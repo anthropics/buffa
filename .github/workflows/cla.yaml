@@ -23,5 +23,5 @@ jobs:
         with:
           path-to-document: "https://github.com/${{ github.repository }}/blob/main/CLA.md"
           path-to-signatures: "signatures/cla.json"
-          branch: "main"
+          branch: "cla-signatures"
           allowlist: "iainmcgin,dependabot[bot],github-actions[bot],renovate[bot]"
