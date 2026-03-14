@@ -1,0 +1,76 @@
+name: Publish to crates.io
+
+# Publishes all workspace crates to crates.io in dependency order.
+#
+# Auth: Trusted Publishing (OIDC) — no stored secrets in steady state.
+# Bootstrap: crates.io requires a crate to exist before Trusted Publishing
+# can be configured for it, so the first publish must use an API token.
+# Set the CARGO_REGISTRY_TOKEN repo secret for the v0.1.0 run, then configure
+# Trusted Publishing per crate (Settings → Trusted Publishers on crates.io)
+# and delete the secret.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: >-
+          Run cargo publish --dry-run (no upload, no auth). Note: only the
+          leaf crate (buffa) fully verifies — downstream crates resolve deps
+          from crates.io, not the workspace, so they fail verification until
+          buffa is actually published. That failure is expected.
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write  # OIDC for crates.io Trusted Publishing
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # GitHub Environment: part of the Trusted Publishing trust config on
+    # crates.io, and lets you add a required-reviewer approval gate.
+    environment: crates-io
+    env:
+      DRY_RUN_FLAG: ${{ inputs.dry_run && '--dry-run' || '' }}
+      # Bootstrap token. Empty if secret is unset → Trusted Publishing path.
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # OIDC token exchange. Skipped in dry-run (never hits crates.io) and
+      # bootstrap (secret present). The action's post-step revokes the token.
+      - name: Authenticate (Trusted Publishing)
+        id: auth
+        if: ${{ !inputs.dry_run && env.CARGO_REGISTRY_TOKEN == '' }}
+        uses: rust-lang/crates-io-auth-action@v1
+
+      - name: Use Trusted Publishing token
+        if: ${{ steps.auth.outputs.token != '' }}
+        run: echo "CARGO_REGISTRY_TOKEN=${{ steps.auth.outputs.token }}" >> "$GITHUB_ENV"
+
+      # Dependency order. cargo publish (≥1.66) blocks until the crate is
+      # indexed, so sequential steps work without manual delays.
+      #
+      # Re-run after partial failure: already-published crates fail with
+      # "already exists". Comment them out and re-run, or bump the version.
+
+      - name: Publish buffa
+        run: cargo publish -p buffa $DRY_RUN_FLAG
+
+      - name: Publish buffa-types
+        run: cargo publish -p buffa-types $DRY_RUN_FLAG
+
+      - name: Publish buffa-codegen
+        run: cargo publish -p buffa-codegen $DRY_RUN_FLAG
+
+      - name: Publish buffa-build
+        run: cargo publish -p buffa-build $DRY_RUN_FLAG
+
+      - name: Publish protoc-gen-buffa
+        run: cargo publish -p protoc-gen-buffa $DRY_RUN_FLAG
