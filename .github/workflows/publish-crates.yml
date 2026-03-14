@@ -2,12 +2,11 @@ name: Publish to crates.io
 
 # Publishes all workspace crates to crates.io in dependency order.
 #
-# Auth: Trusted Publishing (OIDC) — no stored secrets in steady state.
-# Bootstrap: crates.io requires a crate to exist before Trusted Publishing
-# can be configured for it, so the first publish must use an API token.
-# Set the CARGO_REGISTRY_TOKEN repo secret for the v0.1.0 run, then configure
-# Trusted Publishing per crate (Settings → Trusted Publishers on crates.io)
-# and delete the secret.
+# Auth: uses the CARGO_REGISTRY_TOKEN secret when present (bootstrap path —
+# crates.io can't configure Trusted Publishing for a crate that doesn't exist
+# yet), otherwise exchanges the GitHub OIDC token for a short-lived crates.io
+# token. Once Trusted Publishing is configured per crate and the secret is
+# removed, publishes run entirely over OIDC with no stored credentials.
 
 on:
   push:
