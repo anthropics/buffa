@@ -56,23 +56,41 @@ jobs:
       # Dependency order. cargo publish (≥1.66) blocks until the crate is
       # indexed, so sequential steps work without manual delays.
       #
-      # Re-run after partial failure: already-published crates fail with
-      # "already exists". Comment them out and re-run, or bump the version.
+      # Each step is idempotent: if the crate is already published at this
+      # version, the step logs a notice and succeeds. Re-running the workflow
+      # after a partial failure skips what's done and picks up where it left
+      # off. No manual edit-and-rerun needed.
+
+      - name: Create idempotent publish helper
+        run: |
+          cat > /tmp/publish.sh << 'EOF'
+          #!/bin/bash
+          set -o pipefail
+          crate="$1"; shift
+          cargo publish -p "$crate" "$@" 2>&1 | tee /tmp/publish.log
+          status=${PIPESTATUS[0]}
+          if [ $status -ne 0 ] && grep -qE "already (exists|uploaded)" /tmp/publish.log; then
+            echo "::notice::$crate already published at this version; skipping"
+            exit 0
+          fi
+          exit $status
+          EOF
+          chmod +x /tmp/publish.sh
 
       - name: Publish buffa
-        run: cargo publish -p buffa $DRY_RUN_FLAG
+        run: /tmp/publish.sh buffa $DRY_RUN_FLAG
 
       - name: Publish buffa-types
-        run: cargo publish -p buffa-types $DRY_RUN_FLAG
+        run: /tmp/publish.sh buffa-types $DRY_RUN_FLAG
 
       - name: Publish buffa-codegen
-        run: cargo publish -p buffa-codegen $DRY_RUN_FLAG
+        run: /tmp/publish.sh buffa-codegen $DRY_RUN_FLAG
 
       - name: Publish buffa-build
-        run: cargo publish -p buffa-build $DRY_RUN_FLAG
+        run: /tmp/publish.sh buffa-build $DRY_RUN_FLAG
 
       - name: Publish protoc-gen-buffa
-        run: cargo publish -p protoc-gen-buffa $DRY_RUN_FLAG
+        run: /tmp/publish.sh protoc-gen-buffa $DRY_RUN_FLAG
 
       - name: Publish protoc-gen-buffa-packaging
-        run: cargo publish -p protoc-gen-buffa-packaging $DRY_RUN_FLAG
+        run: /tmp/publish.sh protoc-gen-buffa-packaging $DRY_RUN_FLAG
