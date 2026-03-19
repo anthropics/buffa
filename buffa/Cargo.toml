@@ -17,8 +17,13 @@ rustdoc-args = ["--cfg", "docsrs"]
 [features]
 default = ["std"]
 std = ["bytes/std", "thiserror/std", "serde?/std", "serde_json?/std"]
+# `json` and `text` are independently enableable. Both share the
+# `type_registry` module (gated `any(json, text)`) but carry per-format
+# entry types (`JsonAnyEntry` vs `TextAnyEntry`) — no struct-literal `#[cfg]`
+# needed, no `Option<fn>` placeholder fields.
 json = ["dep:serde", "dep:base64", "dep:serde_json", "serde/alloc", "serde/derive", "hashbrown/serde"]
 arbitrary = ["dep:arbitrary"]
+text = []
 
 [dependencies]
 arbitrary = { workspace = true, optional = true }

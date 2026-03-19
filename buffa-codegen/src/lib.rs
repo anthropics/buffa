@@ -29,6 +29,7 @@ pub(crate) mod features;
 pub mod generated;
 pub mod idents;
 pub(crate) mod impl_message;
+pub(crate) mod impl_text;
 pub(crate) mod imports;
 pub(crate) mod message;
 pub(crate) mod oneof;
@@ -119,6 +120,21 @@ pub struct CodeGenConfig {
     /// error — the flag exists to make MessageSet use explicit, since the
     /// format is obsolete outside of interop with very old Google protos.
     pub allow_message_set: bool,
+    /// Whether to emit `impl buffa::text::TextFormat` on generated message
+    /// structs for textproto (human-readable text format) encoding/decoding.
+    ///
+    /// When this is `true`, the downstream crate must enable the `buffa/text`
+    /// feature for the runtime encoder/decoder.
+    pub generate_text: bool,
+    /// Whether to emit the file-level `register_types(&mut TypeRegistry)` fn.
+    ///
+    /// Default `true`. Set to `false` when multiple generated files are
+    /// `include!`d into the same namespace (the identically-named fns would
+    /// collide) — e.g. `buffa-types`' WKTs, which hand-roll
+    /// `register_wkt_types` instead. The per-message `__*_JSON_ANY` /
+    /// `__*_TEXT_ANY` consts are still emitted; only the aggregating fn
+    /// is suppressed.
+    pub emit_register_fn: bool,
 }
 
 impl Default for CodeGenConfig {
@@ -132,6 +148,8 @@ impl Default for CodeGenConfig {
             bytes_fields: Vec::new(),
             strict_utf8_mapping: false,
             allow_message_set: false,
+            generate_text: false,
+            emit_register_fn: true,
         }
     }
 }
@@ -506,11 +524,11 @@ fn generate_file(
             &resolver,
         )?);
     }
-    // Collect paths to JSON extension registry consts (both file-level and
-    // nested-in-message) and Any-type registry consts, for the optional
-    // `register_json` / `register_extensions` fns below.
-    let mut json_ext_paths: Vec<TokenStream> = Vec::new();
-    let mut any_entry_paths: Vec<TokenStream> = Vec::new();
+    // Collect paths to registry consts (both file-level and nested-in-message)
+    // for the optional `register_types` fn below. JSON/text are tracked
+    // separately so each registration line is emitted only under its
+    // corresponding `generate_*` flag.
+    let mut reg = message::RegistryPaths::default();
 
     for message_type in &file.message_type {
         let top_level_name = message_type.name.as_deref().unwrap_or("");
@@ -519,7 +537,7 @@ fn generate_file(
         } else {
             format!("{}.{}", current_package, top_level_name)
         };
-        let (msg_top, msg_mod, msg_json_paths, msg_any_paths) = message::generate_message(
+        let (msg_top, msg_mod, msg_reg) = message::generate_message(
             ctx,
             message_type,
             current_package,
@@ -529,18 +547,20 @@ fn generate_file(
             &resolver,
         )?;
         tokens.extend(msg_top);
-        // Nested extension JSON const paths are relative to the message's
-        // module scope; prefix with `<mod_ident>::` for the package-level view.
+        // Nested extension const paths are relative to the message's module
+        // scope; prefix with `<mod_ident>::` for the package-level view.
         let mod_name = crate::oneof::to_snake_case(top_level_name);
         let mod_ident = crate::message::make_field_ident(&mod_name);
-        for p in msg_json_paths {
-            json_ext_paths.push(quote! { #mod_ident :: #p });
+        for p in msg_reg.json_ext {
+            reg.json_ext.push(quote! { #mod_ident :: #p });
+        }
+        for p in msg_reg.text_ext {
+            reg.text_ext.push(quote! { #mod_ident :: #p });
         }
         // Any-entry paths are already relative to the struct's scope
         // (= file scope for top-level messages) — no prefix needed.
-        for p in msg_any_paths {
-            any_entry_paths.push(p);
-        }
+        reg.json_any.extend(msg_reg.json_any);
+        reg.text_any.extend(msg_reg.text_any);
 
         let view_mod = if ctx.config.generate_views {
             let (view_top, view_mod) = view::generate_view(
@@ -570,7 +590,7 @@ fn generate_file(
         }
     }
 
-    let (file_ext_tokens, file_ext_json_idents) = extension::generate_extensions(
+    let (file_ext_tokens, file_ext_json, file_ext_text) = extension::generate_extensions(
         ctx,
         &file.extension,
         current_package,
@@ -579,35 +599,32 @@ fn generate_file(
         current_package,
     )?;
     tokens.extend(file_ext_tokens);
-    for id in file_ext_json_idents {
-        json_ext_paths.push(quote! { #id });
+    for id in file_ext_json {
+        reg.json_ext.push(quote! { #id });
+    }
+    for id in file_ext_text {
+        reg.text_ext.push(quote! { #id });
     }
 
-    // `register_json(&mut JsonRegistry)` — one call per Any entry + one per
-    // extension entry. Only emitted when generate_json is on and at least one
-    // entry exists. `register_extensions` is kept for back-compat (same body,
-    // extension-only).
-    if ctx.config.generate_json && (!json_ext_paths.is_empty() || !any_entry_paths.is_empty()) {
-        let register_ext = if json_ext_paths.is_empty() {
-            quote! {}
-        } else {
-            quote! {
-                /// Register this file's extension JSON entries with the given registry.
-                ///
-                /// Prefer [`register_json`] which also registers `Any` type entries.
-                pub fn register_extensions(reg: &mut ::buffa::extension_registry::ExtensionRegistry) {
-                    #( reg.register(#json_ext_paths); )*
-                }
-            }
-        };
+    // `register_types(&mut TypeRegistry)` — one call per entry, split by
+    // format. Only emitted when at least one entry exists. Lines are
+    // gated at codegen time by `generate_json` / `generate_text`; the
+    // corresponding `register_*` methods on `TypeRegistry` are feature-gated
+    // in buffa, so a flag/feature mismatch surfaces as a compile error.
+    if ctx.config.emit_register_fn && !reg.is_empty() {
+        let json_any = &reg.json_any;
+        let json_ext = &reg.json_ext;
+        let text_any = &reg.text_any;
+        let text_ext = &reg.text_ext;
         tokens.extend(quote! {
-            /// Register this file's `Any` type entries and extension JSON entries
-            /// with the given unified registry.
-            pub fn register_json(reg: &mut ::buffa::json_registry::JsonRegistry) {
-                #( reg.register_any(#any_entry_paths); )*
-                #( reg.register_extension(#json_ext_paths); )*
+            /// Register this file's `Any` type entries and extension entries
+            /// (JSON and/or text, per codegen config) with the given registry.
+            pub fn register_types(reg: &mut ::buffa::type_registry::TypeRegistry) {
+                #( reg.register_json_any(#json_any); )*
+                #( reg.register_json_ext(#json_ext); )*
+                #( reg.register_text_any(#text_any); )*
+                #( reg.register_text_ext(#text_ext); )*
             }
-            #register_ext
         });
     }
 

@@ -126,6 +126,46 @@ impl ::buffa::ExtensionSet for Duration {
         &mut self.__buffa_unknown_fields
     }
 }
+impl ::buffa::text::TextFormat for Duration {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.seconds != 0i64 {
+            enc.write_field_name("seconds")?;
+            enc.write_i64(self.seconds)?;
+        }
+        if self.nanos != 0i32 {
+            enc.write_field_name("nanos")?;
+            enc.write_i32(self.nanos)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "seconds" => self.seconds = dec.read_i64()?,
+                "nanos" => self.nanos = dec.read_i32()?,
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[doc(hidden)]
+pub const __DURATION_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.Duration",
+    text_encode: ::buffa::type_registry::any_encode_text::<Duration>,
+    text_merge: ::buffa::type_registry::any_merge_text::<Duration>,
+};
 #[derive(Clone, Debug, Default)]
 pub struct DurationView<'a> {
     ///Field 1: `seconds`

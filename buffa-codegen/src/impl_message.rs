@@ -814,7 +814,7 @@ pub(crate) fn decode_fn_token(ty: Type) -> TokenStream {
     }
 }
 
-fn is_non_default_expr(ty: Type, field_ident: &Ident) -> TokenStream {
+pub(crate) fn is_non_default_expr(ty: Type, field_ident: &Ident) -> TokenStream {
     match ty {
         Type::TYPE_INT32 | Type::TYPE_SINT32 | Type::TYPE_SFIXED32 => {
             quote! { self.#field_ident != 0i32 }
@@ -824,11 +824,12 @@ fn is_non_default_expr(ty: Type, field_ident: &Ident) -> TokenStream {
         }
         Type::TYPE_UINT32 | Type::TYPE_FIXED32 => quote! { self.#field_ident != 0u32 },
         Type::TYPE_UINT64 | Type::TYPE_FIXED64 => quote! { self.#field_ident != 0u64 },
-        // IEEE 754: `NaN != 0.0` is true (NaN is serialized), and `-0.0 != 0.0`
-        // is false (negative zero is suppressed like zero).  Both behaviours
-        // are correct per the proto3 spec, which treats -0.0 as the default.
-        Type::TYPE_FLOAT => quote! { self.#field_ident != 0f32 },
-        Type::TYPE_DOUBLE => quote! { self.#field_ident != 0f64 },
+        // Float presence is by bit pattern: `to_bits() != 0` is true for NaN
+        // (serialized) and for -0.0 (also serialized — the proto3 spec treats
+        // only IEEE +0.0 as the default, and the conformance suite checks
+        // that -0.0 round-trips through an implicit-presence field).
+        Type::TYPE_FLOAT => quote! { self.#field_ident.to_bits() != 0u32 },
+        Type::TYPE_DOUBLE => quote! { self.#field_ident.to_bits() != 0u64 },
         Type::TYPE_BOOL => quote! { self.#field_ident },
         _ => unreachable!("is_non_default_expr called for non-numeric type {:?}", ty),
     }

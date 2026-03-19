@@ -21,19 +21,21 @@ fn main() {
     // WKT types come from buffa-types (with hand-written serde impls).
     // We only generate the test message types here.
 
-    // TestAllTypesProto3 with serde enabled.
+    // TestAllTypesProto3 with serde + textproto enabled.
     buffa_build::Config::new()
         .files(&["protos/google/protobuf/test_messages_proto3.proto"])
         .includes(&["protos/"])
         .generate_json(true)
+        .generate_text(true)
         .compile()
         .expect("buffa_build failed for test_messages_proto3.proto");
 
-    // TestAllTypesProto2 with serde enabled for proto2 JSON conformance.
+    // TestAllTypesProto2 with serde + textproto enabled for proto2 conformance.
     buffa_build::Config::new()
         .files(&["protos/google/protobuf/test_messages_proto2.proto"])
         .includes(&["protos/"])
         .generate_json(true)
+        .generate_text(true)
         .allow_message_set(true)
         .compile()
         .expect("buffa_build failed for test_messages_proto2.proto");
@@ -45,6 +47,7 @@ fn main() {
             .files(&[&editions_proto3])
             .includes(&[&protos_dir])
             .generate_json(true)
+            .generate_text(true)
             .compile()
             .expect("buffa_build failed for test_messages_proto3_editions.proto");
 
@@ -53,17 +56,20 @@ fn main() {
             .files(&["protos/editions/golden/test_messages_proto2_editions.proto"])
             .includes(&["protos/"])
             .generate_json(true)
+            .generate_text(true)
             .allow_message_set(true)
             .compile()
             .expect("buffa_build failed for test_messages_proto2_editions.proto");
 
         // Pure edition 2023 test messages: file-level DELIMITED message encoding.
-        // Binary-only (no JSON) — the suite's extension tests for this type
-        // (ValidDelimitedExtension.*, ValidDelimitedField.*) are binary roundtrips.
+        // JSON enabled for the extension registry (the text `[pkg.ext]` bracket
+        // syntax resolves through the same registry structs); text enabled for
+        // the RunDelimitedTests suite.
         buffa_build::Config::new()
             .files(&["protos/conformance/test_protos/test_messages_edition2023.proto"])
             .includes(&["protos/"])
-            .generate_json(false)
+            .generate_json(true)
+            .generate_text(true)
             .generate_views(false)
             .compile()
             .expect("buffa_build failed for test_messages_edition2023.proto");

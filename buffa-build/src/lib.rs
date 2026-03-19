@@ -115,6 +115,17 @@ impl Config {
         self
     }
 
+    /// Enable or disable `impl buffa::text::TextFormat` on generated message
+    /// structs (default: false).
+    ///
+    /// When enabled, the downstream crate must enable the `buffa/text`
+    /// feature for the runtime textproto encoder/decoder.
+    #[must_use]
+    pub fn generate_text(mut self, enabled: bool) -> Self {
+        self.codegen_config.generate_text = enabled;
+        self
+    }
+
     /// Enable or disable `#[derive(arbitrary::Arbitrary)]` on generated
     /// types (default: false).
     ///

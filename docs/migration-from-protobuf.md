@@ -358,7 +358,7 @@ Features in `protobuf` v3/v4 that buffa does not support:
 | Feature | buffa status |
 |---------|-------------|
 | Runtime reflection (`descriptor()`) | Not supported. Server reflection (raw descriptor bytes) is planned. |
-| `protobuf::text_format` | Not supported, not planned |
+| `protobuf::text_format` | Use `generate_text(true)` + `buffa::text::{encode_to_string, decode_from_str}` |
 | `protobuf::json` (v3) | Use `generate_json(true)` + `serde_json` instead |
 | Lite runtime | Not applicable (buffa is already lightweight) |
 | `proto!` construction macro (v4) | Not supported |

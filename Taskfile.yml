@@ -457,6 +457,51 @@ tasks:
       - rm -f src/gen/context.v1.context.rs src/gen/log.v1.log.rs src/gen/mod.rs
       - PATH="{{.ROOT_DIR}}/target/release:$PATH" buf generate
 
+  # The examples are independent cargo projects (own Cargo.toml, own target/),
+  # not workspace members — they declare path deps on the workspace crates to
+  # mirror a downstream consumer's setup.
+
+  build-examples:
+    desc: Build all example binaries.
+    cmds:
+      - cargo build --manifest-path examples/addressbook/Cargo.toml
+      - cargo build --manifest-path examples/envelope/Cargo.toml
+      - cargo build --manifest-path examples/logging/Cargo.toml
+
+  example-envelope:
+    desc: >-
+      Run the extensions demo — binary + JSON roundtrip of custom options,
+      [default = ...] values, extendee-mismatch panic. Self-contained, no args.
+    dir: examples/envelope
+    cmds:
+      - cargo run
+
+  # `dir: {{.USER_WORKING_DIR}}` so file-path arguments resolve relative to
+  # where `task` was invoked, not the Taskfile's directory. Task defaults to
+  # running commands from the Taskfile location, which would make
+  # `task example-addressbook -- dump book.pb` look for ./book.pb in the
+  # repo root instead of the user's cwd.
+
+  example-addressbook:
+    desc: >-
+      Run the addressbook CLI. Pass subcommand + args after `--`:
+      `task example-addressbook -- add book.pb` /
+      `task example-addressbook -- list book.pb` /
+      `task example-addressbook -- dump book.pb` (textproto).
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+      - cargo run --manifest-path {{.ROOT_DIR}}/examples/addressbook/Cargo.toml -- {{.CLI_ARGS}}
+
+  example-logging:
+    desc: >-
+      Run the structured-logging CLI. Pass subcommand + file after `--`:
+      `task example-logging -- write log.pb` /
+      `task example-logging -- read log.pb` /
+      `task example-logging -- filter log.pb WARN`.
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+      - cargo run --manifest-path {{.ROOT_DIR}}/examples/logging/Cargo.toml -- {{.CLI_ARGS}}
+
   build-plugin:
     desc: Build the protoc plugins in release mode.
     cmds:

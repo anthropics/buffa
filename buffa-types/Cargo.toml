@@ -21,7 +21,9 @@ arbitrary = ["dep:arbitrary", "buffa/arbitrary"]
 
 [dependencies]
 arbitrary = { workspace = true, optional = true }
-buffa = { workspace = true, default-features = false }
+# `buffa/text` is zero-dep and the WKT generated code unconditionally impls
+# `TextFormat` — enabled here so the checked-in src/generated/ always compiles.
+buffa = { workspace = true, default-features = false, features = ["text"] }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }

@@ -24,19 +24,18 @@ The Rust ecosystem lacks an actively maintained, pure-Rust library that supports
 
 ## Wire formats
 
-buffa supports **binary** and **JSON** protobuf encodings:
+buffa supports **binary**, **JSON**, and **text** protobuf encodings:
 
 - **Binary wire format** -- full support for all scalar types, nested messages, repeated/packed fields, maps, oneofs, groups, and unknown fields.
 
 - **Proto3 JSON** -- canonical protobuf JSON mapping via optional `serde` integration. Includes well-known type serialization (Timestamp as RFC 3339, Duration as `"1.5s"`, int64/uint64 as quoted strings, bytes as base64, etc.).
 
-**Text format (`textproto`) is not supported** and is not planned.
+- **Text format (`textproto`)** -- the human-readable debug format. Covers `Any` expansion (`[type.googleapis.com/...] { ... }`), extension bracket syntax (`[pkg.ext] { ... }`), and group/DELIMITED fields. `no_std`-compatible. Passes the full text-format conformance suite (883/883).
 
 ## Unsupported features
 
 These are intentionally out of scope:
 
-- **Text format (`textproto`)** — not planned. Binary and JSON are the wire formats that matter for RPC and storage.
 - **Runtime reflection** (`DynamicMessage`, descriptor-driven introspection) — not planned for 0.1. Buffa is a codegen-first library; if you need schema-agnostic processing, consider preserving unknown fields or using `Any`.
 - **Proto2 optional-field getter methods** — `[default = X]` on `optional` fields does not generate `fn field_name(&self) -> T` unwrap-to-default accessors. Custom defaults are applied only to `required` fields via `impl Default`. Optional fields are `Option<T>`; use pattern matching or `.unwrap_or(X)`.
 - **Scoped `JsonParseOptions` in `no_std`** — serde's `Deserialize` trait has no context parameter, so runtime options must be passed through ambient state. In `std` builds, [`with_json_parse_options`] provides per-closure, per-thread scoping via a thread-local. In `no_std` builds, [`set_global_json_parse_options`] provides process-wide set-once configuration via a global atomic. The two APIs are mutually exclusive. The `no_std` global supports singular-enum accept-with-default but not repeated/map container filtering (which requires scoped strict-mode override).
