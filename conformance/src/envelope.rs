@@ -85,6 +85,7 @@ pub struct Request {
     pub message_type: String,
     pub requested_output_format: WireFormat,
     pub test_category: TestCategory,
+    pub print_unknown_fields: bool,
 }
 
 /// Decode a `ConformanceRequest` from raw protobuf bytes.
@@ -93,6 +94,7 @@ pub fn parse_request(mut buf: &[u8]) -> Result<Request, String> {
     let mut message_type = String::new();
     let mut requested_output_format = WireFormat::Unspecified;
     let mut test_category = TestCategory::Unspecified;
+    let mut print_unknown_fields = false;
 
     while !buf.is_empty() {
         let tag = read_varint(&mut buf)?;
@@ -123,6 +125,9 @@ pub fn parse_request(mut buf: &[u8]) -> Result<Request, String> {
             (5, 0) => {
                 test_category = TestCategory::from_u64(read_varint(&mut buf)?);
             }
+            (9, 0) => {
+                print_unknown_fields = read_varint(&mut buf)? != 0;
+            }
             // unknown / future fields — skip gracefully
             (_, 0) => {
                 read_varint(&mut buf)?;
@@ -145,6 +150,7 @@ pub fn parse_request(mut buf: &[u8]) -> Result<Request, String> {
         message_type,
         requested_output_format,
         test_category,
+        print_unknown_fields,
     })
 }
 
@@ -165,6 +171,8 @@ pub enum Response {
     RuntimeError(String),
     /// field 5: test skipped (unsupported format / message type).
     Skipped(String),
+    /// field 8: textproto re-encoding of the test message.
+    TextPayload(String),
 }
 
 /// Encode a `ConformanceResponse` to raw protobuf bytes.
@@ -177,6 +185,7 @@ pub fn encode_response(resp: Response) -> Vec<u8> {
         Response::JsonPayload(s) => write_ld_field(&mut out, 4, s.as_bytes()),
         Response::Skipped(s) => write_ld_field(&mut out, 5, s.as_bytes()),
         Response::SerializeError(s) => write_ld_field(&mut out, 6, s.as_bytes()),
+        Response::TextPayload(s) => write_ld_field(&mut out, 8, s.as_bytes()),
     }
     out
 }

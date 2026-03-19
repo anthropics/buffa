@@ -109,37 +109,39 @@ fn main() {
     std::process::exit(1);
 }
 
-// ── JSON registry (Any types + extensions) ───────────────────────────────
+// ── Type registry (Any types + extensions, JSON + text) ──────────────────
 
-/// Populates the global JSON registry with all well-known types, the
+/// Populates the global type registry with all well-known types, the
 /// generated test-message Any entries, and the conformance proto's extension
-/// declarations. Replaces the previous separate `setup_any_registry` +
-/// `setup_extension_registry` — codegen now emits `register_json` per file
-/// which covers both halves.
+/// declarations. Codegen emits `register_types` per file which covers both
+/// JSON and text entries for both Any types and extensions.
 #[cfg(not(no_protos))]
-fn setup_json_registry() {
-    use buffa::json_registry::{set_json_registry, JsonRegistry};
+fn setup_type_registry() {
+    use buffa::type_registry::{set_type_registry, TypeRegistry};
 
-    let mut reg = JsonRegistry::new();
+    let mut reg = TypeRegistry::new();
 
     // WKTs hand-registered — buffa_types knows which ones use "value"
     // wrapping in Any JSON (is_wkt: true). Codegen always emits
     // is_wkt: false, so user messages and WKTs don't step on each other.
-    buffa_types::register_wkt_types(reg.any_mut());
+    buffa_types::register_wkt_types(&mut reg);
 
     // Generated per-file registration: Any entries for every message type
-    // in the file + extension JSON entries. `test_messages_proto3.proto`
-    // has no extensions, so its register_json is Any-only;
+    // (JSON + text) + extension entries. `test_messages_proto3.proto`
+    // has no extensions, so its register_types is Any-only;
     // `test_messages_proto2.proto` declares `extension_int32` at field 120.
-    proto3::register_json(&mut reg);
-    proto2::register_json(&mut reg);
+    proto3::register_types(&mut reg);
+    proto2::register_types(&mut reg);
     #[cfg(has_editions_protos)]
     {
-        editions_proto3::register_json(&mut reg);
-        editions_proto2::register_json(&mut reg);
+        editions_proto3::register_types(&mut reg);
+        editions_proto2::register_types(&mut reg);
+        // Edition2023's `groupliketype` / `delimited_ext` extensions —
+        // needed for the text `[pkg.ext] { ... }` bracket tests.
+        protobuf_test_messages_editions::register_types(&mut reg);
     }
 
-    set_json_registry(reg);
+    set_type_registry(reg);
 }
 
 // ── Via-view mode ────────────────────────────────────────────────────────
@@ -177,7 +179,7 @@ fn main() {
 
     // Set up the unified JSON registry so that serialization of Any fields
     // and `"[pkg.ext]"` extension keys uses proto3-compliant encoding.
-    setup_json_registry();
+    setup_type_registry();
 
     let stdin = io::stdin();
     let stdout = io::stdout();
@@ -267,13 +269,12 @@ fn process(req: &envelope::Request) -> envelope::Response {
     }
 
     let ignore_unknown = req.test_category == envelope::TestCategory::JsonIgnoreUnknownParsing;
+    let pu = req.print_unknown_fields;
 
     match (&req.payload, req.requested_output_format) {
         (None, _) => Response::ParseError("ConformanceRequest has no payload".into()),
-        (Some(Payload::Text(_)), _) => Response::Skipped("text-format input not supported".into()),
         (Some(Payload::Jspb(_)), _) => Response::Skipped("JSPB not in scope".into()),
         (_, WireFormat::Jspb) => Response::Skipped("JSPB output not in scope".into()),
-        (_, WireFormat::TextFormat) => Response::Skipped("text-format output not supported".into()),
         (_, WireFormat::Unspecified) => Response::Skipped("unspecified output format".into()),
 
         // Proto3 paths
@@ -292,6 +293,15 @@ fn process(req: &envelope::Request) -> envelope::Response {
         (Some(Payload::Json(s)), WireFormat::Json) if req.message_type == MSG_PROTO3 => {
             roundtrip_proto3(|| decode_proto3_json(s, ignore_unknown), encode_proto3_json)
         }
+        (Some(Payload::Protobuf(b)), WireFormat::TextFormat) if req.message_type == MSG_PROTO3 => {
+            roundtrip_proto3(|| decode_proto3_binary(b), |m| encode_proto3_text(m, pu))
+        }
+        (Some(Payload::Text(s)), WireFormat::Protobuf) if req.message_type == MSG_PROTO3 => {
+            roundtrip_proto3(|| decode_proto3_text(s), encode_proto3_binary)
+        }
+        (Some(Payload::Text(s)), WireFormat::TextFormat) if req.message_type == MSG_PROTO3 => {
+            roundtrip_proto3(|| decode_proto3_text(s), |m| encode_proto3_text(m, pu))
+        }
 
         // Proto2 paths
         (Some(Payload::Protobuf(b)), WireFormat::Protobuf) if req.message_type == MSG_PROTO2 => {
@@ -308,6 +318,15 @@ fn process(req: &envelope::Request) -> envelope::Response {
         }
         (Some(Payload::Json(s)), WireFormat::Json) if req.message_type == MSG_PROTO2 => {
             roundtrip_proto2(|| decode_proto2_json(s, ignore_unknown), encode_proto2_json)
+        }
+        (Some(Payload::Protobuf(b)), WireFormat::TextFormat) if req.message_type == MSG_PROTO2 => {
+            roundtrip_proto2(|| decode_proto2_binary(b), |m| encode_proto2_text(m, pu))
+        }
+        (Some(Payload::Text(s)), WireFormat::Protobuf) if req.message_type == MSG_PROTO2 => {
+            roundtrip_proto2(|| decode_proto2_text(s), encode_proto2_binary)
+        }
+        (Some(Payload::Text(s)), WireFormat::TextFormat) if req.message_type == MSG_PROTO2 => {
+            roundtrip_proto2(|| decode_proto2_text(s), |m| encode_proto2_text(m, pu))
         }
 
         _ => process_editions(req, ignore_unknown),
@@ -368,87 +387,109 @@ fn process_editions(
 fn process_editions_inner(req: &envelope::Request, ignore_unknown: bool) -> envelope::Response {
     use envelope::{Payload, Response, WireFormat};
 
+    type EdProto3 = editions_proto3::TestAllTypesProto3;
+    type EdProto2 = editions_proto2::TestAllTypesProto2;
+    type Ed2023 = protobuf_test_messages_editions::TestAllTypesEdition2023;
+
+    let pu = req.print_unknown_fields;
+
     match (&req.payload, req.requested_output_format) {
         (None, _) => Response::ParseError("ConformanceRequest has no payload".into()),
-        (Some(Payload::Text(_)), _) => Response::Skipped("text-format input not supported".into()),
 
         // Proto3 via editions
         (Some(Payload::Protobuf(b)), WireFormat::Protobuf)
             if req.message_type == MSG_EDITIONS_PROTO3 =>
         {
-            roundtrip(
-                || decode_binary::<editions_proto3::TestAllTypesProto3>(b),
-                encode_binary,
-            )
+            roundtrip(|| decode_binary::<EdProto3>(b), encode_binary)
         }
         (Some(Payload::Protobuf(b)), WireFormat::Json)
             if req.message_type == MSG_EDITIONS_PROTO3 =>
         {
-            roundtrip(
-                || decode_binary::<editions_proto3::TestAllTypesProto3>(b),
-                encode_json,
-            )
+            roundtrip(|| decode_binary::<EdProto3>(b), encode_json)
         }
         (Some(Payload::Json(s)), WireFormat::Protobuf)
             if req.message_type == MSG_EDITIONS_PROTO3 =>
         {
-            roundtrip(
-                || decode_json::<editions_proto3::TestAllTypesProto3>(s, ignore_unknown),
-                encode_binary,
-            )
+            roundtrip(|| decode_json::<EdProto3>(s, ignore_unknown), encode_binary)
         }
         (Some(Payload::Json(s)), WireFormat::Json) if req.message_type == MSG_EDITIONS_PROTO3 => {
-            roundtrip(
-                || decode_json::<editions_proto3::TestAllTypesProto3>(s, ignore_unknown),
-                encode_json,
-            )
+            roundtrip(|| decode_json::<EdProto3>(s, ignore_unknown), encode_json)
+        }
+        (Some(Payload::Protobuf(b)), WireFormat::TextFormat)
+            if req.message_type == MSG_EDITIONS_PROTO3 =>
+        {
+            roundtrip(|| decode_binary::<EdProto3>(b), |m| encode_text(m, pu))
+        }
+        (Some(Payload::Text(s)), WireFormat::Protobuf)
+            if req.message_type == MSG_EDITIONS_PROTO3 =>
+        {
+            roundtrip(|| decode_text::<EdProto3>(s), encode_binary)
+        }
+        (Some(Payload::Text(s)), WireFormat::TextFormat)
+            if req.message_type == MSG_EDITIONS_PROTO3 =>
+        {
+            roundtrip(|| decode_text::<EdProto3>(s), |m| encode_text(m, pu))
         }
 
         // Proto2 via editions
         (Some(Payload::Protobuf(b)), WireFormat::Protobuf)
             if req.message_type == MSG_EDITIONS_PROTO2 =>
         {
-            roundtrip(
-                || decode_binary::<editions_proto2::TestAllTypesProto2>(b),
-                encode_binary,
-            )
+            roundtrip(|| decode_binary::<EdProto2>(b), encode_binary)
         }
         (Some(Payload::Protobuf(b)), WireFormat::Json)
             if req.message_type == MSG_EDITIONS_PROTO2 =>
         {
-            roundtrip(
-                || decode_binary::<editions_proto2::TestAllTypesProto2>(b),
-                encode_json,
-            )
+            roundtrip(|| decode_binary::<EdProto2>(b), encode_json)
         }
         (Some(Payload::Json(s)), WireFormat::Protobuf)
             if req.message_type == MSG_EDITIONS_PROTO2 =>
         {
-            roundtrip(
-                || decode_json::<editions_proto2::TestAllTypesProto2>(s, ignore_unknown),
-                encode_binary,
-            )
+            roundtrip(|| decode_json::<EdProto2>(s, ignore_unknown), encode_binary)
         }
         (Some(Payload::Json(s)), WireFormat::Json) if req.message_type == MSG_EDITIONS_PROTO2 => {
-            roundtrip(
-                || decode_json::<editions_proto2::TestAllTypesProto2>(s, ignore_unknown),
-                encode_json,
-            )
+            roundtrip(|| decode_json::<EdProto2>(s, ignore_unknown), encode_json)
+        }
+        (Some(Payload::Protobuf(b)), WireFormat::TextFormat)
+            if req.message_type == MSG_EDITIONS_PROTO2 =>
+        {
+            roundtrip(|| decode_binary::<EdProto2>(b), |m| encode_text(m, pu))
+        }
+        (Some(Payload::Text(s)), WireFormat::Protobuf)
+            if req.message_type == MSG_EDITIONS_PROTO2 =>
+        {
+            roundtrip(|| decode_text::<EdProto2>(s), encode_binary)
+        }
+        (Some(Payload::Text(s)), WireFormat::TextFormat)
+            if req.message_type == MSG_EDITIONS_PROTO2 =>
+        {
+            roundtrip(|| decode_text::<EdProto2>(s), |m| encode_text(m, pu))
         }
 
-        // Pure edition 2023 (file-level DELIMITED). Binary-only: the suite's
-        // tests for this type are binary roundtrips (ValidDelimitedField.*,
-        // ValidDelimitedExtension.*). JSON input/output is skipped.
+        // Pure edition 2023 (file-level DELIMITED). Binary + text; JSON
+        // codegen is on only for the extension registry (the text `[pkg.ext]`
+        // bracket syntax resolves through it) — the suite doesn't send JSON
+        // for this message type.
         (Some(Payload::Protobuf(b)), WireFormat::Protobuf)
             if req.message_type == MSG_EDITION_2023 =>
         {
-            roundtrip(
-                || decode_binary::<protobuf_test_messages_editions::TestAllTypesEdition2023>(b),
-                encode_binary,
-            )
+            roundtrip(|| decode_binary::<Ed2023>(b), encode_binary)
+        }
+        (Some(Payload::Protobuf(b)), WireFormat::TextFormat)
+            if req.message_type == MSG_EDITION_2023 =>
+        {
+            roundtrip(|| decode_binary::<Ed2023>(b), |m| encode_text(m, pu))
+        }
+        (Some(Payload::Text(s)), WireFormat::Protobuf) if req.message_type == MSG_EDITION_2023 => {
+            roundtrip(|| decode_text::<Ed2023>(s), encode_binary)
+        }
+        (Some(Payload::Text(s)), WireFormat::TextFormat)
+            if req.message_type == MSG_EDITION_2023 =>
+        {
+            roundtrip(|| decode_text::<Ed2023>(s), |m| encode_text(m, pu))
         }
         _ if req.message_type == MSG_EDITION_2023 => {
-            Response::Skipped("TestAllTypesEdition2023: JSON not supported (binary-only)".into())
+            Response::Skipped("TestAllTypesEdition2023: JSON I/O not supported".into())
         }
 
         _ => Response::Skipped(format!("unsupported message type '{}'", req.message_type)),
@@ -504,6 +545,22 @@ fn encode_json<T: serde::Serialize>(msg: &T) -> Result<envelope::Response, Strin
         .map_err(|e| format!("{e}"))
 }
 
+#[cfg(has_editions_protos)]
+fn decode_text<T: buffa::text::TextFormat + Default>(s: &str) -> Result<T, String> {
+    buffa::text::decode_from_str(s).map_err(|e| format!("{e}"))
+}
+
+#[cfg(has_editions_protos)]
+fn encode_text<T: buffa::text::TextFormat>(
+    msg: &T,
+    print_unknown: bool,
+) -> Result<envelope::Response, String> {
+    let mut out = String::new();
+    let mut enc = buffa::text::TextEncoder::new(&mut out).emit_unknown(print_unknown);
+    let _ = msg.encode_text(&mut enc);
+    Ok(envelope::Response::TextPayload(out))
+}
+
 // ── Proto3 decode/encode helpers ─────────────────────────────────────────
 
 #[cfg(not(no_protos))]
@@ -555,6 +612,23 @@ fn encode_proto3_json(msg: &proto3::TestAllTypesProto3) -> Result<envelope::Resp
         .map_err(|e| format!("{e}"))
 }
 
+#[cfg(not(no_protos))]
+fn decode_proto3_text(s: &str) -> Result<proto3::TestAllTypesProto3, String> {
+    buffa::text::decode_from_str(s).map_err(|e| format!("{e}"))
+}
+
+#[cfg(not(no_protos))]
+fn encode_proto3_text(
+    msg: &proto3::TestAllTypesProto3,
+    print_unknown: bool,
+) -> Result<envelope::Response, String> {
+    use buffa::text::TextFormat as _;
+    let mut out = String::new();
+    let mut enc = buffa::text::TextEncoder::new(&mut out).emit_unknown(print_unknown);
+    let _ = msg.encode_text(&mut enc);
+    Ok(envelope::Response::TextPayload(out))
+}
+
 // ── Proto2 decode/encode helpers ─────────────────────────────────────────
 
 #[cfg(not(no_protos))]
@@ -604,4 +678,21 @@ fn encode_proto2_json(msg: &proto2::TestAllTypesProto2) -> Result<envelope::Resp
     serde_json::to_string(msg)
         .map(envelope::Response::JsonPayload)
         .map_err(|e| format!("{e}"))
+}
+
+#[cfg(not(no_protos))]
+fn decode_proto2_text(s: &str) -> Result<proto2::TestAllTypesProto2, String> {
+    buffa::text::decode_from_str(s).map_err(|e| format!("{e}"))
+}
+
+#[cfg(not(no_protos))]
+fn encode_proto2_text(
+    msg: &proto2::TestAllTypesProto2,
+    print_unknown: bool,
+) -> Result<envelope::Response, String> {
+    use buffa::text::TextFormat as _;
+    let mut out = String::new();
+    let mut enc = buffa::text::TextEncoder::new(&mut out).emit_unknown(print_unknown);
+    let _ = msg.encode_text(&mut enc);
+    Ok(envelope::Response::TextPayload(out))
 }

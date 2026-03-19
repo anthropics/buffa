@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-buffa = { path = "../../buffa" }
+buffa = { path = "../../buffa", features = ["text"] }
 buffa-types = { path = "../../buffa-types" }
 
 [build-dependencies]

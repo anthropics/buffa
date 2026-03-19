@@ -5,6 +5,7 @@
 //!   addressbook add <file>       Add a person interactively
 //!   addressbook list <file>      List all contacts
 //!   addressbook show <file> <id> Show details for a contact
+//!   addressbook dump <file>      Print the address book in textproto
 
 mod proto {
     include!(concat!(env!("OUT_DIR"), "/_include.rs"));
@@ -20,7 +21,7 @@ use std::io::{self, BufRead, Write};
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
-        eprintln!("Usage: addressbook <add|list|show> <file> [id]");
+        eprintln!("Usage: addressbook <add|list|show|dump> <file> [id]");
         std::process::exit(1);
     }
 
@@ -30,6 +31,7 @@ fn main() {
     match command.as_str() {
         "add" => cmd_add(file_path),
         "list" => cmd_list(file_path),
+        "dump" => cmd_dump(file_path),
         "show" => {
             let id: i32 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or_else(|| {
                 eprintln!("Usage: addressbook show <file> <id>");
@@ -149,6 +151,14 @@ fn cmd_add(file_path: &str) {
 
     book.people.push(person);
     save_address_book(file_path, &book);
+}
+
+/// Print the entire address book in textproto — the human-readable debug
+/// format. Useful for diffing in tests or eyeballing the binary file's
+/// contents without a hex editor.
+fn cmd_dump(file_path: &str) {
+    let book = load_address_book(file_path);
+    print!("{}", buffa::text::encode_to_string_pretty(&book));
 }
 
 fn cmd_list(file_path: &str) {

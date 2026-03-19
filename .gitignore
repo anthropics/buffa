@@ -17,3 +17,6 @@ fuzz/corpus/
 
 # Local tooling extracted from the tools image (task install-protoc).
 /.local/
+
+# Local editor settings
+/.claude/settings.local.json

@@ -39,7 +39,7 @@ impl ::buffa::Message for DoubleValue {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
         let mut size = 0u32;
-        if self.value != 0f64 {
+        if self.value.to_bits() != 0u64 {
             size += 1u32 + ::buffa::types::FIXED64_ENCODED_LEN as u32;
         }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
@@ -49,7 +49,7 @@ impl ::buffa::Message for DoubleValue {
     fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        if self.value != 0f64 {
+        if self.value.to_bits() != 0u64 {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Fixed64)
                 .encode(buf);
             ::buffa::types::encode_double(self.value, buf);
@@ -102,6 +102,41 @@ impl ::buffa::ExtensionSet for DoubleValue {
         &mut self.__buffa_unknown_fields
     }
 }
+impl ::buffa::text::TextFormat for DoubleValue {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.value.to_bits() != 0u64 {
+            enc.write_field_name("value")?;
+            enc.write_f64(self.value)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "value" => self.value = dec.read_f64()?,
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[doc(hidden)]
+pub const __DOUBLE_VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.DoubleValue",
+    text_encode: ::buffa::type_registry::any_encode_text::<DoubleValue>,
+    text_merge: ::buffa::type_registry::any_merge_text::<DoubleValue>,
+};
 #[derive(Clone, Debug, Default)]
 pub struct DoubleValueView<'a> {
     ///Field 1: `value`
@@ -240,7 +275,7 @@ impl ::buffa::Message for FloatValue {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
         let mut size = 0u32;
-        if self.value != 0f32 {
+        if self.value.to_bits() != 0u32 {
             size += 1u32 + ::buffa::types::FIXED32_ENCODED_LEN as u32;
         }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
@@ -250,7 +285,7 @@ impl ::buffa::Message for FloatValue {
     fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        if self.value != 0f32 {
+        if self.value.to_bits() != 0u32 {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Fixed32)
                 .encode(buf);
             ::buffa::types::encode_float(self.value, buf);
@@ -303,6 +338,41 @@ impl ::buffa::ExtensionSet for FloatValue {
         &mut self.__buffa_unknown_fields
     }
 }
+impl ::buffa::text::TextFormat for FloatValue {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.value.to_bits() != 0u32 {
+            enc.write_field_name("value")?;
+            enc.write_f32(self.value)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "value" => self.value = dec.read_f32()?,
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[doc(hidden)]
+pub const __FLOAT_VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.FloatValue",
+    text_encode: ::buffa::type_registry::any_encode_text::<FloatValue>,
+    text_merge: ::buffa::type_registry::any_merge_text::<FloatValue>,
+};
 #[derive(Clone, Debug, Default)]
 pub struct FloatValueView<'a> {
     ///Field 1: `value`
@@ -504,6 +574,41 @@ impl ::buffa::ExtensionSet for Int64Value {
         &mut self.__buffa_unknown_fields
     }
 }
+impl ::buffa::text::TextFormat for Int64Value {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.value != 0i64 {
+            enc.write_field_name("value")?;
+            enc.write_i64(self.value)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "value" => self.value = dec.read_i64()?,
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[doc(hidden)]
+pub const __INT64VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.Int64Value",
+    text_encode: ::buffa::type_registry::any_encode_text::<Int64Value>,
+    text_merge: ::buffa::type_registry::any_merge_text::<Int64Value>,
+};
 #[derive(Clone, Debug, Default)]
 pub struct Int64ValueView<'a> {
     ///Field 1: `value`
@@ -705,6 +810,41 @@ impl ::buffa::ExtensionSet for UInt64Value {
         &mut self.__buffa_unknown_fields
     }
 }
+impl ::buffa::text::TextFormat for UInt64Value {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.value != 0u64 {
+            enc.write_field_name("value")?;
+            enc.write_u64(self.value)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "value" => self.value = dec.read_u64()?,
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[doc(hidden)]
+pub const __U_INT64VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.UInt64Value",
+    text_encode: ::buffa::type_registry::any_encode_text::<UInt64Value>,
+    text_merge: ::buffa::type_registry::any_merge_text::<UInt64Value>,
+};
 #[derive(Clone, Debug, Default)]
 pub struct UInt64ValueView<'a> {
     ///Field 1: `value`
@@ -906,6 +1046,41 @@ impl ::buffa::ExtensionSet for Int32Value {
         &mut self.__buffa_unknown_fields
     }
 }
+impl ::buffa::text::TextFormat for Int32Value {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.value != 0i32 {
+            enc.write_field_name("value")?;
+            enc.write_i32(self.value)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "value" => self.value = dec.read_i32()?,
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[doc(hidden)]
+pub const __INT32VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.Int32Value",
+    text_encode: ::buffa::type_registry::any_encode_text::<Int32Value>,
+    text_merge: ::buffa::type_registry::any_merge_text::<Int32Value>,
+};
 #[derive(Clone, Debug, Default)]
 pub struct Int32ValueView<'a> {
     ///Field 1: `value`
@@ -1107,6 +1282,41 @@ impl ::buffa::ExtensionSet for UInt32Value {
         &mut self.__buffa_unknown_fields
     }
 }
+impl ::buffa::text::TextFormat for UInt32Value {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.value != 0u32 {
+            enc.write_field_name("value")?;
+            enc.write_u32(self.value)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "value" => self.value = dec.read_u32()?,
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[doc(hidden)]
+pub const __U_INT32VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.UInt32Value",
+    text_encode: ::buffa::type_registry::any_encode_text::<UInt32Value>,
+    text_merge: ::buffa::type_registry::any_merge_text::<UInt32Value>,
+};
 #[derive(Clone, Debug, Default)]
 pub struct UInt32ValueView<'a> {
     ///Field 1: `value`
@@ -1308,6 +1518,41 @@ impl ::buffa::ExtensionSet for BoolValue {
         &mut self.__buffa_unknown_fields
     }
 }
+impl ::buffa::text::TextFormat for BoolValue {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.value {
+            enc.write_field_name("value")?;
+            enc.write_bool(self.value)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "value" => self.value = dec.read_bool()?,
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[doc(hidden)]
+pub const __BOOL_VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.BoolValue",
+    text_encode: ::buffa::type_registry::any_encode_text::<BoolValue>,
+    text_merge: ::buffa::type_registry::any_merge_text::<BoolValue>,
+};
 #[derive(Clone, Debug, Default)]
 pub struct BoolValueView<'a> {
     ///Field 1: `value`
@@ -1512,6 +1757,41 @@ impl ::buffa::ExtensionSet for StringValue {
         &mut self.__buffa_unknown_fields
     }
 }
+impl ::buffa::text::TextFormat for StringValue {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if !self.value.is_empty() {
+            enc.write_field_name("value")?;
+            enc.write_string(&self.value)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "value" => self.value = dec.read_string()?.into_owned(),
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[doc(hidden)]
+pub const __STRING_VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.StringValue",
+    text_encode: ::buffa::type_registry::any_encode_text::<StringValue>,
+    text_merge: ::buffa::type_registry::any_merge_text::<StringValue>,
+};
 #[derive(Clone, Debug, Default)]
 pub struct StringValueView<'a> {
     ///Field 1: `value`
@@ -1716,6 +1996,41 @@ impl ::buffa::ExtensionSet for BytesValue {
         &mut self.__buffa_unknown_fields
     }
 }
+impl ::buffa::text::TextFormat for BytesValue {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if !self.value.is_empty() {
+            enc.write_field_name("value")?;
+            enc.write_bytes(&self.value)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "value" => self.value = dec.read_bytes()?,
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[doc(hidden)]
+pub const __BYTES_VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.BytesValue",
+    text_encode: ::buffa::type_registry::any_encode_text::<BytesValue>,
+    text_merge: ::buffa::type_registry::any_merge_text::<BytesValue>,
+};
 #[derive(Clone, Debug, Default)]
 pub struct BytesValueView<'a> {
     ///Field 1: `value`

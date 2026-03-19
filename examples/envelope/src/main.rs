@@ -80,7 +80,10 @@ fn binary_roundtrip() {
 
     println!("  retry_count:  {:?}", Some(3));
     println!("  trace_id:     {:?}", trace.trace_id);
-    println!("  routing_hops: {:?}", vec!["edge-lhr", "core-dub", "edge-sfo"]);
+    println!(
+        "  routing_hops: {:?}",
+        vec!["edge-lhr", "core-dub", "edge-sfo"]
+    );
     println!();
 }
 
@@ -95,8 +98,11 @@ fn default_values() {
     // the declared default.
     assert_eq!(env.extension(&PRIORITY), None);
     assert_eq!(env.extension_or_default(&PRIORITY), 5);
-    println!("  absent:       extension()={:?}  extension_or_default()={}",
-             env.extension(&PRIORITY), env.extension_or_default(&PRIORITY));
+    println!(
+        "  absent:       extension()={:?}  extension_or_default()={}",
+        env.extension(&PRIORITY),
+        env.extension_or_default(&PRIORITY)
+    );
 
     // Explicitly set a value — including one equal to the type's zero.
     // Extensions always have explicit presence (protocolbuffers/protobuf#8234),
@@ -106,8 +112,11 @@ fn default_values() {
     env.set_extension(&PRIORITY, 0);
     assert_eq!(env.extension(&PRIORITY), Some(0));
     assert_eq!(env.extension_or_default(&PRIORITY), 0);
-    println!("  set to 0:     extension()={:?}  extension_or_default()={}",
-             env.extension(&PRIORITY), env.extension_or_default(&PRIORITY));
+    println!(
+        "  set to 0:     extension()={:?}  extension_or_default()={}",
+        env.extension(&PRIORITY),
+        env.extension_or_default(&PRIORITY)
+    );
 
     // Clear → back to the declared default.
     env.clear_extension(&PRIORITY);
@@ -115,19 +124,19 @@ fn default_values() {
     println!();
 }
 
-/// ProtoJSON `"[pkg.ext]"` keys — requires a `JsonRegistry` populated by the
-/// codegen-emitted `register_json()` per file.
+/// ProtoJSON `"[pkg.ext]"` keys — requires a `TypeRegistry` populated by the
+/// codegen-emitted `register_types()` per file.
 fn json_roundtrip() {
     println!("── JSON `[pkg.ext]` keys ────────────────────────────────────");
 
     // Setup: once at startup. Without this, extension bytes stay in
     // `__buffa_unknown_fields` and are silently dropped from JSON output.
-    use buffa::json_registry::{set_json_registry, JsonRegistry};
-    let mut reg = JsonRegistry::new();
-    // Codegen emits this per file. It registers BOTH extension JSON
-    // converters AND `Any` type entries — one call covers both.
-    proto::buffa::examples::envelope::register_json(&mut reg);
-    set_json_registry(reg);
+    use buffa::type_registry::{set_type_registry, TypeRegistry};
+    let mut reg = TypeRegistry::new();
+    // Codegen emits this per file. It registers extension JSON converters,
+    // extension text converters, and `Any` type entries — one call covers all.
+    proto::buffa::examples::envelope::register_types(&mut reg);
+    set_type_registry(reg);
 
     let mut env = Envelope {
         request_id: Some("req-xyz789".into()),
@@ -150,8 +159,7 @@ fn json_roundtrip() {
 
     // Unregistered `"[...]"` keys are silently dropped by default —
     // `JsonParseOptions::strict_extension_keys(true)` makes them error instead.
-    let with_unknown =
-        r#"{"requestId":"req-x","[unknown.extension]":99}"#;
+    let with_unknown = r#"{"requestId":"req-x","[unknown.extension]":99}"#;
     let parsed: Envelope = serde_json::from_str(with_unknown).expect("lenient parse");
     assert_eq!(parsed.request_id.as_deref(), Some("req-x"));
     println!();

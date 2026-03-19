@@ -1,0 +1,7 @@
+# Known text-format conformance test failures for buffa.
+#
+# Consumed by `conformance_test_runner --text_format_failure_list`.
+# The text-format suite runs separately from the binary+JSON suite and
+# validates this list independently.  Remove entries as failures are fixed.
+#
+# std and no_std share this file — textproto has no std-only paths.

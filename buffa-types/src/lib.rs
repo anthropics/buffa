@@ -91,6 +91,5 @@ pub use google::protobuf::{
 pub use duration_ext::DurationError;
 pub use timestamp_ext::TimestampError;
 
-// Re-export the WKT registry function for `Any` JSON support.
-#[cfg(feature = "json")]
+// Re-export the WKT registry function for `Any` JSON + text support.
 pub use any_ext::register_wkt_types;

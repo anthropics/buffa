@@ -28,7 +28,7 @@ default = ["buffa-std"]
 buffa-std = ["buffa/std", "buffa-types/std"]
 
 [dependencies]
-buffa = { path = "../buffa", default-features = false, features = ["json"] }
+buffa = { path = "../buffa", default-features = false, features = ["json", "text"] }
 buffa-types = { path = "../buffa-types", default-features = false, features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["std", "float_roundtrip"] }

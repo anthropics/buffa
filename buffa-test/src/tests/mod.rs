@@ -41,6 +41,7 @@ mod message_set;
 mod nesting;
 mod proto2;
 mod proto3_semantics;
+mod textproto;
 mod utf8_validation;
 mod view;
 mod wkt;

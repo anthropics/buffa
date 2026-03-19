@@ -5,14 +5,14 @@
 //! `__buffa_unknown_fields` is `#[serde(skip)]`, so extension bytes are
 //! silently dropped from JSON without a registry to look them up.
 //!
-//! **Prefer [`json_registry`](crate::json_registry).** [`set_extension_registry`]
-//! is deprecated since 0.3.0 — [`set_json_registry`] installs both the `Any`
+//! **Prefer [`type_registry`](crate::type_registry).** [`set_extension_registry`]
+//! is deprecated since 0.3.0 — [`set_type_registry`] installs both the `Any`
 //! registry and the extension registry in one call, and generated
-//! `register_json(&mut reg)` functions populate both maps. This module remains
-//! for the registry types themselves (used internally by `json_registry`) and
+//! `register_types(&mut reg)` functions populate all maps. This module remains
+//! for the registry types themselves (used internally by `type_registry`) and
 //! the serde helper functions called from generated code.
 //!
-//! [`set_json_registry`]: crate::json_registry::set_json_registry
+//! [`set_type_registry`]: crate::type_registry::set_type_registry
 //!
 //! Codegen emits:
 //! - A `#[serde(flatten)]` newtype wrapper around `__buffa_unknown_fields`
@@ -34,13 +34,19 @@ use hashbrown::HashMap;
 
 use crate::unknown_fields::{UnknownField, UnknownFields};
 
-/// Registry entry for a single extension field.
+/// JSON-specific registry entry for a single extension field.
 ///
 /// The `to_json` / `from_json` function pointers are monomorphized per proto
 /// type by codegen — they compose an [`ExtensionCodec`](crate::ExtensionCodec)
 /// decode/encode with the proto3 JSON rules for that type (int64 stringify,
 /// bytes base64, message-as-object, etc.).
-pub struct ExtensionRegistryEntry {
+///
+/// Text-format conversion lives in a separate [`TextExtEntry`] — the two
+/// entry types are per-feature split so `json` and `text` are independently
+/// enableable.
+///
+/// [`TextExtEntry`]: crate::type_registry::TextExtEntry
+pub struct JsonExtEntry {
     /// Field number on the extendee.
     pub number: u32,
     /// Fully-qualified proto name. The JSON key is `"[<this>]"`.
@@ -56,13 +62,18 @@ pub struct ExtensionRegistryEntry {
     pub from_json: fn(serde_json::Value, u32) -> Result<Vec<UnknownField>, String>,
 }
 
+/// Deprecated alias for [`JsonExtEntry`]. Text-format fields have moved to
+/// a separate `TextExtEntry` in [`type_registry`](crate::type_registry).
+#[deprecated(since = "0.3.0", note = "renamed to JsonExtEntry")]
+pub type ExtensionRegistryEntry = JsonExtEntry;
+
 /// A registry mapping extension identities to JSON encode/decode functions.
 ///
 /// Two lookup axes: serialize looks up by `(extendee, number)` (iterate
 /// unknown fields → is this number a known extension of this message?),
 /// deserialize looks up by `full_name` (saw `"[pkg.ext]"` → what is this?).
 pub struct ExtensionRegistry {
-    by_number: HashMap<(String, u32), ExtensionRegistryEntry>,
+    by_number: HashMap<(String, u32), JsonExtEntry>,
     by_name: HashMap<String, (String, u32)>,
 }
 
@@ -77,19 +88,19 @@ impl ExtensionRegistry {
 
     /// Registers an entry. Replaces any existing entry at the same
     /// `(extendee, number)` or `full_name`.
-    pub fn register(&mut self, entry: ExtensionRegistryEntry) {
+    pub fn register(&mut self, entry: JsonExtEntry) {
         let key = (entry.extendee.to_owned(), entry.number);
         self.by_name.insert(entry.full_name.to_owned(), key.clone());
         self.by_number.insert(key, entry);
     }
 
     /// Serialize-side lookup: is `number` a registered extension of `extendee`?
-    pub fn by_number(&self, extendee: &str, number: u32) -> Option<&ExtensionRegistryEntry> {
+    pub fn by_number(&self, extendee: &str, number: u32) -> Option<&JsonExtEntry> {
         self.by_number.get(&(extendee.to_owned(), number))
     }
 
     /// Deserialize-side lookup: what extension is `"[full_name]"`?
-    pub fn by_name(&self, full_name: &str) -> Option<&ExtensionRegistryEntry> {
+    pub fn by_name(&self, full_name: &str) -> Option<&JsonExtEntry> {
         let key = self.by_name.get(full_name)?;
         self.by_number.get(key)
     }
@@ -110,7 +121,7 @@ static REGISTRY: AtomicPtr<ExtensionRegistry> = AtomicPtr::new(core::ptr::null_m
 /// Set once at startup, before any JSON serialization or deserialization that
 /// involves extension fields. The registry is leaked (lives for the program
 /// lifetime); subsequent calls leak the old registry.
-#[deprecated(since = "0.3.0", note = "use buffa::json_registry::set_json_registry")]
+#[deprecated(since = "0.3.0", note = "use buffa::type_registry::set_type_registry")]
 pub fn set_extension_registry(reg: Box<ExtensionRegistry>) {
     let old = REGISTRY.swap(Box::into_raw(reg), Ordering::Release);
     if !old.is_null() {
@@ -265,7 +276,7 @@ pub fn deserialize_extensions<'de, D: serde::Deserializer<'de>>(
 // compose the existing ExtensionCodec decode/encode with those rules so
 // codegen just picks a function pointer — no closures emitted.
 
-/// Per-type JSON converters for [`ExtensionRegistryEntry`] function pointers.
+/// Per-type JSON converters for [`JsonExtEntry`] function pointers.
 pub mod helpers {
     use super::*;
     use crate::extension::codecs::*;
@@ -904,6 +915,19 @@ mod tests {
         f
     }
 
+    /// Test `JsonExtEntry` shorthand. All test entries use `int32` JSON helpers.
+    macro_rules! entry {
+        ($num:expr, $name:expr, $ext:expr) => {
+            JsonExtEntry {
+                number: $num,
+                full_name: $name,
+                extendee: $ext,
+                to_json: int32_to_json,
+                from_json: int32_from_json,
+            }
+        };
+    }
+
     #[test]
     fn int32_roundtrip() {
         let f = fields_with(UnknownField {
@@ -1024,13 +1048,7 @@ mod tests {
     #[test]
     fn registry_lookup_both_axes() {
         let mut reg = ExtensionRegistry::new();
-        reg.register(ExtensionRegistryEntry {
-            number: 120,
-            full_name: "pkg.ext",
-            extendee: "pkg.Msg",
-            to_json: int32_to_json,
-            from_json: int32_from_json,
-        });
+        reg.register(entry!(120, "pkg.ext", "pkg.Msg"));
         assert!(reg.by_number("pkg.Msg", 120).is_some());
         assert!(reg.by_number("pkg.Msg", 999).is_none());
         assert!(reg.by_number("other.Msg", 120).is_none());
@@ -1041,13 +1059,7 @@ mod tests {
     #[test]
     fn deserialize_extension_key_shapes() {
         let mut reg = ExtensionRegistry::new();
-        reg.register(ExtensionRegistryEntry {
-            number: 120,
-            full_name: "pkg.ext",
-            extendee: "pkg.Msg",
-            to_json: int32_to_json,
-            from_json: int32_from_json,
-        });
+        reg.register(entry!(120, "pkg.ext", "pkg.Msg"));
         set_extension_registry(Box::new(reg));
 
         // Non-bracket key → None (caller ignores).
@@ -1079,13 +1091,7 @@ mod tests {
         // test previously leaned on leaked state from a sibling test, which
         // raced against other global-registry installers under `cargo test`.
         let mut reg = ExtensionRegistry::new();
-        reg.register(ExtensionRegistryEntry {
-            number: 120,
-            full_name: "pkg.ext",
-            extendee: "pkg.Msg",
-            to_json: int32_to_json,
-            from_json: int32_from_json,
-        });
+        reg.register(entry!(120, "pkg.ext", "pkg.Msg"));
         set_extension_registry(Box::new(reg));
 
         let strict = JsonParseOptions::new().strict_extension_keys(true);
@@ -1121,13 +1127,7 @@ mod tests {
     fn serialize_extensions_via_registry() {
         // A global is already set by the previous test — add a fresh entry.
         let mut reg = ExtensionRegistry::new();
-        reg.register(ExtensionRegistryEntry {
-            number: 50,
-            full_name: "pkg.weight",
-            extendee: "pkg.Carrier",
-            to_json: int32_to_json,
-            from_json: int32_from_json,
-        });
+        reg.register(entry!(50, "pkg.weight", "pkg.Carrier"));
         set_extension_registry(Box::new(reg));
 
         let mut fields = UnknownFields::new();

@@ -74,11 +74,24 @@ fn main() {
     //        hand-written in the *_ext.rs modules (Timestamp → RFC3339,
     //        Duration → "3.000001s", Any → type-URL dispatch, etc.).
     //        None of the WKTs use derive-serde.
+    //
+    //   generate_text = true        Textproto has no special WKT treatment
+    //        (unlike JSON), so the generated field-by-field impls are
+    //        correct. `buffa/text` is zero-dep — enabled unconditionally
+    //        in buffa-types so no feature-gate wrapping is needed.
+    //
+    //   emit_register_fn = false    All seven WKT files are `include!`d into
+    //        one namespace — seven `register_types` fns would collide. WKTs
+    //        register via the hand-written `register_wkt_types` in
+    //        `any_ext.rs` anyway. Per-message `__*_TEXT_ANY` consts are
+    //        still emitted (harmless `#[doc(hidden)] pub`).
     let mut config = buffa_codegen::CodeGenConfig::default();
     config.generate_views = true;
     config.preserve_unknown_fields = true;
     config.generate_arbitrary = true;
     config.generate_json = false;
+    config.generate_text = true;
+    config.emit_register_fn = false;
 
     let files_to_generate: Vec<String> = WKT_PROTOS.iter().map(|s| s.to_string()).collect();
 
