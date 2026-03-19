@@ -1,0 +1,27 @@
+// Tests group-encoded extension codegen — editions DELIMITED message_encoding.
+//
+// The file-level `features.message_encoding = DELIMITED` makes the message-typed
+// extension encode as a group (wire types 3/4) rather than length-delimited.
+// `effective_type` in codegen rewrites TYPE_MESSAGE → TYPE_GROUP for such
+// fields, routing them through `GroupCodec<M>` instead of `MessageCodec<M>`.
+
+edition = "2023";
+package buffa.test.groupext;
+
+option features.message_encoding = DELIMITED;
+
+message Inner {
+  int32 c = 1;
+}
+
+// Extendee with an extension range.
+message Carrier {
+  extensions 100 to 200;
+}
+
+// This extension inherits DELIMITED from the file → encoded as a group.
+// Codegen must emit `Extension<GroupCodec<Inner>>`, not `MessageCodec`.
+extend Carrier {
+  Inner delim_inner = 100;
+  repeated Inner delim_repeated = 101;
+}

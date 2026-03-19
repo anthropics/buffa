@@ -79,6 +79,20 @@ pub struct JsonParseOptions {
     /// default value (0) for singular fields, or skipped for repeated/map
     /// fields, instead of producing an error.
     pub ignore_unknown_enum_values: bool,
+    /// When `true`, `"[pkg.ext]"` JSON keys that are not in the extension
+    /// registry produce a parse error instead of being silently dropped.
+    ///
+    /// The default (`false`, lenient) matches the pre-extension-registry
+    /// behavior where all unknown keys were dropped by serde's derive.
+    /// protobuf-go (`protojson/decode.go:175`) and protobuf-es
+    /// (`from-json.ts:251`) both error on unregistered extension keys unless
+    /// their respective ignore-unknown flags are set; set `true` here to
+    /// match. The error pinpoints the missing registration.
+    ///
+    /// Extendee mismatch (key IS registered but extends a different message)
+    /// always errors regardless of this flag — that's a contract violation,
+    /// not a mere miss.
+    pub strict_extension_keys: bool,
 }
 
 impl JsonParseOptions {
@@ -94,6 +108,14 @@ impl JsonParseOptions {
         self.ignore_unknown_enum_values = ignore;
         self
     }
+
+    /// Set whether unregistered `"[pkg.ext]"` JSON keys produce a parse error
+    /// (`true`) or are silently dropped (`false`, the default).
+    #[must_use]
+    pub fn strict_extension_keys(mut self, strict: bool) -> Self {
+        self.strict_extension_keys = strict;
+        self
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -107,7 +129,10 @@ mod std_impl {
 
     thread_local! {
         static OPTIONS: Cell<JsonParseOptions> = const {
-            Cell::new(JsonParseOptions { ignore_unknown_enum_values: false })
+            Cell::new(JsonParseOptions {
+                ignore_unknown_enum_values: false,
+                strict_extension_keys: false,
+            })
         };
     }
 
@@ -135,6 +160,10 @@ mod std_impl {
 
     pub(crate) fn ignore_unknown_enum_values() -> bool {
         OPTIONS.with(|c| c.get().ignore_unknown_enum_values)
+    }
+
+    pub(crate) fn strict_extension_keys() -> bool {
+        OPTIONS.with(|c| c.get().strict_extension_keys)
     }
 }
 
@@ -169,6 +198,7 @@ mod global {
     /// called. Identical to `JsonParseOptions::default()` but `const`-eval.
     static DEFAULT: JsonParseOptions = JsonParseOptions {
         ignore_unknown_enum_values: false,
+        strict_extension_keys: false,
     };
 
     /// Set the global JSON parse options.
@@ -221,6 +251,10 @@ mod global {
     pub(crate) fn ignore_unknown_enum_values() -> bool {
         get().ignore_unknown_enum_values
     }
+
+    pub(crate) fn strict_extension_keys() -> bool {
+        get().strict_extension_keys
+    }
 }
 
 #[cfg(not(feature = "std"))]
@@ -247,6 +281,19 @@ pub(crate) fn ignore_unknown_enum_values() -> bool {
     }
 }
 
+/// Returns `true` if unregistered `"[pkg.ext]"` JSON keys should produce a
+/// parse error instead of being silently dropped.
+pub(crate) fn strict_extension_keys() -> bool {
+    #[cfg(feature = "std")]
+    {
+        std_impl::strict_extension_keys()
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        global::strict_extension_keys()
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -269,6 +316,7 @@ mod tests {
     fn thread_local_scope_enables_flag() {
         let opts = JsonParseOptions {
             ignore_unknown_enum_values: true,
+            ..Default::default()
         };
         with_json_parse_options(&opts, || {
             assert!(ignore_unknown_enum_values());
@@ -281,9 +329,11 @@ mod tests {
     fn thread_local_nested_scopes_restore_correctly() {
         let outer = JsonParseOptions {
             ignore_unknown_enum_values: true,
+            ..Default::default()
         };
         let inner = JsonParseOptions {
             ignore_unknown_enum_values: false,
+            ..Default::default()
         };
         with_json_parse_options(&outer, || {
             assert!(ignore_unknown_enum_values());
@@ -298,6 +348,7 @@ mod tests {
     fn thread_local_restored_on_panic() {
         let opts = JsonParseOptions {
             ignore_unknown_enum_values: true,
+            ..Default::default()
         };
         let result = std::panic::catch_unwind(|| {
             with_json_parse_options(&opts, || {

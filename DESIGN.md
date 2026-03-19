@@ -481,7 +481,7 @@ Runtime types for all edition features exist in `editions.rs`. Editions 2023 and
 - `enum_type`: `OPEN`, `CLOSED`
 - `repeated_field_encoding`: `PACKED`, `EXPANDED`
 - `utf8_validation`: `VERIFY`, `NONE`
-- `message_encoding`: `LENGTH_PREFIXED` (supported); `DELIMITED` (**not yet supported** — parsed into `ResolvedFeatures` but codegen ignores it, `TestAllTypesEdition2023` conformance skipped)
+- `message_encoding`: `LENGTH_PREFIXED`, `DELIMITED`
 - `json_format`: `ALLOW`, `LEGACY_BEST_EFFORT`
 
 ### Proto2
@@ -493,7 +493,37 @@ Full proto2 support:
 - Custom default values via `[default = ...]` annotations on **required** fields: messages with such defaults get a hand-written `impl Default` instead of derive. Escape sequences (`\n`, `\t`, `\"`, `\xNN`) are handled by protoc pre-unescaping the descriptor string. Custom defaults on **optional** fields are ignored — `Default::default()` returns `None`, and buffa doesn't generate proto2-style getter methods (`fn field_name(&self) -> T` that unwraps to the custom default).
 - Groups (both generated types and wire format)
 - Custom `Serialize`/`Deserialize` on generated enums using proto names for JSON, with closed-enum serde helpers (`closed_enum`, `opt_closed_enum`, `repeated_closed_enum`, `map_closed_enum`)
-- Extensions: **not supported** and not planned. Extensions are a proto2-only mechanism removed in proto3 and absent from editions; `google.protobuf.Any` is the recommended replacement. Extension fields on the wire are preserved as unknown fields for binary round-trip fidelity but no typed accessors are generated and extensions are omitted from JSON output.
+- Extensions: fully supported. See **Extensions** below.
+
+### Extensions
+
+Typed extension access is layered on top of unknown-field storage — extension
+values are decoded lazily on each `extension()` call rather than stored in
+dedicated fields. This matches protobuf-es and avoids the registration-timing
+footgun in protobuf-go's eager model, where an extension registered *after*
+decode is silently ignored by both `Get` and JSON encode. With lazy decode,
+registration timing is irrelevant — the unknown-field record is always there.
+
+Design points:
+
+- **`Extension<C>` is parameterized by codec type, not value type.** `Int32Codec`
+  and `Sint32Codec` both have `Value = i32` but distinct wire encodings; a
+  `T`-parameterized design would collide on coherence. The codec is a ZST
+  carrying only type-level information — users never name it (it flows through
+  inference from the codegen-emitted `pub const`).
+- **Extendee identity check.** `extension()`, `set_extension()`, and
+  `clear_extension()` panic on mismatch; `has_extension()` returns `false`
+  gracefully. Matches protobuf-go (panics) and protobuf-es (throws) — catches
+  `field_options.extension(&MESSAGE_OPTION)` bugs at first call.
+- **JSON:** a `#[serde(flatten)]` newtype wrapper around `__buffa_unknown_fields`
+  emits `"[pkg.ext]"` keys for registered extensions on serialize; a `[...]`-key
+  arm in the generated `Deserialize` impl resolves against the registry on parse.
+  Gated on `has_extension_ranges` so messages without `extensions` declarations
+  pay zero overhead — no wrapper is emitted, and the serde impls are unchanged.
+- **MessageSet** (`option message_set_wire_format = true`) is supported behind
+  `CodeGenConfig::allow_message_set`. Neither protobuf-go nor protobuf-es
+  supports it by default (go has code behind `-tags protolegacy`, es has none);
+  the explicit opt-in makes the legacy format a conscious choice.
 
 ### Proto3
 

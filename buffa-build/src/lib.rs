@@ -171,6 +171,17 @@ impl Config {
         self
     }
 
+    /// Permit `option message_set_wire_format = true` on input messages.
+    ///
+    /// MessageSet is a legacy Google-internal wire format. Default: `false`
+    /// (such messages produce a codegen error). Set to `true` only when
+    /// compiling protos that interoperate with old Google-internal services.
+    #[must_use]
+    pub fn allow_message_set(mut self, enabled: bool) -> Self {
+        self.codegen_config.allow_message_set = enabled;
+        self
+    }
+
     /// Declare an external type path mapping.
     ///
     /// Types under the given protobuf path prefix will reference the specified

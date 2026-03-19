@@ -18,9 +18,9 @@ use crate::context::CodeGenContext;
 use crate::features::ResolvedFeatures;
 use crate::impl_message::{
     closed_enum_decode, closed_enum_decode_with_unknown, decode_fn_token, effective_type,
-    field_uses_bytes, find_map_entry_fields, is_explicit_presence_scalar, is_packed_type,
-    is_real_oneof_member, is_supported_field_type, validated_field_number, wire_type_byte,
-    wire_type_check, wire_type_token,
+    effective_type_in_map_entry, field_uses_bytes, find_map_entry_fields,
+    is_explicit_presence_scalar, is_packed_type, is_real_oneof_member, is_supported_field_type,
+    validated_field_number, wire_type_byte, wire_type_check, wire_type_token,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident, rust_path_to_tokens};
 use crate::oneof::to_pascal_case;
@@ -247,7 +247,10 @@ pub fn generate_view(
             // for optional bytes — eta-reducible, but the non-bytes branch
             // `|b| (b).to_vec()` is NOT (no fn path for the method), so the
             // helper can't uniformly emit a fn path.
-            #[allow(clippy::redundant_closure)]
+            // useless_conversion: __buffa_unknown_fields uses `.into()` to
+            // unify the `UnknownFields` (no-wrapper) and `__<Name>ExtJson`
+            // (generate_json wrapper) cases; no-op in the former.
+            #[allow(clippy::redundant_closure, clippy::useless_conversion)]
             fn to_owned_message(&self) -> #owned_ident {
                 #[allow(unused_imports)]
                 use ::buffa::alloc::string::ToString as _;
@@ -417,14 +420,14 @@ fn view_map_type(
 ) -> Result<TokenStream, CodeGenError> {
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
 
-    let key_ty = match effective_type(ctx, key_fd, features) {
+    let key_ty = match effective_type_in_map_entry(ctx, key_fd, features) {
         Type::TYPE_STRING => quote! { &'a str },
         // utf8_validation = NONE on a string map key → &'a [u8].
         Type::TYPE_BYTES => quote! { &'a [u8] },
         ty => scalar_ty(ty),
     };
 
-    let val_ty = match effective_type(ctx, val_fd, features) {
+    let val_ty = match effective_type_in_map_entry(ctx, val_fd, features) {
         Type::TYPE_STRING => quote! { &'a str },
         Type::TYPE_BYTES => quote! { &'a [u8] },
         Type::TYPE_MESSAGE => {
@@ -955,12 +958,12 @@ fn map_decode_arm(
     );
 
     // Default values for key and value when the entry sub-message omits them.
-    let key_default = match effective_type(ctx, key_fd, features) {
+    let key_default = match effective_type_in_map_entry(ctx, key_fd, features) {
         Type::TYPE_STRING => quote! { "" },
         Type::TYPE_BYTES => quote! { &[][..] },
         _ => quote! { ::core::default::Default::default() },
     };
-    let val_default = match effective_type(ctx, val_fd, features) {
+    let val_default = match effective_type_in_map_entry(ctx, val_fd, features) {
         Type::TYPE_STRING => quote! { "" },
         Type::TYPE_BYTES => quote! { &[][..] },
         _ => quote! { ::core::default::Default::default() },
@@ -1013,7 +1016,7 @@ fn map_view_entry_decode(
     parent_features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
     let features = &crate::features::resolve_field(ctx, fd, parent_features);
-    let ty = effective_type(ctx, fd, features);
+    let ty = effective_type_in_map_entry(ctx, fd, features);
     let wire_type = wire_type_token(ty);
     let wire_byte = wire_type_byte(ty);
     let tag_check = quote! {
@@ -1257,13 +1260,16 @@ fn build_to_owned_fields(
     }
 
     // Emit `unknown_fields` conversion so round-trip via decode_view +
-    // to_owned_message preserves unknown fields.
+    // to_owned_message preserves unknown fields. `.into()` is a no-op when
+    // the owned field is `UnknownFields`; when generate_json is on it wraps
+    // in the per-message `__<Name>ExtJson` newtype (which has `From<UnknownFields>`).
     if preserve_unknown_fields {
         out.push(quote! {
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields
                 .to_owned()
-                .unwrap_or_default(),
+                .unwrap_or_default()
+                .into(),
         });
     }
 
@@ -1341,14 +1347,14 @@ fn map_to_owned_expr(
 ) -> Result<TokenStream, CodeGenError> {
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
 
-    let key_conv = match effective_type(ctx, key_fd, features) {
+    let key_conv = match effective_type_in_map_entry(ctx, key_fd, features) {
         Type::TYPE_STRING => quote! { k.to_string() },
         // utf8_validation = NONE on a string map key: &[u8] → Vec<u8>.
         Type::TYPE_BYTES => quote! { k.to_vec() },
         _ => quote! { *k },
     };
 
-    let val_conv = match effective_type(ctx, val_fd, features) {
+    let val_conv = match effective_type_in_map_entry(ctx, val_fd, features) {
         Type::TYPE_STRING => quote! { v.to_string() },
         Type::TYPE_BYTES => quote! { v.to_vec() },
         Type::TYPE_MESSAGE => {

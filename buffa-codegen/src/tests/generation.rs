@@ -1005,3 +1005,186 @@ fn test_repeated_enum_field() {
         "missing EnumValue::from in packed decode: {content}"
     );
 }
+
+#[test]
+fn extension_set_impl_on_generated_options() {
+    // Smoke test: the bootstrap-generated FieldOptions implements
+    // ExtensionSet, and extension get/set roundtrips through its
+    // __buffa_unknown_fields storage.
+    use crate::generated::descriptor::FieldOptions;
+    use buffa::extension::codecs::{Int32, StringCodec};
+    use buffa::{Extension, ExtensionSet};
+
+    // Use the bootstrap-generated PROTO_FQN so the extendee check passes.
+    const WEIGHT: Extension<Int32> = Extension::new(50001, FieldOptions::PROTO_FQN);
+    const TAG: Extension<StringCodec> = Extension::new(50002, FieldOptions::PROTO_FQN);
+
+    let mut opts = FieldOptions::default();
+    assert!(!opts.has_extension(&WEIGHT));
+
+    opts.set_extension(&WEIGHT, -7);
+    opts.set_extension(&TAG, "hello".to_string());
+
+    assert_eq!(opts.extension(&WEIGHT), Some(-7));
+    assert_eq!(opts.extension(&TAG), Some("hello".to_string()));
+    assert!(opts.has_extension(&WEIGHT));
+
+    // Roundtrip through wire encoding: the extension bytes live in
+    // __buffa_unknown_fields and are re-encoded by Message::write_to.
+    use buffa::Message;
+    let bytes = opts.encode_to_vec();
+    let decoded = FieldOptions::decode_from_slice(&bytes).expect("decode");
+    assert_eq!(decoded.extension(&WEIGHT), Some(-7));
+    assert_eq!(decoded.extension(&TAG), Some("hello".to_string()));
+
+    // And an ExtensionSet impl was emitted in the generated output.
+    let file = proto3_file("ext.proto");
+    let files = generate(
+        &[FileDescriptorProto {
+            message_type: vec![DescriptorProto {
+                name: Some("M".to_string()),
+                ..Default::default()
+            }],
+            ..file
+        }],
+        &["ext.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("generate");
+    assert!(
+        files[0]
+            .content
+            .contains("impl ::buffa::ExtensionSet for M"),
+        "missing ExtensionSet impl: {}",
+        files[0].content
+    );
+}
+
+#[test]
+fn editions_delimited_message_encoding() {
+    // Editions 2023 `features.message_encoding = DELIMITED`: the descriptor
+    // field type stays TYPE_MESSAGE, but the codegen must route it through
+    // the group (wire types 3/4) encode/decode paths via effective_type.
+    //
+    // Also verifies the map-entry exemption: map values are always
+    // length-prefixed (protobuf spec hard rule), even under a file-level
+    // DELIMITED default.
+    use crate::generated::descriptor::{
+        feature_set::MessageEncoding as FsMessageEncoding, Edition, FeatureSet, FieldOptions,
+        FileOptions,
+    };
+
+    let inner_msg = DescriptorProto {
+        name: Some("Inner".to_string()),
+        field: vec![make_field("x", 1, Label::LABEL_OPTIONAL, Type::TYPE_INT32)],
+        ..Default::default()
+    };
+
+    // Field with per-field LENGTH_PREFIXED override (common pattern in
+    // test_messages_edition2023.proto to opt specific fields back out).
+    let mut lp_field = make_field("lp_child", 2, Label::LABEL_OPTIONAL, Type::TYPE_MESSAGE);
+    lp_field.type_name = Some(".Inner".to_string());
+    lp_field.options = FieldOptions {
+        features: FeatureSet {
+            message_encoding: Some(FsMessageEncoding::LENGTH_PREFIXED),
+            ..Default::default()
+        }
+        .into(),
+        ..Default::default()
+    }
+    .into();
+
+    // Field that inherits the file-level DELIMITED default.
+    let mut delim_field = make_field("delim_child", 3, Label::LABEL_OPTIONAL, Type::TYPE_MESSAGE);
+    delim_field.type_name = Some(".Inner".to_string());
+
+    // Map field with message value — must stay length-prefixed.
+    let mut map_field = make_field("inners", 4, Label::LABEL_REPEATED, Type::TYPE_MESSAGE);
+    map_field.type_name = Some(".Outer.InnersEntry".to_string());
+    let mut map_val = make_field("value", 2, Label::LABEL_OPTIONAL, Type::TYPE_MESSAGE);
+    map_val.type_name = Some(".Inner".to_string());
+    let map_entry = DescriptorProto {
+        name: Some("InnersEntry".to_string()),
+        field: vec![
+            make_field("key", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING),
+            map_val,
+        ],
+        options: MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        }
+        .into(),
+        ..Default::default()
+    };
+
+    let outer_msg = DescriptorProto {
+        name: Some("Outer".to_string()),
+        field: vec![lp_field, delim_field, map_field],
+        nested_type: vec![map_entry],
+        ..Default::default()
+    };
+
+    let file = FileDescriptorProto {
+        name: Some("delim.proto".to_string()),
+        edition: Some(Edition::EDITION_2023),
+        options: FileOptions {
+            features: FeatureSet {
+                message_encoding: Some(FsMessageEncoding::DELIMITED),
+                ..Default::default()
+            }
+            .into(),
+            ..Default::default()
+        }
+        .into(),
+        message_type: vec![inner_msg, outer_msg],
+        ..Default::default()
+    };
+
+    let files = generate(
+        &[file],
+        &["delim.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("generate");
+    let content = &files[0].content;
+
+    // Field 3 (delim_child): inherits DELIMITED → StartGroup/EndGroup.
+    assert!(
+        content
+            .contains("::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::StartGroup)"),
+        "delim_child should encode as group: {content}"
+    );
+    assert!(
+        content.contains("merge_group"),
+        "delim_child should decode via merge_group: {content}"
+    );
+
+    // Field 2 (lp_child): explicit LENGTH_PREFIXED → regular message encoding.
+    // prettyplease wraps Tag::new across lines for this field number, so
+    // check the decode arm instead (single-line wire-type check).
+    assert!(
+        content.contains("2u32 => {\n                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited"),
+        "lp_child should decode as length-delimited: {content}"
+    );
+    // And it should NOT have a StartGroup encode for field 2.
+    assert!(
+        !content.contains("Tag::new(2u32, ::buffa::encoding::WireType::StartGroup)"),
+        "lp_child should not encode as group"
+    );
+
+    // Map entry value: must NOT be group-encoded despite file-level DELIMITED.
+    // If the map-entry exemption fails, codegen panics in type_encoded_size_expr
+    // (TYPE_GROUP is unreachable there), so reaching this line is the key
+    // evidence. Spot-check group-decode call counts: only delim_child should
+    // use them (merge_group in owned impl, borrow_group in view).
+    assert_eq!(
+        content.matches("merge_group").count(),
+        1,
+        "owned: {content}"
+    );
+    assert_eq!(
+        content.matches("borrow_group").count(),
+        1,
+        "view: {content}"
+    );
+}

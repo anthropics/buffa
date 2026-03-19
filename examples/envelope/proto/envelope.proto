@@ -1,0 +1,38 @@
+// Envelope — a message designed for extension by downstream processors.
+//
+// The `extensions` range makes Envelope an extendee: other proto files can
+// `extend Envelope { ... }` to attach metadata without modifying this schema.
+// Think of it like gRPC metadata or HTTP headers, but structured and typed.
+
+syntax = "proto2";
+package buffa.examples.envelope;
+
+message Envelope {
+  // Field numbers 1–99 are Envelope's own; 100–999 are for extensions.
+  extensions 100 to 999;
+
+  optional string request_id = 1;
+  optional bytes payload = 2;
+}
+
+message TraceContext {
+  optional string trace_id = 1;
+  optional string span_id = 2;
+}
+
+// These extensions could just as well live in a separate proto file owned by
+// a different team — the whole point of `extensions N to M;` is that the
+// extendee doesn't know about them. They're co-located here for the example.
+extend Envelope {
+  // Singular scalar — the simplest case.
+  optional int32 retry_count = 100;
+
+  // Singular message — demonstrates merge-all-records semantics.
+  optional TraceContext trace = 101;
+
+  // Repeated — demonstrates JSON array form.
+  repeated string routing_hops = 102;
+
+  // Proto2 `[default = ...]` — demonstrates `extension_or_default()`.
+  optional int32 priority = 103 [default = 5];
+}

@@ -438,6 +438,7 @@ fn try_deserialize_enum<T: serde::de::DeserializeOwned>(
         let ignore = crate::json::ignore_unknown_enum_values();
         let strict = crate::json::JsonParseOptions {
             ignore_unknown_enum_values: false,
+            ..Default::default()
         };
         // Run the inner deserialize in STRICT mode so unknown enum values
         // produce a distinguishable error, then swallow that error if the

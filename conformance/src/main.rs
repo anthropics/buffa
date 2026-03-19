@@ -82,6 +82,14 @@ pub mod protobuf_test_messages_editions {
             "/editions.golden.test_messages_proto2_editions.rs"
         ));
     }
+
+    // Pure edition 2023: file-level DELIMITED message encoding. Binary-only
+    // — no JSON generation. The package is `protobuf_test_messages.editions`
+    // so the module path here matches where the suite expects to find it.
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/conformance.test_protos.test_messages_edition2023.rs"
+    ));
 }
 
 #[cfg(has_editions_protos)]
@@ -101,51 +109,37 @@ fn main() {
     std::process::exit(1);
 }
 
-// ── Any type registry ────────────────────────────────────────────────────
+// ── JSON registry (Any types + extensions) ───────────────────────────────
 
-/// Populates the global `AnyRegistry` with all well-known types and
-/// the test message types needed by Any conformance tests.
+/// Populates the global JSON registry with all well-known types, the
+/// generated test-message Any entries, and the conformance proto's extension
+/// declarations. Replaces the previous separate `setup_any_registry` +
+/// `setup_extension_registry` — codegen now emits `register_json` per file
+/// which covers both halves.
 #[cfg(not(no_protos))]
-fn setup_any_registry() {
-    use buffa::any_registry::{AnyRegistry, AnyTypeEntry};
+fn setup_json_registry() {
+    use buffa::json_registry::{set_json_registry, JsonRegistry};
 
-    let mut registry = AnyRegistry::new();
-    buffa_types::register_wkt_types(&mut registry);
+    let mut reg = JsonRegistry::new();
 
-    // TestAllTypesProto3 is used by some Any conformance tests as the wrapped type.
-    registry.register(AnyTypeEntry {
-        type_url: proto3::TestAllTypesProto3::TYPE_URL,
-        to_json: |bytes| {
-            let msg = <proto3::TestAllTypesProto3 as buffa::Message>::decode(&mut &*bytes)
-                .map_err(|e| e.to_string())?;
-            serde_json::to_value(&msg).map_err(|e| e.to_string())
-        },
-        from_json: |value| {
-            let msg: proto3::TestAllTypesProto3 =
-                serde_json::from_value(value).map_err(|e| e.to_string())?;
-            Ok(buffa::Message::encode_to_vec(&msg))
-        },
-        is_wkt: false,
-    });
+    // WKTs hand-registered — buffa_types knows which ones use "value"
+    // wrapping in Any JSON (is_wkt: true). Codegen always emits
+    // is_wkt: false, so user messages and WKTs don't step on each other.
+    buffa_types::register_wkt_types(reg.any_mut());
 
-    // Editions proto3 uses a different type URL; register it for Any tests.
+    // Generated per-file registration: Any entries for every message type
+    // in the file + extension JSON entries. `test_messages_proto3.proto`
+    // has no extensions, so its register_json is Any-only;
+    // `test_messages_proto2.proto` declares `extension_int32` at field 120.
+    proto3::register_json(&mut reg);
+    proto2::register_json(&mut reg);
     #[cfg(has_editions_protos)]
-    registry.register(AnyTypeEntry {
-        type_url: editions_proto3::TestAllTypesProto3::TYPE_URL,
-        to_json: |bytes| {
-            let msg = <editions_proto3::TestAllTypesProto3 as buffa::Message>::decode(&mut &*bytes)
-                .map_err(|e| e.to_string())?;
-            serde_json::to_value(&msg).map_err(|e| e.to_string())
-        },
-        from_json: |value| {
-            let msg: editions_proto3::TestAllTypesProto3 =
-                serde_json::from_value(value).map_err(|e| e.to_string())?;
-            Ok(buffa::Message::encode_to_vec(&msg))
-        },
-        is_wkt: false,
-    });
+    {
+        editions_proto3::register_json(&mut reg);
+        editions_proto2::register_json(&mut reg);
+    }
 
-    buffa::any_registry::set_any_registry(Box::new(registry));
+    set_json_registry(reg);
 }
 
 // ── Via-view mode ────────────────────────────────────────────────────────
@@ -181,9 +175,9 @@ where
 fn main() {
     use std::io::{self, Read, Write};
 
-    // Set up the Any type registry so that JSON serialization of Any fields
-    // uses proto3-compliant encoding (inline fields / "value" wrapping).
-    setup_any_registry();
+    // Set up the unified JSON registry so that serialization of Any fields
+    // and `"[pkg.ext]"` extension keys uses proto3-compliant encoding.
+    setup_json_registry();
 
     let stdin = io::stdin();
     let stdout = io::stdout();
@@ -442,10 +436,20 @@ fn process_editions_inner(req: &envelope::Request, ignore_unknown: bool) -> enve
             )
         }
 
-        // Pure edition 2023 (delimited encoding) — skip for now
-        _ if req.message_type == MSG_EDITION_2023 => Response::Skipped(
-            "TestAllTypesEdition2023 (delimited encoding) not yet supported".into(),
-        ),
+        // Pure edition 2023 (file-level DELIMITED). Binary-only: the suite's
+        // tests for this type are binary roundtrips (ValidDelimitedField.*,
+        // ValidDelimitedExtension.*). JSON input/output is skipped.
+        (Some(Payload::Protobuf(b)), WireFormat::Protobuf)
+            if req.message_type == MSG_EDITION_2023 =>
+        {
+            roundtrip(
+                || decode_binary::<protobuf_test_messages_editions::TestAllTypesEdition2023>(b),
+                encode_binary,
+            )
+        }
+        _ if req.message_type == MSG_EDITION_2023 => {
+            Response::Skipped("TestAllTypesEdition2023: JSON not supported (binary-only)".into())
+        }
 
         _ => Response::Skipped(format!("unsupported message type '{}'", req.message_type)),
     }

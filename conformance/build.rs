@@ -34,6 +34,7 @@ fn main() {
         .files(&["protos/google/protobuf/test_messages_proto2.proto"])
         .includes(&["protos/"])
         .generate_json(true)
+        .allow_message_set(true)
         .compile()
         .expect("buffa_build failed for test_messages_proto2.proto");
 
@@ -52,8 +53,20 @@ fn main() {
             .files(&["protos/editions/golden/test_messages_proto2_editions.proto"])
             .includes(&["protos/"])
             .generate_json(true)
+            .allow_message_set(true)
             .compile()
             .expect("buffa_build failed for test_messages_proto2_editions.proto");
+
+        // Pure edition 2023 test messages: file-level DELIMITED message encoding.
+        // Binary-only (no JSON) — the suite's extension tests for this type
+        // (ValidDelimitedExtension.*, ValidDelimitedField.*) are binary roundtrips.
+        buffa_build::Config::new()
+            .files(&["protos/conformance/test_protos/test_messages_edition2023.proto"])
+            .includes(&["protos/"])
+            .generate_json(false)
+            .generate_views(false)
+            .compile()
+            .expect("buffa_build failed for test_messages_edition2023.proto");
 
         println!("cargo:rustc-cfg=has_editions_protos");
     }

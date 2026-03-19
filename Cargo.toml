@@ -16,6 +16,7 @@ exclude = [
     "benchmarks/google",
     "benchmarks/go",
     "examples/addressbook",
+    "examples/envelope",
     "examples/logging",
 ]
 

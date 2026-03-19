@@ -111,6 +111,46 @@ pub mod edge {
     include!(concat!(env!("OUT_DIR"), "/edge_cases.rs"));
 }
 
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod custopts {
+    include!(concat!(env!("OUT_DIR"), "/custom_options.rs"));
+}
+
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod extjson {
+    include!(concat!(env!("OUT_DIR"), "/ext_json.rs"));
+}
+
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod groupext {
+    include!(concat!(env!("OUT_DIR"), "/group_ext.rs"));
+}
+
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod msgset {
+    include!(concat!(env!("OUT_DIR"), "/messageset.rs"));
+}
+
 #[cfg(has_edition_2024)]
 #[allow(
     clippy::derivable_impls,

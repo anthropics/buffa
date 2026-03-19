@@ -6,6 +6,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Breaking changes
+
+- **`Extension::new(number)` → `Extension::new(number, extendee)`.** Same for
+  `Extension::with_default`. Codegen consumers are unaffected — the `pub const`
+  items are regenerated. Hand-written `Extension` consts (unusual) need the
+  extendee string added.
+- **`ExtensionSet` trait gained a required `const PROTO_FQN: &'static str`.**
+  Codegen consumers are unaffected. Hand-written impls need the const added.
+- **`extension()`, `set_extension()`, `clear_extension()` now panic on extendee
+  mismatch** (previously: silently returned `None` / no-op). `has_extension()`
+  returns `false` gracefully. Catches `field_options.extension(&MESSAGE_OPTION)`
+  bugs at the first call site; matches protobuf-go (panics) and protobuf-es
+  (throws).
+
+### Deprecated
+
+- **`set_any_registry`, `set_extension_registry`** — use
+  `buffa::json_registry::set_json_registry` instead, which installs both halves
+  in one call. The deprecated functions still work.
+
+### Added
+
+- **Full extension support.** `Extension<C>` typed descriptors,
+  `ExtensionSet` trait with `extension`/`set_extension`/`has_extension`/
+  `clear_extension`/`extension_or_default`, codec types for every proto field
+  type (including `GroupCodec` for editions `DELIMITED` / proto2 groups),
+  proto2 `[default = ...]` on extension declarations, and MessageSet wire
+  format behind `CodeGenConfig::allow_message_set`. See the
+  [Extensions section of the user guide](docs/guide.md#extensions-custom-options).
+- **`JsonRegistry`** — unified JSON registry covering both `Any` type entries
+  and extension entries. Codegen emits `register_json(&mut JsonRegistry)` per
+  file; call once per generated file, then `set_json_registry(reg)`.
+- **`JsonParseOptions::strict_extension_keys`** — error on unregistered `"[...]"`
+  JSON keys (default: silently drop, matching pre-0.3 behavior for all unknown
+  keys).
+- **Editions `features.message_encoding = DELIMITED`** — fully supported in
+  codegen, previously parsed but ignored. Message fields with this feature use
+  the group wire format (StartGroup/EndGroup) instead of length-prefixed.
+- **Conformance:** `TestAllTypesEdition2023` enabled; 5539 → 5549 passing (std).
+
 ## [0.2.0] - 2026-03-16
 
 ### Breaking changes

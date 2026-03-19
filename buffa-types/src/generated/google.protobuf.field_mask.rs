@@ -96,6 +96,15 @@ impl ::buffa::Message for FieldMask {
         self.__buffa_cached_size.set(0);
     }
 }
+impl ::buffa::ExtensionSet for FieldMask {
+    const PROTO_FQN: &'static str = "google.protobuf.FieldMask";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
 #[derive(Clone, Debug, Default)]
 pub struct FieldMaskView<'a> {
     ///Field 1: `paths`
@@ -172,7 +181,7 @@ impl<'a> ::buffa::MessageView<'a> for FieldMaskView<'a> {
         Self::_decode_depth(buf, depth)
     }
     /// Convert this view to the owned message type.
-    #[allow(clippy::redundant_closure)]
+    #[allow(clippy::redundant_closure, clippy::useless_conversion)]
     fn to_owned_message(&self) -> FieldMask {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
@@ -181,7 +190,8 @@ impl<'a> ::buffa::MessageView<'a> for FieldMaskView<'a> {
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields
                 .to_owned()
-                .unwrap_or_default(),
+                .unwrap_or_default()
+                .into(),
             ..::core::default::Default::default()
         }
     }

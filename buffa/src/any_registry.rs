@@ -8,11 +8,11 @@
 //! # Usage
 //!
 //! ```rust,no_run
-//! use buffa::any_registry::{AnyRegistry, set_any_registry};
+//! use buffa::json_registry::{JsonRegistry, set_json_registry};
 //!
-//! let mut registry = AnyRegistry::new();
-//! // ... register types with registry.register(...) ...
-//! set_any_registry(Box::new(registry));
+//! let mut reg = JsonRegistry::new();
+//! // ... register types via generated register_json(&mut reg) ...
+//! set_json_registry(reg);
 //! // Now serde_json operations on messages containing Any fields will use
 //! // the registry for proper proto3 JSON encoding.
 //! ```
@@ -107,6 +107,7 @@ static ANY_REGISTRY: AtomicPtr<AnyRegistry> = AtomicPtr::new(core::ptr::null_mut
 /// concurrent reader in [`with_any_registry`] could hold a reference to the
 /// old registry while it is dropped. In practice `set_any_registry` is
 /// called once at startup, so the leak is negligible.
+#[deprecated(since = "0.3.0", note = "use buffa::json_registry::set_json_registry")]
 pub fn set_any_registry(registry: Box<AnyRegistry>) {
     let new_ptr = Box::into_raw(registry);
     ANY_REGISTRY.swap(new_ptr, Ordering::AcqRel);
@@ -140,6 +141,8 @@ pub fn with_any_registry<R>(f: impl FnOnce(Option<&AnyRegistry>) -> R) -> R {
 
 #[cfg(test)]
 mod tests {
+    #![allow(deprecated)]
+
     use super::*;
 
     fn dummy_to_json(_bytes: &[u8]) -> Result<serde_json::Value, String> {

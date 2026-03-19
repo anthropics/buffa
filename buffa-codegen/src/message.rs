@@ -24,9 +24,16 @@ use crate::CodeGenError;
 /// `proto_fqn` is the fully-qualified proto type name without a leading dot
 /// (e.g. `google.protobuf.Timestamp`, `my.package.Outer.Inner`).  It is used
 /// to emit the `TYPE_URL` constant.
-/// Returns `(top_level_items, module_items)` where `top_level_items` contains
-/// the struct, its impls, and the custom deserialize, and `module_items`
-/// contains nested types and oneof enums to be placed in `pub mod <name>`.
+/// Returns `(top_level_items, module_items, json_ext_paths, any_entry_paths)`
+/// where `top_level_items` contains the struct, its impls, and the custom
+/// deserialize; `module_items` contains nested types and oneof enums to be
+/// placed in `pub mod <name>`; `json_ext_paths` contains qualified paths
+/// (relative to the `module_items` scope) to any `__*_JSON` extension
+/// registry consts; and `any_entry_paths` contains qualified paths (relative
+/// to the `top_level_items` scope — i.e. the struct's own scope) to any
+/// `__*_ANY_ENTRY` consts emitted by this message or its nested messages,
+/// for `register_json`.
+#[allow(clippy::type_complexity)]
 pub fn generate_message(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -35,8 +42,23 @@ pub fn generate_message(
     proto_fqn: &str,
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
-) -> Result<(TokenStream, TokenStream), CodeGenError> {
+) -> Result<(TokenStream, TokenStream, Vec<TokenStream>, Vec<TokenStream>), CodeGenError> {
     let name_ident = format_ident!("{}", rust_name);
+
+    // MessageSet wire format: legacy Google encoding that wraps each extension
+    // in a group at field 1. protoc enforces the "no regular fields" invariant
+    // on the descriptor, so we don't re-check it here. The flag is read again
+    // inside `generate_message_impl` to branch the unknown-fields snippets.
+    let is_message_set = msg
+        .options
+        .as_option()
+        .and_then(|o| o.message_set_wire_format)
+        .unwrap_or(false);
+    if is_message_set && !ctx.config.allow_message_set {
+        return Err(CodeGenError::MessageSetNotSupported {
+            message_name: proto_fqn.to_string(),
+        });
+    }
 
     // Nested enums — simple name, emitted inside the message's module.
     let nested_enums = msg
@@ -132,28 +154,105 @@ pub fn generate_message(
     let oneof_struct_fields: Vec<&TokenStream> = oneof_generated.iter().map(|(t, _)| t).collect();
     debug_field_idents.extend(oneof_generated.iter().map(|(_, id)| id));
 
-    let serde_skip = if ctx.config.generate_json {
-        quote! { #[serde(skip)] }
-    } else {
-        quote! {}
-    };
-    let unknown_fields_field = if ctx.config.preserve_unknown_fields {
-        quote! {
-            #serde_skip
+    // When JSON is on, `__buffa_unknown_fields` becomes a `#[serde(flatten)]`
+    // newtype wrapper whose Serialize/Deserialize route through the extension
+    // registry. The wrapper has `Deref<Target = UnknownFields>` so all binary
+    // encode/decode paths in impl_message.rs are unaffected (method-call
+    // auto-deref and `&wrapper` → `&UnknownFields` coercion both apply).
+    //
+    // Gated on `has_extension_ranges`: protoc rejects `extend Foo { ... }`
+    // when `Foo` lacks an `extensions N to M;` declaration, so a message
+    // without one can never have a registry entry naming it as extendee.
+    // Without this gate, the wrapper is pure overhead — `#[serde(flatten)]`
+    // on derive-Deserialize buffers every unknown key through serde's
+    // `Content::Map` (String key + `serde_json::Value` DOM) before the
+    // wrapper can discard it. With the gate, extension-range-free messages
+    // keep the pre-extensions `#[serde(skip)]` behavior (zero-alloc
+    // `IgnoredAny` skip for unknown keys).
+    let has_extension_ranges = !msg.extension_range.is_empty();
+    let use_ext_json_wrapper =
+        ctx.config.generate_json && ctx.config.preserve_unknown_fields && has_extension_ranges;
+    let ext_json_wrapper_ident = format_ident!("__{}ExtJson", rust_name);
+    let (unknown_fields_field, ext_json_wrapper_def) = if use_ext_json_wrapper {
+        let arbitrary_attr = if ctx.config.generate_arbitrary {
+            quote! { #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))] }
+        } else {
+            quote! {}
+        };
+        let proto_fqn_lit = proto_fqn;
+        let wrapper = quote! {
+            #[doc(hidden)]
+            #[derive(Clone, Debug, Default, PartialEq)]
+            #[repr(transparent)]
+            #arbitrary_attr
+            pub struct #ext_json_wrapper_ident(pub ::buffa::UnknownFields);
+
+            impl ::core::ops::Deref for #ext_json_wrapper_ident {
+                type Target = ::buffa::UnknownFields;
+                fn deref(&self) -> &::buffa::UnknownFields { &self.0 }
+            }
+            impl ::core::ops::DerefMut for #ext_json_wrapper_ident {
+                fn deref_mut(&mut self) -> &mut ::buffa::UnknownFields { &mut self.0 }
+            }
+            impl ::core::convert::From<::buffa::UnknownFields> for #ext_json_wrapper_ident {
+                fn from(u: ::buffa::UnknownFields) -> Self { Self(u) }
+            }
+            impl ::serde::Serialize for #ext_json_wrapper_ident {
+                fn serialize<S: ::serde::Serializer>(&self, s: S)
+                    -> ::core::result::Result<S::Ok, S::Error>
+                {
+                    ::buffa::extension_registry::serialize_extensions(#proto_fqn_lit, &self.0, s)
+                }
+            }
+            impl<'de> ::serde::Deserialize<'de> for #ext_json_wrapper_ident {
+                fn deserialize<D: ::serde::Deserializer<'de>>(d: D)
+                    -> ::core::result::Result<Self, D::Error>
+                {
+                    ::buffa::extension_registry::deserialize_extensions(#proto_fqn_lit, d).map(Self)
+                }
+            }
+        };
+        let field = quote! {
+            #[serde(flatten)]
+            #[doc(hidden)]
+            pub __buffa_unknown_fields: #ext_json_wrapper_ident,
+        };
+        (field, wrapper)
+    } else if ctx.config.preserve_unknown_fields {
+        // No wrapper — either generate_json is off, or this message has no
+        // extension ranges. In the latter case the serde derive is present
+        // and we must `#[serde(skip)]` to exclude the field from JSON; in
+        // the former the attribute is harmless (no derive to read it).
+        let skip_attr = if ctx.config.generate_json {
+            quote! { #[serde(skip)] }
+        } else {
+            quote! {}
+        };
+        let field = quote! {
+            #skip_attr
             #[doc(hidden)]
             pub __buffa_unknown_fields: ::buffa::UnknownFields,
-        }
+        };
+        (field, quote! {})
     } else {
-        quote! {}
+        (quote! {}, quote! {})
     };
 
     // Does this message have real (non-synthetic) oneofs?
     let has_real_oneofs = !oneof_struct_fields.is_empty();
 
+    // Messages declaring `extensions N to M;` accept `"[...]"` JSON keys.
+    // With only `#[derive(Deserialize)]`, serde's flatten already routes them
+    // to the wrapper's Deserialize — but that path buffers all unclaimed keys
+    // into a serde_json::Value first. The custom impl matches them inline.
+
     // When serde is enabled and the message has oneofs, we generate a custom
     // Deserialize impl so that duplicate-oneof-field and null-value errors
     // propagate correctly (serde's #[serde(flatten)] + Option<T> swallows them).
-    let needs_custom_deserialize = ctx.config.generate_json && has_real_oneofs;
+    // Extension ranges also force the custom impl so `"[...]"` keys are
+    // handled inline without buffering.
+    let needs_custom_deserialize = ctx.config.generate_json
+        && (has_real_oneofs || (has_extension_ranges && ctx.config.preserve_unknown_fields));
 
     // Oneof enum definitions — emitted inside the message's module.
     // Pass the file-level package as current_package, since
@@ -185,6 +284,31 @@ pub fn generate_message(
     )?;
 
     let type_url = format!("type.googleapis.com/{proto_fqn}");
+
+    // Any registry entry — one per message with `generate_json`. The
+    // `any_to_json::<M>` / `any_from_json::<M>` monomorphizations coerce to
+    // fn pointers in const context (same pattern as enum_to_json<E> in
+    // extension_registry). Always `is_wkt: false`: WKTs live in buffa-types
+    // and register themselves via the hand-written `register_wkt_types`
+    // which knows which types get "value" wrapping in Any JSON.
+    let (any_entry_const, any_entry_ident) = if ctx.config.generate_json {
+        let upper = crate::oneof::to_snake_case(rust_name).to_uppercase();
+        let ident = format_ident!("__{}_ANY_ENTRY", upper);
+        let tokens = quote! {
+            #[doc(hidden)]
+            pub const #ident: ::buffa::json_registry::AnyTypeEntry
+                = ::buffa::json_registry::AnyTypeEntry {
+                    type_url: #type_url,
+                    to_json: ::buffa::json_registry::any_to_json::<#name_ident>,
+                    from_json: ::buffa::json_registry::any_from_json::<#name_ident>,
+                    is_wkt: false,
+                };
+        };
+        (tokens, Some(ident))
+    } else {
+        (quote! {}, None)
+    };
+
     let serde_struct_derive = if ctx.config.generate_json {
         if needs_custom_deserialize {
             // Only derive Serialize; Deserialize is generated separately.
@@ -216,6 +340,7 @@ pub fn generate_message(
             &mod_ident,
             features,
             resolver,
+            has_extension_ranges,
         )?
     } else {
         quote! {}
@@ -263,7 +388,17 @@ pub fn generate_message(
     // Build module items from nested messages. Each nested message contributes:
     // - Its struct + impls (top_level) go directly into our module
     // - Its nested types (mod_items) + view types go into a sub-module
+    // - Its JSON extension const paths bubble up, prefixed with the nested mod
     let mut nested_items = TokenStream::new();
+    let mut json_ext_paths: Vec<TokenStream> = Vec::new();
+    // Any-entry paths are relative to THIS struct's scope (top_level).
+    // Our own const lands alongside our struct; nested messages' consts land
+    // in our mod_items, which the caller wraps in `pub mod #mod_ident`, so
+    // their returned paths get prefixed with `#mod_ident::`.
+    let mut any_entry_paths: Vec<TokenStream> = Vec::new();
+    if let Some(id) = &any_entry_ident {
+        any_entry_paths.push(quote! { #id });
+    }
     let non_map_nested: Vec<_> = msg
         .nested_type
         .iter()
@@ -274,8 +409,18 @@ pub fn generate_message(
                 .unwrap_or(false)
         })
         .collect();
-    for (nested_desc, (top, mod_items)) in non_map_nested.iter().zip(nested_msgs) {
+    for (nested_desc, (top, mod_items, nested_json_paths, nested_any_paths)) in
+        non_map_nested.iter().zip(nested_msgs)
+    {
         nested_items.extend(top);
+        let nested_name = nested_desc.name.as_deref().unwrap_or("");
+        let nested_mod = make_field_ident(&crate::oneof::to_snake_case(nested_name));
+        for p in nested_json_paths {
+            json_ext_paths.push(quote! { #nested_mod :: #p });
+        }
+        for p in nested_any_paths {
+            any_entry_paths.push(quote! { #mod_ident :: #p });
+        }
 
         // Also generate views for nested messages if enabled.
         // view_top (struct + impls) goes alongside the owned struct in the
@@ -298,8 +443,6 @@ pub fn generate_message(
         };
 
         if !mod_items.is_empty() || !view_mod_items.is_empty() {
-            let nested_name = nested_desc.name.as_deref().unwrap_or("");
-            let nested_mod = make_field_ident(&crate::oneof::to_snake_case(nested_name));
             nested_items.extend(quote! {
                 pub mod #nested_mod {
                     #[allow(unused_imports)]
@@ -311,12 +454,28 @@ pub fn generate_message(
         }
     }
 
+    // `extend` declarations nested inside this message. The consts land in
+    // the message's `pub mod`, one `super::` hop from package level.
+    // `proto_fqn` is the scope for JSON full_name construction.
+    let (nested_extensions, nested_ext_json_idents) = crate::extension::generate_extensions(
+        ctx,
+        &msg.extension,
+        current_package,
+        1,
+        features,
+        proto_fqn,
+    )?;
+    for id in nested_ext_json_idents {
+        json_ext_paths.push(quote! { #id });
+    }
+
     // Module items: nested enums, nested message structs + sub-modules,
     // and oneof enums.
     let mod_items = quote! {
         #(#nested_enums)*
         #nested_items
         #(#oneof_enums)*
+        #nested_extensions
     };
 
     // Generate a manual Debug impl that excludes internal __buffa_ fields.
@@ -363,9 +522,13 @@ pub fn generate_message(
         #custom_deserialize
 
         #proto_elem_json_impl
+
+        #ext_json_wrapper_def
+
+        #any_entry_const
     };
 
-    Ok((top_level, mod_items))
+    Ok((top_level, mod_items, json_ext_paths, any_entry_paths))
 }
 
 // ── Custom Deserialize for messages with oneofs ──────────────────────────────
@@ -392,6 +555,7 @@ fn generate_custom_deserialize(
     mod_ident: &proc_macro2::Ident,
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
+    has_extension_ranges: bool,
 ) -> Result<TokenStream, CodeGenError> {
     let mut field_vars = Vec::new();
     let mut match_arms = Vec::new();
@@ -437,6 +601,48 @@ fn generate_custom_deserialize(
         field_inits.push(init);
     }
 
+    // `"[pkg.ext]"` keys — collect the decoded UnknownField records in a
+    // local Vec, then push into `__r.__buffa_unknown_fields` after `__r` is
+    // built below (it doesn't exist yet inside the match loop).
+    // Emitted only when the message declares `extensions N to M;` AND
+    // preserve_unknown_fields is on (otherwise there's nowhere to store them).
+    let (ext_var, ext_arm, ext_init) = if has_extension_ranges && ctx.config.preserve_unknown_fields
+    {
+        let proto_fqn_lit = proto_fqn;
+        let var = quote! {
+            let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField>
+                = ::buffa::alloc::vec::Vec::new();
+        };
+        let arm = quote! {
+            __k if __k.starts_with('[') => {
+                let __v: ::serde_json::Value = map.next_value()?;
+                match ::buffa::extension_registry::deserialize_extension_key(
+                    #proto_fqn_lit, __k, __v,
+                ) {
+                    ::core::option::Option::Some(::core::result::Result::Ok(__recs)) => {
+                        for __rec in __recs {
+                            __ext_records.push(__rec);
+                        }
+                    }
+                    ::core::option::Option::Some(::core::result::Result::Err(__e)) => {
+                        return ::core::result::Result::Err(
+                            <A::Error as ::serde::de::Error>::custom(__e),
+                        );
+                    }
+                    ::core::option::Option::None => {}
+                }
+            }
+        };
+        let init = quote! {
+            for __rec in __ext_records {
+                __r.__buffa_unknown_fields.push(__rec);
+            }
+        };
+        (var, arm, init)
+    } else {
+        (quote! {}, quote! {}, quote! {})
+    };
+
     // Assemble the impl block.
     let expecting_msg = format!("struct {name_ident}");
 
@@ -457,10 +663,12 @@ fn generate_custom_deserialize(
                         mut map: A,
                     ) -> Result<#name_ident, A::Error> {
                         #(#field_vars)*
+                        #ext_var
 
                         while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                             match key.as_str() {
                                 #(#match_arms)*
+                                #ext_arm
                                 _ => { map.next_value::<serde::de::IgnoredAny>()?; }
                             }
                         }
@@ -470,6 +678,7 @@ fn generate_custom_deserialize(
                         // annotations), then overwrite fields present in JSON.
                         let mut __r = <#name_ident as ::core::default::Default>::default();
                         #(#field_inits)*
+                        #ext_init
                         Ok(__r)
                     }
                 }
@@ -905,7 +1114,7 @@ fn map_entry_key_type(
     features: &ResolvedFeatures,
 ) -> Option<Type> {
     let key_field = entry.field.iter().find(|f| f.number == Some(1))?;
-    Some(crate::impl_message::effective_type(
+    Some(crate::impl_message::effective_type_in_map_entry(
         ctx, key_field, features,
     ))
 }
@@ -917,7 +1126,7 @@ fn map_entry_value_type(
     features: &ResolvedFeatures,
 ) -> Option<Type> {
     let value_field = entry.field.iter().find(|f| f.number == Some(2))?;
-    Some(crate::impl_message::effective_type(
+    Some(crate::impl_message::effective_type_in_map_entry(
         ctx,
         value_field,
         features,

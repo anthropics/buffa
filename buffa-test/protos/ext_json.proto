@@ -1,0 +1,35 @@
+// Extension JSON registry integration: message/enum/repeated extension types.
+//
+// A self-contained extendee (`Carrier`) so the generated `#[serde(flatten)]`
+// wrapper + `register_extensions` cover the full JSON path. proto2 syntax
+// (extensions require proto2 or editions; proto2 also exercises the closed-enum
+// JSON path via its Enumeration impl).
+
+syntax = "proto2";
+package buffa.test.extjson;
+
+message Ann {
+  optional string doc = 1;
+  optional int32 priority = 2;
+}
+
+enum Color {
+  RED = 0;
+  GREEN = 1;
+  BLUE = 2;
+}
+
+message Carrier {
+  extensions 100 to 200;
+  optional int32 x = 1;
+}
+
+extend Carrier {
+  optional sint32 weight = 100;  // singular scalar (sanity check)
+  optional Ann ann = 101;        // singular message
+  optional Color color = 102;    // singular enum
+  repeated int32 nums = 103;     // repeated scalar
+  repeated Ann anns = 104;       // repeated message
+  repeated Color colors = 105;   // repeated enum
+  repeated int64 bigs = 106;     // repeated int64 — elements stringify in JSON
+}

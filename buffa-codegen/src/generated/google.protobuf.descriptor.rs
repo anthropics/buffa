@@ -234,6 +234,15 @@ impl ::buffa::Message for FileDescriptorSet {
         self.__buffa_cached_size.set(0);
     }
 }
+impl ::buffa::ExtensionSet for FileDescriptorSet {
+    const PROTO_FQN: &'static str = "google.protobuf.FileDescriptorSet";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
 #[derive(Clone, PartialEq, Default)]
 pub struct FileDescriptorProto {
     ///Field 1: `name`
@@ -752,6 +761,15 @@ impl ::buffa::Message for FileDescriptorProto {
         self.__buffa_cached_size.set(0);
     }
 }
+impl ::buffa::ExtensionSet for FileDescriptorProto {
+    const PROTO_FQN: &'static str = "google.protobuf.FileDescriptorProto";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
 #[derive(Clone, PartialEq, Default)]
 pub struct DescriptorProto {
     ///Field 1: `name`
@@ -1159,6 +1177,15 @@ impl ::buffa::Message for DescriptorProto {
         self.__buffa_cached_size.set(0);
     }
 }
+impl ::buffa::ExtensionSet for DescriptorProto {
+    const PROTO_FQN: &'static str = "google.protobuf.DescriptorProto";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
 pub mod descriptor_proto {
     #[allow(unused_imports)]
     use super::*;
@@ -1317,6 +1344,15 @@ pub mod descriptor_proto {
             self.__buffa_cached_size.set(0);
         }
     }
+    impl ::buffa::ExtensionSet for ExtensionRange {
+        const PROTO_FQN: &'static str = "google.protobuf.DescriptorProto.ExtensionRange";
+        fn unknown_fields(&self) -> &::buffa::UnknownFields {
+            &self.__buffa_unknown_fields
+        }
+        fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+            &mut self.__buffa_unknown_fields
+        }
+    }
     #[derive(Clone, PartialEq, Default)]
     pub struct ReservedRange {
         ///Field 1: `start`
@@ -1437,6 +1473,15 @@ pub mod descriptor_proto {
             self.end = ::core::option::Option::None;
             self.__buffa_unknown_fields.clear();
             self.__buffa_cached_size.set(0);
+        }
+    }
+    impl ::buffa::ExtensionSet for ReservedRange {
+        const PROTO_FQN: &'static str = "google.protobuf.DescriptorProto.ReservedRange";
+        fn unknown_fields(&self) -> &::buffa::UnknownFields {
+            &self.__buffa_unknown_fields
+        }
+        fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+            &mut self.__buffa_unknown_fields
         }
     }
 }
@@ -1640,6 +1685,15 @@ impl ::buffa::Message for ExtensionRangeOptions {
         self.declaration.clear();
         self.__buffa_unknown_fields.clear();
         self.__buffa_cached_size.set(0);
+    }
+}
+impl ::buffa::ExtensionSet for ExtensionRangeOptions {
+    const PROTO_FQN: &'static str = "google.protobuf.ExtensionRangeOptions";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
     }
 }
 pub mod extension_range_options {
@@ -1882,6 +1936,15 @@ pub mod extension_range_options {
             self.repeated = ::core::option::Option::None;
             self.__buffa_unknown_fields.clear();
             self.__buffa_cached_size.set(0);
+        }
+    }
+    impl ::buffa::ExtensionSet for Declaration {
+        const PROTO_FQN: &'static str = "google.protobuf.ExtensionRangeOptions.Declaration";
+        fn unknown_fields(&self) -> &::buffa::UnknownFields {
+            &self.__buffa_unknown_fields
+        }
+        fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+            &mut self.__buffa_unknown_fields
         }
     }
 }
@@ -2278,6 +2341,15 @@ impl ::buffa::Message for FieldDescriptorProto {
         self.__buffa_cached_size.set(0);
     }
 }
+impl ::buffa::ExtensionSet for FieldDescriptorProto {
+    const PROTO_FQN: &'static str = "google.protobuf.FieldDescriptorProto";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
 pub mod field_descriptor_proto {
     #[allow(unused_imports)]
     use super::*;
@@ -2557,6 +2629,15 @@ impl ::buffa::Message for OneofDescriptorProto {
         self.__buffa_cached_size.set(0);
     }
 }
+impl ::buffa::ExtensionSet for OneofDescriptorProto {
+    const PROTO_FQN: &'static str = "google.protobuf.OneofDescriptorProto";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
 #[derive(Clone, PartialEq, Default)]
 pub struct EnumDescriptorProto {
     ///Field 1: `name`
@@ -2814,6 +2895,15 @@ impl ::buffa::Message for EnumDescriptorProto {
         self.__buffa_cached_size.set(0);
     }
 }
+impl ::buffa::ExtensionSet for EnumDescriptorProto {
+    const PROTO_FQN: &'static str = "google.protobuf.EnumDescriptorProto";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
 pub mod enum_descriptor_proto {
     #[allow(unused_imports)]
     use super::*;
@@ -2937,6 +3027,15 @@ pub mod enum_descriptor_proto {
             self.end = ::core::option::Option::None;
             self.__buffa_unknown_fields.clear();
             self.__buffa_cached_size.set(0);
+        }
+    }
+    impl ::buffa::ExtensionSet for EnumReservedRange {
+        const PROTO_FQN: &'static str = "google.protobuf.EnumDescriptorProto.EnumReservedRange";
+        fn unknown_fields(&self) -> &::buffa::UnknownFields {
+            &self.__buffa_unknown_fields
+        }
+        fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+            &mut self.__buffa_unknown_fields
         }
     }
 }
@@ -3097,6 +3196,15 @@ impl ::buffa::Message for EnumValueDescriptorProto {
         self.options = ::buffa::MessageField::none();
         self.__buffa_unknown_fields.clear();
         self.__buffa_cached_size.set(0);
+    }
+}
+impl ::buffa::ExtensionSet for EnumValueDescriptorProto {
+    const PROTO_FQN: &'static str = "google.protobuf.EnumValueDescriptorProto";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
     }
 }
 #[derive(Clone, PartialEq, Default)]
@@ -3263,6 +3371,15 @@ impl ::buffa::Message for ServiceDescriptorProto {
         self.method.clear();
         self.__buffa_unknown_fields.clear();
         self.__buffa_cached_size.set(0);
+    }
+}
+impl ::buffa::ExtensionSet for ServiceDescriptorProto {
+    const PROTO_FQN: &'static str = "google.protobuf.ServiceDescriptorProto";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
     }
 }
 #[derive(Clone, PartialEq, Default)]
@@ -3506,6 +3623,15 @@ impl ::buffa::Message for MethodDescriptorProto {
         self.server_streaming = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
         self.__buffa_cached_size.set(0);
+    }
+}
+impl ::buffa::ExtensionSet for MethodDescriptorProto {
+    const PROTO_FQN: &'static str = "google.protobuf.MethodDescriptorProto";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
     }
 }
 #[derive(Clone, PartialEq, Default)]
@@ -4168,6 +4294,15 @@ impl ::buffa::Message for FileOptions {
         self.__buffa_cached_size.set(0);
     }
 }
+impl ::buffa::ExtensionSet for FileOptions {
+    const PROTO_FQN: &'static str = "google.protobuf.FileOptions";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
 pub mod file_options {
     #[allow(unused_imports)]
     use super::*;
@@ -4471,6 +4606,15 @@ impl ::buffa::Message for MessageOptions {
         self.uninterpreted_option.clear();
         self.__buffa_unknown_fields.clear();
         self.__buffa_cached_size.set(0);
+    }
+}
+impl ::buffa::ExtensionSet for MessageOptions {
+    const PROTO_FQN: &'static str = "google.protobuf.MessageOptions";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
     }
 }
 #[derive(Clone, PartialEq, Default)]
@@ -4981,6 +5125,15 @@ impl ::buffa::Message for FieldOptions {
         self.__buffa_cached_size.set(0);
     }
 }
+impl ::buffa::ExtensionSet for FieldOptions {
+    const PROTO_FQN: &'static str = "google.protobuf.FieldOptions";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
 pub mod field_options {
     #[allow(unused_imports)]
     use super::*;
@@ -5335,6 +5488,15 @@ pub mod field_options {
             self.__buffa_cached_size.set(0);
         }
     }
+    impl ::buffa::ExtensionSet for EditionDefault {
+        const PROTO_FQN: &'static str = "google.protobuf.FieldOptions.EditionDefault";
+        fn unknown_fields(&self) -> &::buffa::UnknownFields {
+            &self.__buffa_unknown_fields
+        }
+        fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+            &mut self.__buffa_unknown_fields
+        }
+    }
     #[derive(Clone, PartialEq, Default)]
     pub struct FeatureSupport {
         ///Field 1: `edition_introduced`
@@ -5538,6 +5700,15 @@ pub mod field_options {
             self.__buffa_cached_size.set(0);
         }
     }
+    impl ::buffa::ExtensionSet for FeatureSupport {
+        const PROTO_FQN: &'static str = "google.protobuf.FieldOptions.FeatureSupport";
+        fn unknown_fields(&self) -> &::buffa::UnknownFields {
+            &self.__buffa_unknown_fields
+        }
+        fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+            &mut self.__buffa_unknown_fields
+        }
+    }
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct OneofOptions {
@@ -5672,6 +5843,15 @@ impl ::buffa::Message for OneofOptions {
         self.uninterpreted_option.clear();
         self.__buffa_unknown_fields.clear();
         self.__buffa_cached_size.set(0);
+    }
+}
+impl ::buffa::ExtensionSet for OneofOptions {
+    const PROTO_FQN: &'static str = "google.protobuf.OneofOptions";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
     }
 }
 #[derive(Clone, PartialEq, Default)]
@@ -5882,6 +6062,15 @@ impl ::buffa::Message for EnumOptions {
         self.uninterpreted_option.clear();
         self.__buffa_unknown_fields.clear();
         self.__buffa_cached_size.set(0);
+    }
+}
+impl ::buffa::ExtensionSet for EnumOptions {
+    const PROTO_FQN: &'static str = "google.protobuf.EnumOptions";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
     }
 }
 #[derive(Clone, PartialEq, Default)]
@@ -6104,6 +6293,15 @@ impl ::buffa::Message for EnumValueOptions {
         self.__buffa_cached_size.set(0);
     }
 }
+impl ::buffa::ExtensionSet for EnumValueOptions {
+    const PROTO_FQN: &'static str = "google.protobuf.EnumValueOptions";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
 #[derive(Clone, PartialEq, Default)]
 pub struct ServiceOptions {
     ///Field 34: `features`
@@ -6261,6 +6459,15 @@ impl ::buffa::Message for ServiceOptions {
         self.uninterpreted_option.clear();
         self.__buffa_unknown_fields.clear();
         self.__buffa_cached_size.set(0);
+    }
+}
+impl ::buffa::ExtensionSet for ServiceOptions {
+    const PROTO_FQN: &'static str = "google.protobuf.ServiceOptions";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
     }
 }
 #[derive(Clone, PartialEq, Default)]
@@ -6453,6 +6660,15 @@ impl ::buffa::Message for MethodOptions {
         self.uninterpreted_option.clear();
         self.__buffa_unknown_fields.clear();
         self.__buffa_cached_size.set(0);
+    }
+}
+impl ::buffa::ExtensionSet for MethodOptions {
+    const PROTO_FQN: &'static str = "google.protobuf.MethodOptions";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
     }
 }
 pub mod method_options {
@@ -6766,6 +6982,15 @@ impl ::buffa::Message for UninterpretedOption {
         self.__buffa_cached_size.set(0);
     }
 }
+impl ::buffa::ExtensionSet for UninterpretedOption {
+    const PROTO_FQN: &'static str = "google.protobuf.UninterpretedOption";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
 pub mod uninterpreted_option {
     #[allow(unused_imports)]
     use super::*;
@@ -6877,6 +7102,15 @@ pub mod uninterpreted_option {
             self.is_extension = false;
             self.__buffa_unknown_fields.clear();
             self.__buffa_cached_size.set(0);
+        }
+    }
+    impl ::buffa::ExtensionSet for NamePart {
+        const PROTO_FQN: &'static str = "google.protobuf.UninterpretedOption.NamePart";
+        fn unknown_fields(&self) -> &::buffa::UnknownFields {
+            &self.__buffa_unknown_fields
+        }
+        fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+            &mut self.__buffa_unknown_fields
         }
     }
 }
@@ -7215,6 +7449,15 @@ impl ::buffa::Message for FeatureSet {
         self.default_symbol_visibility = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
         self.__buffa_cached_size.set(0);
+    }
+}
+impl ::buffa::ExtensionSet for FeatureSet {
+    const PROTO_FQN: &'static str = "google.protobuf.FeatureSet";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
     }
 }
 pub mod feature_set {
@@ -7597,6 +7840,15 @@ pub mod feature_set {
             self.__buffa_cached_size.set(0);
         }
     }
+    impl ::buffa::ExtensionSet for VisibilityFeature {
+        const PROTO_FQN: &'static str = "google.protobuf.FeatureSet.VisibilityFeature";
+        fn unknown_fields(&self) -> &::buffa::UnknownFields {
+            &self.__buffa_unknown_fields
+        }
+        fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+            &mut self.__buffa_unknown_fields
+        }
+    }
     pub mod visibility_feature {
         #[allow(unused_imports)]
         use super::*;
@@ -7835,6 +8087,15 @@ impl ::buffa::Message for FeatureSetDefaults {
         self.__buffa_cached_size.set(0);
     }
 }
+impl ::buffa::ExtensionSet for FeatureSetDefaults {
+    const PROTO_FQN: &'static str = "google.protobuf.FeatureSetDefaults";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
 pub mod feature_set_defaults {
     #[allow(unused_imports)]
     use super::*;
@@ -8017,6 +8278,15 @@ pub mod feature_set_defaults {
             self.__buffa_cached_size.set(0);
         }
     }
+    impl ::buffa::ExtensionSet for FeatureSetEditionDefault {
+        const PROTO_FQN: &'static str = "google.protobuf.FeatureSetDefaults.FeatureSetEditionDefault";
+        fn unknown_fields(&self) -> &::buffa::UnknownFields {
+            &self.__buffa_unknown_fields
+        }
+        fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+            &mut self.__buffa_unknown_fields
+        }
+    }
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct SourceCodeInfo {
@@ -8116,6 +8386,15 @@ impl ::buffa::Message for SourceCodeInfo {
         self.location.clear();
         self.__buffa_unknown_fields.clear();
         self.__buffa_cached_size.set(0);
+    }
+}
+impl ::buffa::ExtensionSet for SourceCodeInfo {
+    const PROTO_FQN: &'static str = "google.protobuf.SourceCodeInfo";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
     }
 }
 pub mod source_code_info {
@@ -8398,6 +8677,15 @@ pub mod source_code_info {
             self.__buffa_cached_size.set(0);
         }
     }
+    impl ::buffa::ExtensionSet for Location {
+        const PROTO_FQN: &'static str = "google.protobuf.SourceCodeInfo.Location";
+        fn unknown_fields(&self) -> &::buffa::UnknownFields {
+            &self.__buffa_unknown_fields
+        }
+        fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+            &mut self.__buffa_unknown_fields
+        }
+    }
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct GeneratedCodeInfo {
@@ -8502,6 +8790,15 @@ impl ::buffa::Message for GeneratedCodeInfo {
         self.annotation.clear();
         self.__buffa_unknown_fields.clear();
         self.__buffa_cached_size.set(0);
+    }
+}
+impl ::buffa::ExtensionSet for GeneratedCodeInfo {
+    const PROTO_FQN: &'static str = "google.protobuf.GeneratedCodeInfo";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
     }
 }
 pub mod generated_code_info {
@@ -8746,6 +9043,15 @@ pub mod generated_code_info {
             self.path.clear();
             self.__buffa_unknown_fields.clear();
             self.__buffa_cached_size.set(0);
+        }
+    }
+    impl ::buffa::ExtensionSet for Annotation {
+        const PROTO_FQN: &'static str = "google.protobuf.GeneratedCodeInfo.Annotation";
+        fn unknown_fields(&self) -> &::buffa::UnknownFields {
+            &self.__buffa_unknown_fields
+        }
+        fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+            &mut self.__buffa_unknown_fields
         }
     }
     pub mod annotation {

@@ -33,8 +33,11 @@ mod edge_cases;
 #[cfg(has_edition_2024)]
 mod editions_2024;
 mod editions_enum_json;
+mod extensions;
+mod extensions_json;
 mod json;
 mod keyword;
+mod message_set;
 mod nesting;
 mod proto2;
 mod proto3_semantics;

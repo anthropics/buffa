@@ -653,6 +653,7 @@ fn repeated_enum_skips_unknown_when_lenient() {
     use crate::json::{with_json_parse_options, JsonParseOptions};
     let opts = JsonParseOptions {
         ignore_unknown_enum_values: true,
+        ..Default::default()
     };
     let json = r#"["RED","PURPLE","BLUE"]"#;
     let result: Vec<crate::EnumValue<Color>> = with_json_parse_options(&opts, || {
@@ -696,6 +697,7 @@ fn map_enum_drops_unknown_entries_when_lenient() {
     use crate::json::{with_json_parse_options, JsonParseOptions};
     let opts = JsonParseOptions {
         ignore_unknown_enum_values: true,
+        ..Default::default()
     };
     let json = r#"{"a":"RED","b":"PURPLE","c":"BLUE"}"#;
     let result: crate::__private::HashMap<alloc::string::String, crate::EnumValue<Color>> =
@@ -764,6 +766,7 @@ fn conformance_singular_unknown_enum_lenient_defaults() {
     use crate::json::{with_json_parse_options, JsonParseOptions};
     let opts = JsonParseOptions {
         ignore_unknown_enum_values: true,
+        ..Default::default()
     };
     let json = r#"{"optionalNestedEnum": "UNKNOWN_VALUE"}"#;
     let msg: TestMsg = with_json_parse_options(&opts, || serde_json::from_str(json).unwrap());
@@ -782,6 +785,7 @@ fn conformance_repeated_all_unknown_lenient_produces_empty() {
     use crate::json::{with_json_parse_options, JsonParseOptions};
     let opts = JsonParseOptions {
         ignore_unknown_enum_values: true,
+        ..Default::default()
     };
     let json = r#"{"repeatedNestedEnum": ["UNKNOWN_VALUE"]}"#;
     let msg: TestMsg = with_json_parse_options(&opts, || serde_json::from_str(json).unwrap());
@@ -795,6 +799,7 @@ fn conformance_repeated_mixed_unknown_lenient_skips() {
     use crate::json::{with_json_parse_options, JsonParseOptions};
     let opts = JsonParseOptions {
         ignore_unknown_enum_values: true,
+        ..Default::default()
     };
     let json = r#"{"repeatedNestedEnum": ["RED", "UNKNOWN_VALUE", "RED"]}"#;
     let msg: TestMsg = with_json_parse_options(&opts, || serde_json::from_str(json).unwrap());
@@ -815,6 +820,7 @@ fn conformance_map_all_unknown_lenient_produces_empty() {
     use crate::json::{with_json_parse_options, JsonParseOptions};
     let opts = JsonParseOptions {
         ignore_unknown_enum_values: true,
+        ..Default::default()
     };
     let json = r#"{"mapStringNestedEnum": {"key": "UNKNOWN_VALUE"}}"#;
     let msg: TestMsg = with_json_parse_options(&opts, || serde_json::from_str(json).unwrap());
@@ -828,6 +834,7 @@ fn conformance_map_mixed_unknown_lenient_drops_entry() {
     use crate::json::{with_json_parse_options, JsonParseOptions};
     let opts = JsonParseOptions {
         ignore_unknown_enum_values: true,
+        ..Default::default()
     };
     let json = r#"{"mapStringNestedEnum": {"key1": "RED", "key2": "UNKNOWN_VALUE"}}"#;
     let msg: TestMsg = with_json_parse_options(&opts, || serde_json::from_str(json).unwrap());
@@ -876,6 +883,7 @@ fn opt_enum_returns_none_for_unknown_when_lenient() {
     use crate::json::{with_json_parse_options, JsonParseOptions};
     let opts = JsonParseOptions {
         ignore_unknown_enum_values: true,
+        ..Default::default()
     };
     let json = r#""UNKNOWN_VALUE""#;
     let result: Option<crate::EnumValue<Color>> = with_json_parse_options(&opts, || {
@@ -889,6 +897,7 @@ fn opt_enum_known_value_when_lenient() {
     use crate::json::{with_json_parse_options, JsonParseOptions};
     let opts = JsonParseOptions {
         ignore_unknown_enum_values: true,
+        ..Default::default()
     };
     let json = r#""GREEN""#;
     let result: Option<crate::EnumValue<Color>> = with_json_parse_options(&opts, || {
@@ -919,6 +928,7 @@ fn conformance_proto2_optional_unknown_enum_lenient_absent() {
     use crate::json::{with_json_parse_options, JsonParseOptions};
     let opts = JsonParseOptions {
         ignore_unknown_enum_values: true,
+        ..Default::default()
     };
 
     #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]

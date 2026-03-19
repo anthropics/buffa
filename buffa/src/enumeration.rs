@@ -485,6 +485,7 @@ mod tests {
             use crate::json::{with_json_parse_options, JsonParseOptions};
             let opts = JsonParseOptions {
                 ignore_unknown_enum_values: true,
+                ..Default::default()
             };
             let v: EnumValue<Color> =
                 with_json_parse_options(&opts, || serde_json::from_str(r#""PURPLE""#).unwrap());
@@ -497,6 +498,7 @@ mod tests {
             use crate::json::{with_json_parse_options, JsonParseOptions};
             let opts = JsonParseOptions {
                 ignore_unknown_enum_values: true,
+                ..Default::default()
             };
             let v: EnumValue<Color> =
                 with_json_parse_options(&opts, || serde_json::from_str(r#""BLUE""#).unwrap());

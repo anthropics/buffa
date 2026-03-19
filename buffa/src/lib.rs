@@ -86,6 +86,8 @@
 //! | [`MessageField<T>`](MessageField) | Optional sub-message with transparent `Deref` to default |
 //! | [`EnumValue<E>`](EnumValue) | Open enum wrapper (`Known(E)` / `Unknown(i32)`) |
 //! | [`UnknownFields`] | Unknown-field preservation for round-trip fidelity |
+//! | [`Extension<C>`](Extension) | Typed extension descriptor (codegen-emitted `pub const`) |
+//! | [`ExtensionSet`] | Get/set extensions via unknown-field storage |
 //! | [`view::MessageView`] | Zero-copy borrowed view trait |
 //! | [`view::OwnedView<V>`](view::OwnedView) | Self-contained `'static` view backed by `Bytes` |
 //!
@@ -122,12 +124,18 @@ pub mod editions;
 pub mod encoding;
 pub mod enumeration;
 pub mod error;
+pub mod extension;
+#[cfg(feature = "json")]
+pub mod extension_registry;
 #[cfg(feature = "json")]
 pub mod json;
 #[cfg(feature = "json")]
 pub mod json_helpers;
+#[cfg(feature = "json")]
+pub mod json_registry;
 pub mod message;
 pub mod message_field;
+pub mod message_set;
 pub mod oneof;
 pub mod types;
 pub mod unknown_fields;
@@ -139,6 +147,7 @@ pub mod view;
 
 pub use enumeration::{EnumValue, Enumeration};
 pub use error::{DecodeError, EncodeError};
+pub use extension::{Extension, ExtensionCodec, ExtensionSet};
 pub use message::{DecodeOptions, Message, RECURSION_LIMIT};
 pub use message_field::{DefaultInstance, MessageField};
 pub use oneof::Oneof;

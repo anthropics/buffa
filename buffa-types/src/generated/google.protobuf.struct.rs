@@ -213,6 +213,15 @@ impl ::buffa::Message for Struct {
         self.__buffa_cached_size.set(0);
     }
 }
+impl ::buffa::ExtensionSet for Struct {
+    const PROTO_FQN: &'static str = "google.protobuf.Struct";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
 #[derive(Clone, Debug, Default)]
 pub struct StructView<'a> {
     ///Field 1: `fields` (map)
@@ -333,7 +342,7 @@ impl<'a> ::buffa::MessageView<'a> for StructView<'a> {
         Self::_decode_depth(buf, depth)
     }
     /// Convert this view to the owned message type.
-    #[allow(clippy::redundant_closure)]
+    #[allow(clippy::redundant_closure, clippy::useless_conversion)]
     fn to_owned_message(&self) -> Struct {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
@@ -346,7 +355,8 @@ impl<'a> ::buffa::MessageView<'a> for StructView<'a> {
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields
                 .to_owned()
-                .unwrap_or_default(),
+                .unwrap_or_default()
+                .into(),
             ..::core::default::Default::default()
         }
     }
@@ -615,6 +625,15 @@ impl ::buffa::Message for Value {
         self.__buffa_cached_size.set(0);
     }
 }
+impl ::buffa::ExtensionSet for Value {
+    const PROTO_FQN: &'static str = "google.protobuf.Value";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
 #[derive(Clone, Debug, Default)]
 pub struct ValueView<'a> {
     pub kind: ::core::option::Option<value::KindView<'a>>,
@@ -789,7 +808,7 @@ impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
         Self::_decode_depth(buf, depth)
     }
     /// Convert this view to the owned message type.
-    #[allow(clippy::redundant_closure)]
+    #[allow(clippy::redundant_closure, clippy::useless_conversion)]
     fn to_owned_message(&self) -> Value {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
@@ -818,7 +837,8 @@ impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields
                 .to_owned()
-                .unwrap_or_default(),
+                .unwrap_or_default()
+                .into(),
             ..::core::default::Default::default()
         }
     }
@@ -977,6 +997,15 @@ impl ::buffa::Message for ListValue {
         self.__buffa_cached_size.set(0);
     }
 }
+impl ::buffa::ExtensionSet for ListValue {
+    const PROTO_FQN: &'static str = "google.protobuf.ListValue";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
 #[derive(Clone, Debug, Default)]
 pub struct ListValueView<'a> {
     ///Field 1: `values`
@@ -1057,7 +1086,7 @@ impl<'a> ::buffa::MessageView<'a> for ListValueView<'a> {
         Self::_decode_depth(buf, depth)
     }
     /// Convert this view to the owned message type.
-    #[allow(clippy::redundant_closure)]
+    #[allow(clippy::redundant_closure, clippy::useless_conversion)]
     fn to_owned_message(&self) -> ListValue {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
@@ -1066,7 +1095,8 @@ impl<'a> ::buffa::MessageView<'a> for ListValueView<'a> {
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields
                 .to_owned()
-                .unwrap_or_default(),
+                .unwrap_or_default()
+                .into(),
             ..::core::default::Default::default()
         }
     }

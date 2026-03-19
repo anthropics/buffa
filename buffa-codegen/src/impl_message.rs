@@ -108,6 +108,19 @@ pub(crate) fn effective_type(
     features: &ResolvedFeatures,
 ) -> Type {
     let ty = field.r#type.unwrap_or_default();
+
+    // Editions `features.message_encoding = DELIMITED` keeps the descriptor
+    // field type as TYPE_MESSAGE (unlike proto2 `group` syntax which sets
+    // TYPE_GROUP directly). Rewriting here routes DELIMITED fields through
+    // the existing TYPE_GROUP encode/decode paths (wire types 3/4).
+    if ty == Type::TYPE_MESSAGE {
+        let field_features =
+            crate::features::resolve_child(features, crate::features::field_features(field));
+        if field_features.message_encoding == crate::features::MessageEncoding::Delimited {
+            return Type::TYPE_GROUP;
+        }
+    }
+
     if !ctx.config.strict_utf8_mapping || ty != Type::TYPE_STRING {
         return ty;
     }
@@ -120,6 +133,24 @@ pub(crate) fn effective_type(
     } else {
         ty
     }
+}
+
+/// [`effective_type`] for map-entry key/value fields.
+///
+/// The protobuf wire spec hard-codes map entries as length-prefixed,
+/// independent of `features.message_encoding`. protoc does NOT stamp an
+/// explicit `LENGTH_PREFIXED` feature on synthetic map-entry fields, so a
+/// file-level `DELIMITED` default would otherwise inherit through and
+/// [`effective_type`] would incorrectly rewrite a message-typed map value
+/// to `TYPE_GROUP`. This wrapper forces the spec invariant.
+pub(crate) fn effective_type_in_map_entry(
+    ctx: &crate::context::CodeGenContext,
+    field: &FieldDescriptorProto,
+    features: &ResolvedFeatures,
+) -> Type {
+    let mut f = *features;
+    f.message_encoding = crate::features::MessageEncoding::LengthPrefixed;
+    effective_type(ctx, field, &f)
 }
 
 /// Generate the decode expression for a closed enum value.
@@ -312,18 +343,83 @@ pub fn generate_message_impl(
         map_merge_arms.push(map_merge_arm(ctx, msg, f, features)?);
     }
 
+    // MessageSet wire format: each LengthDelimited unknown field (i.e. each
+    // extension payload) is wrapped in a group-at-field-1 Item on the wire,
+    // but stored flat as `{number: type_id, data: LD(payload)}`. The gate
+    // check (`CodeGenConfig::allow_message_set`) is in `message.rs`; by the
+    // time we're here, the flag is set or the option was absent.
+    let is_message_set = msg
+        .options
+        .as_option()
+        .and_then(|o| o.message_set_wire_format)
+        .unwrap_or(false);
+
     // Generate unknown-fields snippets based on config.
-    let unknown_fields_size_stmt = if preserve_unknown_fields {
+    let unknown_fields_size_stmt = if is_message_set {
+        // LD records become Items; stray non-LD records (which shouldn't
+        // normally exist on a MessageSet) re-emit as regular unknowns.
+        quote! {
+            for f in self.__buffa_unknown_fields.iter() {
+                if let ::buffa::UnknownFieldData::LengthDelimited(ref bytes) = f.data {
+                    size += ::buffa::message_set::item_encoded_len(f.number, bytes.len()) as u32;
+                } else {
+                    size += f.encoded_len() as u32;
+                }
+            }
+        }
+    } else if preserve_unknown_fields {
         quote! { size += self.__buffa_unknown_fields.encoded_len() as u32; }
     } else {
         quote! {}
     };
-    let unknown_fields_write_stmt = if preserve_unknown_fields {
+    let unknown_fields_write_stmt = if is_message_set {
+        quote! {
+            for f in self.__buffa_unknown_fields.iter() {
+                if let ::buffa::UnknownFieldData::LengthDelimited(ref bytes) = f.data {
+                    ::buffa::encoding::encode_varint(::buffa::message_set::ITEM_START_TAG, buf);
+                    ::buffa::encoding::encode_varint(::buffa::message_set::TYPE_ID_TAG, buf);
+                    ::buffa::encoding::encode_varint(f.number as u64, buf);
+                    ::buffa::encoding::encode_varint(::buffa::message_set::MESSAGE_TAG, buf);
+                    ::buffa::encoding::encode_varint(bytes.len() as u64, buf);
+                    buf.put_slice(bytes);
+                    ::buffa::encoding::encode_varint(::buffa::message_set::ITEM_END_TAG, buf);
+                } else {
+                    f.write_to(buf);
+                }
+            }
+        }
+    } else if preserve_unknown_fields {
         quote! { self.__buffa_unknown_fields.write_to(buf); }
     } else {
         quote! {}
     };
-    let unknown_fields_merge_arm = if preserve_unknown_fields {
+    let unknown_fields_merge_arm = if is_message_set {
+        // Field 1 StartGroup is an Item wrapper: unwrap into a flat LD record
+        // at the extension's field number. Everything else is preserved as a
+        // regular unknown. The Item group itself consumes one depth level.
+        quote! {
+            _ => {
+                if tag.field_number() == 1
+                    && tag.wire_type() == ::buffa::encoding::WireType::StartGroup
+                {
+                    if depth == 0 {
+                        return ::core::result::Result::Err(
+                            ::buffa::DecodeError::RecursionLimitExceeded,
+                        );
+                    }
+                    let (type_id, bytes) = ::buffa::message_set::merge_item(buf, depth - 1)?;
+                    self.__buffa_unknown_fields.push(::buffa::UnknownField {
+                        number: type_id,
+                        data: ::buffa::UnknownFieldData::LengthDelimited(bytes),
+                    });
+                } else {
+                    self.__buffa_unknown_fields.push(
+                        ::buffa::encoding::decode_unknown_field(tag, buf, depth)?
+                    );
+                }
+            }
+        }
+    } else if preserve_unknown_fields {
         quote! {
             _ => {
                 self.__buffa_unknown_fields.push(
@@ -400,6 +496,23 @@ pub fn generate_message_impl(
         quote! { _buf: &mut impl ::buffa::bytes::BufMut }
     };
 
+    let extension_set_impl = if preserve_unknown_fields {
+        let proto_fqn_lit = proto_fqn;
+        quote! {
+            impl ::buffa::ExtensionSet for #name_ident {
+                const PROTO_FQN: &'static str = #proto_fqn_lit;
+                fn unknown_fields(&self) -> &::buffa::UnknownFields {
+                    &self.__buffa_unknown_fields
+                }
+                fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+                    &mut self.__buffa_unknown_fields
+                }
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     Ok(quote! {
         unsafe impl ::buffa::DefaultInstance for #name_ident {
             fn default_instance() -> &'static Self {
@@ -474,6 +587,8 @@ pub fn generate_message_impl(
                 self.__buffa_cached_size.set(0);
             }
         }
+
+        #extension_set_impl
     })
 }
 
@@ -2341,8 +2456,8 @@ fn map_compute_size_stmt(
     let ident = make_field_ident(field_name);
     let outer_tag_len = tag_encoded_len(field_number, 2);
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
-    let key_ty = effective_type(ctx, key_fd, features);
-    let val_ty = effective_type(ctx, val_fd, features);
+    let key_ty = effective_type_in_map_entry(ctx, key_fd, features);
+    let val_ty = effective_type_in_map_entry(ctx, val_fd, features);
     let key_tag_len = tag_encoded_len(1, wire_type_byte(key_ty));
     let val_tag_len = tag_encoded_len(2, wire_type_byte(val_ty));
     let k = format_ident!("k");
@@ -2402,8 +2517,8 @@ fn map_write_to_stmt(
     let field_number = validated_field_number(field)?;
     let ident = make_field_ident(field_name);
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
-    let key_ty = effective_type(ctx, key_fd, features);
-    let val_ty = effective_type(ctx, val_fd, features);
+    let key_ty = effective_type_in_map_entry(ctx, key_fd, features);
+    let val_ty = effective_type_in_map_entry(ctx, val_fd, features);
     let key_tag_len = tag_encoded_len(1, wire_type_byte(key_ty));
     let val_tag_len = tag_encoded_len(2, wire_type_byte(val_ty));
     let k = format_ident!("k");
@@ -2439,8 +2554,8 @@ fn map_merge_arm(
     let field_number = validated_field_number(field)?;
     let ident = make_field_ident(field_name);
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
-    let key_ty = effective_type(ctx, key_fd, features);
-    let val_ty = effective_type(ctx, val_fd, features);
+    let key_ty = effective_type_in_map_entry(ctx, key_fd, features);
+    let val_ty = effective_type_in_map_entry(ctx, val_fd, features);
     let k = format_ident!("key");
     let v = format_ident!("val");
     let buf_expr = quote! { buf };

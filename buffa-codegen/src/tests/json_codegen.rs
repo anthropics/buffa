@@ -370,3 +370,123 @@ fn test_no_serde_attrs_without_generate_json_flag() {
         "serde attrs must be absent without generate_json: {content}"
     );
 }
+
+// ── register_json / Any entry emission ───────────────────────────────────
+
+#[test]
+fn test_any_entry_const_emitted_per_message() {
+    let mut file = proto3_file("any_entry.proto");
+    file.package = Some("acme".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Widget".to_string()),
+        ..Default::default()
+    });
+    let files = generate(&[file], &["any_entry.proto".to_string()], &json_config())
+        .expect("should generate");
+    let content = &files[0].content;
+    assert!(
+        content.contains("pub const __WIDGET_ANY_ENTRY: ::buffa::json_registry::AnyTypeEntry"),
+        "missing Any entry const: {content}"
+    );
+    assert!(
+        content.contains(r#"type_url: "type.googleapis.com/acme.Widget""#),
+        "wrong type_url in Any entry: {content}"
+    );
+    assert!(
+        content.contains("::buffa::json_registry::any_to_json::<Widget>"),
+        "missing any_to_json fn pointer: {content}"
+    );
+    assert!(
+        content.contains("::buffa::json_registry::any_from_json::<Widget>"),
+        "missing any_from_json fn pointer: {content}"
+    );
+    assert!(
+        content.contains("is_wkt: false"),
+        "user messages must emit is_wkt: false: {content}"
+    );
+}
+
+#[test]
+fn test_register_json_emitted_with_any_entries_only() {
+    // A file with messages but no extensions still emits register_json
+    // (Any-only). Proto3 has no extension syntax, so this is the common case.
+    let mut file = proto3_file("reg.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("Foo".to_string()),
+        ..Default::default()
+    });
+    file.message_type.push(DescriptorProto {
+        name: Some("Bar".to_string()),
+        ..Default::default()
+    });
+    let files =
+        generate(&[file], &["reg.proto".to_string()], &json_config()).expect("should generate");
+    let content = &files[0].content;
+    assert!(
+        content.contains("pub fn register_json(reg: &mut ::buffa::json_registry::JsonRegistry)"),
+        "missing register_json fn: {content}"
+    );
+    assert!(
+        content.contains("reg.register_any(__FOO_ANY_ENTRY)"),
+        "missing Foo Any registration: {content}"
+    );
+    assert!(
+        content.contains("reg.register_any(__BAR_ANY_ENTRY)"),
+        "missing Bar Any registration: {content}"
+    );
+    // No extensions → no register_extensions.
+    assert!(
+        !content.contains("pub fn register_extensions"),
+        "register_extensions should not appear without extensions: {content}"
+    );
+}
+
+#[test]
+fn test_register_json_includes_nested_message_any_entries() {
+    // Nested message Any consts live inside `pub mod outer`; register_json
+    // must qualify them as `outer::__INNER_ANY_ENTRY`.
+    let mut file = proto3_file("nested_any.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("Outer".to_string()),
+        nested_type: vec![DescriptorProto {
+            name: Some("Inner".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let files = generate(&[file], &["nested_any.proto".to_string()], &json_config())
+        .expect("should generate");
+    let content = &files[0].content;
+    assert!(
+        content.contains("reg.register_any(__OUTER_ANY_ENTRY)"),
+        "missing top-level Outer Any entry: {content}"
+    );
+    assert!(
+        content.contains("reg.register_any(outer::__INNER_ANY_ENTRY)"),
+        "missing nested Inner Any entry path: {content}"
+    );
+}
+
+#[test]
+fn test_any_entry_not_emitted_without_generate_json() {
+    let mut file = proto3_file("noany.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("Msg".to_string()),
+        ..Default::default()
+    });
+    let files = generate(
+        &[file],
+        &["noany.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let content = &files[0].content;
+    assert!(
+        !content.contains("ANY_ENTRY"),
+        "Any entry const must be absent without generate_json: {content}"
+    );
+    assert!(
+        !content.contains("register_json"),
+        "register_json must be absent without generate_json: {content}"
+    );
+}

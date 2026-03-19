@@ -54,6 +54,12 @@ pub enum DecodeError {
     /// the opening StartGroup tag, or an EndGroup was seen outside of a group.
     #[error("invalid end-group tag: field number {0}")]
     InvalidEndGroup(u32),
+
+    /// A MessageSet `Item` group was malformed (missing or out-of-range
+    /// `type_id`). Only occurs for messages declared with
+    /// `option message_set_wire_format = true`.
+    #[error("invalid MessageSet item: {0}")]
+    InvalidMessageSet(&'static str),
 }
 
 /// An error that occurred while encoding a protobuf message.

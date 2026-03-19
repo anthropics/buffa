@@ -23,6 +23,7 @@
 pub mod context;
 pub(crate) mod defaults;
 pub(crate) mod enumeration;
+pub(crate) mod extension;
 pub(crate) mod features;
 #[doc(hidden)]
 pub mod generated;
@@ -110,6 +111,14 @@ pub struct CodeGenConfig {
     /// **This is a breaking change for proto2** — enable only for new code or
     /// when profiling identifies UTF-8 validation as a bottleneck.
     pub strict_utf8_mapping: bool,
+    /// Permit `option message_set_wire_format = true` on input messages.
+    ///
+    /// MessageSet is a legacy Google-internal wire format that wraps each
+    /// extension in a group structure instead of using regular field tags.
+    /// When `false` (the default), encountering such a message is a codegen
+    /// error — the flag exists to make MessageSet use explicit, since the
+    /// format is obsolete outside of interop with very old Google protos.
+    pub allow_message_set: bool,
 }
 
 impl Default for CodeGenConfig {
@@ -122,6 +131,7 @@ impl Default for CodeGenConfig {
             extern_paths: Vec::new(),
             bytes_fields: Vec::new(),
             strict_utf8_mapping: false,
+            allow_message_set: false,
         }
     }
 }
@@ -496,6 +506,12 @@ fn generate_file(
             &resolver,
         )?);
     }
+    // Collect paths to JSON extension registry consts (both file-level and
+    // nested-in-message) and Any-type registry consts, for the optional
+    // `register_json` / `register_extensions` fns below.
+    let mut json_ext_paths: Vec<TokenStream> = Vec::new();
+    let mut any_entry_paths: Vec<TokenStream> = Vec::new();
+
     for message_type in &file.message_type {
         let top_level_name = message_type.name.as_deref().unwrap_or("");
         let proto_fqn = if current_package.is_empty() {
@@ -503,7 +519,7 @@ fn generate_file(
         } else {
             format!("{}.{}", current_package, top_level_name)
         };
-        let (msg_top, msg_mod) = message::generate_message(
+        let (msg_top, msg_mod, msg_json_paths, msg_any_paths) = message::generate_message(
             ctx,
             message_type,
             current_package,
@@ -513,6 +529,18 @@ fn generate_file(
             &resolver,
         )?;
         tokens.extend(msg_top);
+        // Nested extension JSON const paths are relative to the message's
+        // module scope; prefix with `<mod_ident>::` for the package-level view.
+        let mod_name = crate::oneof::to_snake_case(top_level_name);
+        let mod_ident = crate::message::make_field_ident(&mod_name);
+        for p in msg_json_paths {
+            json_ext_paths.push(quote! { #mod_ident :: #p });
+        }
+        // Any-entry paths are already relative to the struct's scope
+        // (= file scope for top-level messages) — no prefix needed.
+        for p in msg_any_paths {
+            any_entry_paths.push(p);
+        }
 
         let view_mod = if ctx.config.generate_views {
             let (view_top, view_mod) = view::generate_view(
@@ -530,8 +558,6 @@ fn generate_file(
         };
 
         // Combine message and view module items into a single `pub mod`.
-        let mod_name = crate::oneof::to_snake_case(top_level_name);
-        let mod_ident = crate::message::make_field_ident(&mod_name);
         if !msg_mod.is_empty() || !view_mod.is_empty() {
             tokens.extend(quote! {
                 pub mod #mod_ident {
@@ -542,6 +568,47 @@ fn generate_file(
                 }
             });
         }
+    }
+
+    let (file_ext_tokens, file_ext_json_idents) = extension::generate_extensions(
+        ctx,
+        &file.extension,
+        current_package,
+        0,
+        &features,
+        current_package,
+    )?;
+    tokens.extend(file_ext_tokens);
+    for id in file_ext_json_idents {
+        json_ext_paths.push(quote! { #id });
+    }
+
+    // `register_json(&mut JsonRegistry)` — one call per Any entry + one per
+    // extension entry. Only emitted when generate_json is on and at least one
+    // entry exists. `register_extensions` is kept for back-compat (same body,
+    // extension-only).
+    if ctx.config.generate_json && (!json_ext_paths.is_empty() || !any_entry_paths.is_empty()) {
+        let register_ext = if json_ext_paths.is_empty() {
+            quote! {}
+        } else {
+            quote! {
+                /// Register this file's extension JSON entries with the given registry.
+                ///
+                /// Prefer [`register_json`] which also registers `Any` type entries.
+                pub fn register_extensions(reg: &mut ::buffa::extension_registry::ExtensionRegistry) {
+                    #( reg.register(#json_ext_paths); )*
+                }
+            }
+        };
+        tokens.extend(quote! {
+            /// Register this file's `Any` type entries and extension JSON entries
+            /// with the given unified registry.
+            pub fn register_json(reg: &mut ::buffa::json_registry::JsonRegistry) {
+                #( reg.register_any(#any_entry_paths); )*
+                #( reg.register_extension(#json_ext_paths); )*
+            }
+            #register_ext
+        });
     }
 
     // Parse the token stream into a syn::File and format with prettyplease.
@@ -641,6 +708,14 @@ pub enum CodeGenError {
         owned_msg: String,
         view_msg: String,
     },
+    /// The input contains a message with `option message_set_wire_format = true`
+    /// but [`CodeGenConfig::allow_message_set`] was not set.
+    #[error(
+        "message '{message_name}' uses `option message_set_wire_format = true` \
+         but CodeGenConfig::allow_message_set is false; MessageSet is a legacy \
+         wire format — set allow_message_set(true) if this is intentional"
+    )]
+    MessageSetNotSupported { message_name: String },
 }
 
 #[cfg(test)]

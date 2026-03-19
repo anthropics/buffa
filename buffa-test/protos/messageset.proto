@@ -1,0 +1,35 @@
+// Tests for `option message_set_wire_format = true` — the legacy
+// Google-internal encoding that wraps each extension in a group-at-field-1
+// Item instead of using regular extension tags.
+//
+// A MessageSet extendee must have NO regular fields (protoc enforces this);
+// all data lives in extensions.
+
+syntax = "proto2";
+package buffa.test.messageset;
+
+// `Box` is the legacy container name from the original Google-internal
+// MessageSet design. Using `Container` here to sidestep Rust's `Box` alloc
+// type without needing to mess with raw identifiers in the test code.
+message Container {
+  option message_set_wire_format = true;
+  extensions 4 to max;
+}
+
+message Payload {
+  optional string name = 1;
+  optional int32 value = 2;
+}
+
+extend Container {
+  optional Payload payload_ext = 1000;
+}
+
+// A second extension to verify multiple Items encode/decode correctly.
+message Marker {
+  optional bool flag = 1;
+}
+
+extend Container {
+  optional Marker marker_ext = 2000;
+}

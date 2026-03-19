@@ -44,6 +44,15 @@ impl UnknownFields {
         self.fields.clear();
     }
 
+    /// Retain only the fields for which the predicate returns `true`.
+    ///
+    /// Used by [`ExtensionSet::set_extension`](crate::ExtensionSet::set_extension)
+    /// and [`clear_extension`](crate::ExtensionSet::clear_extension) to remove
+    /// prior occurrences at a given field number.
+    pub fn retain(&mut self, f: impl FnMut(&UnknownField) -> bool) {
+        self.fields.retain(f);
+    }
+
     /// Compute the encoded size of all unknown fields.
     pub fn encoded_len(&self) -> usize {
         self.fields.iter().map(|f| f.encoded_len()).sum()
@@ -51,25 +60,34 @@ impl UnknownFields {
 
     /// Re-encode all unknown fields to `buf` in their original wire format.
     pub fn write_to(&self, buf: &mut impl BufMut) {
-        use crate::encoding::encode_varint;
         for field in &self.fields {
-            let tag_value = ((field.number as u64) << 3) | field.data.wire_type_value();
-            encode_varint(tag_value, buf);
-            match &field.data {
-                UnknownFieldData::Varint(v) => encode_varint(*v, buf),
-                UnknownFieldData::Fixed64(v) => buf.put_u64_le(*v),
-                UnknownFieldData::Fixed32(v) => buf.put_u32_le(*v),
-                UnknownFieldData::LengthDelimited(data) => {
-                    encode_varint(data.len() as u64, buf);
-                    buf.put_slice(data);
-                }
-                UnknownFieldData::Group(fields) => {
-                    fields.write_to(buf);
-                    // End-group tag (wire type 4, same field number).
-                    encode_varint(((field.number as u64) << 3) | 4, buf);
-                }
-            }
+            field.write_to(buf);
         }
+    }
+
+    /// Decode a concatenation of wire-format fields into [`UnknownFields`].
+    ///
+    /// Reads tag/data pairs until `data` is exhausted. Each field is decoded
+    /// via [`decode_unknown_field`](crate::encoding::decode_unknown_field) with
+    /// the full [`RECURSION_LIMIT`](crate::message::RECURSION_LIMIT) budget.
+    ///
+    /// Used by [`GroupCodec`](crate::extension::codecs::GroupCodec) to turn a
+    /// message's encoded bytes back into the inner-field representation that
+    /// [`UnknownFieldData::Group`] wraps.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeError`](crate::DecodeError) if `data` contains a
+    /// malformed tag, truncated field, or exceeds the recursion limit.
+    pub fn decode_from_slice(mut data: &[u8]) -> Result<Self, crate::DecodeError> {
+        use crate::encoding::{decode_unknown_field, Tag};
+        use crate::message::RECURSION_LIMIT;
+        let mut out = Self::new();
+        while !data.is_empty() {
+            let tag = Tag::decode(&mut data)?;
+            out.push(decode_unknown_field(tag, &mut data, RECURSION_LIMIT)?);
+        }
+        Ok(out)
     }
 }
 
@@ -104,6 +122,27 @@ impl UnknownField {
         let tag_len =
             crate::encoding::varint_len(((self.number as u64) << 3) | self.data.wire_type_value());
         tag_len + self.data.encoded_len(self.number)
+    }
+
+    /// Re-encode this field (tag + data) to `buf` in its original wire format.
+    pub fn write_to(&self, buf: &mut impl BufMut) {
+        use crate::encoding::encode_varint;
+        let tag_value = ((self.number as u64) << 3) | self.data.wire_type_value();
+        encode_varint(tag_value, buf);
+        match &self.data {
+            UnknownFieldData::Varint(v) => encode_varint(*v, buf),
+            UnknownFieldData::Fixed64(v) => buf.put_u64_le(*v),
+            UnknownFieldData::Fixed32(v) => buf.put_u32_le(*v),
+            UnknownFieldData::LengthDelimited(data) => {
+                encode_varint(data.len() as u64, buf);
+                buf.put_slice(data);
+            }
+            UnknownFieldData::Group(fields) => {
+                fields.write_to(buf);
+                // End-group tag (wire type 4, same field number).
+                encode_varint(((self.number as u64) << 3) | 4, buf);
+            }
+        }
     }
 }
 
@@ -348,5 +387,37 @@ mod tests {
         let mut buf = alloc::vec::Vec::new();
         fields.write_to(&mut buf);
         assert_eq!(buf.len(), claimed);
+    }
+
+    // ── decode_from_slice ────────────────────────────────────────────────
+
+    #[test]
+    fn test_decode_from_slice_empty() {
+        let out = UnknownFields::decode_from_slice(&[]).unwrap();
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn test_decode_from_slice_roundtrip() {
+        // Build a multi-variant field set, write, decode back, compare.
+        let mut orig = UnknownFields::new();
+        orig.push(varint_field(1, 42));
+        orig.push(fixed32_field(2, 0xDEAD_BEEF));
+        orig.push(fixed64_field(3, u64::MAX));
+        orig.push(ld_field(4, vec![1, 2, 3]));
+        let mut nested = UnknownFields::new();
+        nested.push(varint_field(10, 7));
+        orig.push(group_field(5, nested));
+
+        let mut buf = Vec::new();
+        orig.write_to(&mut buf);
+        let decoded = UnknownFields::decode_from_slice(&buf).unwrap();
+        assert_eq!(decoded, orig);
+    }
+
+    #[test]
+    fn test_decode_from_slice_truncated() {
+        // Tag 0x08 (field 1, varint) with no value — truncated.
+        assert!(UnknownFields::decode_from_slice(&[0x08]).is_err());
     }
 }

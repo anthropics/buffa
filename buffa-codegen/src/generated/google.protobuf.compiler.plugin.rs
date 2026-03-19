@@ -172,6 +172,15 @@ impl ::buffa::Message for Version {
         self.__buffa_cached_size.set(0);
     }
 }
+impl ::buffa::ExtensionSet for Version {
+    const PROTO_FQN: &'static str = "google.protobuf.compiler.Version";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
 #[derive(Clone, PartialEq, Default)]
 pub struct CodeGeneratorRequest {
     ///Field 1: `file_to_generate`
@@ -399,6 +408,15 @@ impl ::buffa::Message for CodeGeneratorRequest {
         self.__buffa_cached_size.set(0);
     }
 }
+impl ::buffa::ExtensionSet for CodeGeneratorRequest {
+    const PROTO_FQN: &'static str = "google.protobuf.compiler.CodeGeneratorRequest";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
 #[derive(Clone, PartialEq, Default)]
 pub struct CodeGeneratorResponse {
     ///Field 1: `error`
@@ -602,6 +620,15 @@ impl ::buffa::Message for CodeGeneratorResponse {
         self.file.clear();
         self.__buffa_unknown_fields.clear();
         self.__buffa_cached_size.set(0);
+    }
+}
+impl ::buffa::ExtensionSet for CodeGeneratorResponse {
+    const PROTO_FQN: &'static str = "google.protobuf.compiler.CodeGeneratorResponse";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
     }
 }
 pub mod code_generator_response {
@@ -846,6 +873,15 @@ pub mod code_generator_response {
             self.generated_code_info = ::buffa::MessageField::none();
             self.__buffa_unknown_fields.clear();
             self.__buffa_cached_size.set(0);
+        }
+    }
+    impl ::buffa::ExtensionSet for File {
+        const PROTO_FQN: &'static str = "google.protobuf.compiler.CodeGeneratorResponse.File";
+        fn unknown_fields(&self) -> &::buffa::UnknownFields {
+            &self.__buffa_unknown_fields
+        }
+        fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+            &mut self.__buffa_unknown_fields
         }
     }
 }

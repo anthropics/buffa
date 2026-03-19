@@ -37,7 +37,6 @@ buffa supports **binary** and **JSON** protobuf encodings:
 These are intentionally out of scope:
 
 - **Text format (`textproto`)** — not planned. Binary and JSON are the wire formats that matter for RPC and storage.
-- **Proto2 extensions** (`extend`, `extensions` range declarations) — a proto2-only mechanism removed in proto3 and absent from editions; use `google.protobuf.Any` instead. Extension fields on the wire are preserved as unknown fields for binary round-trip fidelity, but no typed accessors are generated and extensions are omitted from JSON output.
 - **Runtime reflection** (`DynamicMessage`, descriptor-driven introspection) — not planned for 0.1. Buffa is a codegen-first library; if you need schema-agnostic processing, consider preserving unknown fields or using `Any`.
 - **Proto2 optional-field getter methods** — `[default = X]` on `optional` fields does not generate `fn field_name(&self) -> T` unwrap-to-default accessors. Custom defaults are applied only to `required` fields via `impl Default`. Optional fields are `Option<T>`; use pattern matching or `.unwrap_or(X)`.
 - **Scoped `JsonParseOptions` in `no_std`** — serde's `Deserialize` trait has no context parameter, so runtime options must be passed through ambient state. In `std` builds, [`with_json_parse_options`] provides per-closure, per-thread scoping via a thread-local. In `no_std` builds, [`set_global_json_parse_options`] provides process-wide set-once configuration via a global atomic. The two APIs are mutually exclusive. The `no_std` global supports singular-enum accept-with-default but not repeated/map container filtering (which requires scoped strict-mode override).
@@ -45,11 +44,10 @@ These are intentionally out of scope:
 [`with_json_parse_options`]: https://docs.rs/buffa/latest/buffa/json/fn.with_json_parse_options.html
 [`set_global_json_parse_options`]: https://docs.rs/buffa/latest/buffa/json/fn.set_global_json_parse_options.html
 
-## Known limitations (0.1.x)
+## Known limitations
 
 These are gaps we intend to address in future releases:
 
-- **Editions `message_encoding = DELIMITED`** is parsed but not yet implemented in codegen. The default `LENGTH_PREFIXED` works; if you explicitly set `features.message_encoding = DELIMITED`, the feature is silently ignored and length-prefixed encoding is used. Conformance tests for `TestAllTypesEdition2023` with DELIMITED are skipped.
 - **Closed-enum unknown values in packed-repeated view decode** are silently dropped (not routed to unknown fields). The owned decoder handles this correctly; the view decoder handles singular, optional, oneof, and unpacked repeated correctly. Packed blobs have no per-element tag to borrow, so the zero-copy `UnknownFieldsView<'a>` has no span to reference.
 - **Closed-enum unknown values in map values** are silently dropped (not routed to unknown fields). The proto spec requires the entire map entry (key + value) to go to unknown fields, which requires re-encoding. This affects proto2 schemas with `map<K, ClosedEnum>` where an evolved sender adds new enum values.
 

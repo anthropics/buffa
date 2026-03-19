@@ -163,6 +163,48 @@ fn main() {
         .compile()
         .expect("buffa_build failed for editions_enum_json.proto");
 
+    // Custom options — `extend google.protobuf.FieldOptions` emits extension
+    // descriptor consts. The extendee is never named in generated Rust (only
+    // the value types and field numbers), so descriptor.proto is only needed
+    // for protoc's resolution pass, not as an include path for codegen.
+    buffa_build::Config::new()
+        .files(&["protos/custom_options.proto"])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .compile()
+        .expect("buffa_build failed for custom_options.proto");
+
+    // Extension JSON registry — message/enum/repeated extensions with a local
+    // extendee. `generate_json(true)` so the `#[serde(flatten)]` wrapper and
+    // `register_extensions` are emitted alongside the `Extension<_>` consts.
+    buffa_build::Config::new()
+        .files(&["protos/ext_json.proto"])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .generate_json(true)
+        .compile()
+        .expect("buffa_build failed for ext_json.proto");
+
+    // Group-encoded extensions — editions `features.message_encoding = DELIMITED`
+    // makes message-typed extensions emit `GroupCodec<M>` instead of
+    // `MessageCodec<M>` (wire types 3/4 instead of 2).
+    buffa_build::Config::new()
+        .files(&["protos/group_ext.proto"])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .compile()
+        .expect("buffa_build failed for group_ext.proto");
+
+    // MessageSet wire format — legacy group-wrapped extension encoding.
+    // Gated behind `allow_message_set(true)`; default is a codegen error.
+    buffa_build::Config::new()
+        .files(&["protos/messageset.proto"])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .allow_message_set(true)
+        .compile()
+        .expect("buffa_build failed for messageset.proto");
+
     // Edition 2024 — requires protoc v30+ (stabilized edition 2024).
     // Older protoc rejects it with "later than the maximum supported edition".
     // Skip gracefully on older protoc so the crate still builds; tests are

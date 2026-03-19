@@ -961,8 +961,171 @@ Buffa supports proto2 with these semantics:
 - **`repeated`** → `Vec<T>` (unpacked by default, unlike proto3)
 - **Closed enums** → bare `E` type (not `EnumValue<E>`); unknown wire values are routed to `unknown_fields`
 - **Custom defaults** → custom `Default` impl using `[default = ...]` values
-- **Extensions** → not supported; extension fields on the wire are preserved as unknown fields
+- **Extensions** → fully supported — see [Extensions (custom options)](#extensions-custom-options) below
 - **Groups** → fully supported (both generated types and StartGroup/EndGroup wire format). Group types are emitted as nested message structs with `MessageField<GroupName>` fields, exactly like regular message fields.
+
+## Extensions (custom options)
+
+> **Runnable example:** [`examples/envelope/`](../examples/envelope/) —
+> a standalone crate demonstrating binary get/set/has/clear, `[default = ...]`,
+> `"[pkg.ext]"` JSON keys via `JsonRegistry`, and the extendee identity check.
+> Run with `cargo run --manifest-path examples/envelope/Cargo.toml`.
+
+Extensions are how protobuf attaches custom metadata to descriptor options —
+`(buf.validate.field)`, `(google.api.http)`, `(grpc.gateway.protoc_gen_openapiv2.options.openapiv2_schema)`,
+and so on. They're declared with `extend <OptionsType> { ... }` and attached
+in proto source as `[(my.option) = {...}]`.
+
+A common misconception: editions did not remove extensions. Proto3 removed
+*general-purpose* message extensions (extending arbitrary user messages) in
+favor of `google.protobuf.Any`, but `descriptor.proto` still declares
+`extensions 1000 to max;` on every `*Options` message. Custom options remain
+the sanctioned use of `extend` across proto2, proto3, and editions.
+
+### Generated code
+
+For each `extend` declaration, codegen emits a `pub const` extension descriptor:
+
+```proto
+// buf/validate/validate.proto
+extend google.protobuf.FieldOptions {
+  optional FieldRules field = 1159;
+}
+```
+
+```rust,ignore
+// Generated — users never write this type by hand
+pub const FIELD: buffa::Extension<buffa::extension::codecs::MessageCodec<FieldRules>>
+    = buffa::Extension::new(1159, "google.protobuf.FieldOptions");
+```
+
+The codec type (`MessageCodec<FieldRules>`) is a zero-sized marker carrying
+only type-level information. You never name it — type inference flows from the
+`const` to the call site.
+
+### Reading and writing
+
+The extendee message implements `ExtensionSet`:
+
+```rust,ignore
+use buffa::ExtensionSet;
+use buf_validate::FIELD;
+
+// A FieldDescriptorProto from some parsed schema
+let field: &FieldDescriptorProto = /* ... */;
+
+// Read: Option<T> for singular extensions, Vec<T> for repeated
+let rules: Option<FieldRules> = field.options.extension(&FIELD);
+
+// Presence test (fast — checks for the tag, doesn't decode)
+if field.options.has_extension(&FIELD) { /* ... */ }
+
+// Write (replaces any prior value)
+field_opts.set_extension(&FIELD, my_rules);
+
+// Clear
+field_opts.clear_extension(&FIELD);
+```
+
+### Extendee identity check
+
+`extension()`, `set_extension()`, and `clear_extension()` **panic** if you
+pass an extension declared for a different message — for example, passing a
+message-level option to a field-level options struct:
+
+```rust,ignore
+// (buf.validate.message) extends MessageOptions, not FieldOptions — this
+// is a bug in the caller. Panics with a clear message.
+let _ = field.options.extension(&buf_validate::MESSAGE);
+```
+
+This matches protobuf-go (which panics) and protobuf-es (which throws).
+`has_extension()` returns `false` gracefully instead of panicking, since
+"is this extension set here" has a legitimate answer (`false`) even when
+the extension can't extend here.
+
+### Proto2 `[default = ...]`
+
+Proto2 extension declarations can carry a default value:
+
+```proto
+extend MyOptions {
+  optional int32 retry_count = 50001 [default = 3];
+}
+```
+
+`extension_or_default()` returns the declared default when the extension is
+absent. `extension()` still returns `None` — presence is distinguishable:
+
+```rust,ignore
+let retries: i32 = opts.extension_or_default(&RETRY_COUNT);  // 3 if unset
+let explicit: Option<i32> = opts.extension(&RETRY_COUNT);    // None if unset
+```
+
+### JSON: `"[pkg.ext]"` keys
+
+Proto3 JSON represents extensions with bracketed fully-qualified keys:
+`{"[buf.validate.field]": {...}}`. Serializing and deserializing these
+requires a populated `JsonRegistry` so serde knows which `"[...]"` keys
+belong to which extendee and how to encode them.
+
+Setup (once, at startup):
+
+```rust,ignore
+use buffa::json_registry::{JsonRegistry, set_json_registry};
+
+let mut reg = JsonRegistry::new();
+// Codegen emits register_json per file; covers both Any types AND extensions:
+my_pkg::register_json(&mut reg);
+buf_validate::register_json(&mut reg);
+set_json_registry(reg);
+```
+
+After setup, `serde_json::to_string(&msg)` and `serde_json::from_str(...)`
+handle `"[...]"` keys transparently.
+
+Unregistered `"[...]"` keys are silently dropped on parse by default — this
+matches buffa's pre-0.3 behavior for all unknown JSON keys, so upgrading
+doesn't break callers whose upstream sends extensions they don't use. To
+error instead:
+
+```rust,ignore
+use buffa::json::{JsonParseOptions, with_json_parse_options};
+
+let opts = JsonParseOptions::new().strict_extension_keys(true);
+let msg = with_json_parse_options(&opts, || serde_json::from_str::<MyMsg>(json))?;
+```
+
+### MessageSet
+
+`option message_set_wire_format = true` is a legacy Google-internal wire
+format (it predates `extensions` ranges). Codegen errors on it by default.
+If you genuinely need it — typically because an upstream dependency uses
+it — enable support explicitly:
+
+```rust,ignore
+// build.rs
+buffa_build::Config::new()
+    .allow_message_set(true)
+    // ...
+```
+
+Neither protobuf-go nor protobuf-es supports MessageSet by default (go hides
+it behind `-tags protolegacy`; es has no runtime code for it). Most users
+will never encounter this.
+
+### Caching
+
+`extension()` decodes from unknown-field storage on every call — there is no
+internal cache. If you read the same extension repeatedly (e.g. in a loop
+over many descriptors), hoist the call:
+
+```rust,ignore
+let rules = field.options.extension(&FIELD);  // decode once
+for constraint in &rules.as_ref().map(|r| &r.constraints).unwrap_or_default() {
+    // ...
+}
+```
 
 ## Editions support
 

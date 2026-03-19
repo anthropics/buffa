@@ -1,0 +1,62 @@
+// Tests for `extend` codegen: extension consts + the ExtensionSet trait.
+//
+// The extendee (`google.protobuf.FieldOptions` / `MessageOptions`) is never
+// named in the generated Rust — only the value types and field numbers are.
+// protoc resolves the `extend` declaration from its bundled descriptor.proto.
+
+syntax = "proto2";
+package buffa.test.options;
+
+import "google/protobuf/descriptor.proto";
+
+message Annotation {
+  optional string doc = 1;
+  optional int32 priority = 2;
+}
+
+extend google.protobuf.FieldOptions {
+  optional Annotation ann = 50001;   // singular message
+  optional sint32 weight = 50002;    // zigzag scalar
+  repeated string tags = 50003;      // repeated (not packable)
+}
+
+extend google.protobuf.MessageOptions {
+  optional bool is_internal = 50010;
+}
+
+// Extensions with proto2 `[default = ...]` — covers the three codegen paths:
+// const-fn scalar, non-const-fn string, and a bool. Used by the
+// extension_or_default integration tests.
+extend google.protobuf.FieldOptions {
+  optional int32 priority = 50030 [default = 7];
+  optional string label = 50031 [default = "none"];
+  optional bool active = 50032 [default = true];
+}
+
+// Carrier is the LOCAL extendee for roundtrip tests. The FieldOptions
+// extensions above can't be used on Carrier (the extendee identity check
+// panics) — they exist to verify codegen shapes (codec types, doc comments,
+// [default = ...] emission) via non-get/set tests.
+message Carrier {
+  extensions 100 to 200;
+
+  // Nested `extend` — the const lands in `carrier::MARKER`. Still targets
+  // FieldOptions (not Carrier itself) to verify nested-extend scoping.
+  extend google.protobuf.FieldOptions {
+    optional int32 marker = 50020;
+  }
+  optional int32 x = 1;
+}
+
+// Extensions of Carrier itself — used by the roundtrip / presence /
+// extension_or_default tests. One per shape the tests exercise.
+extend Carrier {
+  optional Annotation c_ann = 100;              // singular message
+  optional sint32 c_weight = 101;               // zigzag scalar
+  repeated string c_tags = 102;                 // repeated (not packable)
+  optional bool c_flag = 103;
+  optional int32 c_marker = 104;                // for nested-const semantics test
+  optional int32 c_priority = 110 [default = 7];
+  optional string c_label = 111 [default = "none"];
+  optional bool c_active = 112 [default = true];
+}
