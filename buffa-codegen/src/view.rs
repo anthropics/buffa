@@ -309,7 +309,7 @@ fn view_struct_field(
     if is_repeated && is_map_field(msg, field) {
         let ident = make_field_ident(field_name);
         let number = field.number.unwrap_or(0);
-        let doc = format!("Field {number}: `{field_name}` (map)");
+        let doc = format!(" Field {number}: `{field_name}` (map)");
         let map_ty = view_map_type(ctx, msg, field, current_package, features)?;
         return Ok(Some(quote! {
             #[doc = #doc]
@@ -319,7 +319,7 @@ fn view_struct_field(
 
     let ident = make_field_ident(field_name);
     let number = field.number.unwrap_or(0);
-    let doc = format!("Field {number}: `{field_name}`");
+    let doc = format!(" Field {number}: `{field_name}`");
 
     let rust_type = if is_repeated {
         view_repeated_type(ctx, field, current_package, features)?

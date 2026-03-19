@@ -1054,7 +1054,7 @@ fn generate_field(
     )?;
     let rust_name = make_field_ident(field_name);
 
-    let doc = format!("Field {field_number}: `{field_name}`");
+    let doc = format!(" Field {field_number}: `{field_name}`");
     let serde_attr = if ctx.config.generate_json {
         serde_field_attr(ctx, field, field_name, &info, features)
     } else {
