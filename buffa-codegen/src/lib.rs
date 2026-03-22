@@ -20,6 +20,7 @@
 //!
 //! All of that is handled upstream (by protoc, buf, or a future parser).
 
+pub(crate) mod comments;
 pub mod context;
 pub(crate) mod defaults;
 pub(crate) mod enumeration;
@@ -495,13 +496,18 @@ fn generate_file(
     let mut tokens = resolver.generate_use_block();
     let current_package = file.package.as_deref().unwrap_or("");
     let features = crate::features::for_file(file);
-
     for enum_type in &file.enum_type {
         let enum_rust_name = enum_type.name.as_deref().unwrap_or("");
+        let enum_fqn = if current_package.is_empty() {
+            enum_rust_name.to_string()
+        } else {
+            format!("{}.{}", current_package, enum_rust_name)
+        };
         tokens.extend(enumeration::generate_enum(
             ctx,
             enum_type,
             enum_rust_name,
+            &enum_fqn,
             &features,
             &resolver,
         )?);

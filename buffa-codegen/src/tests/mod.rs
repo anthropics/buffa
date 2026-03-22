@@ -36,6 +36,7 @@ pub(super) fn make_field(name: &str, number: i32, label: Label, ty: Type) -> Fie
     }
 }
 
+mod comments;
 mod generation;
 mod json_codegen;
 mod naming;

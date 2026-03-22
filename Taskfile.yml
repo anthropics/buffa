@@ -433,7 +433,7 @@ tasks:
       Requires protoc on PATH.
     cmds:
       - >-
-        protoc --descriptor_set_out=/tmp/wkt.pb --include_imports
+        protoc --descriptor_set_out=/tmp/wkt.pb --include_imports --include_source_info
         -I buffa-types/protos
         google/protobuf/any.proto
         google/protobuf/duration.proto

@@ -66,7 +66,8 @@ pub fn generate_message(
         .iter()
         .map(|e| {
             let enum_name = e.name.as_deref().unwrap_or("");
-            crate::enumeration::generate_enum(ctx, e, enum_name, features, resolver)
+            let enum_fqn = format!("{}.{}", proto_fqn, enum_name);
+            crate::enumeration::generate_enum(ctx, e, enum_name, &enum_fqn, features, resolver)
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -262,13 +263,7 @@ pub fn generate_message(
         .iter()
         .map(|oneof| {
             crate::oneof::generate_oneof_enum(
-                ctx,
-                msg,
-                oneof,
-                current_package,
-                proto_fqn,
-                features,
-                resolver,
+                ctx, msg, oneof, current_package, proto_fqn, features, resolver,
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -399,7 +394,7 @@ pub fn generate_message(
     if let Some(id) = &any_entry_ident {
         any_entry_paths.push(quote! { #id });
     }
-    let non_map_nested: Vec<_> = msg
+    let non_map_nested: Vec<&DescriptorProto> = msg
         .nested_type
         .iter()
         .filter(|n| {
@@ -492,7 +487,10 @@ pub fn generate_message(
         }
     };
 
+    let message_doc = crate::comments::doc_attrs(ctx.comment(proto_fqn));
+
     let top_level = quote! {
+        #message_doc
         #[derive(Clone, PartialEq, #derive_default)]
         #serde_struct_derive
         #arbitrary_derive
@@ -1054,7 +1052,9 @@ fn generate_field(
     )?;
     let rust_name = make_field_ident(field_name);
 
-    let doc = format!("Field {field_number}: `{field_name}`");
+    let field_fqn = format!("{}.{}", proto_fqn, field_name);
+    let tag_line = format!("Field {field_number}: `{field_name}`");
+    let doc = crate::comments::doc_attrs_with_tag(ctx.comment(&field_fqn), &tag_line);
     let serde_attr = if ctx.config.generate_json {
         serde_field_attr(ctx, field, field_name, &info, features)
     } else {
@@ -1062,7 +1062,7 @@ fn generate_field(
     };
     let rust_type = &info.rust_type;
     let tokens = quote! {
-        #[doc = #doc]
+        #doc
         #serde_attr
         pub #rust_name: #rust_type,
     };

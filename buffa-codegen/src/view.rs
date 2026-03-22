@@ -91,7 +91,7 @@ pub fn generate_view(
         .field
         .iter()
         .filter(|f| is_supported_field_type(f.r#type.unwrap_or_default()))
-        .map(|f| view_struct_field(ctx, msg, f, current_package, features))
+        .map(|f| view_struct_field(ctx, msg, f, current_package, proto_fqn, features))
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .flatten()
@@ -162,7 +162,10 @@ pub fn generate_view(
         #(#oneof_view_enums)*
     };
 
+    let view_doc = crate::comments::doc_attrs(ctx.comment(proto_fqn));
+
     let top_level = quote! {
+        #view_doc
         #[derive(Clone, Debug, Default)]
         pub struct #view_ident<'a> {
             #(#direct_fields)*
@@ -292,6 +295,7 @@ fn view_struct_field(
     msg: &DescriptorProto,
     field: &FieldDescriptorProto,
     current_package: &str,
+    proto_fqn: &str,
     features: &ResolvedFeatures,
 ) -> Result<Option<TokenStream>, CodeGenError> {
     // Real oneof members go into the oneof enum, not directly on the struct.
@@ -305,21 +309,25 @@ fn view_struct_field(
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let label = field.label.unwrap_or_default();
     let is_repeated = label == Label::LABEL_REPEATED;
+    let field_fqn = format!("{}.{}", proto_fqn, field_name);
+    let proto_comment = ctx.comment(&field_fqn);
 
     if is_repeated && is_map_field(msg, field) {
         let ident = make_field_ident(field_name);
         let number = field.number.unwrap_or(0);
-        let doc = format!("Field {number}: `{field_name}` (map)");
+        let tag_line = format!("Field {number}: `{field_name}` (map)");
+        let doc = crate::comments::doc_attrs_with_tag(proto_comment, &tag_line);
         let map_ty = view_map_type(ctx, msg, field, current_package, features)?;
         return Ok(Some(quote! {
-            #[doc = #doc]
+            #doc
             pub #ident: #map_ty,
         }));
     }
 
     let ident = make_field_ident(field_name);
     let number = field.number.unwrap_or(0);
-    let doc = format!("Field {number}: `{field_name}`");
+    let tag_line = format!("Field {number}: `{field_name}`");
+    let doc = crate::comments::doc_attrs_with_tag(proto_comment, &tag_line);
 
     let rust_type = if is_repeated {
         view_repeated_type(ctx, field, current_package, features)?
@@ -328,7 +336,7 @@ fn view_struct_field(
     };
 
     Ok(Some(quote! {
-        #[doc = #doc]
+        #doc
         pub #ident: #rust_type,
     }))
 }

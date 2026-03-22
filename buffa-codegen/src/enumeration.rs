@@ -99,6 +99,7 @@ pub fn generate_enum(
     ctx: &CodeGenContext,
     enum_desc: &EnumDescriptorProto,
     rust_name: &str,
+    proto_fqn: &str,
     features: &ResolvedFeatures,
     _resolver: &crate::imports::ImportResolver,
 ) -> Result<TokenStream, CodeGenError> {
@@ -129,10 +130,13 @@ pub fn generate_enum(
             .number
             .ok_or(CodeGenError::MissingField("enum_value.number"))?;
         let variant_ident = crate::message::make_field_ident(value_name);
+        let value_fqn = format!("{}.{}", proto_fqn, value_name);
+        let variant_doc = crate::comments::doc_attrs(ctx.comment(&value_fqn));
 
         if let Some(&primary_name) = seen.get(&number) {
             let primary_ident = crate::message::make_field_ident(primary_name);
             alias_consts.push(quote! {
+                #variant_doc
                 #[allow(non_upper_case_globals)]
                 pub const #variant_ident: Self = Self::#primary_ident;
             });
@@ -148,7 +152,7 @@ pub fn generate_enum(
             if number == 0 && zero_variant.is_none() {
                 zero_variant = Some(variant_ident.clone());
             }
-            variants.push(quote! { #variant_ident = #number });
+            variants.push(quote! { #variant_doc #variant_ident = #number });
             from_i32_arms.push(quote! {
                 #number => ::core::option::Option::Some(Self::#variant_ident)
             });
@@ -202,7 +206,10 @@ pub fn generate_enum(
         quote! {}
     };
 
+    let enum_doc = crate::comments::doc_attrs(ctx.comment(proto_fqn));
+
     Ok(quote! {
+        #enum_doc
         #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
         #arbitrary_derive
         #[repr(i32)]
