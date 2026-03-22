@@ -4,10 +4,10 @@
 /// `FieldMask` represents a set of symbolic field paths, for example:
 ///
 /// ```text
-///     paths: "f.a"
-///     paths: "f.b.d"
-///
+/// paths: "f.a"
+/// paths: "f.b.d"
 /// ```
+///
 /// Here `f` represents a field in some root message, `a` and `b`
 /// fields in the message found in `f`, and `d` a field found in the
 /// message in `f.b`.
@@ -24,31 +24,31 @@
 /// example is applied to a response message as follows:
 ///
 /// ```text
-///     f {
-///       a : 22
-///       b {
-///         d : 1
-///         x : 2
-///       }
-///       y : 13
-///     }
-///     z: 8
-///
+/// f {
+///   a : 22
+///   b {
+///     d : 1
+///     x : 2
+///   }
+///   y : 13
+/// }
+/// z: 8
 /// ```
+///
 /// The result will not contain specific values for fields x,y and z
 /// (their value will be set to the default, and omitted in proto text
 /// output):
 ///
 ///
 /// ```text
-///     f {
-///       a : 22
-///       b {
-///         d : 1
-///       }
-///     }
-///
+/// f {
+///   a : 22
+///   b {
+///     d : 1
+///   }
+/// }
 /// ```
+///
 /// A repeated field is not allowed except at the last position of a
 /// paths string.
 ///
@@ -86,26 +86,26 @@
 /// For example, given the target message:
 ///
 /// ```text
-///     f {
-///       b {
-///         d: 1
-///         x: 2
-///       }
-///       c: [1]
-///     }
-///
+/// f {
+///   b {
+///     d: 1
+///     x: 2
+///   }
+///   c: [1]
+/// }
 /// ```
+///
 /// And an update message:
 ///
 /// ```text
-///     f {
-///       b {
-///         d: 10
-///       }
-///       c: [2]
-///     }
-///
+/// f {
+///   b {
+///     d: 10
+///   }
+///   c: [2]
+/// }
 /// ```
+///
 /// then if the field mask is:
 ///
 ///  paths: ["f.b", "f.c"]
@@ -113,15 +113,15 @@
 /// then the result will be:
 ///
 /// ```text
-///     f {
-///       b {
-///         d: 10
-///         x: 2
-///       }
-///       c: [1, 2]
-///     }
-///
+/// f {
+///   b {
+///     d: 10
+///     x: 2
+///   }
+///   c: [1, 2]
+/// }
 /// ```
+///
 /// An implementation may provide options to override this default behavior for
 /// repeated and message fields.
 ///
@@ -159,63 +159,63 @@
 /// As an example, consider the following message declarations:
 ///
 /// ```text
-///     message Profile {
-///       User user = 1;
-///       Photo photo = 2;
-///     }
-///     message User {
-///       string display_name = 1;
-///       string address = 2;
-///     }
-///
+/// message Profile {
+///   User user = 1;
+///   Photo photo = 2;
+/// }
+/// message User {
+///   string display_name = 1;
+///   string address = 2;
+/// }
 /// ```
+///
 /// In proto a field mask for `Profile` may look as such:
 ///
 /// ```text
-///     mask {
-///       paths: "user.display_name"
-///       paths: "photo"
-///     }
-///
+/// mask {
+///   paths: "user.display_name"
+///   paths: "photo"
+/// }
 /// ```
+///
 /// In JSON, the same mask is represented as below:
 ///
 /// ```text
-///     {
-///       mask: "user.displayName,photo"
-///     }
-///
+/// {
+///   mask: "user.displayName,photo"
+/// }
 /// ```
+///
 /// # Field Masks and Oneof Fields
 ///
 /// Field masks treat fields in oneofs just as regular fields. Consider the
 /// following message:
 ///
 /// ```text
-///     message SampleMessage {
-///       oneof test_oneof {
-///         string name = 4;
-///         SubMessage sub_message = 9;
-///       }
-///     }
-///
+/// message SampleMessage {
+///   oneof test_oneof {
+///     string name = 4;
+///     SubMessage sub_message = 9;
+///   }
+/// }
 /// ```
+///
 /// The field mask can be:
 ///
 /// ```text
-///     mask {
-///       paths: "name"
-///     }
-///
+/// mask {
+///   paths: "name"
+/// }
 /// ```
+///
 /// Or:
 ///
 /// ```text
-///     mask {
-///       paths: "sub_message"
-///     }
-///
+/// mask {
+///   paths: "sub_message"
+/// }
 /// ```
+///
 /// Note that oneof type names ("test_oneof" in this case) cannot be used in
 /// paths.
 ///
@@ -333,10 +333,10 @@ impl ::buffa::ExtensionSet for FieldMask {
 /// `FieldMask` represents a set of symbolic field paths, for example:
 ///
 /// ```text
-///     paths: "f.a"
-///     paths: "f.b.d"
-///
+/// paths: "f.a"
+/// paths: "f.b.d"
 /// ```
+///
 /// Here `f` represents a field in some root message, `a` and `b`
 /// fields in the message found in `f`, and `d` a field found in the
 /// message in `f.b`.
@@ -353,31 +353,31 @@ impl ::buffa::ExtensionSet for FieldMask {
 /// example is applied to a response message as follows:
 ///
 /// ```text
-///     f {
-///       a : 22
-///       b {
-///         d : 1
-///         x : 2
-///       }
-///       y : 13
-///     }
-///     z: 8
-///
+/// f {
+///   a : 22
+///   b {
+///     d : 1
+///     x : 2
+///   }
+///   y : 13
+/// }
+/// z: 8
 /// ```
+///
 /// The result will not contain specific values for fields x,y and z
 /// (their value will be set to the default, and omitted in proto text
 /// output):
 ///
 ///
 /// ```text
-///     f {
-///       a : 22
-///       b {
-///         d : 1
-///       }
-///     }
-///
+/// f {
+///   a : 22
+///   b {
+///     d : 1
+///   }
+/// }
 /// ```
+///
 /// A repeated field is not allowed except at the last position of a
 /// paths string.
 ///
@@ -415,26 +415,26 @@ impl ::buffa::ExtensionSet for FieldMask {
 /// For example, given the target message:
 ///
 /// ```text
-///     f {
-///       b {
-///         d: 1
-///         x: 2
-///       }
-///       c: [1]
-///     }
-///
+/// f {
+///   b {
+///     d: 1
+///     x: 2
+///   }
+///   c: [1]
+/// }
 /// ```
+///
 /// And an update message:
 ///
 /// ```text
-///     f {
-///       b {
-///         d: 10
-///       }
-///       c: [2]
-///     }
-///
+/// f {
+///   b {
+///     d: 10
+///   }
+///   c: [2]
+/// }
 /// ```
+///
 /// then if the field mask is:
 ///
 ///  paths: ["f.b", "f.c"]
@@ -442,15 +442,15 @@ impl ::buffa::ExtensionSet for FieldMask {
 /// then the result will be:
 ///
 /// ```text
-///     f {
-///       b {
-///         d: 10
-///         x: 2
-///       }
-///       c: [1, 2]
-///     }
-///
+/// f {
+///   b {
+///     d: 10
+///     x: 2
+///   }
+///   c: [1, 2]
+/// }
 /// ```
+///
 /// An implementation may provide options to override this default behavior for
 /// repeated and message fields.
 ///
@@ -488,63 +488,63 @@ impl ::buffa::ExtensionSet for FieldMask {
 /// As an example, consider the following message declarations:
 ///
 /// ```text
-///     message Profile {
-///       User user = 1;
-///       Photo photo = 2;
-///     }
-///     message User {
-///       string display_name = 1;
-///       string address = 2;
-///     }
-///
+/// message Profile {
+///   User user = 1;
+///   Photo photo = 2;
+/// }
+/// message User {
+///   string display_name = 1;
+///   string address = 2;
+/// }
 /// ```
+///
 /// In proto a field mask for `Profile` may look as such:
 ///
 /// ```text
-///     mask {
-///       paths: "user.display_name"
-///       paths: "photo"
-///     }
-///
+/// mask {
+///   paths: "user.display_name"
+///   paths: "photo"
+/// }
 /// ```
+///
 /// In JSON, the same mask is represented as below:
 ///
 /// ```text
-///     {
-///       mask: "user.displayName,photo"
-///     }
-///
+/// {
+///   mask: "user.displayName,photo"
+/// }
 /// ```
+///
 /// # Field Masks and Oneof Fields
 ///
 /// Field masks treat fields in oneofs just as regular fields. Consider the
 /// following message:
 ///
 /// ```text
-///     message SampleMessage {
-///       oneof test_oneof {
-///         string name = 4;
-///         SubMessage sub_message = 9;
-///       }
-///     }
-///
+/// message SampleMessage {
+///   oneof test_oneof {
+///     string name = 4;
+///     SubMessage sub_message = 9;
+///   }
+/// }
 /// ```
+///
 /// The field mask can be:
 ///
 /// ```text
-///     mask {
-///       paths: "name"
-///     }
-///
+/// mask {
+///   paths: "name"
+/// }
 /// ```
+///
 /// Or:
 ///
 /// ```text
-///     mask {
-///       paths: "sub_message"
-///     }
-///
+/// mask {
+///   paths: "sub_message"
+/// }
 /// ```
+///
 /// Note that oneof type names ("test_oneof" in this case) cannot be used in
 /// paths.
 ///

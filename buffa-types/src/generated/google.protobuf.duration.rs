@@ -13,49 +13,49 @@
 /// Example 1: Compute Duration from two Timestamps in pseudo code.
 ///
 /// ```text
-///     Timestamp start = ...;
-///     Timestamp end = ...;
-///     Duration duration = ...;
+/// Timestamp start = ...;
+/// Timestamp end = ...;
+/// Duration duration = ...;
 ///
-///     duration.seconds = end.seconds - start.seconds;
-///     duration.nanos = end.nanos - start.nanos;
+/// duration.seconds = end.seconds - start.seconds;
+/// duration.nanos = end.nanos - start.nanos;
 ///
-///     if (duration.seconds < 0 && duration.nanos > 0) {
-///       duration.seconds += 1;
-///       duration.nanos -= 1000000000;
-///     } else if (duration.seconds > 0 && duration.nanos < 0) {
-///       duration.seconds -= 1;
-///       duration.nanos += 1000000000;
-///     }
-///
+/// if (duration.seconds < 0 && duration.nanos > 0) {
+///   duration.seconds += 1;
+///   duration.nanos -= 1000000000;
+/// } else if (duration.seconds > 0 && duration.nanos < 0) {
+///   duration.seconds -= 1;
+///   duration.nanos += 1000000000;
+/// }
 /// ```
+///
 /// Example 2: Compute Timestamp from Timestamp + Duration in pseudo code.
 ///
 /// ```text
-///     Timestamp start = ...;
-///     Duration duration = ...;
-///     Timestamp end = ...;
+/// Timestamp start = ...;
+/// Duration duration = ...;
+/// Timestamp end = ...;
 ///
-///     end.seconds = start.seconds + duration.seconds;
-///     end.nanos = start.nanos + duration.nanos;
+/// end.seconds = start.seconds + duration.seconds;
+/// end.nanos = start.nanos + duration.nanos;
 ///
-///     if (end.nanos < 0) {
-///       end.seconds -= 1;
-///       end.nanos += 1000000000;
-///     } else if (end.nanos >= 1000000000) {
-///       end.seconds += 1;
-///       end.nanos -= 1000000000;
-///     }
-///
+/// if (end.nanos < 0) {
+///   end.seconds -= 1;
+///   end.nanos += 1000000000;
+/// } else if (end.nanos >= 1000000000) {
+///   end.seconds += 1;
+///   end.nanos -= 1000000000;
+/// }
 /// ```
+///
 /// Example 3: Compute Duration from datetime.timedelta in Python.
 ///
 /// ```text
-///     td = datetime.timedelta(days=3, minutes=10)
-///     duration = Duration()
-///     duration.FromTimedelta(td)
-///
+/// td = datetime.timedelta(days=3, minutes=10)
+/// duration = Duration()
+/// duration.FromTimedelta(td)
 /// ```
+///
 /// # JSON Mapping
 ///
 /// In JSON format, the Duration type is encoded as a string rather than an
@@ -213,49 +213,49 @@ impl ::buffa::ExtensionSet for Duration {
 /// Example 1: Compute Duration from two Timestamps in pseudo code.
 ///
 /// ```text
-///     Timestamp start = ...;
-///     Timestamp end = ...;
-///     Duration duration = ...;
+/// Timestamp start = ...;
+/// Timestamp end = ...;
+/// Duration duration = ...;
 ///
-///     duration.seconds = end.seconds - start.seconds;
-///     duration.nanos = end.nanos - start.nanos;
+/// duration.seconds = end.seconds - start.seconds;
+/// duration.nanos = end.nanos - start.nanos;
 ///
-///     if (duration.seconds < 0 && duration.nanos > 0) {
-///       duration.seconds += 1;
-///       duration.nanos -= 1000000000;
-///     } else if (duration.seconds > 0 && duration.nanos < 0) {
-///       duration.seconds -= 1;
-///       duration.nanos += 1000000000;
-///     }
-///
+/// if (duration.seconds < 0 && duration.nanos > 0) {
+///   duration.seconds += 1;
+///   duration.nanos -= 1000000000;
+/// } else if (duration.seconds > 0 && duration.nanos < 0) {
+///   duration.seconds -= 1;
+///   duration.nanos += 1000000000;
+/// }
 /// ```
+///
 /// Example 2: Compute Timestamp from Timestamp + Duration in pseudo code.
 ///
 /// ```text
-///     Timestamp start = ...;
-///     Duration duration = ...;
-///     Timestamp end = ...;
+/// Timestamp start = ...;
+/// Duration duration = ...;
+/// Timestamp end = ...;
 ///
-///     end.seconds = start.seconds + duration.seconds;
-///     end.nanos = start.nanos + duration.nanos;
+/// end.seconds = start.seconds + duration.seconds;
+/// end.nanos = start.nanos + duration.nanos;
 ///
-///     if (end.nanos < 0) {
-///       end.seconds -= 1;
-///       end.nanos += 1000000000;
-///     } else if (end.nanos >= 1000000000) {
-///       end.seconds += 1;
-///       end.nanos -= 1000000000;
-///     }
-///
+/// if (end.nanos < 0) {
+///   end.seconds -= 1;
+///   end.nanos += 1000000000;
+/// } else if (end.nanos >= 1000000000) {
+///   end.seconds += 1;
+///   end.nanos -= 1000000000;
+/// }
 /// ```
+///
 /// Example 3: Compute Duration from datetime.timedelta in Python.
 ///
 /// ```text
-///     td = datetime.timedelta(days=3, minutes=10)
-///     duration = Duration()
-///     duration.FromTimedelta(td)
-///
+/// td = datetime.timedelta(days=3, minutes=10)
+/// duration = Duration()
+/// duration.FromTimedelta(td)
 /// ```
+///
 /// # JSON Mapping
 ///
 /// In JSON format, the Duration type is encoded as a string rather than an

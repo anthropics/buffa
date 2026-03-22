@@ -210,18 +210,46 @@ fn doc_lines_to_tokens(text: &str) -> TokenStream {
     let mut lines: Vec<String> = Vec::with_capacity(raw_lines.len());
     let mut in_code_block = false;
 
-    for line in &raw_lines {
+    for (idx, line) in raw_lines.iter().enumerate() {
         let is_indented = line.starts_with("    ") || line.starts_with('\t');
 
         if is_indented && !in_code_block {
+            // Open a text fence before the first indented line.
             lines.push(" ```text".to_string());
             in_code_block = true;
-        } else if !is_indented && in_code_block && !line.is_empty() {
+        } else if in_code_block && !is_indented {
+            // Non-indented line (including empty) closes the code block,
+            // but only if there isn't another indented line coming next.
+            if line.is_empty() {
+                // Look ahead: if the next non-empty line is indented, keep
+                // the block open (it's a blank line within the example).
+                let next_is_indented = raw_lines[idx + 1..]
+                    .iter()
+                    .find(|l| !l.is_empty())
+                    .is_some_and(|l| l.starts_with("    ") || l.starts_with('\t'));
+                if next_is_indented {
+                    lines.push(String::new());
+                    continue;
+                }
+            }
             lines.push(" ```".to_string());
             in_code_block = false;
         }
 
-        if line.is_empty() {
+        if in_code_block {
+            // Strip the 4-space / tab indent since we're inside a fence.
+            let stripped = line
+                .strip_prefix("    ")
+                .or_else(|| line.strip_prefix('\t'))
+                .unwrap_or(line);
+            if stripped.is_empty() {
+                lines.push(String::new());
+            } else if stripped.starts_with(' ') {
+                lines.push(stripped.to_string());
+            } else {
+                lines.push(format!(" {stripped}"));
+            }
+        } else if line.is_empty() {
             lines.push(String::new());
         } else if line.starts_with(' ') {
             lines.push(line.to_string());

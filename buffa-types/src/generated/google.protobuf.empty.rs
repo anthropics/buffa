@@ -8,7 +8,7 @@
 /// type for RPCs defined as returning or accepting "nothing":
 ///
 /// ```text
-///     rpc Bar(google.protobuf.Empty) returns (google.protobuf.Empty);
+/// rpc Bar(google.protobuf.Empty) returns (google.protobuf.Empty);
 /// ```
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
@@ -97,7 +97,7 @@ impl ::buffa::ExtensionSet for Empty {
 /// type for RPCs defined as returning or accepting "nothing":
 ///
 /// ```text
-///     rpc Bar(google.protobuf.Empty) returns (google.protobuf.Empty);
+/// rpc Bar(google.protobuf.Empty) returns (google.protobuf.Empty);
 /// ```
 #[derive(Clone, Debug, Default)]
 pub struct EmptyView<'a> {
