@@ -7,7 +7,9 @@
 /// Example usage: gRPC uses google.protobuf.Empty as the input and output
 /// type for RPCs defined as returning or accepting "nothing":
 ///
+/// ```text
 ///     rpc Bar(google.protobuf.Empty) returns (google.protobuf.Empty);
+/// ```
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct Empty {
@@ -94,7 +96,9 @@ impl ::buffa::ExtensionSet for Empty {
 /// Example usage: gRPC uses google.protobuf.Empty as the input and output
 /// type for RPCs defined as returning or accepting "nothing":
 ///
+/// ```text
 ///     rpc Bar(google.protobuf.Empty) returns (google.protobuf.Empty);
+/// ```
 #[derive(Clone, Debug, Default)]
 pub struct EmptyView<'a> {
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,

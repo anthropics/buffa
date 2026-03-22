@@ -9,6 +9,7 @@
 ///
 /// Example 1: Pack and unpack a message in C++.
 ///
+/// ```text
 ///     Foo foo = ...;
 ///     Any any;
 ///     any.PackFrom(foo);
@@ -17,8 +18,10 @@
 ///       ...
 ///     }
 ///
+/// ```
 /// Example 2: Pack and unpack a message in Java.
 ///
+/// ```text
 ///     Foo foo = ...;
 ///     Any any = Any.pack(foo);
 ///     ...
@@ -30,8 +33,10 @@
 ///       foo = any.unpack(Foo.getDefaultInstance());
 ///     }
 ///
+/// ```
 ///  Example 3: Pack and unpack a message in Python.
 ///
+/// ```text
 ///     foo = Foo(...)
 ///     any = Any()
 ///     any.Pack(foo)
@@ -40,8 +45,10 @@
 ///       any.Unpack(foo)
 ///       ...
 ///
+/// ```
 ///  Example 4: Pack and unpack a message in Go
 ///
+/// ```text
 ///      foo := &pb.Foo{...}
 ///      any, err := anypb.New(foo)
 ///      if err != nil {
@@ -53,6 +60,7 @@
 ///        ...
 ///      }
 ///
+/// ```
 /// The pack methods provided by protobuf library will by default use
 /// 'type.googleapis.com/full.type.name' as the type URL and the unpack
 /// methods only use the fully qualified type name after the last '/'
@@ -65,6 +73,7 @@
 /// representation of the deserialized, embedded message, with an
 /// additional field `@type` which contains the type URL. Example:
 ///
+/// ```text
 ///     package google.profile;
 ///     message Person {
 ///       string first_name = 1;
@@ -77,15 +86,18 @@
 ///       "lastName": <string>
 ///     }
 ///
+/// ```
 /// If the embedded message type is well-known and has a custom JSON
 /// representation, that representation will be embedded adding a field
 /// `value` which holds the custom JSON in addition to the `@type`
 /// field. Example (for message [google.protobuf.Duration][]):
 ///
+/// ```text
 ///     {
 ///       "@type": "type.googleapis.com/google.protobuf.Duration",
 ///       "value": "1.212s"
 ///     }
+/// ```
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct Any {
@@ -256,6 +268,7 @@ impl ::buffa::ExtensionSet for Any {
 ///
 /// Example 1: Pack and unpack a message in C++.
 ///
+/// ```text
 ///     Foo foo = ...;
 ///     Any any;
 ///     any.PackFrom(foo);
@@ -264,8 +277,10 @@ impl ::buffa::ExtensionSet for Any {
 ///       ...
 ///     }
 ///
+/// ```
 /// Example 2: Pack and unpack a message in Java.
 ///
+/// ```text
 ///     Foo foo = ...;
 ///     Any any = Any.pack(foo);
 ///     ...
@@ -277,8 +292,10 @@ impl ::buffa::ExtensionSet for Any {
 ///       foo = any.unpack(Foo.getDefaultInstance());
 ///     }
 ///
+/// ```
 ///  Example 3: Pack and unpack a message in Python.
 ///
+/// ```text
 ///     foo = Foo(...)
 ///     any = Any()
 ///     any.Pack(foo)
@@ -287,8 +304,10 @@ impl ::buffa::ExtensionSet for Any {
 ///       any.Unpack(foo)
 ///       ...
 ///
+/// ```
 ///  Example 4: Pack and unpack a message in Go
 ///
+/// ```text
 ///      foo := &pb.Foo{...}
 ///      any, err := anypb.New(foo)
 ///      if err != nil {
@@ -300,6 +319,7 @@ impl ::buffa::ExtensionSet for Any {
 ///        ...
 ///      }
 ///
+/// ```
 /// The pack methods provided by protobuf library will by default use
 /// 'type.googleapis.com/full.type.name' as the type URL and the unpack
 /// methods only use the fully qualified type name after the last '/'
@@ -312,6 +332,7 @@ impl ::buffa::ExtensionSet for Any {
 /// representation of the deserialized, embedded message, with an
 /// additional field `@type` which contains the type URL. Example:
 ///
+/// ```text
 ///     package google.profile;
 ///     message Person {
 ///       string first_name = 1;
@@ -324,15 +345,18 @@ impl ::buffa::ExtensionSet for Any {
 ///       "lastName": <string>
 ///     }
 ///
+/// ```
 /// If the embedded message type is well-known and has a custom JSON
 /// representation, that representation will be embedded adding a field
 /// `value` which holds the custom JSON in addition to the `@type`
 /// field. Example (for message [google.protobuf.Duration][]):
 ///
+/// ```text
 ///     {
 ///       "@type": "type.googleapis.com/google.protobuf.Duration",
 ///       "value": "1.212s"
 ///     }
+/// ```
 #[derive(Clone, Debug, Default)]
 pub struct AnyView<'a> {
     /// A URL/resource name that uniquely identifies the type of the serialized

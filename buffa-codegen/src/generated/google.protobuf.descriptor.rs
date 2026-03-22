@@ -4686,8 +4686,10 @@ pub struct MessageOptions {
     ///
     /// The message must be defined exactly as follows:
     ///   message Foo {
+    /// ```text
     ///     option message_set_wire_format = true;
     ///     extensions 4 to max;
+    /// ```
     ///   }
     /// Note that the message cannot have any defined fields; MessageSets only
     /// have extensions.
@@ -4717,8 +4719,11 @@ pub struct MessageOptions {
     /// maps field.
     ///
     /// For maps fields:
+    /// ```text
     ///     map<KeyType, ValueType> map_field = 1;
+    /// ```
     /// The parsed descriptor looks like:
+    /// ```text
     ///     message MapFieldEntry {
     ///         option map_entry = true;
     ///         optional KeyType key = 1;
@@ -4726,6 +4731,7 @@ pub struct MessageOptions {
     ///     }
     ///     repeated MapFieldEntry map_field = 1;
     ///
+    /// ```
     /// Implementations may choose not to generate the map_entry=true message, but
     /// use a native map in the target language to hold the keys and values.
     /// The reflection APIs in such implementations still need to work as
@@ -8937,7 +8943,9 @@ pub struct SourceCodeInfo {
     ///
     /// For example, say we have a file like:
     ///   message Foo {
+    /// ```text
     ///     optional string foo = 1;
+    /// ```
     ///   }
     /// Let's look at just the field definition:
     ///   optional string foo = 1;
@@ -9095,8 +9103,10 @@ pub mod source_code_info {
         ///   [ 4, 3, 2, 7, 1 ]
         /// refers to:
         ///   file.message_type(3)  // 4, 3
+        /// ```text
         ///       .field(7)         // 2, 7
         ///       .name()           // 1
+        /// ```
         /// This is because FileDescriptorProto.message_type has field number 4:
         ///   repeated DescriptorProto message_type = 4;
         /// and DescriptorProto.field has field number 2:
@@ -9160,10 +9170,14 @@ pub mod source_code_info {
         ///
         ///   optional string corge = 5;
         ///   /* Block comment attached
+        /// ```text
         ///    * to corge.  Leading asterisks
         ///    * will be removed. */
+        /// ```
         ///   /* Block comment attached to
+        /// ```text
         ///    * grault. */
+        /// ```
         ///   optional int32 grault = 6;
         ///
         ///   // ignored detached comments.

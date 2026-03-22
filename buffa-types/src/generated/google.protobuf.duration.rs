@@ -12,6 +12,7 @@
 ///
 /// Example 1: Compute Duration from two Timestamps in pseudo code.
 ///
+/// ```text
 ///     Timestamp start = ...;
 ///     Timestamp end = ...;
 ///     Duration duration = ...;
@@ -27,8 +28,10 @@
 ///       duration.nanos += 1000000000;
 ///     }
 ///
+/// ```
 /// Example 2: Compute Timestamp from Timestamp + Duration in pseudo code.
 ///
+/// ```text
 ///     Timestamp start = ...;
 ///     Duration duration = ...;
 ///     Timestamp end = ...;
@@ -44,12 +47,15 @@
 ///       end.nanos -= 1000000000;
 ///     }
 ///
+/// ```
 /// Example 3: Compute Duration from datetime.timedelta in Python.
 ///
+/// ```text
 ///     td = datetime.timedelta(days=3, minutes=10)
 ///     duration = Duration()
 ///     duration.FromTimedelta(td)
 ///
+/// ```
 /// # JSON Mapping
 ///
 /// In JSON format, the Duration type is encoded as a string rather than an
@@ -206,6 +212,7 @@ impl ::buffa::ExtensionSet for Duration {
 ///
 /// Example 1: Compute Duration from two Timestamps in pseudo code.
 ///
+/// ```text
 ///     Timestamp start = ...;
 ///     Timestamp end = ...;
 ///     Duration duration = ...;
@@ -221,8 +228,10 @@ impl ::buffa::ExtensionSet for Duration {
 ///       duration.nanos += 1000000000;
 ///     }
 ///
+/// ```
 /// Example 2: Compute Timestamp from Timestamp + Duration in pseudo code.
 ///
+/// ```text
 ///     Timestamp start = ...;
 ///     Duration duration = ...;
 ///     Timestamp end = ...;
@@ -238,12 +247,15 @@ impl ::buffa::ExtensionSet for Duration {
 ///       end.nanos -= 1000000000;
 ///     }
 ///
+/// ```
 /// Example 3: Compute Duration from datetime.timedelta in Python.
 ///
+/// ```text
 ///     td = datetime.timedelta(days=3, minutes=10)
 ///     duration = Duration()
 ///     duration.FromTimedelta(td)
 ///
+/// ```
 /// # JSON Mapping
 ///
 /// In JSON format, the Duration type is encoded as a string rather than an

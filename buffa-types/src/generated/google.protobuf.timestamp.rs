@@ -19,12 +19,15 @@
 ///
 /// Example 1: Compute Timestamp from POSIX `time()`.
 ///
+/// ```text
 ///     Timestamp timestamp;
 ///     timestamp.set_seconds(time(NULL));
 ///     timestamp.set_nanos(0);
 ///
+/// ```
 /// Example 2: Compute Timestamp from POSIX `gettimeofday()`.
 ///
+/// ```text
 ///     struct timeval tv;
 ///     gettimeofday(&tv, NULL);
 ///
@@ -32,8 +35,10 @@
 ///     timestamp.set_seconds(tv.tv_sec);
 ///     timestamp.set_nanos(tv.tv_usec * 1000);
 ///
+/// ```
 /// Example 3: Compute Timestamp from Win32 `GetSystemTimeAsFileTime()`.
 ///
+/// ```text
 ///     FILETIME ft;
 ///     GetSystemTimeAsFileTime(&ft);
 ///     UINT64 ticks = (((UINT64)ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
@@ -44,26 +49,33 @@
 ///     timestamp.set_seconds((INT64) ((ticks / 10000000) - 11644473600LL));
 ///     timestamp.set_nanos((INT32) ((ticks % 10000000) * 100));
 ///
+/// ```
 /// Example 4: Compute Timestamp from Java `System.currentTimeMillis()`.
 ///
+/// ```text
 ///     long millis = System.currentTimeMillis();
 ///
 ///     Timestamp timestamp = Timestamp.newBuilder().setSeconds(millis / 1000)
 ///         .setNanos((int) ((millis % 1000) * 1000000)).build();
 ///
+/// ```
 /// Example 5: Compute Timestamp from Java `Instant.now()`.
 ///
+/// ```text
 ///     Instant now = Instant.now();
 ///
 ///     Timestamp timestamp =
 ///         Timestamp.newBuilder().setSeconds(now.getEpochSecond())
 ///             .setNanos(now.getNano()).build();
 ///
+/// ```
 /// Example 6: Compute Timestamp from current time in Python.
 ///
+/// ```text
 ///     timestamp = Timestamp()
 ///     timestamp.GetCurrentTime()
 ///
+/// ```
 /// # JSON Mapping
 ///
 /// In JSON format, the Timestamp type is encoded as a string in the
@@ -242,12 +254,15 @@ impl ::buffa::ExtensionSet for Timestamp {
 ///
 /// Example 1: Compute Timestamp from POSIX `time()`.
 ///
+/// ```text
 ///     Timestamp timestamp;
 ///     timestamp.set_seconds(time(NULL));
 ///     timestamp.set_nanos(0);
 ///
+/// ```
 /// Example 2: Compute Timestamp from POSIX `gettimeofday()`.
 ///
+/// ```text
 ///     struct timeval tv;
 ///     gettimeofday(&tv, NULL);
 ///
@@ -255,8 +270,10 @@ impl ::buffa::ExtensionSet for Timestamp {
 ///     timestamp.set_seconds(tv.tv_sec);
 ///     timestamp.set_nanos(tv.tv_usec * 1000);
 ///
+/// ```
 /// Example 3: Compute Timestamp from Win32 `GetSystemTimeAsFileTime()`.
 ///
+/// ```text
 ///     FILETIME ft;
 ///     GetSystemTimeAsFileTime(&ft);
 ///     UINT64 ticks = (((UINT64)ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
@@ -267,26 +284,33 @@ impl ::buffa::ExtensionSet for Timestamp {
 ///     timestamp.set_seconds((INT64) ((ticks / 10000000) - 11644473600LL));
 ///     timestamp.set_nanos((INT32) ((ticks % 10000000) * 100));
 ///
+/// ```
 /// Example 4: Compute Timestamp from Java `System.currentTimeMillis()`.
 ///
+/// ```text
 ///     long millis = System.currentTimeMillis();
 ///
 ///     Timestamp timestamp = Timestamp.newBuilder().setSeconds(millis / 1000)
 ///         .setNanos((int) ((millis % 1000) * 1000000)).build();
 ///
+/// ```
 /// Example 5: Compute Timestamp from Java `Instant.now()`.
 ///
+/// ```text
 ///     Instant now = Instant.now();
 ///
 ///     Timestamp timestamp =
 ///         Timestamp.newBuilder().setSeconds(now.getEpochSecond())
 ///             .setNanos(now.getNano()).build();
 ///
+/// ```
 /// Example 6: Compute Timestamp from current time in Python.
 ///
+/// ```text
 ///     timestamp = Timestamp()
 ///     timestamp.GetCurrentTime()
 ///
+/// ```
 /// # JSON Mapping
 ///
 /// In JSON format, the Timestamp type is encoded as a string in the

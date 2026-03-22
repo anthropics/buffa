@@ -200,19 +200,40 @@ pub fn doc_attrs_with_tag(comment: Option<&str>, tag: &str) -> TokenStream {
 /// Convert text into `#[doc = " ..."]` tokens, ensuring each non-empty line
 /// has a leading space so that `prettyplease` renders `/// text` instead of
 /// `///text`.
+///
+/// Indented code blocks (4+ spaces) from proto source comments contain
+/// C++/Java/Python examples, not Rust. We wrap them in ```` ```text ````
+/// fences so rustdoc renders them as plain text instead of trying to
+/// compile them as Rust doc tests.
 fn doc_lines_to_tokens(text: &str) -> TokenStream {
-    let lines: Vec<String> = text
-        .lines()
-        .map(|line| {
-            if line.is_empty() {
-                String::new()
-            } else if line.starts_with(' ') {
-                line.to_string()
-            } else {
-                format!(" {line}")
-            }
-        })
-        .collect();
+    let raw_lines: Vec<&str> = text.lines().collect();
+    let mut lines: Vec<String> = Vec::with_capacity(raw_lines.len());
+    let mut in_code_block = false;
+
+    for line in &raw_lines {
+        let is_indented = line.starts_with("    ") || line.starts_with('\t');
+
+        if is_indented && !in_code_block {
+            lines.push(" ```text".to_string());
+            in_code_block = true;
+        } else if !is_indented && in_code_block && !line.is_empty() {
+            lines.push(" ```".to_string());
+            in_code_block = false;
+        }
+
+        if line.is_empty() {
+            lines.push(String::new());
+        } else if line.starts_with(' ') {
+            lines.push(line.to_string());
+        } else {
+            lines.push(format!(" {line}"));
+        }
+    }
+
+    if in_code_block {
+        lines.push(" ```".to_string());
+    }
+
     quote! {
         #( #[doc = #lines] )*
     }
