@@ -519,6 +519,7 @@ fn invoke_protoc(
 
     let mut cmd = Command::new(&protoc);
     cmd.arg("--include_imports");
+    cmd.arg("--include_source_info");
     cmd.arg(format!(
         "--descriptor_set_out={}",
         descriptor_path.display()

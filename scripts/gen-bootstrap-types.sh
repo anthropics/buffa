@@ -36,7 +36,7 @@ echo "protoc: $PROTOC ($ver_str)"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 DESC=/tmp/buffa-descriptor-set.pb
-"$PROTOC" --descriptor_set_out="$DESC" --include_imports \
+"$PROTOC" --descriptor_set_out="$DESC" --include_imports --include_source_info \
     -I "$ROOT/buffa-codegen/protos" \
     google/protobuf/descriptor.proto \
     google/protobuf/compiler/plugin.proto

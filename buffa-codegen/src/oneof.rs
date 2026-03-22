@@ -233,7 +233,11 @@ pub fn generate_oneof_enum(
         quote! {}
     };
 
+    let oneof_fqn = format!("{}.{}", proto_fqn, oneof_name);
+    let oneof_doc = crate::comments::doc_attrs(ctx.comment(&oneof_fqn));
+
     Ok(quote! {
+        #oneof_doc
         #[derive(Clone, PartialEq, Debug)]
         #arbitrary_derive
         pub enum #rust_enum_ident {

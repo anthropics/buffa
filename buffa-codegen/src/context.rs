@@ -36,6 +36,19 @@ pub struct CodeGenContext<'a> {
     /// enum-level `enum_type` into field options (verified 2026-03), so
     /// callers must look this up via `is_enum_closed`.
     enum_closedness: HashMap<String, bool>,
+    /// Map from fully-qualified protobuf element name to its source comment.
+    ///
+    /// Keys use dotted FQN form without a leading dot, matching the `proto_fqn`
+    /// values already threaded through codegen: `"pkg.Message"`,
+    /// `"pkg.Message.field_name"`, `"pkg.Enum.VALUE_NAME"`,
+    /// `"pkg.Message.oneof_name"`.
+    ///
+    /// Built by walking each file's descriptor tree alongside its
+    /// `SourceCodeInfo` (which uses index-based paths). This up-front
+    /// translation means codegen call sites can look up comments by the
+    /// proto FQN they already have, rather than threading index-based paths
+    /// through every function signature.
+    comment_map: HashMap<String, String>,
 }
 
 impl<'a> CodeGenContext<'a> {
@@ -52,8 +65,10 @@ impl<'a> CodeGenContext<'a> {
         let mut type_map = HashMap::new();
         let mut package_of = HashMap::new();
         let mut enum_closedness = HashMap::new();
+        let mut comment_map = HashMap::new();
 
         for file in files {
+            comment_map.extend(crate::comments::fqn_comments(file));
             let package = file.package.as_deref().unwrap_or("");
             let file_features = features::for_file(file);
             let proto_prefix = if package.is_empty() {
@@ -129,6 +144,7 @@ impl<'a> CodeGenContext<'a> {
             type_map,
             package_of,
             enum_closedness,
+            comment_map,
         }
     }
 
@@ -155,6 +171,18 @@ impl<'a> CodeGenContext<'a> {
     /// Look up the Rust type path for a fully-qualified protobuf type name.
     pub fn rust_type(&self, proto_fqn: &str) -> Option<&str> {
         self.type_map.get(proto_fqn).map(|s| s.as_str())
+    }
+
+    /// Look up the source comment for a protobuf element by FQN.
+    ///
+    /// `fqn` uses the same dotted form as `proto_fqn` throughout codegen
+    /// (no leading dot). For sub-elements, append the element name:
+    /// - Message: `"pkg.Message"`
+    /// - Field: `"pkg.Message.field_name"`
+    /// - Enum value: `"pkg.Enum.VALUE_NAME"`
+    /// - Oneof: `"pkg.Message.oneof_name"`
+    pub fn comment(&self, fqn: &str) -> Option<&str> {
+        self.comment_map.get(fqn).map(|s| s.as_str())
     }
 
     /// Look up whether an enum (by fully-qualified proto name) is closed.
