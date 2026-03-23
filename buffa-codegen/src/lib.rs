@@ -27,7 +27,7 @@ pub(crate) mod enumeration;
 pub(crate) mod extension;
 pub(crate) mod features;
 #[doc(hidden)]
-pub mod generated;
+pub use buffa_descriptor::generated;
 pub mod idents;
 pub(crate) mod impl_message;
 pub(crate) mod imports;

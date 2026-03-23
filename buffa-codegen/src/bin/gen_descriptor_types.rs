@@ -3,16 +3,17 @@
 //! This is the bootstrap step: it reads a binary FileDescriptorSet (produced
 //! by `protoc --descriptor_set_out --include_imports`) and generates Rust
 //! source using buffa-codegen.  The output is checked into the repo at
-//! `buffa-codegen/src/generated/`.
+//! `buffa-descriptor/src/generated/`.
 //!
 //! Usage:
 //!
 //! ```text
 //!   protoc --descriptor_set_out=descriptor_set.pb --include_imports \
-//!       -I <protobuf-src>/src \
+//!       -I buffa-descriptor/protos \
 //!       google/protobuf/descriptor.proto \
 //!       google/protobuf/compiler/plugin.proto
-//!   cargo run --bin gen_descriptor_types -- descriptor_set.pb
+//!   cargo run -p buffa-codegen --bin gen_descriptor_types -- \
+//!       descriptor_set.pb buffa-descriptor/src/generated
 //! ```
 
 use buffa::Message;
@@ -21,8 +22,8 @@ use std::fs;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 2 {
-        eprintln!("Usage: gen_descriptor_types <descriptor_set.pb>");
+    if args.len() != 3 {
+        eprintln!("Usage: gen_descriptor_types <descriptor_set.pb> <output_dir>");
         std::process::exit(1);
     }
 
@@ -49,7 +50,7 @@ fn main() {
     let generated = buffa_codegen::generate(&descriptor_set.file, &files_to_generate, &config)
         .expect("code generation failed");
 
-    let out_dir = std::path::Path::new("src/generated");
+    let out_dir = std::path::Path::new(&args[2]);
     fs::create_dir_all(out_dir).expect("failed to create output dir");
 
     for file in &generated {

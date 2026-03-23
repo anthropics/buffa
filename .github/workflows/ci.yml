@@ -98,6 +98,9 @@ jobs:
       - name: Check buffa-types no_std
         run: cargo check -p buffa-types --no-default-features
 
+      - name: Check buffa-descriptor no_std
+        run: cargo check -p buffa-descriptor --no-default-features
+
       - name: Check workspace 32-bit
         run: cargo check --workspace --target i686-unknown-linux-gnu
 
@@ -118,7 +121,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Regenerate bootstrap descriptor types
-        # Proto sources are vendored in buffa-codegen/protos/ (pinned),
+        # Proto sources are vendored in buffa-descriptor/protos/ (pinned),
         # so this is independent of the installed protoc's bundled includes.
         run: scripts/gen-bootstrap-types.sh
 
@@ -143,7 +146,7 @@ jobs:
 
       - name: Check for differences
         run: |
-          if ! git diff --exit-code buffa-codegen/src/generated/ buffa-types/src/generated/; then
+          if ! git diff --exit-code buffa-descriptor/src/generated/ buffa-types/src/generated/; then
             echo "::error::Checked-in generated code is stale. Run 'task gen-wkt-types' and/or regenerate bootstrap types, then commit."
             exit 1
           fi

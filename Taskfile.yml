@@ -385,23 +385,23 @@ tasks:
   # ── Checked-in generated code ─────────────────────────────────────────
   #
   # Two sets of generated code are checked into the repo:
-  #   - buffa-codegen/src/generated/  (bootstrap descriptor types)
+  #   - buffa-descriptor/src/generated/  (bootstrap descriptor types)
   #   - buffa-types/src/generated/    (well-known types)
   # CI (check-generated-code) fails if either is stale.
 
   gen-bootstrap-types:
     desc: >-
-      Regenerate buffa-codegen/src/generated/ (descriptor.proto + plugin.proto
+      Regenerate buffa-descriptor/src/generated/ (descriptor.proto + plugin.proto
       types used by codegen itself to parse descriptors). Only needed when a
       codegen change affects the descriptor types themselves — most codegen
-      changes don't. Proto sources are vendored in buffa-codegen/protos/;
+      changes don't. Proto sources are vendored in buffa-descriptor/protos/;
       only a protoc binary (v27+) is required.
     cmds:
       - scripts/gen-bootstrap-types.sh
 
   vendor-bootstrap-protos:
     desc: >-
-      Re-fetch buffa-codegen/protos/ from the protobuf release matching
+      Re-fetch buffa-descriptor/protos/ from the protobuf release matching
       TOOLS_IMAGE. Run this when bumping the protobuf version, then follow
       with `task gen-bootstrap-types` and commit both. Uses gh (authenticated
       API) rather than raw curl to avoid GitHub's anonymous rate limit.
@@ -416,15 +416,15 @@ tasks:
           gh CLI must be authenticated. Run: gh auth login
     cmds:
       - echo "Vendoring descriptor.proto + plugin.proto from protobuf v{{.PROTO_VER}}"
-      - mkdir -p buffa-codegen/protos/google/protobuf/compiler
+      - mkdir -p buffa-descriptor/protos/google/protobuf/compiler
       - >-
         {{.GH_RAW}} '{{.SRC}}/descriptor.proto?ref=v{{.PROTO_VER}}'
-        > buffa-codegen/protos/google/protobuf/descriptor.proto
+        > buffa-descriptor/protos/google/protobuf/descriptor.proto
       - >-
         {{.GH_RAW}} '{{.SRC}}/compiler/plugin.proto?ref=v{{.PROTO_VER}}'
-        > buffa-codegen/protos/google/protobuf/compiler/plugin.proto
-      - wc -l buffa-codegen/protos/google/protobuf/descriptor.proto
-          buffa-codegen/protos/google/protobuf/compiler/plugin.proto
+        > buffa-descriptor/protos/google/protobuf/compiler/plugin.proto
+      - wc -l buffa-descriptor/protos/google/protobuf/descriptor.proto
+          buffa-descriptor/protos/google/protobuf/compiler/plugin.proto
 
   gen-wkt-types:
     desc: >-

@@ -69,17 +69,17 @@ docker run --rm -v /tmp/conf:/out -e CONFORMANCE_OUT=/out buffa-conformance
 
 ```bash
 task tools-image               # rebuild and push the multi-arch tools image
-task vendor-bootstrap-protos   # re-fetch buffa-codegen/protos/ from the new release tag
+task vendor-bootstrap-protos   # re-fetch buffa-descriptor/protos/ from the new release tag
 task gen-bootstrap-types       # regenerate checked-in descriptor types
 ```
 
-Commit the refreshed `buffa-codegen/protos/` and `buffa-codegen/src/generated/` alongside the version bump.
+Commit the refreshed `buffa-descriptor/protos/` and `buffa-descriptor/src/generated/` alongside the version bump.
 
 ## Checked-In Generated Code
 
 Three sets of generated code are checked into the repo and **must be regenerated** whenever codegen output changes (e.g. changes to `imports.rs`, `message.rs`, `oneof.rs`, etc.):
 
-1. **Bootstrap descriptor types** (`buffa-codegen/src/generated/`): Used by codegen itself to parse `.proto` descriptors. Regenerate with `task gen-bootstrap-types`. The source protos are vendored in `buffa-codegen/protos/` (pinned; refresh with `task vendor-bootstrap-protos` when bumping the protobuf version), so output is independent of your local protoc's bundled includes — only a protoc binary ≥ v27 is needed. Only needs regeneration when a codegen change affects the descriptor types themselves — most changes don't.
+1. **Bootstrap descriptor types** (`buffa-descriptor/src/generated/`): Used by codegen itself to parse `.proto` descriptors. Regenerate with `task gen-bootstrap-types`. The source protos are vendored in `buffa-descriptor/protos/` (pinned; refresh with `task vendor-bootstrap-protos` when bumping the protobuf version), so output is independent of your local protoc's bundled includes — only a protoc binary ≥ v27 is needed. Only needs regeneration when a codegen change affects the descriptor types themselves — most changes don't.
 
 2. **Well-known types** (`buffa-types/src/generated/`): `Timestamp`, `Duration`, `Any`, `Struct`/`Value`, `FieldMask`, `Empty`, wrappers. Checked in (rather than generated at build time) so that consumers of `buffa-types` don't need `protoc` or the `buffa-build`/`buffa-codegen` toolchain. Regenerate with `task gen-wkt-types`. The WKT `.proto` sources are vendored in `buffa-types/protos/` (not read from the protoc installation) so the output is pinned. **This is the one most likely to need regeneration** — WKTs use views, unknown-field preservation, and the `arbitrary` derive, so almost any codegen output-format change touches them. If in doubt, run it and check `git status`.
 

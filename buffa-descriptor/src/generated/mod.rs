@@ -1,19 +1,12 @@
-//! Generated protobuf descriptor types for bootstrapping.
+//! Generated protobuf descriptor types.
 //!
 //! These types are generated from `google/protobuf/descriptor.proto` and
 //! `google/protobuf/compiler/plugin.proto` using buffa-codegen itself.
-//! This makes buffa-codegen fully self-hosted — no external protobuf
-//! library is needed to decode protoc's `CodeGeneratorRequest` — and gives
-//! direct access to edition features (`FeatureSet`, `Edition`, etc.).
+//! This makes buffa fully self-hosted — no external protobuf library is
+//! needed to decode descriptors — and gives direct access to edition
+//! features (`FeatureSet`, `Edition`, etc.).
 //!
-//! To regenerate:
-//! ```sh
-//! protoc --descriptor_set_out=/tmp/descriptor_set.pb --include_imports \
-//!     -I <protobuf-src>/src \
-//!     google/protobuf/descriptor.proto \
-//!     google/protobuf/compiler/plugin.proto
-//! cargo run --bin gen_descriptor_types -- /tmp/descriptor_set.pb
-//! ```
+//! To regenerate, run `task gen-bootstrap-types` from the repo root.
 
 #[allow(
     clippy::all,
