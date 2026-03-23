@@ -4,9 +4,9 @@
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct Duration {
-    ///Field 1: `seconds`
+    /// Field 1: `seconds`
     pub seconds: i64,
-    ///Field 2: `nanos`
+    /// Field 2: `nanos`
     pub nanos: i32,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -128,9 +128,9 @@ impl ::buffa::ExtensionSet for Duration {
 }
 #[derive(Clone, Debug, Default)]
 pub struct DurationView<'a> {
-    ///Field 1: `seconds`
+    /// Field 1: `seconds`
     pub seconds: i64,
-    ///Field 2: `nanos`
+    /// Field 2: `nanos`
     pub nanos: i32,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }

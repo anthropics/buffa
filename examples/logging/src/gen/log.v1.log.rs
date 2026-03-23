@@ -57,17 +57,17 @@ impl ::buffa::Enumeration for Severity {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct LogEntry {
-    ///Field 1: `timestamp`
+    /// Field 1: `timestamp`
     pub timestamp: ::buffa::MessageField<::buffa_types::google::protobuf::Timestamp>,
-    ///Field 2: `severity`
+    /// Field 2: `severity`
     pub severity: ::buffa::EnumValue<Severity>,
-    ///Field 3: `message`
+    /// Field 3: `message`
     pub message: ::buffa::alloc::string::String,
-    ///Field 4: `logger`
+    /// Field 4: `logger`
     pub logger: ::buffa::alloc::string::String,
-    ///Field 5: `context`
+    /// Field 5: `context`
     pub context: ::buffa::MessageField<super::super::context::v1::RequestContext>,
-    ///Field 6: `fields`
+    /// Field 6: `fields`
     pub fields: ::buffa::__private::HashMap<
         ::buffa::alloc::string::String,
         ::buffa::alloc::string::String,
@@ -371,9 +371,18 @@ impl ::buffa::Message for LogEntry {
         self.__buffa_cached_size.set(0);
     }
 }
+impl ::buffa::ExtensionSet for LogEntry {
+    const PROTO_FQN: &'static str = "buffa.examples.log.v1.LogEntry";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
 #[derive(Clone, PartialEq, Default)]
 pub struct LogBatch {
-    ///Field 1: `entries`
+    /// Field 1: `entries`
     pub entries: ::buffa::alloc::vec::Vec<LogEntry>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -469,5 +478,14 @@ impl ::buffa::Message for LogBatch {
         self.entries.clear();
         self.__buffa_unknown_fields.clear();
         self.__buffa_cached_size.set(0);
+    }
+}
+impl ::buffa::ExtensionSet for LogBatch {
+    const PROTO_FQN: &'static str = "buffa.examples.log.v1.LogBatch";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
     }
 }

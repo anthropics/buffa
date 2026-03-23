@@ -37,7 +37,7 @@ impl ::buffa::Enumeration for NullValue {
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct Struct {
-    ///Field 1: `fields`
+    /// Field 1: `fields`
     pub fields: ::buffa::__private::HashMap<::buffa::alloc::string::String, Value>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -224,7 +224,7 @@ impl ::buffa::ExtensionSet for Struct {
 }
 #[derive(Clone, Debug, Default)]
 pub struct StructView<'a> {
-    ///Field 1: `fields` (map)
+    /// Field 1: `fields` (map)
     pub fields: ::buffa::MapView<'a, &'a str, ValueView<'a>>,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
@@ -899,7 +899,7 @@ pub mod value {
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct ListValue {
-    ///Field 1: `values`
+    /// Field 1: `values`
     pub values: ::buffa::alloc::vec::Vec<Value>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1008,7 +1008,7 @@ impl ::buffa::ExtensionSet for ListValue {
 }
 #[derive(Clone, Debug, Default)]
 pub struct ListValueView<'a> {
-    ///Field 1: `values`
+    /// Field 1: `values`
     pub values: ::buffa::RepeatedView<'a, ValueView<'a>>,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }

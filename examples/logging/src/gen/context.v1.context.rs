@@ -3,15 +3,15 @@
 
 #[derive(Clone, PartialEq, Default)]
 pub struct RequestContext {
-    ///Field 1: `request_id`
+    /// Field 1: `request_id`
     pub request_id: ::buffa::alloc::string::String,
-    ///Field 2: `user_id`
+    /// Field 2: `user_id`
     pub user_id: ::buffa::alloc::string::String,
-    ///Field 3: `method`
+    /// Field 3: `method`
     pub method: ::buffa::alloc::string::String,
-    ///Field 4: `path`
+    /// Field 4: `path`
     pub path: ::buffa::alloc::string::String,
-    ///Field 5: `metadata`
+    /// Field 5: `metadata`
     pub metadata: ::buffa::__private::HashMap<
         ::buffa::alloc::string::String,
         ::buffa::alloc::string::String,
@@ -269,5 +269,14 @@ impl ::buffa::Message for RequestContext {
         self.metadata.clear();
         self.__buffa_unknown_fields.clear();
         self.__buffa_cached_size.set(0);
+    }
+}
+impl ::buffa::ExtensionSet for RequestContext {
+    const PROTO_FQN: &'static str = "buffa.examples.context.v1.RequestContext";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
     }
 }

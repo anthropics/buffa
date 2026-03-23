@@ -4,9 +4,9 @@
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct Any {
-    ///Field 1: `type_url`
+    /// Field 1: `type_url`
     pub type_url: ::buffa::alloc::string::String,
-    ///Field 2: `value`
+    /// Field 2: `value`
     pub value: ::buffa::alloc::vec::Vec<u8>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -134,9 +134,9 @@ impl ::buffa::ExtensionSet for Any {
 }
 #[derive(Clone, Debug, Default)]
 pub struct AnyView<'a> {
-    ///Field 1: `type_url`
+    /// Field 1: `type_url`
     pub type_url: &'a str,
-    ///Field 2: `value`
+    /// Field 2: `value`
     pub value: &'a [u8],
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }

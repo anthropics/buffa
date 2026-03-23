@@ -133,7 +133,7 @@ impl ::buffa::Enumeration for SymbolVisibility {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct FileDescriptorSet {
-    ///Field 1: `file`
+    /// Field 1: `file`
     pub file: ::buffa::alloc::vec::Vec<FileDescriptorProto>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -245,33 +245,33 @@ impl ::buffa::ExtensionSet for FileDescriptorSet {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct FileDescriptorProto {
-    ///Field 1: `name`
+    /// Field 1: `name`
     pub name: Option<::buffa::alloc::string::String>,
-    ///Field 2: `package`
+    /// Field 2: `package`
     pub package: Option<::buffa::alloc::string::String>,
-    ///Field 3: `dependency`
+    /// Field 3: `dependency`
     pub dependency: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
-    ///Field 10: `public_dependency`
+    /// Field 10: `public_dependency`
     pub public_dependency: ::buffa::alloc::vec::Vec<i32>,
-    ///Field 11: `weak_dependency`
+    /// Field 11: `weak_dependency`
     pub weak_dependency: ::buffa::alloc::vec::Vec<i32>,
-    ///Field 15: `option_dependency`
+    /// Field 15: `option_dependency`
     pub option_dependency: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
-    ///Field 4: `message_type`
+    /// Field 4: `message_type`
     pub message_type: ::buffa::alloc::vec::Vec<DescriptorProto>,
-    ///Field 5: `enum_type`
+    /// Field 5: `enum_type`
     pub enum_type: ::buffa::alloc::vec::Vec<EnumDescriptorProto>,
-    ///Field 6: `service`
+    /// Field 6: `service`
     pub service: ::buffa::alloc::vec::Vec<ServiceDescriptorProto>,
-    ///Field 7: `extension`
+    /// Field 7: `extension`
     pub extension: ::buffa::alloc::vec::Vec<FieldDescriptorProto>,
-    ///Field 8: `options`
+    /// Field 8: `options`
     pub options: ::buffa::MessageField<FileOptions>,
-    ///Field 9: `source_code_info`
+    /// Field 9: `source_code_info`
     pub source_code_info: ::buffa::MessageField<SourceCodeInfo>,
-    ///Field 12: `syntax`
+    /// Field 12: `syntax`
     pub syntax: Option<::buffa::alloc::string::String>,
-    ///Field 14: `edition`
+    /// Field 14: `edition`
     pub edition: Option<Edition>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -772,27 +772,27 @@ impl ::buffa::ExtensionSet for FileDescriptorProto {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct DescriptorProto {
-    ///Field 1: `name`
+    /// Field 1: `name`
     pub name: Option<::buffa::alloc::string::String>,
-    ///Field 2: `field`
+    /// Field 2: `field`
     pub field: ::buffa::alloc::vec::Vec<FieldDescriptorProto>,
-    ///Field 6: `extension`
+    /// Field 6: `extension`
     pub extension: ::buffa::alloc::vec::Vec<FieldDescriptorProto>,
-    ///Field 3: `nested_type`
+    /// Field 3: `nested_type`
     pub nested_type: ::buffa::alloc::vec::Vec<DescriptorProto>,
-    ///Field 4: `enum_type`
+    /// Field 4: `enum_type`
     pub enum_type: ::buffa::alloc::vec::Vec<EnumDescriptorProto>,
-    ///Field 5: `extension_range`
+    /// Field 5: `extension_range`
     pub extension_range: ::buffa::alloc::vec::Vec<descriptor_proto::ExtensionRange>,
-    ///Field 8: `oneof_decl`
+    /// Field 8: `oneof_decl`
     pub oneof_decl: ::buffa::alloc::vec::Vec<OneofDescriptorProto>,
-    ///Field 7: `options`
+    /// Field 7: `options`
     pub options: ::buffa::MessageField<MessageOptions>,
-    ///Field 9: `reserved_range`
+    /// Field 9: `reserved_range`
     pub reserved_range: ::buffa::alloc::vec::Vec<descriptor_proto::ReservedRange>,
-    ///Field 10: `reserved_name`
+    /// Field 10: `reserved_name`
     pub reserved_name: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
-    ///Field 11: `visibility`
+    /// Field 11: `visibility`
     pub visibility: Option<SymbolVisibility>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1191,11 +1191,11 @@ pub mod descriptor_proto {
     use super::*;
     #[derive(Clone, PartialEq, Default)]
     pub struct ExtensionRange {
-        ///Field 1: `start`
+        /// Field 1: `start`
         pub start: Option<i32>,
-        ///Field 2: `end`
+        /// Field 2: `end`
         pub end: Option<i32>,
-        ///Field 3: `options`
+        /// Field 3: `options`
         pub options: ::buffa::MessageField<ExtensionRangeOptions>,
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1355,9 +1355,9 @@ pub mod descriptor_proto {
     }
     #[derive(Clone, PartialEq, Default)]
     pub struct ReservedRange {
-        ///Field 1: `start`
+        /// Field 1: `start`
         pub start: Option<i32>,
-        ///Field 2: `end`
+        /// Field 2: `end`
         pub end: Option<i32>,
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1487,13 +1487,13 @@ pub mod descriptor_proto {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct ExtensionRangeOptions {
-    ///Field 999: `uninterpreted_option`
+    /// Field 999: `uninterpreted_option`
     pub uninterpreted_option: ::buffa::alloc::vec::Vec<UninterpretedOption>,
-    ///Field 2: `declaration`
+    /// Field 2: `declaration`
     pub declaration: ::buffa::alloc::vec::Vec<extension_range_options::Declaration>,
-    ///Field 50: `features`
+    /// Field 50: `features`
     pub features: ::buffa::MessageField<FeatureSet>,
-    ///Field 3: `verification`
+    /// Field 3: `verification`
     pub verification: Option<extension_range_options::VerificationState>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1737,15 +1737,15 @@ pub mod extension_range_options {
     }
     #[derive(Clone, PartialEq, Default)]
     pub struct Declaration {
-        ///Field 1: `number`
+        /// Field 1: `number`
         pub number: Option<i32>,
-        ///Field 2: `full_name`
+        /// Field 2: `full_name`
         pub full_name: Option<::buffa::alloc::string::String>,
-        ///Field 3: `type`
+        /// Field 3: `type`
         pub r#type: Option<::buffa::alloc::string::String>,
-        ///Field 5: `reserved`
+        /// Field 5: `reserved`
         pub reserved: Option<bool>,
-        ///Field 6: `repeated`
+        /// Field 6: `repeated`
         pub repeated: Option<bool>,
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1950,27 +1950,27 @@ pub mod extension_range_options {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct FieldDescriptorProto {
-    ///Field 1: `name`
+    /// Field 1: `name`
     pub name: Option<::buffa::alloc::string::String>,
-    ///Field 3: `number`
+    /// Field 3: `number`
     pub number: Option<i32>,
-    ///Field 4: `label`
+    /// Field 4: `label`
     pub label: Option<field_descriptor_proto::Label>,
-    ///Field 5: `type`
+    /// Field 5: `type`
     pub r#type: Option<field_descriptor_proto::Type>,
-    ///Field 6: `type_name`
+    /// Field 6: `type_name`
     pub type_name: Option<::buffa::alloc::string::String>,
-    ///Field 2: `extendee`
+    /// Field 2: `extendee`
     pub extendee: Option<::buffa::alloc::string::String>,
-    ///Field 7: `default_value`
+    /// Field 7: `default_value`
     pub default_value: Option<::buffa::alloc::string::String>,
-    ///Field 9: `oneof_index`
+    /// Field 9: `oneof_index`
     pub oneof_index: Option<i32>,
-    ///Field 10: `json_name`
+    /// Field 10: `json_name`
     pub json_name: Option<::buffa::alloc::string::String>,
-    ///Field 8: `options`
+    /// Field 8: `options`
     pub options: ::buffa::MessageField<FieldOptions>,
-    ///Field 17: `proto3_optional`
+    /// Field 17: `proto3_optional`
     pub proto3_optional: Option<bool>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -2496,9 +2496,9 @@ pub mod field_descriptor_proto {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct OneofDescriptorProto {
-    ///Field 1: `name`
+    /// Field 1: `name`
     pub name: Option<::buffa::alloc::string::String>,
-    ///Field 2: `options`
+    /// Field 2: `options`
     pub options: ::buffa::MessageField<OneofOptions>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -2640,19 +2640,19 @@ impl ::buffa::ExtensionSet for OneofDescriptorProto {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct EnumDescriptorProto {
-    ///Field 1: `name`
+    /// Field 1: `name`
     pub name: Option<::buffa::alloc::string::String>,
-    ///Field 2: `value`
+    /// Field 2: `value`
     pub value: ::buffa::alloc::vec::Vec<EnumValueDescriptorProto>,
-    ///Field 3: `options`
+    /// Field 3: `options`
     pub options: ::buffa::MessageField<EnumOptions>,
-    ///Field 4: `reserved_range`
+    /// Field 4: `reserved_range`
     pub reserved_range: ::buffa::alloc::vec::Vec<
         enum_descriptor_proto::EnumReservedRange,
     >,
-    ///Field 5: `reserved_name`
+    /// Field 5: `reserved_name`
     pub reserved_name: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
-    ///Field 6: `visibility`
+    /// Field 6: `visibility`
     pub visibility: Option<SymbolVisibility>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -2909,9 +2909,9 @@ pub mod enum_descriptor_proto {
     use super::*;
     #[derive(Clone, PartialEq, Default)]
     pub struct EnumReservedRange {
-        ///Field 1: `start`
+        /// Field 1: `start`
         pub start: Option<i32>,
-        ///Field 2: `end`
+        /// Field 2: `end`
         pub end: Option<i32>,
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -3041,11 +3041,11 @@ pub mod enum_descriptor_proto {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct EnumValueDescriptorProto {
-    ///Field 1: `name`
+    /// Field 1: `name`
     pub name: Option<::buffa::alloc::string::String>,
-    ///Field 2: `number`
+    /// Field 2: `number`
     pub number: Option<i32>,
-    ///Field 3: `options`
+    /// Field 3: `options`
     pub options: ::buffa::MessageField<EnumValueOptions>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -3209,11 +3209,11 @@ impl ::buffa::ExtensionSet for EnumValueDescriptorProto {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct ServiceDescriptorProto {
-    ///Field 1: `name`
+    /// Field 1: `name`
     pub name: Option<::buffa::alloc::string::String>,
-    ///Field 2: `method`
+    /// Field 2: `method`
     pub method: ::buffa::alloc::vec::Vec<MethodDescriptorProto>,
-    ///Field 3: `options`
+    /// Field 3: `options`
     pub options: ::buffa::MessageField<ServiceOptions>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -3384,17 +3384,17 @@ impl ::buffa::ExtensionSet for ServiceDescriptorProto {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct MethodDescriptorProto {
-    ///Field 1: `name`
+    /// Field 1: `name`
     pub name: Option<::buffa::alloc::string::String>,
-    ///Field 2: `input_type`
+    /// Field 2: `input_type`
     pub input_type: Option<::buffa::alloc::string::String>,
-    ///Field 3: `output_type`
+    /// Field 3: `output_type`
     pub output_type: Option<::buffa::alloc::string::String>,
-    ///Field 4: `options`
+    /// Field 4: `options`
     pub options: ::buffa::MessageField<MethodOptions>,
-    ///Field 5: `client_streaming`
+    /// Field 5: `client_streaming`
     pub client_streaming: Option<bool>,
-    ///Field 6: `server_streaming`
+    /// Field 6: `server_streaming`
     pub server_streaming: Option<bool>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -3636,47 +3636,47 @@ impl ::buffa::ExtensionSet for MethodDescriptorProto {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct FileOptions {
-    ///Field 1: `java_package`
+    /// Field 1: `java_package`
     pub java_package: Option<::buffa::alloc::string::String>,
-    ///Field 8: `java_outer_classname`
+    /// Field 8: `java_outer_classname`
     pub java_outer_classname: Option<::buffa::alloc::string::String>,
-    ///Field 10: `java_multiple_files`
+    /// Field 10: `java_multiple_files`
     pub java_multiple_files: Option<bool>,
-    ///Field 20: `java_generate_equals_and_hash`
+    /// Field 20: `java_generate_equals_and_hash`
     pub java_generate_equals_and_hash: Option<bool>,
-    ///Field 27: `java_string_check_utf8`
+    /// Field 27: `java_string_check_utf8`
     pub java_string_check_utf8: Option<bool>,
-    ///Field 9: `optimize_for`
+    /// Field 9: `optimize_for`
     pub optimize_for: Option<file_options::OptimizeMode>,
-    ///Field 11: `go_package`
+    /// Field 11: `go_package`
     pub go_package: Option<::buffa::alloc::string::String>,
-    ///Field 16: `cc_generic_services`
+    /// Field 16: `cc_generic_services`
     pub cc_generic_services: Option<bool>,
-    ///Field 17: `java_generic_services`
+    /// Field 17: `java_generic_services`
     pub java_generic_services: Option<bool>,
-    ///Field 18: `py_generic_services`
+    /// Field 18: `py_generic_services`
     pub py_generic_services: Option<bool>,
-    ///Field 23: `deprecated`
+    /// Field 23: `deprecated`
     pub deprecated: Option<bool>,
-    ///Field 31: `cc_enable_arenas`
+    /// Field 31: `cc_enable_arenas`
     pub cc_enable_arenas: Option<bool>,
-    ///Field 36: `objc_class_prefix`
+    /// Field 36: `objc_class_prefix`
     pub objc_class_prefix: Option<::buffa::alloc::string::String>,
-    ///Field 37: `csharp_namespace`
+    /// Field 37: `csharp_namespace`
     pub csharp_namespace: Option<::buffa::alloc::string::String>,
-    ///Field 39: `swift_prefix`
+    /// Field 39: `swift_prefix`
     pub swift_prefix: Option<::buffa::alloc::string::String>,
-    ///Field 40: `php_class_prefix`
+    /// Field 40: `php_class_prefix`
     pub php_class_prefix: Option<::buffa::alloc::string::String>,
-    ///Field 41: `php_namespace`
+    /// Field 41: `php_namespace`
     pub php_namespace: Option<::buffa::alloc::string::String>,
-    ///Field 44: `php_metadata_namespace`
+    /// Field 44: `php_metadata_namespace`
     pub php_metadata_namespace: Option<::buffa::alloc::string::String>,
-    ///Field 45: `ruby_package`
+    /// Field 45: `ruby_package`
     pub ruby_package: Option<::buffa::alloc::string::String>,
-    ///Field 50: `features`
+    /// Field 50: `features`
     pub features: ::buffa::MessageField<FeatureSet>,
-    ///Field 999: `uninterpreted_option`
+    /// Field 999: `uninterpreted_option`
     pub uninterpreted_option: ::buffa::alloc::vec::Vec<UninterpretedOption>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -4349,19 +4349,19 @@ pub mod file_options {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct MessageOptions {
-    ///Field 1: `message_set_wire_format`
+    /// Field 1: `message_set_wire_format`
     pub message_set_wire_format: Option<bool>,
-    ///Field 2: `no_standard_descriptor_accessor`
+    /// Field 2: `no_standard_descriptor_accessor`
     pub no_standard_descriptor_accessor: Option<bool>,
-    ///Field 3: `deprecated`
+    /// Field 3: `deprecated`
     pub deprecated: Option<bool>,
-    ///Field 7: `map_entry`
+    /// Field 7: `map_entry`
     pub map_entry: Option<bool>,
-    ///Field 11: `deprecated_legacy_json_field_conflicts`
+    /// Field 11: `deprecated_legacy_json_field_conflicts`
     pub deprecated_legacy_json_field_conflicts: Option<bool>,
-    ///Field 12: `features`
+    /// Field 12: `features`
     pub features: ::buffa::MessageField<FeatureSet>,
-    ///Field 999: `uninterpreted_option`
+    /// Field 999: `uninterpreted_option`
     pub uninterpreted_option: ::buffa::alloc::vec::Vec<UninterpretedOption>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -4619,33 +4619,33 @@ impl ::buffa::ExtensionSet for MessageOptions {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct FieldOptions {
-    ///Field 1: `ctype`
+    /// Field 1: `ctype`
     pub ctype: Option<field_options::CType>,
-    ///Field 2: `packed`
+    /// Field 2: `packed`
     pub packed: Option<bool>,
-    ///Field 6: `jstype`
+    /// Field 6: `jstype`
     pub jstype: Option<field_options::JSType>,
-    ///Field 5: `lazy`
+    /// Field 5: `lazy`
     pub lazy: Option<bool>,
-    ///Field 15: `unverified_lazy`
+    /// Field 15: `unverified_lazy`
     pub unverified_lazy: Option<bool>,
-    ///Field 3: `deprecated`
+    /// Field 3: `deprecated`
     pub deprecated: Option<bool>,
-    ///Field 10: `weak`
+    /// Field 10: `weak`
     pub weak: Option<bool>,
-    ///Field 16: `debug_redact`
+    /// Field 16: `debug_redact`
     pub debug_redact: Option<bool>,
-    ///Field 17: `retention`
+    /// Field 17: `retention`
     pub retention: Option<field_options::OptionRetention>,
-    ///Field 19: `targets`
+    /// Field 19: `targets`
     pub targets: ::buffa::alloc::vec::Vec<field_options::OptionTargetType>,
-    ///Field 20: `edition_defaults`
+    /// Field 20: `edition_defaults`
     pub edition_defaults: ::buffa::alloc::vec::Vec<field_options::EditionDefault>,
-    ///Field 21: `features`
+    /// Field 21: `features`
     pub features: ::buffa::MessageField<FeatureSet>,
-    ///Field 22: `feature_support`
+    /// Field 22: `feature_support`
     pub feature_support: ::buffa::MessageField<field_options::FeatureSupport>,
-    ///Field 999: `uninterpreted_option`
+    /// Field 999: `uninterpreted_option`
     pub uninterpreted_option: ::buffa::alloc::vec::Vec<UninterpretedOption>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -5353,9 +5353,9 @@ pub mod field_options {
     }
     #[derive(Clone, PartialEq, Default)]
     pub struct EditionDefault {
-        ///Field 3: `edition`
+        /// Field 3: `edition`
         pub edition: Option<Edition>,
-        ///Field 2: `value`
+        /// Field 2: `value`
         pub value: Option<::buffa::alloc::string::String>,
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -5499,13 +5499,13 @@ pub mod field_options {
     }
     #[derive(Clone, PartialEq, Default)]
     pub struct FeatureSupport {
-        ///Field 1: `edition_introduced`
+        /// Field 1: `edition_introduced`
         pub edition_introduced: Option<Edition>,
-        ///Field 2: `edition_deprecated`
+        /// Field 2: `edition_deprecated`
         pub edition_deprecated: Option<Edition>,
-        ///Field 3: `deprecation_warning`
+        /// Field 3: `deprecation_warning`
         pub deprecation_warning: Option<::buffa::alloc::string::String>,
-        ///Field 4: `edition_removed`
+        /// Field 4: `edition_removed`
         pub edition_removed: Option<Edition>,
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -5712,9 +5712,9 @@ pub mod field_options {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct OneofOptions {
-    ///Field 1: `features`
+    /// Field 1: `features`
     pub features: ::buffa::MessageField<FeatureSet>,
-    ///Field 999: `uninterpreted_option`
+    /// Field 999: `uninterpreted_option`
     pub uninterpreted_option: ::buffa::alloc::vec::Vec<UninterpretedOption>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -5856,15 +5856,15 @@ impl ::buffa::ExtensionSet for OneofOptions {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct EnumOptions {
-    ///Field 2: `allow_alias`
+    /// Field 2: `allow_alias`
     pub allow_alias: Option<bool>,
-    ///Field 3: `deprecated`
+    /// Field 3: `deprecated`
     pub deprecated: Option<bool>,
-    ///Field 6: `deprecated_legacy_json_field_conflicts`
+    /// Field 6: `deprecated_legacy_json_field_conflicts`
     pub deprecated_legacy_json_field_conflicts: Option<bool>,
-    ///Field 7: `features`
+    /// Field 7: `features`
     pub features: ::buffa::MessageField<FeatureSet>,
-    ///Field 999: `uninterpreted_option`
+    /// Field 999: `uninterpreted_option`
     pub uninterpreted_option: ::buffa::alloc::vec::Vec<UninterpretedOption>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -6075,15 +6075,15 @@ impl ::buffa::ExtensionSet for EnumOptions {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct EnumValueOptions {
-    ///Field 1: `deprecated`
+    /// Field 1: `deprecated`
     pub deprecated: Option<bool>,
-    ///Field 2: `features`
+    /// Field 2: `features`
     pub features: ::buffa::MessageField<FeatureSet>,
-    ///Field 3: `debug_redact`
+    /// Field 3: `debug_redact`
     pub debug_redact: Option<bool>,
-    ///Field 4: `feature_support`
+    /// Field 4: `feature_support`
     pub feature_support: ::buffa::MessageField<field_options::FeatureSupport>,
-    ///Field 999: `uninterpreted_option`
+    /// Field 999: `uninterpreted_option`
     pub uninterpreted_option: ::buffa::alloc::vec::Vec<UninterpretedOption>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -6304,11 +6304,11 @@ impl ::buffa::ExtensionSet for EnumValueOptions {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct ServiceOptions {
-    ///Field 34: `features`
+    /// Field 34: `features`
     pub features: ::buffa::MessageField<FeatureSet>,
-    ///Field 33: `deprecated`
+    /// Field 33: `deprecated`
     pub deprecated: Option<bool>,
-    ///Field 999: `uninterpreted_option`
+    /// Field 999: `uninterpreted_option`
     pub uninterpreted_option: ::buffa::alloc::vec::Vec<UninterpretedOption>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -6472,13 +6472,13 @@ impl ::buffa::ExtensionSet for ServiceOptions {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct MethodOptions {
-    ///Field 33: `deprecated`
+    /// Field 33: `deprecated`
     pub deprecated: Option<bool>,
-    ///Field 34: `idempotency_level`
+    /// Field 34: `idempotency_level`
     pub idempotency_level: Option<method_options::IdempotencyLevel>,
-    ///Field 35: `features`
+    /// Field 35: `features`
     pub features: ::buffa::MessageField<FeatureSet>,
-    ///Field 999: `uninterpreted_option`
+    /// Field 999: `uninterpreted_option`
     pub uninterpreted_option: ::buffa::alloc::vec::Vec<UninterpretedOption>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -6719,19 +6719,19 @@ pub mod method_options {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct UninterpretedOption {
-    ///Field 2: `name`
+    /// Field 2: `name`
     pub name: ::buffa::alloc::vec::Vec<uninterpreted_option::NamePart>,
-    ///Field 3: `identifier_value`
+    /// Field 3: `identifier_value`
     pub identifier_value: Option<::buffa::alloc::string::String>,
-    ///Field 4: `positive_int_value`
+    /// Field 4: `positive_int_value`
     pub positive_int_value: Option<u64>,
-    ///Field 5: `negative_int_value`
+    /// Field 5: `negative_int_value`
     pub negative_int_value: Option<i64>,
-    ///Field 6: `double_value`
+    /// Field 6: `double_value`
     pub double_value: Option<f64>,
-    ///Field 7: `string_value`
+    /// Field 7: `string_value`
     pub string_value: Option<::buffa::alloc::vec::Vec<u8>>,
-    ///Field 8: `aggregate_value`
+    /// Field 8: `aggregate_value`
     pub aggregate_value: Option<::buffa::alloc::string::String>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -6996,9 +6996,9 @@ pub mod uninterpreted_option {
     use super::*;
     #[derive(Clone, PartialEq, Default)]
     pub struct NamePart {
-        ///Field 1: `name_part`
+        /// Field 1: `name_part`
         pub name_part: ::buffa::alloc::string::String,
-        ///Field 2: `is_extension`
+        /// Field 2: `is_extension`
         pub is_extension: bool,
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -7116,21 +7116,21 @@ pub mod uninterpreted_option {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct FeatureSet {
-    ///Field 1: `field_presence`
+    /// Field 1: `field_presence`
     pub field_presence: Option<feature_set::FieldPresence>,
-    ///Field 2: `enum_type`
+    /// Field 2: `enum_type`
     pub enum_type: Option<feature_set::EnumType>,
-    ///Field 3: `repeated_field_encoding`
+    /// Field 3: `repeated_field_encoding`
     pub repeated_field_encoding: Option<feature_set::RepeatedFieldEncoding>,
-    ///Field 4: `utf8_validation`
+    /// Field 4: `utf8_validation`
     pub utf8_validation: Option<feature_set::Utf8Validation>,
-    ///Field 5: `message_encoding`
+    /// Field 5: `message_encoding`
     pub message_encoding: Option<feature_set::MessageEncoding>,
-    ///Field 6: `json_format`
+    /// Field 6: `json_format`
     pub json_format: Option<feature_set::JsonFormat>,
-    ///Field 7: `enforce_naming_style`
+    /// Field 7: `enforce_naming_style`
     pub enforce_naming_style: Option<feature_set::EnforceNamingStyle>,
-    ///Field 8: `default_symbol_visibility`
+    /// Field 8: `default_symbol_visibility`
     pub default_symbol_visibility: Option<
         feature_set::visibility_feature::DefaultSymbolVisibility,
     >,
@@ -7916,13 +7916,13 @@ pub mod feature_set {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct FeatureSetDefaults {
-    ///Field 1: `defaults`
+    /// Field 1: `defaults`
     pub defaults: ::buffa::alloc::vec::Vec<
         feature_set_defaults::FeatureSetEditionDefault,
     >,
-    ///Field 4: `minimum_edition`
+    /// Field 4: `minimum_edition`
     pub minimum_edition: Option<Edition>,
-    ///Field 5: `maximum_edition`
+    /// Field 5: `maximum_edition`
     pub maximum_edition: Option<Edition>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -8101,11 +8101,11 @@ pub mod feature_set_defaults {
     use super::*;
     #[derive(Clone, PartialEq, Default)]
     pub struct FeatureSetEditionDefault {
-        ///Field 3: `edition`
+        /// Field 3: `edition`
         pub edition: Option<Edition>,
-        ///Field 4: `overridable_features`
+        /// Field 4: `overridable_features`
         pub overridable_features: ::buffa::MessageField<FeatureSet>,
-        ///Field 5: `fixed_features`
+        /// Field 5: `fixed_features`
         pub fixed_features: ::buffa::MessageField<FeatureSet>,
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -8290,7 +8290,7 @@ pub mod feature_set_defaults {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct SourceCodeInfo {
-    ///Field 1: `location`
+    /// Field 1: `location`
     pub location: ::buffa::alloc::vec::Vec<source_code_info::Location>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -8402,15 +8402,15 @@ pub mod source_code_info {
     use super::*;
     #[derive(Clone, PartialEq, Default)]
     pub struct Location {
-        ///Field 1: `path`
+        /// Field 1: `path`
         pub path: ::buffa::alloc::vec::Vec<i32>,
-        ///Field 2: `span`
+        /// Field 2: `span`
         pub span: ::buffa::alloc::vec::Vec<i32>,
-        ///Field 3: `leading_comments`
+        /// Field 3: `leading_comments`
         pub leading_comments: Option<::buffa::alloc::string::String>,
-        ///Field 4: `trailing_comments`
+        /// Field 4: `trailing_comments`
         pub trailing_comments: Option<::buffa::alloc::string::String>,
-        ///Field 6: `leading_detached_comments`
+        /// Field 6: `leading_detached_comments`
         pub leading_detached_comments: ::buffa::alloc::vec::Vec<
             ::buffa::alloc::string::String,
         >,
@@ -8689,7 +8689,7 @@ pub mod source_code_info {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct GeneratedCodeInfo {
-    ///Field 1: `annotation`
+    /// Field 1: `annotation`
     pub annotation: ::buffa::alloc::vec::Vec<generated_code_info::Annotation>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -8806,15 +8806,15 @@ pub mod generated_code_info {
     use super::*;
     #[derive(Clone, PartialEq, Default)]
     pub struct Annotation {
-        ///Field 1: `path`
+        /// Field 1: `path`
         pub path: ::buffa::alloc::vec::Vec<i32>,
-        ///Field 2: `source_file`
+        /// Field 2: `source_file`
         pub source_file: Option<::buffa::alloc::string::String>,
-        ///Field 3: `begin`
+        /// Field 3: `begin`
         pub begin: Option<i32>,
-        ///Field 4: `end`
+        /// Field 4: `end`
         pub end: Option<i32>,
-        ///Field 5: `semantic`
+        /// Field 5: `semantic`
         pub semantic: Option<generated_code_info::annotation::Semantic>,
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,

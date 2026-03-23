@@ -4,7 +4,7 @@
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct FieldMask {
-    ///Field 1: `paths`
+    /// Field 1: `paths`
     pub paths: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -107,7 +107,7 @@ impl ::buffa::ExtensionSet for FieldMask {
 }
 #[derive(Clone, Debug, Default)]
 pub struct FieldMaskView<'a> {
-    ///Field 1: `paths`
+    /// Field 1: `paths`
     pub paths: ::buffa::RepeatedView<'a, &'a str>,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }

@@ -4,7 +4,7 @@
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct DoubleValue {
-    ///Field 1: `value`
+    /// Field 1: `value`
     pub value: f64,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -104,7 +104,7 @@ impl ::buffa::ExtensionSet for DoubleValue {
 }
 #[derive(Clone, Debug, Default)]
 pub struct DoubleValueView<'a> {
-    ///Field 1: `value`
+    /// Field 1: `value`
     pub value: f64,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
@@ -205,7 +205,7 @@ unsafe impl<'a> ::buffa::HasDefaultViewInstance for DoubleValueView<'a> {
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct FloatValue {
-    ///Field 1: `value`
+    /// Field 1: `value`
     pub value: f32,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -305,7 +305,7 @@ impl ::buffa::ExtensionSet for FloatValue {
 }
 #[derive(Clone, Debug, Default)]
 pub struct FloatValueView<'a> {
-    ///Field 1: `value`
+    /// Field 1: `value`
     pub value: f32,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
@@ -406,7 +406,7 @@ unsafe impl<'a> ::buffa::HasDefaultViewInstance for FloatValueView<'a> {
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct Int64Value {
-    ///Field 1: `value`
+    /// Field 1: `value`
     pub value: i64,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -506,7 +506,7 @@ impl ::buffa::ExtensionSet for Int64Value {
 }
 #[derive(Clone, Debug, Default)]
 pub struct Int64ValueView<'a> {
-    ///Field 1: `value`
+    /// Field 1: `value`
     pub value: i64,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
@@ -607,7 +607,7 @@ unsafe impl<'a> ::buffa::HasDefaultViewInstance for Int64ValueView<'a> {
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct UInt64Value {
-    ///Field 1: `value`
+    /// Field 1: `value`
     pub value: u64,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -707,7 +707,7 @@ impl ::buffa::ExtensionSet for UInt64Value {
 }
 #[derive(Clone, Debug, Default)]
 pub struct UInt64ValueView<'a> {
-    ///Field 1: `value`
+    /// Field 1: `value`
     pub value: u64,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
@@ -808,7 +808,7 @@ unsafe impl<'a> ::buffa::HasDefaultViewInstance for UInt64ValueView<'a> {
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct Int32Value {
-    ///Field 1: `value`
+    /// Field 1: `value`
     pub value: i32,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -908,7 +908,7 @@ impl ::buffa::ExtensionSet for Int32Value {
 }
 #[derive(Clone, Debug, Default)]
 pub struct Int32ValueView<'a> {
-    ///Field 1: `value`
+    /// Field 1: `value`
     pub value: i32,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
@@ -1009,7 +1009,7 @@ unsafe impl<'a> ::buffa::HasDefaultViewInstance for Int32ValueView<'a> {
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct UInt32Value {
-    ///Field 1: `value`
+    /// Field 1: `value`
     pub value: u32,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1109,7 +1109,7 @@ impl ::buffa::ExtensionSet for UInt32Value {
 }
 #[derive(Clone, Debug, Default)]
 pub struct UInt32ValueView<'a> {
-    ///Field 1: `value`
+    /// Field 1: `value`
     pub value: u32,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
@@ -1210,7 +1210,7 @@ unsafe impl<'a> ::buffa::HasDefaultViewInstance for UInt32ValueView<'a> {
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct BoolValue {
-    ///Field 1: `value`
+    /// Field 1: `value`
     pub value: bool,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1310,7 +1310,7 @@ impl ::buffa::ExtensionSet for BoolValue {
 }
 #[derive(Clone, Debug, Default)]
 pub struct BoolValueView<'a> {
-    ///Field 1: `value`
+    /// Field 1: `value`
     pub value: bool,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
@@ -1411,7 +1411,7 @@ unsafe impl<'a> ::buffa::HasDefaultViewInstance for BoolValueView<'a> {
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct StringValue {
-    ///Field 1: `value`
+    /// Field 1: `value`
     pub value: ::buffa::alloc::string::String,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1514,7 +1514,7 @@ impl ::buffa::ExtensionSet for StringValue {
 }
 #[derive(Clone, Debug, Default)]
 pub struct StringValueView<'a> {
-    ///Field 1: `value`
+    /// Field 1: `value`
     pub value: &'a str,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
@@ -1615,7 +1615,7 @@ unsafe impl<'a> ::buffa::HasDefaultViewInstance for StringValueView<'a> {
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct BytesValue {
-    ///Field 1: `value`
+    /// Field 1: `value`
     pub value: ::buffa::alloc::vec::Vec<u8>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1718,7 +1718,7 @@ impl ::buffa::ExtensionSet for BytesValue {
 }
 #[derive(Clone, Debug, Default)]
 pub struct BytesValueView<'a> {
-    ///Field 1: `value`
+    /// Field 1: `value`
     pub value: &'a [u8],
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }

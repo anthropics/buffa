@@ -3,13 +3,13 @@
 
 #[derive(Clone, PartialEq, Default)]
 pub struct Version {
-    ///Field 1: `major`
+    /// Field 1: `major`
     pub major: Option<i32>,
-    ///Field 2: `minor`
+    /// Field 2: `minor`
     pub minor: Option<i32>,
-    ///Field 3: `patch`
+    /// Field 3: `patch`
     pub patch: Option<i32>,
-    ///Field 4: `suffix`
+    /// Field 4: `suffix`
     pub suffix: Option<::buffa::alloc::string::String>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -183,15 +183,15 @@ impl ::buffa::ExtensionSet for Version {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct CodeGeneratorRequest {
-    ///Field 1: `file_to_generate`
+    /// Field 1: `file_to_generate`
     pub file_to_generate: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
-    ///Field 2: `parameter`
+    /// Field 2: `parameter`
     pub parameter: Option<::buffa::alloc::string::String>,
-    ///Field 15: `proto_file`
+    /// Field 15: `proto_file`
     pub proto_file: ::buffa::alloc::vec::Vec<super::FileDescriptorProto>,
-    ///Field 17: `source_file_descriptors`
+    /// Field 17: `source_file_descriptors`
     pub source_file_descriptors: ::buffa::alloc::vec::Vec<super::FileDescriptorProto>,
-    ///Field 3: `compiler_version`
+    /// Field 3: `compiler_version`
     pub compiler_version: ::buffa::MessageField<Version>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -419,15 +419,15 @@ impl ::buffa::ExtensionSet for CodeGeneratorRequest {
 }
 #[derive(Clone, PartialEq, Default)]
 pub struct CodeGeneratorResponse {
-    ///Field 1: `error`
+    /// Field 1: `error`
     pub error: Option<::buffa::alloc::string::String>,
-    ///Field 2: `supported_features`
+    /// Field 2: `supported_features`
     pub supported_features: Option<u64>,
-    ///Field 3: `minimum_edition`
+    /// Field 3: `minimum_edition`
     pub minimum_edition: Option<i32>,
-    ///Field 4: `maximum_edition`
+    /// Field 4: `maximum_edition`
     pub maximum_edition: Option<i32>,
-    ///Field 15: `file`
+    /// Field 15: `file`
     pub file: ::buffa::alloc::vec::Vec<code_generator_response::File>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -680,13 +680,13 @@ pub mod code_generator_response {
     }
     #[derive(Clone, PartialEq, Default)]
     pub struct File {
-        ///Field 1: `name`
+        /// Field 1: `name`
         pub name: Option<::buffa::alloc::string::String>,
-        ///Field 2: `insertion_point`
+        /// Field 2: `insertion_point`
         pub insertion_point: Option<::buffa::alloc::string::String>,
-        ///Field 15: `content`
+        /// Field 15: `content`
         pub content: Option<::buffa::alloc::string::String>,
-        ///Field 16: `generated_code_info`
+        /// Field 16: `generated_code_info`
         pub generated_code_info: ::buffa::MessageField<super::GeneratedCodeInfo>,
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
