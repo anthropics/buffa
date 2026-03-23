@@ -30,4 +30,10 @@
 
 extern crate alloc;
 
+mod desc;
 pub mod generated;
+
+pub use desc::{
+    EnumDescriptor, EnumIndex, EnumValueDescriptor, FieldDescriptor, FieldKind, MessageDescriptor,
+    MessageIndex, OneofDescriptor, ScalarType, SingularKind,
+};
