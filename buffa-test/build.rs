@@ -3,6 +3,7 @@ fn main() {
     buffa_build::Config::new()
         .files(&["protos/basic.proto"])
         .includes(&["protos/"])
+        .generate_text(true)
         .compile()
         .expect("buffa_build failed for basic.proto");
 
@@ -51,6 +52,7 @@ fn main() {
     buffa_build::Config::new()
         .files(&["protos/proto2_defaults.proto"])
         .includes(&["protos/"])
+        .generate_text(true)
         .compile()
         .expect("buffa_build failed for proto2_defaults.proto");
 

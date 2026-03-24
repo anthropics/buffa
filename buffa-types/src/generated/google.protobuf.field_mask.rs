@@ -105,6 +105,46 @@ impl ::buffa::ExtensionSet for FieldMask {
         &mut self.__buffa_unknown_fields
     }
 }
+impl ::buffa::text::TextFormat for FieldMask {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        for __v in &self.paths {
+            enc.write_field_name("paths")?;
+            enc.write_string(__v)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "paths" => {
+                    dec.read_repeated_into(
+                        &mut self.paths,
+                        |__d| ::core::result::Result::Ok(__d.read_string()?.into_owned()),
+                    )?
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[doc(hidden)]
+pub const __FIELD_MASK_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.FieldMask",
+    text_encode: ::buffa::type_registry::any_encode_text::<FieldMask>,
+    text_merge: ::buffa::type_registry::any_merge_text::<FieldMask>,
+};
 #[derive(Clone, Debug, Default)]
 pub struct FieldMaskView<'a> {
     /// Field 1: `paths`

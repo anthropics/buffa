@@ -11,6 +11,31 @@ use crate::features::ResolvedFeatures;
 use crate::impl_message::{is_explicit_presence_scalar, is_real_oneof_member};
 use crate::CodeGenError;
 
+/// Qualified paths to the per-message / per-extension registry `const` items
+/// emitted alongside the structs, bubbled up to the file-level
+/// `register_types` fn. Each vec is relative to the scope where the
+/// corresponding consts land (see `generate_message`'s doc comment).
+#[derive(Default)]
+pub(crate) struct RegistryPaths {
+    /// `__*_JSON_ANY` consts (relative to the struct's scope).
+    pub json_any: Vec<TokenStream>,
+    /// `__*_TEXT_ANY` consts (relative to the struct's scope).
+    pub text_any: Vec<TokenStream>,
+    /// `__*_JSON_EXT` consts (relative to the message's module scope).
+    pub json_ext: Vec<TokenStream>,
+    /// `__*_TEXT_EXT` consts (relative to the message's module scope).
+    pub text_ext: Vec<TokenStream>,
+}
+
+impl RegistryPaths {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.json_any.is_empty()
+            && self.text_any.is_empty()
+            && self.json_ext.is_empty()
+            && self.text_ext.is_empty()
+    }
+}
+
 /// Generate Rust code for a message type (and its nested types).
 ///
 /// `current_package` is the proto package of the file being generated.
@@ -24,16 +49,13 @@ use crate::CodeGenError;
 /// `proto_fqn` is the fully-qualified proto type name without a leading dot
 /// (e.g. `google.protobuf.Timestamp`, `my.package.Outer.Inner`).  It is used
 /// to emit the `TYPE_URL` constant.
-/// Returns `(top_level_items, module_items, json_ext_paths, any_entry_paths)`
-/// where `top_level_items` contains the struct, its impls, and the custom
+/// Returns `(top_level_items, module_items, registry_paths)` where
+/// `top_level_items` contains the struct, its impls, and the custom
 /// deserialize; `module_items` contains nested types and oneof enums to be
-/// placed in `pub mod <name>`; `json_ext_paths` contains qualified paths
-/// (relative to the `module_items` scope) to any `__*_JSON` extension
-/// registry consts; and `any_entry_paths` contains qualified paths (relative
-/// to the `top_level_items` scope — i.e. the struct's own scope) to any
-/// `__*_ANY_ENTRY` consts emitted by this message or its nested messages,
-/// for `register_json`.
-#[allow(clippy::type_complexity)]
+/// placed in `pub mod <name>`; and `registry_paths` collects qualified paths
+/// to the per-message `__*_JSON_ANY` / `__*_TEXT_ANY` consts (relative to
+/// the struct's scope) and per-extension `__*_JSON_EXT` / `__*_TEXT_EXT`
+/// consts (relative to the `module_items` scope) for `register_types`.
 pub fn generate_message(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -42,7 +64,7 @@ pub fn generate_message(
     proto_fqn: &str,
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
-) -> Result<(TokenStream, TokenStream, Vec<TokenStream>, Vec<TokenStream>), CodeGenError> {
+) -> Result<(TokenStream, TokenStream, RegistryPaths), CodeGenError> {
     let name_ident = format_ident!("{}", rust_name);
 
     // MessageSet wire format: legacy Google encoding that wraps each extension
@@ -283,25 +305,56 @@ pub fn generate_message(
         features,
     )?;
 
-    let type_url = format!("type.googleapis.com/{proto_fqn}");
+    let text_impl = crate::impl_text::generate_text_impl(
+        ctx,
+        msg,
+        rust_name,
+        current_package,
+        proto_fqn,
+        features,
+        has_extension_ranges,
+    )?;
 
-    // Any registry entry — one per message with `generate_json`. The
-    // `any_to_json::<M>` / `any_from_json::<M>` monomorphizations coerce to
-    // fn pointers in const context (same pattern as enum_to_json<E> in
-    // extension_registry). Always `is_wkt: false`: WKTs live in buffa-types
-    // and register themselves via the hand-written `register_wkt_types`
-    // which knows which types get "value" wrapping in Any JSON.
-    let (any_entry_const, any_entry_ident) = if ctx.config.generate_json {
-        let upper = crate::oneof::to_snake_case(rust_name).to_uppercase();
-        let ident = format_ident!("__{}_ANY_ENTRY", upper);
+    let type_url = format!("type.googleapis.com/{proto_fqn}");
+    let upper = crate::oneof::to_snake_case(rust_name).to_uppercase();
+
+    // JSON Any entry — one per message with `generate_json`. Always
+    // `is_wkt: false`: WKTs live in buffa-types and register themselves via
+    // the hand-written `register_wkt_types` which knows which types get
+    // `"value"` wrapping in Any JSON. The `any_to_json::<M>` /
+    // `any_from_json::<M>` monomorphizations coerce to fn pointers in const
+    // context (same pattern as enum_to_json<E> in extension_registry).
+    let (json_any_const, json_any_ident) = if ctx.config.generate_json {
+        let ident = format_ident!("__{}_JSON_ANY", upper);
         let tokens = quote! {
             #[doc(hidden)]
-            pub const #ident: ::buffa::json_registry::AnyTypeEntry
-                = ::buffa::json_registry::AnyTypeEntry {
+            pub const #ident: ::buffa::type_registry::JsonAnyEntry
+                = ::buffa::type_registry::JsonAnyEntry {
                     type_url: #type_url,
-                    to_json: ::buffa::json_registry::any_to_json::<#name_ident>,
-                    from_json: ::buffa::json_registry::any_from_json::<#name_ident>,
+                    to_json: ::buffa::type_registry::any_to_json::<#name_ident>,
+                    from_json: ::buffa::type_registry::any_from_json::<#name_ident>,
                     is_wkt: false,
+                };
+        };
+        (tokens, Some(ident))
+    } else {
+        (quote! {}, None)
+    };
+
+    // Text Any entry — one per message with `generate_text`. Independent of
+    // `generate_json`: M implements TextFormat iff `generate_text` was on,
+    // and the monomorphization only typechecks then. No `Option<fn>`
+    // placeholder — JSON and text entries are separate consts in
+    // feature-split maps, so presence in the text map means text-capable.
+    let (text_any_const, text_any_ident) = if ctx.config.generate_text {
+        let ident = format_ident!("__{}_TEXT_ANY", upper);
+        let tokens = quote! {
+            #[doc(hidden)]
+            pub const #ident: ::buffa::type_registry::TextAnyEntry
+                = ::buffa::type_registry::TextAnyEntry {
+                    type_url: #type_url,
+                    text_encode: ::buffa::type_registry::any_encode_text::<#name_ident>,
+                    text_merge: ::buffa::type_registry::any_merge_text::<#name_ident>,
                 };
         };
         (tokens, Some(ident))
@@ -388,16 +441,19 @@ pub fn generate_message(
     // Build module items from nested messages. Each nested message contributes:
     // - Its struct + impls (top_level) go directly into our module
     // - Its nested types (mod_items) + view types go into a sub-module
-    // - Its JSON extension const paths bubble up, prefixed with the nested mod
+    // - Its registry const paths bubble up, prefixed appropriately
     let mut nested_items = TokenStream::new();
-    let mut json_ext_paths: Vec<TokenStream> = Vec::new();
     // Any-entry paths are relative to THIS struct's scope (top_level).
-    // Our own const lands alongside our struct; nested messages' consts land
+    // Our own consts land alongside our struct; nested messages' consts land
     // in our mod_items, which the caller wraps in `pub mod #mod_ident`, so
     // their returned paths get prefixed with `#mod_ident::`.
-    let mut any_entry_paths: Vec<TokenStream> = Vec::new();
-    if let Some(id) = &any_entry_ident {
-        any_entry_paths.push(quote! { #id });
+    // Extension-entry paths are relative to the message's MODULE scope.
+    let mut reg_paths = RegistryPaths::default();
+    if let Some(id) = &json_any_ident {
+        reg_paths.json_any.push(quote! { #id });
+    }
+    if let Some(id) = &text_any_ident {
+        reg_paths.text_any.push(quote! { #id });
     }
     let non_map_nested: Vec<_> = msg
         .nested_type
@@ -409,17 +465,25 @@ pub fn generate_message(
                 .unwrap_or(false)
         })
         .collect();
-    for (nested_desc, (top, mod_items, nested_json_paths, nested_any_paths)) in
-        non_map_nested.iter().zip(nested_msgs)
-    {
+    for (nested_desc, (top, mod_items, nested_reg)) in non_map_nested.iter().zip(nested_msgs) {
         nested_items.extend(top);
         let nested_name = nested_desc.name.as_deref().unwrap_or("");
         let nested_mod = make_field_ident(&crate::oneof::to_snake_case(nested_name));
-        for p in nested_json_paths {
-            json_ext_paths.push(quote! { #nested_mod :: #p });
+        // Extension paths: nested's module-scope → our module-scope = prefix
+        // with the nested message's own module ident.
+        for p in nested_reg.json_ext {
+            reg_paths.json_ext.push(quote! { #nested_mod :: #p });
         }
-        for p in nested_any_paths {
-            any_entry_paths.push(quote! { #mod_ident :: #p });
+        for p in nested_reg.text_ext {
+            reg_paths.text_ext.push(quote! { #nested_mod :: #p });
+        }
+        // Any paths: nested's struct-scope → our struct-scope = prefix
+        // with our own module ident (where nested's top_level lands).
+        for p in nested_reg.json_any {
+            reg_paths.json_any.push(quote! { #mod_ident :: #p });
+        }
+        for p in nested_reg.text_any {
+            reg_paths.text_any.push(quote! { #mod_ident :: #p });
         }
 
         // Also generate views for nested messages if enabled.
@@ -457,16 +521,20 @@ pub fn generate_message(
     // `extend` declarations nested inside this message. The consts land in
     // the message's `pub mod`, one `super::` hop from package level.
     // `proto_fqn` is the scope for JSON full_name construction.
-    let (nested_extensions, nested_ext_json_idents) = crate::extension::generate_extensions(
-        ctx,
-        &msg.extension,
-        current_package,
-        1,
-        features,
-        proto_fqn,
-    )?;
-    for id in nested_ext_json_idents {
-        json_ext_paths.push(quote! { #id });
+    let (nested_extensions, nested_ext_json, nested_ext_text) =
+        crate::extension::generate_extensions(
+            ctx,
+            &msg.extension,
+            current_package,
+            1,
+            features,
+            proto_fqn,
+        )?;
+    for id in nested_ext_json {
+        reg_paths.json_ext.push(quote! { #id });
+    }
+    for id in nested_ext_text {
+        reg_paths.text_ext.push(quote! { #id });
     }
 
     // Module items: nested enums, nested message structs + sub-modules,
@@ -519,16 +587,19 @@ pub fn generate_message(
 
         #message_impl
 
+        #text_impl
+
         #custom_deserialize
 
         #proto_elem_json_impl
 
         #ext_json_wrapper_def
 
-        #any_entry_const
+        #json_any_const
+        #text_any_const
     };
 
-    Ok((top_level, mod_items, json_ext_paths, any_entry_paths))
+    Ok((top_level, mod_items, reg_paths))
 }
 
 // ── Custom Deserialize for messages with oneofs ──────────────────────────────

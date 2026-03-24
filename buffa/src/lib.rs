@@ -71,6 +71,7 @@
 //! |------|:-------:|---------|
 //! | `std` | ✓ | `std::io::Read` decoders, `std::collections::HashMap` for map fields, thread-local JSON parse options (the `json` module) |
 //! | `json` |  | Proto3 JSON via `serde` (the `json_helpers` and `any_registry` modules) |
+//! | `text` |  | Textproto (human-readable) encoding and decoding |
 //! | `arbitrary` |  | `arbitrary::Arbitrary` impls for fuzzing |
 //!
 //! With `default-features = false` the crate is `#![no_std]` (requires
@@ -131,12 +132,14 @@ pub mod extension_registry;
 pub mod json;
 #[cfg(feature = "json")]
 pub mod json_helpers;
-#[cfg(feature = "json")]
-pub mod json_registry;
 pub mod message;
 pub mod message_field;
 pub mod message_set;
 pub mod oneof;
+#[cfg(feature = "text")]
+pub mod text;
+#[cfg(any(feature = "json", feature = "text"))]
+pub mod type_registry;
 pub mod types;
 pub mod unknown_fields;
 pub mod view;
@@ -152,6 +155,9 @@ pub use message::{DecodeOptions, Message, RECURSION_LIMIT};
 pub use message_field::{DefaultInstance, MessageField};
 pub use oneof::Oneof;
 pub use unknown_fields::{UnknownField, UnknownFieldData, UnknownFields};
+
+#[cfg(feature = "text")]
+pub use text::TextFormat;
 pub use view::{
     DefaultViewInstance, HasDefaultViewInstance, MapView, MessageFieldView, MessageView, OwnedView,
     RepeatedView, UnknownFieldsView,

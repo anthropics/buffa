@@ -28,9 +28,9 @@ use crate::CodeGenError;
 /// `scope_fqn` is the proto FQN prefix for building extension JSON full names
 /// (the package for file-level, `<package>.<Message>` for message-nested).
 ///
-/// Returns the generated tokens plus a list of JSON registry const identifiers
-/// emitted in the same scope (empty when `generate_json` is off or all
-/// extensions are `TYPE_GROUP`).
+/// Returns the generated tokens plus two lists of registry const identifiers
+/// emitted in the same scope: JSON entries (all types except `TYPE_GROUP`)
+/// and text entries (message/group only).
 pub(crate) fn generate_extensions(
     ctx: &CodeGenContext,
     extensions: &[FieldDescriptorProto],
@@ -38,22 +38,27 @@ pub(crate) fn generate_extensions(
     nesting: usize,
     features: &ResolvedFeatures,
     scope_fqn: &str,
-) -> Result<(TokenStream, Vec<Ident>), CodeGenError> {
+) -> Result<(TokenStream, Vec<Ident>, Vec<Ident>), CodeGenError> {
     let mut out = TokenStream::new();
     let mut json_consts = Vec::new();
+    let mut text_consts = Vec::new();
     for ext in extensions {
-        if let Some((tokens, json_ident)) =
+        if let Some((tokens, json_id, text_id)) =
             generate_one(ctx, ext, current_package, nesting, features, scope_fqn)?
         {
             out.extend(tokens);
-            if let Some(id) = json_ident {
+            if let Some(id) = json_id {
                 json_consts.push(id);
+            }
+            if let Some(id) = text_id {
+                text_consts.push(id);
             }
         }
     }
-    Ok((out, json_consts))
+    Ok((out, json_consts, text_consts))
 }
 
+#[allow(clippy::type_complexity)]
 fn generate_one(
     ctx: &CodeGenContext,
     field: &FieldDescriptorProto,
@@ -61,7 +66,7 @@ fn generate_one(
     nesting: usize,
     features: &ResolvedFeatures,
     scope_fqn: &str,
-) -> Result<Option<(TokenStream, Option<Ident>)>, CodeGenError> {
+) -> Result<Option<(TokenStream, Option<Ident>, Option<Ident>)>, CodeGenError> {
     let proto_name = field
         .name
         .as_deref()
@@ -139,33 +144,59 @@ fn generate_one(
         }
     }
 
-    // JSON registry entry. TYPE_GROUP is the only exclusion — group-encoded
-    // extensions don't appear in real-world custom options (groups are a
-    // proto2-only legacy construct) and their JSON form is undefined.
+    // Registry entries are feature-split into two separate consts. JSON
+    // entries cover every type except TYPE_GROUP (proto3 JSON form
+    // undefined — groups are a proto2-only legacy construct). Text entries
+    // cover message/group only (the conformance-exercised `[pkg.ext] { ... }`
+    // form). The two consts are independent: a group gets a text entry but
+    // no JSON entry; a scalar gets a JSON entry but no text entry.
+    let full_name = if scope_fqn.is_empty() {
+        proto_name.to_owned()
+    } else {
+        format!("{scope_fqn}.{proto_name}")
+    };
+
     let (json_const, json_ident) = if ctx.config.generate_json {
-        if let Some((to_fn, from_fn)) =
-            json_helper_tokens(ctx, field, ty, repeated, current_package, nesting)?
-        {
-            let json_ident = format_ident!("__{}_JSON", const_ident);
-            let full_name = if scope_fqn.is_empty() {
-                proto_name.to_owned()
-            } else {
-                format!("{scope_fqn}.{proto_name}")
-            };
-            let tokens = quote! {
-                #[doc(hidden)]
-                pub const #json_ident: ::buffa::extension_registry::ExtensionRegistryEntry
-                    = ::buffa::extension_registry::ExtensionRegistryEntry {
-                        number: #number,
-                        full_name: #full_name,
-                        extendee: #extendee_no_dot,
-                        to_json: #to_fn,
-                        from_json: #from_fn,
-                    };
-            };
-            (tokens, Some(json_ident))
-        } else {
-            (quote! {}, None)
+        match json_helper_tokens(ctx, field, ty, repeated, current_package, nesting)? {
+            Some((to_fn, from_fn)) => {
+                let ident = format_ident!("__{}_JSON_EXT", const_ident);
+                let tokens = quote! {
+                    #[doc(hidden)]
+                    pub const #ident: ::buffa::type_registry::JsonExtEntry
+                        = ::buffa::type_registry::JsonExtEntry {
+                            number: #number,
+                            full_name: #full_name,
+                            extendee: #extendee_no_dot,
+                            to_json: #to_fn,
+                            from_json: #from_fn,
+                        };
+                };
+                (tokens, Some(ident))
+            }
+            None => (quote! {}, None),
+        }
+    } else {
+        (quote! {}, None)
+    };
+
+    let (text_const, text_ident) = if ctx.config.generate_text {
+        match text_helper_tokens(ctx, field, ty, current_package, nesting)? {
+            Some((te, tm)) => {
+                let ident = format_ident!("__{}_TEXT_EXT", const_ident);
+                let tokens = quote! {
+                    #[doc(hidden)]
+                    pub const #ident: ::buffa::type_registry::TextExtEntry
+                        = ::buffa::type_registry::TextExtEntry {
+                            number: #number,
+                            full_name: #full_name,
+                            extendee: #extendee_no_dot,
+                            text_encode: #te,
+                            text_merge: #tm,
+                        };
+                };
+                (tokens, Some(ident))
+            }
+            None => (quote! {}, None),
         }
     } else {
         (quote! {}, None)
@@ -194,8 +225,10 @@ fn generate_one(
             #[doc = #doc]
             #ext_const
             #json_const
+            #text_const
         },
         json_ident,
+        text_ident,
     )))
 }
 
@@ -371,6 +404,37 @@ fn json_helper_tokens(
     }))
 }
 
+/// Map a message/group extension to its `type_registry::*_{encode,merge}_text<M>`
+/// function-path token pair. Returns `None` for scalars and enums — textproto
+/// extension support currently covers only the `[pkg.ext] { ... }` form that
+/// conformance exercises.
+fn text_helper_tokens(
+    ctx: &CodeGenContext,
+    field: &FieldDescriptorProto,
+    ty: Type,
+    current_package: &str,
+    nesting: usize,
+) -> Result<Option<(TokenStream, TokenStream)>, CodeGenError> {
+    let h = quote! { ::buffa::type_registry };
+    match ty {
+        Type::TYPE_MESSAGE => {
+            let msg_ty = resolve_type_path(ctx, field, current_package, nesting, "message")?;
+            Ok(Some((
+                quote! { #h::message_encode_text::<#msg_ty> },
+                quote! { #h::message_merge_text::<#msg_ty> },
+            )))
+        }
+        Type::TYPE_GROUP => {
+            let msg_ty = resolve_type_path(ctx, field, current_package, nesting, "group")?;
+            Ok(Some((
+                quote! { #h::group_encode_text::<#msg_ty> },
+                quote! { #h::group_merge_text::<#msg_ty> },
+            )))
+        }
+        _ => Ok(None),
+    }
+}
+
 /// Resolve `field.type_name` (a `.pkg.Type` proto FQN) to a Rust type path
 /// token stream via [`CodeGenContext::rust_type_relative`]. Shared by the
 /// enum and message arms of [`json_helper_tokens`].
@@ -485,6 +549,8 @@ mod tests {
         gen_with(field, false).map(|(t, _)| t)
     }
 
+    /// Returns `(tokens, json_ident)` — text is off in these helpers, so
+    /// `text_ident` is dropped.
     fn gen_with(field: &FieldDescriptorProto, json: bool) -> Option<(String, Option<String>)> {
         let files: [FileDescriptorProto; 0] = [];
         let mut config = CodeGenConfig::default();
@@ -493,7 +559,7 @@ mod tests {
         let features = ResolvedFeatures::proto2_defaults();
         generate_one(&ctx, field, "", 0, &features, "my.pkg")
             .unwrap()
-            .map(|(t, id)| (t.to_string(), id.map(|i| i.to_string())))
+            .map(|(t, json, _text)| (t.to_string(), json.map(|i| i.to_string())))
     }
 
     #[test]
@@ -576,7 +642,7 @@ mod tests {
         let features = ResolvedFeatures::proto2_defaults();
         generate_one(&ctx, field, "my.pkg", 0, &features, "my.pkg")
             .unwrap()
-            .map(|(t, id)| (t.to_string(), id.map(|i| i.to_string())))
+            .map(|(t, json, _text)| (t.to_string(), json.map(|i| i.to_string())))
     }
 
     #[test]
@@ -609,8 +675,8 @@ mod tests {
     fn json_const_emitted_for_scalar() {
         let (tokens, json_ident) =
             gen_with(&ext_field("weight", 50002, Type::TYPE_SINT32), true).unwrap();
-        assert_eq!(json_ident.as_deref(), Some("__WEIGHT_JSON"));
-        assert!(tokens.contains("ExtensionRegistryEntry"), "{tokens}");
+        assert_eq!(json_ident.as_deref(), Some("__WEIGHT_JSON_EXT"));
+        assert!(tokens.contains("JsonExtEntry"), "{tokens}");
         assert!(tokens.contains("sint32_to_json"), "{tokens}");
         assert!(tokens.contains("sint32_from_json"), "{tokens}");
         assert!(tokens.contains("\"my.pkg.weight\""), "{tokens}");
@@ -620,6 +686,8 @@ mod tests {
         );
         // Binary Extension const still present.
         assert!(tokens.contains("Sint32"), "{tokens}");
+        // Scalar extensions don't get text entries (message/group only).
+        assert!(!tokens.contains("TextExtEntry"), "{tokens}");
     }
 
     #[test]
@@ -627,7 +695,7 @@ mod tests {
         let mut field = ext_field("tags", 50003, Type::TYPE_STRING);
         field.label = Some(Label::LABEL_REPEATED);
         let (tokens, json_ident) = gen_with(&field, true).unwrap();
-        assert_eq!(json_ident.as_deref(), Some("__TAGS_JSON"));
+        assert_eq!(json_ident.as_deref(), Some("__TAGS_JSON_EXT"));
         assert!(tokens.contains("repeated_string_to_json"), "{tokens}");
         assert!(tokens.contains("repeated_string_from_json"), "{tokens}");
     }
@@ -638,7 +706,7 @@ mod tests {
         let mut field = ext_field("nums", 50004, Type::TYPE_INT64);
         field.label = Some(Label::LABEL_REPEATED);
         let (tokens, json_ident) = gen_with(&field, true).unwrap();
-        assert_eq!(json_ident.as_deref(), Some("__NUMS_JSON"));
+        assert_eq!(json_ident.as_deref(), Some("__NUMS_JSON_EXT"));
         assert!(tokens.contains("repeated_int64_to_json"), "{tokens}");
     }
 
@@ -647,7 +715,7 @@ mod tests {
         let mut field = ext_field("color", 50005, Type::TYPE_ENUM);
         field.type_name = Some(".my.pkg.Color".to_string());
         let (tokens, json_ident) = gen_in_pkg(&field).unwrap();
-        assert_eq!(json_ident.as_deref(), Some("__COLOR_JSON"));
+        assert_eq!(json_ident.as_deref(), Some("__COLOR_JSON_EXT"));
         // Tokens stringify with spaces around `::<` — match loosely.
         assert!(tokens.contains("enum_to_json"), "{tokens}");
         assert!(tokens.contains("enum_from_json"), "{tokens}");
@@ -661,7 +729,7 @@ mod tests {
         field.type_name = Some(".my.pkg.Color".to_string());
         field.label = Some(Label::LABEL_REPEATED);
         let (tokens, json_ident) = gen_in_pkg(&field).unwrap();
-        assert_eq!(json_ident.as_deref(), Some("__COLORS_JSON"));
+        assert_eq!(json_ident.as_deref(), Some("__COLORS_JSON_EXT"));
         assert!(tokens.contains("repeated_enum_to_json"), "{tokens}");
         assert!(tokens.contains("repeated_enum_from_json"), "{tokens}");
     }
@@ -671,7 +739,7 @@ mod tests {
         let mut field = ext_field("ann", 50007, Type::TYPE_MESSAGE);
         field.type_name = Some(".my.pkg.Ann".to_string());
         let (tokens, json_ident) = gen_in_pkg(&field).unwrap();
-        assert_eq!(json_ident.as_deref(), Some("__ANN_JSON"));
+        assert_eq!(json_ident.as_deref(), Some("__ANN_JSON_EXT"));
         assert!(tokens.contains("message_to_json"), "{tokens}");
         assert!(tokens.contains("message_from_json"), "{tokens}");
         assert!(tokens.contains("Ann"), "{tokens}");
@@ -684,7 +752,7 @@ mod tests {
         field.type_name = Some(".my.pkg.Ann".to_string());
         field.label = Some(Label::LABEL_REPEATED);
         let (tokens, json_ident) = gen_in_pkg(&field).unwrap();
-        assert_eq!(json_ident.as_deref(), Some("__ANNS_JSON"));
+        assert_eq!(json_ident.as_deref(), Some("__ANNS_JSON_EXT"));
         assert!(tokens.contains("repeated_message_to_json"), "{tokens}");
         assert!(tokens.contains("repeated_message_from_json"), "{tokens}");
     }
@@ -694,7 +762,43 @@ mod tests {
         let (tokens, json_ident) =
             gen_with(&ext_field("weight", 50002, Type::TYPE_SINT32), false).unwrap();
         assert!(json_ident.is_none());
-        assert!(!tokens.contains("ExtensionRegistryEntry"), "{tokens}");
+        assert!(!tokens.contains("JsonExtEntry"), "{tokens}");
+    }
+
+    #[test]
+    fn text_const_emitted_for_message_independent_of_json() {
+        // text on, json OFF — message extension gets a TextExtEntry but no
+        // JsonExtEntry. This is the decoupling that the feature-split enables.
+        let files = [FileDescriptorProto {
+            name: Some("test.proto".into()),
+            package: Some("my.pkg".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Ann".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }];
+        let mut config = CodeGenConfig::default();
+        config.generate_text = true;
+        let ctx = CodeGenContext::new(&files, &config, &[]);
+        let features = ResolvedFeatures::proto2_defaults();
+        let mut field = ext_field("ann", 50007, Type::TYPE_MESSAGE);
+        field.type_name = Some(".my.pkg.Ann".to_string());
+
+        let (tokens, json_id, text_id) =
+            generate_one(&ctx, &field, "my.pkg", 0, &features, "my.pkg")
+                .unwrap()
+                .unwrap();
+        let tokens = tokens.to_string();
+        assert!(json_id.is_none());
+        assert_eq!(
+            text_id.map(|i| i.to_string()).as_deref(),
+            Some("__ANN_TEXT_EXT")
+        );
+        assert!(tokens.contains("TextExtEntry"), "{tokens}");
+        assert!(tokens.contains("message_encode_text"), "{tokens}");
+        assert!(tokens.contains("message_merge_text"), "{tokens}");
+        assert!(!tokens.contains("JsonExtEntry"), "{tokens}");
     }
 
     #[test]

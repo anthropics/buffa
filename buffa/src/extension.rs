@@ -51,8 +51,8 @@
 //! # JSON
 //!
 //! Extension fields serialize as `"[pkg.ext]"` keys in proto3 JSON. This
-//! requires a populated [`JsonRegistry`](crate::json_registry::JsonRegistry)
-//! — see the [`json_registry`](crate::json_registry) module. Without a
+//! requires a populated [`TypeRegistry`](crate::type_registry::TypeRegistry)
+//! — see the [`type_registry`](crate::type_registry) module. Without a
 //! registry, extension bytes stay in `__buffa_unknown_fields` and are silently
 //! dropped from JSON output.
 //!

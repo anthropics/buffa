@@ -64,45 +64,65 @@ impl Any {
 
 // ── WKT type registry ───────────────────────────────────────────────────────
 
-/// Registers all well-known types with the given [`AnyRegistry`](buffa::any_registry::AnyRegistry).
+/// Registers all well-known types with the given [`TypeRegistry`].
 ///
 /// This registers Duration, Timestamp, FieldMask, Value, Struct, ListValue,
-/// Empty, all wrapper types, and Any itself, enabling proto3-compliant JSON
-/// serialization when these types appear inside `google.protobuf.Any` fields.
+/// Empty, all wrapper types, and Any itself, enabling both proto3-compliant
+/// JSON serialization (under the `json` feature) and textproto
+/// `[type_url] { fields }` Any-expansion when these types appear inside
+/// `google.protobuf.Any` fields.
+///
+/// Text entries are always registered (buffa-types unconditionally enables
+/// `buffa/text`). JSON entries are registered under the `json` feature.
 ///
 /// # Example
 ///
 /// ```rust,no_run
-/// use buffa::any_registry::AnyRegistry;
+/// use buffa::type_registry::{TypeRegistry, set_type_registry};
 ///
-/// let mut registry = AnyRegistry::new();
-/// buffa_types::register_wkt_types(&mut registry);
+/// let mut reg = TypeRegistry::new();
+/// buffa_types::register_wkt_types(&mut reg);
+/// set_type_registry(reg);
 /// ```
-#[cfg(feature = "json")]
-pub fn register_wkt_types(registry: &mut buffa::any_registry::AnyRegistry) {
+///
+/// [`TypeRegistry`]: buffa::type_registry::TypeRegistry
+pub fn register_wkt_types(reg: &mut buffa::type_registry::TypeRegistry) {
     use crate::google::protobuf::*;
-    use alloc::string::ToString;
-    use buffa::any_registry::AnyTypeEntry;
+    use buffa::type_registry::{any_encode_text, any_merge_text, TextAnyEntry};
 
     macro_rules! register_type {
         ($type:ty, $wkt:expr) => {
-            registry.register(AnyTypeEntry {
+            #[cfg(feature = "json")]
+            {
+                use alloc::string::ToString;
+                reg.register_json_any(buffa::type_registry::JsonAnyEntry {
+                    type_url: <$type>::TYPE_URL,
+                    to_json: |bytes| {
+                        let msg = <$type as buffa::Message>::decode(&mut &*bytes)
+                            .map_err(|e| e.to_string())?;
+                        serde_json::to_value(&msg).map_err(|e| e.to_string())
+                    },
+                    from_json: |value| {
+                        let msg: $type =
+                            serde_json::from_value(value).map_err(|e| e.to_string())?;
+                        Ok(buffa::Message::encode_to_vec(&msg))
+                    },
+                    is_wkt: $wkt,
+                });
+            }
+            // WKTs all implement TextFormat (generate_text is on for
+            // buffa-types). Non-Option fn-ptrs — presence in the text map
+            // means text-capable. `$wkt` is irrelevant here: textproto has
+            // no `"value"` wrapping distinction.
+            reg.register_text_any(TextAnyEntry {
                 type_url: <$type>::TYPE_URL,
-                to_json: |bytes| {
-                    let msg = <$type as buffa::Message>::decode(&mut &*bytes)
-                        .map_err(|e| e.to_string())?;
-                    serde_json::to_value(&msg).map_err(|e| e.to_string())
-                },
-                from_json: |value| {
-                    let msg: $type = serde_json::from_value(value).map_err(|e| e.to_string())?;
-                    Ok(buffa::Message::encode_to_vec(&msg))
-                },
-                is_wkt: $wkt,
+                text_encode: any_encode_text::<$type>,
+                text_merge: any_merge_text::<$type>,
             });
         };
     }
 
-    // WKTs with special JSON mappings (use "value" wrapping in Any).
+    // WKTs with special JSON mappings (use "value" wrapping in Any JSON).
     register_type!(Duration, true);
     register_type!(Timestamp, true);
     register_type!(FieldMask, true);
@@ -122,6 +142,82 @@ pub fn register_wkt_types(registry: &mut buffa::any_registry::AnyRegistry) {
 
     // Regular messages (fields inlined in Any JSON).
     register_type!(Empty, false);
+}
+
+// ── TextFormat impl ─────────────────────────────────────────────────────────
+//
+// Hand-written because textproto packs `Any` as `[type_url] { fields }` when
+// the type is registered — a shape the generated field-by-field impl can't
+// produce. Codegen's `impl_text.rs` skips `google.protobuf.Any` to avoid a
+// conflicting impl.
+//
+// `try_write_any_expanded` and `read_any_expansion` consult the text-format
+// Any map (installed via `set_type_registry`). When no registry is installed,
+// this degrades to the vanilla `type_url: "..." value: "..."` form — still
+// valid textproto, just not the expanded form.
+
+impl buffa::text::TextFormat for Any {
+    fn encode_text(&self, enc: &mut buffa::text::TextEncoder<'_>) -> core::fmt::Result {
+        if !self.type_url.is_empty() && enc.try_write_any_expanded(&self.type_url, &self.value)? {
+            return Ok(());
+        }
+        // Vanilla fallback: unregistered type, or no registry installed.
+        if !self.type_url.is_empty() {
+            enc.write_field_name("type_url")?;
+            enc.write_string(&self.type_url)?;
+        }
+        if !self.value.is_empty() {
+            enc.write_field_name("value")?;
+            enc.write_bytes(&self.value)?;
+        }
+        Ok(())
+    }
+
+    fn merge_text(
+        &mut self,
+        dec: &mut buffa::text::TextDecoder<'_>,
+    ) -> Result<(), buffa::text::ParseError> {
+        while let Some(name) = dec.read_field_name()? {
+            match name {
+                "type_url" => self.type_url = dec.read_string()?.into_owned(),
+                "value" => self.value = dec.read_bytes()?,
+                _ if name.starts_with('[') => {
+                    let (url, bytes) = dec.read_any_expansion(name)?;
+                    self.type_url = url.into();
+                    self.value = bytes;
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod text_tests {
+    use super::Any;
+    use buffa::text::{decode_from_str, encode_to_string};
+
+    #[test]
+    fn vanilla_roundtrip_no_registry() {
+        // Without a registry installed, Any uses the plain
+        // `type_url: "..." value: "..."` form — exactly what the old
+        // generated impl did.
+        let orig = Any {
+            type_url: "type.example.com/Foo".into(),
+            value: alloc::vec![0x08, 0x2A], // field 1 = varint 42
+            ..Default::default()
+        };
+        let text = encode_to_string(&orig);
+        assert_eq!(text, r#"type_url: "type.example.com/Foo" value: "\010*""#);
+        let back: Any = decode_from_str(&text).unwrap();
+        assert_eq!(back.type_url, orig.type_url);
+        assert_eq!(back.value, orig.value);
+    }
+
+    // Registry-manipulating tests live in `serde_tests` below — they share
+    // the same global `AtomicPtr` as the JSON tests and must use the same
+    // `REGISTRY_LOCK` to serialize.
 }
 
 // ── serde impls ──────────────────────────────────────────────────────────────
@@ -325,27 +421,75 @@ mod tests {
     mod serde_tests {
         use super::*;
         use crate::google::protobuf::Duration;
-        use buffa::any_registry::{clear_any_registry, set_any_registry, AnyRegistry};
+        use buffa::any_registry::clear_any_registry;
+        use buffa::type_registry::{clear_text_registry, set_type_registry, TypeRegistry};
 
-        /// Mutex to serialize tests that manipulate the global AnyRegistry.
+        /// Mutex to serialize tests that manipulate the global registries.
         /// Each test binary needs its own lock since #[cfg(test)] modules
         /// cannot be shared across crates.
         static REGISTRY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
         fn with_registry<R>(f: impl FnOnce() -> R) -> R {
             let _guard = REGISTRY_LOCK.lock().unwrap();
-            let mut registry = AnyRegistry::new();
-            register_wkt_types(&mut registry);
-            set_any_registry(Box::new(registry));
+            let mut reg = TypeRegistry::new();
+            register_wkt_types(&mut reg);
+            set_type_registry(reg);
             let result = f();
             clear_any_registry();
+            clear_text_registry();
             result
         }
 
         fn without_registry<R>(f: impl FnOnce() -> R) -> R {
             let _guard = REGISTRY_LOCK.lock().unwrap();
             clear_any_registry();
+            clear_text_registry();
             f()
+        }
+
+        // ── TextFormat impl (Any expansion) ─────────────────────────────────
+        //
+        // Here rather than in `text_tests` because these manipulate the
+        // same global `AtomicPtr` as the JSON tests above — both must
+        // serialize on `REGISTRY_LOCK`.
+
+        #[test]
+        fn text_registry_roundtrip_wkt() {
+            use crate::google::protobuf::Empty;
+            use buffa::text::{decode_from_str, encode_to_string};
+            with_registry(|| {
+                // register_wkt_types installs Empty with text fn-ptrs.
+                let any = Any::pack(&Empty::default(), Empty::TYPE_URL);
+                let text = encode_to_string(&any);
+                // Empty has no fields → `{}`.
+                assert_eq!(text, "[type.googleapis.com/google.protobuf.Empty] {}");
+
+                let back: Any = decode_from_str(&text).unwrap();
+                assert_eq!(back.type_url, Empty::TYPE_URL);
+                assert_eq!(back.value, alloc::vec::Vec::<u8>::new());
+            });
+        }
+
+        #[test]
+        fn text_unregistered_url_errors_on_decode() {
+            use buffa::text::decode_from_str;
+            // Registry installed but URL not in it — the
+            // `AnyFieldWithInvalidType` conformance shape.
+            with_registry(|| {
+                let result: Result<Any, _> =
+                    decode_from_str("[type.googleapis.com/unknown.Type] { x: 1 }");
+                assert!(result.is_err(), "unknown URL should error, not skip");
+            });
+        }
+
+        #[test]
+        fn text_bracket_without_registry_errors() {
+            use buffa::text::decode_from_str;
+            // No registry at all → bracket name is a registry miss → error.
+            without_registry(|| {
+                let result: Result<Any, _> = decode_from_str("[type.example.com/Unknown] { x: 1 }");
+                assert!(result.is_err());
+            });
         }
 
         #[test]
@@ -538,19 +682,20 @@ mod tests {
         }
 
         fn with_user_type_registry<R>(f: impl FnOnce() -> R) -> R {
-            use buffa::any_registry::AnyTypeEntry;
+            use buffa::type_registry::JsonAnyEntry;
             let _guard = REGISTRY_LOCK.lock().unwrap();
-            let mut registry = AnyRegistry::new();
+            let mut reg = TypeRegistry::new();
             // Register as NON-WKT (is_wkt=false) — fields inline at top level.
-            registry.register(AnyTypeEntry {
+            reg.register_json_any(JsonAnyEntry {
                 type_url: "type.example.com/user.Thing",
                 to_json: user_type_to_json,
                 from_json: user_type_from_json,
                 is_wkt: false,
             });
-            set_any_registry(Box::new(registry));
+            set_type_registry(reg);
             let result = f();
             clear_any_registry();
+            clear_text_registry();
             result
         }
 
@@ -611,16 +756,16 @@ mod tests {
             // If to_json for a non-WKT type returns something other than a
             // JSON object, serialization must fail (can't inline non-object
             // fields alongside @type).
-            use buffa::any_registry::AnyTypeEntry;
+            use buffa::type_registry::JsonAnyEntry;
             let _guard = REGISTRY_LOCK.lock().unwrap();
-            let mut registry = AnyRegistry::new();
-            registry.register(AnyTypeEntry {
+            let mut reg = TypeRegistry::new();
+            reg.register_json_any(JsonAnyEntry {
                 type_url: "type.example.com/user.BadType",
                 to_json: |_bytes| Ok(serde_json::Value::Number(42.into())),
                 from_json: |_v| Ok(alloc::vec::Vec::new()),
                 is_wkt: false,
             });
-            set_any_registry(Box::new(registry));
+            set_type_registry(reg);
 
             let any = Any {
                 type_url: "type.example.com/user.BadType".into(),
@@ -629,6 +774,7 @@ mod tests {
             };
             let result = serde_json::to_string(&any);
             clear_any_registry();
+            clear_text_registry();
             assert!(result.is_err(), "expected error for non-object to_json");
             assert!(
                 result

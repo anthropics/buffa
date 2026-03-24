@@ -222,6 +222,85 @@ impl ::buffa::ExtensionSet for Struct {
         &mut self.__buffa_unknown_fields
     }
 }
+impl ::buffa::text::TextFormat for Struct {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        for (__k, __v) in &self.fields {
+            enc.write_field_name("fields")?;
+            enc.write_map_entry(|enc| {
+                enc.write_field_name("key")?;
+                enc.write_string(__k)?;
+                enc.write_field_name("value")?;
+                enc.write_message(__v)?;
+                ::core::result::Result::Ok(())
+            })?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "fields" => {
+                    let mut __pairs: ::buffa::alloc::vec::Vec<_> = ::buffa::alloc::vec::Vec::new();
+                    dec.read_repeated_into(
+                        &mut __pairs,
+                        |__d| {
+                            let mut __k = ::core::option::Option::None;
+                            let mut __v = ::core::option::Option::None;
+                            __d.merge_map_entry(|__d| {
+                                while let ::core::option::Option::Some(__n) = __d
+                                    .read_field_name()?
+                                {
+                                    match __n {
+                                        "key" => {
+                                            __k = ::core::option::Option::Some(
+                                                __d.read_string()?.into_owned(),
+                                            );
+                                        }
+                                        "value" => {
+                                            __v = ::core::option::Option::Some({
+                                                let mut __m = ::core::default::Default::default();
+                                                __d.merge_message(&mut __m)?;
+                                                __m
+                                            });
+                                        }
+                                        _ => __d.skip_value()?,
+                                    }
+                                }
+                                ::core::result::Result::Ok(())
+                            })?;
+                            ::core::result::Result::Ok((
+                                __k.unwrap_or_default(),
+                                __v.unwrap_or_default(),
+                            ))
+                        },
+                    )?;
+                    for (__k, __v) in __pairs {
+                        self.fields.insert(__k, __v);
+                    }
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[doc(hidden)]
+pub const __STRUCT_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.Struct",
+    text_encode: ::buffa::type_registry::any_encode_text::<Struct>,
+    text_merge: ::buffa::type_registry::any_merge_text::<Struct>,
+};
 #[derive(Clone, Debug, Default)]
 pub struct StructView<'a> {
     /// Field 1: `fields` (map)
@@ -634,6 +713,123 @@ impl ::buffa::ExtensionSet for Value {
         &mut self.__buffa_unknown_fields
     }
 }
+impl ::buffa::text::TextFormat for Value {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.kind {
+            match __v {
+                value::Kind::NullValue(__v) => {
+                    enc.write_field_name("null_value")?;
+                    match __v {
+                        ::buffa::EnumValue::Known(__e) => {
+                            enc.write_enum_name(__e.proto_name())?
+                        }
+                        ::buffa::EnumValue::Unknown(__n) => enc.write_enum_number(*__n)?,
+                    }
+                }
+                value::Kind::NumberValue(__v) => {
+                    enc.write_field_name("number_value")?;
+                    enc.write_f64(*__v)?;
+                }
+                value::Kind::StringValue(__v) => {
+                    enc.write_field_name("string_value")?;
+                    enc.write_string(__v)?;
+                }
+                value::Kind::BoolValue(__v) => {
+                    enc.write_field_name("bool_value")?;
+                    enc.write_bool(*__v)?;
+                }
+                value::Kind::StructValue(__v) => {
+                    enc.write_field_name("struct_value")?;
+                    enc.write_message(&**__v)?;
+                }
+                value::Kind::ListValue(__v) => {
+                    enc.write_field_name("list_value")?;
+                    enc.write_message(&**__v)?;
+                }
+            }
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "null_value" => {
+                    self.kind = ::core::option::Option::Some(
+                        value::Kind::NullValue(
+                            dec
+                                .read_enum_by_name::<NullValue>()
+                                .map(::buffa::EnumValue::from)?,
+                        ),
+                    );
+                }
+                "number_value" => {
+                    self.kind = ::core::option::Option::Some(
+                        value::Kind::NumberValue(dec.read_f64()?),
+                    );
+                }
+                "string_value" => {
+                    self.kind = ::core::option::Option::Some(
+                        value::Kind::StringValue(dec.read_string()?.into_owned()),
+                    );
+                }
+                "bool_value" => {
+                    self.kind = ::core::option::Option::Some(
+                        value::Kind::BoolValue(dec.read_bool()?),
+                    );
+                }
+                "struct_value" => {
+                    if let ::core::option::Option::Some(
+                        value::Kind::StructValue(ref mut __existing),
+                    ) = self.kind
+                    {
+                        dec.merge_message(&mut **__existing)?;
+                    } else {
+                        let mut __m = ::core::default::Default::default();
+                        dec.merge_message(&mut __m)?;
+                        self.kind = ::core::option::Option::Some(
+                            value::Kind::StructValue(
+                                ::buffa::alloc::boxed::Box::new(__m),
+                            ),
+                        );
+                    }
+                }
+                "list_value" => {
+                    if let ::core::option::Option::Some(
+                        value::Kind::ListValue(ref mut __existing),
+                    ) = self.kind
+                    {
+                        dec.merge_message(&mut **__existing)?;
+                    } else {
+                        let mut __m = ::core::default::Default::default();
+                        dec.merge_message(&mut __m)?;
+                        self.kind = ::core::option::Option::Some(
+                            value::Kind::ListValue(::buffa::alloc::boxed::Box::new(__m)),
+                        );
+                    }
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[doc(hidden)]
+pub const __VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.Value",
+    text_encode: ::buffa::type_registry::any_encode_text::<Value>,
+    text_merge: ::buffa::type_registry::any_merge_text::<Value>,
+};
 #[derive(Clone, Debug, Default)]
 pub struct ValueView<'a> {
     pub kind: ::core::option::Option<value::KindView<'a>>,
@@ -1006,6 +1202,50 @@ impl ::buffa::ExtensionSet for ListValue {
         &mut self.__buffa_unknown_fields
     }
 }
+impl ::buffa::text::TextFormat for ListValue {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        for __v in &self.values {
+            enc.write_field_name("values")?;
+            enc.write_message(__v)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "values" => {
+                    dec.read_repeated_into(
+                        &mut self.values,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[doc(hidden)]
+pub const __LIST_VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.ListValue",
+    text_encode: ::buffa::type_registry::any_encode_text::<ListValue>,
+    text_merge: ::buffa::type_registry::any_merge_text::<ListValue>,
+};
 #[derive(Clone, Debug, Default)]
 pub struct ListValueView<'a> {
     /// Field 1: `values`

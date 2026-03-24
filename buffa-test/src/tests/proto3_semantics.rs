@@ -105,21 +105,29 @@ fn implicit_nonzero_value_round_trip_table() {
 }
 
 #[test]
-fn implicit_negative_zero_float_suppressed() {
-    // -0.0 == 0.0, so it should be suppressed. Some implementations get this
-    // wrong by checking bit-pattern equality instead of value equality.
+fn implicit_negative_zero_float_emitted() {
+    // -0.0 is NOT the proto3 default: only +0.0 is. The presence check
+    // compares bit patterns (`to_bits() != 0`), so -0.0 (sign bit set) is
+    // serialized. The conformance suite verifies this round-trips.
+    //
+    // Earlier versions of buffa used `!= 0.0` (IEEE equality) and suppressed
+    // -0.0. That was wrong — see `TextFormatInput.FloatFieldNegativeZero.*`.
     let msg = ImplicitScalars {
         f32: -0.0,
         f64: -0.0,
         ..Default::default()
     };
-    // If -0.0 is correctly treated as zero, encodes to nothing.
     let bytes = msg.encode_to_vec();
-    assert!(
-        bytes.is_empty(),
-        "-0.0 should be suppressed (it equals 0.0); got {} bytes",
-        bytes.len()
+    // Each field: 1 tag byte + 4 or 8 payload bytes.
+    assert_eq!(
+        bytes.len(),
+        (1 + 4) + (1 + 8),
+        "-0.0 should be emitted (bit pattern is non-zero); got {bytes:02X?}"
     );
+    // Round-trip: decode and check the sign bit survived.
+    let back = ImplicitScalars::decode_from_slice(&bytes).unwrap();
+    assert!(back.f32.is_sign_negative() && back.f32 == 0.0);
+    assert!(back.f64.is_sign_negative() && back.f64 == 0.0);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

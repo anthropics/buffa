@@ -132,6 +132,12 @@ impl ::buffa::ExtensionSet for Any {
         &mut self.__buffa_unknown_fields
     }
 }
+#[doc(hidden)]
+pub const __ANY_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.Any",
+    text_encode: ::buffa::type_registry::any_encode_text::<Any>,
+    text_merge: ::buffa::type_registry::any_merge_text::<Any>,
+};
 #[derive(Clone, Debug, Default)]
 pub struct AnyView<'a> {
     /// Field 1: `type_url`

@@ -7,7 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-buffa = { workspace = true, features = ["std", "json"] }
+buffa = { workspace = true, features = ["std", "json", "text"] }
 buffa-types = { workspace = true, features = ["json"] }
 bytes = { workspace = true }
 serde = { workspace = true }

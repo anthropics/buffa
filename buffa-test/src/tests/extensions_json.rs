@@ -1,22 +1,22 @@
 //! Extension JSON registry integration: message/enum/repeated extension types
-//! round-trip through `serde_json` via the generated `register_json` +
+//! round-trip through `serde_json` via the generated `register_types` +
 //! the runtime's `#[serde(flatten)]` wrapper.
 
 use crate::extjson::{
-    register_json, Ann, Carrier, Color, ANN, ANNS, BIGS, COLOR, COLORS, NUMS, WEIGHT,
+    register_types, Ann, Carrier, Color, ANN, ANNS, BIGS, COLOR, COLORS, NUMS, WEIGHT,
 };
-use buffa::json_registry::{set_json_registry, JsonRegistry};
+use buffa::type_registry::{set_type_registry, TypeRegistry};
 use buffa::{Enumeration, ExtensionSet};
 
-/// Install the unified JSON registry once for the test process. Tests run in
-/// parallel threads; `set_json_registry` leaks the old halves (see its doc)
+/// Install the unified type registry once for the test process. Tests run in
+/// parallel threads; `set_type_registry` leaks the old halves (see its doc)
 /// so racing installs are safe, but `Once` makes intent explicit.
 fn setup() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
-        let mut reg = JsonRegistry::new();
-        register_json(&mut reg);
-        set_json_registry(reg);
+        let mut reg = TypeRegistry::new();
+        register_types(&mut reg);
+        set_type_registry(reg);
     });
 }
 
@@ -170,23 +170,23 @@ fn multiple_extension_types_coexist_in_json() {
     assert_eq!(back.extension(&NUMS), vec![10, 20]);
 }
 
-// ── Codegen-emitted Any entries via register_json ─────────────────────────
+// ── Codegen-emitted Any entries via register_types ────────────────────────
 //
-// `register_json` populates BOTH the extension registry and the Any registry;
+// `register_types` populates BOTH the extension registry and the Any registry;
 // these tests verify the Any half. `setup()` above installed the unified
 // registry once, so `with_any_registry` sees every message in ext_json.proto.
 
 #[test]
-fn any_entry_const_has_correct_shape() {
+fn json_any_const_has_correct_shape() {
     // The `#[doc(hidden)]` const is stable enough to name directly in tests
     // — if codegen renames it, this test catches the drift.
-    use crate::extjson::__CARRIER_ANY_ENTRY;
-    assert_eq!(__CARRIER_ANY_ENTRY.type_url, Carrier::TYPE_URL);
-    assert!(!__CARRIER_ANY_ENTRY.is_wkt, "user messages are not WKTs");
+    use crate::extjson::__CARRIER_JSON_ANY;
+    assert_eq!(__CARRIER_JSON_ANY.type_url, Carrier::TYPE_URL);
+    assert!(!__CARRIER_JSON_ANY.is_wkt, "user messages are not WKTs");
 }
 
 #[test]
-fn register_json_populates_any_registry() {
+fn register_types_populates_any_registry() {
     setup();
     buffa::any_registry::with_any_registry(|r| {
         let r = r.expect("registry installed by setup");
@@ -199,12 +199,12 @@ fn register_json_populates_any_registry() {
 }
 
 #[test]
-fn any_entry_roundtrips_message_through_json() {
+fn json_any_roundtrips_message_through_json() {
     // Exercise the generated fn pointers directly: encode a message to wire
     // bytes, run it through the entry's to_json, verify the JSON shape, then
     // back through from_json and verify the bytes decode to the same message.
     // This is what Any's serde impl does under the hood.
-    use crate::extjson::__ANN_ANY_ENTRY;
+    use crate::extjson::__ANN_JSON_ANY;
     use buffa::Message;
 
     let ann = Ann {
@@ -214,22 +214,12 @@ fn any_entry_roundtrips_message_through_json() {
     };
     let wire = ann.encode_to_vec();
 
-    let json = (__ANN_ANY_ENTRY.to_json)(&wire).expect("to_json");
+    let json = (__ANN_JSON_ANY.to_json)(&wire).expect("to_json");
     assert_eq!(json["doc"], serde_json::json!("via any entry"));
     assert_eq!(json["priority"], serde_json::json!(3));
 
-    let bytes_back = (__ANN_ANY_ENTRY.from_json)(json).expect("from_json");
+    let bytes_back = (__ANN_JSON_ANY.from_json)(json).expect("from_json");
     let ann_back = Ann::decode_from_slice(&bytes_back).expect("decode");
     assert_eq!(ann_back.doc.as_deref(), Some("via any entry"));
     assert_eq!(ann_back.priority, Some(3));
-}
-
-#[test]
-fn register_extensions_still_works_for_back_compat() {
-    // `register_extensions` is preserved (extension-only; a subset of
-    // `register_json`). Pre-0.3 callers compile unchanged.
-    use crate::extjson::register_extensions;
-    let mut ext = buffa::extension_registry::ExtensionRegistry::new();
-    register_extensions(&mut ext);
-    assert!(ext.by_name("buffa.test.extjson.weight").is_some());
 }

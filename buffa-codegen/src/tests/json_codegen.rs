@@ -371,10 +371,10 @@ fn test_no_serde_attrs_without_generate_json_flag() {
     );
 }
 
-// ── register_json / Any entry emission ───────────────────────────────────
+// ── register_types / Any entry emission ──────────────────────────────────
 
 #[test]
-fn test_any_entry_const_emitted_per_message() {
+fn test_json_any_const_emitted_per_message() {
     let mut file = proto3_file("any_entry.proto");
     file.package = Some("acme".to_string());
     file.message_type.push(DescriptorProto {
@@ -385,30 +385,35 @@ fn test_any_entry_const_emitted_per_message() {
         .expect("should generate");
     let content = &files[0].content;
     assert!(
-        content.contains("pub const __WIDGET_ANY_ENTRY: ::buffa::json_registry::AnyTypeEntry"),
-        "missing Any entry const: {content}"
+        content.contains("pub const __WIDGET_JSON_ANY: ::buffa::type_registry::JsonAnyEntry"),
+        "missing JSON Any const: {content}"
     );
     assert!(
         content.contains(r#"type_url: "type.googleapis.com/acme.Widget""#),
-        "wrong type_url in Any entry: {content}"
+        "wrong type_url: {content}"
     );
     assert!(
-        content.contains("::buffa::json_registry::any_to_json::<Widget>"),
+        content.contains("::buffa::type_registry::any_to_json::<Widget>"),
         "missing any_to_json fn pointer: {content}"
     );
     assert!(
-        content.contains("::buffa::json_registry::any_from_json::<Widget>"),
+        content.contains("::buffa::type_registry::any_from_json::<Widget>"),
         "missing any_from_json fn pointer: {content}"
     );
     assert!(
         content.contains("is_wkt: false"),
         "user messages must emit is_wkt: false: {content}"
     );
+    // json_config has generate_text off — no TEXT_ANY const.
+    assert!(
+        !content.contains("__WIDGET_TEXT_ANY"),
+        "TEXT_ANY must be absent with generate_text off: {content}"
+    );
 }
 
 #[test]
-fn test_register_json_emitted_with_any_entries_only() {
-    // A file with messages but no extensions still emits register_json
+fn test_register_types_emitted_with_json_any_only() {
+    // A file with messages but no extensions still emits register_types
     // (Any-only). Proto3 has no extension syntax, so this is the common case.
     let mut file = proto3_file("reg.proto");
     file.message_type.push(DescriptorProto {
@@ -423,28 +428,28 @@ fn test_register_json_emitted_with_any_entries_only() {
         generate(&[file], &["reg.proto".to_string()], &json_config()).expect("should generate");
     let content = &files[0].content;
     assert!(
-        content.contains("pub fn register_json(reg: &mut ::buffa::json_registry::JsonRegistry)"),
-        "missing register_json fn: {content}"
+        content.contains("pub fn register_types(reg: &mut ::buffa::type_registry::TypeRegistry)"),
+        "missing register_types fn: {content}"
     );
     assert!(
-        content.contains("reg.register_any(__FOO_ANY_ENTRY)"),
-        "missing Foo Any registration: {content}"
+        content.contains("reg.register_json_any(__FOO_JSON_ANY)"),
+        "missing Foo JSON Any registration: {content}"
     );
     assert!(
-        content.contains("reg.register_any(__BAR_ANY_ENTRY)"),
-        "missing Bar Any registration: {content}"
+        content.contains("reg.register_json_any(__BAR_JSON_ANY)"),
+        "missing Bar JSON Any registration: {content}"
     );
-    // No extensions → no register_extensions.
+    // No generate_text → no register_text_* calls in the body.
     assert!(
-        !content.contains("pub fn register_extensions"),
-        "register_extensions should not appear without extensions: {content}"
+        !content.contains("register_text_any"),
+        "register_text_any must be absent without generate_text: {content}"
     );
 }
 
 #[test]
-fn test_register_json_includes_nested_message_any_entries() {
-    // Nested message Any consts live inside `pub mod outer`; register_json
-    // must qualify them as `outer::__INNER_ANY_ENTRY`.
+fn test_register_types_includes_nested_message_any_entries() {
+    // Nested message Any consts live inside `pub mod outer`; register_types
+    // must qualify them as `outer::__INNER_JSON_ANY`.
     let mut file = proto3_file("nested_any.proto");
     file.message_type.push(DescriptorProto {
         name: Some("Outer".to_string()),
@@ -458,17 +463,17 @@ fn test_register_json_includes_nested_message_any_entries() {
         .expect("should generate");
     let content = &files[0].content;
     assert!(
-        content.contains("reg.register_any(__OUTER_ANY_ENTRY)"),
-        "missing top-level Outer Any entry: {content}"
+        content.contains("reg.register_json_any(__OUTER_JSON_ANY)"),
+        "missing top-level Outer: {content}"
     );
     assert!(
-        content.contains("reg.register_any(outer::__INNER_ANY_ENTRY)"),
-        "missing nested Inner Any entry path: {content}"
+        content.contains("reg.register_json_any(outer::__INNER_JSON_ANY)"),
+        "missing nested Inner path: {content}"
     );
 }
 
 #[test]
-fn test_any_entry_not_emitted_without_generate_json() {
+fn test_any_entry_not_emitted_without_generate_json_or_text() {
     let mut file = proto3_file("noany.proto");
     file.message_type.push(DescriptorProto {
         name: Some("Msg".to_string()),
@@ -482,11 +487,47 @@ fn test_any_entry_not_emitted_without_generate_json() {
     .expect("should generate");
     let content = &files[0].content;
     assert!(
-        !content.contains("ANY_ENTRY"),
-        "Any entry const must be absent without generate_json: {content}"
+        !content.contains("_JSON_ANY") && !content.contains("_TEXT_ANY"),
+        "Any consts must be absent: {content}"
     );
     assert!(
-        !content.contains("register_json"),
-        "register_json must be absent without generate_json: {content}"
+        !content.contains("register_types"),
+        "register_types must be absent: {content}"
+    );
+}
+
+#[test]
+fn test_text_any_emitted_independent_of_json() {
+    // generate_text on, generate_json OFF. This is the decoupling point:
+    // __MSG_TEXT_ANY is emitted, __MSG_JSON_ANY is not, and register_types
+    // calls only register_text_any.
+    let mut file = proto3_file("textonly.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("Msg".to_string()),
+        ..Default::default()
+    });
+    let mut cfg = CodeGenConfig::default();
+    cfg.generate_text = true;
+    let files = generate(&[file], &["textonly.proto".to_string()], &cfg).expect("should generate");
+    let content = &files[0].content;
+    assert!(
+        content.contains("pub const __MSG_TEXT_ANY: ::buffa::type_registry::TextAnyEntry"),
+        "missing TEXT_ANY const: {content}"
+    );
+    assert!(
+        content.contains("::buffa::type_registry::any_encode_text::<Msg>"),
+        "missing any_encode_text fn pointer: {content}"
+    );
+    assert!(
+        !content.contains("__MSG_JSON_ANY"),
+        "JSON_ANY must be absent with generate_json off: {content}"
+    );
+    assert!(
+        content.contains("reg.register_text_any(__MSG_TEXT_ANY)"),
+        "missing register_text_any call: {content}"
+    );
+    assert!(
+        !content.contains("register_json_any"),
+        "register_json_any must be absent: {content}"
     );
 }

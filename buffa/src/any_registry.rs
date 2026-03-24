@@ -5,17 +5,9 @@
 //! to conversion functions that translate between wire-format bytes and
 //! [`serde_json::Value`].
 //!
-//! # Usage
-//!
-//! ```rust,no_run
-//! use buffa::json_registry::{JsonRegistry, set_json_registry};
-//!
-//! let mut reg = JsonRegistry::new();
-//! // ... register types via generated register_json(&mut reg) ...
-//! set_json_registry(reg);
-//! // Now serde_json operations on messages containing Any fields will use
-//! // the registry for proper proto3 JSON encoding.
-//! ```
+//! Prefer [`type_registry`](crate::type_registry) for the public-facing setup
+//! path. This module holds the JSON-specific entry type and global; text
+//! entries live under `type_registry` with their own maps.
 
 extern crate alloc;
 
@@ -26,9 +18,14 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicPtr, Ordering};
 use hashbrown::HashMap;
 
-/// Registry entry for a single message type, holding function pointers
-/// for proto3 JSON ↔ Any conversion.
-pub struct AnyTypeEntry {
+/// JSON-specific registry entry for proto3 JSON ↔ `Any` conversion.
+///
+/// Text-format conversion lives in a separate [`TextAnyEntry`] — the two
+/// entry types are per-feature split so `json` and `text` are independently
+/// enableable.
+///
+/// [`TextAnyEntry`]: crate::type_registry::TextAnyEntry
+pub struct JsonAnyEntry {
     /// The full type URL (e.g. `"type.googleapis.com/google.protobuf.Duration"`).
     pub type_url: &'static str,
 
@@ -49,8 +46,15 @@ pub struct AnyTypeEntry {
     ///
     /// Regular messages serialize to JSON objects and have their fields
     /// inlined: `{"@type": "...", "field1": v1, "field2": v2}`.
+    ///
+    /// JSON-specific: textproto has no `"value"` wrapping distinction.
     pub is_wkt: bool,
 }
+
+/// Deprecated alias for [`JsonAnyEntry`]. Text-format fields have moved to
+/// a separate `TextAnyEntry` in [`type_registry`](crate::type_registry).
+#[deprecated(since = "0.3.0", note = "renamed to JsonAnyEntry")]
+pub type AnyTypeEntry = JsonAnyEntry;
 
 /// A registry mapping type URLs to their JSON encode/decode functions.
 ///
@@ -58,7 +62,7 @@ pub struct AnyTypeEntry {
 /// with [`set_any_registry`] before using `serde_json` to serialize or
 /// deserialize messages containing `Any` fields.
 pub struct AnyRegistry {
-    entries: HashMap<String, AnyTypeEntry>,
+    entries: HashMap<String, JsonAnyEntry>,
 }
 
 impl AnyRegistry {
@@ -70,12 +74,12 @@ impl AnyRegistry {
     }
 
     /// Registers a type entry. Replaces any existing entry for the same type URL.
-    pub fn register(&mut self, entry: AnyTypeEntry) {
+    pub fn register(&mut self, entry: JsonAnyEntry) {
         self.entries.insert(entry.type_url.to_owned(), entry);
     }
 
     /// Looks up a type entry by its full type URL.
-    pub fn lookup(&self, type_url: &str) -> Option<&AnyTypeEntry> {
+    pub fn lookup(&self, type_url: &str) -> Option<&JsonAnyEntry> {
         self.entries.get(type_url)
     }
 }
@@ -107,7 +111,7 @@ static ANY_REGISTRY: AtomicPtr<AnyRegistry> = AtomicPtr::new(core::ptr::null_mut
 /// concurrent reader in [`with_any_registry`] could hold a reference to the
 /// old registry while it is dropped. In practice `set_any_registry` is
 /// called once at startup, so the leak is negligible.
-#[deprecated(since = "0.3.0", note = "use buffa::json_registry::set_json_registry")]
+#[deprecated(since = "0.3.0", note = "use buffa::type_registry::set_type_registry")]
 pub fn set_any_registry(registry: Box<AnyRegistry>) {
     let new_ptr = Box::into_raw(registry);
     ANY_REGISTRY.swap(new_ptr, Ordering::AcqRel);
@@ -153,15 +157,22 @@ mod tests {
         Ok(Vec::new())
     }
 
+    /// Shorthand for a test `JsonAnyEntry` — keeps each test site compact.
+    macro_rules! entry {
+        ($url:expr, $wkt:expr) => {
+            JsonAnyEntry {
+                type_url: $url,
+                to_json: dummy_to_json,
+                from_json: dummy_from_json,
+                is_wkt: $wkt,
+            }
+        };
+    }
+
     #[test]
     fn register_and_lookup() {
         let mut registry = AnyRegistry::new();
-        registry.register(AnyTypeEntry {
-            type_url: "type.googleapis.com/test.Message",
-            to_json: dummy_to_json,
-            from_json: dummy_from_json,
-            is_wkt: false,
-        });
+        registry.register(entry!("type.googleapis.com/test.Message", false));
 
         assert!(registry
             .lookup("type.googleapis.com/test.Message")
@@ -172,18 +183,8 @@ mod tests {
     #[test]
     fn lookup_returns_correct_entry() {
         let mut registry = AnyRegistry::new();
-        registry.register(AnyTypeEntry {
-            type_url: "type.googleapis.com/test.Wkt",
-            to_json: dummy_to_json,
-            from_json: dummy_from_json,
-            is_wkt: true,
-        });
-        registry.register(AnyTypeEntry {
-            type_url: "type.googleapis.com/test.Regular",
-            to_json: dummy_to_json,
-            from_json: dummy_from_json,
-            is_wkt: false,
-        });
+        registry.register(entry!("type.googleapis.com/test.Wkt", true));
+        registry.register(entry!("type.googleapis.com/test.Regular", false));
 
         let wkt = registry.lookup("type.googleapis.com/test.Wkt").unwrap();
         assert!(wkt.is_wkt);
@@ -199,12 +200,7 @@ mod tests {
     fn global_registry() {
         let _guard = REGISTRY_TEST_LOCK.lock().unwrap();
         let mut registry = AnyRegistry::new();
-        registry.register(AnyTypeEntry {
-            type_url: "type.googleapis.com/test.Global",
-            to_json: dummy_to_json,
-            from_json: dummy_from_json,
-            is_wkt: false,
-        });
+        registry.register(entry!("type.googleapis.com/test.Global", false));
         set_any_registry(Box::new(registry));
 
         with_any_registry(|reg| {
@@ -223,21 +219,11 @@ mod tests {
     fn set_registry_twice_supersedes_first() {
         let _guard = REGISTRY_TEST_LOCK.lock().unwrap();
         let mut first = AnyRegistry::new();
-        first.register(AnyTypeEntry {
-            type_url: "type.googleapis.com/test.First",
-            to_json: dummy_to_json,
-            from_json: dummy_from_json,
-            is_wkt: false,
-        });
+        first.register(entry!("type.googleapis.com/test.First", false));
         set_any_registry(Box::new(first));
 
         let mut second = AnyRegistry::new();
-        second.register(AnyTypeEntry {
-            type_url: "type.googleapis.com/test.Second",
-            to_json: dummy_to_json,
-            from_json: dummy_from_json,
-            is_wkt: true,
-        });
+        second.register(entry!("type.googleapis.com/test.Second", true));
         set_any_registry(Box::new(second));
 
         with_any_registry(|reg| {
@@ -264,12 +250,7 @@ mod tests {
     #[test]
     fn debug_shows_type_urls() {
         let mut registry = AnyRegistry::new();
-        registry.register(AnyTypeEntry {
-            type_url: "type.googleapis.com/test.Debug",
-            to_json: dummy_to_json,
-            from_json: dummy_from_json,
-            is_wkt: false,
-        });
+        registry.register(entry!("type.googleapis.com/test.Debug", false));
         let debug = format!("{:?}", registry);
         assert!(
             debug.contains("test.Debug"),
