@@ -1,7 +1,7 @@
 //! Tests for source code comment propagation into generated Rust code.
 
 use super::*;
-use crate::generated::descriptor::{SourceCodeInfo, source_code_info::Location};
+use crate::generated::descriptor::{source_code_info::Location, SourceCodeInfo};
 
 fn make_location(path: Vec<i32>, leading: &str) -> Location {
     Location {
@@ -16,7 +16,12 @@ fn test_message_comment_in_generated_code() {
     let mut file = proto3_file("commented.proto");
     file.message_type.push(DescriptorProto {
         name: Some("Person".to_string()),
-        field: vec![make_field("name", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING)],
+        field: vec![make_field(
+            "name",
+            1,
+            Label::LABEL_OPTIONAL,
+            Type::TYPE_STRING,
+        )],
         ..Default::default()
     });
     // Path [4, 0] = FileDescriptorProto.message_type[0]
@@ -46,7 +51,12 @@ fn test_field_comment_in_generated_code() {
     let mut file = proto3_file("field_comment.proto");
     file.message_type.push(DescriptorProto {
         name: Some("User".to_string()),
-        field: vec![make_field("email", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING)],
+        field: vec![make_field(
+            "email",
+            1,
+            Label::LABEL_OPTIONAL,
+            Type::TYPE_STRING,
+        )],
         ..Default::default()
     });
     // Path [4, 0, 2, 0] = message_type[0].field[0]
@@ -76,20 +86,16 @@ fn test_enum_comment_in_generated_code() {
     let mut file = proto3_file("enum_comment.proto");
     file.enum_type.push(EnumDescriptorProto {
         name: Some("Color".to_string()),
-        value: vec![
-            enum_value("UNSPECIFIED", 0),
-            enum_value("RED", 1),
-        ],
+        value: vec![enum_value("UNSPECIFIED", 0), enum_value("RED", 1)],
         ..Default::default()
     });
     let mut sci = SourceCodeInfo::default();
     // Path [5, 0] = enum_type[0]
-    sci.location.push(make_location(vec![5, 0], " Available colors.\n"));
+    sci.location
+        .push(make_location(vec![5, 0], " Available colors.\n"));
     // Path [5, 0, 2, 1] = enum_type[0].value[1] (RED)
-    sci.location.push(make_location(
-        vec![5, 0, 2, 1],
-        " The color red.\n",
-    ));
+    sci.location
+        .push(make_location(vec![5, 0, 2, 1], " The color red.\n"));
     file.source_code_info = sci.into();
 
     let result = generate(
@@ -178,26 +184,25 @@ fn test_view_gets_same_comment_as_message() {
     let mut file = proto3_file("view_comment.proto");
     file.message_type.push(DescriptorProto {
         name: Some("Greeter".to_string()),
-        field: vec![make_field("name", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING)],
+        field: vec![make_field(
+            "name",
+            1,
+            Label::LABEL_OPTIONAL,
+            Type::TYPE_STRING,
+        )],
         ..Default::default()
     });
     let mut sci = SourceCodeInfo::default();
-    sci.location.push(make_location(
-        vec![4, 0],
-        " A greeter message.\n",
-    ));
+    sci.location
+        .push(make_location(vec![4, 0], " A greeter message.\n"));
     file.source_code_info = sci.into();
 
     let config = CodeGenConfig {
         generate_views: true,
         ..Default::default()
     };
-    let result = generate(
-        &[file],
-        &["view_comment.proto".to_string()],
-        &config,
-    )
-    .expect("generation should succeed");
+    let result = generate(&[file], &["view_comment.proto".to_string()], &config)
+        .expect("generation should succeed");
 
     let content = &result[0].content;
     // The comment should appear on both the owned struct and the view struct

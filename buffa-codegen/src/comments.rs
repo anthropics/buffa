@@ -209,8 +209,32 @@ fn doc_lines_to_tokens(text: &str) -> TokenStream {
     let raw_lines: Vec<&str> = text.lines().collect();
     let mut lines: Vec<String> = Vec::with_capacity(raw_lines.len());
     let mut in_code_block = false;
+    let mut in_user_fence = false;
 
     for (idx, line) in raw_lines.iter().enumerate() {
+        // Proto authors may write markdown fences directly. Pass them
+        // through and suppress the indented-block heuristic inside so we
+        // don't nest a synthetic ```text fence.
+        if line.trim_start().starts_with("```") && !in_code_block {
+            in_user_fence = !in_user_fence;
+            lines.push(if line.starts_with(' ') {
+                line.to_string()
+            } else {
+                format!(" {line}")
+            });
+            continue;
+        }
+        if in_user_fence {
+            lines.push(if line.is_empty() {
+                String::new()
+            } else if line.starts_with(' ') {
+                line.to_string()
+            } else {
+                format!(" {line}")
+            });
+            continue;
+        }
+
         let is_indented = line.starts_with("    ") || line.starts_with('\t');
 
         if is_indented && !in_code_block {
@@ -276,27 +300,37 @@ fn doc_lines_to_tokens(text: &str) -> TokenStream {
 /// `// ` or ` * ` prefix and stores plain text. Each line is separated by
 /// `\n`. We preserve this structure so that `#[doc = "..."]` renders
 /// correctly in rustdoc.
+///
+/// Leading newlines and trailing whitespace are stripped, but leading
+/// spaces on the first content line are preserved so that indented code
+/// blocks survive for the fencing heuristic in [`doc_lines_to_tokens`].
+///
+/// When multiple parts (detached, leading, trailing) are present they are
+/// joined with a blank line. If an indented code block spans across parts,
+/// it will be fenced as two separate `text` blocks — this is a known
+/// limitation and acceptable since each proto comment section is
+/// conceptually distinct.
 fn format_comment(
     location: &crate::generated::descriptor::source_code_info::Location,
 ) -> Option<String> {
     let mut parts: Vec<&str> = Vec::new();
 
     for detached in &location.leading_detached_comments {
-        let trimmed = detached.trim();
+        let trimmed = detached.trim_start_matches('\n').trim_end();
         if !trimmed.is_empty() {
             parts.push(trimmed);
         }
     }
 
     if let Some(ref leading) = location.leading_comments {
-        let trimmed = leading.trim();
+        let trimmed = leading.trim_start_matches('\n').trim_end();
         if !trimmed.is_empty() {
             parts.push(trimmed);
         }
     }
 
     if let Some(ref trailing) = location.trailing_comments {
-        let trimmed = trailing.trim();
+        let trimmed = trailing.trim_start_matches('\n').trim_end();
         if !trimmed.is_empty() {
             parts.push(trimmed);
         }
@@ -385,7 +419,10 @@ mod tests {
             vec![make_location(vec![4, 0], Some("A test message.\n"), None)],
         );
         let map = fqn_comments(&file);
-        assert_eq!(map.get("pkg.Person").map(|s| s.as_str()), Some("A test message."));
+        assert_eq!(
+            map.get("pkg.Person").map(|s| s.as_str()),
+            Some("A test message.")
+        );
     }
 
     #[test]
@@ -424,7 +461,10 @@ mod tests {
             ],
         );
         let map = fqn_comments(&file);
-        assert_eq!(map.get("pkg.Status").map(|s| s.as_str()), Some("Status enum."));
+        assert_eq!(
+            map.get("pkg.Status").map(|s| s.as_str()),
+            Some("Status enum.")
+        );
         assert_eq!(
             map.get("pkg.Status.UNKNOWN").map(|s| s.as_str()),
             Some("Unknown status.")
@@ -477,11 +517,7 @@ mod tests {
             vec![],
             vec![
                 make_location(vec![4, 0, 3, 0], Some("A nested type.\n"), None),
-                make_location(
-                    vec![4, 0, 3, 0, 2, 0],
-                    Some("The value.\n"),
-                    None,
-                ),
+                make_location(vec![4, 0, 3, 0, 2, 0], Some("The value.\n"), None),
             ],
         );
         let map = fqn_comments(&file);
@@ -492,6 +528,33 @@ mod tests {
         assert_eq!(
             map.get("pkg.Outer.Inner.value").map(|s| s.as_str()),
             Some("The value.")
+        );
+    }
+
+    #[test]
+    fn test_nested_enum_in_message_comment() {
+        // Path [4, 0, 4, 0] = message_type[0].enum_type[0] (MSG_ENUM_TYPE = 4).
+        let file = make_file_with_locations(
+            "pkg",
+            vec![DescriptorProto {
+                name: Some("Container".to_string()),
+                enum_type: vec![make_enum("Kind", &["UNSET", "A"])],
+                ..Default::default()
+            }],
+            vec![],
+            vec![
+                make_location(vec![4, 0, 4, 0], Some("Kind of thing.\n"), None),
+                make_location(vec![4, 0, 4, 0, 2, 1], Some("The A kind.\n"), None),
+            ],
+        );
+        let map = fqn_comments(&file);
+        assert_eq!(
+            map.get("pkg.Container.Kind").map(|s| s.as_str()),
+            Some("Kind of thing.")
+        );
+        assert_eq!(
+            map.get("pkg.Container.Kind.A").map(|s| s.as_str()),
+            Some("The A kind.")
         );
     }
 
@@ -572,5 +635,113 @@ mod tests {
         let map = fqn_comments(&file);
         assert_eq!(map.get("Root").map(|s| s.as_str()), Some("Root msg."));
         assert_eq!(map.get("Root.id").map(|s| s.as_str()), Some("The id."));
+    }
+
+    // --- doc_lines_to_tokens -----------------------------------------------
+
+    fn doc_tokens(text: &str) -> String {
+        doc_lines_to_tokens(text).to_string()
+    }
+
+    #[test]
+    fn test_doc_plain_text_gets_leading_space() {
+        let out = doc_tokens("hello world");
+        assert_eq!(out, "# [doc = \" hello world\"]");
+    }
+
+    #[test]
+    fn test_doc_line_already_spaced_kept_as_is() {
+        let out = doc_tokens(" already spaced");
+        assert_eq!(out, "# [doc = \" already spaced\"]");
+    }
+
+    #[test]
+    fn test_doc_empty_line_preserved() {
+        let out = doc_tokens("a\n\nb");
+        assert_eq!(out, "# [doc = \" a\"] # [doc = \"\"] # [doc = \" b\"]");
+    }
+
+    #[test]
+    fn test_doc_indented_block_gets_text_fence() {
+        let out = doc_tokens("Example:\n    x = 1;\n    y = 2;");
+        assert!(out.contains("```text"), "should open text fence: {out}");
+        assert!(out.contains("\" x = 1;\""), "indent stripped: {out}");
+        assert!(out.ends_with("# [doc = \" ```\"]"), "should close: {out}");
+    }
+
+    #[test]
+    fn test_doc_blank_line_within_indented_block_keeps_fence_open() {
+        let out = doc_tokens("    line1\n\n    line2");
+        let fence_count = out.matches("```").count();
+        assert_eq!(
+            fence_count, 2,
+            "one open + one close, not two blocks: {out}"
+        );
+    }
+
+    #[test]
+    fn test_doc_trailing_unclosed_block_gets_closing_fence() {
+        let out = doc_tokens("text\n    code");
+        assert!(out.ends_with("# [doc = \" ```\"]"), "trailing close: {out}");
+    }
+
+    #[test]
+    fn test_doc_tab_indent_detected() {
+        let out = doc_tokens("\tcode line");
+        assert!(out.contains("```text"), "tab triggers fence: {out}");
+    }
+
+    #[test]
+    fn test_doc_empty_input() {
+        assert_eq!(doc_tokens(""), "");
+    }
+
+    #[test]
+    fn test_doc_user_markdown_fence_passes_through() {
+        // Proto authors may write markdown fences directly. These should
+        // pass through to rustdoc unmodified — no extra `text` fence added.
+        let out = doc_tokens("Example:\n```go\nx := 1\n```");
+        assert_eq!(
+            out.matches("```").count(),
+            2,
+            "user fence preserved, not double-fenced: {out}"
+        );
+        assert!(!out.contains("```text"), "no synthetic fence: {out}");
+    }
+
+    #[test]
+    fn test_doc_user_fence_with_indented_content_not_double_fenced() {
+        // Edge case: user-written fence with 4-space-indented content inside.
+        // The indented-block heuristic must not fire inside an existing fence.
+        let out = doc_tokens("```\n    int x = 1;\n```");
+        assert_eq!(
+            out.matches("```").count(),
+            2,
+            "no nested fence inside user fence: {out}"
+        );
+    }
+
+    // --- format_comment indentation preservation ----------------------------
+
+    #[test]
+    fn test_format_comment_preserves_leading_indent() {
+        let loc = Location {
+            leading_comments: Some("    int x = 1;\n    int y = 2;\n".to_string()),
+            ..Default::default()
+        };
+        let out = format_comment(&loc).unwrap();
+        assert!(
+            out.starts_with("    "),
+            "leading indent must survive for fencing: {out:?}"
+        );
+    }
+
+    #[test]
+    fn test_format_comment_strips_leading_newlines_keeps_spaces() {
+        let loc = Location {
+            leading_comments: Some("\n\n hello\n".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(format_comment(&loc).as_deref(), Some(" hello"));
     }
 }

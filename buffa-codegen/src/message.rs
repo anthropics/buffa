@@ -263,7 +263,13 @@ pub fn generate_message(
         .iter()
         .map(|oneof| {
             crate::oneof::generate_oneof_enum(
-                ctx, msg, oneof, current_package, proto_fqn, features, resolver,
+                ctx,
+                msg,
+                oneof,
+                current_package,
+                proto_fqn,
+                features,
+                resolver,
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
