@@ -128,6 +128,7 @@ jobs:
           # /usr/local/include) so the checked-in code is pinned to a
           # specific proto source, not whatever protoc version ships.
           protoc --descriptor_set_out=/tmp/wkt.pb --include_imports \
+              --include_source_info \
               -I buffa-types/protos \
               google/protobuf/any.proto \
               google/protobuf/duration.proto \
