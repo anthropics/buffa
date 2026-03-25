@@ -17,7 +17,10 @@ jobs:
     steps:
       - name: "CLA Assistant"
         if: (github.event.comment.body == 'recheck' || github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA') || github.event_name == 'pull_request_target'
-        uses: contributor-assistant/github-action@v2.6.1
+        # Upstream contributor-assistant/github-action was archived 2026-03-23
+        # still on Node 20 (deprecated 2026-06-02). This fork bumps the
+        # runtime to Node 24 with no other changes.
+        uses: iainmcgin/cla-github-action@b3e568c389ab9a34dc7800c2ea23daf21894fc59  # v2.7.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
