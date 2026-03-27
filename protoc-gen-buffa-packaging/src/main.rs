@@ -71,8 +71,8 @@ enum Filter {
 impl Filter {
     fn include(&self, fd: &FileDescriptorProto) -> bool {
         match self {
-            Filter::All => true,
-            Filter::Services => !fd.service.is_empty(),
+            Self::All => true,
+            Self::Services => !fd.service.is_empty(),
         }
     }
 }

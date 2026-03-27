@@ -47,7 +47,7 @@ impl TryFrom<Duration> for std::time::Duration {
         if d.seconds < 0 || d.nanos < 0 {
             return Err(DurationError::NegativeDuration);
         }
-        Ok(std::time::Duration::new(d.seconds as u64, d.nanos as u32))
+        Ok(Self::new(d.seconds as u64, d.nanos as u32))
     }
 }
 
@@ -61,7 +61,7 @@ impl From<std::time::Duration> for Duration {
     /// saturated to `i64::MAX` seconds rather than wrapping, which would produce
     /// an incorrect negative value.
     fn from(d: std::time::Duration) -> Self {
-        Duration {
+        Self {
             // Saturate at i64::MAX rather than wrapping for extremely large durations.
             seconds: d.as_secs().min(i64::MAX as u64) as i64,
             nanos: d.subsec_nanos() as i32,
@@ -192,7 +192,7 @@ impl<'de> serde::Deserialize<'de> for Duration {
         let s: String = serde::Deserialize::deserialize(d)?;
         let (seconds, nanos) = parse_duration_string(&s)
             .ok_or_else(|| serde::de::Error::custom(format!("invalid Duration string: {s}")))?;
-        Ok(Duration {
+        Ok(Self {
             seconds,
             nanos,
             ..Default::default()
@@ -203,7 +203,7 @@ impl<'de> serde::Deserialize<'de> for Duration {
 impl Duration {
     /// Create a [`Duration`] from a whole number of seconds.
     pub fn from_secs(seconds: i64) -> Self {
-        Duration {
+        Self {
             seconds,
             nanos: 0,
             ..Default::default()
@@ -229,7 +229,7 @@ impl Duration {
             !((seconds > 0 && nanos < 0) || (seconds < 0 && nanos > 0)),
             "nanos sign must be consistent with seconds sign"
         );
-        Duration {
+        Self {
             seconds,
             nanos,
             ..Default::default()
@@ -246,7 +246,7 @@ impl Duration {
         if (seconds > 0 && nanos < 0) || (seconds < 0 && nanos > 0) {
             return None;
         }
-        Some(Duration {
+        Some(Self {
             seconds,
             nanos,
             ..Default::default()
@@ -258,7 +258,7 @@ impl Duration {
     /// The sign of `millis` determines the sign of both `seconds` and the
     /// sub-second `nanos` field, per the protobuf sign-consistency rule.
     pub fn from_millis(millis: i64) -> Self {
-        Duration {
+        Self {
             seconds: millis / 1_000,
             // Remainder is in [-999, 999]; after ×1_000_000 → [-999_000_000, 999_000_000],
             // which fits in i32 (max ≈ ±2.1 billion). Cast is lossless.
@@ -269,7 +269,7 @@ impl Duration {
 
     /// Create a [`Duration`] from a number of microseconds.
     pub fn from_micros(micros: i64) -> Self {
-        Duration {
+        Self {
             seconds: micros / 1_000_000,
             // Remainder is in [-999_999, 999_999]; after ×1_000 → [-999_999_000, 999_999_000],
             // which fits in i32. Cast is lossless.
@@ -280,7 +280,7 @@ impl Duration {
 
     /// Create a [`Duration`] from a number of nanoseconds.
     pub fn from_nanos(nanos: i64) -> Self {
-        Duration {
+        Self {
             seconds: nanos / 1_000_000_000,
             // Remainder is in [-999_999_999, 999_999_999], which fits in i32. Cast is lossless.
             nanos: (nanos % 1_000_000_000) as i32,

@@ -10,7 +10,7 @@ use crate::google::protobuf::{value::Kind, ListValue, NullValue, Struct, Value};
 impl Value {
     /// Construct a [`Value`] that represents a protobuf `null`.
     pub fn null() -> Self {
-        Value {
+        Self {
             kind: Some(Kind::NullValue(buffa::EnumValue::from(
                 NullValue::NULL_VALUE,
             ))),
@@ -82,7 +82,7 @@ impl Value {
 
 impl From<f64> for Value {
     fn from(n: f64) -> Self {
-        Value {
+        Self {
             kind: Some(Kind::NumberValue(n)),
             ..Default::default()
         }
@@ -91,7 +91,7 @@ impl From<f64> for Value {
 
 impl From<String> for Value {
     fn from(s: String) -> Self {
-        Value {
+        Self {
             kind: Some(Kind::StringValue(s)),
             ..Default::default()
         }
@@ -100,7 +100,7 @@ impl From<String> for Value {
 
 impl From<&str> for Value {
     fn from(s: &str) -> Self {
-        Value {
+        Self {
             kind: Some(Kind::StringValue(s.to_string())),
             ..Default::default()
         }
@@ -113,13 +113,13 @@ impl From<f32> for Value {
     /// The conversion is lossless for values representable as both `f32` and
     /// `f64`; the extra precision bits are filled with zeros.
     fn from(n: f32) -> Self {
-        Value::from(n as f64)
+        Self::from(n as f64)
     }
 }
 
 impl From<bool> for Value {
     fn from(b: bool) -> Self {
-        Value {
+        Self {
             kind: Some(Kind::BoolValue(b)),
             ..Default::default()
         }
@@ -131,7 +131,7 @@ impl From<i32> for Value {
     ///
     /// All `i32` values are representable exactly as `f64`.
     fn from(n: i32) -> Self {
-        Value::from(n as f64)
+        Self::from(n as f64)
     }
 }
 
@@ -140,7 +140,7 @@ impl From<u32> for Value {
     ///
     /// All `u32` values are representable exactly as `f64`.
     fn from(n: u32) -> Self {
-        Value::from(n as f64)
+        Self::from(n as f64)
     }
 }
 
@@ -152,7 +152,7 @@ impl From<i64> for Value {
     /// `f64` has 53 bits of mantissa. `i64` values outside `[-2^53, 2^53]`
     /// will be rounded to the nearest representable `f64`.
     fn from(n: i64) -> Self {
-        Value::from(n as f64)
+        Self::from(n as f64)
     }
 }
 
@@ -164,13 +164,13 @@ impl From<u64> for Value {
     /// `f64` has 53 bits of mantissa. `u64` values greater than `2^53`
     /// will be rounded to the nearest representable `f64`.
     fn from(n: u64) -> Self {
-        Value::from(n as f64)
+        Self::from(n as f64)
     }
 }
 
 impl From<Struct> for Value {
     fn from(s: Struct) -> Self {
-        Value {
+        Self {
             kind: Some(Kind::StructValue(Box::new(s))),
             ..Default::default()
         }
@@ -179,7 +179,7 @@ impl From<Struct> for Value {
 
 impl From<ListValue> for Value {
     fn from(l: ListValue) -> Self {
-        Value {
+        Self {
             kind: Some(Kind::ListValue(Box::new(l))),
             ..Default::default()
         }
@@ -189,7 +189,7 @@ impl From<ListValue> for Value {
 impl ListValue {
     /// Construct a [`ListValue`] from an iterator of items convertible to [`Value`].
     pub fn from_values(values: impl IntoIterator<Item = impl Into<Value>>) -> Self {
-        ListValue {
+        Self {
             values: values.into_iter().map(Into::into).collect(),
             ..Default::default()
         }
@@ -235,7 +235,7 @@ impl IntoIterator for ListValue {
 impl FromIterator<Value> for ListValue {
     /// Collect [`Value`] items into a [`ListValue`].
     fn from_iter<T: IntoIterator<Item = Value>>(iter: T) -> Self {
-        ListValue {
+        Self {
             values: iter.into_iter().collect(),
             ..Default::default()
         }

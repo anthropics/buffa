@@ -33,7 +33,7 @@ impl Empty {
 unsafe impl ::buffa::DefaultInstance for Empty {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<Empty> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Empty::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for Empty {

@@ -34,12 +34,12 @@ impl WireType {
     /// recognised wire type (i.e. not in 0–5).
     pub fn from_u32(value: u32) -> Result<Self, DecodeError> {
         match value {
-            0 => Ok(WireType::Varint),
-            1 => Ok(WireType::Fixed64),
-            2 => Ok(WireType::LengthDelimited),
-            3 => Ok(WireType::StartGroup),
-            4 => Ok(WireType::EndGroup),
-            5 => Ok(WireType::Fixed32),
+            0 => Ok(Self::Varint),
+            1 => Ok(Self::Fixed64),
+            2 => Ok(Self::LengthDelimited),
+            3 => Ok(Self::StartGroup),
+            4 => Ok(Self::EndGroup),
+            5 => Ok(Self::Fixed32),
             _ => Err(DecodeError::InvalidWireType(value)),
         }
     }
@@ -141,7 +141,7 @@ impl Tag {
         // `field_number` is a u32 right-shifted by 3, so it is bounded by
         // u32::MAX >> 3 = 536_870_911 (2^29 – 1), the protobuf field number
         // maximum.  No further range check is required.
-        Ok(Tag {
+        Ok(Self {
             field_number,
             wire_type,
         })
