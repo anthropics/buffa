@@ -31,7 +31,7 @@ impl DoubleValue {
 unsafe impl ::buffa::DefaultInstance for DoubleValue {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<DoubleValue> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(DoubleValue::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for DoubleValue {
@@ -242,7 +242,7 @@ impl FloatValue {
 unsafe impl ::buffa::DefaultInstance for FloatValue {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<FloatValue> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(FloatValue::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for FloatValue {
@@ -453,7 +453,7 @@ impl Int64Value {
 unsafe impl ::buffa::DefaultInstance for Int64Value {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<Int64Value> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Int64Value::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for Int64Value {
@@ -664,7 +664,7 @@ impl UInt64Value {
 unsafe impl ::buffa::DefaultInstance for UInt64Value {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<UInt64Value> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(UInt64Value::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for UInt64Value {
@@ -875,7 +875,7 @@ impl Int32Value {
 unsafe impl ::buffa::DefaultInstance for Int32Value {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<Int32Value> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Int32Value::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for Int32Value {
@@ -1086,7 +1086,7 @@ impl UInt32Value {
 unsafe impl ::buffa::DefaultInstance for UInt32Value {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<UInt32Value> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(UInt32Value::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for UInt32Value {
@@ -1297,7 +1297,7 @@ impl BoolValue {
 unsafe impl ::buffa::DefaultInstance for BoolValue {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<BoolValue> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(BoolValue::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for BoolValue {
@@ -1508,7 +1508,7 @@ impl StringValue {
 unsafe impl ::buffa::DefaultInstance for StringValue {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<StringValue> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(StringValue::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for StringValue {
@@ -1722,7 +1722,7 @@ impl BytesValue {
 unsafe impl ::buffa::DefaultInstance for BytesValue {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<BytesValue> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(BytesValue::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for BytesValue {

@@ -16,7 +16,7 @@ impl FieldMask {
     /// assert!(mask.contains("user.name"));
     /// ```
     pub fn from_paths(paths: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        FieldMask {
+        Self {
             paths: paths.into_iter().map(Into::into).collect(),
             ..Default::default()
         }
@@ -176,7 +176,7 @@ impl<'de> serde::Deserialize<'de> for FieldMask {
                 })
                 .collect::<Result<_, _>>()?
         };
-        Ok(FieldMask {
+        Ok(Self {
             paths,
             ..Default::default()
         })

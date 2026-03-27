@@ -11,7 +11,7 @@ impl Any {
     /// `type.googleapis.com/fully.qualified.TypeName`, but this method does
     /// not enforce that convention — any string is accepted.
     pub fn pack(msg: &impl buffa::Message, type_url: impl Into<String>) -> Self {
-        Any {
+        Self {
             type_url: type_url.into(),
             value: msg.encode_to_vec(),
             ..Default::default()
@@ -202,7 +202,7 @@ impl<'de> serde::Deserialize<'de> for Any {
             Some(_) => {
                 return Err(serde::de::Error::custom("@type must be a string"));
             }
-            None => return Ok(Any::default()),
+            None => return Ok(Self::default()),
         };
 
         // The type URL must be non-empty and contain a '/' separating the
@@ -239,7 +239,7 @@ impl<'de> serde::Deserialize<'de> for Any {
             }
         };
 
-        Ok(Any {
+        Ok(Self {
             type_url,
             value,
             ..Default::default()
