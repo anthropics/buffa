@@ -327,8 +327,8 @@ impl<T: Default + serde::Serialize> serde::Serialize for MessageField<T> {
 impl<'de, T: Default + serde::Deserialize<'de>> serde::Deserialize<'de> for MessageField<T> {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         Option::<T>::deserialize(d).map(|opt| match opt {
-            Some(v) => MessageField::some(v),
-            None => MessageField::none(),
+            Some(v) => Self::some(v),
+            None => Self::none(),
         })
     }
 }

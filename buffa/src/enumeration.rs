@@ -48,8 +48,8 @@ impl<E: Enumeration> EnumValue<E> {
     #[inline]
     pub fn to_i32(&self) -> i32 {
         match self {
-            EnumValue::Known(e) => e.to_i32(),
-            EnumValue::Unknown(v) => *v,
+            Self::Known(e) => e.to_i32(),
+            Self::Unknown(v) => *v,
         }
     }
 
@@ -59,21 +59,21 @@ impl<E: Enumeration> EnumValue<E> {
     /// [`MessageField::is_set`](crate::MessageField::is_set) pattern.
     #[inline]
     pub fn is_known(&self) -> bool {
-        matches!(self, EnumValue::Known(_))
+        matches!(self, Self::Known(_))
     }
 
     /// Returns `true` if the wire value was not recognized as a known variant.
     #[inline]
     pub fn is_unknown(&self) -> bool {
-        matches!(self, EnumValue::Unknown(_))
+        matches!(self, Self::Unknown(_))
     }
 
     /// Try to convert to a known enum variant.
     #[inline]
     pub fn as_known(&self) -> Option<E> {
         match self {
-            EnumValue::Known(e) => Some(*e),
-            EnumValue::Unknown(_) => None,
+            Self::Known(e) => Some(*e),
+            Self::Unknown(_) => None,
         }
     }
 }
@@ -81,15 +81,15 @@ impl<E: Enumeration> EnumValue<E> {
 impl<E: Enumeration> From<i32> for EnumValue<E> {
     fn from(value: i32) -> Self {
         match E::from_i32(value) {
-            Some(e) => EnumValue::Known(e),
-            None => EnumValue::Unknown(value),
+            Some(e) => Self::Known(e),
+            None => Self::Unknown(value),
         }
     }
 }
 
 impl<E: Enumeration> From<E> for EnumValue<E> {
     fn from(value: E) -> Self {
-        EnumValue::Known(value)
+        Self::Known(value)
     }
 }
 
@@ -106,8 +106,8 @@ impl<E: Enumeration> From<E> for EnumValue<E> {
 impl<E: Enumeration> PartialEq<E> for EnumValue<E> {
     fn eq(&self, other: &E) -> bool {
         match self {
-            EnumValue::Known(e) => e == other,
-            EnumValue::Unknown(_) => false,
+            Self::Known(e) => e == other,
+            Self::Unknown(_) => false,
         }
     }
 }
@@ -115,8 +115,8 @@ impl<E: Enumeration> PartialEq<E> for EnumValue<E> {
 impl<E: Enumeration> fmt::Debug for EnumValue<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            EnumValue::Known(e) => write!(f, "{:?}", e),
-            EnumValue::Unknown(v) => write!(f, "Unknown({v})"),
+            Self::Known(e) => write!(f, "{:?}", e),
+            Self::Unknown(v) => write!(f, "Unknown({v})"),
         }
     }
 }
@@ -124,8 +124,8 @@ impl<E: Enumeration> fmt::Debug for EnumValue<E> {
 impl<E: Enumeration> fmt::Display for EnumValue<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            EnumValue::Known(e) => f.write_str(e.proto_name()),
-            EnumValue::Unknown(v) => write!(f, "{v}"),
+            Self::Known(e) => f.write_str(e.proto_name()),
+            Self::Unknown(v) => write!(f, "{v}"),
         }
     }
 }
@@ -134,8 +134,8 @@ impl<E: Enumeration> fmt::Display for EnumValue<E> {
 impl<E: Enumeration> serde::Serialize for EnumValue<E> {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         match self {
-            EnumValue::Known(e) => s.serialize_str(e.proto_name()),
-            EnumValue::Unknown(v) => s.serialize_i32(*v),
+            Self::Known(e) => s.serialize_str(e.proto_name()),
+            Self::Unknown(v) => s.serialize_i32(*v),
         }
     }
 }
@@ -205,7 +205,7 @@ impl<E: Enumeration> Default for EnumValue<E> {
     /// the correct protobuf default but may be surprising — the field's default
     /// is technically an unknown variant.
     fn default() -> Self {
-        EnumValue::from(0)
+        Self::from(0)
     }
 }
 

@@ -217,7 +217,7 @@ pub mod __doctest_fixtures {
     unsafe impl DefaultInstance for Person {
         fn default_instance() -> &'static Self {
             static INST: __private::OnceBox<Person> = __private::OnceBox::new();
-            INST.get_or_init(|| alloc::boxed::Box::new(Person::default()))
+            INST.get_or_init(|| alloc::boxed::Box::new(Self::default()))
         }
     }
 

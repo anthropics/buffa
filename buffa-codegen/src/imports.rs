@@ -55,7 +55,7 @@ impl ImportResolver {
                 blocked.insert(name.to_string());
             }
         }
-        ImportResolver { blocked }
+        Self { blocked }
     }
 
     /// Emit the `use` block for the top of a generated file.

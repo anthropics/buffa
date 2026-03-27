@@ -40,7 +40,7 @@ impl Version {
 unsafe impl ::buffa::DefaultInstance for Version {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<Version> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Version::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for Version {
@@ -258,7 +258,7 @@ unsafe impl ::buffa::DefaultInstance for CodeGeneratorRequest {
         static VALUE: ::buffa::__private::OnceBox<CodeGeneratorRequest> = ::buffa::__private::OnceBox::new();
         VALUE
             .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                CodeGeneratorRequest::default(),
+                Self::default(),
             ))
     }
 }
@@ -517,7 +517,7 @@ unsafe impl ::buffa::DefaultInstance for CodeGeneratorResponse {
         static VALUE: ::buffa::__private::OnceBox<CodeGeneratorResponse> = ::buffa::__private::OnceBox::new();
         VALUE
             .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                CodeGeneratorResponse::default(),
+                Self::default(),
             ))
     }
 }
@@ -831,7 +831,7 @@ pub mod code_generator_response {
     unsafe impl ::buffa::DefaultInstance for File {
         fn default_instance() -> &'static Self {
             static VALUE: ::buffa::__private::OnceBox<File> = ::buffa::__private::OnceBox::new();
-            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(File::default()))
+            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
     }
     impl ::buffa::Message for File {

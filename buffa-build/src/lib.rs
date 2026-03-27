@@ -674,7 +674,7 @@ fn generate_include_file(entries: &[(String, String)], relative: bool) -> String
     #[derive(Default)]
     struct ModNode {
         files: Vec<String>,
-        children: BTreeMap<String, ModNode>,
+        children: BTreeMap<String, Self>,
     }
 
     let mut root = ModNode::default();

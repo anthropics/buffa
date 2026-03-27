@@ -159,23 +159,23 @@ pub enum UnknownFieldData {
 impl UnknownFieldData {
     fn wire_type_value(&self) -> u64 {
         match self {
-            UnknownFieldData::Varint(_) => 0,
-            UnknownFieldData::Fixed64(_) => 1,
-            UnknownFieldData::LengthDelimited(_) => 2,
-            UnknownFieldData::Group(_) => 3,
-            UnknownFieldData::Fixed32(_) => 5,
+            Self::Varint(_) => 0,
+            Self::Fixed64(_) => 1,
+            Self::LengthDelimited(_) => 2,
+            Self::Group(_) => 3,
+            Self::Fixed32(_) => 5,
         }
     }
 
     fn encoded_len(&self, field_number: u32) -> usize {
         match self {
-            UnknownFieldData::Varint(v) => crate::encoding::varint_len(*v),
-            UnknownFieldData::Fixed64(_) => 8,
-            UnknownFieldData::Fixed32(_) => 4,
-            UnknownFieldData::LengthDelimited(data) => {
+            Self::Varint(v) => crate::encoding::varint_len(*v),
+            Self::Fixed64(_) => 8,
+            Self::Fixed32(_) => 4,
+            Self::LengthDelimited(data) => {
                 crate::encoding::varint_len(data.len() as u64) + data.len()
             }
-            UnknownFieldData::Group(fields) => {
+            Self::Group(fields) => {
                 // Group content + end-group tag (wire type 4, same field number).
                 let end_tag_len = crate::encoding::varint_len((field_number as u64) << 3 | 4);
                 fields.encoded_len() + end_tag_len
