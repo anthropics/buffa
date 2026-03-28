@@ -406,8 +406,20 @@ fn check_nested_type_oneof_conflicts(file: &FileDescriptorProto) -> Result<(), C
             }
         }
 
-        // Check each oneof's PascalCase name against nested type names.
-        for oneof in &msg.oneof_decl {
+        // Check each non-synthetic oneof's PascalCase name against nested
+        // type names.  Synthetic oneofs (created by proto3 `optional` fields)
+        // never produce a Rust enum, so they cannot collide.
+        for (idx, oneof) in msg.oneof_decl.iter().enumerate() {
+            let has_real_fields = msg
+                .field
+                .iter()
+                .any(|f| {
+                    crate::impl_message::is_real_oneof_member(f)
+                        && f.oneof_index == Some(idx as i32)
+                });
+            if !has_real_fields {
+                continue;
+            }
             if let Some(oneof_name) = &oneof.name {
                 let rust_name = crate::oneof::to_pascal_case(oneof_name);
                 if nested_names.contains(rust_name.as_str()) {
