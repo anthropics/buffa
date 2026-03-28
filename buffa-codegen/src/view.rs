@@ -315,7 +315,7 @@ fn view_struct_field(
     if is_repeated && is_map_field(msg, field) {
         let ident = make_field_ident(field_name);
         let number = field.number.unwrap_or(0);
-        let tag_line = format!("Field {number}: `{field_name}` (map)");
+        let tag_line = format!(" Field {number}: `{field_name}` (map)");
         let doc = crate::comments::doc_attrs_with_tag(proto_comment, &tag_line);
         let map_ty = view_map_type(ctx, msg, field, current_package, features)?;
         return Ok(Some(quote! {
@@ -326,7 +326,7 @@ fn view_struct_field(
 
     let ident = make_field_ident(field_name);
     let number = field.number.unwrap_or(0);
-    let tag_line = format!("Field {number}: `{field_name}`");
+    let tag_line = format!(" Field {number}: `{field_name}`");
     let doc = crate::comments::doc_attrs_with_tag(proto_comment, &tag_line);
 
     let rust_type = if is_repeated {

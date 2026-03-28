@@ -1059,7 +1059,7 @@ fn generate_field(
     let rust_name = make_field_ident(field_name);
 
     let field_fqn = format!("{}.{}", proto_fqn, field_name);
-    let tag_line = format!("Field {field_number}: `{field_name}`");
+    let tag_line = format!(" Field {field_number}: `{field_name}`");
     let doc = crate::comments::doc_attrs_with_tag(ctx.comment(&field_fqn), &tag_line);
     let serde_attr = if ctx.config.generate_json {
         serde_field_attr(ctx, field, field_name, &info, features)
