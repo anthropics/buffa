@@ -833,7 +833,7 @@ pub struct DescriptorProto {
     /// Field 6: `extension`
     pub extension: ::buffa::alloc::vec::Vec<FieldDescriptorProto>,
     /// Field 3: `nested_type`
-    pub nested_type: ::buffa::alloc::vec::Vec<DescriptorProto>,
+    pub nested_type: ::buffa::alloc::vec::Vec<Self>,
     /// Field 4: `enum_type`
     pub enum_type: ::buffa::alloc::vec::Vec<EnumDescriptorProto>,
     /// Field 5: `extension_range`

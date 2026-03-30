@@ -886,6 +886,12 @@ fn is_value_field(
 #[derive(Debug)]
 struct FieldInfo {
     rust_type: TokenStream,
+    /// Type to use in the struct field declaration. Differs from `rust_type`
+    /// only for self-referential message fields, where it uses `Self` instead
+    /// of the concrete name. `rust_type` stays concrete for serde-deserialize
+    /// codegen, which runs inside a local Visitor impl where `Self` binds to
+    /// the wrong type.
+    struct_field_type: TokenStream,
     is_repeated: bool,
     is_map: bool,
     /// Whether this field has explicit presence and uses `Option<T>` wrapping.
@@ -984,6 +990,25 @@ fn classify_field(
         scalar_rust_type(field_type, resolver)?
     };
 
+    // Self-referential struct fields (e.g. DescriptorProto.nested_type) can
+    // use `Self` in the struct declaration. Only message-typed, non-map
+    // fields qualify. `rust_type` stays concrete for the serde-deserialize
+    // path — that codegen runs inside `impl Visitor for _V` where `Self`
+    // means `_V`, not the message.
+    let self_fqn = format!(".{proto_fqn}");
+    let is_self_ref = field.type_name.as_deref() == Some(self_fqn.as_str()) && !is_map;
+    let struct_field_type = if is_self_ref {
+        if is_repeated {
+            let vec = resolver.vec();
+            quote! { #vec<Self> }
+        } else {
+            let mf = resolver.message_field();
+            quote! { #mf<Self> }
+        }
+    } else {
+        rust_type.clone()
+    };
+
     let map_key_type = map_entry.and_then(|e| map_entry_key_type(ctx, e, features));
     let map_value_type = map_entry.and_then(|e| map_entry_value_type(ctx, e, features));
 
@@ -1006,6 +1031,7 @@ fn classify_field(
 
     Ok(FieldInfo {
         rust_type,
+        struct_field_type,
         is_repeated,
         is_map,
         is_optional,
@@ -1066,7 +1092,7 @@ fn generate_field(
     } else {
         quote! {}
     };
-    let rust_type = &info.rust_type;
+    let rust_type = &info.struct_field_type;
     let tokens = quote! {
         #doc
         #serde_attr
