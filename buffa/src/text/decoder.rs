@@ -249,8 +249,11 @@ impl<'a> TextDecoder<'a> {
         match tok.scalar_kind {
             ScalarKind::Literal => {
                 // nan, inf, infinity, -inf, -infinity (case-insensitive).
+                // trim_start: the tokenizer accepts `- inf` with whitespace
+                // between the sign and the literal, so the raw span may
+                // contain it.
                 let (neg, lit) = match tok.raw.strip_prefix('-') {
-                    Some(r) => (true, r),
+                    Some(r) => (true, r.trim_start()),
                     None => (false, tok.raw),
                 };
                 let v = if lit.eq_ignore_ascii_case("nan") {
@@ -565,9 +568,12 @@ impl<'a> TextDecoder<'a> {
     pub fn read_any_expansion(&mut self, name: &'a str) -> Result<(&'a str, Vec<u8>), ParseError> {
         // read_field_name only returns bracketed names for NameKind::TypeName;
         // a missing bracket here means the caller dispatched wrong.
+        // trim: the grammar permits whitespace inside brackets, and
+        // `Token.raw` is a slice of the input so it preserves that.
         let url = name
             .strip_prefix('[')
             .and_then(|s| s.strip_suffix(']'))
+            .map(str::trim)
             .ok_or_else(|| self.unknown_field())?;
         let entry =
             crate::type_registry::global_text_any(url).ok_or_else(|| self.unknown_field())?;
@@ -600,6 +606,7 @@ impl<'a> TextDecoder<'a> {
         let full = name
             .strip_prefix('[')
             .and_then(|s| s.strip_suffix(']'))
+            .map(str::trim)
             .ok_or_else(|| self.unknown_field())?;
         let Some(entry) = crate::type_registry::global_text_ext_by_name(full) else {
             return Err(self.unknown_field());
@@ -856,6 +863,8 @@ mod tests {
             ("f: 0e0",        "0"),
             ("f: inf",        "inf"),
             ("f: -inf",       "-inf"),
+            ("f: - inf",      "-inf"),    // whitespace after sign
+            ("f: -\tinf",     "-inf"),
             ("f: infinity",   "inf"),
             ("f: Infinity",   "inf"),
             ("f: -INFINITY",  "-inf"),

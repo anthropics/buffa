@@ -142,7 +142,7 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, &'static str> {
         }
         // After a closing quote: skip whitespace, then check for another quote.
         while let Some(&c) = s.first() {
-            if matches!(c, b' ' | b'\t' | b'\r' | b'\n') {
+            if super::token::is_textproto_ws(c) {
                 s = &s[1..];
             } else {
                 break;
@@ -179,10 +179,7 @@ pub fn unescape_str(raw: &str) -> Result<Cow<'_, str>, &'static str> {
                     // Found closing quote. If nothing follows, we can borrow.
                     // Trailing whitespace is fine (tokenizer may include it).
                     let tail = &inner[i + 1..];
-                    if tail
-                        .iter()
-                        .all(|&c| matches!(c, b' ' | b'\t' | b'\r' | b'\n'))
-                    {
+                    if tail.iter().all(|&c| super::token::is_textproto_ws(c)) {
                         // The original `raw` is &str, so this slice is valid
                         // UTF-8 by construction (no escapes present means no
                         // byte-level rewriting happened).

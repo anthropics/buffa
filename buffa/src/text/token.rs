@@ -135,10 +135,16 @@ pub struct Tokenizer<'a> {
 
 impl<'a> Tokenizer<'a> {
     /// Create a tokenizer positioned at the start of `input`.
+    ///
+    /// A leading UTF-8 byte-order mark (`U+FEFF`) is silently skipped — some
+    /// editors prepend one when saving, and it is not a valid identifier
+    /// start character.
     pub fn new(input: &'a str) -> Self {
+        // BOM is 3 bytes in UTF-8 (EF BB BF).
+        let cursor = if input.starts_with('\u{FEFF}') { 3 } else { 0 };
         Tokenizer {
             input,
-            cursor: 0,
+            cursor,
             last_kind: LastKind::Bof,
             open_stack: [0u8; crate::message::RECURSION_LIMIT as usize],
             open_depth: 0,
@@ -268,7 +274,7 @@ impl<'a> Tokenizer<'a> {
         self.cursor += n;
         loop {
             match self.rest().first() {
-                Some(b' ' | b'\t' | b'\r' | b'\n') => self.cursor += 1,
+                Some(&c) if is_textproto_ws(c) => self.cursor += 1,
                 Some(b'#') => {
                     // Skip to end of line (or end of input).
                     let rest = self.rest();
@@ -686,6 +692,16 @@ fn is_delim(c: u8) -> bool {
     !(c == b'-' || c == b'+' || c == b'.' || c == b'_' || c.is_ascii_alphanumeric())
 }
 
+/// Is `c` a textproto whitespace byte?
+///
+/// Per <https://protobuf.dev/reference/protobuf/textformat-spec/#whitespace>
+/// this includes vertical tab and form feed, which `u8::is_ascii_whitespace`
+/// and the common `matches!(c, b' ' | b'\t' | b'\r' | b'\n')` idiom miss.
+#[inline]
+pub(super) const fn is_textproto_ws(c: u8) -> bool {
+    matches!(c, b' ' | b'\t' | b'\r' | b'\n' | b'\x0B' | b'\x0C')
+}
+
 /// Parse an identifier `[_a-zA-Z][_a-zA-Z0-9]*`, optionally with a leading
 /// `-`. Returns the byte length, or 0 if no identifier is present.
 ///
@@ -694,7 +710,14 @@ fn parse_ident(s: &[u8], allow_neg: bool) -> usize {
     let mut i = 0;
     if allow_neg && s.first() == Some(&b'-') {
         i = 1;
-        if s.len() == 1 {
+        // The grammar permits whitespace between the sign and the literal
+        // (`FLOAT = [ "-" ] , FLOAT_LIT` where `,` means "may be separated
+        // by whitespace"), so `- inf` is as valid as `-inf`. Matches what
+        // `lex_number` does for `- 42`. The decoder side trims after
+        // stripping `-` so the raw span's internal whitespace is harmless.
+        let after = consume_ws(&s[1..]);
+        i += s.len() - 1 - after.len();
+        if s.get(i).is_none() {
             return 0;
         }
     }
@@ -912,7 +935,7 @@ pub(super) fn number_for_parse<'a>(raw: &'a str, num: &LexNumber) -> alloc::borr
 fn consume_ws(mut s: &[u8]) -> &[u8] {
     loop {
         match s.first() {
-            Some(b' ' | b'\t' | b'\r' | b'\n') => s = &s[1..],
+            Some(&c) if is_textproto_ws(c) => s = &s[1..],
             Some(b'#') => match s.iter().position(|&b| b == b'\n') {
                 Some(i) => s = &s[i + 1..],
                 None => return &[],
@@ -956,7 +979,7 @@ fn lex_string_run(s: &[u8]) -> Option<usize> {
         // another opener. No `#` comments here — protobuf-go doesn't skip
         // comments between adjacent literals either (see `parseStringValue`).
         let mut j = i;
-        while matches!(s.get(j), Some(b' ' | b'\t' | b'\r' | b'\n')) {
+        while s.get(j).is_some_and(|&c| is_textproto_ws(c)) {
             j += 1;
         }
         if matches!(s.get(j), Some(b'"') | Some(b'\'')) {
@@ -1351,5 +1374,44 @@ mod tests {
         assert_eq!(err.line, 3);
         // `>` is at byte offset 9 on line 3 → column 10
         assert_eq!(err.col, 10);
+    }
+
+    #[test]
+    fn bom_is_skipped() {
+        // UTF-8 BOM (U+FEFF = EF BB BF) at file start should be transparent.
+        let toks = drain("\u{FEFF}a: 1").unwrap();
+        assert_eq!(toks, &[(TokenKind::Name, "a"), (TokenKind::Scalar, "1")]);
+    }
+
+    #[test]
+    fn bom_only_is_empty() {
+        let toks = drain("\u{FEFF}").unwrap();
+        assert!(toks.is_empty());
+    }
+
+    #[test]
+    fn vertical_tab_and_form_feed_are_whitespace() {
+        // Spec: https://protobuf.dev/reference/protobuf/textformat-spec/#whitespace
+        let toks = drain("a:\x0B1\x0Cb: 2").unwrap();
+        assert_eq!(
+            toks,
+            &[
+                (TokenKind::Name, "a"),
+                (TokenKind::Scalar, "1"),
+                (TokenKind::Name, "b"),
+                (TokenKind::Scalar, "2"),
+            ]
+        );
+    }
+
+    #[test]
+    fn signed_literal_with_whitespace() {
+        // `- inf` is as valid as `-inf` per the grammar. Raw span includes
+        // the whitespace; decoder handles it.
+        let toks = drain("f: - inf").unwrap();
+        assert_eq!(
+            toks,
+            &[(TokenKind::Name, "f"), (TokenKind::Scalar, "- inf")]
+        );
     }
 }
