@@ -335,9 +335,25 @@ fn view_struct_field(
         view_singular_type(ctx, field, current_package, features)?
     };
 
+    // Self-referential view fields (e.g. HttpRuleView.additional_bindings)
+    // can use `Self` — inside `struct FooView<'a>`, `Self` means `FooView<'a>`
+    // with the lifetime applied. Override only for message-typed, non-map
+    // struct fields; decode and to_owned paths use the resolved type as-is
+    // via the helper functions so no conflict there.
+    let self_fqn = format!(".{proto_fqn}");
+    let struct_ty = if field.type_name.as_deref() == Some(self_fqn.as_str()) {
+        if is_repeated {
+            quote! { ::buffa::RepeatedView<'a, Self> }
+        } else {
+            quote! { ::buffa::MessageFieldView<Self> }
+        }
+    } else {
+        rust_type
+    };
+
     Ok(Some(quote! {
         #doc
-        pub #ident: #rust_type,
+        pub #ident: #struct_ty,
     }))
 }
 
