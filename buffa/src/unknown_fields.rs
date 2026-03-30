@@ -194,6 +194,7 @@ impl<'a> arbitrary::Arbitrary<'a> for UnknownFields {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::encoding::MAX_FIELD_NUMBER;
 
     fn varint_field(number: u32, value: u64) -> UnknownField {
         UnknownField {
@@ -328,7 +329,7 @@ mod tests {
 
     #[test]
     fn test_encoded_len_matches_write_varint() {
-        for &num in &[1, 15, 16, 2047, 2048, 536_870_911] {
+        for &num in &[1, 15, 16, 2047, 2048, MAX_FIELD_NUMBER] {
             for &val in &[0, 1, 127, 128, u32::MAX as u64, u64::MAX] {
                 assert_len_matches_write(varint_field(num, val));
             }
@@ -337,7 +338,7 @@ mod tests {
 
     #[test]
     fn test_encoded_len_matches_write_fixed() {
-        for &num in &[1, 16, 536_870_911] {
+        for &num in &[1, 16, MAX_FIELD_NUMBER] {
             assert_len_matches_write(fixed32_field(num, 0));
             assert_len_matches_write(fixed32_field(num, u32::MAX));
             assert_len_matches_write(fixed64_field(num, 0));
@@ -347,7 +348,7 @@ mod tests {
 
     #[test]
     fn test_encoded_len_matches_write_length_delimited() {
-        for &num in &[1, 16, 536_870_911] {
+        for &num in &[1, 16, MAX_FIELD_NUMBER] {
             assert_len_matches_write(ld_field(num, alloc::vec![]));
             assert_len_matches_write(ld_field(num, alloc::vec![0xAB]));
             assert_len_matches_write(ld_field(num, alloc::vec![0; 127]));
@@ -357,7 +358,7 @@ mod tests {
 
     #[test]
     fn test_encoded_len_matches_write_group() {
-        for &num in &[1, 16, 536_870_911] {
+        for &num in &[1, 16, MAX_FIELD_NUMBER] {
             // Empty group.
             assert_len_matches_write(group_field(num, UnknownFields::new()));
             // Group with mixed children.
