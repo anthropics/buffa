@@ -26,7 +26,6 @@
 //! used instead — see [`Config::use_buf()`]. Alternatively, feed a
 //! pre-compiled descriptor set via [`Config::descriptor_set()`].
 
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -460,8 +459,7 @@ impl Config {
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            let mut f = std::fs::File::create(&path)?;
-            f.write_all(file.content.as_bytes())?;
+            write_if_changed(&path, file.content.as_bytes())?;
             let package = file_to_package.get(&file.name).cloned().unwrap_or_default();
             output_entries.push((file.name, package));
         }
@@ -470,8 +468,7 @@ impl Config {
         if let Some(ref include_name) = self.include_file {
             let include_content = generate_include_file(&output_entries, relative_includes);
             let include_path = out_dir.join(include_name);
-            let mut f = std::fs::File::create(&include_path)?;
-            f.write_all(include_content.as_bytes())?;
+            write_if_changed(&include_path, include_content.as_bytes())?;
         }
 
         // Tell cargo to re-run if any proto file changes.
@@ -504,6 +501,18 @@ impl Default for Config {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Write `content` to `path` only if the file doesn't already exist with
+/// identical content. Avoids bumping timestamps on unchanged files, which
+/// prevents unnecessary downstream recompilation.
+fn write_if_changed(path: &Path, content: &[u8]) -> std::io::Result<()> {
+    if let Ok(existing) = std::fs::read(path) {
+        if existing == content {
+            return Ok(());
+        }
+    }
+    std::fs::write(path, content)
 }
 
 /// Invoke `protoc` to produce a `FileDescriptorSet` (serialized bytes).
@@ -841,5 +850,38 @@ mod tests {
             "both files share one `mod b`: {out}"
         );
         assert!(!out.contains("OUT_DIR"));
+    }
+
+    #[test]
+    fn write_if_changed_creates_new_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("new.rs");
+        write_if_changed(&path, b"hello").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn write_if_changed_skips_identical_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("same.rs");
+        std::fs::write(&path, b"content").unwrap();
+        let mtime_before = std::fs::metadata(&path).unwrap().modified().unwrap();
+
+        // Sleep briefly so any write would produce a different mtime.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        write_if_changed(&path, b"content").unwrap();
+        let mtime_after = std::fs::metadata(&path).unwrap().modified().unwrap();
+        assert_eq!(mtime_before, mtime_after);
+    }
+
+    #[test]
+    fn write_if_changed_overwrites_different_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("changed.rs");
+        std::fs::write(&path, b"old").unwrap();
+
+        write_if_changed(&path, b"new").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
     }
 }
