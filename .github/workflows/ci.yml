@@ -20,6 +20,7 @@ jobs:
   # ── Fast feedback: lint + test on stable ─────────────────────────────────
   lint-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -46,6 +47,7 @@ jobs:
   # preinstalled on ubuntu-latest so no setup-node step is needed.
   lint-markdown:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - run: npx --yes markdownlint-cli@0.47.0 '**/*.md' --ignore target --ignore .claude
@@ -53,6 +55,7 @@ jobs:
   # ── MSRV check ───────────────────────────────────────────────────────────
   msrv-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -74,6 +77,7 @@ jobs:
   # ── no_std and 32-bit compilation checks ─────────────────────────────────
   check-nostd:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -107,6 +111,7 @@ jobs:
   # ── Verify checked-in generated code is up to date ───────────────────────
   check-generated-code:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -156,6 +161,7 @@ jobs:
   # extracts the conformance_test_runner + proto files from the tools image.
   conformance:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
