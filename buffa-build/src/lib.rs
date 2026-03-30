@@ -530,6 +530,7 @@ fn invoke_protoc(
 
     let mut cmd = Command::new(&protoc);
     cmd.arg("--include_imports");
+    cmd.arg("--include_source_info");
     cmd.arg(format!(
         "--descriptor_set_out={}",
         descriptor_path.display()
@@ -566,6 +567,9 @@ fn invoke_protoc(
 /// module-root-relative; passing user paths to both would be a contradiction.
 /// Codegen filtering happens on our side via `files_to_generate` matching.
 fn invoke_buf() -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    // buf build includes SourceCodeInfo by default (there's an
+    // --exclude-source-info flag to disable it), so proto comments
+    // propagate to generated code without an explicit opt-in here.
     let output = Command::new("buf")
         .arg("build")
         .arg("--as-file-descriptor-set")
@@ -681,7 +685,7 @@ fn generate_include_file(entries: &[(String, String)], relative: bool) -> String
     #[derive(Default)]
     struct ModNode {
         files: Vec<String>,
-        children: BTreeMap<String, ModNode>,
+        children: BTreeMap<String, Self>,
     }
 
     let mut root = ModNode::default();

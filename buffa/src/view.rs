@@ -634,7 +634,7 @@ where
             let slice: &'static [u8] = core::mem::transmute::<&[u8], &'static [u8]>(&bytes);
             V::decode_view(slice)?
         };
-        Ok(OwnedView {
+        Ok(Self {
             view: core::mem::ManuallyDrop::new(view),
             bytes,
         })
@@ -656,7 +656,7 @@ where
             let slice: &'static [u8] = core::mem::transmute::<&[u8], &'static [u8]>(&bytes);
             opts.decode_view::<V>(slice)?
         };
-        Ok(OwnedView {
+        Ok(Self {
             view: core::mem::ManuallyDrop::new(view),
             bytes,
         })
@@ -706,7 +706,7 @@ where
     /// from `bytes` (or a sub-slice that `bytes` fully contains). Violating
     /// this invariant causes undefined behavior (dangling references).
     pub unsafe fn from_parts(bytes: Bytes, view: V) -> Self {
-        OwnedView {
+        Self {
             view: core::mem::ManuallyDrop::new(view),
             bytes,
         }
@@ -756,7 +756,7 @@ where
         // `'static` references remain valid because they point into data that
         // is now kept alive by the cloned `Bytes` handle. This would be
         // unsound if `Bytes::clone()` performed a deep copy to a new address.
-        OwnedView {
+        Self {
             view: self.view.clone(),
             bytes: self.bytes.clone(),
         }

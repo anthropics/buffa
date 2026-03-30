@@ -20,13 +20,14 @@
 //!
 //! All of that is handled upstream (by protoc, buf, or a future parser).
 
+pub(crate) mod comments;
 pub mod context;
 pub(crate) mod defaults;
 pub(crate) mod enumeration;
 pub(crate) mod extension;
 pub(crate) mod features;
 #[doc(hidden)]
-pub mod generated;
+pub use buffa_descriptor::generated;
 pub mod idents;
 pub(crate) mod impl_message;
 pub(crate) mod impl_text;
@@ -259,7 +260,7 @@ pub fn generate_module_tree(
     #[derive(Default)]
     struct ModNode {
         files: Vec<String>,
-        children: BTreeMap<String, ModNode>,
+        children: BTreeMap<String, Self>,
     }
 
     let mut root = ModNode::default();
@@ -423,8 +424,20 @@ fn check_nested_type_oneof_conflicts(file: &FileDescriptorProto) -> Result<(), C
             }
         }
 
-        // Check each oneof's PascalCase name against nested type names.
-        for oneof in &msg.oneof_decl {
+        // Check each non-synthetic oneof's PascalCase name against nested
+        // type names.  Synthetic oneofs (created by proto3 `optional` fields)
+        // never produce a Rust enum, so they cannot collide.
+        for (idx, oneof) in msg.oneof_decl.iter().enumerate() {
+            let has_real_fields = msg
+                .field
+                .iter()
+                .any(|f| {
+                    crate::impl_message::is_real_oneof_member(f)
+                        && f.oneof_index == Some(idx as i32)
+                });
+            if !has_real_fields {
+                continue;
+            }
             if let Some(oneof_name) = &oneof.name {
                 let rust_name = crate::oneof::to_pascal_case(oneof_name);
                 if nested_names.contains(rust_name.as_str()) {
@@ -513,13 +526,18 @@ fn generate_file(
     let mut tokens = resolver.generate_use_block();
     let current_package = file.package.as_deref().unwrap_or("");
     let features = crate::features::for_file(file);
-
     for enum_type in &file.enum_type {
         let enum_rust_name = enum_type.name.as_deref().unwrap_or("");
+        let enum_fqn = if current_package.is_empty() {
+            enum_rust_name.to_string()
+        } else {
+            format!("{}.{}", current_package, enum_rust_name)
+        };
         tokens.extend(enumeration::generate_enum(
             ctx,
             enum_type,
             enum_rust_name,
+            &enum_fqn,
             &features,
             &resolver,
         )?);

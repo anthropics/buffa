@@ -1044,7 +1044,7 @@ impl ProtoElemJson for ::bytes::Bytes {
 // or integer on deserialize, preserve unknown values as the int).
 impl<E: crate::Enumeration> ProtoElemJson for crate::EnumValue<E>
 where
-    crate::EnumValue<E>: serde::Serialize + serde::de::DeserializeOwned,
+    Self: serde::Serialize + serde::de::DeserializeOwned,
 {
     fn serialize_proto_json<S: serde::Serializer>(v: &Self, s: S) -> Result<S::Ok, S::Error> {
         serde::Serialize::serialize(v, s)

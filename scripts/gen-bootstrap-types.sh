@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Regenerate buffa-codegen/src/generated/ (bootstrap descriptor types).
+# Regenerate buffa-descriptor/src/generated/ (bootstrap descriptor types).
 #
-# The source protos are vendored in buffa-codegen/protos/ (pinned to a
+# The source protos are vendored in buffa-descriptor/protos/ (pinned to a
 # specific protobuf release) so the generated output does not depend on
 # which protoc is installed locally — only the protoc binary is needed,
 # not its bundled includes.
@@ -36,11 +36,11 @@ echo "protoc: $PROTOC ($ver_str)"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 DESC=/tmp/buffa-descriptor-set.pb
-"$PROTOC" --descriptor_set_out="$DESC" --include_imports \
-    -I "$ROOT/buffa-codegen/protos" \
+"$PROTOC" --descriptor_set_out="$DESC" --include_imports --include_source_info \
+    -I "$ROOT/buffa-descriptor/protos" \
     google/protobuf/descriptor.proto \
     google/protobuf/compiler/plugin.proto
 
-# gen_descriptor_types writes to "src/generated" relative to cwd.
-cd "$ROOT/buffa-codegen"
-cargo run --bin gen_descriptor_types -- "$DESC"
+cd "$ROOT"
+cargo run -p buffa-codegen --bin gen_descriptor_types -- \
+    "$DESC" buffa-descriptor/src/generated

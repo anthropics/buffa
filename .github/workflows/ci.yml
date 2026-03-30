@@ -20,6 +20,7 @@ jobs:
   # ── Fast feedback: lint + test on stable ─────────────────────────────────
   lint-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -46,6 +47,7 @@ jobs:
   # preinstalled on ubuntu-latest so no setup-node step is needed.
   lint-markdown:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - run: npx --yes markdownlint-cli@0.47.0 '**/*.md' --ignore target --ignore .claude
@@ -53,6 +55,7 @@ jobs:
   # ── MSRV check ───────────────────────────────────────────────────────────
   msrv-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -74,6 +77,7 @@ jobs:
   # ── no_std and 32-bit compilation checks ─────────────────────────────────
   check-nostd:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -98,12 +102,16 @@ jobs:
       - name: Check buffa-types no_std
         run: cargo check -p buffa-types --no-default-features
 
+      - name: Check buffa-descriptor no_std
+        run: cargo check -p buffa-descriptor --no-default-features
+
       - name: Check workspace 32-bit
         run: cargo check --workspace --target i686-unknown-linux-gnu
 
   # ── Verify checked-in generated code is up to date ───────────────────────
   check-generated-code:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -118,7 +126,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Regenerate bootstrap descriptor types
-        # Proto sources are vendored in buffa-codegen/protos/ (pinned),
+        # Proto sources are vendored in buffa-descriptor/protos/ (pinned),
         # so this is independent of the installed protoc's bundled includes.
         run: scripts/gen-bootstrap-types.sh
 
@@ -128,6 +136,7 @@ jobs:
           # /usr/local/include) so the checked-in code is pinned to a
           # specific proto source, not whatever protoc version ships.
           protoc --descriptor_set_out=/tmp/wkt.pb --include_imports \
+              --include_source_info \
               -I buffa-types/protos \
               google/protobuf/any.proto \
               google/protobuf/duration.proto \
@@ -142,7 +151,7 @@ jobs:
 
       - name: Check for differences
         run: |
-          if ! git diff --exit-code buffa-codegen/src/generated/ buffa-types/src/generated/; then
+          if ! git diff --exit-code buffa-descriptor/src/generated/ buffa-types/src/generated/; then
             echo "::error::Checked-in generated code is stale. Run 'task gen-wkt-types' and/or regenerate bootstrap types, then commit."
             exit 1
           fi
@@ -152,6 +161,7 @@ jobs:
   # extracts the conformance_test_runner + proto files from the tools image.
   conformance:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 

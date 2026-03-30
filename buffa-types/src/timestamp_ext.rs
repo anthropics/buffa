@@ -30,7 +30,7 @@ impl Timestamp {
             (0..=999_999_999).contains(&nanos),
             "nanos ({nanos}) must be in [0, 999_999_999]"
         );
-        Timestamp {
+        Self {
             seconds,
             nanos,
             ..Default::default()
@@ -41,7 +41,7 @@ impl Timestamp {
     ///
     /// This is a convenience shorthand for `Timestamp::from_unix(seconds, 0)`.
     pub fn from_unix_secs(seconds: i64) -> Self {
-        Timestamp {
+        Self {
             seconds,
             nanos: 0,
             ..Default::default()
@@ -52,7 +52,7 @@ impl Timestamp {
     /// `nanos` is outside `[0, 999_999_999]`.
     pub fn from_unix_checked(seconds: i64, nanos: i32) -> Option<Self> {
         if (0..=999_999_999).contains(&nanos) {
-            Some(Timestamp {
+            Some(Self {
                 seconds,
                 nanos,
                 ..Default::default()
@@ -130,7 +130,7 @@ impl From<std::time::SystemTime> for Timestamp {
     /// which would produce a semantically incorrect negative timestamp.
     fn from(t: std::time::SystemTime) -> Self {
         match t.duration_since(std::time::UNIX_EPOCH) {
-            Ok(d) => Timestamp {
+            Ok(d) => Self {
                 // Saturate at i64::MAX to avoid wrapping for times far in the future.
                 seconds: d.as_secs().min(i64::MAX as u64) as i64,
                 nanos: d.subsec_nanos() as i32,
@@ -155,7 +155,7 @@ impl From<std::time::SystemTime> for Timestamp {
                 let dur = e.duration();
                 if dur.subsec_nanos() == 0 {
                     let secs = dur.as_secs().min(i64::MAX as u64) as i64;
-                    Timestamp {
+                    Self {
                         seconds: -secs,
                         nanos: 0,
                         ..Default::default()
@@ -164,7 +164,7 @@ impl From<std::time::SystemTime> for Timestamp {
                     // saturating_add avoids overflow when dur.as_secs() == u64::MAX,
                     // then clamp to i64::MAX before converting.
                     let neg_secs = dur.as_secs().saturating_add(1).min(i64::MAX as u64) as i64;
-                    Timestamp {
+                    Self {
                         seconds: -neg_secs,
                         nanos: (1_000_000_000u32 - dur.subsec_nanos()) as i32,
                         ..Default::default()
@@ -387,7 +387,7 @@ impl<'de> serde::Deserialize<'de> for Timestamp {
         let s: String = serde::Deserialize::deserialize(d)?;
         let (secs, nanos) = parse_rfc3339(&s)
             .ok_or_else(|| serde::de::Error::custom(format!("invalid RFC 3339 timestamp: {s}")))?;
-        Ok(Timestamp {
+        Ok(Self {
             seconds: secs,
             nanos,
             ..Default::default()

@@ -1,0 +1,17 @@
+[package]
+name = "buffa-descriptor"
+description = "Protobuf descriptor types (FileDescriptorProto, DescriptorProto, ...) for buffa"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["protobuf", "protocol-buffers", "descriptor", "reflection"]
+categories = ["encoding", "no-std"]
+
+[dependencies]
+buffa = { workspace = true }
+
+[features]
+default = ["std"]
+std = ["buffa/std"]

@@ -47,11 +47,19 @@ name = "buffa-codegen"
 version = "0.2.0"
 dependencies = [
  "buffa",
+ "buffa-descriptor",
  "prettyplease",
  "proc-macro2",
  "quote",
  "syn",
  "thiserror",
+]
+
+[[package]]
+name = "buffa-descriptor"
+version = "0.2.0"
+dependencies = [
+ "buffa",
 ]
 
 [[package]]

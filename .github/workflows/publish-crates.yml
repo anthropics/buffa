@@ -83,6 +83,9 @@ jobs:
       - name: Publish buffa-types
         run: /tmp/publish.sh buffa-types $DRY_RUN_FLAG
 
+      - name: Publish buffa-descriptor
+        run: /tmp/publish.sh buffa-descriptor $DRY_RUN_FLAG
+
       - name: Publish buffa-codegen
         run: /tmp/publish.sh buffa-codegen $DRY_RUN_FLAG
 

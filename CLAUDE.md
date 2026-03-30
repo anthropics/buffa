@@ -10,7 +10,7 @@ If a change to `buffa-codegen` (notably `message.rs`, `impl_message.rs`, `view.r
 
 ```bash
 task gen-wkt-types          # buffa-types/src/generated/ — WKTs for consumer use
-task gen-bootstrap-types    # buffa-codegen/src/generated/ — only if the change affects descriptor types
+task gen-bootstrap-types    # buffa-descriptor/src/generated/ — only if the change affects descriptor types
 ```
 
 Most codegen changes don't touch descriptor-specific paths, so `gen-wkt-types` is usually sufficient.

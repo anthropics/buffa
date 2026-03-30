@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "buffa",
     "buffa-types",
+    "buffa-descriptor",
     "buffa-codegen",
     "buffa-build",
     "buffa-test",
@@ -32,6 +33,7 @@ categories = ["encoding", "no-std"]
 [workspace.dependencies]
 buffa = { path = "buffa", version = "0.2.0", default-features = false }
 buffa-types = { path = "buffa-types", version = "0.2.0" }
+buffa-descriptor = { path = "buffa-descriptor", version = "0.2.0" }
 buffa-codegen = { path = "buffa-codegen", version = "0.2.0" }
 buffa-build = { path = "buffa-build", version = "0.2.0" }
 buffa-test = { path = "buffa-test", version = "0.2.0" }

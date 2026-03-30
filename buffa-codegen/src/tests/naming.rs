@@ -258,6 +258,50 @@ fn test_view_name_conflict_not_checked_when_views_disabled() {
 }
 
 #[test]
+fn test_proto3_optional_field_name_matches_nested_enum_no_conflict() {
+    // Proto3 `optional MatchOperator match_operator = 4;` creates a synthetic
+    // oneof named `_match_operator`.  `to_pascal_case("_match_operator")` yields
+    // `MatchOperator`, which collides with the nested enum.  But synthetic oneofs
+    // never generate a Rust enum, so this must be accepted.
+    let msg = DescriptorProto {
+        name: Some("StringFieldMatcher".to_string()),
+        enum_type: vec![EnumDescriptorProto {
+            name: Some("MatchOperator".to_string()),
+            value: vec![
+                enum_value("MATCH_OPERATOR_UNKNOWN", 0),
+                enum_value("MATCH_OPERATOR_EXACT_MATCH", 1),
+            ],
+            ..Default::default()
+        }],
+        // protoc wraps proto3 optional in a synthetic oneof named `_match_operator`.
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("_match_operator".to_string()),
+            ..Default::default()
+        }],
+        field: vec![{
+            let mut f = make_field("match_operator", 4, Label::LABEL_OPTIONAL, Type::TYPE_ENUM);
+            f.type_name =
+                Some(".minimal.StringFieldMatcher.MatchOperator".to_string());
+            f.oneof_index = Some(0);
+            f.proto3_optional = Some(true);
+            f
+        }],
+        ..Default::default()
+    };
+    let mut file = proto3_file("test.proto");
+    file.package = Some("minimal".to_string());
+    file.message_type = vec![msg];
+
+    let config = CodeGenConfig::default();
+    let result = generate(&[file], &["test.proto".to_string()], &config);
+    assert!(
+        result.is_ok(),
+        "synthetic oneof should not conflict with nested enum: {}",
+        result.unwrap_err()
+    );
+}
+
+#[test]
 fn test_message_named_type_with_nested() {
     // Proto message named "Type" (a Rust keyword) with a nested message.
     // This must produce valid Rust: `pub mod r#type { ... }`.

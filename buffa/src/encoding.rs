@@ -7,6 +7,15 @@ use bytes::{Buf, BufMut};
 
 use crate::error::DecodeError;
 
+/// The maximum valid protobuf field number, 2^29 − 1.
+///
+/// The wire-format tag packs `(field_number << 3) | wire_type` into a
+/// u32-decodable varint; the low 3 bits carry the wire type, leaving 29
+/// bits for the field number. See the [protobuf encoding spec][spec].
+///
+/// [spec]: https://protobuf.dev/programming-guides/encoding/#structure
+pub const MAX_FIELD_NUMBER: u32 = (1 << 29) - 1;
+
 /// Protobuf wire types.
 ///
 /// Only wire types 0–5 are currently defined by the protobuf specification;
@@ -34,12 +43,12 @@ impl WireType {
     /// recognised wire type (i.e. not in 0–5).
     pub fn from_u32(value: u32) -> Result<Self, DecodeError> {
         match value {
-            0 => Ok(WireType::Varint),
-            1 => Ok(WireType::Fixed64),
-            2 => Ok(WireType::LengthDelimited),
-            3 => Ok(WireType::StartGroup),
-            4 => Ok(WireType::EndGroup),
-            5 => Ok(WireType::Fixed32),
+            0 => Ok(Self::Varint),
+            1 => Ok(Self::Fixed64),
+            2 => Ok(Self::LengthDelimited),
+            3 => Ok(Self::StartGroup),
+            4 => Ok(Self::EndGroup),
+            5 => Ok(Self::Fixed32),
             _ => Err(DecodeError::InvalidWireType(value)),
         }
     }
@@ -57,13 +66,14 @@ impl Tag {
     ///
     /// # Panics
     ///
-    /// Panics if `field_number` is not in the valid range `[1, 2^29 – 1]`.
-    /// This is a programming error (generated code always uses valid field
-    /// numbers); the panic fires in all build profiles.
+    /// Panics if `field_number` is not in the valid range
+    /// `[1, MAX_FIELD_NUMBER]`. This is a programming error (generated
+    /// code always uses valid field numbers); the panic fires in all
+    /// build profiles.
     pub fn new(field_number: u32, wire_type: WireType) -> Self {
         assert!(
-            (1..=536_870_911).contains(&field_number),
-            "field_number must be in [1, 2^29-1], got {field_number}"
+            (1..=MAX_FIELD_NUMBER).contains(&field_number),
+            "field_number must be in [1, {MAX_FIELD_NUMBER}], got {field_number}"
         );
         Self {
             field_number,
@@ -139,9 +149,8 @@ impl Tag {
             return Err(DecodeError::InvalidFieldNumber);
         }
         // `field_number` is a u32 right-shifted by 3, so it is bounded by
-        // u32::MAX >> 3 = 536_870_911 (2^29 – 1), the protobuf field number
-        // maximum.  No further range check is required.
-        Ok(Tag {
+        // u32::MAX >> 3 = MAX_FIELD_NUMBER. No upper range check required.
+        Ok(Self {
             field_number,
             wire_type,
         })
@@ -544,7 +553,7 @@ mod tests {
 
     #[test]
     fn test_tag_high_field_number() {
-        let tag = Tag::new(536_870_911, WireType::LengthDelimited); // max field number
+        let tag = Tag::new(MAX_FIELD_NUMBER, WireType::LengthDelimited);
         let mut buf = Vec::new();
         tag.encode(&mut buf);
         let decoded = Tag::decode(&mut buf.as_slice()).unwrap();

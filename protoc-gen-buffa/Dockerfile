@@ -24,6 +24,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY buffa/           buffa/
 COPY buffa-build/     buffa-build/
 COPY buffa-codegen/   buffa-codegen/
+COPY buffa-descriptor/ buffa-descriptor/
 COPY buffa-test/      buffa-test/
 COPY buffa-types/     buffa-types/
 COPY protoc-gen-buffa/ protoc-gen-buffa/

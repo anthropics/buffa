@@ -88,7 +88,8 @@ pub fn generate_message(
         .iter()
         .map(|e| {
             let enum_name = e.name.as_deref().unwrap_or("");
-            crate::enumeration::generate_enum(ctx, e, enum_name, features, resolver)
+            let enum_fqn = format!("{}.{}", proto_fqn, enum_name);
+            crate::enumeration::generate_enum(ctx, e, enum_name, &enum_fqn, features, resolver)
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -455,7 +456,7 @@ pub fn generate_message(
     if let Some(id) = &text_any_ident {
         reg_paths.text_any.push(quote! { #id });
     }
-    let non_map_nested: Vec<_> = msg
+    let non_map_nested: Vec<&DescriptorProto> = msg
         .nested_type
         .iter()
         .filter(|n| {
@@ -560,7 +561,10 @@ pub fn generate_message(
         }
     };
 
+    let message_doc = crate::comments::doc_attrs(ctx.comment(proto_fqn));
+
     let top_level = quote! {
+        #message_doc
         #[derive(Clone, PartialEq, #derive_default)]
         #serde_struct_derive
         #arbitrary_derive
@@ -953,6 +957,12 @@ fn is_value_field(
 #[derive(Debug)]
 struct FieldInfo {
     rust_type: TokenStream,
+    /// Type to use in the struct field declaration. Differs from `rust_type`
+    /// only for self-referential message fields, where it uses `Self` instead
+    /// of the concrete name. `rust_type` stays concrete for serde-deserialize
+    /// codegen, which runs inside a local Visitor impl where `Self` binds to
+    /// the wrong type.
+    struct_field_type: TokenStream,
     is_repeated: bool,
     is_map: bool,
     /// Whether this field has explicit presence and uses `Option<T>` wrapping.
@@ -1051,6 +1061,25 @@ fn classify_field(
         scalar_rust_type(field_type, resolver)?
     };
 
+    // Self-referential struct fields (e.g. DescriptorProto.nested_type) can
+    // use `Self` in the struct declaration. Only message-typed, non-map
+    // fields qualify. `rust_type` stays concrete for the serde-deserialize
+    // path — that codegen runs inside `impl Visitor for _V` where `Self`
+    // means `_V`, not the message.
+    let self_fqn = format!(".{proto_fqn}");
+    let is_self_ref = field.type_name.as_deref() == Some(self_fqn.as_str()) && !is_map;
+    let struct_field_type = if is_self_ref {
+        if is_repeated {
+            let vec = resolver.vec();
+            quote! { #vec<Self> }
+        } else {
+            let mf = resolver.message_field();
+            quote! { #mf<Self> }
+        }
+    } else {
+        rust_type.clone()
+    };
+
     let map_key_type = map_entry.and_then(|e| map_entry_key_type(ctx, e, features));
     let map_value_type = map_entry.and_then(|e| map_entry_value_type(ctx, e, features));
 
@@ -1073,6 +1102,7 @@ fn classify_field(
 
     Ok(FieldInfo {
         rust_type,
+        struct_field_type,
         is_repeated,
         is_map,
         is_optional,
@@ -1125,15 +1155,17 @@ fn generate_field(
     )?;
     let rust_name = make_field_ident(field_name);
 
-    let doc = format!("Field {field_number}: `{field_name}`");
+    let field_fqn = format!("{}.{}", proto_fqn, field_name);
+    let tag_line = format!("Field {field_number}: `{field_name}`");
+    let doc = crate::comments::doc_attrs_with_tag(ctx.comment(&field_fqn), &tag_line);
     let serde_attr = if ctx.config.generate_json {
         serde_field_attr(ctx, field, field_name, &info, features)
     } else {
         quote! {}
     };
-    let rust_type = &info.rust_type;
+    let rust_type = &info.struct_field_type;
     let tokens = quote! {
-        #[doc = #doc]
+        #doc
         #serde_attr
         pub #rust_name: #rust_type,
     };
