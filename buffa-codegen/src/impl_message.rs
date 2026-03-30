@@ -24,15 +24,18 @@ use quote::{format_ident, quote};
 use crate::features::ResolvedFeatures;
 use crate::message::{find_map_entry, is_closed_enum, make_field_ident};
 use crate::CodeGenError;
+use buffa::encoding::MAX_FIELD_NUMBER;
 
 /// Extract and validate the field number from a descriptor, returning a `u32`.
 ///
-/// Protobuf field numbers must be in [1, 2^29 − 1].
+/// Protobuf field numbers must be in `[1, MAX_FIELD_NUMBER]`.
 pub(crate) fn validated_field_number(field: &FieldDescriptorProto) -> Result<u32, CodeGenError> {
     let n = field
         .number
         .ok_or(CodeGenError::MissingField("field.number"))?;
-    if !(1..=536_870_911).contains(&n) {
+    // FieldDescriptorProto.number is int32 in the descriptor schema, hence
+    // the cast for the range check (2^29 − 1 fits comfortably in i32).
+    if !(1..=MAX_FIELD_NUMBER as i32).contains(&n) {
         return Err(CodeGenError::Other(format!("invalid field number: {n}")));
     }
     Ok(n as u32)
