@@ -200,7 +200,7 @@ pub fn generate_oneof_enum(
             let from_oneof = quote! {
                 impl From<#ty> for #rust_enum_ident {
                     fn from(v: #ty) -> Self {
-                        #rust_enum_ident::#ident(::buffa::alloc::boxed::Box::new(v))
+                        Self::#ident(::buffa::alloc::boxed::Box::new(v))
                     }
                 }
             };
@@ -213,7 +213,7 @@ pub fn generate_oneof_enum(
                 quote! {
                     impl From<#ty> for ::core::option::Option<#rust_enum_ident> {
                         fn from(v: #ty) -> Self {
-                            ::core::option::Option::Some(#rust_enum_ident::from(v))
+                            Self::Some(#rust_enum_ident::from(v))
                         }
                     }
                 }

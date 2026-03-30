@@ -113,7 +113,7 @@ impl LogEntry {
 unsafe impl ::buffa::DefaultInstance for LogEntry {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<LogEntry> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(LogEntry::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for LogEntry {
@@ -419,7 +419,7 @@ impl LogBatch {
 unsafe impl ::buffa::DefaultInstance for LogBatch {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<LogBatch> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(LogBatch::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for LogBatch {

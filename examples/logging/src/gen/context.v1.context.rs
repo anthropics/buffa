@@ -53,7 +53,7 @@ impl RequestContext {
 unsafe impl ::buffa::DefaultInstance for RequestContext {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<RequestContext> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(RequestContext::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for RequestContext {

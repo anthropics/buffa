@@ -906,22 +906,22 @@ pub mod value {
     impl ::buffa::Oneof for Kind {}
     impl From<super::Struct> for Kind {
         fn from(v: super::Struct) -> Self {
-            Kind::StructValue(::buffa::alloc::boxed::Box::new(v))
+            Self::StructValue(::buffa::alloc::boxed::Box::new(v))
         }
     }
     impl From<super::Struct> for ::core::option::Option<Kind> {
         fn from(v: super::Struct) -> Self {
-            ::core::option::Option::Some(Kind::from(v))
+            Self::Some(Kind::from(v))
         }
     }
     impl From<super::ListValue> for Kind {
         fn from(v: super::ListValue) -> Self {
-            Kind::ListValue(::buffa::alloc::boxed::Box::new(v))
+            Self::ListValue(::buffa::alloc::boxed::Box::new(v))
         }
     }
     impl From<super::ListValue> for ::core::option::Option<Kind> {
         fn from(v: super::ListValue) -> Self {
-            ::core::option::Option::Some(Kind::from(v))
+            Self::Some(Kind::from(v))
         }
     }
     #[derive(Clone, Debug)]
