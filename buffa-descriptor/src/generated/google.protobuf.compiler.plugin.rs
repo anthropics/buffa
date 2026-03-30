@@ -256,10 +256,7 @@ impl CodeGeneratorRequest {
 unsafe impl ::buffa::DefaultInstance for CodeGeneratorRequest {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<CodeGeneratorRequest> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                Self::default(),
-            ))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for CodeGeneratorRequest {
@@ -515,10 +512,7 @@ impl CodeGeneratorResponse {
 unsafe impl ::buffa::DefaultInstance for CodeGeneratorResponse {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<CodeGeneratorResponse> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                Self::default(),
-            ))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for CodeGeneratorResponse {

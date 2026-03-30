@@ -179,10 +179,7 @@ impl FileDescriptorSet {
 unsafe impl ::buffa::DefaultInstance for FileDescriptorSet {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<FileDescriptorSet> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                Self::default(),
-            ))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for FileDescriptorSet {
@@ -367,10 +364,7 @@ impl FileDescriptorProto {
 unsafe impl ::buffa::DefaultInstance for FileDescriptorProto {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<FileDescriptorProto> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                Self::default(),
-            ))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for FileDescriptorProto {
@@ -839,7 +833,7 @@ pub struct DescriptorProto {
     /// Field 6: `extension`
     pub extension: ::buffa::alloc::vec::Vec<FieldDescriptorProto>,
     /// Field 3: `nested_type`
-    pub nested_type: ::buffa::alloc::vec::Vec<Self>,
+    pub nested_type: ::buffa::alloc::vec::Vec<DescriptorProto>,
     /// Field 4: `enum_type`
     pub enum_type: ::buffa::alloc::vec::Vec<EnumDescriptorProto>,
     /// Field 5: `extension_range`
@@ -1290,10 +1284,7 @@ pub mod descriptor_proto {
     unsafe impl ::buffa::DefaultInstance for ExtensionRange {
         fn default_instance() -> &'static Self {
             static VALUE: ::buffa::__private::OnceBox<ExtensionRange> = ::buffa::__private::OnceBox::new();
-            VALUE
-                .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                    Self::default(),
-                ))
+            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
     }
     impl ::buffa::Message for ExtensionRange {
@@ -1458,10 +1449,7 @@ pub mod descriptor_proto {
     unsafe impl ::buffa::DefaultInstance for ReservedRange {
         fn default_instance() -> &'static Self {
             static VALUE: ::buffa::__private::OnceBox<ReservedRange> = ::buffa::__private::OnceBox::new();
-            VALUE
-                .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                    Self::default(),
-                ))
+            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
     }
     impl ::buffa::Message for ReservedRange {
@@ -1608,10 +1596,7 @@ impl ExtensionRangeOptions {
 unsafe impl ::buffa::DefaultInstance for ExtensionRangeOptions {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<ExtensionRangeOptions> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                Self::default(),
-            ))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for ExtensionRangeOptions {
@@ -2158,10 +2143,7 @@ impl FieldDescriptorProto {
 unsafe impl ::buffa::DefaultInstance for FieldDescriptorProto {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<FieldDescriptorProto> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                Self::default(),
-            ))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for FieldDescriptorProto {
@@ -2697,10 +2679,7 @@ impl OneofDescriptorProto {
 unsafe impl ::buffa::DefaultInstance for OneofDescriptorProto {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<OneofDescriptorProto> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                Self::default(),
-            ))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for OneofDescriptorProto {
@@ -2865,10 +2844,7 @@ impl EnumDescriptorProto {
 unsafe impl ::buffa::DefaultInstance for EnumDescriptorProto {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<EnumDescriptorProto> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                Self::default(),
-            ))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for EnumDescriptorProto {
@@ -3130,10 +3106,7 @@ pub mod enum_descriptor_proto {
     unsafe impl ::buffa::DefaultInstance for EnumReservedRange {
         fn default_instance() -> &'static Self {
             static VALUE: ::buffa::__private::OnceBox<EnumReservedRange> = ::buffa::__private::OnceBox::new();
-            VALUE
-                .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                    Self::default(),
-                ))
+            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
     }
     impl ::buffa::Message for EnumReservedRange {
@@ -3266,10 +3239,7 @@ impl EnumValueDescriptorProto {
 unsafe impl ::buffa::DefaultInstance for EnumValueDescriptorProto {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<EnumValueDescriptorProto> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                Self::default(),
-            ))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for EnumValueDescriptorProto {
@@ -3435,10 +3405,7 @@ impl ServiceDescriptorProto {
 unsafe impl ::buffa::DefaultInstance for ServiceDescriptorProto {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<ServiceDescriptorProto> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                Self::default(),
-            ))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for ServiceDescriptorProto {
@@ -3627,10 +3594,7 @@ impl MethodDescriptorProto {
 unsafe impl ::buffa::DefaultInstance for MethodDescriptorProto {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<MethodDescriptorProto> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                Self::default(),
-            ))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for MethodDescriptorProto {
@@ -5873,10 +5837,7 @@ pub mod field_options {
     unsafe impl ::buffa::DefaultInstance for EditionDefault {
         fn default_instance() -> &'static Self {
             static VALUE: ::buffa::__private::OnceBox<EditionDefault> = ::buffa::__private::OnceBox::new();
-            VALUE
-                .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                    Self::default(),
-                ))
+            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
     }
     impl ::buffa::Message for EditionDefault {
@@ -6040,10 +6001,7 @@ pub mod field_options {
     unsafe impl ::buffa::DefaultInstance for FeatureSupport {
         fn default_instance() -> &'static Self {
             static VALUE: ::buffa::__private::OnceBox<FeatureSupport> = ::buffa::__private::OnceBox::new();
-            VALUE
-                .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                    Self::default(),
-                ))
+            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
     }
     impl ::buffa::Message for FeatureSupport {
@@ -6666,8 +6624,7 @@ impl EnumValueOptions {
 unsafe impl ::buffa::DefaultInstance for EnumValueOptions {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<EnumValueOptions> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for EnumValueOptions {
@@ -7364,10 +7321,7 @@ impl UninterpretedOption {
 unsafe impl ::buffa::DefaultInstance for UninterpretedOption {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<UninterpretedOption> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                Self::default(),
-            ))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for UninterpretedOption {
@@ -8406,10 +8360,7 @@ pub mod feature_set {
     unsafe impl ::buffa::DefaultInstance for VisibilityFeature {
         fn default_instance() -> &'static Self {
             static VALUE: ::buffa::__private::OnceBox<VisibilityFeature> = ::buffa::__private::OnceBox::new();
-            VALUE
-                .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                    Self::default(),
-                ))
+            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
     }
     impl ::buffa::Message for VisibilityFeature {
@@ -8581,10 +8532,7 @@ impl FeatureSetDefaults {
 unsafe impl ::buffa::DefaultInstance for FeatureSetDefaults {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<FeatureSetDefaults> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                Self::default(),
-            ))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for FeatureSetDefaults {
@@ -8772,10 +8720,7 @@ pub mod feature_set_defaults {
     unsafe impl ::buffa::DefaultInstance for FeatureSetEditionDefault {
         fn default_instance() -> &'static Self {
             static VALUE: ::buffa::__private::OnceBox<FeatureSetEditionDefault> = ::buffa::__private::OnceBox::new();
-            VALUE
-                .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                    Self::default(),
-                ))
+            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
     }
     impl ::buffa::Message for FeatureSetEditionDefault {
@@ -9495,10 +9440,7 @@ impl GeneratedCodeInfo {
 unsafe impl ::buffa::DefaultInstance for GeneratedCodeInfo {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<GeneratedCodeInfo> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                Self::default(),
-            ))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for GeneratedCodeInfo {

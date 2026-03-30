@@ -389,7 +389,7 @@ impl<'a> ::buffa::MessageView<'a> for StructView<'a> {
 unsafe impl ::buffa::DefaultViewInstance for StructView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<StructView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(StructView::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 unsafe impl<'a> ::buffa::HasDefaultViewInstance for StructView<'a> {
@@ -883,7 +883,7 @@ impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
 unsafe impl ::buffa::DefaultViewInstance for ValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<ValueView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(ValueView::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 unsafe impl<'a> ::buffa::HasDefaultViewInstance for ValueView<'a> {
@@ -906,22 +906,22 @@ pub mod value {
     impl ::buffa::Oneof for Kind {}
     impl From<super::Struct> for Kind {
         fn from(v: super::Struct) -> Self {
-            Self::StructValue(::buffa::alloc::boxed::Box::new(v))
+            Kind::StructValue(::buffa::alloc::boxed::Box::new(v))
         }
     }
     impl From<super::Struct> for ::core::option::Option<Kind> {
         fn from(v: super::Struct) -> Self {
-            Self::Some(Kind::from(v))
+            ::core::option::Option::Some(Kind::from(v))
         }
     }
     impl From<super::ListValue> for Kind {
         fn from(v: super::ListValue) -> Self {
-            Self::ListValue(::buffa::alloc::boxed::Box::new(v))
+            Kind::ListValue(::buffa::alloc::boxed::Box::new(v))
         }
     }
     impl From<super::ListValue> for ::core::option::Option<Kind> {
         fn from(v: super::ListValue) -> Self {
-            Self::Some(Kind::from(v))
+            ::core::option::Option::Some(Kind::from(v))
         }
     }
     #[derive(Clone, Debug)]
@@ -1152,7 +1152,7 @@ impl<'a> ::buffa::MessageView<'a> for ListValueView<'a> {
 unsafe impl ::buffa::DefaultViewInstance for ListValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<ListValueView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(ListValueView::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 unsafe impl<'a> ::buffa::HasDefaultViewInstance for ListValueView<'a> {

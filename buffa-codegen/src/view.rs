@@ -271,7 +271,7 @@ pub fn generate_view(
                 static VALUE: ::buffa::__private::OnceBox<#view_ident<'static>>
                     = ::buffa::__private::OnceBox::new();
                 VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                    #view_ident::default(),
+                    Self::default(),
                 ))
             }
         }

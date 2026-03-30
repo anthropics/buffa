@@ -649,7 +649,7 @@ impl<'a> ::buffa::MessageView<'a> for FieldMaskView<'a> {
 unsafe impl ::buffa::DefaultViewInstance for FieldMaskView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<FieldMaskView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(FieldMaskView::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 unsafe impl<'a> ::buffa::HasDefaultViewInstance for FieldMaskView<'a> {

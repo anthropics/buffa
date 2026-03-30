@@ -453,7 +453,7 @@ impl<'a> ::buffa::MessageView<'a> for TimestampView<'a> {
 unsafe impl ::buffa::DefaultViewInstance for TimestampView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<TimestampView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(TimestampView::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 unsafe impl<'a> ::buffa::HasDefaultViewInstance for TimestampView<'a> {

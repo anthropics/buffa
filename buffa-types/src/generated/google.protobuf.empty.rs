@@ -180,7 +180,7 @@ impl<'a> ::buffa::MessageView<'a> for EmptyView<'a> {
 unsafe impl ::buffa::DefaultViewInstance for EmptyView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<EmptyView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(EmptyView::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 unsafe impl<'a> ::buffa::HasDefaultViewInstance for EmptyView<'a> {
