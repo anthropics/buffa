@@ -263,12 +263,11 @@ impl<'a> TextEncoder<'a> {
         // One emit per field number — the entry's text_encode reads all
         // records at that number (merge semantics). Mirrors JSON's
         // serialize_extensions dedup loop.
-        let mut seen: alloc::vec::Vec<u32> = alloc::vec::Vec::new();
+        let mut seen = alloc::collections::BTreeSet::new();
         for uf in fields.iter() {
-            if seen.contains(&uf.number) {
+            if !seen.insert(uf.number) {
                 continue;
             }
-            seen.push(uf.number);
             let Some(entry) = crate::type_registry::global_text_ext_by_number(extendee, uf.number)
             else {
                 continue;

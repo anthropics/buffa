@@ -27,6 +27,17 @@ use alloc::borrow::Cow;
 use alloc::vec::Vec;
 use core::fmt::Write;
 
+/// Error returned by [`unescape`] and [`unescape_str`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnescapeError {
+    /// The unescaped bytes are not valid UTF-8. Only produced by
+    /// [`unescape_str`]; [`unescape`] is byte-level and never returns this.
+    InvalidUtf8,
+    /// A malformed escape sequence or structural problem in the literal.
+    /// The string describes the specific failure.
+    BadEscape(&'static str),
+}
+
 /// Unescape a textproto string token — one or more adjacent quoted literals —
 /// into a byte vector.
 ///
@@ -37,9 +48,9 @@ use core::fmt::Write;
 ///
 /// # Errors
 ///
-/// Returns a short static string describing the first malformed escape
-/// encountered, or `"unterminated string"` if the closing quote is missing.
-pub fn unescape(raw: &str) -> Result<Vec<u8>, &'static str> {
+/// Returns [`UnescapeError::BadEscape`] on the first malformed escape or
+/// structural problem encountered.
+pub fn unescape(raw: &str) -> Result<Vec<u8>, UnescapeError> {
     debug_assert!(
         matches!(raw.as_bytes().first(), Some(b'"' | b'\'')),
         "unescape input must start with a quote; got {raw:?}"
@@ -49,7 +60,7 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, &'static str> {
     loop {
         // Each iteration consumes one quoted literal.
         let Some(&quote) = s.first() else {
-            return Err("unterminated string");
+            return Err(UnescapeError::BadEscape("unterminated string"));
         };
         if quote != b'"' && quote != b'\'' {
             // Not a string-literal opener — we're done with adjacent concatenation.
@@ -58,18 +69,20 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, &'static str> {
         s = &s[1..];
         loop {
             match s.first() {
-                None => return Err("unterminated string"),
+                None => return Err(UnescapeError::BadEscape("unterminated string")),
                 Some(&c) if c == quote => {
                     s = &s[1..];
                     break;
                 }
                 Some(b'\n') | Some(0) => {
-                    return Err("raw newline/NUL in string literal");
+                    return Err(UnescapeError::BadEscape(
+                        "raw newline/NUL in string literal",
+                    ));
                 }
                 Some(b'\\') => {
                     s = &s[1..];
                     let Some(&esc) = s.first() else {
-                        return Err("unterminated escape");
+                        return Err(UnescapeError::BadEscape("unterminated escape"));
                     };
                     s = &s[1..];
                     match esc {
@@ -96,7 +109,7 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, &'static str> {
                                 }
                             }
                             if v > 0xFF {
-                                return Err("octal escape out of range");
+                                return Err(UnescapeError::BadEscape("octal escape out of range"));
                             }
                             out.push(v as u8);
                         }
@@ -104,7 +117,7 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, &'static str> {
                             // 1–2 hex digits.
                             let (v, consumed) = take_hex(s, 2);
                             if consumed == 0 {
-                                return Err("invalid \\x escape");
+                                return Err(UnescapeError::BadEscape("invalid \\x escape"));
                             }
                             s = &s[consumed..];
                             out.push(v as u8);
@@ -112,26 +125,28 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, &'static str> {
                         b'u' => {
                             let (cp, n) = take_hex(s, 4);
                             if n != 4 {
-                                return Err("invalid \\u escape");
+                                return Err(UnescapeError::BadEscape("invalid \\u escape"));
                             }
                             s = &s[4..];
                             // Textproto's \u is BMP-only — surrogate codepoints are
                             // rejected outright (no UTF-16 pair recombination). For
                             // non-BMP, use \U00010437 etc.
                             if (0xD800..0xE000).contains(&cp) {
-                                return Err("\\u escape is surrogate; use \\U for non-BMP");
+                                return Err(UnescapeError::BadEscape(
+                                    "\\u escape is surrogate; use \\U for non-BMP",
+                                ));
                             }
                             push_utf8(&mut out, cp)?;
                         }
                         b'U' => {
                             let (cp, n) = take_hex(s, 8);
                             if n != 8 {
-                                return Err("invalid \\U escape");
+                                return Err(UnescapeError::BadEscape("invalid \\U escape"));
                             }
                             s = &s[8..];
                             push_utf8(&mut out, cp)?;
                         }
-                        _ => return Err("unrecognised escape sequence"),
+                        _ => return Err(UnescapeError::BadEscape("unrecognised escape sequence")),
                     }
                 }
                 Some(&c) => {
@@ -163,9 +178,9 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, &'static str> {
 ///
 /// # Errors
 ///
-/// As [`unescape`], plus `"invalid UTF-8"` if the unescaped bytes are not a
-/// valid UTF-8 sequence.
-pub fn unescape_str(raw: &str) -> Result<Cow<'_, str>, &'static str> {
+/// As [`unescape`], plus [`UnescapeError::InvalidUtf8`] if the unescaped
+/// bytes are not a valid UTF-8 sequence.
+pub fn unescape_str(raw: &str) -> Result<Cow<'_, str>, UnescapeError> {
     // Fast path: single literal, ASCII quote, no escapes, no adjacent concat.
     // Scan once for anything that would force owned output.
     let bytes = raw.as_bytes();
@@ -198,7 +213,7 @@ pub fn unescape_str(raw: &str) -> Result<Cow<'_, str>, &'static str> {
     let owned = unescape(raw)?;
     alloc::string::String::from_utf8(owned)
         .map(Cow::Owned)
-        .map_err(|_| "invalid UTF-8")
+        .map_err(|_| UnescapeError::InvalidUtf8)
 }
 
 /// Consume up to `max` hex digits from the front of `s`, returning the
@@ -222,8 +237,8 @@ fn take_hex(s: &[u8], max: usize) -> (u32, usize) {
 
 /// Push the UTF-8 encoding of `cp` onto `out`.
 #[inline]
-fn push_utf8(out: &mut Vec<u8>, cp: u32) -> Result<(), &'static str> {
-    let c = char::from_u32(cp).ok_or("invalid unicode code point")?;
+fn push_utf8(out: &mut Vec<u8>, cp: u32) -> Result<(), UnescapeError> {
+    let c = char::from_u32(cp).ok_or(UnescapeError::BadEscape("invalid unicode code point"))?;
     let mut buf = [0u8; 4];
     out.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
     Ok(())

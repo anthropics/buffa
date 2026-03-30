@@ -104,6 +104,7 @@ enum OpenKind {
 /// separators.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum LastKind {
+    /// Beginning of file — no token emitted yet.
     Bof,
     Name,
     Scalar,
@@ -216,6 +217,9 @@ impl<'a> Tokenizer<'a> {
     ///
     /// Column counts Unicode scalar values, not bytes. `pos` past the end of
     /// input clamps to the final position.
+    ///
+    /// Line and column use `u32`: inputs larger than ~4 GiB would wrap, but
+    /// that is not a realistic textproto size and this is error-reporting only.
     pub fn line_col(&self, pos: usize) -> (u32, u32) {
         let pos = pos.min(self.input.len());
         let before = &self.input[..pos];

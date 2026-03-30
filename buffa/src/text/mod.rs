@@ -46,7 +46,7 @@ mod token;
 pub use decoder::TextDecoder;
 pub use encoder::TextEncoder;
 pub use error::{ParseError, ParseErrorKind};
-pub use string::{escape_bytes, escape_str, unescape, unescape_str};
+pub use string::{escape_bytes, escape_str, unescape, unescape_str, UnescapeError};
 pub use token::{NameKind, ScalarKind, Token, TokenKind, Tokenizer};
 
 use alloc::string::String;
@@ -101,12 +101,17 @@ pub fn encode_to_string<M: TextFormat>(msg: &M) -> String {
 
 /// Encode a message as a multi-line textproto string with 2-space indent.
 ///
-/// One field per line; nested messages are indented. No trailing newline.
+/// One field per line; nested messages are indented. A trailing newline is
+/// appended when the output is non-empty, matching `txtpbfmt` and POSIX
+/// text-file conventions.
 #[must_use]
 pub fn encode_to_string_pretty<M: TextFormat>(msg: &M) -> String {
     let mut out = String::new();
     let mut enc = TextEncoder::new_pretty(&mut out);
     let _ = msg.encode_text(&mut enc);
+    if !out.is_empty() {
+        out.push('\n');
+    }
     out
 }
 

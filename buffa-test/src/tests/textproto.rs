@@ -112,7 +112,7 @@ fn person_pretty_output() {
         ..Default::default()
     });
     let text = encode_to_string_pretty(&p);
-    assert_eq!(text, "id: 1\naddress {\n  city: \"London\"\n}");
+    assert_eq!(text, "id: 1\naddress {\n  city: \"London\"\n}\n");
 }
 
 // ── enum ────────────────────────────────────────────────────────────────────

@@ -10,7 +10,7 @@ use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
 use super::error::{ParseError, ParseErrorKind};
-use super::string::{unescape, unescape_str};
+use super::string::{unescape, unescape_str, UnescapeError};
 use super::token::{
     lex_number, number_for_parse, NumKind, ScalarKind, Token, TokenKind, Tokenizer,
 };
@@ -362,13 +362,12 @@ impl<'a> TextDecoder<'a> {
     /// UTF-8.
     pub fn read_string(&mut self) -> Result<Cow<'a, str>, ParseError> {
         let tok = self.read_scalar(ScalarKind::String)?;
-        unescape_str(tok.raw).map_err(|why| {
+        unescape_str(tok.raw).map_err(|e| {
             self.err_at(
                 &tok,
-                if why == "invalid UTF-8" {
-                    ParseErrorKind::InvalidUtf8
-                } else {
-                    ParseErrorKind::InvalidString(why)
+                match e {
+                    UnescapeError::InvalidUtf8 => ParseErrorKind::InvalidUtf8,
+                    UnescapeError::BadEscape(why) => ParseErrorKind::InvalidString(why),
                 },
             )
         })
@@ -381,7 +380,13 @@ impl<'a> TextDecoder<'a> {
     /// [`ParseErrorKind::InvalidString`] for malformed escapes.
     pub fn read_bytes(&mut self) -> Result<Vec<u8>, ParseError> {
         let tok = self.read_scalar(ScalarKind::String)?;
-        unescape(tok.raw).map_err(|why| self.err_at(&tok, ParseErrorKind::InvalidString(why)))
+        unescape(tok.raw).map_err(|e| {
+            // unescape (byte-level) never returns InvalidUtf8.
+            let UnescapeError::BadEscape(why) = e else {
+                unreachable!("unescape is byte-level")
+            };
+            self.err_at(&tok, ParseErrorKind::InvalidString(why))
+        })
     }
 
     /// Read an enum token into `(i32_value, had_known_name, token)`.
@@ -1179,7 +1184,7 @@ mod tests {
             })),
         };
         let text = encode_to_string_pretty(&orig);
-        assert_eq!(text, "i: 1\nchild {\n  i: 2\n}");
+        assert_eq!(text, "i: 1\nchild {\n  i: 2\n}\n");
         let back: TestMsg = decode_from_str(&text).unwrap();
         assert_eq!(back, orig);
     }

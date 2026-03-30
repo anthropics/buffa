@@ -91,4 +91,11 @@ pub enum ParseErrorKind {
     /// the pair must match.
     #[error("mismatched message delimiters")]
     DelimiterMismatch,
+
+    /// An internal invariant was violated during parsing.
+    ///
+    /// This indicates a bug in buffa, not a problem with the input. Please
+    /// report it if encountered.
+    #[error("internal error (this is a buffa bug): {0}")]
+    Internal(&'static str),
 }

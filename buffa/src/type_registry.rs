@@ -562,8 +562,17 @@ where
     dec.merge_message(&mut m)?;
     let bytes = m.encode_to_vec();
     // Freshly-encoded → re-decode cannot fail short of an encoder bug.
-    let inner = UnknownFields::decode_from_slice(&bytes)
-        .expect("BUG: re-decoding freshly-encoded message bytes failed");
+    // Surface as Internal rather than panicking so a library caller
+    // isn't taken down by it.
+    let inner = UnknownFields::decode_from_slice(&bytes).map_err(|_| {
+        crate::text::ParseError::new(
+            0,
+            0,
+            crate::text::ParseErrorKind::Internal(
+                "re-decoding freshly-encoded group message bytes failed",
+            ),
+        )
+    })?;
     Ok(alloc::vec![UnknownField {
         number: n,
         data: UnknownFieldData::Group(inner),
