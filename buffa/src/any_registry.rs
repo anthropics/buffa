@@ -64,7 +64,7 @@ pub struct AnyRegistry {
 impl AnyRegistry {
     /// Creates an empty registry.
     pub fn new() -> Self {
-        AnyRegistry {
+        Self {
             entries: HashMap::new(),
         }
     }

@@ -45,7 +45,7 @@ impl_wrapper!(BytesValue, Vec<u8>);
 impl From<&str> for StringValue {
     /// Converts a string slice into a [`StringValue`], allocating a new `String`.
     fn from(s: &str) -> Self {
-        StringValue {
+        Self {
             value: s.to_string(),
             ..Default::default()
         }
@@ -55,7 +55,7 @@ impl From<&str> for StringValue {
 impl From<&[u8]> for BytesValue {
     /// Converts a byte slice into a [`BytesValue`], copying the bytes.
     fn from(b: &[u8]) -> Self {
-        BytesValue {
+        Self {
             value: b.to_vec(),
             ..Default::default()
         }

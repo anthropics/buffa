@@ -31,7 +31,7 @@ impl DoubleValue {
 unsafe impl ::buffa::DefaultInstance for DoubleValue {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<DoubleValue> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(DoubleValue::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for DoubleValue {
@@ -206,7 +206,7 @@ impl<'a> ::buffa::MessageView<'a> for DoubleValueView<'a> {
 unsafe impl ::buffa::DefaultViewInstance for DoubleValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<DoubleValueView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(DoubleValueView::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 unsafe impl<'a> ::buffa::HasDefaultViewInstance for DoubleValueView<'a> {
@@ -242,7 +242,7 @@ impl FloatValue {
 unsafe impl ::buffa::DefaultInstance for FloatValue {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<FloatValue> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(FloatValue::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for FloatValue {
@@ -417,7 +417,7 @@ impl<'a> ::buffa::MessageView<'a> for FloatValueView<'a> {
 unsafe impl ::buffa::DefaultViewInstance for FloatValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<FloatValueView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(FloatValueView::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 unsafe impl<'a> ::buffa::HasDefaultViewInstance for FloatValueView<'a> {
@@ -453,7 +453,7 @@ impl Int64Value {
 unsafe impl ::buffa::DefaultInstance for Int64Value {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<Int64Value> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Int64Value::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for Int64Value {
@@ -628,7 +628,7 @@ impl<'a> ::buffa::MessageView<'a> for Int64ValueView<'a> {
 unsafe impl ::buffa::DefaultViewInstance for Int64ValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<Int64ValueView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Int64ValueView::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 unsafe impl<'a> ::buffa::HasDefaultViewInstance for Int64ValueView<'a> {
@@ -664,7 +664,7 @@ impl UInt64Value {
 unsafe impl ::buffa::DefaultInstance for UInt64Value {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<UInt64Value> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(UInt64Value::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for UInt64Value {
@@ -839,7 +839,7 @@ impl<'a> ::buffa::MessageView<'a> for UInt64ValueView<'a> {
 unsafe impl ::buffa::DefaultViewInstance for UInt64ValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<UInt64ValueView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(UInt64ValueView::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 unsafe impl<'a> ::buffa::HasDefaultViewInstance for UInt64ValueView<'a> {
@@ -875,7 +875,7 @@ impl Int32Value {
 unsafe impl ::buffa::DefaultInstance for Int32Value {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<Int32Value> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Int32Value::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for Int32Value {
@@ -1050,7 +1050,7 @@ impl<'a> ::buffa::MessageView<'a> for Int32ValueView<'a> {
 unsafe impl ::buffa::DefaultViewInstance for Int32ValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<Int32ValueView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Int32ValueView::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 unsafe impl<'a> ::buffa::HasDefaultViewInstance for Int32ValueView<'a> {
@@ -1086,7 +1086,7 @@ impl UInt32Value {
 unsafe impl ::buffa::DefaultInstance for UInt32Value {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<UInt32Value> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(UInt32Value::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for UInt32Value {
@@ -1261,7 +1261,7 @@ impl<'a> ::buffa::MessageView<'a> for UInt32ValueView<'a> {
 unsafe impl ::buffa::DefaultViewInstance for UInt32ValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<UInt32ValueView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(UInt32ValueView::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 unsafe impl<'a> ::buffa::HasDefaultViewInstance for UInt32ValueView<'a> {
@@ -1297,7 +1297,7 @@ impl BoolValue {
 unsafe impl ::buffa::DefaultInstance for BoolValue {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<BoolValue> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(BoolValue::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for BoolValue {
@@ -1472,7 +1472,7 @@ impl<'a> ::buffa::MessageView<'a> for BoolValueView<'a> {
 unsafe impl ::buffa::DefaultViewInstance for BoolValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<BoolValueView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(BoolValueView::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 unsafe impl<'a> ::buffa::HasDefaultViewInstance for BoolValueView<'a> {
@@ -1508,7 +1508,7 @@ impl StringValue {
 unsafe impl ::buffa::DefaultInstance for StringValue {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<StringValue> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(StringValue::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for StringValue {
@@ -1686,7 +1686,7 @@ impl<'a> ::buffa::MessageView<'a> for StringValueView<'a> {
 unsafe impl ::buffa::DefaultViewInstance for StringValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<StringValueView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(StringValueView::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 unsafe impl<'a> ::buffa::HasDefaultViewInstance for StringValueView<'a> {
@@ -1722,7 +1722,7 @@ impl BytesValue {
 unsafe impl ::buffa::DefaultInstance for BytesValue {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<BytesValue> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(BytesValue::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for BytesValue {
@@ -1900,7 +1900,7 @@ impl<'a> ::buffa::MessageView<'a> for BytesValueView<'a> {
 unsafe impl ::buffa::DefaultViewInstance for BytesValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<BytesValueView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(BytesValueView::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 unsafe impl<'a> ::buffa::HasDefaultViewInstance for BytesValueView<'a> {

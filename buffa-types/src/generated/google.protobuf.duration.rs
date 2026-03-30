@@ -106,7 +106,7 @@ impl Duration {
 unsafe impl ::buffa::DefaultInstance for Duration {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<Duration> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Duration::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 impl ::buffa::Message for Duration {
@@ -383,7 +383,7 @@ impl<'a> ::buffa::MessageView<'a> for DurationView<'a> {
 unsafe impl ::buffa::DefaultViewInstance for DurationView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<DurationView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(DurationView::default()))
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
 unsafe impl<'a> ::buffa::HasDefaultViewInstance for DurationView<'a> {

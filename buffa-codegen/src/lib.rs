@@ -242,7 +242,7 @@ pub fn generate_module_tree(
     #[derive(Default)]
     struct ModNode {
         files: Vec<String>,
-        children: BTreeMap<String, ModNode>,
+        children: BTreeMap<String, Self>,
     }
 
     let mut root = ModNode::default();
