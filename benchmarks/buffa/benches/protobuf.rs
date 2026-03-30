@@ -61,7 +61,7 @@ fn benchmark_decode<M: Message + Default>(c: &mut Criterion, name: &str, dataset
             .collect();
         b.iter(|| {
             for msg in &messages {
-                let size = msg.compute_size();
+                let size = msg.encoded_len();
                 criterion::black_box(size);
             }
         });

@@ -170,10 +170,10 @@ fn test_json_message_has_derive_and_field_attrs() {
         content.contains("is_zero_f32"),
         "missing skip_serializing_if for ratio: {content}"
     );
-    // cached_size gets skip
+    // __buffa_unknown_fields gets skip (no extension ranges → no JSON wrapper)
     assert!(
         content.contains("serde(skip)"),
-        "missing serde(skip) for cached_size: {content}"
+        "missing serde(skip) for unknown_fields: {content}"
     );
 }
 

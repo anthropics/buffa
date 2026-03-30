@@ -2,7 +2,8 @@
 //!
 //! Every generated message type implements [`Message`], which provides
 //! encode/decode/merge methods and a two-pass serialization model
-//! (`compute_size` → `write_to`) that avoids the exponential-time
+//! (`compute_size` populates a [`SizeCache`](crate::SizeCache), `write_to`
+//! consumes it) that avoids the exponential-time
 //! problem affecting naïve length-delimited encoders.
 
 use bytes::{Buf, BufMut};
@@ -39,7 +40,8 @@ pub const RECURSION_LIMIT: u32 = 100;
 ///
 /// Manual implementation is intentionally high-friction:
 /// - You must correctly implement the two-pass serialization contract
-///   (`compute_size` caches sizes before `write_to` uses them).
+///   (`compute_size` populates the [`SizeCache`](crate::SizeCache) in the
+///   same traversal order that `write_to` consumes it).
 /// - You must implement wire-format decoding in `merge_field`.
 /// - [`DefaultInstance`] is an `unsafe` supertrait; you must uphold its
 ///   safety contract for the default-instance pointer.
@@ -54,28 +56,34 @@ pub const RECURSION_LIMIT: u32 = 100;
 /// Serialization is a two-pass process to avoid the exponential-time problem
 /// that affects prost with deeply nested messages:
 ///
-/// 1. **`compute_size()`** — walks the message tree and caches the encoded
-///    size of every sub-message in its `CachedSize` field.
-/// 2. **`write_to()`** — walks the tree again, writing bytes and using the
+/// 1. **`compute_size()`** — walks the message tree and records the encoded
+///    size of every length-delimited sub-message in a [`SizeCache`].
+/// 2. **`write_to()`** — walks the tree again, writing bytes and consuming
 ///    cached sizes for length-prefixed sub-messages.
 ///
-/// The convenience method `encode()` performs both passes. If you need to
-/// serialize the same message multiple times without mutation in between,
-/// you can call `compute_size()` once and then `write_to()` repeatedly.
+/// The provided [`encode`](Self::encode) method performs both passes with a
+/// fresh [`SizeCache`] — most callers use that and never touch the cache
+/// directly. `compute_size` / `write_to` take the cache explicitly so that
+/// manual `Message` implementations can thread it through nested-message
+/// recursion.
 ///
 /// # Thread safety
 ///
-/// `Message` requires `Send + Sync`. The `CachedSize` field uses `AtomicU32`
-/// with `Relaxed` ordering, so messages can be placed in an `Arc` and shared
-/// across threads. Serialization (`compute_size` → `write_to`) must still be
-/// sequenced on a single thread per message — `merge` requires `&mut self`,
-/// and `compute_size`/`write_to` must be called in order without interleaving
-/// from another thread to produce a valid encoding.
+/// `Message` requires `Send + Sync`. Generated structs contain no interior
+/// mutability — serialization state lives in the external [`SizeCache`], not
+/// in the message — so messages can be placed in an `Arc` and shared across
+/// threads freely. `merge` requires `&mut self`, so mutation is exclusive.
+///
+/// [`SizeCache`]: crate::SizeCache
 pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
-    /// Compute and cache the encoded byte size of this message.
+    /// Compute the encoded byte size of this message, recording nested
+    /// sub-message sizes in `cache` for `write_to` to consume.
     ///
-    /// This recursively computes sizes for all sub-messages and stores them
-    /// in each message's `CachedSize` field. Must be called before `write_to()`.
+    /// Most callers should use [`encode`](Self::encode) instead, which runs
+    /// both passes with a fresh cache. Manual `Message` implementations call
+    /// this recursively on nested message fields, wrapping each call in
+    /// [`SizeCache::reserve`] / [`SizeCache::set`] for length-delimited
+    /// fields — see the user guide's custom-types section for the pattern.
     ///
     /// # Size limit
     ///
@@ -83,32 +91,51 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// is `u32`, so messages whose encoded size exceeds `u32::MAX` (4 GiB)
     /// will produce a wrapped (undefined) size and a truncated encoding.
     /// Stay well within the 2 GiB spec limit.
-    fn compute_size(&self) -> u32;
-
-    /// Write this message's encoded bytes to a buffer.
     ///
-    /// Assumes `compute_size()` has already been called. Uses cached sizes
-    /// for length-delimited sub-message headers.
-    fn write_to(&self, buf: &mut impl BufMut);
+    /// [`SizeCache::reserve`]: crate::SizeCache::reserve
+    /// [`SizeCache::set`]: crate::SizeCache::set
+    fn compute_size(&self, cache: &mut crate::SizeCache) -> u32;
 
-    /// Convenience: compute size, then write. This is the primary encoding API.
+    /// Write this message's encoded bytes to a buffer, consuming
+    /// nested-message sizes from `cache` (populated by a prior
+    /// `compute_size` call on the same cache).
+    ///
+    /// Most callers should use [`encode`](Self::encode) instead.
+    fn write_to(&self, cache: &mut crate::SizeCache, buf: &mut impl BufMut);
+
+    /// Compute size, then write. This is the primary encoding API.
     fn encode(&self, buf: &mut impl BufMut) {
-        self.compute_size();
-        self.write_to(buf);
+        let mut cache = crate::SizeCache::new();
+        self.compute_size(&mut cache);
+        self.write_to(&mut cache, buf);
+    }
+
+    /// Compute the encoded byte size of this message.
+    ///
+    /// Walks the message tree, discarding the intermediate [`SizeCache`].
+    /// If you also intend to encode, prefer [`encode`](Self::encode) or
+    /// [`encode_to_vec`](Self::encode_to_vec) — they do a single size pass
+    /// and reuse the cache for the write.
+    ///
+    /// [`SizeCache`]: crate::SizeCache
+    fn encoded_len(&self) -> u32 {
+        self.compute_size(&mut crate::SizeCache::new())
     }
 
     /// Encode this message as a length-delimited byte sequence.
     fn encode_length_delimited(&self, buf: &mut impl BufMut) {
-        let len = self.compute_size();
+        let mut cache = crate::SizeCache::new();
+        let len = self.compute_size(&mut cache);
         crate::encoding::encode_varint(len as u64, buf);
-        self.write_to(buf);
+        self.write_to(&mut cache, buf);
     }
 
     /// Encode this message to a new `Vec<u8>`.
     fn encode_to_vec(&self) -> alloc::vec::Vec<u8> {
-        let size = self.compute_size() as usize;
+        let mut cache = crate::SizeCache::new();
+        let size = self.compute_size(&mut cache) as usize;
         let mut buf = alloc::vec::Vec::with_capacity(size);
-        self.write_to(&mut buf);
+        self.write_to(&mut cache, &mut buf);
         buf
     }
 
@@ -121,9 +148,10 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// are zero-copy with respect to the encoded bytes — but saves readers
     /// from having to know that `From<Vec<u8>> for Bytes` is zero-copy.
     fn encode_to_bytes(&self) -> bytes::Bytes {
-        let size = self.compute_size() as usize;
+        let mut cache = crate::SizeCache::new();
+        let size = self.compute_size(&mut cache) as usize;
         let mut buf = bytes::BytesMut::with_capacity(size);
-        self.write_to(&mut buf);
+        self.write_to(&mut cache, &mut buf);
         buf.freeze()
     }
 
@@ -373,11 +401,6 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
         }
         Ok(())
     }
-
-    /// The cached encoded size from the last `compute_size()` call.
-    ///
-    /// Returns 0 if `compute_size()` has never been called.
-    fn cached_size(&self) -> u32;
 
     /// Clear all fields to their default values.
     fn clear(&mut self);
@@ -658,17 +681,15 @@ fn read_varint(reader: &mut impl std::io::Read) -> Result<u64, std::io::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cached_size::CachedSize;
     use crate::encoding::encode_varint;
     use crate::error::DecodeError;
     use crate::message_field::DefaultInstance;
+    use crate::size_cache::SizeCache;
 
     // Minimal hand-written Message for testing merge_length_delimited.
-    // Includes `CachedSize` to mirror the shape of generated message structs.
     #[derive(Clone, Debug, Default, PartialEq)]
     struct FlatMsg {
         value: i32,
-        __buffa_cached_size: CachedSize,
     }
 
     unsafe impl DefaultInstance for FlatMsg {
@@ -679,17 +700,15 @@ mod tests {
     }
 
     impl Message for FlatMsg {
-        fn compute_size(&self) -> u32 {
-            let size = if self.value != 0 {
+        fn compute_size(&self, _cache: &mut SizeCache) -> u32 {
+            if self.value != 0 {
                 1 + crate::types::int32_encoded_len(self.value) as u32
             } else {
                 0
-            };
-            self.__buffa_cached_size.set(size);
-            size
+            }
         }
 
-        fn write_to(&self, buf: &mut impl BufMut) {
+        fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
             if self.value != 0 {
                 crate::encoding::Tag::new(1, crate::encoding::WireType::Varint).encode(buf);
                 crate::types::encode_int32(self.value, buf);
@@ -713,10 +732,6 @@ mod tests {
             Ok(())
         }
 
-        fn cached_size(&self) -> u32 {
-            self.__buffa_cached_size.get()
-        }
-
         fn clear(&mut self) {
             *self = Self::default();
         }
@@ -730,10 +745,7 @@ mod tests {
 
     #[test]
     fn test_merge_length_delimited_basic() {
-        let src = FlatMsg {
-            value: 42,
-            __buffa_cached_size: CachedSize::default(),
-        };
+        let src = FlatMsg { value: 42 };
         let mut dst = FlatMsg::default();
         dst.merge_length_delimited(&mut wire_bytes(&src).as_slice(), RECURSION_LIMIT)
             .unwrap();
@@ -745,21 +757,13 @@ mod tests {
         // Second merge overwrites (proto3 last-wins for scalar fields).
         let mut dst = FlatMsg::default();
         dst.merge_length_delimited(
-            &mut wire_bytes(&FlatMsg {
-                value: 1,
-                __buffa_cached_size: CachedSize::default(),
-            })
-            .as_slice(),
+            &mut wire_bytes(&FlatMsg { value: 1 }).as_slice(),
             RECURSION_LIMIT,
         )
         .unwrap();
         assert_eq!(dst.value, 1);
         dst.merge_length_delimited(
-            &mut wire_bytes(&FlatMsg {
-                value: 2,
-                __buffa_cached_size: CachedSize::default(),
-            })
-            .as_slice(),
+            &mut wire_bytes(&FlatMsg { value: 2 }).as_slice(),
             RECURSION_LIMIT,
         )
         .unwrap();
@@ -798,10 +802,7 @@ mod tests {
         // to merge_length_delimited itself is the boundary: it decrements to
         // 0 and calls merge with depth=0, which for FlatMsg (a leaf) succeeds.
         // Passing depth=0 directly must return RecursionLimitExceeded.
-        let src = FlatMsg {
-            value: 7,
-            __buffa_cached_size: CachedSize::default(),
-        };
+        let src = FlatMsg { value: 7 };
         let mut dst = FlatMsg::default();
         assert_eq!(
             dst.merge_length_delimited(&mut wire_bytes(&src).as_slice(), 0),
@@ -815,10 +816,7 @@ mod tests {
 
     #[test]
     fn test_decode_from_slice_basic() {
-        let src = FlatMsg {
-            value: 42,
-            __buffa_cached_size: CachedSize::default(),
-        };
+        let src = FlatMsg { value: 42 };
         let bytes = src.encode_to_vec();
         let dst = FlatMsg::decode_from_slice(&bytes).unwrap();
         assert_eq!(dst.value, 42);
@@ -826,10 +824,7 @@ mod tests {
 
     #[test]
     fn test_encode_to_bytes_matches_encode_to_vec() {
-        let src = FlatMsg {
-            value: 42,
-            __buffa_cached_size: CachedSize::default(),
-        };
+        let src = FlatMsg { value: 42 };
         let vec = src.encode_to_vec();
         let bytes = src.encode_to_bytes();
         assert_eq!(vec.as_slice(), bytes.as_ref());
@@ -855,10 +850,7 @@ mod tests {
 
     #[test]
     fn test_merge_from_slice_basic() {
-        let src = FlatMsg {
-            value: 7,
-            __buffa_cached_size: CachedSize::default(),
-        };
+        let src = FlatMsg { value: 7 };
         let bytes = src.encode_to_vec();
         let mut dst = FlatMsg::default();
         dst.merge_from_slice(&bytes).unwrap();
@@ -867,14 +859,8 @@ mod tests {
 
     #[test]
     fn test_merge_from_slice_last_wins() {
-        let src1 = FlatMsg {
-            value: 1,
-            __buffa_cached_size: CachedSize::default(),
-        };
-        let src2 = FlatMsg {
-            value: 2,
-            __buffa_cached_size: CachedSize::default(),
-        };
+        let src1 = FlatMsg { value: 1 };
+        let src2 = FlatMsg { value: 2 };
         let mut dst = FlatMsg::default();
         dst.merge_from_slice(&src1.encode_to_vec()).unwrap();
         dst.merge_from_slice(&src2.encode_to_vec()).unwrap();
@@ -886,10 +872,7 @@ mod tests {
 
     #[test]
     fn test_decode_options_default_works() {
-        let src = FlatMsg {
-            value: 99,
-            __buffa_cached_size: CachedSize::default(),
-        };
+        let src = FlatMsg { value: 99 };
         let bytes = src.encode_to_vec();
         let msg: FlatMsg = DecodeOptions::new().decode_from_slice(&bytes).unwrap();
         assert_eq!(msg.value, 99);
@@ -897,10 +880,7 @@ mod tests {
 
     #[test]
     fn test_decode_options_max_message_size_rejects() {
-        let src = FlatMsg {
-            value: 42,
-            __buffa_cached_size: CachedSize::default(),
-        };
+        let src = FlatMsg { value: 42 };
         let bytes = src.encode_to_vec();
         // Set max size to 1 byte — smaller than the encoded message.
         let result: Result<FlatMsg, _> = DecodeOptions::new()
@@ -911,10 +891,7 @@ mod tests {
 
     #[test]
     fn test_decode_options_max_message_size_exact_boundary() {
-        let src = FlatMsg {
-            value: 42,
-            __buffa_cached_size: CachedSize::default(),
-        };
+        let src = FlatMsg { value: 42 };
         let bytes = src.encode_to_vec();
         // Exact size should succeed.
         let msg: FlatMsg = DecodeOptions::new()
@@ -933,10 +910,7 @@ mod tests {
     fn test_decode_options_custom_recursion_limit() {
         // FlatMsg has no nested messages, so any recursion limit >= 0 works.
         // Just verify the API compiles and runs.
-        let src = FlatMsg {
-            value: 7,
-            __buffa_cached_size: CachedSize::default(),
-        };
+        let src = FlatMsg { value: 7 };
         let bytes = src.encode_to_vec();
         let msg: FlatMsg = DecodeOptions::new()
             .with_recursion_limit(1)
@@ -947,10 +921,7 @@ mod tests {
 
     #[test]
     fn test_decode_options_merge() {
-        let src = FlatMsg {
-            value: 55,
-            __buffa_cached_size: CachedSize::default(),
-        };
+        let src = FlatMsg { value: 55 };
         let bytes = src.encode_to_vec();
         let mut msg = FlatMsg::default();
         DecodeOptions::new()
@@ -961,10 +932,7 @@ mod tests {
 
     #[test]
     fn test_decode_options_merge_rejects_oversize() {
-        let src = FlatMsg {
-            value: 55,
-            __buffa_cached_size: CachedSize::default(),
-        };
+        let src = FlatMsg { value: 55 };
         let bytes = src.encode_to_vec();
         let mut msg = FlatMsg::default();
         let result = DecodeOptions::new()
@@ -975,10 +943,7 @@ mod tests {
 
     #[test]
     fn test_decode_options_length_delimited() {
-        let src = FlatMsg {
-            value: 42,
-            __buffa_cached_size: CachedSize::default(),
-        };
+        let src = FlatMsg { value: 42 };
         let mut ld_bytes = alloc::vec::Vec::new();
         src.encode_length_delimited(&mut ld_bytes);
         let msg: FlatMsg = DecodeOptions::new()
@@ -989,10 +954,7 @@ mod tests {
 
     #[test]
     fn test_decode_options_length_delimited_rejects_oversize() {
-        let src = FlatMsg {
-            value: 42,
-            __buffa_cached_size: CachedSize::default(),
-        };
+        let src = FlatMsg { value: 42 };
         let mut ld_bytes = alloc::vec::Vec::new();
         src.encode_length_delimited(&mut ld_bytes);
         let result: Result<FlatMsg, _> = DecodeOptions::new()

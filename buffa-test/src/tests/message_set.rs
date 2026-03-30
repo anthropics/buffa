@@ -146,7 +146,7 @@ fn compute_size_matches_encoded_length() {
         },
     );
 
-    let size = container.compute_size();
+    let size = container.encoded_len();
     let bytes = container.encode_to_vec();
     assert_eq!(size as usize, bytes.len());
 }
@@ -169,7 +169,7 @@ fn stray_varint_preserved_through_roundtrip() {
     // re-emitted as-is. Total length preserved.
     let reencoded = decoded.encode_to_vec();
     assert_eq!(reencoded.len(), wire.len());
-    assert_eq!(decoded.compute_size() as usize, reencoded.len());
+    assert_eq!(decoded.encoded_len() as usize, reencoded.len());
 
     // Decode again to verify the stray varint survived.
     let redecoded = Container::decode_from_slice(&reencoded).expect("redecode");
@@ -187,7 +187,7 @@ fn stray_varint_preserved_through_roundtrip() {
 fn empty_container_encodes_empty() {
     let container = Container::default();
     assert_eq!(container.encode_to_vec(), Vec::<u8>::new());
-    assert_eq!(container.compute_size(), 0);
+    assert_eq!(container.encoded_len(), 0);
 }
 
 /// Clearing after setting an extension yields an empty encode.

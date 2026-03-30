@@ -260,7 +260,7 @@ fn test_compute_size_matches_encode_len() {
     msg.id = 99;
     msg.name = "Bob".into();
     msg.tags = vec!["a".into(), "b".into()];
-    let size = msg.compute_size() as usize;
+    let size = msg.encoded_len() as usize;
     let bytes = msg.encode_to_vec();
     assert_eq!(size, bytes.len());
 }

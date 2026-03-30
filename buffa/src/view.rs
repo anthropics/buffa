@@ -60,7 +60,6 @@
 //!     pub tags: Vec<String>,
 //!     pub address: MessageField<Address>,
 //!     #[doc(hidden)] pub __buffa_unknown_fields: UnknownFields,
-//!     #[doc(hidden)] pub __buffa_cached_size: /* internal */,
 //! }
 //!
 //! // Borrowed view type (zero-copy from input buffer)
@@ -1149,7 +1148,7 @@ mod tests {
     }
 
     impl crate::Message for SimpleMessage {
-        fn compute_size(&self) -> u32 {
+        fn compute_size(&self, _cache: &mut crate::SizeCache) -> u32 {
             let mut size = 0u32;
             if self.id != 0 {
                 size += 1 + crate::types::int32_encoded_len(self.id) as u32;
@@ -1160,7 +1159,7 @@ mod tests {
             size
         }
 
-        fn write_to(&self, buf: &mut impl bytes::BufMut) {
+        fn write_to(&self, _cache: &mut crate::SizeCache, buf: &mut impl bytes::BufMut) {
             if self.id != 0 {
                 crate::encoding::Tag::new(1, crate::encoding::WireType::Varint).encode(buf);
                 crate::types::encode_int32(self.id, buf);
@@ -1184,10 +1183,6 @@ mod tests {
                 _ => crate::encoding::skip_field(tag, buf)?,
             }
             Ok(())
-        }
-
-        fn cached_size(&self) -> u32 {
-            0
         }
 
         fn clear(&mut self) {

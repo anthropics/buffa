@@ -6,7 +6,7 @@ use super::*;
 #[test]
 fn test_reserved_field_name_rejected() {
     let field = make_field(
-        "__buffa_cached_size",
+        "__buffa_unknown_fields",
         1,
         Label::LABEL_OPTIONAL,
         Type::TYPE_INT32,
@@ -25,7 +25,7 @@ fn test_reserved_field_name_rejected() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
-        err.to_string().contains("__buffa_cached_size"),
+        err.to_string().contains("__buffa_unknown_fields"),
         "error should mention the field name: {err}"
     );
     assert!(
@@ -280,8 +280,7 @@ fn test_proto3_optional_field_name_matches_nested_enum_no_conflict() {
         }],
         field: vec![{
             let mut f = make_field("match_operator", 4, Label::LABEL_OPTIONAL, Type::TYPE_ENUM);
-            f.type_name =
-                Some(".minimal.StringFieldMatcher.MatchOperator".to_string());
+            f.type_name = Some(".minimal.StringFieldMatcher.MatchOperator".to_string());
             f.oneof_index = Some(0);
             f.proto3_optional = Some(true);
             f
