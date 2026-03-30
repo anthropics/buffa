@@ -1433,7 +1433,7 @@ mod tests {
     }
 
     impl crate::Message for TestMsg {
-        fn compute_size(&self) -> u32 {
+        fn compute_size(&self, _cache: &mut crate::SizeCache) -> u32 {
             let mut n = 0;
             if self.a != 0 {
                 n += 1 + crate::encoding::varint_len(self.a as i64 as u64);
@@ -1444,7 +1444,7 @@ mod tests {
             n += self.unknown.encoded_len();
             n as u32
         }
-        fn write_to(&self, buf: &mut impl bytes::BufMut) {
+        fn write_to(&self, _cache: &mut crate::SizeCache, buf: &mut impl bytes::BufMut) {
             use crate::encoding::encode_varint;
             if self.a != 0 {
                 encode_varint(1 << 3, buf);
@@ -1468,9 +1468,6 @@ mod tests {
                 _ => crate::encoding::skip_field(tag, buf)?,
             }
             Ok(())
-        }
-        fn cached_size(&self) -> u32 {
-            self.compute_size()
         }
         fn clear(&mut self) {
             *self = Self::default();

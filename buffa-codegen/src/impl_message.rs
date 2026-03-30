@@ -531,8 +531,9 @@ pub fn generate_message_impl(
             /// The result is a `u32`; the protobuf specification requires all
             /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
             /// compliant message will never overflow this type.
-            fn compute_size(&self) -> u32 {
-                #[allow(unused_imports)]
+            #[allow(clippy::let_and_return)]
+            fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
+                #[allow(unused_variables, unused_imports)]
                 use ::buffa::Enumeration as _;
                 #size_decl
                 #(#compute_stmts)*
@@ -540,15 +541,15 @@ pub fn generate_message_impl(
                 #(#oneof_compute_stmts)*
                 #(#map_compute_stmts)*
                 #unknown_fields_size_stmt
-                self.__buffa_cached_size.set(size);
                 size
             }
 
             fn write_to(
                 &self,
+                __cache: &mut ::buffa::SizeCache,
                 #buf_param,
-            ) {
-                #[allow(unused_imports)]
+                ) {
+                #[allow(unused_variables, unused_imports)]
                 use ::buffa::Enumeration as _;
                 #(#write_stmts)*
                 #(#repeated_write_stmts)*
@@ -577,17 +578,12 @@ pub fn generate_message_impl(
                 ::core::result::Result::Ok(())
             }
 
-            fn cached_size(&self) -> u32 {
-                self.__buffa_cached_size.get()
-            }
-
             fn clear(&mut self) {
                 #(#scalar_clear_stmts)*
                 #(#repeated_clear_stmts)*
                 #(#oneof_clear_stmts)*
                 #(#map_clear_stmts)*
                 #unknown_fields_clear_stmt
-                self.__buffa_cached_size.set(0);
             }
         }
 
@@ -985,7 +981,9 @@ fn scalar_compute_size_stmt(
         Type::TYPE_MESSAGE => {
             return Ok(quote! {
                 if self.#ident.is_set() {
-                    let inner_size = self.#ident.compute_size();
+                    let __slot = __cache.reserve();
+                    let inner_size = self.#ident.compute_size(__cache);
+                    __cache.set(__slot, inner_size);
                     size += #tag_len
                         + ::buffa::encoding::varint_len(inner_size as u64) as u32
                         + inner_size;
@@ -996,7 +994,7 @@ fn scalar_compute_size_stmt(
             // Groups: start_tag + body + end_tag (no length prefix).
             return Ok(quote! {
                 if self.#ident.is_set() {
-                    let inner_size = self.#ident.compute_size();
+                    let inner_size = self.#ident.compute_size(__cache);
                     size += #tag_len + inner_size + #tag_len;
                 }
             });
@@ -1154,8 +1152,8 @@ fn scalar_write_to_stmt(
                         #field_number,
                         ::buffa::encoding::WireType::LengthDelimited,
                     ).encode(buf);
-                    ::buffa::encoding::encode_varint(self.#ident.cached_size() as u64, buf);
-                    self.#ident.write_to(buf);
+                    ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+                    self.#ident.write_to(__cache, buf);
                 }
             });
         }
@@ -1166,7 +1164,7 @@ fn scalar_write_to_stmt(
                         #field_number,
                         ::buffa::encoding::WireType::StartGroup,
                     ).encode(buf);
-                    self.#ident.write_to(buf);
+                    self.#ident.write_to(__cache, buf);
                     ::buffa::encoding::Tag::new(
                         #field_number,
                         ::buffa::encoding::WireType::EndGroup,
@@ -1517,7 +1515,9 @@ fn repeated_compute_size_stmt(
         // Messages are always length-delimited (one tag per element).
         return Ok(quote! {
             for v in &self.#ident {
-                let inner_size = v.compute_size();
+                let __slot = __cache.reserve();
+                let inner_size = v.compute_size(__cache);
+                __cache.set(__slot, inner_size);
                 size += #ld_tag_len
                     + ::buffa::encoding::varint_len(inner_size as u64) as u32
                     + inner_size;
@@ -1528,7 +1528,7 @@ fn repeated_compute_size_stmt(
         // Groups: start_tag + body + end_tag per element (no length prefix).
         return Ok(quote! {
             for v in &self.#ident {
-                let inner_size = v.compute_size();
+                let inner_size = v.compute_size(__cache);
                 size += #elem_tag_len + inner_size + #elem_tag_len;
             }
         });
@@ -1610,8 +1610,8 @@ fn repeated_write_to_stmt(
                     #field_number,
                     ::buffa::encoding::WireType::LengthDelimited,
                 ).encode(buf);
-                ::buffa::encoding::encode_varint(v.cached_size() as u64, buf);
-                v.write_to(buf);
+                ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+                v.write_to(__cache, buf);
             }
         });
     }
@@ -1622,7 +1622,7 @@ fn repeated_write_to_stmt(
                     #field_number,
                     ::buffa::encoding::WireType::StartGroup,
                 ).encode(buf);
-                v.write_to(buf);
+                v.write_to(__cache, buf);
                 ::buffa::encoding::Tag::new(
                     #field_number,
                     ::buffa::encoding::WireType::EndGroup,
@@ -2001,7 +2001,9 @@ fn oneof_size_arm(
         },
         Type::TYPE_MESSAGE => quote! {
             #enum_ident::#variant_ident(x) => {
-                let inner = x.compute_size();
+                let __slot = __cache.reserve();
+                let inner = x.compute_size(__cache);
+                __cache.set(__slot, inner);
                 size += #tag_len
                     + ::buffa::encoding::varint_len(inner as u64) as u32
                     + inner;
@@ -2009,7 +2011,7 @@ fn oneof_size_arm(
         },
         Type::TYPE_GROUP => quote! {
             #enum_ident::#variant_ident(x) => {
-                let inner = x.compute_size();
+                let inner = x.compute_size(__cache);
                 size += #tag_len + inner + #tag_len;
             }
         },
@@ -2083,8 +2085,8 @@ fn oneof_write_arm(
                 ::buffa::encoding::Tag::new(
                     #field_number, ::buffa::encoding::WireType::LengthDelimited,
                 ).encode(buf);
-                ::buffa::encoding::encode_varint(x.cached_size() as u64, buf);
-                x.write_to(buf);
+                ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+                x.write_to(__cache, buf);
             }
         },
         Type::TYPE_GROUP => quote! {
@@ -2092,7 +2094,7 @@ fn oneof_write_arm(
                 ::buffa::encoding::Tag::new(
                     #field_number, ::buffa::encoding::WireType::StartGroup,
                 ).encode(buf);
-                x.write_to(buf);
+                x.write_to(__cache, buf);
                 ::buffa::encoding::Tag::new(
                     #field_number, ::buffa::encoding::WireType::EndGroup,
                 ).encode(buf);
@@ -2338,18 +2340,17 @@ pub(crate) fn find_map_entry_fields<'a>(
 
 /// Generate the encoded-byte-size expression for a single map entry element
 /// (key or value) bound to the variable named `var`. Uses `*var` for copy
-/// scalars, `var` for string/bytes/enum, and `var.compute_size()` for messages.
+/// scalars, `var` for string/bytes/enum, and `var.to_i32()` for enums.
+///
+/// Message values are phase-dependent (compute reserves a cache slot,
+/// write reads it) so callers handle them explicitly; keys cannot be
+/// message-typed per the proto spec.
 fn map_element_size_expr(ty: Type, var: &Ident) -> TokenStream {
     match ty {
         Type::TYPE_STRING => quote! { ::buffa::types::string_encoded_len(#var) as u32 },
         Type::TYPE_BYTES => quote! { ::buffa::types::bytes_encoded_len(#var) as u32 },
         Type::TYPE_ENUM => quote! { ::buffa::types::int32_encoded_len(#var.to_i32()) as u32 },
-        Type::TYPE_MESSAGE => quote! {
-            {
-                let inner = #var.compute_size();
-                ::buffa::encoding::varint_len(inner as u64) as u32 + inner
-            }
-        },
+        Type::TYPE_MESSAGE => unreachable!("message map values are handled per-phase by callers"),
         Type::TYPE_FIXED32 | Type::TYPE_SFIXED32 | Type::TYPE_FLOAT => {
             quote! { ::buffa::types::FIXED32_ENCODED_LEN as u32 }
         }
@@ -2389,8 +2390,8 @@ fn map_element_encode_stmt(ty: Type, tag_num: u32, var: &Ident) -> TokenStream {
         Type::TYPE_ENUM => quote! { ::buffa::types::encode_int32(#var.to_i32(), buf); },
         Type::TYPE_MESSAGE => {
             quote! {
-                ::buffa::encoding::encode_varint(#var.cached_size() as u64, buf);
-                #var.write_to(buf);
+                ::buffa::encoding::encode_varint(__v_len as u64, buf);
+                #var.write_to(__cache, buf);
             }
         }
         _ => {
@@ -2466,7 +2467,18 @@ fn map_compute_size_stmt(
     let k = format_ident!("k");
     let v = format_ident!("v");
     let key_size = map_element_size_expr(key_ty, &k);
-    let val_size = map_element_size_expr(val_ty, &v);
+    let val_size = if val_ty == Type::TYPE_MESSAGE {
+        quote! {
+            {
+                let __slot = __cache.reserve();
+                let inner = #v.compute_size(__cache);
+                __cache.set(__slot, inner);
+                ::buffa::encoding::varint_len(inner as u64) as u32 + inner
+            }
+        }
+    } else {
+        map_element_size_expr(val_ty, &v)
+    };
     let key_const = map_element_size_is_constant(key_ty);
     let val_const = map_element_size_is_constant(val_ty);
     // Iterate only the side(s) whose size varies: avoids unused-variable
@@ -2527,11 +2539,19 @@ fn map_write_to_stmt(
     let k = format_ident!("k");
     let v = format_ident!("v");
     let key_size = map_element_size_expr(key_ty, &k);
-    let val_size = map_element_size_expr(val_ty, &v);
+    let (val_len_bind, val_size) = if val_ty == Type::TYPE_MESSAGE {
+        (
+            quote! { let __v_len = __cache.next_size(); },
+            quote! { (::buffa::encoding::varint_len(__v_len as u64) as u32 + __v_len) },
+        )
+    } else {
+        (quote! {}, map_element_size_expr(val_ty, &v))
+    };
     let encode_key = map_element_encode_stmt(key_ty, 1, &k);
     let encode_val = map_element_encode_stmt(val_ty, 2, &v);
     Ok(quote! {
         for (#k, #v) in &self.#ident {
+            #val_len_bind
             let entry_size: u32 = #key_tag_len + #key_size + #val_tag_len + #val_size;
             ::buffa::encoding::Tag::new(
                 #field_number,

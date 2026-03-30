@@ -13,8 +13,6 @@ pub struct DoubleValue {
     pub value: f64,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
-    #[doc(hidden)]
-    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl ::core::fmt::Debug for DoubleValue {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -40,19 +38,23 @@ impl ::buffa::Message for DoubleValue {
     /// The result is a `u32`; the protobuf specification requires all
     /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
     /// compliant message will never overflow this type.
-    fn compute_size(&self) -> u32 {
-        #[allow(unused_imports)]
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
         let mut size = 0u32;
         if self.value != 0f64 {
             size += 1u32 + ::buffa::types::FIXED64_ENCODED_LEN as u32;
         }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
-        self.__buffa_cached_size.set(size);
         size
     }
-    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
-        #[allow(unused_imports)]
+    fn write_to(
+        &self,
+        __cache: &mut ::buffa::SizeCache,
+        buf: &mut impl ::buffa::bytes::BufMut,
+    ) {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
         if self.value != 0f64 {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Fixed64)
@@ -89,13 +91,9 @@ impl ::buffa::Message for DoubleValue {
         }
         ::core::result::Result::Ok(())
     }
-    fn cached_size(&self) -> u32 {
-        self.__buffa_cached_size.get()
-    }
     fn clear(&mut self) {
         self.value = 0f64;
         self.__buffa_unknown_fields.clear();
-        self.__buffa_cached_size.set(0);
     }
 }
 impl ::buffa::ExtensionSet for DoubleValue {
@@ -199,7 +197,6 @@ impl<'a> ::buffa::MessageView<'a> for DoubleValueView<'a> {
                 .to_owned()
                 .unwrap_or_default()
                 .into(),
-            ..::core::default::Default::default()
         }
     }
 }
@@ -224,8 +221,6 @@ pub struct FloatValue {
     pub value: f32,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
-    #[doc(hidden)]
-    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl ::core::fmt::Debug for FloatValue {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -251,19 +246,23 @@ impl ::buffa::Message for FloatValue {
     /// The result is a `u32`; the protobuf specification requires all
     /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
     /// compliant message will never overflow this type.
-    fn compute_size(&self) -> u32 {
-        #[allow(unused_imports)]
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
         let mut size = 0u32;
         if self.value != 0f32 {
             size += 1u32 + ::buffa::types::FIXED32_ENCODED_LEN as u32;
         }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
-        self.__buffa_cached_size.set(size);
         size
     }
-    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
-        #[allow(unused_imports)]
+    fn write_to(
+        &self,
+        __cache: &mut ::buffa::SizeCache,
+        buf: &mut impl ::buffa::bytes::BufMut,
+    ) {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
         if self.value != 0f32 {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Fixed32)
@@ -300,13 +299,9 @@ impl ::buffa::Message for FloatValue {
         }
         ::core::result::Result::Ok(())
     }
-    fn cached_size(&self) -> u32 {
-        self.__buffa_cached_size.get()
-    }
     fn clear(&mut self) {
         self.value = 0f32;
         self.__buffa_unknown_fields.clear();
-        self.__buffa_cached_size.set(0);
     }
 }
 impl ::buffa::ExtensionSet for FloatValue {
@@ -410,7 +405,6 @@ impl<'a> ::buffa::MessageView<'a> for FloatValueView<'a> {
                 .to_owned()
                 .unwrap_or_default()
                 .into(),
-            ..::core::default::Default::default()
         }
     }
 }
@@ -435,8 +429,6 @@ pub struct Int64Value {
     pub value: i64,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
-    #[doc(hidden)]
-    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl ::core::fmt::Debug for Int64Value {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -462,19 +454,23 @@ impl ::buffa::Message for Int64Value {
     /// The result is a `u32`; the protobuf specification requires all
     /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
     /// compliant message will never overflow this type.
-    fn compute_size(&self) -> u32 {
-        #[allow(unused_imports)]
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
         let mut size = 0u32;
         if self.value != 0i64 {
             size += 1u32 + ::buffa::types::int64_encoded_len(self.value) as u32;
         }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
-        self.__buffa_cached_size.set(size);
         size
     }
-    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
-        #[allow(unused_imports)]
+    fn write_to(
+        &self,
+        __cache: &mut ::buffa::SizeCache,
+        buf: &mut impl ::buffa::bytes::BufMut,
+    ) {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
         if self.value != 0i64 {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
@@ -511,13 +507,9 @@ impl ::buffa::Message for Int64Value {
         }
         ::core::result::Result::Ok(())
     }
-    fn cached_size(&self) -> u32 {
-        self.__buffa_cached_size.get()
-    }
     fn clear(&mut self) {
         self.value = 0i64;
         self.__buffa_unknown_fields.clear();
-        self.__buffa_cached_size.set(0);
     }
 }
 impl ::buffa::ExtensionSet for Int64Value {
@@ -621,7 +613,6 @@ impl<'a> ::buffa::MessageView<'a> for Int64ValueView<'a> {
                 .to_owned()
                 .unwrap_or_default()
                 .into(),
-            ..::core::default::Default::default()
         }
     }
 }
@@ -646,8 +637,6 @@ pub struct UInt64Value {
     pub value: u64,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
-    #[doc(hidden)]
-    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl ::core::fmt::Debug for UInt64Value {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -673,19 +662,23 @@ impl ::buffa::Message for UInt64Value {
     /// The result is a `u32`; the protobuf specification requires all
     /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
     /// compliant message will never overflow this type.
-    fn compute_size(&self) -> u32 {
-        #[allow(unused_imports)]
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
         let mut size = 0u32;
         if self.value != 0u64 {
             size += 1u32 + ::buffa::types::uint64_encoded_len(self.value) as u32;
         }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
-        self.__buffa_cached_size.set(size);
         size
     }
-    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
-        #[allow(unused_imports)]
+    fn write_to(
+        &self,
+        __cache: &mut ::buffa::SizeCache,
+        buf: &mut impl ::buffa::bytes::BufMut,
+    ) {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
         if self.value != 0u64 {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
@@ -722,13 +715,9 @@ impl ::buffa::Message for UInt64Value {
         }
         ::core::result::Result::Ok(())
     }
-    fn cached_size(&self) -> u32 {
-        self.__buffa_cached_size.get()
-    }
     fn clear(&mut self) {
         self.value = 0u64;
         self.__buffa_unknown_fields.clear();
-        self.__buffa_cached_size.set(0);
     }
 }
 impl ::buffa::ExtensionSet for UInt64Value {
@@ -832,7 +821,6 @@ impl<'a> ::buffa::MessageView<'a> for UInt64ValueView<'a> {
                 .to_owned()
                 .unwrap_or_default()
                 .into(),
-            ..::core::default::Default::default()
         }
     }
 }
@@ -857,8 +845,6 @@ pub struct Int32Value {
     pub value: i32,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
-    #[doc(hidden)]
-    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl ::core::fmt::Debug for Int32Value {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -884,19 +870,23 @@ impl ::buffa::Message for Int32Value {
     /// The result is a `u32`; the protobuf specification requires all
     /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
     /// compliant message will never overflow this type.
-    fn compute_size(&self) -> u32 {
-        #[allow(unused_imports)]
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
         let mut size = 0u32;
         if self.value != 0i32 {
             size += 1u32 + ::buffa::types::int32_encoded_len(self.value) as u32;
         }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
-        self.__buffa_cached_size.set(size);
         size
     }
-    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
-        #[allow(unused_imports)]
+    fn write_to(
+        &self,
+        __cache: &mut ::buffa::SizeCache,
+        buf: &mut impl ::buffa::bytes::BufMut,
+    ) {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
         if self.value != 0i32 {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
@@ -933,13 +923,9 @@ impl ::buffa::Message for Int32Value {
         }
         ::core::result::Result::Ok(())
     }
-    fn cached_size(&self) -> u32 {
-        self.__buffa_cached_size.get()
-    }
     fn clear(&mut self) {
         self.value = 0i32;
         self.__buffa_unknown_fields.clear();
-        self.__buffa_cached_size.set(0);
     }
 }
 impl ::buffa::ExtensionSet for Int32Value {
@@ -1043,7 +1029,6 @@ impl<'a> ::buffa::MessageView<'a> for Int32ValueView<'a> {
                 .to_owned()
                 .unwrap_or_default()
                 .into(),
-            ..::core::default::Default::default()
         }
     }
 }
@@ -1068,8 +1053,6 @@ pub struct UInt32Value {
     pub value: u32,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
-    #[doc(hidden)]
-    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl ::core::fmt::Debug for UInt32Value {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -1095,19 +1078,23 @@ impl ::buffa::Message for UInt32Value {
     /// The result is a `u32`; the protobuf specification requires all
     /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
     /// compliant message will never overflow this type.
-    fn compute_size(&self) -> u32 {
-        #[allow(unused_imports)]
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
         let mut size = 0u32;
         if self.value != 0u32 {
             size += 1u32 + ::buffa::types::uint32_encoded_len(self.value) as u32;
         }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
-        self.__buffa_cached_size.set(size);
         size
     }
-    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
-        #[allow(unused_imports)]
+    fn write_to(
+        &self,
+        __cache: &mut ::buffa::SizeCache,
+        buf: &mut impl ::buffa::bytes::BufMut,
+    ) {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
         if self.value != 0u32 {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
@@ -1144,13 +1131,9 @@ impl ::buffa::Message for UInt32Value {
         }
         ::core::result::Result::Ok(())
     }
-    fn cached_size(&self) -> u32 {
-        self.__buffa_cached_size.get()
-    }
     fn clear(&mut self) {
         self.value = 0u32;
         self.__buffa_unknown_fields.clear();
-        self.__buffa_cached_size.set(0);
     }
 }
 impl ::buffa::ExtensionSet for UInt32Value {
@@ -1254,7 +1237,6 @@ impl<'a> ::buffa::MessageView<'a> for UInt32ValueView<'a> {
                 .to_owned()
                 .unwrap_or_default()
                 .into(),
-            ..::core::default::Default::default()
         }
     }
 }
@@ -1279,8 +1261,6 @@ pub struct BoolValue {
     pub value: bool,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
-    #[doc(hidden)]
-    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl ::core::fmt::Debug for BoolValue {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -1306,19 +1286,23 @@ impl ::buffa::Message for BoolValue {
     /// The result is a `u32`; the protobuf specification requires all
     /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
     /// compliant message will never overflow this type.
-    fn compute_size(&self) -> u32 {
-        #[allow(unused_imports)]
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
         let mut size = 0u32;
         if self.value {
             size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
         }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
-        self.__buffa_cached_size.set(size);
         size
     }
-    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
-        #[allow(unused_imports)]
+    fn write_to(
+        &self,
+        __cache: &mut ::buffa::SizeCache,
+        buf: &mut impl ::buffa::bytes::BufMut,
+    ) {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
         if self.value {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
@@ -1355,13 +1339,9 @@ impl ::buffa::Message for BoolValue {
         }
         ::core::result::Result::Ok(())
     }
-    fn cached_size(&self) -> u32 {
-        self.__buffa_cached_size.get()
-    }
     fn clear(&mut self) {
         self.value = false;
         self.__buffa_unknown_fields.clear();
-        self.__buffa_cached_size.set(0);
     }
 }
 impl ::buffa::ExtensionSet for BoolValue {
@@ -1465,7 +1445,6 @@ impl<'a> ::buffa::MessageView<'a> for BoolValueView<'a> {
                 .to_owned()
                 .unwrap_or_default()
                 .into(),
-            ..::core::default::Default::default()
         }
     }
 }
@@ -1490,8 +1469,6 @@ pub struct StringValue {
     pub value: ::buffa::alloc::string::String,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
-    #[doc(hidden)]
-    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl ::core::fmt::Debug for StringValue {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -1517,19 +1494,23 @@ impl ::buffa::Message for StringValue {
     /// The result is a `u32`; the protobuf specification requires all
     /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
     /// compliant message will never overflow this type.
-    fn compute_size(&self) -> u32 {
-        #[allow(unused_imports)]
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
         let mut size = 0u32;
         if !self.value.is_empty() {
             size += 1u32 + ::buffa::types::string_encoded_len(&self.value) as u32;
         }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
-        self.__buffa_cached_size.set(size);
         size
     }
-    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
-        #[allow(unused_imports)]
+    fn write_to(
+        &self,
+        __cache: &mut ::buffa::SizeCache,
+        buf: &mut impl ::buffa::bytes::BufMut,
+    ) {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
         if !self.value.is_empty() {
             ::buffa::encoding::Tag::new(
@@ -1569,13 +1550,9 @@ impl ::buffa::Message for StringValue {
         }
         ::core::result::Result::Ok(())
     }
-    fn cached_size(&self) -> u32 {
-        self.__buffa_cached_size.get()
-    }
     fn clear(&mut self) {
         self.value.clear();
         self.__buffa_unknown_fields.clear();
-        self.__buffa_cached_size.set(0);
     }
 }
 impl ::buffa::ExtensionSet for StringValue {
@@ -1679,7 +1656,6 @@ impl<'a> ::buffa::MessageView<'a> for StringValueView<'a> {
                 .to_owned()
                 .unwrap_or_default()
                 .into(),
-            ..::core::default::Default::default()
         }
     }
 }
@@ -1704,8 +1680,6 @@ pub struct BytesValue {
     pub value: ::buffa::alloc::vec::Vec<u8>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
-    #[doc(hidden)]
-    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl ::core::fmt::Debug for BytesValue {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -1731,19 +1705,23 @@ impl ::buffa::Message for BytesValue {
     /// The result is a `u32`; the protobuf specification requires all
     /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
     /// compliant message will never overflow this type.
-    fn compute_size(&self) -> u32 {
-        #[allow(unused_imports)]
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
         let mut size = 0u32;
         if !self.value.is_empty() {
             size += 1u32 + ::buffa::types::bytes_encoded_len(&self.value) as u32;
         }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
-        self.__buffa_cached_size.set(size);
         size
     }
-    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
-        #[allow(unused_imports)]
+    fn write_to(
+        &self,
+        __cache: &mut ::buffa::SizeCache,
+        buf: &mut impl ::buffa::bytes::BufMut,
+    ) {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
         if !self.value.is_empty() {
             ::buffa::encoding::Tag::new(
@@ -1783,13 +1761,9 @@ impl ::buffa::Message for BytesValue {
         }
         ::core::result::Result::Ok(())
     }
-    fn cached_size(&self) -> u32 {
-        self.__buffa_cached_size.get()
-    }
     fn clear(&mut self) {
         self.value.clear();
         self.__buffa_unknown_fields.clear();
-        self.__buffa_cached_size.set(0);
     }
 }
 impl ::buffa::ExtensionSet for BytesValue {
@@ -1893,7 +1867,6 @@ impl<'a> ::buffa::MessageView<'a> for BytesValueView<'a> {
                 .to_owned()
                 .unwrap_or_default()
                 .into(),
-            ..::core::default::Default::default()
         }
     }
 }

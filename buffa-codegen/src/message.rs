@@ -369,12 +369,6 @@ pub fn generate_message(
         quote! {}
     };
 
-    let cached_size_serde_skip = if ctx.config.generate_json {
-        quote! { #[serde(skip)] }
-    } else {
-        quote! {}
-    };
-
     // Check if any non-optional field has a custom default value, which
     // requires a hand-written `impl Default` instead of `#[derive(Default)]`.
     let custom_default_impl =
@@ -504,9 +498,6 @@ pub fn generate_message(
             #(#direct_fields)*
             #(#oneof_struct_fields)*
             #unknown_fields_field
-            #[doc(hidden)]
-            #cached_size_serde_skip
-            pub __buffa_cached_size: ::buffa::__private::CachedSize,
         }
 
         #debug_impl
@@ -1725,7 +1716,6 @@ fn generate_custom_default(
                 Self {
                     #(#field_inits)*
                     #unknown_fields_init
-                    __buffa_cached_size: ::core::default::Default::default(),
                 }
             }
         }

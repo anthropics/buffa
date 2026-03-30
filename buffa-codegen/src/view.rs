@@ -259,7 +259,6 @@ pub fn generate_view(
                 use ::buffa::alloc::string::ToString as _;
                 #owned_ident {
                     #(#owned_fields)*
-                    ..::core::default::Default::default()
                 }
             }
         }

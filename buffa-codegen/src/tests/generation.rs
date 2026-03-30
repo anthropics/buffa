@@ -952,14 +952,19 @@ fn test_repeated_message_field() {
         content.contains("pub items: ::buffa::alloc::vec::Vec<Item>"),
         "missing items field: {content}"
     );
-    // Uses two-pass size model for each element.
+    // Uses two-pass size model for each element: compute reserves a cache
+    // slot, write consumes it.
     assert!(
         content.contains("merge_length_delimited"),
         "missing merge_length_delimited for repeated msg: {content}"
     );
     assert!(
-        content.contains("cached_size"),
-        "missing cached_size in write_to: {content}"
+        content.contains("__cache.reserve()"),
+        "missing cache slot reservation in compute_size: {content}"
+    );
+    assert!(
+        content.contains("__cache.next_size()"),
+        "missing cache read in write_to: {content}"
     );
 }
 
