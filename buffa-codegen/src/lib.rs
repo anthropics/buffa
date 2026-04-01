@@ -428,13 +428,9 @@ fn check_nested_type_oneof_conflicts(file: &FileDescriptorProto) -> Result<(), C
         // type names.  Synthetic oneofs (created by proto3 `optional` fields)
         // never produce a Rust enum, so they cannot collide.
         for (idx, oneof) in msg.oneof_decl.iter().enumerate() {
-            let has_real_fields = msg
-                .field
-                .iter()
-                .any(|f| {
-                    crate::impl_message::is_real_oneof_member(f)
-                        && f.oneof_index == Some(idx as i32)
-                });
+            let has_real_fields = msg.field.iter().any(|f| {
+                crate::impl_message::is_real_oneof_member(f) && f.oneof_index == Some(idx as i32)
+            });
             if !has_real_fields {
                 continue;
             }

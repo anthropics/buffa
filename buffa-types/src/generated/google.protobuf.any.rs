@@ -90,7 +90,7 @@
 /// If the embedded message type is well-known and has a custom JSON
 /// representation, that representation will be embedded adding a field
 /// `value` which holds the custom JSON in addition to the `@type`
-/// field. Example (for message [google.protobuf.Duration][]):
+/// field. Example (for message \[google.protobuf.Duration\]\[\]):
 ///
 /// ```text
 /// {
@@ -114,7 +114,7 @@ pub struct Any {
     /// server that maps type URLs to message definitions as follows:
     ///
     /// * If no scheme is provided, `https` is assumed.
-    /// * An HTTP GET on the URL must yield a [google.protobuf.Type][]
+    /// * An HTTP GET on the URL must yield a \[google.protobuf.Type\]\[\]
     ///   value in binary format, or produce an error.
     /// * Applications are allowed to cache lookup results based on the
     ///   URL, or have them precompiled into a binary to avoid any
@@ -355,7 +355,7 @@ pub const __ANY_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_r
 /// If the embedded message type is well-known and has a custom JSON
 /// representation, that representation will be embedded adding a field
 /// `value` which holds the custom JSON in addition to the `@type`
-/// field. Example (for message [google.protobuf.Duration][]):
+/// field. Example (for message \[google.protobuf.Duration\]\[\]):
 ///
 /// ```text
 /// {
@@ -378,7 +378,7 @@ pub struct AnyView<'a> {
     /// server that maps type URLs to message definitions as follows:
     ///
     /// * If no scheme is provided, `https` is assumed.
-    /// * An HTTP GET on the URL must yield a [google.protobuf.Type][]
+    /// * An HTTP GET on the URL must yield a \[google.protobuf.Type\]\[\]
     ///   value in binary format, or produce an error.
     /// * Applications are allowed to cache lookup results based on the
     ///   URL, or have them precompiled into a binary to avoid any

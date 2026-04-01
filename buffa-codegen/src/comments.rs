@@ -275,10 +275,13 @@ fn doc_lines_to_tokens(text: &str) -> TokenStream {
             }
         } else if line.is_empty() {
             lines.push(String::new());
-        } else if line.starts_with(' ') {
-            lines.push(line.to_string());
         } else {
-            lines.push(format!(" {line}"));
+            let sanitized = sanitize_line(line);
+            if sanitized.starts_with(' ') {
+                lines.push(sanitized);
+            } else {
+                lines.push(format!(" {sanitized}"));
+            }
         }
     }
 
@@ -289,6 +292,195 @@ fn doc_lines_to_tokens(text: &str) -> TokenStream {
     quote! {
         #( #[doc = #lines] )*
     }
+}
+
+/// Escape one prose line of proto comment text for rustdoc.
+///
+/// Proto comments are written for a cross-language audience and frequently
+/// contain constructs that rustdoc misparses:
+///
+/// - `[foo]` / `[foo][]` — treated as intra-doc links; an error under
+///   `deny(rustdoc::broken_intra_doc_links)` when `foo` resembles a Rust
+///   path. Escaped to `\[foo\]`.
+/// - Bare `http(s)://…` — triggers `rustdoc::bare_urls`. Wrapped in `<…>`.
+/// - `Option<T>` — treated as raw HTML; triggers
+///   `rustdoc::invalid_html_tags`. Escaped to `Option\<T\>`.
+///
+/// Left intact:
+/// - Single-line inline links `[text](url)`.
+/// - Existing autolinks `<http(s)://…>`.
+/// - Content inside `` `…` `` backtick code spans.
+/// - Already-escaped `\[`, `\]`, `\<`, `\>`.
+///
+/// This is a per-line pass invoked from [`doc_lines_to_tokens`] on prose
+/// lines only — code blocks are left untouched. Multi-line markdown links
+/// are conservatively escaped; the link degrades to literal text plus a
+/// clickable autolink, which is preferable to a docs.rs build failure.
+fn sanitize_line(line: &str) -> String {
+    let bytes = line.as_bytes();
+    let mut out = String::with_capacity(line.len());
+    let mut i = 0;
+
+    while i < bytes.len() {
+        let b = bytes[i];
+
+        if b == b'`' {
+            // CommonMark code span: a run of N backticks opens, the next run
+            // of exactly N closes. Emit the whole span verbatim. If no
+            // closer exists on this line, the run is literal (not a span).
+            let run_start = i;
+            while i < bytes.len() && bytes[i] == b'`' {
+                i += 1;
+            }
+            let run_len = i - run_start;
+            if let Some(close_end) = find_backtick_closer(bytes, i, run_len) {
+                out.push_str(&line[run_start..close_end]);
+                i = close_end;
+            } else {
+                out.push_str(&line[run_start..i]);
+            }
+            continue;
+        }
+
+        match b {
+            b'\\' => {
+                out.push('\\');
+                i += 1;
+                if i < bytes.len() {
+                    i += push_char_at(&mut out, line, i);
+                }
+            }
+            b'[' => {
+                if let Some(end) = find_inline_link_end(bytes, i) {
+                    out.push_str(&line[i..=end]);
+                    i = end + 1;
+                } else {
+                    out.push_str("\\[");
+                    i += 1;
+                }
+            }
+            b']' => {
+                out.push_str("\\]");
+                i += 1;
+            }
+            b'<' => {
+                if let Some(end) = find_autolink_end(bytes, i) {
+                    out.push_str(&line[i..=end]);
+                    i = end + 1;
+                } else {
+                    out.push_str("\\<");
+                    i += 1;
+                }
+            }
+            b'>' => {
+                out.push_str("\\>");
+                i += 1;
+            }
+            b'h' => {
+                if let Some(end) = find_bare_url_end(bytes, i) {
+                    out.push('<');
+                    out.push_str(&line[i..end]);
+                    out.push('>');
+                    i = end;
+                } else {
+                    out.push('h');
+                    i += 1;
+                }
+            }
+            _ => {
+                i += push_char_at(&mut out, line, i);
+            }
+        }
+    }
+    out
+}
+
+/// Push the UTF-8 char at byte index `i` of `s` into `out`, returning its
+/// byte length. `i` must be a char boundary and `< s.len()`.
+fn push_char_at(out: &mut String, s: &str, i: usize) -> usize {
+    let ch = s[i..]
+        .chars()
+        .next()
+        .expect("i is in bounds and on a char boundary");
+    out.push(ch);
+    ch.len_utf8()
+}
+
+/// Starting at `from` (just past an opening run of `run_len` backticks),
+/// return the past-the-end index of the matching closing run, or `None`.
+fn find_backtick_closer(bytes: &[u8], from: usize, run_len: usize) -> Option<usize> {
+    let mut i = from;
+    while i < bytes.len() {
+        if bytes[i] == b'`' {
+            let start = i;
+            while i < bytes.len() && bytes[i] == b'`' {
+                i += 1;
+            }
+            if i - start == run_len {
+                return Some(i);
+            }
+        } else {
+            i += 1;
+        }
+    }
+    None
+}
+
+/// If `bytes[start..]` is a complete `[text](url)`, return the index of the
+/// closing `)`. Nested `(`/`)` inside the URL are balanced one level deep so
+/// fragments like `…#method()` survive.
+fn find_inline_link_end(bytes: &[u8], start: usize) -> Option<usize> {
+    debug_assert_eq!(bytes[start], b'[');
+    let mut j = start + 1;
+    while j < bytes.len() && bytes[j] != b']' {
+        if bytes[j] == b'[' {
+            return None;
+        }
+        j += 1;
+    }
+    if j + 1 >= bytes.len() || bytes[j + 1] != b'(' {
+        return None;
+    }
+    let mut depth = 1i32;
+    let mut k = j + 2;
+    while k < bytes.len() {
+        match bytes[k] {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(k);
+                }
+            }
+            _ => {}
+        }
+        k += 1;
+    }
+    None
+}
+
+/// If `bytes[start..]` is `<http(s)://…>`, return the index of the `>`.
+fn find_autolink_end(bytes: &[u8], start: usize) -> Option<usize> {
+    debug_assert_eq!(bytes[start], b'<');
+    let rest = &bytes[start + 1..];
+    if !(rest.starts_with(b"http://") || rest.starts_with(b"https://")) {
+        return None;
+    }
+    rest.iter().position(|&b| b == b'>').map(|p| start + 1 + p)
+}
+
+/// If `bytes[start..]` begins a bare `http(s)://` URL, return the
+/// past-the-end byte index. The URL ends at whitespace or `)`.
+fn find_bare_url_end(bytes: &[u8], start: usize) -> Option<usize> {
+    let rest = &bytes[start..];
+    if !(rest.starts_with(b"http://") || rest.starts_with(b"https://")) {
+        return None;
+    }
+    let mut j = start;
+    while j < bytes.len() && !bytes[j].is_ascii_whitespace() && bytes[j] != b')' {
+        j += 1;
+    }
+    Some(j)
 }
 
 /// Format a `SourceCodeInfo.Location` into a doc-comment string.
@@ -743,5 +935,93 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(format_comment(&loc).as_deref(), Some(" hello"));
+    }
+
+    // --- sanitize_line ------------------------------------------------------
+
+    #[test]
+    fn test_sanitize_line() {
+        let cases: &[(&str, &str, &str)] = &[
+            ("plain text", "plain text", "plain"),
+            ("hello world", "hello world", "h_not_url"),
+            // Brackets
+            (
+                "see [google.protobuf.Duration][]",
+                r"see \[google.protobuf.Duration\]\[\]",
+                "collapsed_ref_link",
+            ),
+            ("a [foo] b", r"a \[foo\] b", "shortcut_link"),
+            ("[foo][bar]", r"\[foo\]\[bar\]", "full_ref_link"),
+            ("[.{frac_sec}]Z", r"\[.{frac_sec}\]Z", "format_string"),
+            // Inline links preserved
+            (
+                "[RFC 3339](https://ietf.org/rfc/rfc3339.txt)",
+                "[RFC 3339](https://ietf.org/rfc/rfc3339.txt)",
+                "inline_link",
+            ),
+            (
+                "[m()](https://e.com/#m())",
+                "[m()](https://e.com/#m())",
+                "inline_link_nested_parens",
+            ),
+            // Already escaped
+            (r"\[foo\]", r"\[foo\]", "pre_escaped"),
+            // Backtick spans untouched
+            ("`[foo]` bar", "`[foo]` bar", "backtick_brackets"),
+            ("`Option<T>` bar", "`Option<T>` bar", "backtick_generics"),
+            ("``[foo]``", "``[foo]``", "double_backtick"),
+            ("`` `<T>` ``", "`` `<T>` ``", "double_backtick_inner"),
+            ("``` x ` y ```", "``` x ` y ```", "triple_backtick"),
+            ("`` no closer", "`` no closer", "unclosed_backticks"),
+            (
+                "[résumé](http://e.com)",
+                "[résumé](http://e.com)",
+                "utf8_link_text",
+            ),
+            // Bare URLs wrapped
+            (
+                "see https://example.com/x for details",
+                "see <https://example.com/x> for details",
+                "bare_url",
+            ),
+            (
+                "(https://example.com)",
+                "(<https://example.com>)",
+                "bare_url_in_parens",
+            ),
+            // Existing autolinks preserved
+            ("<https://example.com>", "<https://example.com>", "autolink"),
+            // Angle brackets escaped
+            ("Option<T>", r"Option\<T\>", "generics"),
+            ("HashMap<K, V>", r"HashMap\<K, V\>", "generics_multi"),
+            // UTF-8 passthrough
+            ("café — ok", "café — ok", "utf8"),
+            ("`café` [x]", r"`café` \[x\]", "utf8_backtick"),
+        ];
+        for (input, want, name) in cases {
+            assert_eq!(sanitize_line(input), *want, "case: {name}");
+        }
+    }
+
+    #[test]
+    fn test_sanitize_line_unbalanced() {
+        // Unmatched delimiters are escaped, not crashed on.
+        assert_eq!(sanitize_line("[foo"), r"\[foo");
+        assert_eq!(sanitize_line("foo]"), r"foo\]");
+        assert_eq!(sanitize_line("[foo]("), r"\[foo\](");
+        assert_eq!(sanitize_line("<http://x"), r"\<<http://x>");
+        assert_eq!(sanitize_line("a > b"), r"a \> b");
+        assert_eq!(sanitize_line("trailing \\"), "trailing \\");
+    }
+
+    #[test]
+    fn test_doc_tokens_sanitizes_prose_not_code() {
+        // Indented code block content must NOT be sanitized.
+        let out = doc_tokens("Prose [foo].\n    code [bar]\nMore.");
+        assert!(out.contains(r"\\[foo\\]"), "prose escaped: {out}");
+        assert!(out.contains("code [bar]"), "code untouched: {out}");
+        // User-written fence content must NOT be sanitized.
+        let out = doc_tokens("```\n[x](y)\nOption<T>\n```");
+        assert!(out.contains("Option<T>"), "fence untouched: {out}");
     }
 }

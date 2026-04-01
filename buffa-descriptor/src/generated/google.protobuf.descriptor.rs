@@ -2069,7 +2069,7 @@ pub struct FieldDescriptorProto {
     /// For numeric types, contains the original text representation of the value.
     /// For booleans, "true" or "false".
     /// For strings, contains the default text contents (not escaped in any way).
-    /// For bytes, contains the C escaped value.  All bytes >= 128 are escaped.
+    /// For bytes, contains the C escaped value.  All bytes \>= 128 are escaped.
     ///
     /// Field 7: `default_value`
     pub default_value: Option<::buffa::alloc::string::String>,
@@ -3830,7 +3830,7 @@ impl ::buffa::ExtensionSet for MethodDescriptorProto {
 ///   extension number. You can declare multiple options with only one extension
 ///   number by putting them in a sub-message. See the Custom Options section of
 ///   the docs for examples:
-///   https://developers.google.com/protocol-buffers/docs/proto#options
+///   <https://developers.google.com/protocol-buffers/docs/proto#options>
 ///   If this turns out to be popular, a web service will be set up
 ///   to automatically assign option numbers.
 #[derive(Clone, PartialEq, Default)]
@@ -4991,7 +4991,7 @@ pub struct FieldOptions {
     /// The ctype option instructs the C++ code generator to use a different
     /// representation of the field than it normally would.  See the specific
     /// options below.  This option is only implemented to support use of
-    /// [ctype=CORD] and [ctype=STRING] (the default) on non-repeated fields of
+    /// \[ctype=CORD\] and \[ctype=STRING\] (the default) on non-repeated fields of
     /// type "bytes" in the open source release.
     /// TODO: make ctype actually deprecated.
     ///
@@ -5583,7 +5583,7 @@ pub mod field_options {
     pub enum CType {
         /// Default mode.
         STRING = 0i32,
-        /// The option [ctype=CORD] may be applied to a non-repeated field of type
+        /// The option \[ctype=CORD\] may be applied to a non-repeated field of type
         /// "bytes". It indicates that in C++, the data should be stored in a Cord
         /// instead of a string.  For very large strings, this may reduce memory
         /// fragmentation. It may also allow better performance when parsing from a
@@ -7554,7 +7554,7 @@ pub mod uninterpreted_option {
     /// The name of the uninterpreted option.  Each string represents a segment in
     /// a dot-separated name.  is_extension is true iff a segment represents an
     /// extension (denoted with parentheses in options specs in .proto files).
-    /// E.g.,{ ["foo", false], ["bar.baz", true], ["moo", false] } represents
+    /// E.g.,{ \["foo", false\], \["bar.baz", true\], \["moo", false\] } represents
     /// "foo.(bar.baz).moo".
     #[derive(Clone, PartialEq, Default)]
     pub struct NamePart {
@@ -8898,11 +8898,11 @@ pub struct SourceCodeInfo {
     ///   a       bc     de  f  ghi
     /// We have the following locations:
     ///   span   path               represents
-    ///   [a,i)  [ 4, 0, 2, 0 ]     The whole field definition.
-    ///   [a,b)  [ 4, 0, 2, 0, 4 ]  The label (optional).
-    ///   [c,d)  [ 4, 0, 2, 0, 5 ]  The type (string).
-    ///   [e,f)  [ 4, 0, 2, 0, 1 ]  The name (foo).
-    ///   [g,h)  [ 4, 0, 2, 0, 3 ]  The number (1).
+    ///   \[a,i)  \[ 4, 0, 2, 0 \]     The whole field definition.
+    ///   \[a,b)  \[ 4, 0, 2, 0, 4 \]  The label (optional).
+    ///   \[c,d)  \[ 4, 0, 2, 0, 5 \]  The type (string).
+    ///   \[e,f)  \[ 4, 0, 2, 0, 1 \]  The name (foo).
+    ///   \[g,h)  \[ 4, 0, 2, 0, 3 \]  The number (1).
     ///
     /// Notes:
     /// - A location may refer to a repeated field itself (i.e. not to any
@@ -9045,7 +9045,7 @@ pub mod source_code_info {
         /// Each element is a field number or an index.  They form a path from
         /// the root FileDescriptorProto to the place where the definition appears.
         /// For example, this path:
-        ///   [ 4, 3, 2, 7, 1 ]
+        ///   \[ 4, 3, 2, 7, 1 \]
         /// refers to:
         ///   file.message_type(3)  // 4, 3
         /// ```text
@@ -9061,7 +9061,7 @@ pub mod source_code_info {
         ///
         /// Thus, the above path gives the location of a field name.  If we removed
         /// the last element:
-        ///   [ 4, 3, 2, 7 ]
+        ///   \[ 4, 3, 2, 7 \]
         /// this path refers to the whole field declaration (from the beginning
         /// of the label to the terminating semicolon).
         ///

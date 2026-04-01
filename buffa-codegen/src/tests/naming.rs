@@ -280,8 +280,7 @@ fn test_proto3_optional_field_name_matches_nested_enum_no_conflict() {
         }],
         field: vec![{
             let mut f = make_field("match_operator", 4, Label::LABEL_OPTIONAL, Type::TYPE_ENUM);
-            f.type_name =
-                Some(".minimal.StringFieldMatcher.MatchOperator".to_string());
+            f.type_name = Some(".minimal.StringFieldMatcher.MatchOperator".to_string());
             f.oneof_index = Some(0);
             f.proto3_optional = Some(true);
             f
