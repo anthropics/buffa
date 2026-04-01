@@ -1,6 +1,6 @@
 name: Release protoc plugins
 
-# Triggered by pushing a tag like v0.2.0.
+# Triggered by pushing a tag matching v*.
 # Builds protoc-gen-buffa and protoc-gen-buffa-packaging for
 # Linux (x86_64, aarch64), macOS (x86_64, aarch64), and Windows (x86_64).
 # Creates a GitHub release with the binaries, SHA-256 checksums,

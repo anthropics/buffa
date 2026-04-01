@@ -12,13 +12,13 @@ This guide covers migration from both versions of the `protobuf` crate:
 ```diff
  [dependencies]
 -protobuf = "3"
-+buffa = "0.1"
-+buffa-types = "0.1"
++buffa = "0.3"
++buffa-types = "0.3"
 
  [build-dependencies]
 -protobuf-codegen = "3"
 -protoc-bin-vendored = "3"    # if using vendored protoc
-+buffa-build = "0.1"
++buffa-build = "0.3"
 ```
 
 ### From Google v4
@@ -26,12 +26,12 @@ This guide covers migration from both versions of the `protobuf` crate:
 ```diff
  [dependencies]
 -protobuf = "=4.33.1-release"
-+buffa = "0.1"
-+buffa-types = "0.1"
++buffa = "0.3"
++buffa-types = "0.3"
 
  [build-dependencies]
 -protobuf-codegen = "=4.33.1-release"
-+buffa-build = "0.1"
++buffa-build = "0.3"
 ```
 
 ## 2. Rewrite `build.rs`
