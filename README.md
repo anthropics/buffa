@@ -4,6 +4,8 @@
 [![docs.rs](https://img.shields.io/docsrs/buffa)](https://docs.rs/buffa)
 [![CI](https://github.com/anthropics/buffa/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/anthropics/buffa/actions/workflows/ci.yml)
 [![MSRV](https://img.shields.io/crates/msrv/buffa)](Cargo.toml)
+[![deps.rs](https://deps.rs/repo/github/anthropics/buffa/status.svg)](https://deps.rs/repo/github/anthropics/buffa)
+[![no_std](https://img.shields.io/badge/no__std-compatible-blue)](docs/guide.md#no_std-usage)
 [![License](https://img.shields.io/crates/l/buffa)](LICENSE)
 
 A pure-Rust Protocol Buffers implementation with first-class [protobuf editions](https://protobuf.dev/editions/overview/) support. Written by Claude ❣️
