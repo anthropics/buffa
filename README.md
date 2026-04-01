@@ -1,5 +1,11 @@
 # buffa
 
+[![crates.io](https://img.shields.io/crates/v/buffa.svg)](https://crates.io/crates/buffa)
+[![docs.rs](https://img.shields.io/docsrs/buffa)](https://docs.rs/buffa)
+[![CI](https://github.com/anthropics/buffa/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/anthropics/buffa/actions/workflows/ci.yml)
+[![MSRV](https://img.shields.io/crates/msrv/buffa)](Cargo.toml)
+[![License](https://img.shields.io/crates/l/buffa)](LICENSE)
+
 A pure-Rust Protocol Buffers implementation with first-class [protobuf editions](https://protobuf.dev/editions/overview/) support. Written by Claude ❣️
 
 ## Why buffa?
