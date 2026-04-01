@@ -30,31 +30,31 @@
   <text x="720.0" y="451" text-anchor="middle" class="axis-label">800</text>
   <text x="430.0" y="466" text-anchor="middle" class="axis-label">MiB/s</text>
   <text x="130" y="121.0" text-anchor="end" class="label">ApiResponse</text>
-  <rect x="140" y="80.0" width="522.5" height="22" rx="2" fill="#4C78A8"/>
-  <text x="666.5" y="95.0" class="value">720</text>
-  <rect x="140" y="106.0" width="216.8" height="22" rx="2" fill="#F58518"/>
-  <text x="360.8" y="121.0" class="value">298</text>
-  <rect x="140" y="132.0" width="51.8" height="22" rx="2" fill="#54A24B"/>
-  <text x="195.8" y="147.0" class="value">71</text>
+  <rect x="140" y="80.0" width="520.5" height="22" rx="2" fill="#4C78A8"/>
+  <text x="664.5" y="95.0" class="value">717</text>
+  <rect x="140" y="106.0" width="212.6" height="22" rx="2" fill="#F58518"/>
+  <text x="356.6" y="121.0" class="value">293</text>
+  <rect x="140" y="132.0" width="51.1" height="22" rx="2" fill="#54A24B"/>
+  <text x="195.1" y="147.0" class="value">70</text>
   <text x="130" y="215.0" text-anchor="end" class="label">LogRecord</text>
-  <rect x="140" y="174.0" width="565.7" height="22" rx="2" fill="#4C78A8"/>
-  <text x="709.7" y="189.0" class="value">780</text>
-  <rect x="140" y="200.0" width="503.0" height="22" rx="2" fill="#F58518"/>
-  <text x="647.0" y="215.0" class="value">693</text>
-  <rect x="140" y="226.0" width="80.9" height="22" rx="2" fill="#54A24B"/>
-  <text x="224.9" y="241.0" class="value">111</text>
+  <rect x="140" y="174.0" width="578.1" height="22" rx="2" fill="#4C78A8"/>
+  <text x="722.1" y="189.0" class="value">797</text>
+  <rect x="140" y="200.0" width="500.2" height="22" rx="2" fill="#F58518"/>
+  <text x="644.2" y="215.0" class="value">689</text>
+  <rect x="140" y="226.0" width="79.8" height="22" rx="2" fill="#54A24B"/>
+  <text x="223.8" y="241.0" class="value">110</text>
   <text x="130" y="309.0" text-anchor="end" class="label">AnalyticsEvent</text>
-  <rect x="140" y="268.0" width="196.9" height="22" rx="2" fill="#4C78A8"/>
-  <text x="340.9" y="283.0" class="value">271</text>
-  <rect x="140" y="294.0" width="173.1" height="22" rx="2" fill="#F58518"/>
-  <text x="317.1" y="309.0" class="value">238</text>
-  <rect x="140" y="320.0" width="34.0" height="22" rx="2" fill="#54A24B"/>
-  <text x="178.0" y="335.0" class="value">46</text>
+  <rect x="140" y="268.0" width="192.2" height="22" rx="2" fill="#4C78A8"/>
+  <text x="336.2" y="283.0" class="value">265</text>
+  <rect x="140" y="294.0" width="170.4" height="22" rx="2" fill="#F58518"/>
+  <text x="314.4" y="309.0" class="value">235</text>
+  <rect x="140" y="320.0" width="33.4" height="22" rx="2" fill="#54A24B"/>
+  <text x="177.4" y="335.0" class="value">46</text>
   <text x="130" y="403.0" text-anchor="end" class="label">GoogleMessage1</text>
-  <rect x="140" y="362.0" width="460.0" height="22" rx="2" fill="#4C78A8"/>
-  <text x="604.0" y="377.0" class="value">634</text>
-  <rect x="140" y="388.0" width="183.7" height="22" rx="2" fill="#F58518"/>
-  <text x="327.7" y="403.0" class="value">253</text>
-  <rect x="140" y="414.0" width="53.6" height="22" rx="2" fill="#54A24B"/>
-  <text x="197.6" y="429.0" class="value">73</text>
+  <rect x="140" y="362.0" width="468.3" height="22" rx="2" fill="#4C78A8"/>
+  <text x="612.3" y="377.0" class="value">645</text>
+  <rect x="140" y="388.0" width="185.0" height="22" rx="2" fill="#F58518"/>
+  <text x="329.0" y="403.0" class="value">255</text>
+  <rect x="140" y="414.0" width="52.7" height="22" rx="2" fill="#54A24B"/>
+  <text x="196.7" y="429.0" class="value">72</text>
 </svg>
