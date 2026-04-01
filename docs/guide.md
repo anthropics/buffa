@@ -9,11 +9,11 @@ Add buffa to your project:
 ```toml
 # Cargo.toml
 [dependencies]
-buffa = "0.1"
-buffa-types = "0.1"       # well-known types (Timestamp, Duration, Any, etc.)
+buffa = "0.3"
+buffa-types = "0.3"       # well-known types (Timestamp, Duration, Any, etc.)
 
 [build-dependencies]
-buffa-build = "0.1"
+buffa-build = "0.3"
 ```
 
 ### Feature flags
@@ -28,8 +28,8 @@ Both `buffa` and `buffa-types` share the same feature flag names:
 
 ```toml
 # Enable JSON support
-buffa = { version = "0.1", features = ["json"] }
-buffa-types = { version = "0.1", features = ["json"] }
+buffa = { version = "0.3", features = ["json"] }
+buffa-types = { version = "0.3", features = ["json"] }
 ```
 
 ## Prerequisites
@@ -163,7 +163,7 @@ This requires `buffa-types` as a dependency in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-buffa-types = "0.1"
+buffa-types = "0.3"
 ```
 
 `buffa-types` is a pure source crate — it does **not** run `protoc` or any code generation at build time. If your protos use WKTs but you generate your own Rust code ahead-of-time (via `buf generate` or a `protoc` script), then `buffa` + `buffa-types` is your entire runtime dependency surface.
@@ -285,25 +285,25 @@ Download the binaries for your platform from the [releases page](https://github.
 
 ```sh
 # Download binaries + cosign signatures + certificates (both plugins match)
-gh release download v0.2.0 --repo anthropics/buffa \
+gh release download v0.3.0 --repo anthropics/buffa \
     --pattern 'protoc-gen-buffa*-linux-x86_64*'
 
 # Verify with GitHub attestations (requires gh CLI ≥ 2.49)
-gh attestation verify protoc-gen-buffa-v0.2.0-linux-x86_64 --repo anthropics/buffa
-gh attestation verify protoc-gen-buffa-packaging-v0.2.0-linux-x86_64 --repo anthropics/buffa
+gh attestation verify protoc-gen-buffa-v0.3.0-linux-x86_64 --repo anthropics/buffa
+gh attestation verify protoc-gen-buffa-packaging-v0.3.0-linux-x86_64 --repo anthropics/buffa
 
 # Or with cosign (standalone, no gh required) — shown for one binary
 cosign verify-blob \
-    --signature protoc-gen-buffa-v0.2.0-linux-x86_64.sig \
-    --certificate protoc-gen-buffa-v0.2.0-linux-x86_64.pem \
+    --signature protoc-gen-buffa-v0.3.0-linux-x86_64.sig \
+    --certificate protoc-gen-buffa-v0.3.0-linux-x86_64.pem \
     --certificate-identity-regexp "github.com/anthropics/buffa" \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    protoc-gen-buffa-v0.2.0-linux-x86_64
+    protoc-gen-buffa-v0.3.0-linux-x86_64
 
 # Install both
-chmod +x protoc-gen-buffa-v0.2.0-linux-x86_64 protoc-gen-buffa-packaging-v0.2.0-linux-x86_64
-mv protoc-gen-buffa-v0.2.0-linux-x86_64 ~/.local/bin/protoc-gen-buffa
-mv protoc-gen-buffa-packaging-v0.2.0-linux-x86_64 ~/.local/bin/protoc-gen-buffa-packaging
+chmod +x protoc-gen-buffa-v0.3.0-linux-x86_64 protoc-gen-buffa-packaging-v0.3.0-linux-x86_64
+mv protoc-gen-buffa-v0.3.0-linux-x86_64 ~/.local/bin/protoc-gen-buffa
+mv protoc-gen-buffa-packaging-v0.3.0-linux-x86_64 ~/.local/bin/protoc-gen-buffa-packaging
 ```
 
 Available platforms: `linux-x86_64`, `linux-aarch64`, `darwin-x86_64`, `darwin-aarch64`, `windows-x86_64` (`.exe`). All releases include SHA-256 checksums, Sigstore cosign signatures, and signed SLSA build provenance for supply chain verification.
@@ -358,7 +358,7 @@ Plugin options (passed via `opt:`):
 ```yaml
 version: v2
 plugins:
-  - remote: buf.build/anthropic/buffa:v0.1.0
+  - remote: buf.build/anthropic/buffa:v0.3.0
     out: src/generated
     opt: [views=true]
 ```
@@ -814,7 +814,7 @@ Enable the `json` feature and `generate_json(true)` in your build config:
 ```toml
 # Cargo.toml
 [dependencies]
-buffa = { version = "0.1", features = ["json"] }
+buffa = { version = "0.3", features = ["json"] }
 serde_json = "1"
 ```
 
@@ -1001,8 +1001,8 @@ let obj = Struct::from_fields([
 Buffa works without `std` (requires `alloc`):
 
 ```toml
-buffa = { version = "0.1", default-features = false }
-buffa-types = { version = "0.1", default-features = false }
+buffa = { version = "0.3", default-features = false }
+buffa-types = { version = "0.3", default-features = false }
 ```
 
 In `no_std` mode:

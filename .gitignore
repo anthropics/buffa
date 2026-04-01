@@ -7,6 +7,7 @@ conformance/target-nostd/
 target/
 benchmarks/results/
 benchmarks/charts/__pycache__/
+benchmarks/datasets/hyperpb/
 
 # Stress test output
 stress/googleapis/out/
