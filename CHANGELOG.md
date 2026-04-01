@@ -95,7 +95,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Generated rustdoc no longer breaks on proto comments** containing
   `[foo][]` reference-style links or bare URLs — these are now escaped so
   rustdoc treats them as literal text.
-  ([#TBD](https://github.com/anthropics/buffa/pull/TBD))
+  ([#25](https://github.com/anthropics/buffa/pull/25))
 
 ## [0.2.0] - 2026-03-16
 
