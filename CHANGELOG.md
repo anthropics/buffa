@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-01
+
 ### Breaking changes
 
 - **`Extension::new(number)` → `Extension::new(number, extendee)`.** Same for
@@ -61,6 +63,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   text-format conformance suite (883/883).
 - **Conformance:** `TestAllTypesEdition2023` enabled; binary+JSON 5539 → 5549
   passing (std). Text format suite 0 → 883 passing (was entirely skipped).
+- **`buffa-descriptor` crate** — `FileDescriptorProto` and friends are now in a
+  standalone crate that depends only on `buffa`, so descriptor types are usable
+  without pulling in `quote`/`syn`/`prettyplease`. `buffa-codegen` re-exports
+  the module so existing `buffa_codegen::generated::*` paths still resolve.
+  ([#8](https://github.com/anthropics/buffa/pull/8))
+- **Proto source comments → rustdoc.** Comments from `.proto` files are now
+  emitted as `///` doc comments on generated structs, fields, enums, variants,
+  and view types. Requires `--include_source_info` (set automatically by
+  `buffa-build` and the protoc plugins).
+  ([#7](https://github.com/anthropics/buffa/pull/7))
+- **`buffa::encoding::MAX_FIELD_NUMBER`** constant (`(1 << 29) - 1`), replacing
+  the magic number at all call sites.
+  ([#21](https://github.com/anthropics/buffa/pull/21))
+
+### Changed
+
+- **`buffa-build` skips writing unchanged outputs**, avoiding mtime bumps that
+  trigger needless downstream recompilation.
+  ([#17](https://github.com/anthropics/buffa/pull/17))
+- **Generated code emits `Self`** in `impl` blocks instead of repeating the
+  type name, so consumer crates that enable `clippy::use_self` get clean
+  output. ([#15](https://github.com/anthropics/buffa/pull/15))
+
+### Fixed
+
+- **Codegen no longer reports a false name collision** between a nested type
+  and a proto3 `optional` field whose synthetic oneof PascalCases to the same
+  name. ([#20](https://github.com/anthropics/buffa/pull/20),
+  fixes [#12](https://github.com/anthropics/buffa/issues/12))
+- **Generated rustdoc no longer breaks on proto comments** containing
+  `[foo][]` reference-style links or bare URLs — these are now escaped so
+  rustdoc treats them as literal text.
+  ([#25](https://github.com/anthropics/buffa/pull/25))
 
 ## [0.2.0] - 2026-03-16
 
@@ -187,6 +222,7 @@ This release publishes:
 
 MSRV: Rust 1.85.
 
-[Unreleased]: https://github.com/anthropics/buffa/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/anthropics/buffa/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/anthropics/buffa/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/anthropics/buffa/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/anthropics/buffa/releases/tag/v0.1.0

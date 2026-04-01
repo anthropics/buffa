@@ -1,6 +1,6 @@
 version: v1
 name: buf.build/anthropic/buffa
-plugin_version: v0.1.0
+plugin_version: v0.3.0
 source_url: https://github.com/anthropics/buffa
 description: >-
   Generates Rust code from Protocol Buffer definitions using the buffa
@@ -17,8 +17,8 @@ registry:
     rust_version: "1.85"
     deps:
       - name: buffa
-        version_requirement: "0.1"
+        version_requirement: "0.3"
       - name: buffa-types
-        version_requirement: "0.1"
+        version_requirement: "0.3"
       - name: bytes
         version_requirement: "1"

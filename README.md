@@ -1,5 +1,13 @@
 # buffa
 
+[![crates.io](https://img.shields.io/crates/v/buffa.svg)](https://crates.io/crates/buffa)
+[![docs.rs](https://img.shields.io/docsrs/buffa)](https://docs.rs/buffa)
+[![CI](https://github.com/anthropics/buffa/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/anthropics/buffa/actions/workflows/ci.yml)
+[![MSRV](https://img.shields.io/crates/msrv/buffa)](Cargo.toml)
+[![deps.rs](https://deps.rs/repo/github/anthropics/buffa/status.svg)](https://deps.rs/repo/github/anthropics/buffa)
+[![no_std](https://img.shields.io/badge/no__std-compatible-blue)](docs/guide.md#no_std-usage)
+[![License](https://img.shields.io/crates/l/buffa)](LICENSE)
+
 A pure-Rust Protocol Buffers implementation with first-class [protobuf editions](https://protobuf.dev/editions/overview/) support. Written by Claude ❣️
 
 ## Why buffa?
@@ -36,7 +44,7 @@ buffa supports **binary**, **JSON**, and **text** protobuf encodings:
 
 These are intentionally out of scope:
 
-- **Runtime reflection** (`DynamicMessage`, descriptor-driven introspection) — not planned for 0.1. Buffa is a codegen-first library; if you need schema-agnostic processing, consider preserving unknown fields or using `Any`.
+- **Runtime reflection** (`DynamicMessage`, descriptor-driven introspection) — planned for a future release. The descriptor types are now available in `buffa-descriptor` as a first step. Buffa remains a codegen-first library; if you need schema-agnostic processing today, consider preserving unknown fields or using `Any`.
 - **Proto2 optional-field getter methods** — `[default = X]` on `optional` fields does not generate `fn field_name(&self) -> T` unwrap-to-default accessors. Custom defaults are applied only to `required` fields via `impl Default`. Optional fields are `Option<T>`; use pattern matching or `.unwrap_or(X)`.
 - **Scoped `JsonParseOptions` in `no_std`** — serde's `Deserialize` trait has no context parameter, so runtime options must be passed through ambient state. In `std` builds, [`with_json_parse_options`] provides per-closure, per-thread scoping via a thread-local. In `no_std` builds, [`set_global_json_parse_options`] provides process-wide set-once configuration via a global atomic. The two APIs are mutually exclusive. The `no_std` global supports singular-enum accept-with-default but not repeated/map container filtering (which requires scoped strict-mode override).
 
@@ -52,7 +60,7 @@ These are gaps we intend to address in future releases:
 
 ## Semver and API stability
 
-Buffa is pre-1.0. We follow the [Rust community convention](https://doc.rust-lang.org/cargo/reference/semver.html) for 0.x crates: breaking changes increment the **minor** version (0.1.x → 0.2.0), additive changes increment the **patch** version (0.1.0 → 0.1.1). Pin to a minor version (`buffa = "0.1"`) to avoid surprises.
+Buffa is pre-1.0. We follow the [Rust community convention](https://doc.rust-lang.org/cargo/reference/semver.html) for 0.x crates: breaking changes increment the **minor** version (0.1.x → 0.2.0), additive changes increment the **patch** version (0.1.0 → 0.1.1). Pin to a minor version (`buffa = "0.3"`) to avoid surprises.
 
 The generated code API (struct shapes, `Message` trait, `MessageView` trait, `EnumValue`, `MessageField`) is considered the primary stability surface. Internal helper modules marked `#[doc(hidden)]` (`__private`, `__buffa_*` fields) may change at any time.
 
@@ -146,12 +154,12 @@ Throughput comparison across four representative message types, measured on an I
 
 <details><summary>Raw data (MiB/s)</summary>
 
-| Message | buffa | buffa (view) | prost | protobuf‑v4 | Go |
-|---------|------:|-------------:|------:|------------:|---:|
-| ApiResponse | 762 | 1,245 (+63%) | 777 (+2%) | 720 (−5%) | 277 (−64%) |
-| LogRecord | 689 | 1,772 (+157%) | 692 (+0%) | 882 (+28%) | 251 (−64%) |
-| AnalyticsEvent | 188 | 307 (+63%) | 258 (+37%) | 364 (+93%) | 92 (−51%) |
-| GoogleMessage1 | 801 | 1,093 (+36%) | 1,001 (+25%) | 659 (−18%) | 351 (−56%) |
+| Message | buffa | buffa (view) | prost | protobuf-v4 | Go |
+|---------|------:|------:|------:|------:|------:|
+| ApiResponse | 834 | 1,413 (+69%) | 766 (−8%) | 712 (−15%) | 270 (−68%) |
+| LogRecord | 768 | 1,921 (+150%) | 681 (−11%) | 873 (+14%) | 249 (−68%) |
+| AnalyticsEvent | 198 | 316 (+60%) | 252 (+28%) | 358 (+81%) | 91 (−54%) |
+| GoogleMessage1 | 1,024 | 1,322 (+29%) | 998 (−3%) | 648 (−37%) | 344 (−66%) |
 
 </details>
 
@@ -161,12 +169,12 @@ Throughput comparison across four representative message types, measured on an I
 
 <details><summary>Raw data (MiB/s)</summary>
 
-| Message | buffa | prost | protobuf‑v4 | Go |
-|---------|------:|------:|------------:|---:|
-| ApiResponse | 2,637 | 1,755 (−33%) | 1,050 (−60%) | 570 (−78%) |
-| LogRecord | 4,149 | 3,163 (−24%) | 1,717 (−59%) | 309 (−93%) |
-| AnalyticsEvent | 671 | 369 (−45%) | 516 (−23%) | 162 (−76%) |
-| GoogleMessage1 | 2,543 | 1,866 (−27%) | 882 (−65%) | 366 (−86%) |
+| Message | buffa | prost | protobuf-v4 | Go |
+|---------|------:|------:|------:|------:|
+| ApiResponse | 2,613 | 1,680 (−36%) | 1,049 (−60%) | 556 (−79%) |
+| LogRecord | 4,102 | 3,000 (−27%) | 1,666 (−59%) | 302 (−93%) |
+| AnalyticsEvent | 656 | 366 (−44%) | 511 (−22%) | 159 (−76%) |
+| GoogleMessage1 | 2,644 | 1,867 (−29%) | 872 (−67%) | 358 (−86%) |
 
 </details>
 
@@ -178,10 +186,10 @@ Throughput comparison across four representative message types, measured on an I
 
 | Message | buffa | prost | Go |
 |---------|------:|------:|---:|
-| ApiResponse | 869 | 776 (−11%) | 119 (−86%) |
-| LogRecord | 1,335 | 1,099 (−18%) | 144 (−89%) |
-| AnalyticsEvent | 781 | 768 (−2%) | 52 (−93%) |
-| GoogleMessage1 | 1,047 | 840 (−20%) | 129 (−88%) |
+| ApiResponse | 867 | 805 (−7%) | 116 (−87%) |
+| LogRecord | 1,312 | 1,083 (−17%) | 140 (−89%) |
+| AnalyticsEvent | 777 | 758 (−2%) | 51 (−93%) |
+| GoogleMessage1 | 1,021 | 830 (−19%) | 128 (−88%) |
 
 </details>
 
@@ -193,10 +201,10 @@ Throughput comparison across four representative message types, measured on an I
 
 | Message | buffa | prost | Go |
 |---------|------:|------:|---:|
-| ApiResponse | 721 | 299 (−59%) | 71 (−90%) |
-| LogRecord | 780 | 694 (−11%) | 112 (−86%) |
-| AnalyticsEvent | 272 | 239 (−12%) | 47 (−83%) |
-| GoogleMessage1 | 635 | 253 (−60%) | 74 (−88%) |
+| ApiResponse | 718 | 293 (−59%) | 70 (−90%) |
+| LogRecord | 797 | 690 (−13%) | 110 (−86%) |
+| AnalyticsEvent | 265 | 235 (−11%) | 46 (−83%) |
+| GoogleMessage1 | 646 | 255 (−60%) | 73 (−89%) |
 
 </details>
 
