@@ -108,7 +108,7 @@
 ///
 /// then if the field mask is:
 ///
-///  paths: ["f.b", "f.c"]
+///  paths: \["f.b", "f.c"\]
 ///
 /// then the result will be:
 ///
@@ -477,7 +477,7 @@ pub const __FIELD_MASK_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa:
 ///
 /// then if the field mask is:
 ///
-///  paths: ["f.b", "f.c"]
+///  paths: \["f.b", "f.c"\]
 ///
 /// then the result will be:
 ///
