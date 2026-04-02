@@ -187,5 +187,15 @@ pub mod basic_no_uf {
     include!(concat!(env!("OUT_DIR"), "/no_unknown_views/basic.rs"));
 }
 
+// These tests intentionally use the field-assignment style
+// (`let mut m = T::default(); m.f = v;`) because it mirrors how protobuf
+// messages are constructed in other languages and is what the docs show.
+// `3.14` is a test value, not an attempt at PI.
+#[allow(
+    clippy::field_reassign_with_default,
+    clippy::approx_constant,
+    clippy::unnecessary_to_owned,
+    clippy::assertions_on_constants
+)]
 #[cfg(test)]
 mod tests;

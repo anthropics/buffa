@@ -553,8 +553,10 @@ mod tests {
     /// `text_ident` is dropped.
     fn gen_with(field: &FieldDescriptorProto, json: bool) -> Option<(String, Option<String>)> {
         let files: [FileDescriptorProto; 0] = [];
-        let mut config = CodeGenConfig::default();
-        config.generate_json = json;
+        let config = CodeGenConfig {
+            generate_json: json,
+            ..Default::default()
+        };
         let ctx = CodeGenContext::new(&files, &config, &[]);
         let features = ResolvedFeatures::proto2_defaults();
         generate_one(&ctx, field, "", 0, &features, "my.pkg")
@@ -636,8 +638,10 @@ mod tests {
             }],
             ..Default::default()
         }];
-        let mut config = CodeGenConfig::default();
-        config.generate_json = true;
+        let config = CodeGenConfig {
+            generate_json: true,
+            ..Default::default()
+        };
         let ctx = CodeGenContext::new(&files, &config, &[]);
         let features = ResolvedFeatures::proto2_defaults();
         generate_one(&ctx, field, "my.pkg", 0, &features, "my.pkg")
@@ -778,8 +782,10 @@ mod tests {
             }],
             ..Default::default()
         }];
-        let mut config = CodeGenConfig::default();
-        config.generate_text = true;
+        let config = CodeGenConfig {
+            generate_text: true,
+            ..Default::default()
+        };
         let ctx = CodeGenContext::new(&files, &config, &[]);
         let features = ResolvedFeatures::proto2_defaults();
         let mut field = ext_field("ann", 50007, Type::TYPE_MESSAGE);

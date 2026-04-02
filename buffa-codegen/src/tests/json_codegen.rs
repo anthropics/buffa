@@ -506,8 +506,10 @@ fn test_text_any_emitted_independent_of_json() {
         name: Some("Msg".to_string()),
         ..Default::default()
     });
-    let mut cfg = CodeGenConfig::default();
-    cfg.generate_text = true;
+    let cfg = CodeGenConfig {
+        generate_text: true,
+        ..Default::default()
+    };
     let files = generate(&[file], &["textonly.proto".to_string()], &cfg).expect("should generate");
     let content = &files[0].content;
     assert!(

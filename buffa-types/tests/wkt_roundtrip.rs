@@ -13,17 +13,21 @@ fn encode_decode<T: Message>(msg: &T) -> T {
 
 #[test]
 fn timestamp_roundtrip_positive() {
-    let mut ts = wkt::Timestamp::default();
-    ts.seconds = 1_700_000_000;
-    ts.nanos = 123_456_789;
+    let ts = wkt::Timestamp {
+        seconds: 1_700_000_000,
+        nanos: 123_456_789,
+        ..Default::default()
+    };
     assert_eq!(encode_decode(&ts), ts);
 }
 
 #[test]
 fn timestamp_roundtrip_negative_seconds() {
-    let mut ts = wkt::Timestamp::default();
-    ts.seconds = -86400;
-    ts.nanos = 500_000_000;
+    let ts = wkt::Timestamp {
+        seconds: -86400,
+        nanos: 500_000_000,
+        ..Default::default()
+    };
     assert_eq!(encode_decode(&ts), ts);
 }
 
@@ -37,9 +41,11 @@ fn timestamp_roundtrip_zero() {
 
 #[test]
 fn duration_roundtrip() {
-    let mut d = wkt::Duration::default();
-    d.seconds = 3600;
-    d.nanos = 999_999_999;
+    let d = wkt::Duration {
+        seconds: 3600,
+        nanos: 999_999_999,
+        ..Default::default()
+    };
     assert_eq!(encode_decode(&d), d);
 }
 
@@ -68,8 +74,10 @@ fn empty_encodes_to_zero_bytes() {
 
 #[test]
 fn field_mask_roundtrip() {
-    let mut fm = wkt::FieldMask::default();
-    fm.paths = vec!["a.b".into(), "c.d.e".into()];
+    let fm = wkt::FieldMask {
+        paths: vec!["a.b".into(), "c.d.e".into()],
+        ..Default::default()
+    };
     assert_eq!(encode_decode(&fm), fm);
 }
 
@@ -83,8 +91,10 @@ fn field_mask_empty_paths() {
 
 #[test]
 fn any_roundtrip() {
-    let mut ts = wkt::Timestamp::default();
-    ts.seconds = 42;
+    let ts = wkt::Timestamp {
+        seconds: 42,
+        ..Default::default()
+    };
     let any = wkt::Any::pack(&ts, "type.googleapis.com/google.protobuf.Timestamp");
     let decoded = encode_decode(&any);
     let unpacked: wkt::Timestamp = decoded.unpack_unchecked().unwrap();
@@ -96,7 +106,7 @@ fn any_roundtrip() {
 #[test]
 fn struct_roundtrip() {
     let mut s = wkt::Struct::new();
-    s.insert("number", 3.14_f64);
+    s.insert("number", 2.5_f64);
     s.insert("text", "hello");
     s.insert("flag", true);
     assert_eq!(encode_decode(&s), s);
@@ -259,8 +269,10 @@ fn any_view_roundtrip() {
 
 #[test]
 fn field_mask_view_roundtrip() {
-    let mut fm = wkt::FieldMask::default();
-    fm.paths = vec!["a.b".into(), "c.d.e".into()];
+    let fm = wkt::FieldMask {
+        paths: vec!["a.b".into(), "c.d.e".into()],
+        ..Default::default()
+    };
     let bytes = fm.encode_to_vec();
     assert_eq!(view_roundtrip::<wkt::FieldMaskView>(&bytes), fm);
 }

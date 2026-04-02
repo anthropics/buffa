@@ -505,7 +505,7 @@ mod tests {
                 .iter()
                 .filter(|d| {
                     d.edition
-                        .map_or(false, |e| (e as i32) <= (target_edition as i32))
+                        .is_some_and(|e| (e as i32) <= (target_edition as i32))
                 })
                 .last()
                 .unwrap_or_else(|| panic!("no defaults entry for edition {target_edition:?}"));

@@ -1528,8 +1528,7 @@ mod tests {
         let body = borrow_group(&mut cur, 1, crate::RECURSION_LIMIT).unwrap();
 
         // Body should contain the tag for field 2 + the varint 150.
-        let expected_body_len =
-            data.len() - crate::encoding::varint_len(((1u64) << 3) | 4) as usize;
+        let expected_body_len = data.len() - crate::encoding::varint_len(((1u64) << 3) | 4);
         assert_eq!(body.len(), expected_body_len);
         assert!(cur.is_empty());
 

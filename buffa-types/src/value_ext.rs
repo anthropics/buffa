@@ -464,8 +464,8 @@ mod tests {
 
     #[test]
     fn value_from_f64() {
-        let v = Value::from(3.14_f64);
-        assert_eq!(v.as_number(), Some(3.14));
+        let v = Value::from(2.5_f64);
+        assert_eq!(v.as_number(), Some(2.5));
     }
 
     #[test]
@@ -659,10 +659,10 @@ mod tests {
 
         #[test]
         fn value_number_roundtrip() {
-            let v = Value::from(3.14_f64);
+            let v = Value::from(2.5_f64);
             let json = serde_json::to_string(&v).unwrap();
             let back: Value = serde_json::from_str(&json).unwrap();
-            assert!((back.as_number().unwrap() - 3.14).abs() < 1e-10);
+            assert!((back.as_number().unwrap() - 2.5).abs() < 1e-10);
         }
 
         #[test]

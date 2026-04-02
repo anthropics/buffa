@@ -168,9 +168,10 @@ tasks:
       - cargo test -p buffa-codegen --test codegen_integration
 
   lint:
-    desc: Run clippy across the workspace with warnings as errors.
+    desc: Run rustfmt check and clippy (all targets) with warnings as errors.
     cmds:
-      - cargo clippy --workspace -- -D warnings
+      - cargo fmt --all --check
+      - cargo clippy --workspace --all-targets -- -D warnings
 
   lint-md:
     desc: >-

@@ -559,14 +559,17 @@ mod tests {
         enums: Vec<EnumDescriptorProto>,
         locations: Vec<Location>,
     ) -> FileDescriptorProto {
-        let mut file = FileDescriptorProto::default();
-        file.package = Some(package.to_string());
-        file.message_type = messages;
-        file.enum_type = enums;
-        let mut sci = SourceCodeInfo::default();
-        sci.location = locations;
-        file.source_code_info = sci.into();
-        file
+        FileDescriptorProto {
+            package: Some(package.to_string()),
+            message_type: messages,
+            enum_type: enums,
+            source_code_info: SourceCodeInfo {
+                location: locations,
+                ..Default::default()
+            }
+            .into(),
+            ..Default::default()
+        }
     }
 
     fn make_field(name: &str) -> FieldDescriptorProto {
@@ -806,7 +809,7 @@ mod tests {
             vec![make_location(vec![4, 0], Some("  \n  "), Some("  "))],
         );
         let map = fqn_comments(&file);
-        assert!(map.get("pkg.Msg").is_none());
+        assert!(!map.contains_key("pkg.Msg"));
     }
 
     #[test]

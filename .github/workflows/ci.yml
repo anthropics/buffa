@@ -36,8 +36,11 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Rustfmt
+        run: cargo fmt --all --check
+
       - name: Clippy
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Tests
         run: cargo test --workspace
@@ -72,7 +75,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Check (MSRV 1.85)
-        run: cargo check --workspace
+        run: cargo check --workspace --all-targets
 
   # ── no_std and 32-bit compilation checks ─────────────────────────────────
   check-nostd:

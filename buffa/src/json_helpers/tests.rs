@@ -317,8 +317,8 @@ fn double_serializes_infinity_as_string() {
 
 #[test]
 fn double_finite_roundtrip() {
-    let val: SerdeDouble = serde_json::from_str("3.14").unwrap();
-    assert!((val.0 - 3.14).abs() < 1e-10);
+    let val: SerdeDouble = serde_json::from_str("2.5").unwrap();
+    assert!((val.0 - 2.5).abs() < 1e-10);
 }
 
 // ── bytes ────────────────────────────────────────────────────────────────
@@ -552,17 +552,12 @@ fn message_field_always_present_forwards_null() {
 
 // ── repeated_enum / map_enum ─────────────────────────────────────────
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 enum Color {
+    #[default]
     Red,
     Green,
     Blue,
-}
-
-impl Default for Color {
-    fn default() -> Self {
-        Color::Red
-    }
 }
 
 // Custom serde impls matching what codegen produces (proto names).
@@ -909,14 +904,14 @@ fn opt_enum_known_value_when_lenient() {
 #[test]
 fn opt_enum_roundtrip_some() {
     let val = Some(crate::EnumValue::Known(Color::Blue));
-    let json = serde_json::to_value(&SerdeOptEnum(val.clone())).unwrap();
+    let json = serde_json::to_value(SerdeOptEnum(val)).unwrap();
     assert_eq!(json, serde_json::json!("BLUE"));
 }
 
 #[test]
 fn opt_enum_roundtrip_none() {
     let val: Option<crate::EnumValue<Color>> = None;
-    let json = serde_json::to_value(&SerdeOptEnum(val)).unwrap();
+    let json = serde_json::to_value(SerdeOptEnum(val)).unwrap();
     assert_eq!(json, serde_json::Value::Null);
 }
 
@@ -1338,7 +1333,7 @@ fn bytes_key_map_roundtrip() {
     // "key1" base64 = "a2V5MQ=="
     assert_eq!(json, r#"{"m":{"a2V5MQ==":42}}"#);
     let back: BytesKeyWrapper = serde_json::from_str(&json).unwrap();
-    assert_eq!(back.m.get(&b"key1".to_vec()), Some(&42));
+    assert_eq!(back.m.get(b"key1".as_slice()), Some(&42));
 }
 
 #[test]
@@ -1350,7 +1345,7 @@ fn bytes_key_bytes_val_map_roundtrip() {
     // "k" = "aw==", "v" = "dg=="
     assert_eq!(json, r#"{"m":{"aw==":"dg=="}}"#);
     let back: BytesKeyBytesValWrapper = serde_json::from_str(&json).unwrap();
-    assert_eq!(back.m.get(&b"k".to_vec()), Some(&b"v".to_vec()));
+    assert_eq!(back.m.get(b"k".as_slice()), Some(&b"v".to_vec()));
 }
 
 #[test]
@@ -1449,7 +1444,7 @@ fn double_deserialize_table() {
         ("-7",               Some(-7.0)),
         (r#""Infinity""#,    Some(f64::INFINITY)),
         (r#""-Infinity""#,   Some(f64::NEG_INFINITY)),
-        (r#""3.14""#,        Some(3.14)),
+        (r#""2.5""#,         Some(2.5)),
         ("null",             Some(0.0)),
         // f64 has no overflow check (all JSON numbers fit in f64 domain).
         ("1e308",            Some(1e308)),

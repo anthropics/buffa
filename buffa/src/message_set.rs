@@ -176,6 +176,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::identity_op)] // `| 0` makes the Varint wire type explicit
     fn merge_item_skips_unknown_fields() {
         // Junk field 99 (varint) between type_id and message.
         let mut junk = Vec::new();
@@ -193,6 +194,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::identity_op)] // `| 0` makes the Varint wire type explicit
     fn merge_item_skips_nested_group_respecting_depth() {
         // Junk field 50, wire type StartGroup, containing a varint then EndGroup.
         let mut junk = Vec::new();
@@ -296,6 +298,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::identity_op)] // `+ 0` keeps the byte-count breakdown columns aligned
     fn item_encoded_len_matches_manual_count() {
         #[rustfmt::skip]
         let cases: &[(u32, usize, usize)] = &[

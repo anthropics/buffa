@@ -196,10 +196,10 @@ mod tests {
 
     #[test]
     fn double_value_roundtrip() {
-        let w = DoubleValue::from(3.14_f64);
-        assert_eq!(w.value, 3.14);
+        let w = DoubleValue::from(2.5_f64);
+        assert_eq!(w.value, 2.5);
         let back: f64 = w.into();
-        assert_eq!(back, 3.14);
+        assert_eq!(back, 2.5);
     }
 
     #[test]
@@ -364,10 +364,10 @@ mod tests {
 
         #[test]
         fn double_value_serde_roundtrip() {
-            let w = DoubleValue::from(3.14_f64);
+            let w = DoubleValue::from(2.5_f64);
             let json = serde_json::to_string(&w).unwrap();
             let back: DoubleValue = serde_json::from_str(&json).unwrap();
-            assert!((back.value - 3.14).abs() < 1e-10);
+            assert!((back.value - 2.5).abs() < 1e-10);
         }
 
         #[test]
