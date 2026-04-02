@@ -275,8 +275,16 @@ There are two binaries: `protoc-gen-buffa` (the codegen plugin) and `protoc-gen-
 
 **From source (requires Rust toolchain):**
 
+From crates.io (recommended):
+
 ```sh
-cargo install --git https://github.com/anthropics/buffa protoc-gen-buffa protoc-gen-buffa-packaging
+cargo install --locked protoc-gen-buffa protoc-gen-buffa-packaging
+```
+
+Or from a git ref, for unreleased changes:
+
+```sh
+cargo install --locked --git https://github.com/anthropics/buffa protoc-gen-buffa protoc-gen-buffa-packaging
 ```
 
 **From GitHub releases:**
