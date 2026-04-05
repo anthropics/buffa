@@ -315,6 +315,7 @@ pub fn generate_message_impl(
     for (oneof_name, fields) in &oneof_groups {
         let (cs, ws, mas) = generate_oneof_impls(
             ctx,
+            msg,
             oneof_name,
             fields,
             &mod_ident,
@@ -2103,8 +2104,10 @@ fn oneof_merge_arm(
 ///
 /// Returns `(compute_stmt, write_stmt, merge_arms)` where `merge_arms` is one
 /// arm per field belonging to the oneof.
+#[allow(clippy::too_many_arguments)]
 fn generate_oneof_impls(
     ctx: &CodeGenContext,
+    msg: &crate::generated::descriptor::DescriptorProto,
     oneof_name: &str,
     fields: &[&FieldDescriptorProto],
     mod_ident: &proc_macro2::Ident,
@@ -2112,8 +2115,9 @@ fn generate_oneof_impls(
     features: &ResolvedFeatures,
     preserve_unknown_fields: bool,
 ) -> Result<(TokenStream, TokenStream, Vec<TokenStream>), CodeGenError> {
+    let reserved = crate::oneof::reserved_names_for_msg(msg);
     let field_ident = make_field_ident(oneof_name);
-    let enum_ident = crate::oneof::oneof_enum_ident(oneof_name);
+    let enum_ident = crate::oneof::oneof_enum_ident(oneof_name, &reserved)?;
     // Module-qualified path: the oneof enum lives in the message's module.
     let qualified_enum: TokenStream = quote! { #mod_ident::#enum_ident };
 

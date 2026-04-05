@@ -140,8 +140,9 @@ fn test_different_snake_case_names_no_conflict() {
 }
 
 #[test]
-fn test_nested_type_oneof_conflict_detected() {
-    // Nested message "MyField" and oneof "my_field" both produce MyField.
+fn test_nested_type_oneof_conflict_resolved_with_suffix() {
+    // Nested message "MyField" and oneof "my_field" both produce MyField in
+    // PascalCase.  The oneof enum should be renamed to MyFieldOneof.
     let msg = DescriptorProto {
         name: Some("Parent".to_string()),
         nested_type: vec![DescriptorProto {
@@ -166,15 +167,15 @@ fn test_nested_type_oneof_conflict_detected() {
 
     let config = CodeGenConfig::default();
     let result = generate(&[file], &["test.proto".to_string()], &config);
-    assert!(result.is_err());
-    let err = result.unwrap_err().to_string();
+    let files = result.expect("nested type + oneof name collision should resolve, not error");
+    let content = &files[0].content;
     assert!(
-        err.contains("MyField"),
-        "should mention the conflicting name: {err}"
+        content.contains("MyFieldOneof"),
+        "oneof enum should be suffixed with Oneof: {content}"
     );
     assert!(
-        err.contains("my_field"),
-        "should mention the oneof name: {err}"
+        content.contains("pub struct MyField"),
+        "nested message struct should keep its original name: {content}"
     );
 }
 
@@ -205,6 +206,126 @@ fn test_nested_type_oneof_no_conflict() {
     let config = CodeGenConfig::default();
     let result = generate(&[file], &["test.proto".to_string()], &config);
     assert!(result.is_ok(), "Inner and MyField should not conflict");
+}
+
+#[test]
+fn test_nested_enum_oneof_conflict_resolved_with_suffix() {
+    // Nested enum "RegionCodes" and oneof "region_codes" both produce
+    // RegionCodes in PascalCase.  The oneof enum should become
+    // RegionCodesOneof (the original gh#31 example).
+    let msg = DescriptorProto {
+        name: Some("PerkRestrictions".to_string()),
+        enum_type: vec![EnumDescriptorProto {
+            name: Some("RegionCodes".to_string()),
+            value: vec![
+                enum_value("REGION_CODES_UNKNOWN", 0),
+                enum_value("US", 1),
+            ],
+            ..Default::default()
+        }],
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("region_codes".to_string()),
+            ..Default::default()
+        }],
+        field: vec![{
+            let mut f = make_field("code", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
+            f.oneof_index = Some(0);
+            f
+        }],
+        ..Default::default()
+    };
+    let mut file = proto3_file("test.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type = vec![msg];
+
+    let config = CodeGenConfig::default();
+    let result = generate(&[file], &["test.proto".to_string()], &config);
+    let files = result.expect("nested enum + oneof name collision should resolve, not error");
+    let content = &files[0].content;
+    assert!(
+        content.contains("RegionCodesOneof"),
+        "oneof enum should be suffixed with Oneof: {content}"
+    );
+    assert!(
+        content.contains("pub enum RegionCodes"),
+        "nested enum should keep its original name: {content}"
+    );
+}
+
+#[test]
+fn test_nested_type_oneof_conflict_view_uses_suffix() {
+    // When view generation is on, the view enum should also use the
+    // Oneof-suffixed name (MyFieldOneofView).
+    let msg = DescriptorProto {
+        name: Some("Parent".to_string()),
+        nested_type: vec![DescriptorProto {
+            name: Some("MyField".to_string()),
+            ..Default::default()
+        }],
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("my_field".to_string()),
+            ..Default::default()
+        }],
+        field: vec![{
+            let mut f = make_field("val", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
+            f.oneof_index = Some(0);
+            f
+        }],
+        ..Default::default()
+    };
+    let mut file = proto3_file("test.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type = vec![msg];
+
+    let config = CodeGenConfig::default(); // views enabled by default
+    let result = generate(&[file], &["test.proto".to_string()], &config);
+    let files = result.expect("view codegen should handle oneof rename");
+    let content = &files[0].content;
+    assert!(
+        content.contains("MyFieldOneofView"),
+        "view enum should use suffixed name: {content}"
+    );
+}
+
+#[test]
+fn test_oneof_suffix_double_collision_errors() {
+    // Nested types "MyField" and "MyFieldOneof" plus oneof "my_field" —
+    // the suffix fallback also collides, so this must error.
+    let msg = DescriptorProto {
+        name: Some("Parent".to_string()),
+        nested_type: vec![
+            DescriptorProto {
+                name: Some("MyField".to_string()),
+                ..Default::default()
+            },
+            DescriptorProto {
+                name: Some("MyFieldOneof".to_string()),
+                ..Default::default()
+            },
+        ],
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("my_field".to_string()),
+            ..Default::default()
+        }],
+        field: vec![{
+            let mut f = make_field("val", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
+            f.oneof_index = Some(0);
+            f
+        }],
+        ..Default::default()
+    };
+    let mut file = proto3_file("test.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type = vec![msg];
+
+    let config = CodeGenConfig::default();
+    let result = generate(&[file], &["test.proto".to_string()], &config);
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("MyFieldOneof"),
+        "error should mention the attempted name: {err}"
+    );
 }
 
 #[test]

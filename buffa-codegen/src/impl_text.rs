@@ -155,7 +155,7 @@ pub(crate) fn generate_text_impl(
         .collect::<Result<_, _>>()?;
     let oneof_encode: Vec<_> = oneof_groups
         .iter()
-        .map(|(name, fields)| oneof_encode_stmt(ctx, name, fields, &mod_ident, features))
+        .map(|(name, fields)| oneof_encode_stmt(ctx, msg, name, fields, &mod_ident, features))
         .collect::<Result<_, _>>()?;
     let map_encode: Vec<_> = map_fields
         .iter()
@@ -176,6 +176,7 @@ pub(crate) fn generate_text_impl(
     for (name, fields) in &oneof_groups {
         oneof_merge.extend(oneof_merge_arms(
             ctx,
+            msg,
             name,
             fields,
             &mod_ident,
@@ -704,13 +705,15 @@ fn repeated_merge_arm(
 
 fn oneof_encode_stmt(
     ctx: &CodeGenContext,
+    msg: &DescriptorProto,
     oneof_name: &str,
     fields: &[&FieldDescriptorProto],
     mod_ident: &proc_macro2::Ident,
     parent_features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
+    let reserved = crate::oneof::reserved_names_for_msg(msg);
     let field_ident = make_field_ident(oneof_name);
-    let enum_ident = oneof_enum_ident(oneof_name);
+    let enum_ident = oneof_enum_ident(oneof_name, &reserved)?;
     let qualified: TokenStream = quote! { #mod_ident::#enum_ident };
 
     let mut arms: Vec<TokenStream> = Vec::new();
@@ -760,8 +763,10 @@ fn oneof_encode_stmt(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn oneof_merge_arms(
     ctx: &CodeGenContext,
+    msg: &DescriptorProto,
     oneof_name: &str,
     fields: &[&FieldDescriptorProto],
     mod_ident: &proc_macro2::Ident,
@@ -769,8 +774,9 @@ fn oneof_merge_arms(
     proto_fqn: &str,
     parent_features: &ResolvedFeatures,
 ) -> Result<Vec<TokenStream>, CodeGenError> {
+    let reserved = crate::oneof::reserved_names_for_msg(msg);
     let field_ident = make_field_ident(oneof_name);
-    let enum_ident = oneof_enum_ident(oneof_name);
+    let enum_ident = oneof_enum_ident(oneof_name, &reserved)?;
     let qualified: TokenStream = quote! { #mod_ident::#enum_ident };
 
     let mut arms: Vec<TokenStream> = Vec::new();

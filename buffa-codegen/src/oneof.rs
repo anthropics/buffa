@@ -152,7 +152,8 @@ pub fn generate_oneof_enum(
         return Ok(TokenStream::new());
     }
 
-    let rust_enum_ident = oneof_enum_ident(oneof_name);
+    let reserved_names = reserved_names_for_msg(msg);
+    let rust_enum_ident = oneof_enum_ident(oneof_name, &reserved_names)?;
 
     let variants: Vec<_> = variants_info
         .iter()
@@ -453,13 +454,50 @@ pub(crate) fn oneof_variant_deser_arm(input: &OneofVariantDeserInput<'_>) -> Tok
     }
 }
 
+/// Collect names that oneof enums must not collide with inside a message
+/// module: nested message names and nested enum names.
+pub(crate) fn reserved_names_for_msg(msg: &DescriptorProto) -> std::collections::HashSet<String> {
+    let mut reserved = std::collections::HashSet::new();
+    for nested in &msg.nested_type {
+        if let Some(name) = &nested.name {
+            reserved.insert(name.clone());
+        }
+    }
+    for nested_enum in &msg.enum_type {
+        if let Some(name) = &nested_enum.name {
+            reserved.insert(name.clone());
+        }
+    }
+    reserved
+}
+
 /// Build the Rust identifier for a oneof enum.
 ///
 /// With module-based nesting, the enum lives inside the owning message's
 /// module (`pub mod msg_name { pub enum OneofField { ... } }`), so no
 /// message prefix is needed.
-pub(crate) fn oneof_enum_ident(oneof_name: &str) -> proc_macro2::Ident {
-    format_ident!("{}", to_pascal_case(oneof_name))
+///
+/// When the PascalCase name collides with a name in `reserved` (e.g.
+/// nested message or enum names that share the same module), the suffix
+/// `Oneof` is appended to disambiguate. Returns an error if the suffixed
+/// name also collides.
+pub(crate) fn oneof_enum_ident(
+    oneof_name: &str,
+    reserved: &std::collections::HashSet<String>,
+) -> Result<proc_macro2::Ident, CodeGenError> {
+    let pascal = to_pascal_case(oneof_name);
+    if reserved.contains(&pascal) {
+        let suffixed = format!("{}Oneof", pascal);
+        if reserved.contains(&suffixed) {
+            return Err(CodeGenError::OneofSuffixConflict {
+                oneof_name: oneof_name.to_string(),
+                attempted: suffixed,
+            });
+        }
+        Ok(format_ident!("{}Oneof", pascal))
+    } else {
+        Ok(format_ident!("{}", pascal))
+    }
 }
 
 /// Convert a snake_case identifier to PascalCase.
