@@ -97,6 +97,12 @@ pub fn generate_message(
 
     // Nested messages (skip map entry synthetics) — simple name, emitted
     // inside the message's module.
+    //
+    // The child resolver inherits parent-scope blocked names (via
+    // `use super::*`) and adds this message's nested types/enums, so that
+    // a nested message named `Option` causes `::core::option::Option` to
+    // be emitted in struct fields within this module scope.
+    let child_resolver = resolver.child_for_message(msg);
     let nested_msgs = msg
         .nested_type
         .iter()
@@ -119,7 +125,7 @@ pub fn generate_message(
                 nested_proto_name,
                 &nested_fqn,
                 &msg_features,
-                resolver,
+                &child_resolver,
                 view_skip_fqns,
             )
         })
@@ -861,7 +867,7 @@ fn custom_deser_regular_field(
         quote! { #json_name => { #var_ident = Some(#deser_expr); } }
     };
 
-    let var_decl = quote! { let mut #var_ident: Option<#rust_type> = None; };
+    let var_decl = quote! { let mut #var_ident: ::core::option::Option<#rust_type> = None; };
     // Overwrite only if present — missing fields keep the struct's Default
     // (which honours proto2 [default = X], unlike <T>::default()).
     let field_init = quote! {
@@ -901,7 +907,7 @@ fn custom_deser_oneof_group(
     let field_ident = make_field_ident(oneof_name);
 
     // Oneof enum lives in the message's module.
-    let var_decl = quote! { let mut #var_ident: Option<#mod_ident::#enum_ident> = None; };
+    let var_decl = quote! { let mut #var_ident: ::core::option::Option<#mod_ident::#enum_ident> = None; };
     let mut arms = Vec::new();
 
     for field in &msg.field {
@@ -1606,7 +1612,7 @@ fn skip_serializing_predicate(
     } else if info.is_repeated {
         Some("::buffa::json_helpers::skip_if::is_empty_vec")
     } else if info.is_optional {
-        Some("Option::is_none")
+        Some("::core::option::Option::is_none")
     } else {
         singular_skip_predicate(field_type, features)
     }

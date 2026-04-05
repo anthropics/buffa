@@ -416,13 +416,13 @@ pub(crate) fn oneof_variant_deser_arm(input: &OneofVariantDeserInput<'_>) -> Tok
                         #helper::deserialize(d)
                     }
                 }
-                let v: Option<#variant_type> = map.next_value_seed(
+                let v: ::core::option::Option<#variant_type> = map.next_value_seed(
                     ::buffa::json_helpers::NullableDeserializeSeed(_DeserSeed)
                 )?;
             }
         } else {
             quote! {
-                let v: Option<#variant_type> = map.next_value_seed(
+                let v: ::core::option::Option<#variant_type> = map.next_value_seed(
                     ::buffa::json_helpers::NullableDeserializeSeed(
                         ::buffa::json_helpers::DefaultDeserializeSeed::<#variant_type>::new()
                     )
