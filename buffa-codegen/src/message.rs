@@ -56,6 +56,7 @@ impl RegistryPaths {
 /// to the per-message `__*_JSON_ANY` / `__*_TEXT_ANY` consts (relative to
 /// the struct's scope) and per-extension `__*_JSON_EXT` / `__*_TEXT_EXT`
 /// consts (relative to the `module_items` scope) for `register_types`.
+#[allow(clippy::too_many_arguments)]
 pub fn generate_message(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -64,6 +65,7 @@ pub fn generate_message(
     proto_fqn: &str,
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
+    view_skip_fqns: &std::collections::HashSet<String>,
 ) -> Result<(TokenStream, TokenStream, RegistryPaths), CodeGenError> {
     let name_ident = format_ident!("{}", rust_name);
 
@@ -118,6 +120,7 @@ pub fn generate_message(
                 &nested_fqn,
                 &msg_features,
                 resolver,
+                view_skip_fqns,
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -491,22 +494,25 @@ pub fn generate_message(
             reg_paths.text_any.push(quote! { #mod_ident :: #p });
         }
 
-        // Also generate views for nested messages if enabled.
-        // view_top (struct + impls) goes alongside the owned struct in the
-        // parent module; view_mod (oneof view enums) goes in the sub-module.
+        // Also generate views for nested messages if enabled and not skipped
+        // due to a sibling name collision (e.g. FooView message exists).
         let view_mod_items = if ctx.config.generate_views {
             let nested_name = nested_desc.name.as_deref().unwrap_or("");
             let nested_fqn = format!("{}.{}", proto_fqn, nested_name);
-            let (view_top, view_mod) = crate::view::generate_view(
-                ctx,
-                nested_desc,
-                current_package,
-                nested_name,
-                &nested_fqn,
-                features,
-            )?;
-            nested_items.extend(view_top);
-            view_mod
+            if view_skip_fqns.contains(&nested_fqn) {
+                quote! {}
+            } else {
+                let (view_top, view_mod) = crate::view::generate_view(
+                    ctx,
+                    nested_desc,
+                    current_package,
+                    nested_name,
+                    &nested_fqn,
+                    features,
+                )?;
+                nested_items.extend(view_top);
+                view_mod
+            }
         } else {
             quote! {}
         };

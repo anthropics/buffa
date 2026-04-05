@@ -443,8 +443,9 @@ fn test_sibling_oneofs_get_distinct_names() {
 }
 
 #[test]
-fn test_view_name_conflict_detected() {
-    // Messages "Foo" and "FooView" — Foo's view type collides with FooView struct.
+fn test_view_name_collision_skips_view_generation() {
+    // Messages "Foo" and "FooView" — Foo's view type would collide with the
+    // FooView struct, so Foo's view is skipped rather than erroring.
     let mut file = proto3_file("test.proto");
     file.package = Some("pkg".to_string());
     file.message_type = vec![
@@ -460,12 +461,27 @@ fn test_view_name_conflict_detected() {
 
     let config = CodeGenConfig::default(); // views enabled by default
     let result = generate(&[file], &["test.proto".to_string()], &config);
-    assert!(result.is_err());
-    let err = result.unwrap_err().to_string();
-    assert!(err.contains("Foo"), "should mention owned message: {err}");
+    let files = result.expect("view collision should be handled gracefully");
+    let content = &files[0].content;
     assert!(
-        err.contains("FooView"),
-        "should mention view collision: {err}"
+        content.contains("pub struct Foo"),
+        "owned Foo struct must exist: {content}"
+    );
+    assert!(
+        content.contains("pub struct FooView"),
+        "FooView message struct must exist: {content}"
+    );
+    // The generated view for Foo would be `pub struct FooView<'a>` with a
+    // `MessageView` impl — but that collides with the user-defined FooView
+    // message, so the view must be skipped.  The user-defined FooView
+    // message's *own* view (`FooViewView<'a>`) should still exist.
+    assert!(
+        content.contains("FooViewView"),
+        "FooView message's own view (FooViewView) should still be generated: {content}"
+    );
+    assert!(
+        !content.contains("impl<'a> ::buffa::MessageView<'a> for FooView<'a>"),
+        "Foo's view impl should be skipped to avoid collision: {content}"
     );
 }
 

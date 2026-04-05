@@ -393,32 +393,32 @@ fn check_module_name_conflicts(file: &FileDescriptorProto) -> Result<(), CodeGen
     check_siblings(&file.message_type, package)
 }
 
-/// Check that no message named `FooView` collides with the generated view
-/// type for a sibling message `Foo`.
-fn check_view_name_conflicts(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
+/// Collect proto FQNs of messages whose generated `{Name}View` type would
+/// collide with a sibling message of that name. Views for these messages
+/// are skipped rather than erroring, so the rest of the crate still compiles.
+fn collect_view_skip_fqns(file: &FileDescriptorProto) -> std::collections::HashSet<String> {
     use std::collections::HashSet;
 
-    fn check_siblings(
+    fn collect_siblings(
         messages: &[crate::generated::descriptor::DescriptorProto],
         scope: &str,
-    ) -> Result<(), CodeGenError> {
-        // Collect all message names at this level.
+        out: &mut HashSet<String>,
+    ) {
         let names: HashSet<&str> = messages.iter().filter_map(|m| m.name.as_deref()).collect();
 
-        // For each message Foo, check if FooView also exists.
         for msg in messages {
             let name = msg.name.as_deref().unwrap_or("");
             let view_name = format!("{}View", name);
             if names.contains(view_name.as_str()) {
-                return Err(CodeGenError::ViewNameConflict {
-                    scope: scope.to_string(),
-                    owned_msg: name.to_string(),
-                    view_msg: view_name,
-                });
+                let fqn = if scope.is_empty() {
+                    name.to_string()
+                } else {
+                    format!("{}.{}", scope, name)
+                };
+                out.insert(fqn);
             }
         }
 
-        // Recurse into nested messages.
         for msg in messages {
             let name = msg.name.as_deref().unwrap_or("");
             let child_scope = if scope.is_empty() {
@@ -426,14 +426,14 @@ fn check_view_name_conflicts(file: &FileDescriptorProto) -> Result<(), CodeGenEr
             } else {
                 format!("{}.{}", scope, name)
             };
-            check_siblings(&msg.nested_type, &child_scope)?;
+            collect_siblings(&msg.nested_type, &child_scope, out);
         }
-
-        Ok(())
     }
 
     let package = file.package.as_deref().unwrap_or("");
-    check_siblings(&file.message_type, package)
+    let mut skip = HashSet::new();
+    collect_siblings(&file.message_type, package, &mut skip);
+    skip
 }
 
 /// Generate Rust source for a single `.proto` file.
@@ -444,9 +444,11 @@ fn generate_file(
     // Validate descriptors before generating code.
     check_reserved_field_names(file)?;
     check_module_name_conflicts(file)?;
-    if ctx.config.generate_views {
-        check_view_name_conflicts(file)?;
-    }
+    let view_skip_fqns = if ctx.config.generate_views {
+        collect_view_skip_fqns(file)
+    } else {
+        std::collections::HashSet::new()
+    };
 
     let resolver = imports::ImportResolver::for_file(file);
     let mut tokens = resolver.generate_use_block();
@@ -489,6 +491,7 @@ fn generate_file(
             &proto_fqn,
             &features,
             &resolver,
+            &view_skip_fqns,
         )?;
         tokens.extend(msg_top);
         // Nested extension const paths are relative to the message's module
@@ -506,7 +509,7 @@ fn generate_file(
         reg.json_any.extend(msg_reg.json_any);
         reg.text_any.extend(msg_reg.text_any);
 
-        let view_mod = if ctx.config.generate_views {
+        let view_mod = if ctx.config.generate_views && !view_skip_fqns.contains(&proto_fqn) {
             let (view_top, view_mod) = view::generate_view(
                 ctx,
                 message_type,
@@ -655,17 +658,6 @@ pub enum CodeGenError {
     OneofSuffixConflict {
         oneof_name: String,
         attempted: String,
-    },
-    /// A message named `FooView` collides with the generated view type for
-    /// message `Foo`.
-    #[error(
-        "name conflict in '{scope}': message '{view_msg}' collides with \
-         the generated view type for message '{owned_msg}'"
-    )]
-    ViewNameConflict {
-        scope: String,
-        owned_msg: String,
-        view_msg: String,
     },
     /// The input contains a message with `option message_set_wire_format = true`
     /// but [`CodeGenConfig::allow_message_set`] was not set.
