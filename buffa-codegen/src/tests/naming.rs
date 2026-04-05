@@ -253,6 +253,64 @@ fn test_nested_enum_oneof_conflict_resolved_with_suffix() {
 }
 
 #[test]
+fn test_oneof_shadows_parent_message_name() {
+    // message DataType { oneof data_type { ... } } — the oneof enum would
+    // shadow the parent struct imported via `use super::*`.  The oneof enum
+    // should become DataTypeOneof.
+    let msg = DescriptorProto {
+        name: Some("DataType".to_string()),
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("data_type".to_string()),
+            ..Default::default()
+        }],
+        field: vec![
+            {
+                let mut f = make_field("variant", 1, Label::LABEL_OPTIONAL, Type::TYPE_MESSAGE);
+                f.type_name = Some(".pkg.DataType.Variant".to_string());
+                f.oneof_index = Some(0);
+                f
+            },
+        ],
+        nested_type: vec![
+            DescriptorProto {
+                name: Some("Variant".to_string()),
+                field: vec![make_field("name", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING)],
+                ..Default::default()
+            },
+            DescriptorProto {
+                name: Some("Ref".to_string()),
+                field: vec![{
+                    let mut f = make_field("target", 1, Label::LABEL_OPTIONAL, Type::TYPE_MESSAGE);
+                    f.type_name = Some(".pkg.DataType".to_string());
+                    f
+                }],
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+    let mut file = proto3_file("test.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type = vec![msg];
+
+    let config = CodeGenConfig {
+        generate_views: false,
+        ..Default::default()
+    };
+    let result = generate(&[file], &["test.proto".to_string()], &config);
+    let files = result.expect("oneof shadowing parent name should resolve, not error");
+    let content = &files[0].content;
+    assert!(
+        content.contains("DataTypeOneof"),
+        "oneof enum should be suffixed to avoid shadowing parent: {content}"
+    );
+    assert!(
+        content.contains("pub struct DataType"),
+        "parent message struct should keep its name: {content}"
+    );
+}
+
+#[test]
 fn test_nested_type_oneof_conflict_view_uses_suffix() {
     // When view generation is on, the view enum should also use the
     // Oneof-suffixed name (MyFieldOneofView).

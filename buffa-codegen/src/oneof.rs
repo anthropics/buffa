@@ -455,9 +455,13 @@ pub(crate) fn oneof_variant_deser_arm(input: &OneofVariantDeserInput<'_>) -> Tok
 }
 
 /// Collect names that oneof enums must not collide with inside a message
-/// module: nested message names and nested enum names.
+/// module: nested message names, nested enum names, and the parent message
+/// name itself (imported via `use super::*`).
 pub(crate) fn reserved_names_for_msg(msg: &DescriptorProto) -> std::collections::HashSet<String> {
     let mut reserved = std::collections::HashSet::new();
+    if let Some(name) = &msg.name {
+        reserved.insert(name.clone());
+    }
     for nested in &msg.nested_type {
         if let Some(name) = &nested.name {
             reserved.insert(name.clone());
