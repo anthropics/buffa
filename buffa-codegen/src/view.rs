@@ -560,8 +560,9 @@ fn oneof_view_struct_fields(
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("oneof.name"))?;
+        let reserved = crate::oneof::reserved_names_for_msg(msg);
         let field_ident = make_field_ident(oneof_name);
-        let view_enum = format_ident!("{}View", crate::oneof::oneof_enum_ident(oneof_name));
+        let view_enum = format_ident!("{}View", crate::oneof::oneof_enum_ident(oneof_name, &reserved)?);
         let generics = if oneof_view_needs_lifetime(ctx, &fields, features) {
             quote! { <'a> }
         } else {
@@ -601,7 +602,8 @@ fn generate_oneof_view_enum(
         return Ok(TokenStream::new());
     }
 
-    let view_enum = format_ident!("{}View", crate::oneof::oneof_enum_ident(oneof_name));
+    let reserved = crate::oneof::reserved_names_for_msg(msg);
+    let view_enum = format_ident!("{}View", crate::oneof::oneof_enum_ident(oneof_name, &reserved)?);
 
     let variants = fields
         .iter()
@@ -716,6 +718,7 @@ fn build_decode_arms(
             .collect();
         oneof_arms.extend(oneof_decode_arms(
             ctx,
+            msg,
             oneof_name,
             &fields,
             current_package,
@@ -1082,8 +1085,10 @@ fn map_view_entry_decode(
     Ok(quote! { #tag_check #assign })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn oneof_decode_arms(
     ctx: &CodeGenContext,
+    msg: &DescriptorProto,
     oneof_name: &str,
     fields: &[&FieldDescriptorProto],
     current_package: &str,
@@ -1091,8 +1096,9 @@ fn oneof_decode_arms(
     features: &ResolvedFeatures,
     preserve_unknown_fields: bool,
 ) -> Result<Vec<TokenStream>, CodeGenError> {
+    let reserved = crate::oneof::reserved_names_for_msg(msg);
     let field_ident = make_field_ident(oneof_name);
-    let view_enum_simple = format_ident!("{}View", crate::oneof::oneof_enum_ident(oneof_name));
+    let view_enum_simple = format_ident!("{}View", crate::oneof::oneof_enum_ident(oneof_name, &reserved)?);
     let view_enum: TokenStream = quote! { #mod_ident::#view_enum_simple };
 
     fields
@@ -1256,8 +1262,9 @@ fn build_to_owned_fields(
         if group.is_empty() {
             continue;
         }
+        let reserved = crate::oneof::reserved_names_for_msg(msg);
         let field_ident = make_field_ident(oneof_name);
-        let base_ident = crate::oneof::oneof_enum_ident(oneof_name);
+        let base_ident = crate::oneof::oneof_enum_ident(oneof_name, &reserved)?;
         let view_enum_simple = format_ident!("{}View", base_ident);
         let view_enum: TokenStream = quote! { #mod_ident::#view_enum_simple };
         let owned_enum: TokenStream = quote! { #mod_ident::#base_ident };

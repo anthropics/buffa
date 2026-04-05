@@ -143,6 +143,9 @@ pub fn generate_message(
     let mod_name_str = crate::oneof::to_snake_case(proto_name);
     let mod_ident = make_field_ident(&mod_name_str);
 
+    // Names that oneof enums must not collide with inside the message module.
+    let oneof_reserved_names = crate::oneof::reserved_names_for_msg(msg);
+
     // One `Option<OneofEnum>` field in the struct per non-synthetic oneof.
     // Oneof enums live inside the message's module, so the type path is
     // `mod_name::EnumName`.
@@ -164,16 +167,19 @@ pub fn generate_message(
                 return None;
             }
             let oneof_name = oneof.name.as_deref()?;
-            let field_ident = make_field_ident(oneof_name);
-            let enum_ident = crate::oneof::oneof_enum_ident(oneof_name);
+            Some((oneof_name, make_field_ident(oneof_name)))
+        })
+        .map(|(oneof_name, field_ident)| {
+            let enum_ident =
+                crate::oneof::oneof_enum_ident(oneof_name, &oneof_reserved_names)?;
             let opt = resolver.option();
             let tokens = quote! {
                 #oneof_serde_attr
                 pub #field_ident: #opt<#mod_ident::#enum_ident>,
             };
-            Some((tokens, field_ident))
+            Ok((tokens, field_ident))
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
     let oneof_struct_fields: Vec<&TokenStream> = oneof_generated.iter().map(|(t, _)| t).collect();
     debug_field_idents.extend(oneof_generated.iter().map(|(_, id)| id));
 
@@ -886,9 +892,10 @@ fn custom_deser_oneof_group(
         return Ok(None);
     }
 
+    let reserved = crate::oneof::reserved_names_for_msg(msg);
     let var_ident = format_ident!("__oneof_{}", oneof_name);
     let field_ident = make_field_ident(oneof_name);
-    let enum_ident = crate::oneof::oneof_enum_ident(oneof_name);
+    let enum_ident = crate::oneof::oneof_enum_ident(oneof_name, &reserved)?;
 
     // Oneof enum lives in the message's module.
     let var_decl = quote! { let mut #var_ident: Option<#mod_ident::#enum_ident> = None; };
