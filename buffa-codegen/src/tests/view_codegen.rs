@@ -167,3 +167,71 @@ fn test_view_oneof_with_message_variant() {
         "message-type oneof variant must check recursion depth: {content}"
     );
 }
+
+/// When `Foo` and `FooView` are both messages in the same package, `Foo`'s zero-copy
+/// view is skipped. Parent views that reference `Foo` must use owned `MessageField<Foo>`
+/// (not `MessageFieldView<FooView<'a>>`, which would name the wrong type).
+#[test]
+fn test_view_field_uses_owned_when_message_view_skipped() {
+    let mut file = proto3_file("view_skip_field.proto");
+    file.package = Some("test.view_skip_field".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Foo".to_string()),
+        field: vec![make_field(
+            "x",
+            1,
+            Label::LABEL_OPTIONAL,
+            Type::TYPE_INT32,
+        )],
+        ..Default::default()
+    });
+    file.message_type.push(DescriptorProto {
+        name: Some("FooView".to_string()),
+        field: vec![make_field(
+            "y",
+            1,
+            Label::LABEL_OPTIONAL,
+            Type::TYPE_STRING,
+        )],
+        ..Default::default()
+    });
+    file.message_type.push(DescriptorProto {
+        name: Some("Bar".to_string()),
+        field: vec![FieldDescriptorProto {
+            name: Some("foo".to_string()),
+            number: Some(1),
+            label: Some(Label::LABEL_OPTIONAL),
+            r#type: Some(Type::TYPE_MESSAGE),
+            type_name: Some(".test.view_skip_field.Foo".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let files = generate(
+        &[file],
+        &["view_skip_field.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let content = &files[0].content;
+    assert!(
+        !content.contains("pub struct FooView<'a>"),
+        "Foo's borrowed view must be skipped when FooView message exists: {content}"
+    );
+    assert!(
+        content.contains("pub struct BarView<'a>"),
+        "BarView should still be generated: {content}"
+    );
+    assert!(
+        content.contains("pub struct BarView<'a> {\n    /// Field 1: `foo`\n    pub foo: ::buffa::MessageField<Foo>"),
+        "BarView.foo must use owned MessageField<Foo>, not MessageFieldView<FooView<'a>>: {content}"
+    );
+    assert!(
+        !content.contains("MessageFieldView<super::foo::FooView"),
+        "BarView must not reference a synthetic FooView borrow type for nested Foo: {content}"
+    );
+    assert!(
+        content.contains("view.foo.get_or_insert_default()"),
+        "skipped nested message decode must merge into MessageField via get_or_insert_default: {content}"
+    );
+}

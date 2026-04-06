@@ -509,6 +509,7 @@ pub fn generate_message(
                     nested_name,
                     &nested_fqn,
                     features,
+                    view_skip_fqns,
                 )?;
                 nested_items.extend(view_top);
                 view_mod
