@@ -486,6 +486,55 @@ fn test_view_name_collision_skips_view_generation() {
 }
 
 #[test]
+fn test_view_name_collision_skips_view_across_files_same_package() {
+    // Same as test_view_name_collision_skips_view_generation, but `Foo` and
+    // `FooView` live in different FileDescriptorProtos. They still share one
+    // generated Rust module per package, so Foo's view must be skipped.
+    let mut place = proto3_file("place.proto");
+    place.package = Some("pkg".to_string());
+    place.message_type = vec![DescriptorProto {
+        name: Some("Foo".to_string()),
+        ..Default::default()
+    }];
+
+    let mut view = proto3_file("view.proto");
+    view.package = Some("pkg".to_string());
+    view.message_type = vec![DescriptorProto {
+        name: Some("FooView".to_string()),
+        ..Default::default()
+    }];
+
+    let files = [place, view];
+    let config = CodeGenConfig::default();
+    let result = generate(
+        &files,
+        &["place.proto".to_string(), "view.proto".to_string()],
+        &config,
+    );
+    let generated = result.expect("cross-file view collision should be handled");
+    let place_rs = generated
+        .iter()
+        .find(|f| f.name.contains("place"))
+        .expect("place output");
+    assert!(
+        !place_rs
+            .content
+            .contains("impl<'a> ::buffa::MessageView<'a> for FooView<'a>"),
+        "Foo's view impl should be skipped (collision with FooView from view.proto): {}",
+        place_rs.content
+    );
+    let view_rs = generated
+        .iter()
+        .find(|f| f.name.contains("view"))
+        .expect("view output");
+    assert!(
+        view_rs.content.contains("FooViewView"),
+        "FooView message's own view should still be generated: {}",
+        view_rs.content
+    );
+}
+
+#[test]
 fn test_view_name_conflict_not_checked_when_views_disabled() {
     let mut file = proto3_file("test.proto");
     file.package = Some("pkg".to_string());

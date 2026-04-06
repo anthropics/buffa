@@ -210,6 +210,11 @@ pub fn generate(
     files_to_generate: &[String],
     config: &CodeGenConfig,
 ) -> Result<Vec<GeneratedFile>, CodeGenError> {
+    let package_top_level = if config.generate_views {
+        top_level_message_names_by_package(file_descriptors)
+    } else {
+        std::collections::HashMap::new()
+    };
     let ctx = context::CodeGenContext::for_generate(file_descriptors, files_to_generate, config);
 
     let mut output = Vec::new();
@@ -219,7 +224,7 @@ pub fn generate(
             .find(|f| f.name.as_deref() == Some(file_name.as_str()))
             .ok_or_else(|| CodeGenError::FileNotFound(file_name.clone()))?;
 
-        let content = generate_file(&ctx, file_desc)?;
+        let content = generate_file(&ctx, file_desc, &package_top_level)?;
         let rust_filename = proto_path_to_rust_module(file_name);
         output.push(GeneratedFile {
             name: rust_filename,
@@ -393,13 +398,44 @@ fn check_module_name_conflicts(file: &FileDescriptorProto) -> Result<(), CodeGen
     check_siblings(&file.message_type, package)
 }
 
+/// Union of top-level message simple names per protobuf package across **all**
+/// files in the descriptor set.
+///
+/// Files that share a package are generated into the same Rust module tree, so
+/// a `FooView` message in `b.proto` is a sibling of `Foo` from `a.proto` for
+/// `{Name}View` collision purposes.
+fn top_level_message_names_by_package(
+    files: &[FileDescriptorProto],
+) -> std::collections::HashMap<String, std::collections::HashSet<String>> {
+    use std::collections::{HashMap, HashSet};
+
+    let mut out: HashMap<String, HashSet<String>> = HashMap::new();
+    for file in files {
+        let package = file.package.clone().unwrap_or_default();
+        let set = out.entry(package).or_default();
+        for msg in &file.message_type {
+            if let Some(name) = &msg.name {
+                set.insert(name.clone());
+            }
+        }
+    }
+    out
+}
+
 /// Collect proto FQNs of messages whose generated `{Name}View` type would
 /// collide with a sibling message of that name. Views for these messages
 /// are skipped rather than erroring, so the rest of the crate still compiles.
-fn collect_view_skip_fqns(file: &FileDescriptorProto) -> std::collections::HashSet<String> {
+///
+/// For top-level messages, siblings include every top-level message in the same
+/// package from any file in the descriptor set. Nested messages still use only
+/// same-parent siblings (nested types are not merged across files).
+fn collect_view_skip_fqns(
+    file: &FileDescriptorProto,
+    package_top_level: &std::collections::HashMap<String, std::collections::HashSet<String>>,
+) -> std::collections::HashSet<String> {
     use std::collections::HashSet;
 
-    fn collect_siblings(
+    fn collect_nested_siblings(
         messages: &[crate::generated::descriptor::DescriptorProto],
         scope: &str,
         out: &mut HashSet<String>,
@@ -426,13 +462,41 @@ fn collect_view_skip_fqns(file: &FileDescriptorProto) -> std::collections::HashS
             } else {
                 format!("{}.{}", scope, name)
             };
-            collect_siblings(&msg.nested_type, &child_scope, out);
+            collect_nested_siblings(&msg.nested_type, &child_scope, out);
         }
     }
 
     let package = file.package.as_deref().unwrap_or("");
     let mut skip = HashSet::new();
-    collect_siblings(&file.message_type, package, &mut skip);
+
+    let global_top_level: HashSet<&str> = package_top_level
+        .get(package)
+        .map(|names| names.iter().map(String::as_str).collect())
+        .unwrap_or_default();
+
+    for msg in &file.message_type {
+        let name = msg.name.as_deref().unwrap_or("");
+        let view_name = format!("{}View", name);
+        if global_top_level.contains(view_name.as_str()) {
+            let fqn = if package.is_empty() {
+                name.to_string()
+            } else {
+                format!("{}.{}", package, name)
+            };
+            skip.insert(fqn);
+        }
+    }
+
+    for msg in &file.message_type {
+        let name = msg.name.as_deref().unwrap_or("");
+        let child_scope = if package.is_empty() {
+            name.to_string()
+        } else {
+            format!("{}.{}", package, name)
+        };
+        collect_nested_siblings(&msg.nested_type, &child_scope, &mut skip);
+    }
+
     skip
 }
 
@@ -440,12 +504,13 @@ fn collect_view_skip_fqns(file: &FileDescriptorProto) -> std::collections::HashS
 fn generate_file(
     ctx: &context::CodeGenContext,
     file: &FileDescriptorProto,
+    package_top_level: &std::collections::HashMap<String, std::collections::HashSet<String>>,
 ) -> Result<String, CodeGenError> {
     // Validate descriptors before generating code.
     check_reserved_field_names(file)?;
     check_module_name_conflicts(file)?;
     let view_skip_fqns = if ctx.config.generate_views {
-        collect_view_skip_fqns(file)
+        collect_view_skip_fqns(file, package_top_level)
     } else {
         std::collections::HashSet::new()
     };
