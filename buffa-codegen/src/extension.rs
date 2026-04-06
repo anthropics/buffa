@@ -275,7 +275,7 @@ fn default_fn_tokens(
     }
 
     let value_ty = codec_value_type(ty);
-    let default_expr = crate::defaults::parse_default_value(field, ctx, current_package, features)?
+    let default_expr = crate::defaults::parse_default_value(field, ctx, current_package, features, nesting)?
         .ok_or_else(|| {
             // default_value was non-empty but parse returned None —
             // happens when field_presence ≠ Explicit (shouldn't for

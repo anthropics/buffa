@@ -199,9 +199,10 @@ impl<'a> CodeGenContext<'a> {
     /// scope.
     ///
     /// `current_package` is the proto package (e.g., `"google.protobuf"`).
-    /// `nesting` is the number of message module levels the generated code
-    /// sits inside (0 for struct fields and impls at the package level,
-    /// 1 for oneof enums inside a message module, etc.).
+    /// `nesting` is the number of `pub mod` levels between the package
+    /// module and the item containing the reference (0 for a top-level
+    /// struct's fields and impls, 1 for items inside a top-level message's
+    /// module, 2 for a doubly-nested message's module items, etc.).
     ///
     /// - **Same package**: strips the package prefix and prepends `super::`
     ///   for each nesting level.

@@ -30,7 +30,7 @@ use crate::impl_message::{
     is_supported_field_type,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident};
-use crate::oneof::{is_boxed_variant, oneof_enum_ident, to_pascal_case, to_snake_case};
+use crate::oneof::{is_boxed_variant, to_pascal_case, to_snake_case};
 use crate::CodeGenError;
 
 /// Generate `impl ::buffa::text::TextFormat for #name_ident { ... }`.
@@ -48,6 +48,8 @@ pub(crate) fn generate_text_impl(
     proto_fqn: &str,
     features: &ResolvedFeatures,
     has_extension_ranges: bool,
+    oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
+    struct_nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     if !ctx.config.generate_text {
         return Ok(TokenStream::new());
@@ -126,11 +128,12 @@ pub(crate) fn generate_text_impl(
         .filter(|f| f.label.unwrap_or_default() == Label::LABEL_REPEATED && is_map_field(msg, f))
         .collect();
 
-    let oneof_groups: Vec<(String, Vec<&FieldDescriptorProto>)> = msg
+    let oneof_groups: Vec<(String, proc_macro2::Ident, Vec<&FieldDescriptorProto>)> = msg
         .oneof_decl
         .iter()
         .enumerate()
         .filter_map(|(idx, oneof)| {
+            let enum_ident = oneof_idents.get(&idx)?;
             let fields: Vec<_> = msg
                 .field
                 .iter()
@@ -139,7 +142,11 @@ pub(crate) fn generate_text_impl(
             if fields.is_empty() {
                 return None;
             }
-            Some((oneof.name.as_deref()?.to_string(), fields))
+            Some((
+                oneof.name.as_deref()?.to_string(),
+                enum_ident.clone(),
+                fields,
+            ))
         })
         .collect();
 
@@ -155,7 +162,9 @@ pub(crate) fn generate_text_impl(
         .collect::<Result<_, _>>()?;
     let oneof_encode: Vec<_> = oneof_groups
         .iter()
-        .map(|(name, fields)| oneof_encode_stmt(ctx, name, fields, &mod_ident, features))
+        .map(|(name, enum_ident, fields)| {
+            oneof_encode_stmt(ctx, enum_ident, name, fields, &mod_ident, features)
+        })
         .collect::<Result<_, _>>()?;
     let map_encode: Vec<_> = map_fields
         .iter()
@@ -166,27 +175,29 @@ pub(crate) fn generate_text_impl(
 
     let scalar_merge: Vec<_> = scalar_fields
         .iter()
-        .map(|f| scalar_merge_arm(ctx, f, current_package, proto_fqn, features))
+        .map(|f| scalar_merge_arm(ctx, f, current_package, proto_fqn, features, struct_nesting))
         .collect::<Result<_, _>>()?;
     let repeated_merge: Vec<_> = repeated_fields
         .iter()
-        .map(|f| repeated_merge_arm(ctx, f, current_package, proto_fqn, features))
+        .map(|f| repeated_merge_arm(ctx, f, current_package, proto_fqn, features, struct_nesting))
         .collect::<Result<_, _>>()?;
     let mut oneof_merge: Vec<TokenStream> = Vec::new();
-    for (name, fields) in &oneof_groups {
+    for (name, enum_ident, fields) in &oneof_groups {
         oneof_merge.extend(oneof_merge_arms(
             ctx,
+            enum_ident,
             name,
             fields,
             &mod_ident,
             current_package,
             proto_fqn,
             features,
+            struct_nesting,
         )?);
     }
     let map_merge: Vec<_> = map_fields
         .iter()
-        .map(|f| map_merge_arm(ctx, msg, f, current_package, features))
+        .map(|f| map_merge_arm(ctx, msg, f, current_package, features, struct_nesting))
         .collect::<Result<_, _>>()?;
 
     // Extension bracket syntax `[pkg.ext] { ... }` — encode side writes
@@ -399,19 +410,19 @@ fn enum_write(closed: bool, val: &TokenStream) -> TokenStream {
     }
 }
 
-/// Resolve a field's enum type path relative to the message impl scope
-/// (nesting = 0, same as `generate_message_impl`).
+/// Resolve a field's enum type path relative to the message impl scope.
 fn enum_type_path(
     ctx: &CodeGenContext,
     field: &FieldDescriptorProto,
     current_package: &str,
+    struct_nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let type_name = field
         .type_name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.type_name"))?;
     let path = ctx
-        .rust_type_relative(type_name, current_package, 0)
+        .rust_type_relative(type_name, current_package, struct_nesting)
         .ok_or_else(|| CodeGenError::Other(format!("enum type '{type_name}' not found")))?;
     Ok(rust_path_to_tokens(&path))
 }
@@ -552,6 +563,7 @@ fn scalar_merge_arm(
     current_package: &str,
     proto_fqn: &str,
     parent_features: &ResolvedFeatures,
+    struct_nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let features = &crate::features::resolve_field(ctx, field, parent_features);
     let proto_name = field
@@ -574,7 +586,7 @@ fn scalar_merge_arm(
     // Enum.
     if ty == Type::TYPE_ENUM {
         let closed = is_closed_enum(features);
-        let enum_ty = enum_type_path(ctx, field, current_package)?;
+        let enum_ty = enum_type_path(ctx, field, current_package, struct_nesting)?;
         let read = enum_read(closed, &enum_ty, &format_ident!("dec"));
         return Ok(if explicit {
             quote! { #name_pat => self.#ident = ::core::option::Option::Some(#read?), }
@@ -638,6 +650,7 @@ fn repeated_merge_arm(
     current_package: &str,
     proto_fqn: &str,
     parent_features: &ResolvedFeatures,
+    struct_nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let features = &crate::features::resolve_field(ctx, field, parent_features);
     let proto_name = field
@@ -662,7 +675,7 @@ fn repeated_merge_arm(
         },
         Type::TYPE_ENUM => {
             let closed = is_closed_enum(features);
-            let enum_ty = enum_type_path(ctx, field, current_package)?;
+            let enum_ty = enum_type_path(ctx, field, current_package, struct_nesting)?;
             enum_read(closed, &enum_ty, &format_ident!("__d"))
         }
         Type::TYPE_STRING => {
@@ -704,13 +717,13 @@ fn repeated_merge_arm(
 
 fn oneof_encode_stmt(
     ctx: &CodeGenContext,
+    enum_ident: &proc_macro2::Ident,
     oneof_name: &str,
     fields: &[&FieldDescriptorProto],
     mod_ident: &proc_macro2::Ident,
     parent_features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
     let field_ident = make_field_ident(oneof_name);
-    let enum_ident = oneof_enum_ident(oneof_name);
     let qualified: TokenStream = quote! { #mod_ident::#enum_ident };
 
     let mut arms: Vec<TokenStream> = Vec::new();
@@ -760,17 +773,19 @@ fn oneof_encode_stmt(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn oneof_merge_arms(
     ctx: &CodeGenContext,
+    enum_ident: &proc_macro2::Ident,
     oneof_name: &str,
     fields: &[&FieldDescriptorProto],
     mod_ident: &proc_macro2::Ident,
     current_package: &str,
     proto_fqn: &str,
     parent_features: &ResolvedFeatures,
+    struct_nesting: usize,
 ) -> Result<Vec<TokenStream>, CodeGenError> {
     let field_ident = make_field_ident(oneof_name);
-    let enum_ident = oneof_enum_ident(oneof_name);
     let qualified: TokenStream = quote! { #mod_ident::#enum_ident };
 
     let mut arms: Vec<TokenStream> = Vec::new();
@@ -805,7 +820,7 @@ fn oneof_merge_arms(
             }
             Type::TYPE_ENUM => {
                 let closed = is_closed_enum(&features);
-                let enum_ty = enum_type_path(ctx, field, current_package)?;
+                let enum_ty = enum_type_path(ctx, field, current_package, struct_nesting)?;
                 let read = enum_read(closed, &enum_ty, &format_ident!("dec"));
                 quote! {
                     self.#field_ident = ::core::option::Option::Some(
@@ -917,6 +932,7 @@ fn map_merge_arm(
     field: &FieldDescriptorProto,
     current_package: &str,
     features: &ResolvedFeatures,
+    struct_nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let proto_name = field
         .name
@@ -956,7 +972,7 @@ fn map_merge_arm(
         },
         Type::TYPE_ENUM => {
             let closed = is_closed_enum(&val_features);
-            let enum_ty = enum_type_path(ctx, val_fd, current_package)?;
+            let enum_ty = enum_type_path(ctx, val_fd, current_package, struct_nesting)?;
             let read = enum_read(closed, &enum_ty, &format_ident!("__d"));
             quote! { #read? }
         }

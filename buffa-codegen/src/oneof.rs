@@ -62,6 +62,7 @@ struct VariantInfo {
     is_boxed: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_variant_info(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -70,6 +71,7 @@ fn collect_variant_info(
     proto_fqn: &str,
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
+    module_nesting: usize,
 ) -> Result<Vec<VariantInfo>, CodeGenError> {
     let oneof_index = msg
         .oneof_decl
@@ -106,7 +108,7 @@ fn collect_variant_info(
             {
                 quote! { ::bytes::Bytes }
             } else {
-                scalar_or_message_type_nested(ctx, field, current_package, 1, features, resolver)?
+                scalar_or_message_type_nested(ctx, field, current_package, module_nesting, features, resolver)?
             };
             Ok(VariantInfo {
                 variant_ident,
@@ -125,15 +127,23 @@ fn collect_variant_info(
 /// When JSON is enabled, the containing message always gets a hand-generated
 /// `Deserialize` impl that handles oneof fields inline (`generate_custom_deserialize`
 /// in `message.rs`), so the oneof enum only needs `Serialize`.
+#[allow(clippy::too_many_arguments)]
 pub fn generate_oneof_enum(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
+    idx: usize,
     oneof: &OneofDescriptorProto,
     current_package: &str,
     proto_fqn: &str,
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
+    oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
+    module_nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
+    let rust_enum_ident = match oneof_idents.get(&idx) {
+        Some(id) => id.clone(),
+        None => return Ok(TokenStream::new()),
+    };
     let oneof_name = oneof
         .name
         .as_deref()
@@ -147,12 +157,11 @@ pub fn generate_oneof_enum(
         proto_fqn,
         features,
         resolver,
+        module_nesting,
     )?;
     if variants_info.is_empty() {
         return Ok(TokenStream::new());
     }
-
-    let rust_enum_ident = oneof_enum_ident(oneof_name);
 
     let variants: Vec<_> = variants_info
         .iter()
@@ -411,13 +420,13 @@ pub(crate) fn oneof_variant_deser_arm(input: &OneofVariantDeserInput<'_>) -> Tok
                         #helper::deserialize(d)
                     }
                 }
-                let v: Option<#variant_type> = map.next_value_seed(
+                let v: ::core::option::Option<#variant_type> = map.next_value_seed(
                     ::buffa::json_helpers::NullableDeserializeSeed(_DeserSeed)
                 )?;
             }
         } else {
             quote! {
-                let v: Option<#variant_type> = map.next_value_seed(
+                let v: ::core::option::Option<#variant_type> = map.next_value_seed(
                     ::buffa::json_helpers::NullableDeserializeSeed(
                         ::buffa::json_helpers::DefaultDeserializeSeed::<#variant_type>::new()
                     )
@@ -453,13 +462,84 @@ pub(crate) fn oneof_variant_deser_arm(input: &OneofVariantDeserInput<'_>) -> Tok
     }
 }
 
+/// Collect names that oneof enums must not collide with inside a message
+/// module: nested message names, nested enum names, and the parent message
+/// name itself (imported via `use super::*`).
+pub(crate) fn reserved_names_for_msg(msg: &DescriptorProto) -> std::collections::HashSet<String> {
+    let mut reserved = std::collections::HashSet::new();
+    if let Some(name) = &msg.name {
+        reserved.insert(name.clone());
+    }
+    for nested in &msg.nested_type {
+        if let Some(name) = &nested.name {
+            reserved.insert(name.clone());
+        }
+    }
+    for nested_enum in &msg.enum_type {
+        if let Some(name) = &nested_enum.name {
+            reserved.insert(name.clone());
+        }
+    }
+    reserved
+}
+
 /// Build the Rust identifier for a oneof enum.
 ///
 /// With module-based nesting, the enum lives inside the owning message's
 /// module (`pub mod msg_name { pub enum OneofField { ... } }`), so no
 /// message prefix is needed.
-pub(crate) fn oneof_enum_ident(oneof_name: &str) -> proc_macro2::Ident {
-    format_ident!("{}", to_pascal_case(oneof_name))
+///
+/// When the PascalCase name collides with a name in `reserved` (e.g.
+/// nested message or enum names that share the same module), the suffix
+/// `Oneof` is appended to disambiguate. Returns an error if the suffixed
+/// name also collides.
+pub(crate) fn oneof_enum_ident(
+    oneof_name: &str,
+    reserved: &std::collections::HashSet<String>,
+) -> Result<proc_macro2::Ident, CodeGenError> {
+    let pascal = to_pascal_case(oneof_name);
+    if reserved.contains(&pascal) {
+        let suffixed = format!("{}Oneof", pascal);
+        if reserved.contains(&suffixed) {
+            return Err(CodeGenError::OneofSuffixConflict {
+                oneof_name: oneof_name.to_string(),
+                attempted: suffixed,
+            });
+        }
+        Ok(format_ident!("{}Oneof", pascal))
+    } else {
+        Ok(format_ident!("{}", pascal))
+    }
+}
+
+/// Compute oneof enum identifiers for all non-synthetic oneofs in a message.
+///
+/// Processes oneofs sequentially, growing the reserved set after each
+/// allocation to prevent later oneofs from colliding with earlier ones'
+/// suffixed names (e.g. `my_field` → `MyFieldOneof` reserves that name
+/// so `my_field_oneof` cannot also claim `MyFieldOneof`).
+///
+/// Returns a map from oneof declaration index to its Rust enum `Ident`.
+/// Synthetic oneofs (proto3 `optional`) are omitted.
+pub(crate) fn resolve_oneof_idents(
+    msg: &DescriptorProto,
+) -> Result<std::collections::HashMap<usize, Ident>, CodeGenError> {
+    let mut reserved = reserved_names_for_msg(msg);
+    let mut result = std::collections::HashMap::new();
+    for (idx, oneof) in msg.oneof_decl.iter().enumerate() {
+        let has_real_fields = msg.field.iter().any(|f| {
+            crate::impl_message::is_real_oneof_member(f) && f.oneof_index == Some(idx as i32)
+        });
+        if !has_real_fields {
+            continue;
+        }
+        if let Some(oneof_name) = &oneof.name {
+            let ident = oneof_enum_ident(oneof_name, &reserved)?;
+            reserved.insert(ident.to_string());
+            result.insert(idx, ident);
+        }
+    }
+    Ok(result)
 }
 
 /// Convert a snake_case identifier to PascalCase.
