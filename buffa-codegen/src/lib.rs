@@ -210,6 +210,11 @@ pub fn generate(
     files_to_generate: &[String],
     config: &CodeGenConfig,
 ) -> Result<Vec<GeneratedFile>, CodeGenError> {
+    let package_top_level = if config.generate_views {
+        top_level_message_names_by_package(file_descriptors)
+    } else {
+        std::collections::HashMap::new()
+    };
     let ctx = context::CodeGenContext::for_generate(file_descriptors, files_to_generate, config);
 
     let mut output = Vec::new();
@@ -219,7 +224,7 @@ pub fn generate(
             .find(|f| f.name.as_deref() == Some(file_name.as_str()))
             .ok_or_else(|| CodeGenError::FileNotFound(file_name.clone()))?;
 
-        let content = generate_file(&ctx, file_desc)?;
+        let content = generate_file(&ctx, file_desc, &package_top_level)?;
         let rust_filename = proto_path_to_rust_module(file_name);
         output.push(GeneratedFile {
             name: rust_filename,
@@ -393,101 +398,63 @@ fn check_module_name_conflicts(file: &FileDescriptorProto) -> Result<(), CodeGen
     check_siblings(&file.message_type, package)
 }
 
-/// Check that nested type names don't collide with oneof enum names.
+/// Union of top-level message simple names per protobuf package across **all**
+/// files in the descriptor set.
 ///
-/// Nested messages/enums and oneof enums coexist in the message's module.
-/// A nested `message MyField` and `oneof my_field` both produce `MyField`.
-fn check_nested_type_oneof_conflicts(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
-    use std::collections::HashSet;
+/// Files that share a package are generated into the same Rust module tree, so
+/// a `FooView` message in `b.proto` is a sibling of `Foo` from `a.proto` for
+/// `{Name}View` collision purposes.
+fn top_level_message_names_by_package(
+    files: &[FileDescriptorProto],
+) -> std::collections::HashMap<String, std::collections::HashSet<String>> {
+    use std::collections::{HashMap, HashSet};
 
-    fn check_message(
-        msg: &crate::generated::descriptor::DescriptorProto,
-        scope: &str,
-    ) -> Result<(), CodeGenError> {
-        let msg_name = msg.name.as_deref().unwrap_or("");
-        let fqn = if scope.is_empty() {
-            msg_name.to_string()
-        } else {
-            format!("{}.{}", scope, msg_name)
-        };
-
-        // Collect names that nested types/enums will occupy in the module.
-        let mut nested_names: HashSet<&str> = HashSet::new();
-        for nested in &msg.nested_type {
-            if let Some(name) = &nested.name {
-                nested_names.insert(name);
+    let mut out: HashMap<String, HashSet<String>> = HashMap::new();
+    for file in files {
+        let package = file.package.clone().unwrap_or_default();
+        let set = out.entry(package).or_default();
+        for msg in &file.message_type {
+            if let Some(name) = &msg.name {
+                set.insert(name.clone());
             }
         }
-        for nested_enum in &msg.enum_type {
-            if let Some(name) = &nested_enum.name {
-                nested_names.insert(name);
-            }
-        }
-
-        // Check each non-synthetic oneof's PascalCase name against nested
-        // type names.  Synthetic oneofs (created by proto3 `optional` fields)
-        // never produce a Rust enum, so they cannot collide.
-        for (idx, oneof) in msg.oneof_decl.iter().enumerate() {
-            let has_real_fields = msg.field.iter().any(|f| {
-                crate::impl_message::is_real_oneof_member(f) && f.oneof_index == Some(idx as i32)
-            });
-            if !has_real_fields {
-                continue;
-            }
-            if let Some(oneof_name) = &oneof.name {
-                let rust_name = crate::oneof::to_pascal_case(oneof_name);
-                if nested_names.contains(rust_name.as_str()) {
-                    return Err(CodeGenError::NestedTypeOneofConflict {
-                        scope: fqn,
-                        nested_name: rust_name.clone(),
-                        oneof_name: oneof_name.clone(),
-                        rust_name,
-                    });
-                }
-            }
-        }
-
-        // Recurse into nested messages.
-        for nested in &msg.nested_type {
-            check_message(nested, &fqn)?;
-        }
-
-        Ok(())
     }
-
-    let package = file.package.as_deref().unwrap_or("");
-    for msg in &file.message_type {
-        check_message(msg, package)?;
-    }
-    Ok(())
+    out
 }
 
-/// Check that no message named `FooView` collides with the generated view
-/// type for a sibling message `Foo`.
-fn check_view_name_conflicts(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
+/// Collect proto FQNs of messages whose generated `{Name}View` type would
+/// collide with a sibling message of that name. Views for these messages
+/// are skipped rather than erroring, so the rest of the crate still compiles.
+///
+/// For top-level messages, siblings include every top-level message in the same
+/// package from any file in the descriptor set. Nested messages still use only
+/// same-parent siblings (nested types are not merged across files).
+fn collect_view_skip_fqns(
+    file: &FileDescriptorProto,
+    package_top_level: &std::collections::HashMap<String, std::collections::HashSet<String>>,
+) -> std::collections::HashSet<String> {
     use std::collections::HashSet;
 
-    fn check_siblings(
+    fn collect_nested_siblings(
         messages: &[crate::generated::descriptor::DescriptorProto],
         scope: &str,
-    ) -> Result<(), CodeGenError> {
-        // Collect all message names at this level.
+        out: &mut HashSet<String>,
+    ) {
         let names: HashSet<&str> = messages.iter().filter_map(|m| m.name.as_deref()).collect();
 
-        // For each message Foo, check if FooView also exists.
         for msg in messages {
             let name = msg.name.as_deref().unwrap_or("");
             let view_name = format!("{}View", name);
             if names.contains(view_name.as_str()) {
-                return Err(CodeGenError::ViewNameConflict {
-                    scope: scope.to_string(),
-                    owned_msg: name.to_string(),
-                    view_msg: view_name,
-                });
+                let fqn = if scope.is_empty() {
+                    name.to_string()
+                } else {
+                    format!("{}.{}", scope, name)
+                };
+                out.insert(fqn);
             }
         }
 
-        // Recurse into nested messages.
         for msg in messages {
             let name = msg.name.as_deref().unwrap_or("");
             let child_scope = if scope.is_empty() {
@@ -495,28 +462,58 @@ fn check_view_name_conflicts(file: &FileDescriptorProto) -> Result<(), CodeGenEr
             } else {
                 format!("{}.{}", scope, name)
             };
-            check_siblings(&msg.nested_type, &child_scope)?;
+            collect_nested_siblings(&msg.nested_type, &child_scope, out);
         }
-
-        Ok(())
     }
 
     let package = file.package.as_deref().unwrap_or("");
-    check_siblings(&file.message_type, package)
+    let mut skip = HashSet::new();
+
+    let global_top_level: HashSet<&str> = package_top_level
+        .get(package)
+        .map(|names| names.iter().map(String::as_str).collect())
+        .unwrap_or_default();
+
+    for msg in &file.message_type {
+        let name = msg.name.as_deref().unwrap_or("");
+        let view_name = format!("{}View", name);
+        if global_top_level.contains(view_name.as_str()) {
+            let fqn = if package.is_empty() {
+                name.to_string()
+            } else {
+                format!("{}.{}", package, name)
+            };
+            skip.insert(fqn);
+        }
+    }
+
+    for msg in &file.message_type {
+        let name = msg.name.as_deref().unwrap_or("");
+        let child_scope = if package.is_empty() {
+            name.to_string()
+        } else {
+            format!("{}.{}", package, name)
+        };
+        collect_nested_siblings(&msg.nested_type, &child_scope, &mut skip);
+    }
+
+    skip
 }
 
 /// Generate Rust source for a single `.proto` file.
 fn generate_file(
     ctx: &context::CodeGenContext,
     file: &FileDescriptorProto,
+    package_top_level: &std::collections::HashMap<String, std::collections::HashSet<String>>,
 ) -> Result<String, CodeGenError> {
     // Validate descriptors before generating code.
     check_reserved_field_names(file)?;
     check_module_name_conflicts(file)?;
-    check_nested_type_oneof_conflicts(file)?;
-    if ctx.config.generate_views {
-        check_view_name_conflicts(file)?;
-    }
+    let view_skip_fqns = if ctx.config.generate_views {
+        collect_view_skip_fqns(file, package_top_level)
+    } else {
+        std::collections::HashSet::new()
+    };
 
     let resolver = imports::ImportResolver::for_file(file);
     let mut tokens = resolver.generate_use_block();
@@ -559,6 +556,7 @@ fn generate_file(
             &proto_fqn,
             &features,
             &resolver,
+            &view_skip_fqns,
         )?;
         tokens.extend(msg_top);
         // Nested extension const paths are relative to the message's module
@@ -576,7 +574,7 @@ fn generate_file(
         reg.json_any.extend(msg_reg.json_any);
         reg.text_any.extend(msg_reg.text_any);
 
-        let view_mod = if ctx.config.generate_views {
+        let view_mod = if ctx.config.generate_views && !view_skip_fqns.contains(&proto_fqn) {
             let (view_top, view_mod) = view::generate_view(
                 ctx,
                 message_type,
@@ -584,6 +582,7 @@ fn generate_file(
                 top_level_name,
                 &proto_fqn,
                 &features,
+                &view_skip_fqns,
             )?;
             tokens.extend(view_top);
             view_mod
@@ -716,28 +715,15 @@ pub enum CodeGenError {
         name_b: String,
         module_name: String,
     },
-    /// A nested message/enum name collides with a oneof enum name inside
-    /// the same message module.
+    /// The `Oneof`-suffixed name chosen to disambiguate a oneof enum from a
+    /// nested type also collides with another nested type.
     #[error(
-        "name conflict in '{scope}': nested type '{nested_name}' and \
-         oneof '{oneof_name}' both produce '{rust_name}' in the message module"
+        "oneof '{oneof_name}' collides with a nested type, and the fallback \
+         name '{attempted}' also collides with another nested type"
     )]
-    NestedTypeOneofConflict {
-        scope: String,
-        nested_name: String,
+    OneofSuffixConflict {
         oneof_name: String,
-        rust_name: String,
-    },
-    /// A message named `FooView` collides with the generated view type for
-    /// message `Foo`.
-    #[error(
-        "name conflict in '{scope}': message '{view_msg}' collides with \
-         the generated view type for message '{owned_msg}'"
-    )]
-    ViewNameConflict {
-        scope: String,
-        owned_msg: String,
-        view_msg: String,
+        attempted: String,
     },
     /// The input contains a message with `option message_set_wire_format = true`
     /// but [`CodeGenConfig::allow_message_set`] was not set.

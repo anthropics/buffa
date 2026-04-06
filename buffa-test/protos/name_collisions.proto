@@ -48,9 +48,9 @@ message MethodNames {
 }
 
 // Message with a oneof whose PascalCase name matches the parent message.
-// message Foo with oneof foo → struct Foo + enum Foo in same module.
-// The enum should go in the message's module (pub mod foo { enum Foo })
-// so the names don't actually collide at the same level.
+// message Status with oneof status → the oneof enum is renamed to
+// StatusOneof to avoid shadowing the parent struct imported via
+// `use super::*` in the message module.
 message Status {
   oneof status {
     int32 code = 1;
