@@ -219,6 +219,7 @@ pub(crate) fn closed_enum_unknown_route(
 /// `preserve_unknown_fields`: when `true`, the generated merge collects
 /// unknown fields into `self.__buffa_unknown_fields` and both `compute_size` and
 /// `write_to` include them.
+#[allow(clippy::too_many_arguments)]
 pub fn generate_message_impl(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -227,6 +228,7 @@ pub fn generate_message_impl(
     current_package: &str,
     proto_fqn: &str,
     features: &ResolvedFeatures,
+    oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
 ) -> Result<TokenStream, CodeGenError> {
     let name_ident = format_ident!("{}", rust_name);
 
@@ -256,12 +258,13 @@ pub fn generate_message_impl(
         })
         .collect();
 
-    // Non-synthetic oneof groups: each entry is (oneof_name, fields[]).
-    let oneof_groups: Vec<(String, Vec<&FieldDescriptorProto>)> = msg
+    // Non-synthetic oneof groups: each entry is (oneof_name, enum_ident, fields[]).
+    let oneof_groups: Vec<(String, proc_macro2::Ident, Vec<&FieldDescriptorProto>)> = msg
         .oneof_decl
         .iter()
         .enumerate()
         .filter_map(|(idx, oneof)| {
+            let enum_ident = oneof_idents.get(&idx)?;
             let fields: Vec<_> = msg
                 .field
                 .iter()
@@ -270,7 +273,11 @@ pub fn generate_message_impl(
             if fields.is_empty() {
                 return None;
             }
-            Some((oneof.name.as_deref()?.to_string(), fields))
+            Some((
+                oneof.name.as_deref()?.to_string(),
+                enum_ident.clone(),
+                fields,
+            ))
         })
         .collect();
 
@@ -312,9 +319,10 @@ pub fn generate_message_impl(
     let mut oneof_compute_stmts: Vec<TokenStream> = Vec::new();
     let mut oneof_write_stmts: Vec<TokenStream> = Vec::new();
     let mut oneof_merge_arms: Vec<TokenStream> = Vec::new();
-    for (oneof_name, fields) in &oneof_groups {
+    for (oneof_name, enum_ident, fields) in &oneof_groups {
         let (cs, ws, mas) = generate_oneof_impls(
             ctx,
+            enum_ident,
             oneof_name,
             fields,
             &mod_ident,
@@ -455,7 +463,7 @@ pub fn generate_message_impl(
         .collect::<Result<Vec<_>, CodeGenError>>()?;
     let oneof_clear_stmts: Vec<TokenStream> = oneof_groups
         .iter()
-        .map(|(name, _)| {
+        .map(|(name, _, _)| {
             let ident = make_field_ident(name);
             quote! { self.#ident = ::core::option::Option::None; }
         })
@@ -2103,8 +2111,10 @@ fn oneof_merge_arm(
 ///
 /// Returns `(compute_stmt, write_stmt, merge_arms)` where `merge_arms` is one
 /// arm per field belonging to the oneof.
+#[allow(clippy::too_many_arguments)]
 fn generate_oneof_impls(
     ctx: &CodeGenContext,
+    enum_ident: &proc_macro2::Ident,
     oneof_name: &str,
     fields: &[&FieldDescriptorProto],
     mod_ident: &proc_macro2::Ident,
@@ -2113,7 +2123,6 @@ fn generate_oneof_impls(
     preserve_unknown_fields: bool,
 ) -> Result<(TokenStream, TokenStream, Vec<TokenStream>), CodeGenError> {
     let field_ident = make_field_ident(oneof_name);
-    let enum_ident = crate::oneof::oneof_enum_ident(oneof_name);
     // Module-qualified path: the oneof enum lives in the message's module.
     let qualified_enum: TokenStream = quote! { #mod_ident::#enum_ident };
 
