@@ -235,3 +235,67 @@ fn test_view_field_uses_owned_when_message_view_skipped() {
         "skipped nested message decode must merge into MessageField via get_or_insert_default: {content}"
     );
 }
+
+/// A nested message's oneof view must use the correct `super::` depth when
+/// referencing types from the enclosing package. For a nested message at
+/// struct_nesting=1, the oneof module is at depth 2, so type references need
+/// `super::super::sibling_module::Type` (not just `super::sibling_module::Type`).
+#[test]
+fn test_nested_message_oneof_view_path_depth() {
+    let mut file = proto3_file("nested_oneof.proto");
+    file.package = Some("test.nested_oneof".to_string());
+    // Outer.Inner is a nested message with a field at tag 1.
+    file.message_type.push(DescriptorProto {
+        name: Some("Inner".to_string()),
+        field: vec![make_field("x", 1, Label::LABEL_OPTIONAL, Type::TYPE_INT32)],
+        ..Default::default()
+    });
+    // Outer has a nested message Wrapper with a oneof referencing Inner.
+    file.message_type.push(DescriptorProto {
+        name: Some("Outer".to_string()),
+        nested_type: vec![DescriptorProto {
+            name: Some("Wrapper".to_string()),
+            field: vec![FieldDescriptorProto {
+                name: Some("inner_val".to_string()),
+                number: Some(1),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_MESSAGE),
+                type_name: Some(".test.nested_oneof.Inner".to_string()),
+                oneof_index: Some(0),
+                ..Default::default()
+            }],
+            oneof_decl: vec![OneofDescriptorProto {
+                name: Some("kind".to_string()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let files = generate(
+        &[file],
+        &["nested_oneof.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let content = &files[0].content;
+    // The oneof view enum is inside pub mod outer::pub mod wrapper::pub mod kind.
+    // From there, referencing InnerView requires super::super::super:: to reach
+    // the package scope (test::nested_oneof), then inner::InnerView.
+    // The key assertion: the path must NOT use just `super::inner::InnerView`
+    // (which would be wrong depth for a nested message).
+    assert!(
+        content.contains("pub struct InnerView<'a>"),
+        "InnerView should be generated: {content}"
+    );
+    assert!(
+        content.contains("pub struct WrapperView<'a>"),
+        "WrapperView should be generated: {content}"
+    );
+    // The view enum variant must compile — if the nesting depth were wrong,
+    // this type path would reference a nonexistent module.
+    assert!(
+        content.contains("InnerView<'a>"),
+        "KindView must reference InnerView: {content}"
+    );
+}

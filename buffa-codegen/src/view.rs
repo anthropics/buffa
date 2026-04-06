@@ -98,6 +98,7 @@ pub fn generate_view(
     proto_fqn: &str,
     features: &ResolvedFeatures,
     view_skip_fqns: &HashSet<String>,
+    struct_nesting: usize,
 ) -> Result<(TokenStream, TokenStream), CodeGenError> {
     let proto_name = msg.name.as_deref().unwrap_or(rust_name);
     let mod_name_str = crate::oneof::to_snake_case(proto_name);
@@ -158,6 +159,7 @@ pub fn generate_view(
                 features,
                 &oneof_idents,
                 view_skip_fqns,
+                struct_nesting,
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -700,6 +702,7 @@ fn generate_oneof_view_enum(
     features: &ResolvedFeatures,
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
     view_skip_fqns: &HashSet<String>,
+    struct_nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let base_ident = match oneof_idents.get(&idx) {
         Some(id) => id,
@@ -732,17 +735,18 @@ fn generate_oneof_view_enum(
                 Type::TYPE_STRING => quote! { &'a str },
                 Type::TYPE_BYTES => quote! { &'a [u8] },
                 Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
+                    let oneof_nesting = struct_nesting + 1;
                     if message_field_view_skipped(f, view_skip_fqns) {
                         let owned_ty =
-                            rust_path_to_tokens(&resolve_owned_path(ctx, f, current_package, 1)?);
+                            rust_path_to_tokens(&resolve_owned_path(ctx, f, current_package, oneof_nesting)?);
                         quote! { ::buffa::alloc::boxed::Box<#owned_ty> }
                     } else {
-                        let view_ty = resolve_view_ty_tokens(ctx, f, current_package, 1)?;
+                        let view_ty = resolve_view_ty_tokens(ctx, f, current_package, oneof_nesting)?;
                         quote! { ::buffa::alloc::boxed::Box<#view_ty> }
                     }
                 }
                 Type::TYPE_ENUM => {
-                    let et = resolve_enum_ty(ctx, f, current_package, 1)?;
+                    let et = resolve_enum_ty(ctx, f, current_package, struct_nesting + 1)?;
                     if is_closed_enum(&f_features) {
                         quote! { #et }
                     } else {
