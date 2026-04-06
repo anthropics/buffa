@@ -749,3 +749,72 @@ fn test_message_with_oneof_field_named_type() {
         "missing struct Type: {content}"
     );
 }
+
+#[test]
+fn test_nested_message_shadowing_sibling_module_path() {
+    // Reproducer for gh#38: nested message Picker.Validation shadows the
+    // top-level Validation module, causing oneof variant types like
+    // `super::validation::Boolean` to resolve to the wrong module.
+    //
+    // With the fix, nested messages get deeper nesting so the generated
+    // super:: chain escapes to the correct scope.
+
+    // Top-level Validation with nested Boolean.
+    let validation_msg = DescriptorProto {
+        name: Some("Validation".to_string()),
+        nested_type: vec![DescriptorProto {
+            name: Some("Boolean".to_string()),
+            field: vec![make_field("value", 1, Label::LABEL_OPTIONAL, Type::TYPE_BOOL)],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    // Top-level Picker with nested Validation that has a oneof referencing
+    // the top-level Validation.Boolean.
+    let picker_msg = DescriptorProto {
+        name: Some("Picker".to_string()),
+        nested_type: vec![DescriptorProto {
+            name: Some("Validation".to_string()),
+            field: vec![FieldDescriptorProto {
+                name: Some("date_selected".to_string()),
+                number: Some(1),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_MESSAGE),
+                type_name: Some(".test.oneof_sibling.Validation.Boolean".to_string()),
+                oneof_index: Some(0),
+                ..Default::default()
+            }],
+            oneof_decl: vec![OneofDescriptorProto {
+                name: Some("rule".to_string()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    let mut file = proto3_file("picker.proto");
+    file.package = Some("test.oneof_sibling".to_string());
+    file.message_type = vec![validation_msg, picker_msg];
+
+    let config = CodeGenConfig {
+        generate_views: false,
+        ..Default::default()
+    };
+    let result = generate(&[file], &["picker.proto".to_string()], &config);
+    let files = result.expect("nested message shadowing sibling should not break codegen");
+    let content = &files[0].content;
+
+    // The oneof variant must NOT use a single `super::validation::Boolean`
+    // which would resolve to the nested Picker.Validation module.
+    assert!(
+        !content.contains("DateSelected(super::validation::Boolean)"),
+        "single super:: resolves to nested module, not sibling: {content}"
+    );
+    // It should use two super:: hops to escape the nested module.
+    assert!(
+        content.contains("super::super::validation::Boolean"),
+        "must use super::super:: to reach sibling top-level module: {content}"
+    );
+}

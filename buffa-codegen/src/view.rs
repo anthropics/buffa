@@ -74,6 +74,7 @@ pub fn generate_view(
     rust_name: &str,
     proto_fqn: &str,
     features: &ResolvedFeatures,
+    struct_nesting: usize,
 ) -> Result<(TokenStream, TokenStream), CodeGenError> {
     let proto_name = msg.name.as_deref().unwrap_or(rust_name);
     let mod_name_str = crate::oneof::to_snake_case(proto_name);
@@ -93,7 +94,7 @@ pub fn generate_view(
         .field
         .iter()
         .filter(|f| is_supported_field_type(f.r#type.unwrap_or_default()))
-        .map(|f| view_struct_field(ctx, msg, f, current_package, proto_fqn, features))
+        .map(|f| view_struct_field(ctx, msg, f, current_package, proto_fqn, features, struct_nesting))
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .flatten()
@@ -109,13 +110,13 @@ pub fn generate_view(
         .iter()
         .enumerate()
         .map(|(idx, oneof)| {
-            generate_oneof_view_enum(ctx, msg, idx, oneof, current_package, features, &oneof_idents)
+            generate_oneof_view_enum(ctx, msg, idx, oneof, current_package, features, &oneof_idents, struct_nesting + 1)
         })
         .collect::<Result<Vec<_>, _>>()?;
 
     // decode_view match arms.
     let (scalar_arms, repeated_arms, oneof_arms) =
-        build_decode_arms(ctx, msg, current_package, &mod_ident, features, &oneof_idents)?;
+        build_decode_arms(ctx, msg, current_package, &mod_ident, features, &oneof_idents, struct_nesting)?;
 
     // to_owned_message field initialisers.
     let owned_fields = build_to_owned_fields(
@@ -127,6 +128,7 @@ pub fn generate_view(
         &mod_ident,
         ctx.config.preserve_unknown_fields,
         &oneof_idents,
+        struct_nesting,
     )?;
 
     let unknown_fields_field = if ctx.config.preserve_unknown_fields {
@@ -294,6 +296,7 @@ pub fn generate_view(
 // View struct field declarations
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn view_struct_field(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -301,6 +304,7 @@ fn view_struct_field(
     current_package: &str,
     proto_fqn: &str,
     features: &ResolvedFeatures,
+    struct_nesting: usize,
 ) -> Result<Option<TokenStream>, CodeGenError> {
     // Real oneof members go into the oneof enum, not directly on the struct.
     if is_real_oneof_member(field) {
@@ -321,7 +325,7 @@ fn view_struct_field(
         let number = field.number.unwrap_or(0);
         let tag_line = format!("Field {number}: `{field_name}` (map)");
         let doc = crate::comments::doc_attrs_with_tag(proto_comment, &tag_line);
-        let map_ty = view_map_type(ctx, msg, field, current_package, features)?;
+        let map_ty = view_map_type(ctx, msg, field, current_package, features, struct_nesting)?;
         return Ok(Some(quote! {
             #doc
             pub #ident: #map_ty,
@@ -334,9 +338,9 @@ fn view_struct_field(
     let doc = crate::comments::doc_attrs_with_tag(proto_comment, &tag_line);
 
     let rust_type = if is_repeated {
-        view_repeated_type(ctx, field, current_package, features)?
+        view_repeated_type(ctx, field, current_package, features, struct_nesting)?
     } else {
-        view_singular_type(ctx, field, current_package, features)?
+        view_singular_type(ctx, field, current_package, features, struct_nesting)?
     };
 
     // Self-referential view fields (e.g. HttpRuleView.additional_bindings)
@@ -366,6 +370,7 @@ fn view_singular_type(
     field: &FieldDescriptorProto,
     current_package: &str,
     parent_features: &ResolvedFeatures,
+    nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let features = &crate::features::resolve_field(ctx, field, parent_features);
     let ty = effective_type(ctx, field, features);
@@ -375,7 +380,7 @@ fn view_singular_type(
             Type::TYPE_STRING => quote! { ::core::option::Option<&'a str> },
             Type::TYPE_BYTES => quote! { ::core::option::Option<&'a [u8]> },
             Type::TYPE_ENUM => {
-                let et = resolve_enum_ty(ctx, field, current_package, 0)?;
+                let et = resolve_enum_ty(ctx, field, current_package, nesting)?;
                 if is_closed_enum(features) {
                     quote! { ::core::option::Option<#et> }
                 } else {
@@ -393,11 +398,11 @@ fn view_singular_type(
         Type::TYPE_STRING => Ok(quote! { &'a str }),
         Type::TYPE_BYTES => Ok(quote! { &'a [u8] }),
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
-            let view_ty = resolve_view_ty_tokens(ctx, field, current_package, 0)?;
+            let view_ty = resolve_view_ty_tokens(ctx, field, current_package, nesting)?;
             Ok(quote! { ::buffa::MessageFieldView<#view_ty> })
         }
         Type::TYPE_ENUM => {
-            let et = resolve_enum_ty(ctx, field, current_package, 0)?;
+            let et = resolve_enum_ty(ctx, field, current_package, nesting)?;
             if is_closed_enum(features) {
                 Ok(quote! { #et })
             } else {
@@ -413,6 +418,7 @@ fn view_repeated_type(
     field: &FieldDescriptorProto,
     current_package: &str,
     parent_features: &ResolvedFeatures,
+    nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let features = &crate::features::resolve_field(ctx, field, parent_features);
     let ty = effective_type(ctx, field, features);
@@ -420,11 +426,11 @@ fn view_repeated_type(
         Type::TYPE_STRING => Ok(quote! { ::buffa::RepeatedView<'a, &'a str> }),
         Type::TYPE_BYTES => Ok(quote! { ::buffa::RepeatedView<'a, &'a [u8]> }),
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
-            let view_ty = resolve_view_ty_tokens(ctx, field, current_package, 0)?;
+            let view_ty = resolve_view_ty_tokens(ctx, field, current_package, nesting)?;
             Ok(quote! { ::buffa::RepeatedView<'a, #view_ty> })
         }
         Type::TYPE_ENUM => {
-            let et = resolve_enum_ty(ctx, field, current_package, 0)?;
+            let et = resolve_enum_ty(ctx, field, current_package, nesting)?;
             if is_closed_enum(features) {
                 Ok(quote! { ::buffa::RepeatedView<'a, #et> })
             } else {
@@ -439,12 +445,14 @@ fn view_repeated_type(
 }
 
 /// Build the `::buffa::MapView<'a, K, V>` type for a map field.
+#[allow(clippy::too_many_arguments)]
 fn view_map_type(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
     field: &FieldDescriptorProto,
     current_package: &str,
     features: &ResolvedFeatures,
+    nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
 
@@ -459,11 +467,11 @@ fn view_map_type(
         Type::TYPE_STRING => quote! { &'a str },
         Type::TYPE_BYTES => quote! { &'a [u8] },
         Type::TYPE_MESSAGE => {
-            let view_ty = resolve_view_ty_tokens(ctx, val_fd, current_package, 0)?;
+            let view_ty = resolve_view_ty_tokens(ctx, val_fd, current_package, nesting)?;
             quote! { #view_ty }
         }
         Type::TYPE_ENUM => {
-            let et = resolve_enum_ty(ctx, val_fd, current_package, 0)?;
+            let et = resolve_enum_ty(ctx, val_fd, current_package, nesting)?;
             let val_features = crate::features::resolve_field(ctx, val_fd, features);
             if is_closed_enum(&val_features) {
                 quote! { #et }
@@ -587,6 +595,7 @@ fn oneof_view_struct_fields(
 // Oneof view enum
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn generate_oneof_view_enum(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -595,6 +604,7 @@ fn generate_oneof_view_enum(
     current_package: &str,
     features: &ResolvedFeatures,
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
+    module_nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let base_ident = match oneof_idents.get(&idx) {
         Some(id) => id,
@@ -627,11 +637,11 @@ fn generate_oneof_view_enum(
                 Type::TYPE_STRING => quote! { &'a str },
                 Type::TYPE_BYTES => quote! { &'a [u8] },
                 Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
-                    let view_ty = resolve_view_ty_tokens(ctx, f, current_package, 1)?;
+                    let view_ty = resolve_view_ty_tokens(ctx, f, current_package, module_nesting)?;
                     quote! { ::buffa::alloc::boxed::Box<#view_ty> }
                 }
                 Type::TYPE_ENUM => {
-                    let et = resolve_enum_ty(ctx, f, current_package, 1)?;
+                    let et = resolve_enum_ty(ctx, f, current_package, module_nesting)?;
                     if is_closed_enum(&f_features) {
                         quote! { #et }
                     } else {
@@ -663,6 +673,7 @@ fn generate_oneof_view_enum(
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
 fn build_decode_arms(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -670,6 +681,7 @@ fn build_decode_arms(
     mod_ident: &proc_macro2::Ident,
     features: &ResolvedFeatures,
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
+    struct_nesting: usize,
 ) -> Result<(Vec<TokenStream>, Vec<TokenStream>, Vec<TokenStream>), CodeGenError> {
     let preserve_unknown_fields = ctx.config.preserve_unknown_fields;
     let scalar_fields: Vec<_> = msg
@@ -685,7 +697,7 @@ fn build_decode_arms(
         .collect();
     let scalar_arms = scalar_fields
         .iter()
-        .map(|f| scalar_decode_arm(ctx, f, current_package, features, preserve_unknown_fields))
+        .map(|f| scalar_decode_arm(ctx, f, current_package, features, preserve_unknown_fields, struct_nesting))
         .collect::<Result<Vec<_>, _>>()?;
 
     let repeated_fields: Vec<_> = msg
@@ -699,7 +711,7 @@ fn build_decode_arms(
         .collect();
     let mut repeated_arms: Vec<_> = repeated_fields
         .iter()
-        .map(|f| repeated_decode_arm(ctx, f, current_package, features, preserve_unknown_fields))
+        .map(|f| repeated_decode_arm(ctx, f, current_package, features, preserve_unknown_fields, struct_nesting))
         .collect::<Result<Vec<_>, _>>()?;
 
     // Map fields: decode entries into MapView.
@@ -710,7 +722,7 @@ fn build_decode_arms(
         .collect();
     let map_arms = map_fields
         .iter()
-        .map(|f| map_decode_arm(ctx, msg, f, current_package, features))
+        .map(|f| map_decode_arm(ctx, msg, f, current_package, features, struct_nesting))
         .collect::<Result<Vec<_>, _>>()?;
     repeated_arms.extend(map_arms);
 
@@ -738,6 +750,7 @@ fn build_decode_arms(
             mod_ident,
             features,
             preserve_unknown_fields,
+            struct_nesting,
         )?);
     }
 
@@ -750,6 +763,7 @@ fn scalar_decode_arm(
     current_package: &str,
     parent_features: &ResolvedFeatures,
     preserve_unknown_fields: bool,
+    struct_nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let features = &crate::features::resolve_field(ctx, field, parent_features);
     let field_name = field
@@ -810,7 +824,7 @@ fn scalar_decode_arm(
             }
         }
         Type::TYPE_MESSAGE => {
-            let vt = resolve_view_decode_tokens(ctx, field, current_package, 0)?;
+            let vt = resolve_view_decode_tokens(ctx, field, current_package, struct_nesting)?;
             quote! {
                 if depth == 0 {
                     return Err(::buffa::DecodeError::RecursionLimitExceeded);
@@ -827,7 +841,7 @@ fn scalar_decode_arm(
             }
         }
         Type::TYPE_GROUP => {
-            let vt = resolve_view_decode_tokens(ctx, field, current_package, 0)?;
+            let vt = resolve_view_decode_tokens(ctx, field, current_package, struct_nesting)?;
             quote! {
                 if depth == 0 {
                     return Err(::buffa::DecodeError::RecursionLimitExceeded);
@@ -856,6 +870,7 @@ fn repeated_decode_arm(
     current_package: &str,
     parent_features: &ResolvedFeatures,
     preserve_unknown_fields: bool,
+    struct_nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let features = &crate::features::resolve_field(ctx, field, parent_features);
     let field_name = field
@@ -873,7 +888,7 @@ fn repeated_decode_arm(
             &quote! { ::buffa::encoding::WireType::LengthDelimited },
             2u8,
         );
-        let vt = resolve_view_decode_tokens(ctx, field, current_package, 0)?;
+        let vt = resolve_view_decode_tokens(ctx, field, current_package, struct_nesting)?;
         return Ok(quote! {
             #field_number => {
                 #ld_check
@@ -893,7 +908,7 @@ fn repeated_decode_arm(
             &quote! { ::buffa::encoding::WireType::StartGroup },
             3u8,
         );
-        let vt = resolve_view_decode_tokens(ctx, field, current_package, 0)?;
+        let vt = resolve_view_decode_tokens(ctx, field, current_package, struct_nesting)?;
         return Ok(quote! {
             #field_number => {
                 #sg_check
@@ -982,6 +997,7 @@ fn map_decode_arm(
     field: &FieldDescriptorProto,
     current_package: &str,
     features: &ResolvedFeatures,
+    struct_nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let field_name = field
         .name
@@ -1015,6 +1031,7 @@ fn map_decode_arm(
         &format_ident!("key"),
         current_package,
         features,
+        struct_nesting,
     )?;
     let decode_val = map_view_entry_decode(
         ctx,
@@ -1022,6 +1039,7 @@ fn map_decode_arm(
         &format_ident!("val"),
         current_package,
         features,
+        struct_nesting,
     )?;
 
     Ok(quote! {
@@ -1054,6 +1072,7 @@ fn map_view_entry_decode(
     var: &proc_macro2::Ident,
     current_package: &str,
     parent_features: &ResolvedFeatures,
+    struct_nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let features = &crate::features::resolve_field(ctx, fd, parent_features);
     let ty = effective_type_in_map_entry(ctx, fd, features);
@@ -1080,7 +1099,7 @@ fn map_view_entry_decode(
             }
         }
         Type::TYPE_MESSAGE => {
-            let vt = resolve_view_decode_tokens(ctx, fd, current_package, 0)?;
+            let vt = resolve_view_decode_tokens(ctx, fd, current_package, struct_nesting)?;
             quote! {
                 if depth == 0 {
                     return Err(::buffa::DecodeError::RecursionLimitExceeded);
@@ -1108,6 +1127,7 @@ fn oneof_decode_arms(
     mod_ident: &proc_macro2::Ident,
     features: &ResolvedFeatures,
     preserve_unknown_fields: bool,
+    struct_nesting: usize,
 ) -> Result<Vec<TokenStream>, CodeGenError> {
     let field_ident = make_field_ident(oneof_name);
     let view_enum_simple = format_ident!("{}View", base_ident);
@@ -1132,11 +1152,7 @@ fn oneof_decode_arms(
                 Type::TYPE_STRING => quote! { ::buffa::types::borrow_str(&mut cur)? },
                 Type::TYPE_BYTES => quote! { ::buffa::types::borrow_bytes(&mut cur)? },
                 Type::TYPE_MESSAGE => {
-                    let vt = resolve_view_decode_tokens(ctx, field, current_package, 0)?;
-                    // Proto merge semantics: if this same variant is already set,
-                    // merge into the existing boxed view rather than replacing.
-                    // Uses an early `return Ok(...)` since the merge path doesn't
-                    // fit the `value` expression shape used by scalar variants.
+                    let vt = resolve_view_decode_tokens(ctx, field, current_package, struct_nesting)?;
                     return Ok(quote! {
                         #field_number => {
                             #wire_check
@@ -1157,7 +1173,7 @@ fn oneof_decode_arms(
                     });
                 }
                 Type::TYPE_GROUP => {
-                    let vt = resolve_view_decode_tokens(ctx, field, current_package, 0)?;
+                    let vt = resolve_view_decode_tokens(ctx, field, current_package, struct_nesting)?;
                     return Ok(quote! {
                         #field_number => {
                             #wire_check
@@ -1225,6 +1241,7 @@ fn build_to_owned_fields(
     mod_ident: &proc_macro2::Ident,
     preserve_unknown_fields: bool,
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
+    struct_nesting: usize,
 ) -> Result<Vec<TokenStream>, CodeGenError> {
     let mut out = Vec::new();
 
@@ -1240,7 +1257,7 @@ fn build_to_owned_fields(
         let ident = make_field_ident(name);
         let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;
         if is_repeated && is_map_field(msg, field) {
-            let expr = map_to_owned_expr(ctx, msg, field, &ident, current_package, features)?;
+            let expr = map_to_owned_expr(ctx, msg, field, &ident, current_package, features, struct_nesting)?;
             out.push(quote! { #ident: #expr, });
             continue;
         }
@@ -1257,6 +1274,7 @@ fn build_to_owned_fields(
                 proto_fqn,
                 name,
                 features,
+                struct_nesting,
             )?
         };
         out.push(quote! { #ident: #init, });
@@ -1333,6 +1351,7 @@ fn singular_to_owned(
     proto_fqn: &str,
     field_name: &str,
     features: &ResolvedFeatures,
+    struct_nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     if is_explicit_presence_scalar(field, ty, features) {
         return Ok(match ty {
@@ -1348,7 +1367,7 @@ fn singular_to_owned(
         Type::TYPE_STRING => quote! { self.#ident.to_string() },
         Type::TYPE_BYTES => bytes_to_owned(ctx, proto_fqn, field_name, quote! { self.#ident }),
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
-            let owned_path = resolve_owned_path(ctx, field, current_package, 0)?;
+            let owned_path = resolve_owned_path(ctx, field, current_package, struct_nesting)?;
             // Use rust_path_to_tokens, not syn::parse_str: the latter chokes
             // on keyword segments like `super::super::type::LatLng`.
             let owned_ty = crate::message::rust_path_to_tokens(&owned_path);
@@ -1384,6 +1403,7 @@ fn repeated_to_owned(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn map_to_owned_expr(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -1391,6 +1411,7 @@ fn map_to_owned_expr(
     ident: &proc_macro2::Ident,
     current_package: &str,
     features: &ResolvedFeatures,
+    struct_nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
 
@@ -1406,7 +1427,7 @@ fn map_to_owned_expr(
         Type::TYPE_BYTES => quote! { v.to_vec() },
         Type::TYPE_MESSAGE => {
             // Verify the owned path resolves (catches missing imports at codegen time).
-            let _owned_path = resolve_owned_path(ctx, val_fd, current_package, 0)?;
+            let _owned_path = resolve_owned_path(ctx, val_fd, current_package, struct_nesting)?;
             quote! { v.to_owned_message() }
         }
         _ => quote! { *v },

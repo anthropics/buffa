@@ -62,6 +62,7 @@ struct VariantInfo {
     is_boxed: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_variant_info(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -70,6 +71,7 @@ fn collect_variant_info(
     proto_fqn: &str,
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
+    module_nesting: usize,
 ) -> Result<Vec<VariantInfo>, CodeGenError> {
     let oneof_index = msg
         .oneof_decl
@@ -106,7 +108,7 @@ fn collect_variant_info(
             {
                 quote! { ::bytes::Bytes }
             } else {
-                scalar_or_message_type_nested(ctx, field, current_package, 1, features, resolver)?
+                scalar_or_message_type_nested(ctx, field, current_package, module_nesting, features, resolver)?
             };
             Ok(VariantInfo {
                 variant_ident,
@@ -136,6 +138,7 @@ pub fn generate_oneof_enum(
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
+    module_nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let rust_enum_ident = match oneof_idents.get(&idx) {
         Some(id) => id.clone(),
@@ -154,6 +157,7 @@ pub fn generate_oneof_enum(
         proto_fqn,
         features,
         resolver,
+        module_nesting,
     )?;
     if variants_info.is_empty() {
         return Ok(TokenStream::new());

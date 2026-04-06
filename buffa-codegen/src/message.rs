@@ -66,6 +66,7 @@ pub fn generate_message(
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
     view_skip_fqns: &std::collections::HashSet<String>,
+    struct_nesting: usize,
 ) -> Result<(TokenStream, TokenStream, RegistryPaths), CodeGenError> {
     let name_ident = format_ident!("{}", rust_name);
 
@@ -127,6 +128,7 @@ pub fn generate_message(
                 &msg_features,
                 &child_resolver,
                 view_skip_fqns,
+                struct_nesting + 1,
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -137,7 +139,7 @@ pub fn generate_message(
     let generated_fields: Vec<GeneratedField> = msg
         .field
         .iter()
-        .map(|f| generate_field(ctx, msg, f, current_package, proto_fqn, features, resolver))
+        .map(|f| generate_field(ctx, msg, f, current_package, proto_fqn, features, resolver, struct_nesting))
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .flatten()
@@ -284,9 +286,9 @@ pub fn generate_message(
     let needs_custom_deserialize = ctx.config.generate_json
         && (has_real_oneofs || (has_extension_ranges && ctx.config.preserve_unknown_fields));
 
-    // Oneof enum definitions — emitted inside the message's module.
-    // Pass the file-level package as current_package, since
-    // nesting=1 in the oneof codegen handles the module depth.
+    // Oneof enum definitions — emitted inside the message's module,
+    // one nesting level deeper than the struct itself.
+    let module_nesting = struct_nesting + 1;
     let oneof_enums = msg
         .oneof_decl
         .iter()
@@ -302,6 +304,7 @@ pub fn generate_message(
                 features,
                 resolver,
                 &oneof_idents,
+                module_nesting,
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -315,6 +318,7 @@ pub fn generate_message(
         proto_fqn,
         features,
         &oneof_idents,
+        struct_nesting,
     )?;
 
     let text_impl = crate::impl_text::generate_text_impl(
@@ -326,6 +330,7 @@ pub fn generate_message(
         features,
         has_extension_ranges,
         &oneof_idents,
+        struct_nesting,
     )?;
 
     let type_url = format!("type.googleapis.com/{proto_fqn}");
@@ -408,6 +413,7 @@ pub fn generate_message(
             resolver,
             has_extension_ranges,
             &oneof_idents,
+            struct_nesting,
         )?
     } else {
         quote! {}
@@ -444,7 +450,7 @@ pub fn generate_message(
     // Check if any non-optional field has a custom default value, which
     // requires a hand-written `impl Default` instead of `#[derive(Default)]`.
     let custom_default_impl =
-        generate_custom_default(ctx, msg, &name_ident, current_package, features)?;
+        generate_custom_default(ctx, msg, &name_ident, current_package, features, struct_nesting)?;
     let derive_default = if custom_default_impl.is_some() {
         quote! {}
     } else {
@@ -515,6 +521,7 @@ pub fn generate_message(
                     nested_name,
                     &nested_fqn,
                     features,
+                    struct_nesting + 1,
                 )?;
                 nested_items.extend(view_top);
                 view_mod
@@ -536,14 +543,14 @@ pub fn generate_message(
     }
 
     // `extend` declarations nested inside this message. The consts land in
-    // the message's `pub mod`, one `super::` hop from package level.
+    // the message's `pub mod`, one nesting level deeper than the struct.
     // `proto_fqn` is the scope for JSON full_name construction.
     let (nested_extensions, nested_ext_json, nested_ext_text) =
         crate::extension::generate_extensions(
             ctx,
             &msg.extension,
             current_package,
-            1,
+            module_nesting,
             features,
             proto_fqn,
         )?;
@@ -648,6 +655,7 @@ fn generate_custom_deserialize(
     resolver: &crate::imports::ImportResolver,
     has_extension_ranges: bool,
     oneof_idents: &std::collections::HashMap<usize, Ident>,
+    struct_nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let mut field_vars = Vec::new();
     let mut match_arms = Vec::new();
@@ -666,6 +674,7 @@ fn generate_custom_deserialize(
             proto_fqn,
             features,
             resolver,
+            struct_nesting,
         )?;
         field_vars.push(var);
         match_arms.push(arm);
@@ -684,6 +693,7 @@ fn generate_custom_deserialize(
             mod_ident,
             features,
             resolver,
+            struct_nesting,
             oneof_idents,
         )?;
         let Some((var, arms, init)) = result else {
@@ -806,6 +816,7 @@ fn deser_seed_expr(rust_type: &TokenStream, inner: TokenStream) -> TokenStream {
 
 /// Emit the variable declaration, match arm, and field initializer for one
 /// regular (non-oneof) field in a custom `Deserialize` impl.
+#[allow(clippy::too_many_arguments)]
 fn custom_deser_regular_field(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -814,6 +825,7 @@ fn custom_deser_regular_field(
     proto_fqn: &str,
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
+    struct_nesting: usize,
 ) -> Result<(TokenStream, TokenStream, TokenStream), CodeGenError> {
     let field_name = field
         .name
@@ -831,6 +843,7 @@ fn custom_deser_regular_field(
         proto_fqn,
         features,
         resolver,
+        struct_nesting,
     )?;
     let rust_type = &info.rust_type;
 
@@ -891,6 +904,7 @@ fn custom_deser_oneof_group(
     mod_ident: &proc_macro2::Ident,
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
+    struct_nesting: usize,
     oneof_idents: &std::collections::HashMap<usize, Ident>,
 ) -> Result<Option<(TokenStream, Vec<TokenStream>, TokenStream)>, CodeGenError> {
     let oneof_name = oneof
@@ -930,7 +944,7 @@ fn custom_deser_oneof_group(
         {
             quote! { ::bytes::Bytes }
         } else {
-            scalar_or_message_type(ctx, field, current_package, features, resolver)?
+            scalar_or_message_type_nested(ctx, field, current_package, struct_nesting, features, resolver)?
         };
 
         // Module-qualified path for the oneof enum (lives in the message's module).
@@ -1006,6 +1020,7 @@ struct FieldInfo {
 /// Shared by `generate_field` (struct declaration) and the custom
 /// deserialize codegen to avoid duplicating the type-resolution
 /// if/else chain.
+#[allow(clippy::too_many_arguments)]
 fn classify_field(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -1014,6 +1029,7 @@ fn classify_field(
     proto_fqn: &str,
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
+    struct_nesting: usize,
 ) -> Result<FieldInfo, CodeGenError> {
     let label = field.label.unwrap_or_default();
     let field_type = crate::impl_message::effective_type(ctx, field, features);
@@ -1040,26 +1056,26 @@ fn classify_field(
     };
 
     let rust_type = if let Some(entry) = map_entry {
-        map_rust_type_from_entry(ctx, entry, current_package, features, resolver)?
+        map_rust_type_from_entry(ctx, entry, current_package, features, resolver, struct_nesting)?
     } else if is_repeated {
         let elem = if field_type == Type::TYPE_BYTES {
             bytes_type.clone()
         } else {
-            scalar_or_message_type(ctx, field, current_package, features, resolver)?
+            scalar_or_message_type_nested(ctx, field, current_package, struct_nesting, features, resolver)?
         };
         {
             let vec = resolver.vec();
             quote! { #vec<#elem> }
         }
     } else if field_type == Type::TYPE_MESSAGE || field_type == Type::TYPE_GROUP {
-        let inner = resolve_message_type(ctx, field, current_package, 0)?;
+        let inner = resolve_message_type(ctx, field, current_package, struct_nesting)?;
         {
             let mf = resolver.message_field();
             quote! { #mf<#inner> }
         }
     } else if is_optional {
         let inner = if field_type == Type::TYPE_ENUM {
-            resolve_enum_type(ctx, field, current_package, 0, features, resolver)?
+            resolve_enum_type(ctx, field, current_package, struct_nesting, features, resolver)?
         } else if field_type == Type::TYPE_BYTES {
             bytes_type.clone()
         } else {
@@ -1070,7 +1086,7 @@ fn classify_field(
             quote! { #opt<#inner> }
         }
     } else if field_type == Type::TYPE_ENUM {
-        resolve_enum_type(ctx, field, current_package, 0, features, resolver)?
+        resolve_enum_type(ctx, field, current_package, struct_nesting, features, resolver)?
     } else if field_type == Type::TYPE_BYTES {
         bytes_type
     } else {
@@ -1140,6 +1156,7 @@ struct GeneratedField {
     ident: Ident,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn generate_field(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -1148,6 +1165,7 @@ fn generate_field(
     proto_fqn: &str,
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
+    struct_nesting: usize,
 ) -> Result<Option<GeneratedField>, CodeGenError> {
     let field_name = field
         .name
@@ -1168,6 +1186,7 @@ fn generate_field(
         proto_fqn,
         features,
         resolver,
+        struct_nesting,
     )?;
     let rust_name = make_field_ident(field_name);
 
@@ -1259,6 +1278,7 @@ fn map_rust_type_from_entry(
     current_package: &str,
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
+    struct_nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let key_field = entry
         .field
@@ -1271,8 +1291,8 @@ fn map_rust_type_from_entry(
         .find(|f| f.number == Some(2))
         .ok_or(CodeGenError::MissingField("map_entry.value"))?;
 
-    let key_type = scalar_or_message_type(ctx, key_field, current_package, features, resolver)?;
-    let value_type = scalar_or_message_type(ctx, value_field, current_package, features, resolver)?;
+    let key_type = scalar_or_message_type_nested(ctx, key_field, current_package, struct_nesting, features, resolver)?;
+    let value_type = scalar_or_message_type_nested(ctx, value_field, current_package, struct_nesting, features, resolver)?;
 
     let hm = resolver.hashmap();
     Ok(quote! { #hm<#key_type, #value_type> })
@@ -1284,17 +1304,10 @@ fn map_rust_type_from_entry(
 /// same proto package (they will be in the same generated `pub mod`).
 ///
 /// Used by both this module and `oneof.rs`.
-pub fn scalar_or_message_type(
-    ctx: &CodeGenContext,
-    field: &crate::generated::descriptor::FieldDescriptorProto,
-    current_package: &str,
-    features: &ResolvedFeatures,
-    resolver: &crate::imports::ImportResolver,
-) -> Result<TokenStream, CodeGenError> {
-    scalar_or_message_type_nested(ctx, field, current_package, 0, features, resolver)
-}
-
-/// Like [`scalar_or_message_type`] but with explicit module nesting depth.
+/// Resolve a field's Rust type with explicit module nesting depth.
+///
+/// `nesting` is the number of `pub mod` levels from the package root
+/// to the item containing this type reference.
 pub fn scalar_or_message_type_nested(
     ctx: &CodeGenContext,
     field: &crate::generated::descriptor::FieldDescriptorProto,
@@ -1715,6 +1728,7 @@ fn generate_custom_default(
     name_ident: &Ident,
     current_package: &str,
     features: &ResolvedFeatures,
+    struct_nesting: usize,
 ) -> Result<Option<TokenStream>, CodeGenError> {
     // Custom defaults only apply when field presence is explicit (proto2,
     // or editions with explicit presence).
@@ -1777,7 +1791,7 @@ fn generate_custom_default(
             continue;
         }
 
-        if let Some(expr) = parse_default_value(field, ctx, current_package, features)? {
+        if let Some(expr) = parse_default_value(field, ctx, current_package, features, struct_nesting)? {
             field_inits.push(quote! { #field_ident: #expr, });
         } else {
             field_inits.push(quote! { #field_ident: ::core::default::Default::default(), });

@@ -492,6 +492,7 @@ fn generate_file(
             &features,
             &resolver,
             &view_skip_fqns,
+            0,
         )?;
         tokens.extend(msg_top);
         // Nested extension const paths are relative to the message's module
@@ -517,6 +518,7 @@ fn generate_file(
                 top_level_name,
                 &proto_fqn,
                 &features,
+                0,
             )?;
             tokens.extend(view_top);
             view_mod
