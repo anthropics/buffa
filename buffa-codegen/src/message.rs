@@ -384,6 +384,10 @@ pub fn generate_message(
     } else {
         quote! {}
     };
+    let custom_type_attrs =
+        CodeGenContext::matching_attributes(&ctx.config.type_attributes, proto_fqn);
+    let custom_message_attrs =
+        CodeGenContext::matching_attributes(&ctx.config.message_attributes, proto_fqn);
     let custom_deserialize = if needs_custom_deserialize {
         generate_custom_deserialize(
             ctx,
@@ -568,6 +572,8 @@ pub fn generate_message(
         #[derive(Clone, PartialEq, #derive_default)]
         #serde_struct_derive
         #arbitrary_derive
+        #custom_type_attrs
+        #custom_message_attrs
         pub struct #name_ident {
             #(#direct_fields)*
             #(#oneof_struct_fields)*
@@ -1163,10 +1169,13 @@ fn generate_field(
     } else {
         quote! {}
     };
+    let custom_field_attrs =
+        CodeGenContext::matching_attributes(&ctx.config.field_attributes, &field_fqn);
     let rust_type = &info.struct_field_type;
     let tokens = quote! {
         #doc
         #serde_attr
+        #custom_field_attrs
         pub #rust_name: #rust_type,
     };
     Ok(Some(GeneratedField {

@@ -266,6 +266,104 @@ impl Config {
         self
     }
 
+    /// Add a custom attribute to generated types (messages and enums)
+    /// matching a proto path prefix.
+    ///
+    /// `path` is a fully-qualified proto path prefix: `"."` applies to all
+    /// types, `".my.pkg"` to types in that package, `".my.pkg.MyMessage"`
+    /// to a specific type. `attribute` is a raw Rust attribute string
+    /// (e.g., `"#[derive(serde::Serialize)]"`).
+    ///
+    /// Multiple calls accumulate — all matching attributes are emitted.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// buffa_build::Config::new()
+    ///     .type_attribute(".", "#[derive(serde::Serialize)]")
+    ///     .type_attribute(".my.pkg.MyEnum", "#[derive(strum::EnumIter)]")
+    ///     .files(&["proto/my_service.proto"])
+    ///     .includes(&["proto/"])
+    ///     .compile()
+    ///     .unwrap();
+    /// ```
+    #[must_use]
+    pub fn type_attribute(mut self, path: impl Into<String>, attribute: impl Into<String>) -> Self {
+        let mut path = path.into();
+        if !path.starts_with('.') {
+            path.insert(0, '.');
+        }
+        self.codegen_config
+            .type_attributes
+            .push((path, attribute.into()));
+        self
+    }
+
+    /// Add a custom attribute to generated struct fields matching a proto
+    /// path prefix.
+    ///
+    /// `path` is a fully-qualified proto field path (e.g.,
+    /// `".my.pkg.MyMessage.my_field"`). `"."` applies to all fields.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// buffa_build::Config::new()
+    ///     .field_attribute(".my.pkg.MyMessage.secret_key", "#[serde(skip)]")
+    ///     .files(&["proto/my_service.proto"])
+    ///     .includes(&["proto/"])
+    ///     .compile()
+    ///     .unwrap();
+    /// ```
+    #[must_use]
+    pub fn field_attribute(
+        mut self,
+        path: impl Into<String>,
+        attribute: impl Into<String>,
+    ) -> Self {
+        let mut path = path.into();
+        if !path.starts_with('.') {
+            path.insert(0, '.');
+        }
+        self.codegen_config
+            .field_attributes
+            .push((path, attribute.into()));
+        self
+    }
+
+    /// Add a custom attribute to generated message structs only (not enums)
+    /// matching a proto path prefix.
+    ///
+    /// Same path-matching semantics as [`type_attribute`](Self::type_attribute),
+    /// but only applied to message structs. Useful for struct-only attributes
+    /// like `#[serde(default)]`.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// buffa_build::Config::new()
+    ///     .message_attribute(".", "#[serde(default)]")
+    ///     .files(&["proto/my_service.proto"])
+    ///     .includes(&["proto/"])
+    ///     .compile()
+    ///     .unwrap();
+    /// ```
+    #[must_use]
+    pub fn message_attribute(
+        mut self,
+        path: impl Into<String>,
+        attribute: impl Into<String>,
+    ) -> Self {
+        let mut path = path.into();
+        if !path.starts_with('.') {
+            path.insert(0, '.');
+        }
+        self.codegen_config
+            .message_attributes
+            .push((path, attribute.into()));
+        self
+    }
+
     /// Use `buf build` instead of `protoc` for descriptor generation.
     ///
     /// `buf` is often easier to install and keep current than `protoc`
