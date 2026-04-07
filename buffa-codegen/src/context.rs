@@ -288,6 +288,39 @@ impl<'a> CodeGenContext<'a> {
         Some(result)
     }
 
+    /// Collect custom attributes matching a fully-qualified proto path.
+    ///
+    /// Returns a `TokenStream` of all `#[...]` attributes whose path prefix
+    /// matches `fqn`. Each attribute string is parsed via `syn::parse_str`
+    /// so the caller can interpolate directly into `quote!`.
+    ///
+    /// `fqn` uses dotted form without a leading dot (e.g., `"my.pkg.MyMessage"`).
+    pub fn matching_attributes(attrs: &[(String, String)], fqn: &str) -> proc_macro2::TokenStream {
+        if attrs.is_empty() {
+            return proc_macro2::TokenStream::new();
+        }
+        let fqn_dotted = format!(".{fqn}");
+        let mut tokens = proc_macro2::TokenStream::new();
+        for (prefix, attr_str) in attrs {
+            let matched = *prefix == "."
+                || fqn_dotted == *prefix
+                || (fqn_dotted.starts_with(prefix.as_str())
+                    && fqn_dotted.as_bytes().get(prefix.len()) == Some(&b'.'));
+            if matched {
+                match syn::parse_str::<proc_macro2::TokenStream>(attr_str) {
+                    Ok(parsed) => tokens.extend(parsed),
+                    Err(_) => {
+                        // Emit as a string doc comment so the user sees the error
+                        // in generated code rather than a silent drop.
+                        let msg = format!("buffa: failed to parse attribute: {attr_str}");
+                        tokens.extend(quote::quote! { #[doc = #msg] });
+                    }
+                }
+            }
+        }
+        tokens
+    }
+
     /// Check whether a bytes field at the given proto path should use
     /// `bytes::Bytes` instead of `Vec<u8>`.
     ///
@@ -1131,5 +1164,64 @@ mod tests {
             ctx.rust_type(".google.protobuf.Timestamp"),
             Some("google::protobuf::Timestamp")
         );
+    }
+
+    // ── matching_attributes tests ──────────────────────────────────────
+
+    #[test]
+    fn test_matching_attributes_catchall() {
+        // "." matches every type.
+        let attrs = vec![(".".into(), "#[derive(Foo)]".into())];
+        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage");
+        assert!(result.to_string().contains("derive"));
+    }
+
+    #[test]
+    fn test_matching_attributes_exact_match() {
+        let attrs = vec![(".my.pkg.MyMessage".into(), "#[derive(Bar)]".into())];
+        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage");
+        assert!(result.to_string().contains("derive"));
+    }
+
+    #[test]
+    fn test_matching_attributes_package_prefix() {
+        let attrs = vec![(".my.pkg".into(), "#[derive(Baz)]".into())];
+        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage");
+        assert!(result.to_string().contains("derive"));
+    }
+
+    #[test]
+    fn test_matching_attributes_no_partial_segment_match() {
+        // ".my.pk" must not match ".my.pkg" (partial segment).
+        let attrs = vec![(".my.pk".into(), "#[derive(Bad)]".into())];
+        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_matching_attributes_no_match() {
+        let attrs = vec![(".other.pkg".into(), "#[derive(Nope)]".into())];
+        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_matching_attributes_multiple_accumulate() {
+        // All matching entries are emitted, not just the first.
+        let attrs = vec![
+            (".".into(), "#[derive(A)]".into()),
+            (".my.pkg".into(), "#[derive(B)]".into()),
+        ];
+        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage");
+        let s = result.to_string();
+        assert!(s.contains("A") && s.contains("B"));
+    }
+
+    #[test]
+    fn test_matching_attributes_invalid_attr_produces_doc() {
+        // Unparseable attributes become doc comments so the error is visible.
+        let attrs = vec![(".".into(), "not valid {{{{".into())];
+        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.Msg");
+        assert!(result.to_string().contains("failed to parse attribute"));
     }
 }
