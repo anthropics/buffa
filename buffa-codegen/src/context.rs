@@ -810,6 +810,62 @@ mod tests {
         );
     }
 
+    // ── Nesting depth tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_relative_cross_package_nesting_1() {
+        // Simulates a nested message (inside a `pub mod`) referencing a type
+        // from a sibling package. E.g., account.business.admin.v1 nested msg
+        // referencing account.business.v1.Business.Status.
+        let outer = msg_with_nested_and_enums("Business", vec![], vec![enum_desc("Status")]);
+        let files = [
+            make_file("admin.proto", "a.b.admin.v1", vec![msg("Svc")], vec![]),
+            make_file("biz.proto", "a.b.v1", vec![outer], vec![]),
+        ];
+        let config = CodeGenConfig::default();
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+
+        // nesting=0 (top-level struct in admin.v1): up 2 (v1→admin), into v1
+        assert_eq!(
+            ctx.rust_type_relative(".a.b.v1.Business.Status", "a.b.admin.v1", 0),
+            Some("super::super::v1::business::Status".into())
+        );
+        // nesting=1 (inside a nested message module): one extra super::
+        assert_eq!(
+            ctx.rust_type_relative(".a.b.v1.Business.Status", "a.b.admin.v1", 1),
+            Some("super::super::super::v1::business::Status".into())
+        );
+    }
+
+    #[test]
+    fn test_relative_same_package_nesting_1() {
+        // Nested message referencing a sibling type in the same package.
+        let files = [make_file(
+            "test.proto",
+            "pkg",
+            vec![msg("Foo"), msg("Bar")],
+            vec![],
+        )];
+        let config = CodeGenConfig::default();
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+
+        // nesting=0: same package, just the name
+        assert_eq!(
+            ctx.rust_type_relative(".pkg.Foo", "pkg", 0),
+            Some("Foo".into())
+        );
+        // nesting=1: inside a message module, needs one super::
+        assert_eq!(
+            ctx.rust_type_relative(".pkg.Foo", "pkg", 1),
+            Some("super::Foo".into())
+        );
+        // nesting=2: doubly nested
+        assert_eq!(
+            ctx.rust_type_relative(".pkg.Foo", "pkg", 2),
+            Some("super::super::Foo".into())
+        );
+    }
+
     // ── Extern path tests ─────────────────────────────────────────────
 
     #[test]
