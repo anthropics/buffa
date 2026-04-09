@@ -799,7 +799,7 @@ pub mod code_generator_response {
         /// into the code generation metadata for the generated files.
         ///
         /// Field 16: `generated_code_info`
-        pub generated_code_info: ::buffa::MessageField<super::GeneratedCodeInfo>,
+        pub generated_code_info: ::buffa::MessageField<super::super::GeneratedCodeInfo>,
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
         #[doc(hidden)]

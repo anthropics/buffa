@@ -340,6 +340,54 @@ impl<'a> CodeGenContext<'a> {
     }
 }
 
+/// Scope-local context for code generation within a message.
+///
+/// Bundles the parameters that are constant within a single message's code
+/// generation scope and change only when recursing into nested messages.
+/// Threading this struct instead of five individual parameters keeps function
+/// signatures short and makes adding new scope-level state a one-field change.
+#[derive(Clone, Copy)]
+pub(crate) struct MessageScope<'a> {
+    /// Global codegen context (descriptors, type map, config).
+    pub ctx: &'a CodeGenContext<'a>,
+    /// Proto package of the file being generated (e.g. `"google.protobuf"`).
+    pub current_package: &'a str,
+    /// Fully-qualified proto name of the current message
+    /// (e.g. `"google.protobuf.Timestamp"`, `"pkg.Outer.Inner"`).
+    pub proto_fqn: &'a str,
+    /// Resolved edition features for this message scope.
+    pub features: &'a ResolvedFeatures,
+    /// Module nesting depth — number of `pub mod` levels the generated code
+    /// sits inside.  Controls the count of `super::` prefixes in type
+    /// references via [`CodeGenContext::rust_type_relative`].
+    pub nesting: usize,
+}
+
+impl<'a> MessageScope<'a> {
+    /// Create a child scope for a nested message (increments nesting by 1).
+    pub fn nested(&self, proto_fqn: &'a str, features: &'a ResolvedFeatures) -> MessageScope<'a> {
+        MessageScope {
+            ctx: self.ctx,
+            current_package: self.current_package,
+            proto_fqn,
+            features,
+            nesting: self.nesting + 1,
+        }
+    }
+
+    /// Return a copy of this scope with the nesting depth incremented by 1.
+    ///
+    /// Use this when generating code that will live inside the message's own
+    /// `pub mod` (e.g. oneof view enums) without changing the identity
+    /// (`proto_fqn`, `features`).
+    pub fn deeper(&self) -> MessageScope<'a> {
+        MessageScope {
+            nesting: self.nesting + 1,
+            ..*self
+        }
+    }
+}
+
 /// Proto-segment-aware prefix match: `prefix` matches `fqn_dotted` if
 /// `prefix == "."`, the two are equal, or `fqn_dotted` starts with `prefix`
 /// followed by a `.` boundary. Proto identifiers are ASCII, and `.` is ASCII,
@@ -856,6 +904,62 @@ mod tests {
         assert_eq!(
             ctx.rust_type_relative(".a.bc.Msg2", "a.b", 0),
             Some("super::bc::Msg2".into())
+        );
+    }
+
+    // ── Nesting depth tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_relative_cross_package_nesting_1() {
+        // Simulates a nested message (inside a `pub mod`) referencing a type
+        // from a sibling package. E.g., account.business.admin.v1 nested msg
+        // referencing account.business.v1.Business.Status.
+        let outer = msg_with_nested_and_enums("Business", vec![], vec![enum_desc("Status")]);
+        let files = [
+            make_file("admin.proto", "a.b.admin.v1", vec![msg("Svc")], vec![]),
+            make_file("biz.proto", "a.b.v1", vec![outer], vec![]),
+        ];
+        let config = CodeGenConfig::default();
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+
+        // nesting=0 (top-level struct in admin.v1): up 2 (v1→admin), into v1
+        assert_eq!(
+            ctx.rust_type_relative(".a.b.v1.Business.Status", "a.b.admin.v1", 0),
+            Some("super::super::v1::business::Status".into())
+        );
+        // nesting=1 (inside a nested message module): one extra super::
+        assert_eq!(
+            ctx.rust_type_relative(".a.b.v1.Business.Status", "a.b.admin.v1", 1),
+            Some("super::super::super::v1::business::Status".into())
+        );
+    }
+
+    #[test]
+    fn test_relative_same_package_nesting_1() {
+        // Nested message referencing a sibling type in the same package.
+        let files = [make_file(
+            "test.proto",
+            "pkg",
+            vec![msg("Foo"), msg("Bar")],
+            vec![],
+        )];
+        let config = CodeGenConfig::default();
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+
+        // nesting=0: same package, just the name
+        assert_eq!(
+            ctx.rust_type_relative(".pkg.Foo", "pkg", 0),
+            Some("Foo".into())
+        );
+        // nesting=1: inside a message module, needs one super::
+        assert_eq!(
+            ctx.rust_type_relative(".pkg.Foo", "pkg", 1),
+            Some("super::Foo".into())
+        );
+        // nesting=2: doubly nested
+        assert_eq!(
+            ctx.rust_type_relative(".pkg.Foo", "pkg", 2),
+            Some("super::super::Foo".into())
         );
     }
 

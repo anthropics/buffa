@@ -133,6 +133,7 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                 "strict_utf8" | "strict_utf8_mapping" => {
                     codegen.strict_utf8_mapping = value.trim() == "true"
                 }
+                "register_types" => codegen.emit_register_fn = value.trim() != "false",
                 "extern_path" => {
                     // value is "<proto_path>=<rust_path>"
                     if let Some((proto, rust)) = value.split_once('=') {
@@ -263,6 +264,24 @@ mod tests {
         // Missing "=" in the value — should not panic.
         let config = parse_config("extern_path=no_equals_sign").unwrap();
         assert!(config.codegen.extern_paths.is_empty());
+    }
+
+    #[test]
+    fn register_types_false() {
+        let config = parse_config("register_types=false").unwrap();
+        assert!(!config.codegen.emit_register_fn);
+    }
+
+    #[test]
+    fn register_types_true() {
+        let config = parse_config("register_types=true").unwrap();
+        assert!(config.codegen.emit_register_fn);
+    }
+
+    #[test]
+    fn register_types_default_is_true() {
+        let config = parse_config("").unwrap();
+        assert!(config.codegen.emit_register_fn);
     }
 
     #[test]

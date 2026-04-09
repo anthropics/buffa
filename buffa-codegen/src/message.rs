@@ -5,7 +5,7 @@ use crate::generated::descriptor::DescriptorProto;
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
 
-use crate::context::CodeGenContext;
+use crate::context::{CodeGenContext, MessageScope};
 use crate::defaults::parse_default_value;
 use crate::features::ResolvedFeatures;
 use crate::impl_message::{is_explicit_presence_scalar, is_real_oneof_member};
@@ -65,6 +65,29 @@ pub fn generate_message(
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
 ) -> Result<(TokenStream, TokenStream, RegistryPaths), CodeGenError> {
+    let scope = MessageScope {
+        ctx,
+        current_package,
+        proto_fqn,
+        features,
+        nesting: 0,
+    };
+    generate_message_with_nesting(scope, msg, rust_name, resolver)
+}
+
+fn generate_message_with_nesting(
+    scope: MessageScope<'_>,
+    msg: &DescriptorProto,
+    rust_name: &str,
+    resolver: &crate::imports::ImportResolver,
+) -> Result<(TokenStream, TokenStream, RegistryPaths), CodeGenError> {
+    let MessageScope {
+        ctx,
+        current_package,
+        proto_fqn,
+        features,
+        nesting,
+    } = scope;
     let name_ident = format_ident!("{}", rust_name);
 
     // MessageSet wire format: legacy Google encoding that wraps each extension
@@ -110,13 +133,10 @@ pub fn generate_message(
             let nested_fqn = format!("{}.{}", proto_fqn, nested_proto_name);
             let msg_features =
                 crate::features::resolve_child(features, crate::features::message_features(nested));
-            generate_message(
-                ctx,
+            generate_message_with_nesting(
+                scope.nested(&nested_fqn, &msg_features),
                 nested,
-                current_package,
                 nested_proto_name,
-                &nested_fqn,
-                &msg_features,
                 resolver,
             )
         })
@@ -128,7 +148,7 @@ pub fn generate_message(
     let generated_fields: Vec<GeneratedField> = msg
         .field
         .iter()
-        .map(|f| generate_field(ctx, msg, f, current_package, proto_fqn, features, resolver))
+        .map(|f| generate_field(scope, msg, f, resolver))
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .flatten()
@@ -394,13 +414,10 @@ pub fn generate_message(
         CodeGenContext::matching_attributes(&ctx.config.message_attributes, proto_fqn)?;
     let custom_deserialize = if needs_custom_deserialize {
         generate_custom_deserialize(
-            ctx,
+            scope,
             msg,
             &name_ident,
-            current_package,
-            proto_fqn,
             &mod_ident,
-            features,
             resolver,
             has_extension_ranges,
             &oneof_idents,
@@ -502,13 +519,14 @@ pub fn generate_message(
         let view_mod_items = if ctx.config.generate_views {
             let nested_name = nested_desc.name.as_deref().unwrap_or("");
             let nested_fqn = format!("{}.{}", proto_fqn, nested_name);
-            let (view_top, view_mod) = crate::view::generate_view(
-                ctx,
+            let (view_top, view_mod) = crate::view::generate_view_with_nesting(
+                MessageScope {
+                    proto_fqn: &nested_fqn,
+                    nesting: nesting + 1,
+                    ..scope
+                },
                 nested_desc,
-                current_package,
                 nested_name,
-                &nested_fqn,
-                features,
             )?;
             nested_items.extend(view_top);
             view_mod
@@ -631,19 +649,22 @@ pub fn generate_message(
 /// derive-based approach.  Oneof fields are handled inline with
 /// `NullableDeserializeSeed` (null -> variant not set) and duplicate
 /// detection (error on second non-null variant).
-#[allow(clippy::too_many_arguments)]
 fn generate_custom_deserialize(
-    ctx: &CodeGenContext,
+    scope: MessageScope<'_>,
     msg: &DescriptorProto,
     name_ident: &proc_macro2::Ident,
-    current_package: &str,
-    proto_fqn: &str,
     mod_ident: &proc_macro2::Ident,
-    features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
     has_extension_ranges: bool,
     oneof_idents: &std::collections::HashMap<usize, Ident>,
 ) -> Result<TokenStream, CodeGenError> {
+    let MessageScope {
+        ctx,
+        current_package,
+        proto_fqn,
+        features,
+        ..
+    } = scope;
     let mut field_vars = Vec::new();
     let mut match_arms = Vec::new();
     let mut field_inits = Vec::new();
@@ -653,15 +674,7 @@ fn generate_custom_deserialize(
         if is_real_oneof_member(field) {
             continue;
         }
-        let (var, arm, init) = custom_deser_regular_field(
-            ctx,
-            msg,
-            field,
-            current_package,
-            proto_fqn,
-            features,
-            resolver,
-        )?;
+        let (var, arm, init) = custom_deser_regular_field(scope, msg, field, resolver)?;
         field_vars.push(var);
         match_arms.push(arm);
         field_inits.push(init);
@@ -736,7 +749,7 @@ fn generate_custom_deserialize(
 
     Ok(quote! {
         impl<'de> serde::Deserialize<'de> for #name_ident {
-            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> ::core::result::Result<Self, D::Error> {
                 struct _V;
                 impl<'de> serde::de::Visitor<'de> for _V {
                     type Value = #name_ident;
@@ -749,7 +762,7 @@ fn generate_custom_deserialize(
                     fn visit_map<A: serde::de::MapAccess<'de>>(
                         self,
                         mut map: A,
-                    ) -> Result<#name_ident, A::Error> {
+                    ) -> ::core::result::Result<#name_ident, A::Error> {
                         #(#field_vars)*
                         #ext_var
 
@@ -790,7 +803,7 @@ fn deser_seed_expr(rust_type: &TokenStream, inner: TokenStream) -> TokenStream {
         impl<'de> serde::de::DeserializeSeed<'de> for _S {
             type Value = #rust_type;
             fn deserialize<D: serde::Deserializer<'de>>(self, d: D)
-                -> Result<#rust_type, D::Error>
+                -> ::core::result::Result<#rust_type, D::Error>
             {
                 #inner
             }
@@ -802,14 +815,12 @@ fn deser_seed_expr(rust_type: &TokenStream, inner: TokenStream) -> TokenStream {
 /// Emit the variable declaration, match arm, and field initializer for one
 /// regular (non-oneof) field in a custom `Deserialize` impl.
 fn custom_deser_regular_field(
-    ctx: &CodeGenContext,
+    scope: MessageScope<'_>,
     msg: &DescriptorProto,
     field: &crate::generated::descriptor::FieldDescriptorProto,
-    current_package: &str,
-    proto_fqn: &str,
-    features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
 ) -> Result<(TokenStream, TokenStream, TokenStream), CodeGenError> {
+    let MessageScope { ctx, features, .. } = scope;
     let field_name = field
         .name
         .as_deref()
@@ -818,15 +829,7 @@ fn custom_deser_regular_field(
     let var_ident = format_ident!("__f_{}", field_name);
     let field_ident = make_field_ident(field_name);
 
-    let info = classify_field(
-        ctx,
-        msg,
-        field,
-        current_package,
-        proto_fqn,
-        features,
-        resolver,
-    )?;
+    let info = classify_field(scope, msg, field, resolver)?;
     let rust_type = &info.rust_type;
 
     let field_features = crate::features::resolve_field(ctx, field, features);
@@ -1002,14 +1005,18 @@ struct FieldInfo {
 /// deserialize codegen to avoid duplicating the type-resolution
 /// if/else chain.
 fn classify_field(
-    ctx: &CodeGenContext,
+    scope: MessageScope<'_>,
     msg: &DescriptorProto,
     field: &crate::generated::descriptor::FieldDescriptorProto,
-    current_package: &str,
-    proto_fqn: &str,
-    features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
 ) -> Result<FieldInfo, CodeGenError> {
+    let MessageScope {
+        ctx,
+        current_package,
+        proto_fqn,
+        features,
+        nesting,
+    } = scope;
     let label = field.label.unwrap_or_default();
     let field_type = crate::impl_message::effective_type(ctx, field, features);
     let is_repeated = label == Label::LABEL_REPEATED;
@@ -1035,26 +1042,26 @@ fn classify_field(
     };
 
     let rust_type = if let Some(entry) = map_entry {
-        map_rust_type_from_entry(ctx, entry, current_package, features, resolver)?
+        map_rust_type_from_entry(scope, entry, resolver)?
     } else if is_repeated {
         let elem = if field_type == Type::TYPE_BYTES {
             bytes_type.clone()
         } else {
-            scalar_or_message_type(ctx, field, current_package, features, resolver)?
+            scalar_or_message_type_nested(ctx, field, current_package, nesting, features, resolver)?
         };
         {
             let vec = resolver.vec();
             quote! { #vec<#elem> }
         }
     } else if field_type == Type::TYPE_MESSAGE || field_type == Type::TYPE_GROUP {
-        let inner = resolve_message_type(ctx, field, current_package, 0)?;
+        let inner = resolve_message_type(scope, field)?;
         {
             let mf = resolver.message_field();
             quote! { #mf<#inner> }
         }
     } else if is_optional {
         let inner = if field_type == Type::TYPE_ENUM {
-            resolve_enum_type(ctx, field, current_package, 0, features, resolver)?
+            resolve_enum_type(scope, field, resolver)?
         } else if field_type == Type::TYPE_BYTES {
             bytes_type.clone()
         } else {
@@ -1065,7 +1072,7 @@ fn classify_field(
             quote! { #opt<#inner> }
         }
     } else if field_type == Type::TYPE_ENUM {
-        resolve_enum_type(ctx, field, current_package, 0, features, resolver)?
+        resolve_enum_type(scope, field, resolver)?
     } else if field_type == Type::TYPE_BYTES {
         bytes_type
     } else {
@@ -1136,14 +1143,17 @@ struct GeneratedField {
 }
 
 fn generate_field(
-    ctx: &CodeGenContext,
+    scope: MessageScope<'_>,
     msg: &DescriptorProto,
     field: &crate::generated::descriptor::FieldDescriptorProto,
-    current_package: &str,
-    proto_fqn: &str,
-    features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
 ) -> Result<Option<GeneratedField>, CodeGenError> {
+    let MessageScope {
+        ctx,
+        proto_fqn,
+        features,
+        ..
+    } = scope;
     let field_name = field
         .name
         .as_deref()
@@ -1155,15 +1165,7 @@ fn generate_field(
         return Ok(None);
     }
 
-    let info = classify_field(
-        ctx,
-        msg,
-        field,
-        current_package,
-        proto_fqn,
-        features,
-        resolver,
-    )?;
+    let info = classify_field(scope, msg, field, resolver)?;
     let rust_name = make_field_ident(field_name);
 
     let field_fqn = format!("{}.{}", proto_fqn, field_name);
@@ -1252,12 +1254,17 @@ fn map_entry_value_type(
 
 /// Build the `HashMap<K, V>` Rust type from an already-resolved map entry descriptor.
 fn map_rust_type_from_entry(
-    ctx: &CodeGenContext,
+    scope: MessageScope<'_>,
     entry: &DescriptorProto,
-    current_package: &str,
-    features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
 ) -> Result<TokenStream, CodeGenError> {
+    let MessageScope {
+        ctx,
+        current_package,
+        features,
+        nesting,
+        ..
+    } = scope;
     let key_field = entry
         .field
         .iter()
@@ -1269,8 +1276,22 @@ fn map_rust_type_from_entry(
         .find(|f| f.number == Some(2))
         .ok_or(CodeGenError::MissingField("map_entry.value"))?;
 
-    let key_type = scalar_or_message_type(ctx, key_field, current_package, features, resolver)?;
-    let value_type = scalar_or_message_type(ctx, value_field, current_package, features, resolver)?;
+    let key_type = scalar_or_message_type_nested(
+        ctx,
+        key_field,
+        current_package,
+        nesting,
+        features,
+        resolver,
+    )?;
+    let value_type = scalar_or_message_type_nested(
+        ctx,
+        value_field,
+        current_package,
+        nesting,
+        features,
+        resolver,
+    )?;
 
     let hm = resolver.hashmap();
     Ok(quote! { #hm<#key_type, #value_type> })
@@ -1301,29 +1322,31 @@ pub fn scalar_or_message_type_nested(
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
 ) -> Result<TokenStream, CodeGenError> {
+    let scope = MessageScope {
+        ctx,
+        current_package,
+        proto_fqn: "",
+        features,
+        nesting,
+    };
     match crate::impl_message::effective_type(ctx, field, features) {
-        Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
-            resolve_message_type(ctx, field, current_package, nesting)
-        }
-        Type::TYPE_ENUM => {
-            resolve_enum_type(ctx, field, current_package, nesting, features, resolver)
-        }
+        Type::TYPE_MESSAGE | Type::TYPE_GROUP => resolve_message_type(scope, field),
+        Type::TYPE_ENUM => resolve_enum_type(scope, field, resolver),
         other => scalar_rust_type(other, resolver),
     }
 }
 
 fn resolve_message_type(
-    ctx: &CodeGenContext,
+    scope: MessageScope<'_>,
     field: &crate::generated::descriptor::FieldDescriptorProto,
-    current_package: &str,
-    nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let type_name = field
         .type_name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.type_name"))?;
-    let path_str = ctx
-        .rust_type_relative(type_name, current_package, nesting)
+    let path_str = scope
+        .ctx
+        .rust_type_relative(type_name, scope.current_package, scope.nesting)
         .ok_or_else(|| {
             CodeGenError::Other(format!(
                 "message type '{type_name}' not found in descriptor set; \
@@ -1335,19 +1358,17 @@ fn resolve_message_type(
 }
 
 fn resolve_enum_type(
-    ctx: &CodeGenContext,
+    scope: MessageScope<'_>,
     field: &crate::generated::descriptor::FieldDescriptorProto,
-    current_package: &str,
-    nesting: usize,
-    features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
 ) -> Result<TokenStream, CodeGenError> {
     let type_name = field
         .type_name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.type_name"))?;
-    let path_str = ctx
-        .rust_type_relative(type_name, current_package, nesting)
+    let path_str = scope
+        .ctx
+        .rust_type_relative(type_name, scope.current_package, scope.nesting)
         .ok_or_else(|| {
             CodeGenError::Other(format!(
                 "enum type '{type_name}' not found in descriptor set; \
@@ -1355,7 +1376,7 @@ fn resolve_enum_type(
             ))
         })?;
     let ty = rust_path_to_tokens(&path_str);
-    let field_features = crate::features::resolve_field(ctx, field, features);
+    let field_features = crate::features::resolve_field(scope.ctx, field, scope.features);
     if is_closed_enum(&field_features) {
         Ok(quote! { #ty })
     } else {
