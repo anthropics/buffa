@@ -533,3 +533,46 @@ fn test_text_any_emitted_independent_of_json() {
         "register_json_any must be absent: {content}"
     );
 }
+
+#[test]
+fn message_named_result_does_not_shadow_std_result_in_serde() {
+    // A proto message named "Result" inside another message creates a
+    // `pub mod parent { pub struct Result { ... } }` which shadows
+    // `std::result::Result`. The generated serde Deserialize impl must use
+    // `::core::result::Result` to avoid the conflict.
+    let result_msg = DescriptorProto {
+        name: Some("Result".into()),
+        field: vec![make_field(
+            "value",
+            1,
+            Label::LABEL_OPTIONAL,
+            Type::TYPE_INT64,
+        )],
+        ..Default::default()
+    };
+    let parent = DescriptorProto {
+        name: Some("ParseJob".into()),
+        nested_type: vec![result_msg],
+        ..Default::default()
+    };
+    let mut file = proto3_file("job.proto");
+    file.package = Some("pkg".into());
+    file.message_type.push(parent);
+
+    let files =
+        generate(&[file], &["job.proto".to_string()], &json_config()).expect("should generate");
+
+    let content = &files[0].content;
+
+    // The custom Deserialize impl for Result must use ::core::result::Result,
+    // not bare `Result` which would resolve to the proto message type.
+    assert!(
+        !content.contains("fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self"),
+        "serde Deserialize must not use bare `Result<Self, ...>` — it shadows \
+         the proto message named Result.\nGenerated code:\n{content}"
+    );
+    assert!(
+        content.contains("::core::result::Result<Self"),
+        "serde Deserialize should use ::core::result::Result.\nGenerated code:\n{content}"
+    );
+}

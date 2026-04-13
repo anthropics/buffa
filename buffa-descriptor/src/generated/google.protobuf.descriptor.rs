@@ -1259,7 +1259,7 @@ pub mod descriptor_proto {
         /// Field 2: `end`
         pub end: Option<i32>,
         /// Field 3: `options`
-        pub options: ::buffa::MessageField<ExtensionRangeOptions>,
+        pub options: ::buffa::MessageField<super::ExtensionRangeOptions>,
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
         #[doc(hidden)]
@@ -5809,7 +5809,7 @@ pub mod field_options {
     #[derive(Clone, PartialEq, Default)]
     pub struct EditionDefault {
         /// Field 3: `edition`
-        pub edition: Option<Edition>,
+        pub edition: Option<super::Edition>,
         /// Textproto value.
         ///
         /// Field 2: `value`
@@ -5959,12 +5959,12 @@ pub mod field_options {
         /// used, and proto files will not be able to override it.
         ///
         /// Field 1: `edition_introduced`
-        pub edition_introduced: Option<Edition>,
+        pub edition_introduced: Option<super::Edition>,
         /// The edition this feature becomes deprecated in.  Using this after this
         /// edition may trigger warnings.
         ///
         /// Field 2: `edition_deprecated`
-        pub edition_deprecated: Option<Edition>,
+        pub edition_deprecated: Option<super::Edition>,
         /// The deprecation warning text if this feature is used after the edition it
         /// was marked deprecated in.
         ///
@@ -5975,7 +5975,7 @@ pub mod field_options {
         /// not be able to override it.
         ///
         /// Field 4: `edition_removed`
-        pub edition_removed: Option<Edition>,
+        pub edition_removed: Option<super::Edition>,
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
         #[doc(hidden)]
@@ -8687,15 +8687,15 @@ pub mod feature_set_defaults {
     #[derive(Clone, PartialEq, Default)]
     pub struct FeatureSetEditionDefault {
         /// Field 3: `edition`
-        pub edition: Option<Edition>,
+        pub edition: Option<super::Edition>,
         /// Defaults of features that can be overridden in this edition.
         ///
         /// Field 4: `overridable_features`
-        pub overridable_features: ::buffa::MessageField<FeatureSet>,
+        pub overridable_features: ::buffa::MessageField<super::FeatureSet>,
         /// Defaults of features that can't be overridden in this edition.
         ///
         /// Field 5: `fixed_features`
-        pub fixed_features: ::buffa::MessageField<FeatureSet>,
+        pub fixed_features: ::buffa::MessageField<super::FeatureSet>,
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
         #[doc(hidden)]
@@ -9551,7 +9551,7 @@ pub mod generated_code_info {
         /// Field 4: `end`
         pub end: Option<i32>,
         /// Field 5: `semantic`
-        pub semantic: Option<generated_code_info::annotation::Semantic>,
+        pub semantic: Option<super::generated_code_info::annotation::Semantic>,
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
         #[doc(hidden)]
