@@ -295,30 +295,34 @@ impl<'a> CodeGenContext<'a> {
     /// so the caller can interpolate directly into `quote!`.
     ///
     /// `fqn` uses dotted form without a leading dot (e.g., `"my.pkg.MyMessage"`).
-    pub fn matching_attributes(attrs: &[(String, String)], fqn: &str) -> proc_macro2::TokenStream {
+    ///
+    /// # Errors
+    ///
+    /// Returns `CodeGenError::InvalidCustomAttribute` if any matching attribute
+    /// string fails to parse as a valid Rust attribute.
+    pub(crate) fn matching_attributes(
+        attrs: &[(String, String)],
+        fqn: &str,
+    ) -> Result<proc_macro2::TokenStream, crate::CodeGenError> {
         if attrs.is_empty() {
-            return proc_macro2::TokenStream::new();
+            return Ok(proc_macro2::TokenStream::new());
         }
         let fqn_dotted = format!(".{fqn}");
         let mut tokens = proc_macro2::TokenStream::new();
         for (prefix, attr_str) in attrs {
-            let matched = *prefix == "."
-                || fqn_dotted == *prefix
-                || (fqn_dotted.starts_with(prefix.as_str())
-                    && fqn_dotted.as_bytes().get(prefix.len()) == Some(&b'.'));
-            if matched {
-                match syn::parse_str::<proc_macro2::TokenStream>(attr_str) {
-                    Ok(parsed) => tokens.extend(parsed),
-                    Err(_) => {
-                        // Emit as a string doc comment so the user sees the error
-                        // in generated code rather than a silent drop.
-                        let msg = format!("buffa: failed to parse attribute: {attr_str}");
-                        tokens.extend(quote::quote! { #[doc = #msg] });
-                    }
-                }
+            if matches_proto_prefix(prefix, &fqn_dotted) {
+                let parsed =
+                    syn::parse_str::<proc_macro2::TokenStream>(attr_str).map_err(|err| {
+                        crate::CodeGenError::InvalidCustomAttribute {
+                            path: prefix.clone(),
+                            attribute: attr_str.clone(),
+                            detail: err.to_string(),
+                        }
+                    })?;
+                tokens.extend(parsed);
             }
         }
-        tokens
+        Ok(tokens)
     }
 
     /// Check whether a bytes field at the given proto path should use
@@ -326,13 +330,25 @@ impl<'a> CodeGenContext<'a> {
     ///
     /// `field_fqn` is the fully-qualified proto field path, e.g.,
     /// `".my.pkg.MyMessage.data"`. Matches against `config.bytes_fields`
-    /// entries, which are prefix-matched (so `"."` matches all fields).
+    /// entries using proto-segment-aware prefix matching: `"."` matches all,
+    /// `".my.pkg"` matches `".my.pkg.Msg.data"` but not `".my.pkgs.X.data"`.
     pub fn use_bytes_type(&self, field_fqn: &str) -> bool {
         self.config
             .bytes_fields
             .iter()
-            .any(|prefix| field_fqn.starts_with(prefix.as_str()))
+            .any(|prefix| matches_proto_prefix(prefix, field_fqn))
     }
+}
+
+/// Proto-segment-aware prefix match: `prefix` matches `fqn_dotted` if
+/// `prefix == "."`, the two are equal, or `fqn_dotted` starts with `prefix`
+/// followed by a `.` boundary. Proto identifiers are ASCII, and `.` is ASCII,
+/// so byte indexing is safe.
+pub(crate) fn matches_proto_prefix(prefix: &str, fqn_dotted: &str) -> bool {
+    prefix == "."
+        || prefix == fqn_dotted
+        || (fqn_dotted.starts_with(prefix)
+            && fqn_dotted.as_bytes().get(prefix.len()) == Some(&b'.'))
 }
 
 /// Check if a proto package matches any extern_path prefix.
@@ -1172,21 +1188,21 @@ mod tests {
     fn test_matching_attributes_catchall() {
         // "." matches every type.
         let attrs = vec![(".".into(), "#[derive(Foo)]".into())];
-        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage");
+        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage").unwrap();
         assert!(result.to_string().contains("derive"));
     }
 
     #[test]
     fn test_matching_attributes_exact_match() {
         let attrs = vec![(".my.pkg.MyMessage".into(), "#[derive(Bar)]".into())];
-        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage");
+        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage").unwrap();
         assert!(result.to_string().contains("derive"));
     }
 
     #[test]
     fn test_matching_attributes_package_prefix() {
         let attrs = vec![(".my.pkg".into(), "#[derive(Baz)]".into())];
-        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage");
+        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage").unwrap();
         assert!(result.to_string().contains("derive"));
     }
 
@@ -1194,14 +1210,14 @@ mod tests {
     fn test_matching_attributes_no_partial_segment_match() {
         // ".my.pk" must not match ".my.pkg" (partial segment).
         let attrs = vec![(".my.pk".into(), "#[derive(Bad)]".into())];
-        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage");
+        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage").unwrap();
         assert!(result.is_empty());
     }
 
     #[test]
     fn test_matching_attributes_no_match() {
         let attrs = vec![(".other.pkg".into(), "#[derive(Nope)]".into())];
-        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage");
+        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage").unwrap();
         assert!(result.is_empty());
     }
 
@@ -1212,16 +1228,34 @@ mod tests {
             (".".into(), "#[derive(A)]".into()),
             (".my.pkg".into(), "#[derive(B)]".into()),
         ];
-        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage");
+        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage").unwrap();
         let s = result.to_string();
         assert!(s.contains("A") && s.contains("B"));
     }
 
     #[test]
-    fn test_matching_attributes_invalid_attr_produces_doc() {
-        // Unparseable attributes become doc comments so the error is visible.
+    fn test_matching_attributes_invalid_attr_errors() {
+        // Unparseable attributes surface as a hard error so the user sees
+        // the problem at build time rather than a silently-dropped attribute.
         let attrs = vec![(".".into(), "not valid {{{{".into())];
-        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.Msg");
-        assert!(result.to_string().contains("failed to parse attribute"));
+        let err = CodeGenContext::matching_attributes(&attrs, "my.pkg.Msg").unwrap_err();
+        assert!(matches!(
+            err,
+            crate::CodeGenError::InvalidCustomAttribute { .. }
+        ));
+    }
+
+    #[test]
+    fn test_matches_proto_prefix_catchall() {
+        assert!(matches_proto_prefix(".", ".anything.here"));
+        assert!(matches_proto_prefix(".", "."));
+    }
+
+    #[test]
+    fn test_matches_proto_prefix_segment_boundary() {
+        // Segment-aware: ".my.pk" must not match ".my.pkg".
+        assert!(!matches_proto_prefix(".my.pk", ".my.pkg.Msg"));
+        // But full-segment prefix match does.
+        assert!(matches_proto_prefix(".my.pkg", ".my.pkg.Msg"));
     }
 }

@@ -770,6 +770,18 @@ pub enum CodeGenError {
          wire format — set allow_message_set(true) if this is intentional"
     )]
     MessageSetNotSupported { message_name: String },
+    /// A custom attribute string configured via [`CodeGenConfig::type_attributes`],
+    /// [`CodeGenConfig::field_attributes`], or [`CodeGenConfig::message_attributes`]
+    /// could not be parsed as a Rust attribute.
+    #[error(
+        "invalid custom attribute for path '{path}': '{attribute}' is not a valid \
+         Rust attribute ({detail})"
+    )]
+    InvalidCustomAttribute {
+        path: String,
+        attribute: String,
+        detail: String,
+    },
 }
 
 #[cfg(test)]

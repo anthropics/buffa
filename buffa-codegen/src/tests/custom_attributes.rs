@@ -193,6 +193,95 @@ fn test_field_attribute_catchall() {
     );
 }
 
+// ── oneof coverage ──────────────────────────────────────────────────
+
+fn oneof_message(name: &str, oneof_name: &str, variant_names: &[&str]) -> DescriptorProto {
+    let mut fields = Vec::new();
+    for (i, v) in variant_names.iter().enumerate() {
+        let mut f = make_field(v, (i + 1) as i32, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
+        f.oneof_index = Some(0);
+        fields.push(f);
+    }
+    DescriptorProto {
+        name: Some(name.to_string()),
+        field: fields,
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some(oneof_name.to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
+}
+
+#[test]
+fn test_type_attribute_reaches_oneof_enum() {
+    let mut file = proto3_file("oo.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type
+        .push(oneof_message("Msg", "payload", &["a", "b"]));
+    // Target the oneof enum by its fully-qualified proto path.
+    let config = attr_config(
+        vec![(".pkg.Msg.payload", "#[derive(Hash)]")],
+        vec![],
+        vec![],
+    );
+    let files = generate(&[file], &["oo.proto".to_string()], &config).expect("should generate");
+    let content = &files[0].content;
+    assert!(
+        content.contains("#[derive(Hash)]"),
+        "type_attribute should reach oneof enum: {content}"
+    );
+}
+
+#[test]
+fn test_field_attribute_reaches_oneof_variant() {
+    let mut file = proto3_file("oo.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type
+        .push(oneof_message("Msg", "payload", &["a", "b"]));
+    // Target variant `a` only.
+    let config = attr_config(
+        vec![],
+        vec![(".pkg.Msg.payload.a", "#[doc = \"only_a\"]")],
+        vec![],
+    );
+    let files = generate(&[file], &["oo.proto".to_string()], &config).expect("should generate");
+    let content = &files[0].content;
+    assert!(
+        content.contains("only_a"),
+        "field_attribute should reach oneof variant: {content}"
+    );
+    assert_eq!(
+        content.matches("only_a").count(),
+        1,
+        "exactly one variant matched"
+    );
+}
+
+// ── malformed attributes fail loudly ────────────────────────────────
+
+#[test]
+fn test_invalid_attribute_produces_error() {
+    let mut file = proto3_file("bad.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("Msg".to_string()),
+        field: vec![make_field("id", 1, Label::LABEL_OPTIONAL, Type::TYPE_INT32)],
+        ..Default::default()
+    });
+    let config = attr_config(vec![(".", "not a valid #[attribute")], vec![], vec![]);
+    let err = generate(&[file], &["bad.proto".to_string()], &config)
+        .expect_err("malformed attribute should error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("invalid custom attribute"),
+        "error should mention invalid custom attribute: {msg}"
+    );
+    assert!(
+        msg.contains("not a valid #[attribute"),
+        "error should include the offending string: {msg}"
+    );
+}
+
 // ── no attributes when config is empty ──────────────────────────────
 
 #[test]

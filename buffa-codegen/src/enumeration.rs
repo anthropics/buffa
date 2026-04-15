@@ -207,8 +207,10 @@ pub fn generate_enum(
     };
 
     let enum_doc = crate::comments::doc_attrs(ctx.comment(proto_fqn));
-    let custom_type_attrs =
-        crate::context::CodeGenContext::matching_attributes(&ctx.config.type_attributes, proto_fqn);
+    let custom_type_attrs = crate::context::CodeGenContext::matching_attributes(
+        &ctx.config.type_attributes,
+        proto_fqn,
+    )?;
 
     Ok(quote! {
         #enum_doc

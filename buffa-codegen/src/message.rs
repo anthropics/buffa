@@ -385,9 +385,9 @@ pub fn generate_message(
         quote! {}
     };
     let custom_type_attrs =
-        CodeGenContext::matching_attributes(&ctx.config.type_attributes, proto_fqn);
+        CodeGenContext::matching_attributes(&ctx.config.type_attributes, proto_fqn)?;
     let custom_message_attrs =
-        CodeGenContext::matching_attributes(&ctx.config.message_attributes, proto_fqn);
+        CodeGenContext::matching_attributes(&ctx.config.message_attributes, proto_fqn)?;
     let custom_deserialize = if needs_custom_deserialize {
         generate_custom_deserialize(
             ctx,
@@ -1170,7 +1170,7 @@ fn generate_field(
         quote! {}
     };
     let custom_field_attrs =
-        CodeGenContext::matching_attributes(&ctx.config.field_attributes, &field_fqn);
+        CodeGenContext::matching_attributes(&ctx.config.field_attributes, &field_fqn)?;
     let rust_type = &info.struct_field_type;
     let tokens = quote! {
         #doc

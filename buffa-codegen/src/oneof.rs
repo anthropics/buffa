@@ -60,6 +60,9 @@ struct VariantInfo {
     is_null_value: bool,
     /// True for message/group types (boxed in the owned enum).
     is_boxed: bool,
+    /// Custom attributes matched via `CodeGenConfig::field_attributes` on the
+    /// variant's fully-qualified path (`{oneof_fqn}.{variant_proto_name}`).
+    custom_attrs: TokenStream,
 }
 
 fn collect_variant_info(
@@ -108,6 +111,9 @@ fn collect_variant_info(
             } else {
                 scalar_or_message_type_nested(ctx, field, current_package, 1, features, resolver)?
             };
+            let variant_fqn = format!("{proto_fqn}.{oneof_name}.{proto_name}");
+            let custom_attrs =
+                CodeGenContext::matching_attributes(&ctx.config.field_attributes, &variant_fqn)?;
             Ok(VariantInfo {
                 variant_ident,
                 rust_type,
@@ -115,6 +121,7 @@ fn collect_variant_info(
                 field_type,
                 is_boxed: is_boxed_variant(field_type),
                 is_null_value: is_null_value_field(field),
+                custom_attrs,
             })
         })
         .collect()
@@ -159,10 +166,11 @@ pub fn generate_oneof_enum(
         .map(|v| {
             let ident = &v.variant_ident;
             let ty = &v.rust_type;
+            let attrs = &v.custom_attrs;
             if v.is_boxed {
-                quote! { #ident(::buffa::alloc::boxed::Box<#ty>) }
+                quote! { #attrs #ident(::buffa::alloc::boxed::Box<#ty>) }
             } else {
-                quote! { #ident(#ty) }
+                quote! { #attrs #ident(#ty) }
             }
         })
         .collect();
@@ -235,11 +243,14 @@ pub fn generate_oneof_enum(
 
     let oneof_fqn = format!("{}.{}", proto_fqn, oneof_name);
     let oneof_doc = crate::comments::doc_attrs(ctx.comment(&oneof_fqn));
+    let custom_type_attrs =
+        CodeGenContext::matching_attributes(&ctx.config.type_attributes, &oneof_fqn)?;
 
     Ok(quote! {
         #oneof_doc
         #[derive(Clone, PartialEq, Debug)]
         #arbitrary_derive
+        #custom_type_attrs
         pub enum #rust_enum_ident {
             #(#variants,)*
         }
