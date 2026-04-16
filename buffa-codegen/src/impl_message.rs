@@ -229,6 +229,7 @@ pub fn generate_message_impl(
     proto_fqn: &str,
     features: &ResolvedFeatures,
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
+    nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let name_ident = format_ident!("{}", rust_name);
 
@@ -448,7 +449,7 @@ pub fn generate_message_impl(
     let scalar_clear_stmts = scalar_fields
         .iter()
         .copied()
-        .map(|f| scalar_clear_stmt(f, ctx, current_package, proto_fqn, features))
+        .map(|f| scalar_clear_stmt(f, ctx, current_package, proto_fqn, features, nesting))
         .collect::<Result<Vec<_>, _>>()?;
     let repeated_clear_stmts: Vec<TokenStream> = repeated_fields
         .iter()
@@ -622,6 +623,7 @@ fn scalar_clear_stmt(
     current_package: &str,
     proto_fqn: &str,
     parent_features: &ResolvedFeatures,
+    nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let features = &crate::features::resolve_field(ctx, field, parent_features);
     let field_name = field
@@ -640,7 +642,7 @@ fn scalar_clear_stmt(
     // If the field has a custom default value (proto2), use it instead of
     // the type's zero value so that clear() matches Default::default().
     if let Some(default_expr) =
-        crate::defaults::parse_default_value(field, ctx, current_package, features)?
+        crate::defaults::parse_default_value(field, ctx, current_package, features, nesting)?
     {
         return Ok(quote! { self.#ident = #default_expr; });
     }

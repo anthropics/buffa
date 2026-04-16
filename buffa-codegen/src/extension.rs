@@ -275,17 +275,18 @@ fn default_fn_tokens(
     }
 
     let value_ty = codec_value_type(ty);
-    let default_expr = crate::defaults::parse_default_value(field, ctx, current_package, features)?
-        .ok_or_else(|| {
-            // default_value was non-empty but parse returned None —
-            // happens when field_presence ≠ Explicit (shouldn't for
-            // extensions, which are always explicit-presence per
-            // protocolbuffers/protobuf#8234) or for an unhandled type.
-            CodeGenError::Other(format!(
-                "extension `{proto_name}`: could not parse default_value `{}` for type {ty:?}",
-                field.default_value.as_deref().unwrap_or_default()
-            ))
-        })?;
+    let default_expr =
+        crate::defaults::parse_default_value(field, ctx, current_package, features, nesting)?
+            .ok_or_else(|| {
+                // default_value was non-empty but parse returned None —
+                // happens when field_presence ≠ Explicit (shouldn't for
+                // extensions, which are always explicit-presence per
+                // protocolbuffers/protobuf#8234) or for an unhandled type.
+                CodeGenError::Other(format!(
+                    "extension `{proto_name}`: could not parse default_value `{}` for type {ty:?}",
+                    field.default_value.as_deref().unwrap_or_default()
+                ))
+            })?;
 
     // String::from / vec![...] allocate → can't be const. Everything else
     // (integer/float/bool literals) is const-evaluable.

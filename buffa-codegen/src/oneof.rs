@@ -65,6 +65,7 @@ struct VariantInfo {
     custom_attrs: TokenStream,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_variant_info(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -73,6 +74,7 @@ fn collect_variant_info(
     proto_fqn: &str,
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
+    nesting: usize,
 ) -> Result<Vec<VariantInfo>, CodeGenError> {
     let oneof_index = msg
         .oneof_decl
@@ -104,13 +106,19 @@ fn collect_variant_info(
             // without codegen changes; only decode and JSON-deser need an
             // explicit Vec<u8>→Bytes conversion (see oneof_merge_arm and
             // oneof_variant_deser_arm).
-            let rust_type = if field_type == Type::TYPE_BYTES
-                && field_uses_bytes(ctx, proto_fqn, proto_name)
-            {
-                quote! { ::bytes::Bytes }
-            } else {
-                scalar_or_message_type_nested(ctx, field, current_package, 1, features, resolver)?
-            };
+            let rust_type =
+                if field_type == Type::TYPE_BYTES && field_uses_bytes(ctx, proto_fqn, proto_name) {
+                    quote! { ::bytes::Bytes }
+                } else {
+                    scalar_or_message_type_nested(
+                        ctx,
+                        field,
+                        current_package,
+                        nesting + 1,
+                        features,
+                        resolver,
+                    )?
+                };
             let variant_fqn = format!("{proto_fqn}.{oneof_name}.{proto_name}");
             let custom_attrs =
                 CodeGenContext::matching_attributes(&ctx.config.field_attributes, &variant_fqn)?;
@@ -143,6 +151,7 @@ pub fn generate_oneof_enum(
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
+    nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let rust_enum_ident = match oneof_idents.get(&idx) {
         Some(id) => id.clone(),
@@ -161,6 +170,7 @@ pub fn generate_oneof_enum(
         proto_fqn,
         features,
         resolver,
+        nesting,
     )?;
     if variants_info.is_empty() {
         return Ok(TokenStream::new());

@@ -49,6 +49,7 @@ pub(crate) fn generate_text_impl(
     features: &ResolvedFeatures,
     has_extension_ranges: bool,
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
+    nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     if !ctx.config.generate_text {
         return Ok(TokenStream::new());
@@ -174,11 +175,11 @@ pub(crate) fn generate_text_impl(
 
     let scalar_merge: Vec<_> = scalar_fields
         .iter()
-        .map(|f| scalar_merge_arm(ctx, f, current_package, proto_fqn, features))
+        .map(|f| scalar_merge_arm(ctx, f, current_package, proto_fqn, features, nesting))
         .collect::<Result<_, _>>()?;
     let repeated_merge: Vec<_> = repeated_fields
         .iter()
-        .map(|f| repeated_merge_arm(ctx, f, current_package, proto_fqn, features))
+        .map(|f| repeated_merge_arm(ctx, f, current_package, proto_fqn, features, nesting))
         .collect::<Result<_, _>>()?;
     let mut oneof_merge: Vec<TokenStream> = Vec::new();
     for (name, enum_ident, fields) in &oneof_groups {
@@ -191,11 +192,12 @@ pub(crate) fn generate_text_impl(
             current_package,
             proto_fqn,
             features,
+            nesting,
         )?);
     }
     let map_merge: Vec<_> = map_fields
         .iter()
-        .map(|f| map_merge_arm(ctx, msg, f, current_package, features))
+        .map(|f| map_merge_arm(ctx, msg, f, current_package, features, nesting))
         .collect::<Result<_, _>>()?;
 
     // Extension bracket syntax `[pkg.ext] { ... }` — encode side writes
@@ -408,19 +410,22 @@ fn enum_write(closed: bool, val: &TokenStream) -> TokenStream {
     }
 }
 
-/// Resolve a field's enum type path relative to the message impl scope
-/// (nesting = 0, same as `generate_message_impl`).
+/// Resolve a field's enum type path relative to the message impl scope.
+/// The impl block sits at the struct's own depth (`nesting`); a nested
+/// message referencing a cross-package enum therefore needs the same
+/// number of `super::` hops as its containing struct.
 fn enum_type_path(
     ctx: &CodeGenContext,
     field: &FieldDescriptorProto,
     current_package: &str,
+    nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let type_name = field
         .type_name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.type_name"))?;
     let path = ctx
-        .rust_type_relative(type_name, current_package, 0)
+        .rust_type_relative(type_name, current_package, nesting)
         .ok_or_else(|| CodeGenError::Other(format!("enum type '{type_name}' not found")))?;
     Ok(rust_path_to_tokens(&path))
 }
@@ -561,6 +566,7 @@ fn scalar_merge_arm(
     current_package: &str,
     proto_fqn: &str,
     parent_features: &ResolvedFeatures,
+    nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let features = &crate::features::resolve_field(ctx, field, parent_features);
     let proto_name = field
@@ -583,7 +589,7 @@ fn scalar_merge_arm(
     // Enum.
     if ty == Type::TYPE_ENUM {
         let closed = is_closed_enum(features);
-        let enum_ty = enum_type_path(ctx, field, current_package)?;
+        let enum_ty = enum_type_path(ctx, field, current_package, nesting)?;
         let read = enum_read(closed, &enum_ty, &format_ident!("dec"));
         return Ok(if explicit {
             quote! { #name_pat => self.#ident = ::core::option::Option::Some(#read?), }
@@ -647,6 +653,7 @@ fn repeated_merge_arm(
     current_package: &str,
     proto_fqn: &str,
     parent_features: &ResolvedFeatures,
+    nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let features = &crate::features::resolve_field(ctx, field, parent_features);
     let proto_name = field
@@ -671,7 +678,7 @@ fn repeated_merge_arm(
         },
         Type::TYPE_ENUM => {
             let closed = is_closed_enum(features);
-            let enum_ty = enum_type_path(ctx, field, current_package)?;
+            let enum_ty = enum_type_path(ctx, field, current_package, nesting)?;
             enum_read(closed, &enum_ty, &format_ident!("__d"))
         }
         Type::TYPE_STRING => {
@@ -779,6 +786,7 @@ fn oneof_merge_arms(
     current_package: &str,
     proto_fqn: &str,
     parent_features: &ResolvedFeatures,
+    nesting: usize,
 ) -> Result<Vec<TokenStream>, CodeGenError> {
     let field_ident = make_field_ident(oneof_name);
     let qualified: TokenStream = quote! { #mod_ident::#enum_ident };
@@ -815,7 +823,7 @@ fn oneof_merge_arms(
             }
             Type::TYPE_ENUM => {
                 let closed = is_closed_enum(&features);
-                let enum_ty = enum_type_path(ctx, field, current_package)?;
+                let enum_ty = enum_type_path(ctx, field, current_package, nesting)?;
                 let read = enum_read(closed, &enum_ty, &format_ident!("dec"));
                 quote! {
                     self.#field_ident = ::core::option::Option::Some(
@@ -927,6 +935,7 @@ fn map_merge_arm(
     field: &FieldDescriptorProto,
     current_package: &str,
     features: &ResolvedFeatures,
+    nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let proto_name = field
         .name
@@ -966,7 +975,7 @@ fn map_merge_arm(
         },
         Type::TYPE_ENUM => {
             let closed = is_closed_enum(&val_features);
-            let enum_ty = enum_type_path(ctx, val_fd, current_package)?;
+            let enum_ty = enum_type_path(ctx, val_fd, current_package, nesting)?;
             let read = enum_read(closed, &enum_ty, &format_ident!("__d"));
             quote! { #read? }
         }

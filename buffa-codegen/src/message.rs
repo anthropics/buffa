@@ -314,6 +314,7 @@ fn generate_message_with_nesting(
                 features,
                 resolver,
                 &oneof_idents,
+                nesting,
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -327,6 +328,7 @@ fn generate_message_with_nesting(
         proto_fqn,
         features,
         &oneof_idents,
+        nesting,
     )?;
 
     let text_impl = crate::impl_text::generate_text_impl(
@@ -338,6 +340,7 @@ fn generate_message_with_nesting(
         features,
         has_extension_ranges,
         &oneof_idents,
+        nesting,
     )?;
 
     let type_url = format!("type.googleapis.com/{proto_fqn}");
@@ -457,7 +460,7 @@ fn generate_message_with_nesting(
     // Check if any non-optional field has a custom default value, which
     // requires a hand-written `impl Default` instead of `#[derive(Default)]`.
     let custom_default_impl =
-        generate_custom_default(ctx, msg, &name_ident, current_package, features)?;
+        generate_custom_default(ctx, msg, &name_ident, current_package, features, nesting)?;
     let derive_default = if custom_default_impl.is_some() {
         quote! {}
     } else {
@@ -554,7 +557,11 @@ fn generate_message_with_nesting(
             ctx,
             &msg.extension,
             current_package,
-            1,
+            // Extensions declared inside this message live in its module
+            // (`pub mod {msg} { pub fn register_extensions() { ... } }`),
+            // so type references inside them need one additional `super::`
+            // hop beyond the current message's own nesting.
+            nesting + 1,
             features,
             proto_fqn,
         )?;
@@ -663,6 +670,7 @@ fn generate_custom_deserialize(
         current_package,
         proto_fqn,
         features,
+        nesting,
         ..
     } = scope;
     let mut field_vars = Vec::new();
@@ -693,6 +701,7 @@ fn generate_custom_deserialize(
             features,
             resolver,
             oneof_idents,
+            nesting,
         )?;
         let Some((var, arms, init)) = result else {
             continue;
@@ -890,6 +899,7 @@ fn custom_deser_oneof_group(
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
     oneof_idents: &std::collections::HashMap<usize, Ident>,
+    nesting: usize,
 ) -> Result<Option<(TokenStream, Vec<TokenStream>, TokenStream)>, CodeGenError> {
     let oneof_name = oneof
         .name
@@ -928,7 +938,7 @@ fn custom_deser_oneof_group(
         {
             quote! { ::bytes::Bytes }
         } else {
-            scalar_or_message_type(ctx, field, current_package, features, resolver)?
+            scalar_or_message_type_nested(ctx, field, current_package, nesting, features, resolver)?
         };
 
         // Module-qualified path for the oneof enum (lives in the message's module).
@@ -1301,20 +1311,10 @@ fn map_rust_type_from_entry(
 ///
 /// `current_package` is used to produce unqualified names for types in the
 /// same proto package (they will be in the same generated `pub mod`).
-///
-/// Used by both this module and `oneof.rs`.
-pub fn scalar_or_message_type(
-    ctx: &CodeGenContext,
-    field: &crate::generated::descriptor::FieldDescriptorProto,
-    current_package: &str,
-    features: &ResolvedFeatures,
-    resolver: &crate::imports::ImportResolver,
-) -> Result<TokenStream, CodeGenError> {
-    scalar_or_message_type_nested(ctx, field, current_package, 0, features, resolver)
-}
-
-/// Like [`scalar_or_message_type`] but with explicit module nesting depth.
-pub fn scalar_or_message_type_nested(
+/// `nesting` is the module depth of the *consumer* of this type (every
+/// `pub mod` step away from the package root adds one hop). Used by both
+/// this module and `oneof.rs`.
+pub(crate) fn scalar_or_message_type_nested(
     ctx: &CodeGenContext,
     field: &crate::generated::descriptor::FieldDescriptorProto,
     current_package: &str,
@@ -1734,6 +1734,7 @@ fn generate_custom_default(
     name_ident: &Ident,
     current_package: &str,
     features: &ResolvedFeatures,
+    nesting: usize,
 ) -> Result<Option<TokenStream>, CodeGenError> {
     // Custom defaults only apply when field presence is explicit (proto2,
     // or editions with explicit presence).
@@ -1796,7 +1797,7 @@ fn generate_custom_default(
             continue;
         }
 
-        if let Some(expr) = parse_default_value(field, ctx, current_package, features)? {
+        if let Some(expr) = parse_default_value(field, ctx, current_package, features, nesting)? {
             field_inits.push(quote! { #field_ident: #expr, });
         } else {
             field_inits.push(quote! { #field_ident: ::core::default::Default::default(), });

@@ -1272,3 +1272,118 @@ fn nested_message_cross_package_reference_uses_correct_nesting() {
         path_3, path_2
     );
 }
+
+#[test]
+fn doubly_nested_message_paths_use_correct_nesting() {
+    // Stress the nesting plumbing at nesting=2, across each site that has
+    // historically hardcoded a too-shallow depth:
+    //   - message field (handled by the base fix)
+    //   - oneof variant type (oneof.rs collect_variant_info)
+    //   - textproto enum lookup (impl_text.rs enum_type_path)
+    //
+    // Proto layout:
+    //   package a.admin.v1:
+    //     message Svc { message Outer { message Inner {
+    //       a.v1.Biz.Status direct = 1;
+    //       oneof choice { a.v1.Biz.Status via_oneof = 2; }
+    //     } } }
+    //   package a.v1: message Biz { enum Status { UNSPECIFIED=0; ACTIVE=1; } }
+    //
+    // Inner sits at nesting=3 (`svc::outer::inner`), so every cross-package
+    // reference it emits must use 4 supers.
+    let status_enum = EnumDescriptorProto {
+        name: Some("Status".into()),
+        value: vec![enum_value("UNSPECIFIED", 0), enum_value("ACTIVE", 1)],
+        ..Default::default()
+    };
+    let biz = DescriptorProto {
+        name: Some("Biz".into()),
+        enum_type: vec![status_enum],
+        ..Default::default()
+    };
+
+    let inner = DescriptorProto {
+        name: Some("Inner".into()),
+        field: vec![
+            FieldDescriptorProto {
+                name: Some("direct".into()),
+                number: Some(1),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_ENUM),
+                type_name: Some(".a.v1.Biz.Status".into()),
+                ..Default::default()
+            },
+            FieldDescriptorProto {
+                name: Some("via_oneof".into()),
+                number: Some(2),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_ENUM),
+                type_name: Some(".a.v1.Biz.Status".into()),
+                oneof_index: Some(0),
+                ..Default::default()
+            },
+        ],
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("choice".into()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let outer = DescriptorProto {
+        name: Some("Outer".into()),
+        nested_type: vec![inner],
+        ..Default::default()
+    };
+    let svc = DescriptorProto {
+        name: Some("Svc".into()),
+        nested_type: vec![outer],
+        ..Default::default()
+    };
+
+    let file_admin = FileDescriptorProto {
+        name: Some("admin.proto".into()),
+        package: Some("a.admin.v1".into()),
+        syntax: Some("proto3".into()),
+        message_type: vec![svc],
+        ..Default::default()
+    };
+    let file_biz = FileDescriptorProto {
+        name: Some("biz.proto".into()),
+        package: Some("a.v1".into()),
+        syntax: Some("proto3".into()),
+        message_type: vec![biz],
+        ..Default::default()
+    };
+
+    // Exercise the impl_text path too — textproto enum references used to
+    // hardcode nesting=0 regardless of the struct's actual depth.
+    let config = CodeGenConfig {
+        generate_text: true,
+        ..Default::default()
+    };
+    let files = generate(&[file_admin, file_biz], &["admin.proto".into()], &config)
+        .expect("codegen should succeed");
+    let content = &files[0].content;
+
+    // Inner is at nesting=3 (inside svc::outer::inner), so every cross-
+    // package reference must emit 4 supers.
+    let path_4 = content
+        .matches("super::super::super::super::v1::biz::Status")
+        .count();
+    // path_3 should match only the Svc::Filter-style depth-1 references —
+    // since we don't emit any here, we use path_3 purely as a sanity baseline.
+    let path_3 = content
+        .matches("super::super::super::v1::biz::Status")
+        .count();
+    assert_eq!(
+        path_4, path_3,
+        "every Inner (nesting=3) reference must use 4 supers, but \
+         found {path_4} with 4 supers and {path_3} with >=3 supers.\n\
+         Generated code:\n{content}"
+    );
+    assert!(
+        path_4 > 0,
+        "expected the cross-package enum reference to appear at least once \
+         with 4 supers in Inner's module.\nGenerated code:\n{content}"
+    );
+}

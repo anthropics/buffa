@@ -22,6 +22,7 @@ pub fn parse_default_value(
     ctx: &CodeGenContext,
     current_package: &str,
     features: &ResolvedFeatures,
+    nesting: usize,
 ) -> Result<Option<TokenStream>, CodeGenError> {
     use crate::generated::descriptor::field_descriptor_proto::Type;
 
@@ -105,7 +106,7 @@ pub fn parse_default_value(
                 .as_deref()
                 .ok_or(CodeGenError::MissingField("field.type_name"))?;
             let path_str = ctx
-                .rust_type_relative(type_name, current_package, 0)
+                .rust_type_relative(type_name, current_package, nesting)
                 .ok_or_else(|| {
                     CodeGenError::Other(format!(
                         "enum type '{type_name}' not found in descriptor set"
