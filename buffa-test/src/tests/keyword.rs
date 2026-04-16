@@ -46,13 +46,13 @@ fn test_keyword_expression_with_oneof() {
             ..Default::default()
         }),
         match_mode: buffa::EnumValue::Known(keywords::Match::MATCH_EXACT),
-        value: Some(keywords::expression::Value::Literal("42".into())),
+        value: Some(keywords::expression::ValueOneof::Literal("42".into())),
         ..Default::default()
     };
     let decoded = round_trip(&msg);
     assert_eq!(decoded.result_type.name, "bool");
     assert_eq!(
         decoded.value,
-        Some(keywords::expression::Value::Literal("42".into()))
+        Some(keywords::expression::ValueOneof::Literal("42".into()))
     );
 }

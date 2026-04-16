@@ -96,11 +96,11 @@ fn test_view_proto3_optional_unset_is_none() {
 #[test]
 fn test_view_decodes_oneof() {
     let mut msg = Person::default();
-    msg.contact = Some(person::Contact::Email("bob@example.com".into()));
+    msg.contact = Some(person::ContactOneof::Email("bob@example.com".into()));
     let bytes = msg.encode_to_vec();
     let view = PersonView::decode_view(&bytes).expect("decode_view");
     match view.contact {
-        Some(person::ContactView::Email(s)) => assert_eq!(s, "bob@example.com"),
+        Some(person::ContactOneofView::Email(s)) => assert_eq!(s, "bob@example.com"),
         other => panic!("expected Email, got {other:?}"),
     }
 }
@@ -112,7 +112,7 @@ fn test_view_to_owned_roundtrip() {
     msg.name = "Carol".into();
     msg.tags = vec!["x".into(), "y".into()];
     msg.maybe_age = Some(30);
-    msg.contact = Some(person::Contact::Phone("+1-555-0000".into()));
+    msg.contact = Some(person::ContactOneof::Phone("+1-555-0000".into()));
     let bytes = msg.encode_to_vec();
     let view = PersonView::decode_view(&bytes).expect("decode_view");
     let owned = view.to_owned_message();
@@ -122,7 +122,7 @@ fn test_view_to_owned_roundtrip() {
     assert_eq!(owned.maybe_age, Some(30));
     assert_eq!(
         owned.contact,
-        Some(person::Contact::Phone("+1-555-0000".into()))
+        Some(person::ContactOneof::Phone("+1-555-0000".into()))
     );
 }
 

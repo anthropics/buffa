@@ -23,27 +23,27 @@ fn test_wkt_in_oneof_from_impls() {
     };
     assert!(matches!(
         env.content,
-        Some(envelope::Content::EventContent(_))
+        Some(envelope::ContentOneof::EventContent(_))
     ));
 
     // Extern variant: only From<T> for Content exists — Some() is explicit.
     let env = Envelope {
-        content: Some(envelope::Content::from(Any::default())),
+        content: Some(envelope::ContentOneof::from(Any::default())),
         ..Default::default()
     };
     assert!(matches!(
         env.content,
-        Some(envelope::Content::AnyContent(_))
+        Some(envelope::ContentOneof::AnyContent(_))
     ));
 
     // The From<T> for Option<Content> impl for extern T does NOT exist.
     // The following would not compile (uncomment to verify):
-    // let _: Option<envelope::Content> = Any::default().into();
+    // let _: Option<envelope::ContentOneof> = Any::default().into();
 
     let decoded = round_trip(&env);
     assert!(matches!(
         decoded.content,
-        Some(envelope::Content::AnyContent(_))
+        Some(envelope::ContentOneof::AnyContent(_))
     ));
 }
 

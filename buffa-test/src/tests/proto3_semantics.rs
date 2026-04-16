@@ -365,13 +365,13 @@ fn enum_unknown_value_preserved_map() {
 #[test]
 fn enum_unknown_value_preserved_oneof() {
     let msg = EnumContexts {
-        choice: Some(enum_contexts::Choice::Picked(EnumValue::Unknown(77))),
+        choice: Some(enum_contexts::ChoiceOneof::Picked(EnumValue::Unknown(77))),
         ..Default::default()
     };
     let decoded = round_trip(&msg);
     assert_eq!(
         decoded.choice,
-        Some(enum_contexts::Choice::Picked(EnumValue::Unknown(77)))
+        Some(enum_contexts::ChoiceOneof::Picked(EnumValue::Unknown(77)))
     );
 }
 

@@ -143,6 +143,12 @@ pub fn generate_message(
     let mod_name_str = crate::oneof::to_snake_case(proto_name);
     let mod_ident = make_field_ident(&mod_name_str);
 
+    // Compute oneof enum identifiers for all non-synthetic oneofs up front.
+    // Sequential allocation prevents sibling oneofs from claiming the same
+    // suffixed name (see `resolve_oneof_idents`).
+    let oneof_idents =
+        crate::oneof::resolve_oneof_idents(msg, proto_fqn, ctx.config.generate_views)?;
+
     // One `Option<OneofEnum>` field in the struct per non-synthetic oneof.
     // Oneof enums live inside the message's module, so the type path is
     // `mod_name::EnumName`.
@@ -156,16 +162,9 @@ pub fn generate_message(
         .iter()
         .enumerate()
         .filter_map(|(idx, oneof)| {
-            let has_real_fields = msg
-                .field
-                .iter()
-                .any(|f| is_real_oneof_member(f) && f.oneof_index == Some(idx as i32));
-            if !has_real_fields {
-                return None;
-            }
+            let enum_ident = oneof_idents.get(&idx)?;
             let oneof_name = oneof.name.as_deref()?;
             let field_ident = make_field_ident(oneof_name);
-            let enum_ident = crate::oneof::oneof_enum_ident(oneof_name);
             let opt = resolver.option();
             let tokens = quote! {
                 #oneof_serde_attr
@@ -283,15 +282,18 @@ pub fn generate_message(
     let oneof_enums = msg
         .oneof_decl
         .iter()
-        .map(|oneof| {
+        .enumerate()
+        .map(|(idx, oneof)| {
             crate::oneof::generate_oneof_enum(
                 ctx,
                 msg,
+                idx,
                 oneof,
                 current_package,
                 proto_fqn,
                 features,
                 resolver,
+                &oneof_idents,
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -304,6 +306,7 @@ pub fn generate_message(
         current_package,
         proto_fqn,
         features,
+        &oneof_idents,
     )?;
 
     let text_impl = crate::impl_text::generate_text_impl(
@@ -314,6 +317,7 @@ pub fn generate_message(
         proto_fqn,
         features,
         has_extension_ranges,
+        &oneof_idents,
     )?;
 
     let type_url = format!("type.googleapis.com/{proto_fqn}");
@@ -399,6 +403,7 @@ pub fn generate_message(
             features,
             resolver,
             has_extension_ranges,
+            &oneof_idents,
         )?
     } else {
         quote! {}
@@ -637,6 +642,7 @@ fn generate_custom_deserialize(
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
     has_extension_ranges: bool,
+    oneof_idents: &std::collections::HashMap<usize, Ident>,
 ) -> Result<TokenStream, CodeGenError> {
     let mut field_vars = Vec::new();
     let mut match_arms = Vec::new();
@@ -673,6 +679,7 @@ fn generate_custom_deserialize(
             mod_ident,
             features,
             resolver,
+            oneof_idents,
         )?;
         let Some((var, arms, init)) = result else {
             continue;
@@ -879,22 +886,20 @@ fn custom_deser_oneof_group(
     mod_ident: &proc_macro2::Ident,
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
+    oneof_idents: &std::collections::HashMap<usize, Ident>,
 ) -> Result<Option<(TokenStream, Vec<TokenStream>, TokenStream)>, CodeGenError> {
     let oneof_name = oneof
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("oneof.name"))?;
-    let has_real = msg
-        .field
-        .iter()
-        .any(|f| is_real_oneof_member(f) && f.oneof_index == Some(idx as i32));
-    if !has_real {
-        return Ok(None);
-    }
+
+    let enum_ident = match oneof_idents.get(&idx) {
+        Some(id) => id.clone(),
+        None => return Ok(None),
+    };
 
     let var_ident = format_ident!("__oneof_{}", oneof_name);
     let field_ident = make_field_ident(oneof_name);
-    let enum_ident = crate::oneof::oneof_enum_ident(oneof_name);
 
     // Oneof enum lives in the message's module.
     let var_decl = quote! { let mut #var_ident: Option<#mod_ident::#enum_ident> = None; };

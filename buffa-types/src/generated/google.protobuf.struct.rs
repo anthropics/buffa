@@ -483,7 +483,7 @@ unsafe impl<'a> ::buffa::HasDefaultViewInstance for StructView<'a> {
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct Value {
-    pub kind: Option<value::Kind>,
+    pub kind: Option<value::KindOneof>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
     #[doc(hidden)]
@@ -519,25 +519,25 @@ impl ::buffa::Message for Value {
         let mut size = 0u32;
         if let ::core::option::Option::Some(ref v) = self.kind {
             match v {
-                value::Kind::NullValue(x) => {
+                value::KindOneof::NullValue(x) => {
                     size += 1u32 + ::buffa::types::int32_encoded_len(x.to_i32()) as u32;
                 }
-                value::Kind::NumberValue(_x) => {
+                value::KindOneof::NumberValue(_x) => {
                     size += 1u32 + ::buffa::types::FIXED64_ENCODED_LEN as u32;
                 }
-                value::Kind::StringValue(x) => {
+                value::KindOneof::StringValue(x) => {
                     size += 1u32 + ::buffa::types::string_encoded_len(x) as u32;
                 }
-                value::Kind::BoolValue(_x) => {
+                value::KindOneof::BoolValue(_x) => {
                     size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
                 }
-                value::Kind::StructValue(x) => {
+                value::KindOneof::StructValue(x) => {
                     let inner = x.compute_size();
                     size
                         += 1u32 + ::buffa::encoding::varint_len(inner as u64) as u32
                             + inner;
                 }
-                value::Kind::ListValue(x) => {
+                value::KindOneof::ListValue(x) => {
                     let inner = x.compute_size();
                     size
                         += 1u32 + ::buffa::encoding::varint_len(inner as u64) as u32
@@ -554,7 +554,7 @@ impl ::buffa::Message for Value {
         use ::buffa::Enumeration as _;
         if let ::core::option::Option::Some(ref v) = self.kind {
             match v {
-                value::Kind::NullValue(x) => {
+                value::KindOneof::NullValue(x) => {
                     ::buffa::encoding::Tag::new(
                             1u32,
                             ::buffa::encoding::WireType::Varint,
@@ -562,7 +562,7 @@ impl ::buffa::Message for Value {
                         .encode(buf);
                     ::buffa::types::encode_int32(x.to_i32(), buf);
                 }
-                value::Kind::NumberValue(x) => {
+                value::KindOneof::NumberValue(x) => {
                     ::buffa::encoding::Tag::new(
                             2u32,
                             ::buffa::encoding::WireType::Fixed64,
@@ -570,7 +570,7 @@ impl ::buffa::Message for Value {
                         .encode(buf);
                     ::buffa::types::encode_double(*x, buf);
                 }
-                value::Kind::StringValue(x) => {
+                value::KindOneof::StringValue(x) => {
                     ::buffa::encoding::Tag::new(
                             3u32,
                             ::buffa::encoding::WireType::LengthDelimited,
@@ -578,7 +578,7 @@ impl ::buffa::Message for Value {
                         .encode(buf);
                     ::buffa::types::encode_string(x, buf);
                 }
-                value::Kind::BoolValue(x) => {
+                value::KindOneof::BoolValue(x) => {
                     ::buffa::encoding::Tag::new(
                             4u32,
                             ::buffa::encoding::WireType::Varint,
@@ -586,7 +586,7 @@ impl ::buffa::Message for Value {
                         .encode(buf);
                     ::buffa::types::encode_bool(*x, buf);
                 }
-                value::Kind::StructValue(x) => {
+                value::KindOneof::StructValue(x) => {
                     ::buffa::encoding::Tag::new(
                             5u32,
                             ::buffa::encoding::WireType::LengthDelimited,
@@ -595,7 +595,7 @@ impl ::buffa::Message for Value {
                     ::buffa::encoding::encode_varint(x.cached_size() as u64, buf);
                     x.write_to(buf);
                 }
-                value::Kind::ListValue(x) => {
+                value::KindOneof::ListValue(x) => {
                     ::buffa::encoding::Tag::new(
                             6u32,
                             ::buffa::encoding::WireType::LengthDelimited,
@@ -628,7 +628,7 @@ impl ::buffa::Message for Value {
                     });
                 }
                 self.kind = ::core::option::Option::Some(
-                    value::Kind::NullValue(
+                    value::KindOneof::NullValue(
                         ::buffa::EnumValue::from(::buffa::types::decode_int32(buf)?),
                     ),
                 );
@@ -642,7 +642,7 @@ impl ::buffa::Message for Value {
                     });
                 }
                 self.kind = ::core::option::Option::Some(
-                    value::Kind::NumberValue(::buffa::types::decode_double(buf)?),
+                    value::KindOneof::NumberValue(::buffa::types::decode_double(buf)?),
                 );
             }
             3u32 => {
@@ -654,7 +654,7 @@ impl ::buffa::Message for Value {
                     });
                 }
                 self.kind = ::core::option::Option::Some(
-                    value::Kind::StringValue(::buffa::types::decode_string(buf)?),
+                    value::KindOneof::StringValue(::buffa::types::decode_string(buf)?),
                 );
             }
             4u32 => {
@@ -666,7 +666,7 @@ impl ::buffa::Message for Value {
                     });
                 }
                 self.kind = ::core::option::Option::Some(
-                    value::Kind::BoolValue(::buffa::types::decode_bool(buf)?),
+                    value::KindOneof::BoolValue(::buffa::types::decode_bool(buf)?),
                 );
             }
             5u32 => {
@@ -678,7 +678,7 @@ impl ::buffa::Message for Value {
                     });
                 }
                 if let ::core::option::Option::Some(
-                    value::Kind::StructValue(ref mut existing),
+                    value::KindOneof::StructValue(ref mut existing),
                 ) = self.kind
                 {
                     ::buffa::Message::merge_length_delimited(
@@ -690,7 +690,9 @@ impl ::buffa::Message for Value {
                     let mut val = ::core::default::Default::default();
                     ::buffa::Message::merge_length_delimited(&mut val, buf, depth)?;
                     self.kind = ::core::option::Option::Some(
-                        value::Kind::StructValue(::buffa::alloc::boxed::Box::new(val)),
+                        value::KindOneof::StructValue(
+                            ::buffa::alloc::boxed::Box::new(val),
+                        ),
                     );
                 }
             }
@@ -703,7 +705,7 @@ impl ::buffa::Message for Value {
                     });
                 }
                 if let ::core::option::Option::Some(
-                    value::Kind::ListValue(ref mut existing),
+                    value::KindOneof::ListValue(ref mut existing),
                 ) = self.kind
                 {
                     ::buffa::Message::merge_length_delimited(
@@ -715,7 +717,7 @@ impl ::buffa::Message for Value {
                     let mut val = ::core::default::Default::default();
                     ::buffa::Message::merge_length_delimited(&mut val, buf, depth)?;
                     self.kind = ::core::option::Option::Some(
-                        value::Kind::ListValue(::buffa::alloc::boxed::Box::new(val)),
+                        value::KindOneof::ListValue(::buffa::alloc::boxed::Box::new(val)),
                     );
                 }
             }
@@ -753,7 +755,7 @@ impl ::buffa::text::TextFormat for Value {
         use ::buffa::Enumeration as _;
         if let ::core::option::Option::Some(ref __v) = self.kind {
             match __v {
-                value::Kind::NullValue(__v) => {
+                value::KindOneof::NullValue(__v) => {
                     enc.write_field_name("null_value")?;
                     match __v {
                         ::buffa::EnumValue::Known(__e) => {
@@ -762,23 +764,23 @@ impl ::buffa::text::TextFormat for Value {
                         ::buffa::EnumValue::Unknown(__n) => enc.write_enum_number(*__n)?,
                     }
                 }
-                value::Kind::NumberValue(__v) => {
+                value::KindOneof::NumberValue(__v) => {
                     enc.write_field_name("number_value")?;
                     enc.write_f64(*__v)?;
                 }
-                value::Kind::StringValue(__v) => {
+                value::KindOneof::StringValue(__v) => {
                     enc.write_field_name("string_value")?;
                     enc.write_string(__v)?;
                 }
-                value::Kind::BoolValue(__v) => {
+                value::KindOneof::BoolValue(__v) => {
                     enc.write_field_name("bool_value")?;
                     enc.write_bool(*__v)?;
                 }
-                value::Kind::StructValue(__v) => {
+                value::KindOneof::StructValue(__v) => {
                     enc.write_field_name("struct_value")?;
                     enc.write_message(&**__v)?;
                 }
-                value::Kind::ListValue(__v) => {
+                value::KindOneof::ListValue(__v) => {
                     enc.write_field_name("list_value")?;
                     enc.write_message(&**__v)?;
                 }
@@ -797,7 +799,7 @@ impl ::buffa::text::TextFormat for Value {
             match __name {
                 "null_value" => {
                     self.kind = ::core::option::Option::Some(
-                        value::Kind::NullValue(
+                        value::KindOneof::NullValue(
                             dec
                                 .read_enum_by_name::<NullValue>()
                                 .map(::buffa::EnumValue::from)?,
@@ -806,22 +808,22 @@ impl ::buffa::text::TextFormat for Value {
                 }
                 "number_value" => {
                     self.kind = ::core::option::Option::Some(
-                        value::Kind::NumberValue(dec.read_f64()?),
+                        value::KindOneof::NumberValue(dec.read_f64()?),
                     );
                 }
                 "string_value" => {
                     self.kind = ::core::option::Option::Some(
-                        value::Kind::StringValue(dec.read_string()?.into_owned()),
+                        value::KindOneof::StringValue(dec.read_string()?.into_owned()),
                     );
                 }
                 "bool_value" => {
                     self.kind = ::core::option::Option::Some(
-                        value::Kind::BoolValue(dec.read_bool()?),
+                        value::KindOneof::BoolValue(dec.read_bool()?),
                     );
                 }
                 "struct_value" => {
                     if let ::core::option::Option::Some(
-                        value::Kind::StructValue(ref mut __existing),
+                        value::KindOneof::StructValue(ref mut __existing),
                     ) = self.kind
                     {
                         dec.merge_message(&mut **__existing)?;
@@ -829,7 +831,7 @@ impl ::buffa::text::TextFormat for Value {
                         let mut __m = ::core::default::Default::default();
                         dec.merge_message(&mut __m)?;
                         self.kind = ::core::option::Option::Some(
-                            value::Kind::StructValue(
+                            value::KindOneof::StructValue(
                                 ::buffa::alloc::boxed::Box::new(__m),
                             ),
                         );
@@ -837,7 +839,7 @@ impl ::buffa::text::TextFormat for Value {
                 }
                 "list_value" => {
                     if let ::core::option::Option::Some(
-                        value::Kind::ListValue(ref mut __existing),
+                        value::KindOneof::ListValue(ref mut __existing),
                     ) = self.kind
                     {
                         dec.merge_message(&mut **__existing)?;
@@ -845,7 +847,9 @@ impl ::buffa::text::TextFormat for Value {
                         let mut __m = ::core::default::Default::default();
                         dec.merge_message(&mut __m)?;
                         self.kind = ::core::option::Option::Some(
-                            value::Kind::ListValue(::buffa::alloc::boxed::Box::new(__m)),
+                            value::KindOneof::ListValue(
+                                ::buffa::alloc::boxed::Box::new(__m),
+                            ),
                         );
                     }
                 }
@@ -869,7 +873,7 @@ pub const __VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type
 /// The JSON representation for `Value` is JSON value.
 #[derive(Clone, Debug, Default)]
 pub struct ValueView<'a> {
-    pub kind: ::core::option::Option<value::KindView<'a>>,
+    pub kind: ::core::option::Option<value::KindOneofView<'a>>,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
 impl<'a> ValueView<'a> {
@@ -919,7 +923,7 @@ impl<'a> ValueView<'a> {
                         });
                     }
                     view.kind = Some(
-                        value::KindView::NullValue(
+                        value::KindOneofView::NullValue(
                             ::buffa::EnumValue::from(
                                 ::buffa::types::decode_int32(&mut cur)?,
                             ),
@@ -935,7 +939,7 @@ impl<'a> ValueView<'a> {
                         });
                     }
                     view.kind = Some(
-                        value::KindView::NumberValue(
+                        value::KindOneofView::NumberValue(
                             ::buffa::types::decode_double(&mut cur)?,
                         ),
                     );
@@ -949,7 +953,7 @@ impl<'a> ValueView<'a> {
                         });
                     }
                     view.kind = Some(
-                        value::KindView::StringValue(
+                        value::KindOneofView::StringValue(
                             ::buffa::types::borrow_str(&mut cur)?,
                         ),
                     );
@@ -963,7 +967,7 @@ impl<'a> ValueView<'a> {
                         });
                     }
                     view.kind = Some(
-                        value::KindView::BoolValue(
+                        value::KindOneofView::BoolValue(
                             ::buffa::types::decode_bool(&mut cur)?,
                         ),
                     );
@@ -980,13 +984,13 @@ impl<'a> ValueView<'a> {
                         return Err(::buffa::DecodeError::RecursionLimitExceeded);
                     }
                     let sub = ::buffa::types::borrow_bytes(&mut cur)?;
-                    if let Some(value::KindView::StructValue(ref mut existing)) = view
+                    if let Some(value::KindOneofView::StructValue(ref mut existing)) = view
                         .kind
                     {
                         existing._merge_into_view(sub, depth - 1)?;
                     } else {
                         view.kind = Some(
-                            value::KindView::StructValue(
+                            value::KindOneofView::StructValue(
                                 ::buffa::alloc::boxed::Box::new(
                                     StructView::_decode_depth(sub, depth - 1)?,
                                 ),
@@ -1006,12 +1010,13 @@ impl<'a> ValueView<'a> {
                         return Err(::buffa::DecodeError::RecursionLimitExceeded);
                     }
                     let sub = ::buffa::types::borrow_bytes(&mut cur)?;
-                    if let Some(value::KindView::ListValue(ref mut existing)) = view.kind
+                    if let Some(value::KindOneofView::ListValue(ref mut existing)) = view
+                        .kind
                     {
                         existing._merge_into_view(sub, depth - 1)?;
                     } else {
                         view.kind = Some(
-                            value::KindView::ListValue(
+                            value::KindOneofView::ListValue(
                                 ::buffa::alloc::boxed::Box::new(
                                     ListValueView::_decode_depth(sub, depth - 1)?,
                                 ),
@@ -1050,19 +1055,21 @@ impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
                 .kind
                 .as_ref()
                 .map(|v| match v {
-                    value::KindView::NullValue(v) => value::Kind::NullValue(*v),
-                    value::KindView::NumberValue(v) => value::Kind::NumberValue(*v),
-                    value::KindView::StringValue(v) => {
-                        value::Kind::StringValue(v.to_string())
+                    value::KindOneofView::NullValue(v) => value::KindOneof::NullValue(*v),
+                    value::KindOneofView::NumberValue(v) => {
+                        value::KindOneof::NumberValue(*v)
                     }
-                    value::KindView::BoolValue(v) => value::Kind::BoolValue(*v),
-                    value::KindView::StructValue(v) => {
-                        value::Kind::StructValue(
+                    value::KindOneofView::StringValue(v) => {
+                        value::KindOneof::StringValue(v.to_string())
+                    }
+                    value::KindOneofView::BoolValue(v) => value::KindOneof::BoolValue(*v),
+                    value::KindOneofView::StructValue(v) => {
+                        value::KindOneof::StructValue(
                             ::buffa::alloc::boxed::Box::new(v.to_owned_message()),
                         )
                     }
-                    value::KindView::ListValue(v) => {
-                        value::Kind::ListValue(
+                    value::KindOneofView::ListValue(v) => {
+                        value::KindOneof::ListValue(
                             ::buffa::alloc::boxed::Box::new(v.to_owned_message()),
                         )
                     }
@@ -1091,7 +1098,7 @@ pub mod value {
     /// The kind of value.
     #[derive(Clone, PartialEq, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
-    pub enum Kind {
+    pub enum KindOneof {
         NullValue(::buffa::EnumValue<super::NullValue>),
         NumberValue(f64),
         StringValue(::buffa::alloc::string::String),
@@ -1099,29 +1106,29 @@ pub mod value {
         StructValue(::buffa::alloc::boxed::Box<super::Struct>),
         ListValue(::buffa::alloc::boxed::Box<super::ListValue>),
     }
-    impl ::buffa::Oneof for Kind {}
-    impl From<super::Struct> for Kind {
+    impl ::buffa::Oneof for KindOneof {}
+    impl From<super::Struct> for KindOneof {
         fn from(v: super::Struct) -> Self {
             Self::StructValue(::buffa::alloc::boxed::Box::new(v))
         }
     }
-    impl From<super::Struct> for ::core::option::Option<Kind> {
+    impl From<super::Struct> for ::core::option::Option<KindOneof> {
         fn from(v: super::Struct) -> Self {
-            Self::Some(Kind::from(v))
+            Self::Some(KindOneof::from(v))
         }
     }
-    impl From<super::ListValue> for Kind {
+    impl From<super::ListValue> for KindOneof {
         fn from(v: super::ListValue) -> Self {
             Self::ListValue(::buffa::alloc::boxed::Box::new(v))
         }
     }
-    impl From<super::ListValue> for ::core::option::Option<Kind> {
+    impl From<super::ListValue> for ::core::option::Option<KindOneof> {
         fn from(v: super::ListValue) -> Self {
-            Self::Some(Kind::from(v))
+            Self::Some(KindOneof::from(v))
         }
     }
     #[derive(Clone, Debug)]
-    pub enum KindView<'a> {
+    pub enum KindOneofView<'a> {
         NullValue(::buffa::EnumValue<super::NullValue>),
         NumberValue(f64),
         StringValue(&'a str),

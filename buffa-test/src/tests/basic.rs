@@ -191,19 +191,19 @@ fn test_map_empty_round_trip() {
 fn test_oneof_round_trip() {
     // Set the email variant.
     let mut msg = Person::default();
-    msg.contact = Some(person::Contact::Email("alice@example.com".into()));
+    msg.contact = Some(person::ContactOneof::Email("alice@example.com".into()));
     let decoded = round_trip(&msg);
     assert_eq!(
         decoded.contact,
-        Some(person::Contact::Email("alice@example.com".into()))
+        Some(person::ContactOneof::Email("alice@example.com".into()))
     );
 
     // Overwrite with phone variant — last write wins.
-    msg.contact = Some(person::Contact::Phone("+1-555-1234".into()));
+    msg.contact = Some(person::ContactOneof::Phone("+1-555-1234".into()));
     let decoded = round_trip(&msg);
     assert_eq!(
         decoded.contact,
-        Some(person::Contact::Phone("+1-555-1234".into()))
+        Some(person::ContactOneof::Phone("+1-555-1234".into()))
     );
 
     // Unset.

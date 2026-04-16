@@ -261,7 +261,7 @@ fn test_proto2_group_wire_format() {
 
 #[test]
 fn test_view_coverage_owned_round_trip() {
-    use crate::proto2::view_coverage::{Choice, Payload};
+    use crate::proto2::view_coverage::{ChoiceOneof, Payload};
     use crate::proto2::{Priority, ViewCoverage};
 
     let mut by_id = std::collections::HashMap::new();
@@ -276,7 +276,7 @@ fn test_view_coverage_owned_round_trip() {
         level: Priority::CRITICAL,
         by_id,
         priorities,
-        choice: Some(Choice::Payload(Box::new(Payload {
+        choice: Some(ChoiceOneof::Payload(Box::new(Payload {
             x: Some(42),
             y: Some("hello".into()),
             ..Default::default()
@@ -291,7 +291,7 @@ fn test_view_coverage_owned_round_trip() {
     assert_eq!(decoded.priorities.get("low"), Some(&Priority::LOW));
     assert_eq!(decoded.priorities.get("high"), Some(&Priority::HIGH));
     match decoded.choice {
-        Some(Choice::Payload(p)) => {
+        Some(ChoiceOneof::Payload(p)) => {
             assert_eq!(p.x, Some(42));
             assert_eq!(p.y.as_deref(), Some("hello"));
         }
@@ -304,7 +304,7 @@ fn test_view_coverage_via_view() {
     // View-decode → to_owned_message → encode round-trip.
     // Exercises: singular closed-enum view type, MapView<i32, &str>,
     // MapView<&str, ClosedEnum>, group-in-oneof view decode + merge.
-    use crate::proto2::view_coverage::{Choice, Payload};
+    use crate::proto2::view_coverage::{ChoiceOneof, Payload};
     use crate::proto2::{Priority, ViewCoverage, ViewCoverageView};
     use buffa::MessageView;
 
@@ -318,7 +318,7 @@ fn test_view_coverage_via_view() {
         level: Priority::HIGH,
         by_id,
         priorities,
-        choice: Some(Choice::Payload(Box::new(Payload {
+        choice: Some(ChoiceOneof::Payload(Box::new(Payload {
             x: Some(99),
             y: Some("world".into()),
             ..Default::default()
@@ -344,7 +344,7 @@ fn test_view_coverage_via_view() {
     assert_eq!(owned.by_id.get(&7).map(String::as_str), Some("seven"));
     assert_eq!(owned.priorities.get("med"), Some(&Priority::MEDIUM));
     match &owned.choice {
-        Some(Choice::Payload(p)) => {
+        Some(ChoiceOneof::Payload(p)) => {
             assert_eq!(p.x, Some(99));
             assert_eq!(p.y.as_deref(), Some("world"));
         }
@@ -373,14 +373,14 @@ fn test_view_coverage_required_enum_default() {
 fn test_view_coverage_group_in_oneof_merge() {
     // Proto spec: same oneof field on the wire twice → merge (for messages/
     // groups). Exercises the `_merge_into_view` branch for group-in-oneof.
-    use crate::proto2::view_coverage::{Choice, Payload};
+    use crate::proto2::view_coverage::{ChoiceOneof, Payload};
     use crate::proto2::{Priority, ViewCoverage, ViewCoverageView};
     use buffa::MessageView;
 
     // First occurrence: only x set.
     let first = ViewCoverage {
         level: Priority::LOW,
-        choice: Some(Choice::Payload(Box::new(Payload {
+        choice: Some(ChoiceOneof::Payload(Box::new(Payload {
             x: Some(1),
             ..Default::default()
         }))),
@@ -389,7 +389,7 @@ fn test_view_coverage_group_in_oneof_merge() {
     // Second occurrence: only y set.
     let second = ViewCoverage {
         level: Priority::LOW,
-        choice: Some(Choice::Payload(Box::new(Payload {
+        choice: Some(ChoiceOneof::Payload(Box::new(Payload {
             y: Some("merged".into()),
             ..Default::default()
         }))),
@@ -403,7 +403,7 @@ fn test_view_coverage_group_in_oneof_merge() {
     let view = ViewCoverageView::decode_view(&wire).unwrap();
     let owned = view.to_owned_message();
     match owned.choice {
-        Some(Choice::Payload(p)) => {
+        Some(ChoiceOneof::Payload(p)) => {
             // Both x (from first) and y (from second) should be present.
             assert_eq!(p.x, Some(1), "x should survive merge");
             assert_eq!(p.y.as_deref(), Some("merged"), "y should be added by merge");

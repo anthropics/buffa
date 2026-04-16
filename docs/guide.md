@@ -507,7 +507,7 @@ let known: Option<Status> = msg.status.as_known();
 
 ### Oneofs
 
-Oneofs are represented as Rust enums inside the message's module:
+Oneofs are represented as Rust enums inside the message's module. The enum name is always `{PascalCase(oneof_name)}Oneof` — the suffix is applied uniformly, so the generated type name is predictable from the `.proto` alone and does not depend on which siblings happen to exist.
 
 ```protobuf
 message Contact {
@@ -521,12 +521,12 @@ message Contact {
 
 ```rust,ignore
 pub struct Contact {
-    pub info: Option<contact::Info>,
+    pub info: Option<contact::InfoOneof>,
     // ...
 }
 
 pub mod contact {
-    pub enum Info {
+    pub enum InfoOneof {
         Email(String),
         Phone(String),
         Address(Box<super::Address>),  // message variants are boxed
@@ -536,12 +536,12 @@ pub mod contact {
 
 ```rust,ignore
 // Setting
-msg.info = Some(contact::Info::Email("test@example.com".into()));
+msg.info = Some(contact::InfoOneof::Email("test@example.com".into()));
 
 // Matching
 match &msg.info {
-    Some(contact::Info::Email(e)) => println!("email: {}", e),
-    Some(contact::Info::Phone(p)) => println!("phone: {}", p),
+    Some(contact::InfoOneof::Email(e)) => println!("email: {}", e),
+    Some(contact::InfoOneof::Phone(p)) => println!("phone: {}", p),
     None => println!("not set"),
     _ => {}
 }
@@ -550,14 +550,41 @@ match &msg.info {
 **Message and group variants are always boxed** (`Box<T>`) so that recursive types compile. `From<T>` impls are generated for each boxed variant — one targeting the oneof enum, one targeting `Option<_>` — so that both `Box::new` and `Some` disappear at the call site:
 
 ```rust,ignore
-msg.info = addr.into();                                    // From<Address> for Option<Info>
-msg.info = Some(contact::Info::from(addr));                // From<Address> for Info
-msg.info = Some(contact::Info::Address(Box::new(addr)));   // fully explicit
+msg.info = addr.into();                                         // From<Address> for Option<InfoOneof>
+msg.info = Some(contact::InfoOneof::from(addr));                // From<Address> for InfoOneof
+msg.info = Some(contact::InfoOneof::Address(Box::new(addr)));   // fully explicit
 ```
 
 All three are equivalent. The `From` impls are only generated when the message type appears in **exactly one** variant of the oneof — if two variants share a type (e.g., two `Empty`-typed variants), `From` would be ambiguous and is skipped.
 
-Deref coercion means pattern-matched bindings (`Some(Info::Address(a)) => a.street`) work the same as for unboxed types.
+Deref coercion means pattern-matched bindings (`Some(InfoOneof::Address(a)) => a.street`) work the same as for unboxed types.
+
+#### Naming
+
+The oneof enum is always named `{PascalCase(oneof_name)}Oneof`, regardless of whether siblings would otherwise collide. The view counterpart (when view generation is enabled) is `{Name}OneofView`. Both live in the message's module alongside any nested messages and enums:
+
+```protobuf
+message Contact {
+  // Nested message sharing the PascalCase name with the oneof below is fine.
+  message Info { ... }
+  oneof info {
+    string email = 1;
+  }
+}
+```
+
+```rust,ignore
+pub mod contact {
+    pub struct Info { ... }          // nested message keeps its declared name
+    pub enum InfoOneof {             // oneof enum always takes the Oneof suffix
+        Email(String),
+    }
+}
+```
+
+Because the rule is purely a function of the oneof's own name, adding or removing sibling types never changes the Rust name of an existing oneof enum — migrations are localized.
+
+If the generated `{Name}Oneof` would itself collide with a sibling nested type (a message literally named `InfoOneof` beside `oneof info`, for example) or, when views are enabled, a sibling's view struct would clash with `{Name}OneofView`, codegen fails with `CodeGenError::OneofNameConflict { scope, oneof_name, attempted }` identifying the parent message so you can rename the oneof or the nested type in the `.proto`.
 
 ### Nested types and module structure
 

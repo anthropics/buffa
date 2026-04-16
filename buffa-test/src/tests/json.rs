@@ -51,7 +51,9 @@ fn test_json_oneof_round_trip() {
     use crate::json_types::WithOneof;
 
     let msg = WithOneof {
-        value: Some(crate::json_types::with_oneof::Value::Text("hello".into())),
+        value: Some(crate::json_types::with_oneof::ValueOneof::Text(
+            "hello".into(),
+        )),
         ..Default::default()
     };
     let json = serde_json::to_string(&msg).expect("serialize");
@@ -64,24 +66,24 @@ fn test_json_oneof_all_scalar_types_round_trip() {
     // Exercises serde_helper_path dispatch for all proto3-JSON-special
     // scalar types in oneof position, and the corresponding runtime
     // json_helpers::{int64, uint32, uint64, float, double, bytes} paths.
-    use crate::json_types::with_oneof_types::Kind;
+    use crate::json_types::with_oneof_types::KindOneof;
     use crate::json_types::WithOneofTypes;
 
     #[rustfmt::skip]
-    let cases: &[(Kind, &str)] = &[
+    let cases: &[(KindOneof, &str)] = &[
         // int64 → quoted decimal string.
-        (Kind::I64(i64::MAX),       r#"{"i64":"9223372036854775807"}"#),
-        (Kind::I64(-1),             r#"{"i64":"-1"}"#),
+        (KindOneof::I64(i64::MAX),       r#"{"i64":"9223372036854775807"}"#),
+        (KindOneof::I64(-1),             r#"{"i64":"-1"}"#),
         // uint32 → unquoted integer.
-        (Kind::U32(u32::MAX),       r#"{"u32":4294967295}"#),
+        (KindOneof::U32(u32::MAX),       r#"{"u32":4294967295}"#),
         // uint64 → quoted decimal string.
-        (Kind::U64(u64::MAX),       r#"{"u64":"18446744073709551615"}"#),
+        (KindOneof::U64(u64::MAX),       r#"{"u64":"18446744073709551615"}"#),
         // float → JSON number.
-        (Kind::F32(1.5),            r#"{"f32":1.5}"#),
+        (KindOneof::F32(1.5),            r#"{"f32":1.5}"#),
         // double → JSON number.
-        (Kind::F64(3.25),           r#"{"f64":3.25}"#),
+        (KindOneof::F64(3.25),           r#"{"f64":3.25}"#),
         // bytes → base64-encoded string.
-        (Kind::B(vec![0xDE, 0xAD]), r#"{"b":"3q0="}"#),
+        (KindOneof::B(vec![0xDE, 0xAD]), r#"{"b":"3q0="}"#),
     ];
 
     for (kind, expected_json) in cases {
@@ -94,8 +96,8 @@ fn test_json_oneof_all_scalar_types_round_trip() {
 
         let decoded: WithOneofTypes = serde_json::from_str(&json).expect("deserialize");
         match (&decoded.kind, kind) {
-            (Some(Kind::F32(a)), Kind::F32(b)) => assert_eq!(a, b),
-            (Some(Kind::F64(a)), Kind::F64(b)) => assert_eq!(a, b),
+            (Some(KindOneof::F32(a)), KindOneof::F32(b)) => assert_eq!(a, b),
+            (Some(KindOneof::F64(a)), KindOneof::F64(b)) => assert_eq!(a, b),
             (a, b) => assert_eq!(a, &Some(b.clone()), "deserialize mismatch"),
         }
     }
@@ -104,17 +106,17 @@ fn test_json_oneof_all_scalar_types_round_trip() {
 #[test]
 fn test_json_oneof_float_special_values() {
     // NaN/Infinity/-Infinity serialize as string tokens per proto3-JSON spec.
-    use crate::json_types::with_oneof_types::Kind;
+    use crate::json_types::with_oneof_types::KindOneof;
     use crate::json_types::WithOneofTypes;
 
     #[rustfmt::skip]
-    let cases: &[(Kind, &str)] = &[
-        (Kind::F32(f32::NAN),          r#"{"f32":"NaN"}"#),
-        (Kind::F32(f32::INFINITY),     r#"{"f32":"Infinity"}"#),
-        (Kind::F32(f32::NEG_INFINITY), r#"{"f32":"-Infinity"}"#),
-        (Kind::F64(f64::NAN),          r#"{"f64":"NaN"}"#),
-        (Kind::F64(f64::INFINITY),     r#"{"f64":"Infinity"}"#),
-        (Kind::F64(f64::NEG_INFINITY), r#"{"f64":"-Infinity"}"#),
+    let cases: &[(KindOneof, &str)] = &[
+        (KindOneof::F32(f32::NAN),          r#"{"f32":"NaN"}"#),
+        (KindOneof::F32(f32::INFINITY),     r#"{"f32":"Infinity"}"#),
+        (KindOneof::F32(f32::NEG_INFINITY), r#"{"f32":"-Infinity"}"#),
+        (KindOneof::F64(f64::NAN),          r#"{"f64":"NaN"}"#),
+        (KindOneof::F64(f64::INFINITY),     r#"{"f64":"Infinity"}"#),
+        (KindOneof::F64(f64::NEG_INFINITY), r#"{"f64":"-Infinity"}"#),
     ];
 
     for (kind, expected_json) in cases {
@@ -128,13 +130,13 @@ fn test_json_oneof_float_special_values() {
         let decoded: WithOneofTypes = serde_json::from_str(&json).expect("deserialize");
         // Check class equality for NaN (NaN != NaN).
         match (decoded.kind.unwrap(), kind) {
-            (Kind::F32(a), Kind::F32(b)) => {
+            (KindOneof::F32(a), KindOneof::F32(b)) => {
                 assert_eq!(a.is_nan(), b.is_nan(), "{kind:?}");
                 if !b.is_nan() {
                     assert_eq!(a, *b, "{kind:?}");
                 }
             }
-            (Kind::F64(a), Kind::F64(b)) => {
+            (KindOneof::F64(a), KindOneof::F64(b)) => {
                 assert_eq!(a.is_nan(), b.is_nan(), "{kind:?}");
                 if !b.is_nan() {
                     assert_eq!(a, *b, "{kind:?}");
@@ -149,12 +151,12 @@ fn test_json_oneof_float_special_values() {
 fn test_json_oneof_null_value() {
     // google.protobuf.NullValue in a oneof serializes as JSON null.
     // On deserialize, JSON null populates the NullValue variant (not unset).
-    use crate::json_types::with_oneof_types::Kind;
+    use crate::json_types::with_oneof_types::KindOneof;
     use crate::json_types::WithOneofTypes;
     use buffa_types::google::protobuf::NullValue;
 
     let msg = WithOneofTypes {
-        kind: Some(Kind::Nv(NullValue::NULL_VALUE.into())),
+        kind: Some(KindOneof::Nv(NullValue::NULL_VALUE.into())),
         ..Default::default()
     };
     let json = serde_json::to_string(&msg).expect("serialize");
@@ -162,7 +164,7 @@ fn test_json_oneof_null_value() {
 
     let decoded: WithOneofTypes = serde_json::from_str(&json).expect("deserialize");
     assert!(
-        matches!(decoded.kind, Some(Kind::Nv(_))),
+        matches!(decoded.kind, Some(KindOneof::Nv(_))),
         "expected Nv variant, got {:?}",
         decoded.kind
     );
@@ -172,14 +174,14 @@ fn test_json_oneof_null_value() {
 fn test_json_oneof_float_deserialize_from_integer() {
     // proto3-JSON: float/double fields accept integer JSON values.
     // Exercises json_helpers::float::visit_i64/visit_u64.
-    use crate::json_types::with_oneof_types::Kind;
+    use crate::json_types::with_oneof_types::KindOneof;
     use crate::json_types::WithOneofTypes;
 
     let decoded: WithOneofTypes = serde_json::from_str(r#"{"f32": 42}"#).unwrap();
-    assert_eq!(decoded.kind, Some(Kind::F32(42.0)));
+    assert_eq!(decoded.kind, Some(KindOneof::F32(42.0)));
 
     let decoded: WithOneofTypes = serde_json::from_str(r#"{"f64": -7}"#).unwrap();
-    assert_eq!(decoded.kind, Some(Kind::F64(-7.0)));
+    assert_eq!(decoded.kind, Some(KindOneof::F64(-7.0)));
 }
 
 #[test]
@@ -435,7 +437,7 @@ fn test_json_optional_open_enum_integer_deserialize() {
 
 #[test]
 fn test_json_mixed_oneof_and_fields_round_trip() {
-    use crate::json_types::mixed_oneof_and_fields::Choice;
+    use crate::json_types::mixed_oneof_and_fields::ChoiceOneof;
     use crate::json_types::{MixedOneofAndFields, Scalar};
 
     let msg = MixedOneofAndFields {
@@ -448,7 +450,7 @@ fn test_json_mixed_oneof_and_fields_round_trip() {
         }),
         dynamic: buffa::MessageField::some(buffa_types::google::protobuf::Value::from(3.14)),
         snake_case_field: 7,
-        choice: Some(Choice::Text("hello".into())),
+        choice: Some(ChoiceOneof::Text("hello".into())),
         ..Default::default()
     };
 
@@ -467,7 +469,7 @@ fn test_json_mixed_oneof_and_fields_round_trip() {
     assert_eq!(decoded.scalar.int32_val, 42);
     assert_eq!(decoded.dynamic.as_number(), Some(3.14));
     assert_eq!(decoded.snake_case_field, 7);
-    assert_eq!(decoded.choice, Some(Choice::Text("hello".into())));
+    assert_eq!(decoded.choice, Some(ChoiceOneof::Text("hello".into())));
 }
 
 #[test]
@@ -488,12 +490,12 @@ fn test_json_mixed_value_field_null_forwarding() {
     // not "field absent". The custom Deserialize must forward null to
     // Value's own Deserialize rather than skipping the field.
     use crate::json_types::MixedOneofAndFields;
-    use buffa_types::google::protobuf::{value::Kind, NullValue};
+    use buffa_types::google::protobuf::{value::KindOneof, NullValue};
 
     let decoded: MixedOneofAndFields = serde_json::from_str(r#"{"dynamic": null}"#).unwrap();
     assert!(decoded.dynamic.is_set(), "null should set the Value field");
     assert!(
-        matches!(decoded.dynamic.kind, Some(Kind::NullValue(_))),
+        matches!(decoded.dynamic.kind, Some(KindOneof::NullValue(_))),
         "expected NullValue, got {:?}",
         decoded.dynamic.kind
     );

@@ -96,7 +96,7 @@ fn person_roundtrip() {
         ..Default::default()
     }];
     p.maybe_age = Some(30);
-    p.contact = Some(person::Contact::Email("alice@example.com".into()));
+    p.contact = Some(person::ContactOneof::Email("alice@example.com".into()));
 
     let text = encode_to_string(&p);
     let back: Person = decode_from_str(&text).unwrap();
@@ -155,15 +155,18 @@ fn closed_enum_encode_decode() {
 #[test]
 fn oneof_variants() {
     let mut p = Person::default();
-    p.contact = Some(person::Contact::Phone("555-1234".into()));
+    p.contact = Some(person::ContactOneof::Phone("555-1234".into()));
     assert_eq!(encode_to_string(&p), r#"phone: "555-1234""#);
 
     let p: Person = decode_from_str(r#"email: "x@y.com""#).unwrap();
-    assert_eq!(p.contact, Some(person::Contact::Email("x@y.com".into())));
+    assert_eq!(
+        p.contact,
+        Some(person::ContactOneof::Email("x@y.com".into()))
+    );
 
     // Last-wins when both variants appear (textproto merge semantics).
     let p: Person = decode_from_str(r#"email: "a" phone: "b""#).unwrap();
-    assert_eq!(p.contact, Some(person::Contact::Phone("b".into())));
+    assert_eq!(p.contact, Some(person::ContactOneof::Phone("b".into())));
 }
 
 // ── repeated ────────────────────────────────────────────────────────────────
@@ -336,11 +339,11 @@ fn group_decode_accepts_both_names() {
 
 #[test]
 fn group_in_oneof_uses_type_name() {
-    use crate::proto2::view_coverage::{Choice, Payload};
+    use crate::proto2::view_coverage::{ChoiceOneof, Payload};
     use crate::proto2::ViewCoverage;
 
     let mut v = ViewCoverage::default();
-    v.choice = Some(Choice::Payload(Box::new(Payload {
+    v.choice = Some(ChoiceOneof::Payload(Box::new(Payload {
         x: Some(5),
         ..Default::default()
     })));
@@ -351,9 +354,9 @@ fn group_in_oneof_uses_type_name() {
     // Decode accepts both forms.
     let mut v = ViewCoverage::default();
     buffa::text::merge_from_str(&mut v, "Payload { x: 10 }").unwrap();
-    assert!(matches!(v.choice, Some(Choice::Payload(ref p)) if p.x == Some(10)));
+    assert!(matches!(v.choice, Some(ChoiceOneof::Payload(ref p)) if p.x == Some(10)));
 
     let mut v = ViewCoverage::default();
     buffa::text::merge_from_str(&mut v, "payload { x: 11 }").unwrap();
-    assert!(matches!(v.choice, Some(Choice::Payload(ref p)) if p.x == Some(11)));
+    assert!(matches!(v.choice, Some(ChoiceOneof::Payload(ref p)) if p.x == Some(11)));
 }

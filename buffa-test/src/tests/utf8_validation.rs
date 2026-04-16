@@ -63,13 +63,16 @@ fn view_none_accepts_invalid_utf8() {
 
 #[test]
 fn oneof_none_variant_is_vec_u8() {
-    use oneof_no_validation::Content;
+    use oneof_no_validation::ContentOneof;
     let msg = OneofNoValidation {
-        content: Some(Content::RawText(b"bytes".to_vec())),
+        content: Some(ContentOneof::RawText(b"bytes".to_vec())),
         ..Default::default()
     };
     let decoded = OneofNoValidation::decode_from_slice(&msg.encode_to_vec()).unwrap();
-    assert_eq!(decoded.content, Some(Content::RawText(b"bytes".to_vec())));
+    assert_eq!(
+        decoded.content,
+        Some(ContentOneof::RawText(b"bytes".to_vec()))
+    );
 }
 
 #[test]

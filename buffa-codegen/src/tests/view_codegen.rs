@@ -147,10 +147,10 @@ fn test_view_oneof_with_message_variant() {
     )
     .expect("should generate");
     let content = &files[0].content;
-    // View struct must have an optional PayloadView field.
+    // View struct must have an optional PayloadOneofView field.
     assert!(
-        content.contains("pub payload: ::core::option::Option<request::PayloadView"),
-        "RequestView must have payload: ::core::option::Option<request::PayloadView>: {content}"
+        content.contains("pub payload: ::core::option::Option<request::PayloadOneofView"),
+        "RequestView must have payload: ::core::option::Option<request::PayloadOneofView>: {content}"
     );
     // The oneof view enum must have both variants.
     assert!(

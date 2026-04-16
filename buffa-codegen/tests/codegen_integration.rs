@@ -363,8 +363,8 @@ fn inline_oneof() {
         "#,
         &no_views(),
     );
-    assert!(content.contains("pub info: Option<contact::Info>"));
-    assert!(content.contains("pub enum Info"));
+    assert!(content.contains("pub info: Option<contact::InfoOneof>"));
+    assert!(content.contains("pub enum InfoOneof"));
     assert!(content.contains("Email("));
     assert!(content.contains("Phone("));
 }
