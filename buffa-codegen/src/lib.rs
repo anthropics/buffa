@@ -156,6 +156,13 @@ pub struct CodeGenConfig {
     /// message structs, not enum types. Useful for struct-only attributes like
     /// `#[serde(default)]`.
     pub message_attributes: Vec<(String, String)>,
+    /// Custom attributes to inject on generated enum types only (not messages).
+    ///
+    /// Same path-matching semantics as `type_attributes`, but only applied to
+    /// enum types. Useful for enum-only attributes like
+    /// `#[derive(strum::EnumIter)]` when the user does not want to apply the
+    /// same attribute to every message in the matched scope.
+    pub enum_attributes: Vec<(String, String)>,
 }
 
 impl Default for CodeGenConfig {
@@ -174,6 +181,7 @@ impl Default for CodeGenConfig {
             type_attributes: Vec::new(),
             field_attributes: Vec::new(),
             message_attributes: Vec::new(),
+            enum_attributes: Vec::new(),
         }
     }
 }

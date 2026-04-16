@@ -211,12 +211,17 @@ pub fn generate_enum(
         &ctx.config.type_attributes,
         proto_fqn,
     )?;
+    let custom_enum_attrs = crate::context::CodeGenContext::matching_attributes(
+        &ctx.config.enum_attributes,
+        proto_fqn,
+    )?;
 
     Ok(quote! {
         #enum_doc
         #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
         #arbitrary_derive
         #custom_type_attrs
+        #custom_enum_attrs
         #[repr(i32)]
         pub enum #name_ident {
             #(#variants,)*
