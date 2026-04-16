@@ -116,6 +116,11 @@ pub fn generate_enum(
     let mut from_i32_arms = Vec::new();
     let mut from_proto_name_arms: Vec<TokenStream> = Vec::new();
     let mut proto_name_arms = Vec::new();
+    // Static slice for `Enumeration::values()`. Aliases are skipped — the
+    // slice mirrors the *primary* declaration order, matching what
+    // `from_i32` resolves to (so `MyEnum::values()[i].to_i32() ==
+    // from_i32(...).unwrap().to_i32()` for unique values).
+    let mut value_idents: Vec<Ident> = Vec::new();
     // Track the best candidate for Default: prefer value == 0 (proto3 default),
     // fall back to the first primary variant.
     let mut zero_variant: Option<Ident> = None;
@@ -162,6 +167,7 @@ pub fn generate_enum(
             proto_name_arms.push(quote! {
                 Self::#variant_ident => #value_name
             });
+            value_idents.push(variant_ident);
         }
     }
 
@@ -251,6 +257,10 @@ pub fn generate_enum(
                     #(#from_proto_name_arms,)*
                     _ => ::core::option::Option::None,
                 }
+            }
+
+            fn values() -> &'static [Self] {
+                &[#(Self::#value_idents),*]
             }
         }
     })

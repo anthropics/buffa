@@ -107,6 +107,23 @@ impl ::buffa::Enumeration for Edition {
             _ => ::core::option::Option::None,
         }
     }
+    fn values() -> &'static [Self] {
+        &[
+            Self::EDITION_UNKNOWN,
+            Self::EDITION_LEGACY,
+            Self::EDITION_PROTO2,
+            Self::EDITION_PROTO3,
+            Self::EDITION_2023,
+            Self::EDITION_2024,
+            Self::EDITION_UNSTABLE,
+            Self::EDITION_1_TEST_ONLY,
+            Self::EDITION_2_TEST_ONLY,
+            Self::EDITION_99997_TEST_ONLY,
+            Self::EDITION_99998_TEST_ONLY,
+            Self::EDITION_99999_TEST_ONLY,
+            Self::EDITION_MAX,
+        ]
+    }
 }
 /// Describes the 'visibility' of a symbol with respect to the proto import
 /// system. Symbols can only be imported when the visibility rules do not prevent
@@ -151,6 +168,9 @@ impl ::buffa::Enumeration for SymbolVisibility {
             "VISIBILITY_EXPORT" => ::core::option::Option::Some(Self::VISIBILITY_EXPORT),
             _ => ::core::option::Option::None,
         }
+    }
+    fn values() -> &'static [Self] {
+        &[Self::VISIBILITY_UNSET, Self::VISIBILITY_LOCAL, Self::VISIBILITY_EXPORT]
     }
 }
 /// The protocol compiler can output a FileDescriptorSet containing the .proto
@@ -1809,6 +1829,9 @@ pub mod extension_range_options {
                 _ => ::core::option::Option::None,
             }
         }
+        fn values() -> &'static [Self] {
+            &[Self::DECLARATION, Self::UNVERIFIED]
+        }
     }
     #[derive(Clone, PartialEq, Default)]
     pub struct Declaration {
@@ -2603,6 +2626,28 @@ pub mod field_descriptor_proto {
                 _ => ::core::option::Option::None,
             }
         }
+        fn values() -> &'static [Self] {
+            &[
+                Self::TYPE_DOUBLE,
+                Self::TYPE_FLOAT,
+                Self::TYPE_INT64,
+                Self::TYPE_UINT64,
+                Self::TYPE_INT32,
+                Self::TYPE_FIXED64,
+                Self::TYPE_FIXED32,
+                Self::TYPE_BOOL,
+                Self::TYPE_STRING,
+                Self::TYPE_GROUP,
+                Self::TYPE_MESSAGE,
+                Self::TYPE_BYTES,
+                Self::TYPE_UINT32,
+                Self::TYPE_ENUM,
+                Self::TYPE_SFIXED32,
+                Self::TYPE_SFIXED64,
+                Self::TYPE_SINT32,
+                Self::TYPE_SINT64,
+            ]
+        }
     }
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[repr(i32)]
@@ -2646,6 +2691,9 @@ pub mod field_descriptor_proto {
                 "LABEL_REQUIRED" => ::core::option::Option::Some(Self::LABEL_REQUIRED),
                 _ => ::core::option::Option::None,
             }
+        }
+        fn values() -> &'static [Self] {
+            &[Self::LABEL_OPTIONAL, Self::LABEL_REPEATED, Self::LABEL_REQUIRED]
         }
     }
 }
@@ -4639,6 +4687,9 @@ pub mod file_options {
                 _ => ::core::option::Option::None,
             }
         }
+        fn values() -> &'static [Self] {
+            &[Self::SPEED, Self::CODE_SIZE, Self::LITE_RUNTIME]
+        }
     }
 }
 #[derive(Clone, PartialEq, Default)]
@@ -5624,6 +5675,9 @@ pub mod field_options {
                 _ => ::core::option::Option::None,
             }
         }
+        fn values() -> &'static [Self] {
+            &[Self::STRING, Self::CORD, Self::STRING_PIECE]
+        }
     }
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[repr(i32)]
@@ -5666,6 +5720,9 @@ pub mod field_options {
                 "JS_NUMBER" => ::core::option::Option::Some(Self::JS_NUMBER),
                 _ => ::core::option::Option::None,
             }
+        }
+        fn values() -> &'static [Self] {
+            &[Self::JS_NORMAL, Self::JS_STRING, Self::JS_NUMBER]
         }
     }
     /// If set to RETENTION_SOURCE, the option will be omitted from the binary.
@@ -5713,6 +5770,9 @@ pub mod field_options {
                 }
                 _ => ::core::option::Option::None,
             }
+        }
+        fn values() -> &'static [Self] {
+            &[Self::RETENTION_UNKNOWN, Self::RETENTION_RUNTIME, Self::RETENTION_SOURCE]
         }
     }
     /// This indicates the types of entities that the field may apply to when used
@@ -5804,6 +5864,20 @@ pub mod field_options {
                 }
                 _ => ::core::option::Option::None,
             }
+        }
+        fn values() -> &'static [Self] {
+            &[
+                Self::TARGET_TYPE_UNKNOWN,
+                Self::TARGET_TYPE_FILE,
+                Self::TARGET_TYPE_EXTENSION_RANGE,
+                Self::TARGET_TYPE_MESSAGE,
+                Self::TARGET_TYPE_FIELD,
+                Self::TARGET_TYPE_ONEOF,
+                Self::TARGET_TYPE_ENUM,
+                Self::TARGET_TYPE_ENUM_ENTRY,
+                Self::TARGET_TYPE_SERVICE,
+                Self::TARGET_TYPE_METHOD,
+            ]
         }
     }
     #[derive(Clone, PartialEq, Default)]
@@ -7266,6 +7340,9 @@ pub mod method_options {
                 _ => ::core::option::Option::None,
             }
         }
+        fn values() -> &'static [Self] {
+            &[Self::IDEMPOTENCY_UNKNOWN, Self::NO_SIDE_EFFECTS, Self::IDEMPOTENT]
+        }
     }
 }
 /// A message representing a option the parser does not recognize. This only
@@ -8079,6 +8156,14 @@ pub mod feature_set {
                 _ => ::core::option::Option::None,
             }
         }
+        fn values() -> &'static [Self] {
+            &[
+                Self::FIELD_PRESENCE_UNKNOWN,
+                Self::EXPLICIT,
+                Self::IMPLICIT,
+                Self::LEGACY_REQUIRED,
+            ]
+        }
     }
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[repr(i32)]
@@ -8120,6 +8205,9 @@ pub mod feature_set {
                 "CLOSED" => ::core::option::Option::Some(Self::CLOSED),
                 _ => ::core::option::Option::None,
             }
+        }
+        fn values() -> &'static [Self] {
+            &[Self::ENUM_TYPE_UNKNOWN, Self::OPEN, Self::CLOSED]
         }
     }
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -8167,6 +8255,9 @@ pub mod feature_set {
                 _ => ::core::option::Option::None,
             }
         }
+        fn values() -> &'static [Self] {
+            &[Self::REPEATED_FIELD_ENCODING_UNKNOWN, Self::PACKED, Self::EXPANDED]
+        }
     }
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[repr(i32)]
@@ -8209,6 +8300,9 @@ pub mod feature_set {
                 _ => ::core::option::Option::None,
             }
         }
+        fn values() -> &'static [Self] {
+            &[Self::UTF8_VALIDATION_UNKNOWN, Self::VERIFY, Self::NONE]
+        }
     }
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[repr(i32)]
@@ -8250,6 +8344,9 @@ pub mod feature_set {
                 "DELIMITED" => ::core::option::Option::Some(Self::DELIMITED),
                 _ => ::core::option::Option::None,
             }
+        }
+        fn values() -> &'static [Self] {
+            &[Self::MESSAGE_ENCODING_UNKNOWN, Self::LENGTH_PREFIXED, Self::DELIMITED]
         }
     }
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -8295,6 +8392,9 @@ pub mod feature_set {
                 _ => ::core::option::Option::None,
             }
         }
+        fn values() -> &'static [Self] {
+            &[Self::JSON_FORMAT_UNKNOWN, Self::ALLOW, Self::LEGACY_BEST_EFFORT]
+        }
     }
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[repr(i32)]
@@ -8336,6 +8436,9 @@ pub mod feature_set {
                 "STYLE_LEGACY" => ::core::option::Option::Some(Self::STYLE_LEGACY),
                 _ => ::core::option::Option::None,
             }
+        }
+        fn values() -> &'static [Self] {
+            &[Self::ENFORCE_NAMING_STYLE_UNKNOWN, Self::STYLE2024, Self::STYLE_LEGACY]
         }
     }
     #[derive(Clone, PartialEq, Default)]
@@ -8484,6 +8587,15 @@ pub mod feature_set {
                     "STRICT" => ::core::option::Option::Some(Self::STRICT),
                     _ => ::core::option::Option::None,
                 }
+            }
+            fn values() -> &'static [Self] {
+                &[
+                    Self::DEFAULT_SYMBOL_VISIBILITY_UNKNOWN,
+                    Self::EXPORT_ALL,
+                    Self::EXPORT_TOP_LEVEL,
+                    Self::LOCAL_ALL,
+                    Self::STRICT,
+                ]
             }
         }
     }
@@ -9836,6 +9948,9 @@ pub mod generated_code_info {
                     "ALIAS" => ::core::option::Option::Some(Self::ALIAS),
                     _ => ::core::option::Option::None,
                 }
+            }
+            fn values() -> &'static [Self] {
+                &[Self::NONE, Self::SET, Self::ALIAS]
             }
         }
     }

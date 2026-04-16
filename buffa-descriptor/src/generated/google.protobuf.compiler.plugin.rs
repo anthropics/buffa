@@ -732,6 +732,13 @@ pub mod code_generator_response {
                 _ => ::core::option::Option::None,
             }
         }
+        fn values() -> &'static [Self] {
+            &[
+                Self::FEATURE_NONE,
+                Self::FEATURE_PROTO3_OPTIONAL,
+                Self::FEATURE_SUPPORTS_EDITIONS,
+            ]
+        }
     }
     /// Represents a single generated file.
     #[derive(Clone, PartialEq, Default)]

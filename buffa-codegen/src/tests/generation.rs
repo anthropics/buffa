@@ -154,6 +154,72 @@ fn test_enum_with_alias() {
 }
 
 #[test]
+fn test_enum_values_emits_static_slice_in_declaration_order() {
+    let mut file = proto3_file("status.proto");
+    file.enum_type.push(EnumDescriptorProto {
+        name: Some("Status".to_string()),
+        value: vec![
+            enum_value("UNKNOWN", 0),
+            enum_value("ACTIVE", 1),
+            enum_value("INACTIVE", 2),
+        ],
+        ..Default::default()
+    });
+
+    let files = generate(
+        &[file],
+        &["status.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("enum should generate");
+    let content = &files[0].content;
+    // Generated impl includes a `values()` returning a static slice in
+    // proto declaration order. The generated body collapses to a single
+    // line so we match against that exact form.
+    assert!(
+        content.contains("&[Self::UNKNOWN, Self::ACTIVE, Self::INACTIVE]"),
+        "missing declaration-order values() slice: {content}"
+    );
+}
+
+#[test]
+fn test_enum_values_skips_aliases() {
+    let mut file = proto3_file("code.proto");
+    file.enum_type.push(EnumDescriptorProto {
+        name: Some("Code".to_string()),
+        value: vec![
+            enum_value("OK", 0),
+            enum_value("SUCCESS", 0), // alias for OK — not its own variant
+            enum_value("ERROR", 1),
+        ],
+        options: (crate::generated::descriptor::EnumOptions {
+            allow_alias: Some(true),
+            ..Default::default()
+        })
+        .into(),
+        ..Default::default()
+    });
+
+    let files = generate(
+        &[file],
+        &["code.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("aliased enum should generate");
+    let content = &files[0].content;
+    // values() lists only primary variants — aliases are `pub const` items,
+    // not enum variants, so they don't belong in the slice.
+    assert!(
+        content.contains("&[Self::OK, Self::ERROR]"),
+        "values() should mirror primary variants only: {content}"
+    );
+    assert!(
+        !content.contains("Self::SUCCESS"),
+        "alias `SUCCESS` must not appear in values(): {content}"
+    );
+}
+
+#[test]
 fn test_file_not_found_error() {
     let file = proto3_file("other.proto");
     let result = generate(

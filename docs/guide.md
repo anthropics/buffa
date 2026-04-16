@@ -505,6 +505,19 @@ let known: Option<Status> = msg.status.as_known();
 
 **Proto2 closed enums** use the bare enum type directly (`Status`, not `EnumValue<Status>`). Unknown values on the wire are routed to `unknown_fields` instead.
 
+**Iterating over variants.** Every generated enum implements [`Enumeration::values`], a static slice of all primary variants in proto declaration order:
+
+```rust,ignore
+for variant in Status::values() {
+    println!("{:?} = {}", variant, variant.to_i32());
+}
+
+assert!(Status::values().contains(&Status::ACTIVE));
+assert_eq!(Status::values().len(), 3);
+```
+
+Aliases (additional names sharing an existing value, allowed by `option allow_alias = true`) are not enum variants in Rust — they're emitted as `pub const` aliases — so they don't appear in `values()`.
+
 ### Oneofs
 
 Oneofs are represented as Rust enums inside the message's module. The enum name is always `{PascalCase(oneof_name)}Oneof` — the suffix is applied uniformly, so the generated type name is predictable from the `.proto` alone and does not depend on which siblings happen to exist.

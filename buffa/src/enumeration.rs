@@ -28,6 +28,26 @@ pub trait Enumeration: Clone + Copy + PartialEq + Eq + Hash + fmt::Debug {
     fn from_proto_name(_name: &str) -> Option<Self> {
         None
     }
+
+    /// All known variants of this enum, in proto declaration order.
+    ///
+    /// Generated `impl Enumeration` blocks override this with a static
+    /// slice of every variant. The default implementation returns an
+    /// empty slice so out-of-tree consumers implementing this trait
+    /// against an older codegen version continue to compile — they
+    /// should override the default once regenerated.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// for variant in MyEnum::values() {
+    ///     println!("{:?} = {}", variant, variant.to_i32());
+    /// }
+    /// assert!(MyEnum::values().contains(&MyEnum::Active));
+    /// ```
+    fn values() -> &'static [Self] {
+        &[]
+    }
 }
 
 /// A protobuf enum field value that can hold either a known variant or an

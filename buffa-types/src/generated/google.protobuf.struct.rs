@@ -38,6 +38,9 @@ impl ::buffa::Enumeration for NullValue {
             _ => ::core::option::Option::None,
         }
     }
+    fn values() -> &'static [Self] {
+        &[Self::NULL_VALUE]
+    }
 }
 /// `Struct` represents a structured data value, consisting of fields
 /// which map to dynamically typed values. In some languages, `Struct`
