@@ -927,7 +927,7 @@ fn custom_deser_oneof_group(
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?;
         let json_name = field.json_name.as_deref().unwrap_or(proto_name);
-        let variant_ident = format_ident!("{}", crate::oneof::to_pascal_case(proto_name));
+        let variant_ident = crate::oneof::oneof_variant_ident(proto_name);
         let field_type = crate::impl_message::effective_type(ctx, field, features);
         // bytes_fields override: feeds #variant_type into the _DeserSeed
         // return type, which pins the generic T in json_helpers::bytes::
