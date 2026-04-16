@@ -7,13 +7,20 @@
 //!   addressbook show <file> <id> Show details for a contact
 //!   addressbook dump <file>      Print the address book in textproto
 
+// `#[allow(deprecated)]` silences codegen-internal references to
+// deprecated fields (here: `AddressOneof::FreeformAddress`, which
+// build.rs marks `#[deprecated]`). Generated encoders/decoders match
+// on every variant regardless of deprecation, so the warnings fire
+// inside the generated module itself; we only want them in *our*
+// code, not in generated code we don't control.
+#[allow(deprecated)]
 mod proto {
     include!(concat!(env!("OUT_DIR"), "/_include.rs"));
 }
 
 use buffa::{EnumValue, Message};
 use proto::buffa::examples::addressbook::v1::{
-    person::{Address, PhoneNumber, PhoneType},
+    person::{AddressOneof, PhoneNumber, PhoneType},
     AddressBook, Person, StructuredAddress,
 };
 use std::io::{self, BufRead, Write};
@@ -107,28 +114,29 @@ fn cmd_add(file_path: &str) {
         });
     }
 
-    let address_choice = prompt("Address type (structured/freeform/none)");
-    let address = match address_choice.to_lowercase().as_str() {
-        "structured" | "s" => {
-            let street = prompt("  Street");
-            let city = prompt("  City");
-            let state = prompt("  State");
-            let zip_code = prompt("  Zip code");
-            let country = prompt("  Country");
-            Some(Address::StructuredAddress(Box::new(StructuredAddress {
+    // Write path: the `freeform_address` variant is marked `#[deprecated]`
+    // via a `field_attribute` in build.rs, so we don't offer it on new
+    // entries — this is the typical migration pattern. Existing records
+    // that already use it are still read correctly by `cmd_show` below.
+    let address_choice = prompt("Address (type 'y' for structured, empty to skip)");
+    let address = if matches!(address_choice.to_lowercase().as_str(), "y" | "yes" | "s") {
+        let street = prompt("  Street");
+        let city = prompt("  City");
+        let state = prompt("  State");
+        let zip_code = prompt("  Zip code");
+        let country = prompt("  Country");
+        Some(AddressOneof::StructuredAddress(Box::new(
+            StructuredAddress {
                 street,
                 city,
                 state,
                 zip_code,
                 country,
                 ..Default::default()
-            })))
-        }
-        "freeform" | "f" => {
-            let addr = prompt("  Address");
-            Some(Address::FreeformAddress(addr))
-        }
-        _ => None,
+            },
+        )))
+    } else {
+        None
     };
 
     let now = std::time::SystemTime::now()
@@ -206,15 +214,20 @@ fn cmd_show(file_path: &str, id: i32) {
         println!("Phone: {} ({})", phone.number, type_name);
     }
 
+    // Read path: read both variants including the deprecated one for
+    // back-compat with address books written before `freeform_address`
+    // was deprecated. `#[allow(deprecated)]` is scoped to this match so
+    // warnings still fire on any accidental *writes* elsewhere.
+    #[allow(deprecated)]
     match &person.address {
-        Some(Address::StructuredAddress(addr)) => {
+        Some(AddressOneof::StructuredAddress(addr)) => {
             println!("Address:");
             println!("  {}", addr.street);
             println!("  {}, {} {}", addr.city, addr.state, addr.zip_code);
             println!("  {}", addr.country);
         }
-        Some(Address::FreeformAddress(addr)) => {
-            println!("Address: {addr}");
+        Some(AddressOneof::FreeformAddress(addr)) => {
+            println!("Address: {addr} (legacy freeform format)");
         }
         None => {}
     }
