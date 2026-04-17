@@ -258,7 +258,7 @@ fn empty_view_roundtrip() {
 fn any_view_roundtrip() {
     let any = wkt::Any {
         type_url: "type.googleapis.com/test.Msg".into(),
-        value: vec![0x08, 0x2a],
+        value: vec![0x08, 0x2a].into(),
         ..Default::default()
     };
     let bytes = any.encode_to_vec();
@@ -290,7 +290,7 @@ fn string_value_view_roundtrip() {
 #[test]
 fn bytes_value_view_roundtrip() {
     let w = wkt::BytesValue {
-        value: vec![0xca, 0xfe],
+        value: vec![0xca, 0xfe].into(),
         ..Default::default()
     };
     let bytes = w.encode_to_vec();

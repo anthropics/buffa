@@ -135,7 +135,7 @@ pub struct Any {
     /// Must be a valid serialized protocol buffer of the above specified type.
     ///
     /// Field 2: `value`
-    pub value: ::buffa::alloc::vec::Vec<u8>,
+    pub value: ::bytes::Bytes,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
     #[doc(hidden)]
@@ -232,7 +232,7 @@ impl ::buffa::Message for Any {
                         actual: tag.wire_type() as u8,
                     });
                 }
-                ::buffa::types::merge_bytes(&mut self.value, buf)?;
+                self.value = ::bytes::Bytes::from(::buffa::types::decode_bytes(buf)?);
             }
             _ => {
                 self.__buffa_unknown_fields
@@ -246,7 +246,7 @@ impl ::buffa::Message for Any {
     }
     fn clear(&mut self) {
         self.type_url.clear();
-        self.value.clear();
+        self.value = ::bytes::Bytes::new();
         self.__buffa_unknown_fields.clear();
         self.__buffa_cached_size.set(0);
     }
@@ -488,7 +488,7 @@ impl<'a> ::buffa::MessageView<'a> for AnyView<'a> {
         use ::buffa::alloc::string::ToString as _;
         Any {
             type_url: self.type_url.to_string(),
-            value: (self.value).to_vec(),
+            value: ::bytes::Bytes::copy_from_slice(self.value),
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields
                 .to_owned()

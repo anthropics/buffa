@@ -24,6 +24,9 @@ arbitrary = { workspace = true, optional = true }
 # `buffa/text` is zero-dep and the WKT generated code unconditionally impls
 # `TextFormat` — enabled here so the checked-in src/generated/ always compiles.
 buffa = { workspace = true, default-features = false, features = ["text"] }
+# Generated `Any.value: Bytes` (via `bytes_fields` in gen_wkt_types) emits
+# `::bytes::Bytes` paths, so the crate is referenced directly.
+bytes = { workspace = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
@@ -31,3 +34,10 @@ thiserror = { workspace = true }
 # No [build-dependencies]. WKT code is checked in at src/generated/ so
 # consumers don't need protoc or the buffa-build/buffa-codegen toolchain.
 # Regenerate with `task gen-wkt-types` if codegen output format changes.
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "any_clone"
+harness = false
