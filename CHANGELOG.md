@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Breaking changes
+
+- **`google.protobuf.Any.value` is now `::bytes::Bytes` instead of `Vec<u8>`.**
+  Makes `Any::clone()` a cheap refcount bump (up to ~170x faster for large
+  payloads) instead of a full memcpy. Call sites constructing an `Any` by hand
+  need `.into()` on the payload (e.g. `value: my_vec.into()`, or pass `Bytes`
+  directly). Reading `any.value` is unchanged — `Bytes` derefs to `&[u8]`.
+  `buffa-types` now depends on `bytes` unconditionally.
+
 ## [0.3.0] - 2026-04-01
 
 ### Breaking changes
