@@ -35,7 +35,7 @@ fn bench_clone_into_vec(c: &mut Criterion) {
         group.throughput(Throughput::Elements(n as u64));
         group.bench_with_input(BenchmarkId::new(format!("{len}B"), n), &src, |b, src| {
             b.iter(|| {
-                let out: Vec<Any> = src.iter().cloned().collect();
+                let out: Vec<Any> = src.to_vec();
                 black_box(out);
             });
         });

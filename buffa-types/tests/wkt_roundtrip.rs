@@ -290,7 +290,7 @@ fn string_value_view_roundtrip() {
 #[test]
 fn bytes_value_view_roundtrip() {
     let w = wkt::BytesValue {
-        value: vec![0xca, 0xfe].into(),
+        value: vec![0xca, 0xfe],
         ..Default::default()
     };
     let bytes = w.encode_to_vec();
