@@ -395,6 +395,18 @@ mod tests {
     }
 
     #[test]
+    fn clone_shares_payload_buffer() {
+        let orig = Any {
+            type_url: "type.googleapis.com/example.Msg".into(),
+            value: alloc::vec![0xAB; 1024].into(),
+            ..Default::default()
+        };
+        let dup = orig.clone();
+        assert_eq!(orig.value.as_ptr(), dup.value.as_ptr());
+        assert_eq!(orig.value.len(), dup.value.len());
+    }
+
+    #[test]
     fn is_type() {
         let ts = Timestamp::default();
         let any = Any::pack(&ts, "type.googleapis.com/google.protobuf.Timestamp");
