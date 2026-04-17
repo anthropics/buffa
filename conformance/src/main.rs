@@ -45,6 +45,58 @@ pub mod protobuf_test_messages {
             env!("OUT_DIR"),
             "/google.protobuf.test_messages_proto3.rs"
         ));
+        #[allow(
+            clippy::derivable_impls,
+            clippy::match_single_binding,
+            non_camel_case_types,
+            dead_code,
+            unused_imports
+        )]
+        pub mod view {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/google.protobuf.test_messages_proto3.__view.rs"
+            ));
+            #[allow(
+                clippy::derivable_impls,
+                clippy::match_single_binding,
+                non_camel_case_types,
+                dead_code,
+                unused_imports
+            )]
+            pub mod oneofs {
+                include!(concat!(
+                    env!("OUT_DIR"),
+                    "/google.protobuf.test_messages_proto3.__view_oneofs.rs"
+                ));
+            }
+        }
+        #[allow(
+            clippy::derivable_impls,
+            clippy::match_single_binding,
+            non_camel_case_types,
+            dead_code,
+            unused_imports
+        )]
+        pub mod ext {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/google.protobuf.test_messages_proto3.__ext.rs"
+            ));
+        }
+        #[allow(
+            clippy::derivable_impls,
+            clippy::match_single_binding,
+            non_camel_case_types,
+            dead_code,
+            unused_imports
+        )]
+        pub mod oneofs {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/google.protobuf.test_messages_proto3.__oneofs.rs"
+            ));
+        }
     }
 
     pub mod proto2 {
@@ -53,6 +105,58 @@ pub mod protobuf_test_messages {
             env!("OUT_DIR"),
             "/google.protobuf.test_messages_proto2.rs"
         ));
+        #[allow(
+            clippy::derivable_impls,
+            clippy::match_single_binding,
+            non_camel_case_types,
+            dead_code,
+            unused_imports
+        )]
+        pub mod view {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/google.protobuf.test_messages_proto2.__view.rs"
+            ));
+            #[allow(
+                clippy::derivable_impls,
+                clippy::match_single_binding,
+                non_camel_case_types,
+                dead_code,
+                unused_imports
+            )]
+            pub mod oneofs {
+                include!(concat!(
+                    env!("OUT_DIR"),
+                    "/google.protobuf.test_messages_proto2.__view_oneofs.rs"
+                ));
+            }
+        }
+        #[allow(
+            clippy::derivable_impls,
+            clippy::match_single_binding,
+            non_camel_case_types,
+            dead_code,
+            unused_imports
+        )]
+        pub mod ext {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/google.protobuf.test_messages_proto2.__ext.rs"
+            ));
+        }
+        #[allow(
+            clippy::derivable_impls,
+            clippy::match_single_binding,
+            non_camel_case_types,
+            dead_code,
+            unused_imports
+        )]
+        pub mod oneofs {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/google.protobuf.test_messages_proto2.__oneofs.rs"
+            ));
+        }
     }
 }
 
@@ -73,6 +177,58 @@ pub mod protobuf_test_messages_editions {
             env!("OUT_DIR"),
             "/editions.golden.test_messages_proto3_editions.rs"
         ));
+        #[allow(
+            clippy::derivable_impls,
+            clippy::match_single_binding,
+            non_camel_case_types,
+            dead_code,
+            unused_imports
+        )]
+        pub mod view {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/editions.golden.test_messages_proto3_editions.__view.rs"
+            ));
+            #[allow(
+                clippy::derivable_impls,
+                clippy::match_single_binding,
+                non_camel_case_types,
+                dead_code,
+                unused_imports
+            )]
+            pub mod oneofs {
+                include!(concat!(
+                    env!("OUT_DIR"),
+                    "/editions.golden.test_messages_proto3_editions.__view_oneofs.rs"
+                ));
+            }
+        }
+        #[allow(
+            clippy::derivable_impls,
+            clippy::match_single_binding,
+            non_camel_case_types,
+            dead_code,
+            unused_imports
+        )]
+        pub mod ext {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/editions.golden.test_messages_proto3_editions.__ext.rs"
+            ));
+        }
+        #[allow(
+            clippy::derivable_impls,
+            clippy::match_single_binding,
+            non_camel_case_types,
+            dead_code,
+            unused_imports
+        )]
+        pub mod oneofs {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/editions.golden.test_messages_proto3_editions.__oneofs.rs"
+            ));
+        }
     }
 
     pub mod proto2 {
@@ -81,6 +237,58 @@ pub mod protobuf_test_messages_editions {
             env!("OUT_DIR"),
             "/editions.golden.test_messages_proto2_editions.rs"
         ));
+        #[allow(
+            clippy::derivable_impls,
+            clippy::match_single_binding,
+            non_camel_case_types,
+            dead_code,
+            unused_imports
+        )]
+        pub mod view {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/editions.golden.test_messages_proto2_editions.__view.rs"
+            ));
+            #[allow(
+                clippy::derivable_impls,
+                clippy::match_single_binding,
+                non_camel_case_types,
+                dead_code,
+                unused_imports
+            )]
+            pub mod oneofs {
+                include!(concat!(
+                    env!("OUT_DIR"),
+                    "/editions.golden.test_messages_proto2_editions.__view_oneofs.rs"
+                ));
+            }
+        }
+        #[allow(
+            clippy::derivable_impls,
+            clippy::match_single_binding,
+            non_camel_case_types,
+            dead_code,
+            unused_imports
+        )]
+        pub mod ext {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/editions.golden.test_messages_proto2_editions.__ext.rs"
+            ));
+        }
+        #[allow(
+            clippy::derivable_impls,
+            clippy::match_single_binding,
+            non_camel_case_types,
+            dead_code,
+            unused_imports
+        )]
+        pub mod oneofs {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/editions.golden.test_messages_proto2_editions.__oneofs.rs"
+            ));
+        }
     }
 
     // Pure edition 2023: file-level DELIMITED message encoding. Binary-only
@@ -90,6 +298,58 @@ pub mod protobuf_test_messages_editions {
         env!("OUT_DIR"),
         "/conformance.test_protos.test_messages_edition2023.rs"
     ));
+    #[allow(
+        clippy::derivable_impls,
+        clippy::match_single_binding,
+        non_camel_case_types,
+        dead_code,
+        unused_imports
+    )]
+    pub mod view {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/conformance.test_protos.test_messages_edition2023.__view.rs"
+        ));
+        #[allow(
+            clippy::derivable_impls,
+            clippy::match_single_binding,
+            non_camel_case_types,
+            dead_code,
+            unused_imports
+        )]
+        pub mod oneofs {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/conformance.test_protos.test_messages_edition2023.__view_oneofs.rs"
+            ));
+        }
+    }
+    #[allow(
+        clippy::derivable_impls,
+        clippy::match_single_binding,
+        non_camel_case_types,
+        dead_code,
+        unused_imports
+    )]
+    pub mod ext {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/conformance.test_protos.test_messages_edition2023.__ext.rs"
+        ));
+    }
+    #[allow(
+        clippy::derivable_impls,
+        clippy::match_single_binding,
+        non_camel_case_types,
+        dead_code,
+        unused_imports
+    )]
+    pub mod oneofs {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/conformance.test_protos.test_messages_edition2023.__oneofs.rs"
+        ));
+    }
 }
 
 #[cfg(has_editions_protos)]
@@ -130,15 +390,15 @@ fn setup_type_registry() {
     // (JSON + text) + extension entries. `test_messages_proto3.proto`
     // has no extensions, so its register_types is Any-only;
     // `test_messages_proto2.proto` declares `extension_int32` at field 120.
-    proto3::register_types(&mut reg);
-    proto2::register_types(&mut reg);
+    proto3::ext::register_types(&mut reg);
+    proto2::ext::register_types(&mut reg);
     #[cfg(has_editions_protos)]
     {
-        editions_proto3::register_types(&mut reg);
-        editions_proto2::register_types(&mut reg);
+        editions_proto3::ext::register_types(&mut reg);
+        editions_proto2::ext::register_types(&mut reg);
         // Edition2023's `groupliketype` / `delimited_ext` extensions —
         // needed for the text `[pkg.ext] { ... }` bracket tests.
-        protobuf_test_messages_editions::register_types(&mut reg);
+        protobuf_test_messages_editions::ext::register_types(&mut reg);
     }
 
     set_type_registry(reg);
@@ -344,21 +604,21 @@ fn process_via_view(req: &envelope::Request) -> envelope::Response {
 
     match req.message_type.as_str() {
         MSG_PROTO3 => roundtrip_proto3(
-            || decode_binary_via_view::<proto3::TestAllTypesProto3View<'_>>(b),
+            || decode_binary_via_view::<proto3::view::TestAllTypesProto3View<'_>>(b),
             encode_proto3_binary,
         ),
         MSG_PROTO2 => roundtrip_proto2(
-            || decode_binary_via_view::<proto2::TestAllTypesProto2View<'_>>(b),
+            || decode_binary_via_view::<proto2::view::TestAllTypesProto2View<'_>>(b),
             encode_proto2_binary,
         ),
         #[cfg(has_editions_protos)]
         MSG_EDITIONS_PROTO3 => roundtrip(
-            || decode_binary_via_view::<editions_proto3::TestAllTypesProto3View<'_>>(b),
+            || decode_binary_via_view::<editions_proto3::view::TestAllTypesProto3View<'_>>(b),
             encode_binary,
         ),
         #[cfg(has_editions_protos)]
         MSG_EDITIONS_PROTO2 => roundtrip(
-            || decode_binary_via_view::<editions_proto2::TestAllTypesProto2View<'_>>(b),
+            || decode_binary_via_view::<editions_proto2::view::TestAllTypesProto2View<'_>>(b),
             encode_binary,
         ),
         other => Response::Skipped(format!("message type '{other}' not in view dispatch")),

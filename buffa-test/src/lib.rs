@@ -1,12 +1,74 @@
 // Wrap generated code in the package module so intra-file type references
 // (e.g. `basic::Status`, `basic::Address`) resolve correctly.
 //
+// Each `.proto` file produces five sibling `.rs` outputs:
+//   - `<stem>.rs`                — owned items (structs, enums, nested modules)
+//   - `<stem>.__view.rs`         — view-tree contents (included inside `view::`)
+//   - `<stem>.__ext.rs`          — extension-tree contents (included inside `ext::`)
+//   - `<stem>.__oneofs.rs`       — owned oneof enums (inside `oneofs::`)
+//   - `<stem>.__view_oneofs.rs`  — view oneof enums (inside `view::oneofs::`)
+//
+// Each pub mod below mirrors that layout: `include!` the owned file at
+// the package root, and stitch the ancillary siblings inside
+// `pub mod view { … pub mod oneofs { … } }`, `pub mod ext { … }`, and
+// `pub mod oneofs { … }` per package.
+//
 // The clippy allows suppress lints that fire on generated code patterns:
 // - derivable_impls: generated enum Default impls are explicit rather than derived
 // - match_single_binding: empty messages generate a single-arm wildcard merge match
+
+macro_rules! include_generated {
+    ($stem:literal) => {
+        include!(concat!(env!("OUT_DIR"), "/", $stem, ".rs"));
+        #[allow(
+            clippy::derivable_impls,
+            clippy::match_single_binding,
+            clippy::wildcard_in_or_patterns,
+            non_camel_case_types,
+            dead_code,
+            unused_imports
+        )]
+        pub mod view {
+            include!(concat!(env!("OUT_DIR"), "/", $stem, ".__view.rs"));
+            #[allow(
+                clippy::derivable_impls,
+                clippy::match_single_binding,
+                clippy::wildcard_in_or_patterns,
+                non_camel_case_types,
+                dead_code,
+                unused_imports
+            )]
+            pub mod oneofs {
+                include!(concat!(env!("OUT_DIR"), "/", $stem, ".__view_oneofs.rs"));
+            }
+        }
+        #[allow(
+            clippy::derivable_impls,
+            clippy::match_single_binding,
+            non_camel_case_types,
+            dead_code,
+            unused_imports
+        )]
+        pub mod ext {
+            include!(concat!(env!("OUT_DIR"), "/", $stem, ".__ext.rs"));
+        }
+        #[allow(
+            clippy::derivable_impls,
+            clippy::match_single_binding,
+            clippy::wildcard_in_or_patterns,
+            non_camel_case_types,
+            dead_code,
+            unused_imports
+        )]
+        pub mod oneofs {
+            include!(concat!(env!("OUT_DIR"), "/", $stem, ".__oneofs.rs"));
+        }
+    };
+}
+
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod basic {
-    include!(concat!(env!("OUT_DIR"), "/basic.rs"));
+    include_generated!("basic");
 }
 
 #[allow(
@@ -15,7 +77,7 @@ pub mod basic {
     non_camel_case_types
 )]
 pub mod proto3sem {
-    include!(concat!(env!("OUT_DIR"), "/proto3_semantics.rs"));
+    include_generated!("proto3_semantics");
 }
 
 #[allow(
@@ -25,32 +87,32 @@ pub mod proto3sem {
     dead_code
 )]
 pub mod keywords {
-    include!(concat!(env!("OUT_DIR"), "/keywords.rs"));
+    include_generated!("keywords");
 }
 
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod nested {
-    include!(concat!(env!("OUT_DIR"), "/nested_deep.rs"));
+    include_generated!("nested_deep");
 }
 
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod wkt {
-    include!(concat!(env!("OUT_DIR"), "/wkt_usage.rs"));
+    include_generated!("wkt_usage");
 }
 
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod cross {
-    include!(concat!(env!("OUT_DIR"), "/cross_package.rs"));
+    include_generated!("cross_package");
 }
 
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod cross_syntax {
-    include!(concat!(env!("OUT_DIR"), "/cross_syntax.rs"));
+    include_generated!("cross_syntax");
 }
 
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod collisions {
-    include!(concat!(env!("OUT_DIR"), "/name_collisions.rs"));
+    include_generated!("name_collisions");
 }
 
 #[allow(clippy::derivable_impls, clippy::match_single_binding, dead_code)]
@@ -64,7 +126,7 @@ pub mod prelude_shadow {
     non_camel_case_types
 )]
 pub mod proto2 {
-    include!(concat!(env!("OUT_DIR"), "/proto2_defaults.rs"));
+    include_generated!("proto2_defaults");
 }
 
 #[allow(
@@ -74,7 +136,7 @@ pub mod proto2 {
     dead_code
 )]
 pub mod json_types {
-    include!(concat!(env!("OUT_DIR"), "/json_types.rs"));
+    include_generated!("json_types");
 }
 
 #[allow(
@@ -83,7 +145,7 @@ pub mod json_types {
     non_camel_case_types
 )]
 pub mod p2json {
-    include!(concat!(env!("OUT_DIR"), "/proto2_json.rs"));
+    include_generated!("proto2_json");
 }
 
 #[allow(
@@ -92,7 +154,7 @@ pub mod p2json {
     non_camel_case_types
 )]
 pub mod utf8test {
-    include!(concat!(env!("OUT_DIR"), "/utf8_validation.rs"));
+    include_generated!("utf8_validation");
 }
 
 #[allow(
@@ -103,7 +165,7 @@ pub mod utf8test {
     dead_code
 )]
 pub mod edenumjson {
-    include!(concat!(env!("OUT_DIR"), "/editions_enum_json.rs"));
+    include_generated!("editions_enum_json");
 }
 
 #[allow(
@@ -113,7 +175,7 @@ pub mod edenumjson {
     dead_code
 )]
 pub mod edge {
-    include!(concat!(env!("OUT_DIR"), "/edge_cases.rs"));
+    include_generated!("edge_cases");
 }
 
 #[allow(
@@ -123,7 +185,7 @@ pub mod edge {
     dead_code
 )]
 pub mod custopts {
-    include!(concat!(env!("OUT_DIR"), "/custom_options.rs"));
+    include_generated!("custom_options");
 }
 
 #[allow(
@@ -133,7 +195,7 @@ pub mod custopts {
     dead_code
 )]
 pub mod extjson {
-    include!(concat!(env!("OUT_DIR"), "/ext_json.rs"));
+    include_generated!("ext_json");
 }
 
 #[allow(
@@ -143,7 +205,7 @@ pub mod extjson {
     dead_code
 )]
 pub mod groupext {
-    include!(concat!(env!("OUT_DIR"), "/group_ext.rs"));
+    include_generated!("group_ext");
 }
 
 #[allow(
@@ -153,7 +215,7 @@ pub mod groupext {
     dead_code
 )]
 pub mod msgset {
-    include!(concat!(env!("OUT_DIR"), "/messageset.rs"));
+    include_generated!("messageset");
 }
 
 #[cfg(has_edition_2024)]
@@ -164,7 +226,7 @@ pub mod msgset {
     dead_code
 )]
 pub mod ed2024 {
-    include!(concat!(env!("OUT_DIR"), "/editions_2024.rs"));
+    include_generated!("editions_2024");
 }
 
 // Regression: use_bytes_type() previously produced uncompilable decode code.
@@ -178,6 +240,49 @@ pub mod ed2024 {
 )]
 pub mod basic_bytes {
     include!(concat!(env!("OUT_DIR"), "/bytes_variant/basic.rs"));
+    #[allow(
+        clippy::derivable_impls,
+        clippy::match_single_binding,
+        non_camel_case_types,
+        dead_code,
+        unused_imports
+    )]
+    pub mod view {
+        include!(concat!(env!("OUT_DIR"), "/bytes_variant/basic.__view.rs"));
+        #[allow(
+            clippy::derivable_impls,
+            clippy::match_single_binding,
+            non_camel_case_types,
+            dead_code,
+            unused_imports
+        )]
+        pub mod oneofs {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/bytes_variant/basic.__view_oneofs.rs"
+            ));
+        }
+    }
+    #[allow(
+        clippy::derivable_impls,
+        clippy::match_single_binding,
+        non_camel_case_types,
+        dead_code,
+        unused_imports
+    )]
+    pub mod ext {
+        include!(concat!(env!("OUT_DIR"), "/bytes_variant/basic.__ext.rs"));
+    }
+    #[allow(
+        clippy::derivable_impls,
+        clippy::match_single_binding,
+        non_camel_case_types,
+        dead_code,
+        unused_imports
+    )]
+    pub mod oneofs {
+        include!(concat!(env!("OUT_DIR"), "/bytes_variant/basic.__oneofs.rs"));
+    }
 }
 
 // Views + preserve_unknown_fields=false: covers the else-branches in view
@@ -190,6 +295,55 @@ pub mod basic_bytes {
 )]
 pub mod basic_no_uf {
     include!(concat!(env!("OUT_DIR"), "/no_unknown_views/basic.rs"));
+    #[allow(
+        clippy::derivable_impls,
+        clippy::match_single_binding,
+        non_camel_case_types,
+        dead_code,
+        unused_imports
+    )]
+    pub mod view {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/no_unknown_views/basic.__view.rs"
+        ));
+        #[allow(
+            clippy::derivable_impls,
+            clippy::match_single_binding,
+            non_camel_case_types,
+            dead_code,
+            unused_imports
+        )]
+        pub mod oneofs {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/no_unknown_views/basic.__view_oneofs.rs"
+            ));
+        }
+    }
+    #[allow(
+        clippy::derivable_impls,
+        clippy::match_single_binding,
+        non_camel_case_types,
+        dead_code,
+        unused_imports
+    )]
+    pub mod ext {
+        include!(concat!(env!("OUT_DIR"), "/no_unknown_views/basic.__ext.rs"));
+    }
+    #[allow(
+        clippy::derivable_impls,
+        clippy::match_single_binding,
+        non_camel_case_types,
+        dead_code,
+        unused_imports
+    )]
+    pub mod oneofs {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/no_unknown_views/basic.__oneofs.rs"
+        ));
+    }
 }
 
 // These tests intentionally use the field-assignment style

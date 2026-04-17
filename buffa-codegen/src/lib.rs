@@ -41,12 +41,69 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 /// Result of generating Rust code for a single `.proto` file.
-#[derive(Debug)]
+///
+/// Buffa's generated-code layout places ancillary types in **kind-namespaced
+/// parallel trees** at each package root (see DESIGN.md → "Generated code
+/// layout"). The kind segment is outermost; for kinds that modify other
+/// kinds (only `view` today), the modifier wraps the modified:
+///
+/// - `pkg::<ident>` — owned types at package scope (messages, nested
+///   modules, package-level enums).
+/// - `pkg::view::<proto-path>::<Ident>View` — views mirroring the owned
+///   proto-message path. Views retain the `View` suffix (the one
+///   documented exception to the tree-disambiguates-ident rule —
+///   message + view are commonly co-imported into the same scope).
+/// - `pkg::oneofs::<proto-path>::<Ident>` — oneof enums, lifted out of
+///   the owned tree into a dedicated parallel tree.
+/// - `pkg::view::oneofs::<proto-path>::<Ident>` — views of oneof enums
+///   (the `view` modifier wraps the `oneofs` kind).
+/// - `pkg::ext::<Ident>` — file-level extension consts + `register_types`.
+///
+/// Each proto file produces up to FIVE sibling output files, which
+/// [`generate_module_tree`] stitches into the tree above:
+///
+/// - `<stem>.rs` — owned tree contents, emitted at package scope.
+/// - `<stem>.__view.rs` — view tree contents (top-level view structs
+///   and nested-view sub-modules), destined for `pub mod view`.
+/// - `<stem>.__ext.rs` — ext tree contents (extension consts + register
+///   fn), destined for `pub mod ext`.
+/// - `<stem>.__oneofs.rs` — owned oneof enums grouped by owner, destined
+///   for `pub mod oneofs`.
+/// - `<stem>.__view_oneofs.rs` — view-of-oneof enums, destined for
+///   `pub mod view::oneofs`.
+///
+/// The [`kind`](Self::kind) field identifies which of the five a file is.
+/// Files missing content for a particular kind (e.g. a proto with no
+/// oneofs) still emit an empty sibling so downstream tooling
+/// ([`protoc-gen-buffa-packaging`], `buffa-build`) can use stable
+/// `include!` paths without probing the filesystem.
+#[derive(Debug, Clone)]
 pub struct GeneratedFile {
-    /// The output file path (e.g., "my_package.rs").
+    /// The output file path (e.g., "my_package.rs", "my_package.__view.rs").
     pub name: String,
     /// The generated Rust source code.
     pub content: String,
+    /// Which stream this file represents.
+    pub kind: GeneratedFileKind,
+    /// Proto-package dotted name (e.g. `"google.protobuf"`, or empty
+    /// for no package). Used by [`generate_module_tree`] to group
+    /// sibling files into the right `pub mod <pkg>` target.
+    pub package: String,
+}
+
+/// Which sub-tree within a proto-file's generated output a file represents.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GeneratedFileKind {
+    /// Owned structs, enums, nested modules — emitted at package scope.
+    Owned,
+    /// View tree contents — to be placed inside a package-level `pub mod view`.
+    View,
+    /// Extension consts + `register_types` — placed inside `pub mod ext`.
+    Ext,
+    /// Oneof enums — placed inside `pub mod oneofs`.
+    Oneofs,
+    /// Views of oneof enums — placed inside `pub mod view { pub mod oneofs }`.
+    ViewOneofs,
 }
 
 /// Configuration for code generation.
@@ -129,12 +186,14 @@ pub struct CodeGenConfig {
     pub generate_text: bool,
     /// Whether to emit the file-level `register_types(&mut TypeRegistry)` fn.
     ///
-    /// Default `true`. Set to `false` when multiple generated files are
-    /// `include!`d into the same namespace (the identically-named fns would
-    /// collide) — e.g. `buffa-types`' WKTs, which hand-roll
-    /// `register_wkt_types` instead. The per-message `__*_JSON_ANY` /
-    /// `__*_TEXT_ANY` consts are still emitted; only the aggregating fn
-    /// is suppressed.
+    /// Default `true`. Emitted inside `pub mod ext { ... }` at the
+    /// package root alongside file-level extension consts (see the
+    /// [`ext` sub-module][GeneratedFileKind::Ext] of the generated
+    /// output). Set to `false` when a consumer hand-rolls its own
+    /// registration fn — e.g. `buffa-types` provides `register_wkt_types`
+    /// instead. The per-message `__*_JSON_ANY` / `__*_TEXT_ANY` consts
+    /// are still emitted at package scope; only the aggregating fn is
+    /// suppressed.
     pub emit_register_fn: bool,
     /// Custom attributes to inject on generated types (messages and enums).
     ///
@@ -250,24 +309,94 @@ pub fn generate(
             .find(|f| f.name.as_deref() == Some(file_name.as_str()))
             .ok_or_else(|| CodeGenError::FileNotFound(file_name.clone()))?;
 
-        let content = generate_file(&ctx, file_desc)?;
-        let rust_filename = proto_path_to_rust_module(file_name);
+        let FileOutputs {
+            owned,
+            view,
+            ext,
+            oneofs,
+            view_oneofs,
+        } = generate_file(&ctx, file_desc)?;
+        let owned_stem = proto_path_to_rust_module(file_name);
+        let stem = owned_stem
+            .strip_suffix(".rs")
+            .unwrap_or(&owned_stem)
+            .to_string();
+        let package = file_desc.package.as_deref().unwrap_or("").to_string();
         output.push(GeneratedFile {
-            name: rust_filename,
-            content,
+            name: owned_stem.clone(),
+            content: owned,
+            kind: GeneratedFileKind::Owned,
+            package: package.clone(),
+        });
+        // Always emit the sibling files, even when empty. Keeping them
+        // unconditional means `protoc-gen-buffa-packaging` (which can't
+        // tell whether a given file has view / ext / oneofs content) and
+        // `buffa-build` both generate stable `include!(...)` directives
+        // safely — an empty file expands to no tokens.
+        let empty_stream_header = |label: &str| -> String {
+            let source_line = file_desc
+                .name
+                .as_ref()
+                .map_or(String::new(), |n| format!("// source: {n}\n"));
+            format!(
+                "// @generated by protoc-gen-buffa. DO NOT EDIT. ({label}, empty)\n{source_line}\n"
+            )
+        };
+        output.push(GeneratedFile {
+            name: format!("{stem}.__view.rs"),
+            content: view.unwrap_or_else(|| empty_stream_header("view:: module contents")),
+            kind: GeneratedFileKind::View,
+            package: package.clone(),
+        });
+        output.push(GeneratedFile {
+            name: format!("{stem}.__ext.rs"),
+            content: ext.unwrap_or_else(|| empty_stream_header("ext:: module contents")),
+            kind: GeneratedFileKind::Ext,
+            package: package.clone(),
+        });
+        output.push(GeneratedFile {
+            name: format!("{stem}.__oneofs.rs"),
+            content: oneofs.unwrap_or_else(|| empty_stream_header("oneofs:: module contents")),
+            kind: GeneratedFileKind::Oneofs,
+            package: package.clone(),
+        });
+        output.push(GeneratedFile {
+            name: format!("{stem}.__view_oneofs.rs"),
+            content: view_oneofs
+                .unwrap_or_else(|| empty_stream_header("view::oneofs:: module contents")),
+            kind: GeneratedFileKind::ViewOneofs,
+            package,
         });
     }
 
     Ok(output)
 }
 
+/// Five output streams produced by [`generate_file`] for a single proto.
+struct FileOutputs {
+    owned: String,
+    view: Option<String>,
+    ext: Option<String>,
+    oneofs: Option<String>,
+    view_oneofs: Option<String>,
+}
+
 /// Generate a module tree that assembles generated `.rs` files into
 /// nested `pub mod` blocks matching the protobuf package hierarchy.
 ///
-/// Each entry is a `(file_name, package)` pair where `package` is the
-/// dot-separated protobuf package name (e.g., `"google.api"`). The module
-/// tree is built from the **package** hierarchy so that `super::`-based
-/// cross-package references resolve correctly.
+/// Each entry is a `ModuleTreeEntry` that records the file name, its
+/// proto package, and which stream it belongs to
+/// ([`GeneratedFileKind`]). Within each package module, sibling files
+/// are coalesced into:
+///
+/// - The package scope itself (owned files `include!`d directly).
+/// - A single `pub mod view { … }` wrapper that `include!`s every
+///   view-stream file in the package.
+/// - A single `pub mod ext { … }` wrapper likewise.
+///
+/// This lets multi-file-per-package setups (e.g. `google.rpc` has
+/// `status.rs` + `error_details.rs`) share one `view::` and one `ext::`
+/// module per package instead of colliding on per-file wrappers.
 ///
 /// `include_prefix` is prepended to file names in `include!` directives.
 /// Use `""` for relative paths or `concat!(env!("OUT_DIR"), "/")` style
@@ -279,7 +408,7 @@ pub fn generate(
 /// is consumed via `include!` (inner attributes are not valid in that
 /// context).
 pub fn generate_module_tree(
-    entries: &[(&str, &str)],
+    entries: &[ModuleTreeEntry<'_>],
     include_prefix: &str,
     emit_inner_allow: bool,
 ) -> String {
@@ -290,24 +419,36 @@ pub fn generate_module_tree(
 
     #[derive(Default)]
     struct ModNode {
-        files: Vec<String>,
+        owned_files: Vec<String>,
+        view_files: Vec<String>,
+        ext_files: Vec<String>,
+        oneofs_files: Vec<String>,
+        view_oneofs_files: Vec<String>,
         children: BTreeMap<String, Self>,
     }
 
     let mut root = ModNode::default();
 
-    for (file_name, package) in entries {
-        let pkg_parts: Vec<&str> = if package.is_empty() {
+    for entry in entries {
+        let pkg_parts: Vec<&str> = if entry.package.is_empty() {
             vec![]
         } else {
-            package.split('.').collect()
+            entry.package.split('.').collect()
         };
 
         let mut node = &mut root;
         for seg in &pkg_parts {
             node = node.children.entry(seg.to_string()).or_default();
         }
-        node.files.push(file_name.to_string());
+        match entry.kind {
+            GeneratedFileKind::Owned => node.owned_files.push(entry.file_name.to_string()),
+            GeneratedFileKind::View => node.view_files.push(entry.file_name.to_string()),
+            GeneratedFileKind::Ext => node.ext_files.push(entry.file_name.to_string()),
+            GeneratedFileKind::Oneofs => node.oneofs_files.push(entry.file_name.to_string()),
+            GeneratedFileKind::ViewOneofs => {
+                node.view_oneofs_files.push(entry.file_name.to_string())
+            }
+        }
     }
 
     let mut out = String::new();
@@ -324,8 +465,50 @@ pub fn generate_module_tree(
     fn emit(out: &mut String, node: &ModNode, depth: usize, prefix: &str, lints: &str) {
         let indent = "    ".repeat(depth);
 
-        for file in &node.files {
+        for file in &node.owned_files {
             writeln!(out, r#"{indent}include!("{prefix}{file}");"#).unwrap();
+        }
+
+        // `pub mod view { … }` wraps both the ordinary view files and
+        // (when present) an inner `pub mod oneofs { … }` for view-of-
+        // oneof enums — the `view` modifier wraps the `oneofs` kind,
+        // following the generated-code layout rule. Multi-file
+        // packages emit one `pub mod view` per package regardless of
+        // how many source `.proto`s contributed content.
+        let emit_view_wrapper = !node.view_files.is_empty() || !node.view_oneofs_files.is_empty();
+        if emit_view_wrapper {
+            writeln!(out, "{indent}#[allow({lints})]").unwrap();
+            writeln!(out, "{indent}pub mod view {{").unwrap();
+            for file in &node.view_files {
+                writeln!(out, r#"{indent}    include!("{prefix}{file}");"#).unwrap();
+            }
+            if !node.view_oneofs_files.is_empty() {
+                writeln!(out, "{indent}    #[allow({lints})]").unwrap();
+                writeln!(out, "{indent}    pub mod oneofs {{").unwrap();
+                for file in &node.view_oneofs_files {
+                    writeln!(out, r#"{indent}        include!("{prefix}{file}");"#).unwrap();
+                }
+                writeln!(out, "{indent}    }}").unwrap();
+            }
+            writeln!(out, "{indent}}}").unwrap();
+        }
+
+        if !node.ext_files.is_empty() {
+            writeln!(out, "{indent}#[allow({lints})]").unwrap();
+            writeln!(out, "{indent}pub mod ext {{").unwrap();
+            for file in &node.ext_files {
+                writeln!(out, r#"{indent}    include!("{prefix}{file}");"#).unwrap();
+            }
+            writeln!(out, "{indent}}}").unwrap();
+        }
+
+        if !node.oneofs_files.is_empty() {
+            writeln!(out, "{indent}#[allow({lints})]").unwrap();
+            writeln!(out, "{indent}pub mod oneofs {{").unwrap();
+            for file in &node.oneofs_files {
+                writeln!(out, r#"{indent}    include!("{prefix}{file}");"#).unwrap();
+            }
+            writeln!(out, "{indent}}}").unwrap();
         }
 
         for (name, child) in &node.children {
@@ -340,6 +523,17 @@ pub fn generate_module_tree(
 
     emit(&mut out, &root, 0, include_prefix, ALLOW_LINTS);
     out
+}
+
+/// Per-file entry passed to [`generate_module_tree`].
+#[derive(Debug, Clone, Copy)]
+pub struct ModuleTreeEntry<'a> {
+    /// Name (or relative path) of the `.rs` file to `include!`.
+    pub file_name: &'a str,
+    /// Proto package, dotted form, or `""` for no package.
+    pub package: &'a str,
+    /// Which sub-tree the file belongs to.
+    pub kind: GeneratedFileKind,
 }
 
 /// Check that no fields in the file use the `__buffa_` reserved prefix.
@@ -424,63 +618,24 @@ fn check_module_name_conflicts(file: &FileDescriptorProto) -> Result<(), CodeGen
     check_siblings(&file.message_type, package)
 }
 
-/// Check that no message named `FooView` collides with the generated view
-/// type for a sibling message `Foo`.
-fn check_view_name_conflicts(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
-    use std::collections::HashSet;
-
-    fn check_siblings(
-        messages: &[crate::generated::descriptor::DescriptorProto],
-        scope: &str,
-    ) -> Result<(), CodeGenError> {
-        // Collect all message names at this level.
-        let names: HashSet<&str> = messages.iter().filter_map(|m| m.name.as_deref()).collect();
-
-        // For each message Foo, check if FooView also exists.
-        for msg in messages {
-            let name = msg.name.as_deref().unwrap_or("");
-            let view_name = format!("{}View", name);
-            if names.contains(view_name.as_str()) {
-                return Err(CodeGenError::ViewNameConflict {
-                    scope: scope.to_string(),
-                    owned_msg: name.to_string(),
-                    view_msg: view_name,
-                });
-            }
-        }
-
-        // Recurse into nested messages.
-        for msg in messages {
-            let name = msg.name.as_deref().unwrap_or("");
-            let child_scope = if scope.is_empty() {
-                name.to_string()
-            } else {
-                format!("{}.{}", scope, name)
-            };
-            check_siblings(&msg.nested_type, &child_scope)?;
-        }
-
-        Ok(())
-    }
-
-    let package = file.package.as_deref().unwrap_or("");
-    check_siblings(&file.message_type, package)
-}
-
 /// Generate Rust source for a single `.proto` file.
 fn generate_file(
     ctx: &context::CodeGenContext,
     file: &FileDescriptorProto,
-) -> Result<String, CodeGenError> {
+) -> Result<FileOutputs, CodeGenError> {
     // Validate descriptors before generating code.
     check_reserved_field_names(file)?;
     check_module_name_conflicts(file)?;
-    if ctx.config.generate_views {
-        check_view_name_conflicts(file)?;
-    }
 
     let resolver = imports::ImportResolver::for_file(file);
-    let mut tokens = resolver.generate_use_block();
+    let mut owned_tokens = resolver.generate_use_block();
+    let mut view_tokens = TokenStream::new();
+    // Oneof-tree accumulators. Each top-level message contributes one
+    // `pub mod <self_mod> { ... }` wrapper to each of these streams
+    // (containing direct oneof enums and recursive sub-modules for
+    // nested messages' oneofs).
+    let mut oneofs_tokens = TokenStream::new();
+    let mut view_oneofs_tokens = TokenStream::new();
     let current_package = file.package.as_deref().unwrap_or("");
     let features = crate::features::for_file(file);
     for enum_type in &file.enum_type {
@@ -490,7 +645,7 @@ fn generate_file(
         } else {
             format!("{}.{}", current_package, enum_rust_name)
         };
-        tokens.extend(enumeration::generate_enum(
+        owned_tokens.extend(enumeration::generate_enum(
             ctx,
             enum_type,
             enum_rust_name,
@@ -512,7 +667,12 @@ fn generate_file(
         } else {
             format!("{}.{}", current_package, top_level_name)
         };
-        let (msg_top, msg_mod, msg_reg) = message::generate_message(
+        let message::MessageOutput {
+            top_level: msg_top,
+            mod_items: msg_mod,
+            oneof_items: msg_oneofs,
+            registry_paths: msg_reg,
+        } = message::generate_message(
             ctx,
             message_type,
             current_package,
@@ -521,7 +681,7 @@ fn generate_file(
             &features,
             &resolver,
         )?;
-        tokens.extend(msg_top);
+        owned_tokens.extend(msg_top);
         // Nested extension const paths are relative to the message's module
         // scope; prefix with `<mod_ident>::` for the package-level view.
         let mod_name = crate::oneof::to_snake_case(top_level_name);
@@ -537,8 +697,40 @@ fn generate_file(
         reg.json_any.extend(msg_reg.json_any);
         reg.text_any.extend(msg_reg.text_any);
 
-        let view_mod = if ctx.config.generate_views {
-            let (view_top, view_mod) = view::generate_view(
+        if !msg_mod.is_empty() {
+            owned_tokens.extend(quote! {
+                pub mod #mod_ident {
+                    #[allow(unused_imports)]
+                    use super::*;
+                    #msg_mod
+                }
+            });
+        }
+
+        // Wrap this message's oneof items in `pub mod <self_mod>` for
+        // the oneofs:: tree. Empty when neither this message nor any
+        // of its descendants declares a oneof.
+        if !msg_oneofs.is_empty() {
+            oneofs_tokens.extend(quote! {
+                pub mod #mod_ident {
+                    #[allow(unused_imports)]
+                    use super::*;
+                    #msg_oneofs
+                }
+            });
+        }
+
+        // Generate view items for this top-level message (and recursively
+        // for all of its non-map nested messages). The returned streams
+        // are the raw contents that belong inside `pub mod view { … }`
+        // and `pub mod view { pub mod oneofs { … } }` at the package
+        // level — `generate_module_tree` coalesces every file's view
+        // stream into a single wrapper per package.
+        if ctx.config.generate_views {
+            let view::ViewOutput {
+                items: view_items,
+                oneof_items: view_oneof_items,
+            } = view::generate_view(
                 ctx,
                 message_type,
                 current_package,
@@ -546,77 +738,144 @@ fn generate_file(
                 &proto_fqn,
                 &features,
             )?;
-            tokens.extend(view_top);
-            view_mod
-        } else {
-            TokenStream::new()
-        };
-
-        // Combine message and view module items into a single `pub mod`.
-        if !msg_mod.is_empty() || !view_mod.is_empty() {
-            tokens.extend(quote! {
-                pub mod #mod_ident {
-                    #[allow(unused_imports)]
-                    use super::*;
-                    #msg_mod
-                    #view_mod
-                }
-            });
+            view_tokens.extend(view_items);
+            if !view_oneof_items.is_empty() {
+                view_oneofs_tokens.extend(quote! {
+                    pub mod #mod_ident {
+                        #[allow(unused_imports)]
+                        use super::*;
+                        #view_oneof_items
+                    }
+                });
+            }
         }
     }
 
+    // File-level extensions. The emitted tokens expect to live inside
+    // `pub mod ext { ... }` at the package level (one hop below package
+    // root), so type references inside them use nesting=1.
     let (file_ext_tokens, file_ext_json, file_ext_text) = extension::generate_extensions(
         ctx,
         &file.extension,
         current_package,
-        0,
+        1,
         &features,
         current_package,
     )?;
-    tokens.extend(file_ext_tokens);
-    for id in file_ext_json {
-        reg.json_ext.push(quote! { #id });
-    }
-    for id in file_ext_text {
-        reg.text_ext.push(quote! { #id });
-    }
+    // File-level ext consts live in the ext:: module itself — bare idents
+    // from register_types (no super::). Nested-in-message ext consts are
+    // already in `reg.json_ext` / `reg.text_ext` with `mod_ident :: CONST`
+    // form and need `super::` to climb to package level.
+    let file_ext_json_refs: Vec<TokenStream> =
+        file_ext_json.into_iter().map(|id| quote! { #id }).collect();
+    let file_ext_text_refs: Vec<TokenStream> =
+        file_ext_text.into_iter().map(|id| quote! { #id }).collect();
 
-    // `register_types(&mut TypeRegistry)` — one call per entry, split by
-    // format. Only emitted when at least one entry exists. Lines are
-    // gated at codegen time by `generate_json` / `generate_text`; the
-    // corresponding `register_*` methods on `TypeRegistry` are feature-gated
-    // in buffa, so a flag/feature mismatch surfaces as a compile error.
-    if ctx.config.emit_register_fn && !reg.is_empty() {
-        let json_any = &reg.json_any;
-        let json_ext = &reg.json_ext;
-        let text_any = &reg.text_any;
-        let text_ext = &reg.text_ext;
-        tokens.extend(quote! {
-            /// Register this file's `Any` type entries and extension entries
-            /// (JSON and/or text, per codegen config) with the given registry.
-            pub fn register_types(reg: &mut ::buffa::type_registry::TypeRegistry) {
-                #( reg.register_json_any(#json_any); )*
-                #( reg.register_json_ext(#json_ext); )*
-                #( reg.register_text_any(#text_any); )*
-                #( reg.register_text_ext(#text_ext); )*
+    let mut ext_tokens = TokenStream::new();
+    let emit_ext = ctx.config.emit_register_fn
+        && (!reg.is_empty()
+            || !file_ext_tokens.is_empty()
+            || !file_ext_json_refs.is_empty()
+            || !file_ext_text_refs.is_empty());
+    if emit_ext {
+        let json_any: Vec<TokenStream> =
+            reg.json_any.iter().map(|p| quote! { super::#p }).collect();
+        let text_any: Vec<TokenStream> =
+            reg.text_any.iter().map(|p| quote! { super::#p }).collect();
+        // Nested-in-message ext consts: climb out of ext:: to package scope.
+        let nested_json_ext: Vec<TokenStream> =
+            reg.json_ext.iter().map(|p| quote! { super::#p }).collect();
+        let nested_text_ext: Vec<TokenStream> =
+            reg.text_ext.iter().map(|p| quote! { super::#p }).collect();
+        let file_json_ext = &file_ext_json_refs;
+        let file_text_ext = &file_ext_text_refs;
+        let has_any_reg =
+            !reg.is_empty() || !file_ext_json_refs.is_empty() || !file_ext_text_refs.is_empty();
+        let register_fn = if has_any_reg {
+            quote! {
+                /// Register this file's `Any` type entries and extension
+                /// entries (JSON and/or text, per codegen config) with the
+                /// given registry. See also the [`ext`] module for the
+                /// individual `Extension` consts the generated code uses.
+                pub fn register_types(reg: &mut ::buffa::type_registry::TypeRegistry) {
+                    #( reg.register_json_any(#json_any); )*
+                    #( reg.register_json_ext(#nested_json_ext); )*
+                    #( reg.register_json_ext(#file_json_ext); )*
+                    #( reg.register_text_any(#text_any); )*
+                    #( reg.register_text_ext(#nested_text_ext); )*
+                    #( reg.register_text_ext(#file_text_ext); )*
+                }
             }
+        } else {
+            quote! {}
+        };
+        // Raw contents only — no `pub mod ext { … }` wrapper. The wrapper
+        // is inserted by `generate_module_tree` (or by hand-written
+        // stitching, as in `buffa-types/src/lib.rs`).
+        ext_tokens.extend(quote! {
+            #[allow(unused_imports)]
+            use super::*;
+            #file_ext_tokens
+            #register_fn
         });
+    } else if !file_ext_tokens.is_empty() {
+        // emit_register_fn=false path: keep extensions at package scope so
+        // existing consumers (e.g. the hand-written `register_wkt_types`)
+        // that reference them by module-local name continue to work. The
+        // ext items get inlined into the owned stream.
+        owned_tokens.extend(file_ext_tokens);
     }
 
-    // Parse the token stream into a syn::File and format with prettyplease.
-    // Regular `//` comments cannot appear inside quote! blocks, so the file
-    // header is prepended as a raw string after formatting.
+    Ok(FileOutputs {
+        owned: render_stream(owned_tokens, file, "package-level owned items")?,
+        view: if view_tokens.is_empty() {
+            None
+        } else {
+            Some(render_stream(view_tokens, file, "view:: module contents")?)
+        },
+        ext: if ext_tokens.is_empty() {
+            None
+        } else {
+            Some(render_stream(ext_tokens, file, "ext:: module contents")?)
+        },
+        oneofs: if oneofs_tokens.is_empty() {
+            None
+        } else {
+            Some(render_stream(
+                oneofs_tokens,
+                file,
+                "oneofs:: module contents",
+            )?)
+        },
+        view_oneofs: if view_oneofs_tokens.is_empty() {
+            None
+        } else {
+            Some(render_stream(
+                view_oneofs_tokens,
+                file,
+                "view::oneofs:: module contents",
+            )?)
+        },
+    })
+}
+
+/// Format an accumulated `TokenStream` into Rust source with the
+/// standard `@generated` header. Shared by the owned, view, and ext
+/// streams so each file gets the same preamble.
+fn render_stream(
+    tokens: TokenStream,
+    file: &FileDescriptorProto,
+    stream_label: &str,
+) -> Result<String, CodeGenError> {
     let syntax_tree =
         syn::parse2::<syn::File>(tokens).map_err(|e| CodeGenError::InvalidSyntax(e.to_string()))?;
     let formatted = prettyplease::unparse(&syntax_tree);
-
     let source_line = file
         .name
         .as_ref()
         .map_or(String::new(), |n| format!("// source: {n}\n"));
-
     Ok(format!(
-        "// @generated by protoc-gen-buffa. DO NOT EDIT.\n{source_line}\n{formatted}"
+        "// @generated by protoc-gen-buffa. DO NOT EDIT. ({stream_label})\n{source_line}\n{formatted}"
     ))
 }
 
@@ -676,32 +935,6 @@ pub enum CodeGenError {
         name_a: String,
         name_b: String,
         module_name: String,
-    },
-    /// The `{Name}Oneof` identifier buffa would emit for a oneof collides
-    /// with another name in the parent message's Rust module (a nested
-    /// message, a nested enum, or — when view generation is enabled — a
-    /// `{Name}OneofView`-equivalent sibling). Resolve by renaming the
-    /// oneof or the colliding nested type in the `.proto`.
-    #[error(
-        "name conflict in '{scope}': oneof '{oneof_name}' would emit as \
-         '{attempted}', but that name already names another item in the \
-         enclosing scope"
-    )]
-    OneofNameConflict {
-        scope: String,
-        oneof_name: String,
-        attempted: String,
-    },
-    /// A message named `FooView` collides with the generated view type for
-    /// message `Foo`.
-    #[error(
-        "name conflict in '{scope}': message '{view_msg}' collides with \
-         the generated view type for message '{owned_msg}'"
-    )]
-    ViewNameConflict {
-        scope: String,
-        owned_msg: String,
-        view_msg: String,
     },
     /// The input contains a message with `option message_set_wire_format = true`
     /// but [`CodeGenConfig::allow_message_set`] was not set.

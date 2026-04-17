@@ -33,7 +33,7 @@ fn test_view_explicit_presence_scalar_is_option() {
         &CodeGenConfig::default(),
     )
     .expect("should generate");
-    let content = &files[0].content;
+    let content = crate::tests::all_content(&files);
     // View struct field should be Option<i32>.
     assert!(
         content.contains("pub value: Option<i32>"),
@@ -78,7 +78,7 @@ fn test_view_repeated_message_field() {
         &CodeGenConfig::default(),
     )
     .expect("should generate");
-    let content = &files[0].content;
+    let content = crate::tests::all_content(&files);
     // Both Item and Container views should be generated.
     assert!(
         content.contains("pub struct ItemView"),
@@ -146,20 +146,29 @@ fn test_view_oneof_with_message_variant() {
         &CodeGenConfig::default(),
     )
     .expect("should generate");
-    let content = &files[0].content;
-    // View struct must have an optional PayloadOneofView field.
+    let content = crate::tests::all_content(&files);
+    // View struct `RequestView` (inside `view::`) has `payload` field
+    // pointing at its view-of-oneof enum `Payload` (no View suffix —
+    // the `view::oneofs::` tree prefix disambiguates). From inside
+    // `view::RequestView` (depth 1) the enum lives at
+    // `view::oneofs::request::Payload`, reached as `oneofs::request::Payload`.
     assert!(
-        content.contains("pub payload: ::core::option::Option<request::PayloadOneofView"),
-        "RequestView must have payload: ::core::option::Option<request::PayloadOneofView>: {content}"
+        content.contains("pub payload: ::core::option::Option<oneofs::request::Payload"),
+        "RequestView must have payload: ::core::option::Option<oneofs::request::Payload>: {content}"
     );
-    // The oneof view enum must have both variants.
+    // The view-of-oneof enum (inside `view::oneofs::request`) has both
+    // variants. Its message-typed `Body` variant references sibling
+    // view `BodyView<'a>` in the sibling `view::` tree — from inside
+    // `view::oneofs::request` (depth 3), the path is
+    // `super::super::super::view::BodyView` via the standard view-path
+    // resolver.
     assert!(
         content.contains("Count(i32)"),
-        "PayloadView must have Count(i32): {content}"
+        "Payload enum must have Count(i32): {content}"
     );
     assert!(
-        content.contains("Body(::buffa::alloc::boxed::Box<super::BodyView"),
-        "PayloadView must have Body boxed: {content}"
+        content.contains("Body(::buffa::alloc::boxed::Box<") && content.contains("BodyView"),
+        "Payload enum must have Body boxed referencing BodyView: {content}"
     );
     // Decode arm for the message variant must check recursion depth.
     assert!(

@@ -351,7 +351,7 @@ fn test_type_attribute_reaches_oneof_enum() {
         vec![],
     );
     let files = generate(&[file], &["oo.proto".to_string()], &config).expect("should generate");
-    let content = &files[0].content;
+    let content = all_content(&files);
     assert!(
         content.contains("#[derive(Hash)]"),
         "type_attribute should reach oneof enum: {content}"
@@ -371,7 +371,7 @@ fn test_field_attribute_reaches_oneof_variant() {
         vec![],
     );
     let files = generate(&[file], &["oo.proto".to_string()], &config).expect("should generate");
-    let content = &files[0].content;
+    let content = all_content(&files);
     assert!(
         content.contains("only_a"),
         "field_attribute should reach oneof variant: {content}"

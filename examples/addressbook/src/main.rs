@@ -8,7 +8,7 @@
 //!   addressbook dump <file>      Print the address book in textproto
 
 // `#[allow(deprecated)]` silences codegen-internal references to
-// deprecated fields (here: `AddressOneof::FreeformAddress`, which
+// deprecated fields (here: `Address::FreeformAddress`, which
 // build.rs marks `#[deprecated]`). Generated encoders/decoders match
 // on every variant regardless of deprecation, so the warnings fire
 // inside the generated module itself; we only want them in *our*
@@ -20,7 +20,8 @@ mod proto {
 
 use buffa::{EnumValue, Message};
 use proto::buffa::examples::addressbook::v1::{
-    person::{AddressOneof, PhoneNumber, PhoneType},
+    oneofs::person::Address,
+    person::{PhoneNumber, PhoneType},
     AddressBook, Person, StructuredAddress,
 };
 use std::io::{self, BufRead, Write};
@@ -125,16 +126,14 @@ fn cmd_add(file_path: &str) {
         let state = prompt("  State");
         let zip_code = prompt("  Zip code");
         let country = prompt("  Country");
-        Some(AddressOneof::StructuredAddress(Box::new(
-            StructuredAddress {
-                street,
-                city,
-                state,
-                zip_code,
-                country,
-                ..Default::default()
-            },
-        )))
+        Some(Address::StructuredAddress(Box::new(StructuredAddress {
+            street,
+            city,
+            state,
+            zip_code,
+            country,
+            ..Default::default()
+        })))
     } else {
         None
     };
@@ -220,13 +219,13 @@ fn cmd_show(file_path: &str, id: i32) {
     // warnings still fire on any accidental *writes* elsewhere.
     #[allow(deprecated)]
     match &person.address {
-        Some(AddressOneof::StructuredAddress(addr)) => {
+        Some(Address::StructuredAddress(addr)) => {
             println!("Address:");
             println!("  {}", addr.street);
             println!("  {}, {} {}", addr.city, addr.state, addr.zip_code);
             println!("  {}", addr.country);
         }
-        Some(AddressOneof::FreeformAddress(addr)) => {
+        Some(Address::FreeformAddress(addr)) => {
             println!("Address: {addr} (legacy freeform format)");
         }
         None => {}

@@ -540,7 +540,8 @@ mod tests {
 
     #[test]
     fn timestamp_view_round_trip() {
-        use crate::google::protobuf::{Timestamp, TimestampView};
+        use crate::google::protobuf::view::TimestampView;
+        use crate::google::protobuf::Timestamp;
         use buffa::{Message, MessageView};
 
         let ts = Timestamp {

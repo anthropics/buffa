@@ -1,6 +1,7 @@
 //! View type tests: decode_view, MessageFieldView Deref, to_owned_message,
 //! MapView iteration, oneof views, unknown-field preservation, recursion limit.
 
+use crate::basic::view::{AddressView, EmptyView, InventoryView, PersonView};
 use crate::basic::*;
 use buffa::{Message, MessageView};
 
@@ -96,11 +97,15 @@ fn test_view_proto3_optional_unset_is_none() {
 #[test]
 fn test_view_decodes_oneof() {
     let mut msg = Person::default();
-    msg.contact = Some(person::ContactOneof::Email("bob@example.com".into()));
+    msg.contact = Some(crate::basic::oneofs::person::Contact::Email(
+        "bob@example.com".into(),
+    ));
     let bytes = msg.encode_to_vec();
     let view = PersonView::decode_view(&bytes).expect("decode_view");
     match view.contact {
-        Some(person::ContactOneofView::Email(s)) => assert_eq!(s, "bob@example.com"),
+        Some(crate::basic::view::oneofs::person::Contact::Email(s)) => {
+            assert_eq!(s, "bob@example.com")
+        }
         other => panic!("expected Email, got {other:?}"),
     }
 }
@@ -112,7 +117,9 @@ fn test_view_to_owned_roundtrip() {
     msg.name = "Carol".into();
     msg.tags = vec!["x".into(), "y".into()];
     msg.maybe_age = Some(30);
-    msg.contact = Some(person::ContactOneof::Phone("+1-555-0000".into()));
+    msg.contact = Some(crate::basic::oneofs::person::Contact::Phone(
+        "+1-555-0000".into(),
+    ));
     let bytes = msg.encode_to_vec();
     let view = PersonView::decode_view(&bytes).expect("decode_view");
     let owned = view.to_owned_message();
@@ -122,7 +129,9 @@ fn test_view_to_owned_roundtrip() {
     assert_eq!(owned.maybe_age, Some(30));
     assert_eq!(
         owned.contact,
-        Some(person::ContactOneof::Phone("+1-555-0000".into()))
+        Some(crate::basic::oneofs::person::Contact::Phone(
+            "+1-555-0000".into()
+        ))
     );
 }
 
@@ -316,7 +325,8 @@ fn test_view_map_with_open_enum_value() {
 
 #[test]
 fn test_view_no_unknown_fields_all_scalar_compiles() {
-    use crate::basic_no_uf::{AllScalars, AllScalarsView, Empty, EmptyView};
+    use crate::basic_no_uf::view::{AllScalarsView, EmptyView};
+    use crate::basic_no_uf::{AllScalars, Empty};
     // EmptyView<'a> has NO fields; AllScalarsView<'a> has only scalars.
     // Both now carry a PhantomData marker.
     let e = Empty::default();

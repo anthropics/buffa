@@ -11,6 +11,62 @@ use crate::features::ResolvedFeatures;
 use crate::impl_message::{is_explicit_presence_scalar, is_real_oneof_member};
 use crate::CodeGenError;
 
+/// Build the Rust path prefix to THIS message's oneof-enum sub-module in
+/// the parallel `oneofs::` tree, relative to the current owned-tree scope.
+///
+/// Owned-tree scope at module depth `nesting` (counted from the package
+/// root) wants to reference an oneof enum `Kind` living at
+/// `<pkg>::oneofs::<owner_chain>::<self_mod>::Kind`, where
+/// `<owner_chain>::<self_mod>` mirrors the proto nesting of the current
+/// message.
+///
+/// Emitted prefix has the form `super::super::...::oneofs::<owner_chain>::<self_mod>::`
+/// with one `super::` per `nesting` level (to climb out to package scope)
+/// plus `oneofs::` plus the snake_cased owner chain plus the current
+/// message's own snake_cased module name. Trailing `::` is included so
+/// callers can append the enum ident directly.
+///
+/// Examples:
+///
+/// ```ignore
+/// // Top-level `Foo` at package scope (nesting=0):
+/// oneofs_path_prefix(scope with nesting=0, proto_fqn="pkg.Foo") → `oneofs::foo::`
+///
+/// // Nested `Outer.Inner` at depth 1 (inside `pub mod outer`):
+/// oneofs_path_prefix(scope with nesting=1, proto_fqn="pkg.Outer.Inner") → `super::oneofs::outer::inner::`
+/// ```
+pub(crate) fn oneofs_path_prefix(
+    current_package: &str,
+    proto_fqn: &str,
+    nesting: usize,
+) -> TokenStream {
+    // `super::super::...::` — one hop per module level we sit below the
+    // package root. `syn::parse_str` handles the trailing `::` fine.
+    let supers = "super::".repeat(nesting);
+    let supers_tokens: TokenStream = syn::parse_str(&supers).unwrap_or_default();
+
+    // Snake-cased path of owner messages + this message's own name,
+    // derived from proto_fqn by stripping the package prefix.
+    let within_pkg = if current_package.is_empty() {
+        proto_fqn
+    } else {
+        proto_fqn
+            .strip_prefix(current_package)
+            .and_then(|s| s.strip_prefix('.'))
+            .unwrap_or(proto_fqn)
+    };
+    let snake_segments: Vec<TokenStream> = within_pkg
+        .split('.')
+        .filter(|s| !s.is_empty())
+        .map(|name| {
+            let ident = crate::idents::make_field_ident(&crate::oneof::to_snake_case(name));
+            quote! { #ident :: }
+        })
+        .collect();
+
+    quote! { #supers_tokens oneofs:: #(#snake_segments)* }
+}
+
 /// Qualified paths to the per-message / per-extension registry `const` items
 /// emitted alongside the structs, bubbled up to the file-level
 /// `register_types` fn. Each vec is relative to the scope where the
@@ -49,13 +105,35 @@ impl RegistryPaths {
 /// `proto_fqn` is the fully-qualified proto type name without a leading dot
 /// (e.g. `google.protobuf.Timestamp`, `my.package.Outer.Inner`).  It is used
 /// to emit the `TYPE_URL` constant.
-/// Returns `(top_level_items, module_items, registry_paths)` where
-/// `top_level_items` contains the struct, its impls, and the custom
-/// deserialize; `module_items` contains nested types and oneof enums to be
-/// placed in `pub mod <name>`; and `registry_paths` collects qualified paths
-/// to the per-message `__*_JSON_ANY` / `__*_TEXT_ANY` consts (relative to
-/// the struct's scope) and per-extension `__*_JSON_EXT` / `__*_TEXT_EXT`
-/// consts (relative to the `module_items` scope) for `register_types`.
+/// Returns `MessageOutput` covering the four streams produced for a
+/// single proto message:
+///
+/// - `top_level`: struct + impls + custom deserialize, emitted at the
+///   parent scope (file-level for top-level messages, owner-module for
+///   nested messages).
+/// - `mod_items`: nested types (enums, sub-messages, their sub-modules)
+///   and nested-extension consts — placed inside `pub mod <name>` at the
+///   parent scope.
+/// - `oneof_items`: oneof enum definitions for this message AND its
+///   nested-message descendants, pre-structured as the contents of this
+///   message's own sub-module inside the parallel `oneofs::` tree.
+///   Placed inside `pub mod <name> { ... }` at the oneofs-tree scope.
+/// - `registry_paths`: qualified paths to the per-message
+///   `__*_JSON_ANY` / `__*_TEXT_ANY` consts (relative to the struct's
+///   scope) and per-extension `__*_JSON_EXT` / `__*_TEXT_EXT` consts
+///   (relative to `mod_items` scope) for `register_types`.
+pub(crate) struct MessageOutput {
+    pub top_level: TokenStream,
+    pub mod_items: TokenStream,
+    /// Contents of this message's own sub-module within the `oneofs::`
+    /// parallel tree — i.e. direct oneof enum definitions for this
+    /// message plus recursive `pub mod <nested_mod> { ... }` wrappers
+    /// for each nested-message's oneofs. Empty when this message and
+    /// all of its descendants declare no oneofs.
+    pub oneof_items: TokenStream,
+    pub registry_paths: RegistryPaths,
+}
+
 pub fn generate_message(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -64,13 +142,15 @@ pub fn generate_message(
     proto_fqn: &str,
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
-) -> Result<(TokenStream, TokenStream, RegistryPaths), CodeGenError> {
+) -> Result<MessageOutput, CodeGenError> {
     let scope = MessageScope {
         ctx,
         current_package,
         proto_fqn,
         features,
         nesting: 0,
+        // `generate_message` emits owned code at package scope.
+        in_view_tree: false,
     };
     generate_message_with_nesting(scope, msg, rust_name, resolver)
 }
@@ -80,13 +160,14 @@ fn generate_message_with_nesting(
     msg: &DescriptorProto,
     rust_name: &str,
     resolver: &crate::imports::ImportResolver,
-) -> Result<(TokenStream, TokenStream, RegistryPaths), CodeGenError> {
+) -> Result<MessageOutput, CodeGenError> {
     let MessageScope {
         ctx,
         current_package,
         proto_fqn,
         features,
         nesting,
+        ..
     } = scope;
     let name_ident = format_ident!("{}", rust_name);
 
@@ -172,12 +253,19 @@ fn generate_message_with_nesting(
     // Compute oneof enum identifiers for all non-synthetic oneofs up front.
     // Sequential allocation prevents sibling oneofs from claiming the same
     // suffixed name (see `resolve_oneof_idents`).
-    let oneof_idents =
-        crate::oneof::resolve_oneof_idents(msg, proto_fqn, ctx.config.generate_views)?;
+    let oneof_idents = crate::oneof::resolve_oneof_idents(msg, proto_fqn)?;
+
+    // Path prefix to the owned oneof enums for this message, sitting in
+    // the parallel `oneofs::` tree at
+    // `<pkg>::oneofs::<owner_chain>::<self_mod>::Kind`. Used by both the
+    // struct field types and — via the shared prefix — by the
+    // `impl_message` / `impl_text` generators that reference the enum
+    // from within nested-owner scopes.
+    let oneofs_prefix = oneofs_path_prefix(current_package, proto_fqn, nesting);
 
     // One `Option<OneofEnum>` field in the struct per non-synthetic oneof.
-    // Oneof enums live inside the message's module, so the type path is
-    // `mod_name::EnumName`.
+    // Owned oneof enums live at `pkg::oneofs::<owner_chain>::<self>::Kind`,
+    // reached via `oneofs_prefix`.
     let oneof_serde_attr = if ctx.config.generate_json {
         quote! { #[serde(flatten)] }
     } else {
@@ -194,7 +282,7 @@ fn generate_message_with_nesting(
             let opt = resolver.option();
             let tokens = quote! {
                 #oneof_serde_attr
-                pub #field_ident: #opt<#mod_ident::#enum_ident>,
+                pub #field_ident: #opt<#oneofs_prefix #enum_ident>,
             };
             Some((tokens, field_ident))
         })
@@ -302,9 +390,13 @@ fn generate_message_with_nesting(
     let needs_custom_deserialize = ctx.config.generate_json
         && (has_real_oneofs || (has_extension_ranges && ctx.config.preserve_unknown_fields));
 
-    // Oneof enum definitions — emitted inside the message's module.
-    // Pass the file-level package as current_package, since
-    // nesting=1 in the oneof codegen handles the module depth.
+    // Oneof enum definitions. The enums live in the parallel
+    // `pkg::oneofs::<owner_chain>::<self_mod>::Kind` tree, one level
+    // deeper than the previous layout (which embedded them as
+    // `pkg::<self_mod>::Kind`). Bumping the nesting argument by ONE
+    // absorbs that extra hop for variant-type path resolution:
+    // `generate_oneof_enum` internally adds 1 more to account for the
+    // enum sitting inside its own `pub mod <self_mod>` wrapper.
     let oneof_enums = msg
         .oneof_decl
         .iter()
@@ -320,7 +412,7 @@ fn generate_message_with_nesting(
                 features,
                 resolver,
                 &oneof_idents,
-                nesting,
+                nesting + 1,
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -426,7 +518,7 @@ fn generate_message_with_nesting(
             scope,
             msg,
             &name_ident,
-            &mod_ident,
+            &oneofs_prefix,
             resolver,
             has_extension_ranges,
             &oneof_idents,
@@ -491,6 +583,11 @@ fn generate_message_with_nesting(
     if let Some(id) = &text_any_ident {
         reg_paths.text_any.push(quote! { #id });
     }
+    // Oneof-tree accumulator for descendants. Nested-message oneof
+    // sub-modules end up as sibling `pub mod <nested_mod> { ... }`
+    // blocks inside THIS message's own oneof-tree module.
+    let mut nested_oneof_items = TokenStream::new();
+
     let non_map_nested: Vec<&DescriptorProto> = msg
         .nested_type
         .iter()
@@ -501,7 +598,13 @@ fn generate_message_with_nesting(
                 .unwrap_or(false)
         })
         .collect();
-    for (nested_desc, (top, mod_items, nested_reg)) in non_map_nested.iter().zip(nested_msgs) {
+    for (nested_desc, nested_out) in non_map_nested.iter().zip(nested_msgs) {
+        let MessageOutput {
+            top_level: top,
+            mod_items,
+            oneof_items: nested_oneofs,
+            registry_paths: nested_reg,
+        } = nested_out;
         nested_items.extend(top);
         let nested_name = nested_desc.name.as_deref().unwrap_or("");
         let nested_mod = make_field_ident(&crate::oneof::to_snake_case(nested_name));
@@ -522,34 +625,32 @@ fn generate_message_with_nesting(
             reg_paths.text_any.push(quote! { #mod_ident :: #p });
         }
 
-        // Also generate views for nested messages if enabled.
-        // view_top (struct + impls) goes alongside the owned struct in the
-        // parent module; view_mod (oneof view enums) goes in the sub-module.
-        let view_mod_items = if ctx.config.generate_views {
-            let nested_name = nested_desc.name.as_deref().unwrap_or("");
-            let nested_fqn = format!("{}.{}", proto_fqn, nested_name);
-            let (view_top, view_mod) = crate::view::generate_view_with_nesting(
-                MessageScope {
-                    proto_fqn: &nested_fqn,
-                    nesting: nesting + 1,
-                    ..scope
-                },
-                nested_desc,
-                nested_name,
-            )?;
-            nested_items.extend(view_top);
-            view_mod
-        } else {
-            quote! {}
-        };
+        // Nested-message views are emitted into the parallel `view::` tree
+        // by `view::generate_view` — `message.rs` only handles the owned
+        // tree. Sub-module only needs owned `mod_items` (nested-of-nested
+        // messages, nested extensions; oneof enums now live in the
+        // separate oneofs:: tree).
 
-        if !mod_items.is_empty() || !view_mod_items.is_empty() {
+        if !mod_items.is_empty() {
             nested_items.extend(quote! {
                 pub mod #nested_mod {
                     #[allow(unused_imports)]
                     use super::*;
                     #mod_items
-                    #view_mod_items
+                }
+            });
+        }
+
+        // Merge the nested message's oneof items into THIS message's
+        // oneofs sub-module, under the nested's own `pub mod <nested_mod>`
+        // wrapper. Result is a mirror of the proto nesting in the
+        // `oneofs::` tree.
+        if !nested_oneofs.is_empty() {
+            nested_oneof_items.extend(quote! {
+                pub mod #nested_mod {
+                    #[allow(unused_imports)]
+                    use super::*;
+                    #nested_oneofs
                 }
             });
         }
@@ -578,13 +679,22 @@ fn generate_message_with_nesting(
         reg_paths.text_ext.push(quote! { #id });
     }
 
-    // Module items: nested enums, nested message structs + sub-modules,
-    // and oneof enums.
+    // Module items for the owned tree: nested enums, nested message
+    // structs + sub-modules, and nested extensions. Oneof enums now
+    // live in the parallel `oneofs::` tree — collected separately into
+    // `oneof_items`.
     let mod_items = quote! {
         #(#nested_enums)*
         #nested_items
-        #(#oneof_enums)*
         #nested_extensions
+    };
+
+    // Oneof-tree sub-module contents for THIS message: direct oneof
+    // enums + recursive nested-message wrappers. Wrapped in
+    // `pub mod <self_mod>` by the caller (the oneofs file emitter).
+    let oneof_items = quote! {
+        #(#oneof_enums)*
+        #nested_oneof_items
     };
 
     // Generate a manual Debug impl that excludes internal __buffa_ fields.
@@ -645,7 +755,12 @@ fn generate_message_with_nesting(
         #text_any_const
     };
 
-    Ok((top_level, mod_items, reg_paths))
+    Ok(MessageOutput {
+        top_level,
+        mod_items,
+        oneof_items,
+        registry_paths: reg_paths,
+    })
 }
 
 // ── Custom Deserialize for messages with oneofs ──────────────────────────────
@@ -666,7 +781,7 @@ fn generate_custom_deserialize(
     scope: MessageScope<'_>,
     msg: &DescriptorProto,
     name_ident: &proc_macro2::Ident,
-    mod_ident: &proc_macro2::Ident,
+    oneofs_prefix: &TokenStream,
     resolver: &crate::imports::ImportResolver,
     has_extension_ranges: bool,
     oneof_idents: &std::collections::HashMap<usize, Ident>,
@@ -703,7 +818,7 @@ fn generate_custom_deserialize(
             oneof,
             current_package,
             proto_fqn,
-            mod_ident,
+            oneofs_prefix,
             features,
             resolver,
             oneof_idents,
@@ -901,7 +1016,7 @@ fn custom_deser_oneof_group(
     oneof: &crate::generated::descriptor::OneofDescriptorProto,
     current_package: &str,
     proto_fqn: &str,
-    mod_ident: &proc_macro2::Ident,
+    oneofs_prefix: &TokenStream,
     features: &ResolvedFeatures,
     resolver: &crate::imports::ImportResolver,
     oneof_idents: &std::collections::HashMap<usize, Ident>,
@@ -920,9 +1035,10 @@ fn custom_deser_oneof_group(
     let var_ident = format_ident!("__oneof_{}", oneof_name);
     let field_ident = make_field_ident(oneof_name);
 
-    // Oneof enum lives in the message's module.
+    // Oneof enum lives in the parallel `oneofs::` tree, reached via
+    // `oneofs_prefix` from the current emission scope.
     let var_decl =
-        quote! { let mut #var_ident: ::core::option::Option<#mod_ident::#enum_ident> = None; };
+        quote! { let mut #var_ident: ::core::option::Option<#oneofs_prefix #enum_ident> = None; };
     let mut arms = Vec::new();
 
     for field in &msg.field {
@@ -948,8 +1064,9 @@ fn custom_deser_oneof_group(
             scalar_or_message_type_nested(ctx, field, current_package, nesting, features, resolver)?
         };
 
-        // Module-qualified path for the oneof enum (lives in the message's module).
-        let qualified_enum: TokenStream = quote! { #mod_ident::#enum_ident };
+        // Module-qualified path for the owned oneof enum — lives at
+        // `<…>::oneofs::<owner>::<self>::Kind`, reached via `oneofs_prefix`.
+        let qualified_enum: TokenStream = quote! { #oneofs_prefix #enum_ident };
         let arm = crate::oneof::oneof_variant_deser_arm(&crate::oneof::OneofVariantDeserInput {
             variant_ident: &variant_ident,
             variant_type: &variant_type,
@@ -1033,6 +1150,7 @@ fn classify_field(
         proto_fqn,
         features,
         nesting,
+        ..
     } = scope;
     let label = field.label.unwrap_or_default();
     let field_type = crate::impl_message::effective_type(ctx, field, features);
@@ -1335,6 +1453,8 @@ pub(crate) fn scalar_or_message_type_nested(
         proto_fqn: "",
         features,
         nesting,
+        // Shared owned/type resolver — only used for owned-side path work.
+        in_view_tree: false,
     };
     match crate::impl_message::effective_type(ctx, field, features) {
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => resolve_message_type(scope, field),

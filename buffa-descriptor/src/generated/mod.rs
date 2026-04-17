@@ -8,6 +8,15 @@
 //!
 //! To regenerate, run `task gen-bootstrap-types` from the repo root.
 
+// Each `.proto` file contributes five sibling outputs to its package
+// module (see `buffa-codegen::GeneratedFileKind` — owned, view, ext,
+// oneofs, view_oneofs). Descriptor codegen runs with
+// `generate_views=false` and has no file-level extensions / oneofs, so
+// the ancillary `.__view*.rs` / `.__ext.rs` / `.__oneofs.rs` /
+// `.__view_oneofs.rs` siblings are empty-bodied — we still `include!`
+// them so the sibling-file invariant is visible in the source tree and
+// so fresh clones don't surprise the reader.
+
 #[allow(
     clippy::all,
     dead_code,

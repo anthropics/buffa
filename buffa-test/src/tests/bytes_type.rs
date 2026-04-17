@@ -49,7 +49,7 @@ fn test_bytes_type_view_to_owned() {
     // Views borrow &[u8]; to_owned_message must produce Bytes (not Vec<u8>)
     // when use_bytes_type() is active. Previously this emitted .to_vec()
     // unconditionally, failing to compile.
-    use crate::basic_bytes::PersonView;
+    use crate::basic_bytes::view::PersonView;
     use buffa::MessageView;
     let msg = Person {
         id: 7,
@@ -82,8 +82,9 @@ fn test_bytes_type_view_to_owned() {
 // The bytes_variant build block compiles BytesContexts with use_bytes_type()
 // + generate_views=true; compilation alone is the primary assertion.
 
-use crate::basic_bytes::bytes_contexts::ChoiceOneof;
-use crate::basic_bytes::{BytesContexts, BytesContextsView};
+use crate::basic_bytes::oneofs::bytes_contexts::Choice;
+use crate::basic_bytes::view::BytesContextsView;
+use crate::basic_bytes::BytesContexts;
 
 #[test]
 fn test_bytes_type_repeated_view_to_owned() {
@@ -116,9 +117,7 @@ fn test_bytes_type_repeated_view_to_owned() {
 fn test_bytes_type_oneof_view_to_owned() {
     use buffa::MessageView;
     let msg = BytesContexts {
-        choice: Some(ChoiceOneof::Raw(bytes::Bytes::from_static(&[
-            0x00, 0xFF, 0x7F,
-        ]))),
+        choice: Some(Choice::Raw(bytes::Bytes::from_static(&[0x00, 0xFF, 0x7F]))),
         ..Default::default()
     };
     let wire = msg.encode_to_vec();
@@ -130,7 +129,7 @@ fn test_bytes_type_oneof_view_to_owned() {
     // Match ergonomics: v in the arm is &&[u8], *v is &[u8].
     let owned: BytesContexts = view.to_owned_message();
     match &owned.choice {
-        Some(ChoiceOneof::Raw(b)) => assert_eq!(&b[..], &[0x00, 0xFF, 0x7F]),
+        Some(Choice::Raw(b)) => assert_eq!(&b[..], &[0x00, 0xFF, 0x7F]),
         other => panic!("expected Choice::Raw, got {other:?}"),
     }
     assert_eq!(owned.encode_to_vec(), wire);
@@ -180,7 +179,7 @@ fn test_bytes_type_json_all_contexts_roundtrip() {
             bytes::Bytes::from_static(&[0x04]),
             bytes::Bytes::from_static(b""),
         ],
-        choice: Some(ChoiceOneof::Raw(bytes::Bytes::from_static(&[0xDE, 0xAD]))),
+        choice: Some(Choice::Raw(bytes::Bytes::from_static(&[0xDE, 0xAD]))),
         by_key: [("k".to_string(), vec![0x05])].into_iter().collect(),
         ..Default::default()
     };
@@ -198,7 +197,7 @@ fn test_bytes_type_json_all_contexts_roundtrip() {
     assert_eq!(back.maybe.as_deref(), Some(&[0x02, 0x03][..]));
     assert_eq!(back.many, msg.many);
     match &back.choice {
-        Some(ChoiceOneof::Raw(b)) => assert_eq!(&b[..], &[0xDE, 0xAD]),
+        Some(Choice::Raw(b)) => assert_eq!(&b[..], &[0xDE, 0xAD]),
         other => panic!("expected Choice::Raw, got {other:?}"),
     }
     assert_eq!(back.by_key, msg.by_key);
@@ -243,7 +242,7 @@ fn test_bytes_type_json_cross_decodes_external_json() {
     assert!(back.many[0].is_empty());
     assert_eq!(&back.many[1][..], b"A");
     match &back.choice {
-        Some(ChoiceOneof::Raw(b)) => assert_eq!(&b[..], &[0x00, 0xFF, 0x7F]),
+        Some(Choice::Raw(b)) => assert_eq!(&b[..], &[0x00, 0xFF, 0x7F]),
         other => panic!("expected Choice::Raw, got {other:?}"),
     }
 }

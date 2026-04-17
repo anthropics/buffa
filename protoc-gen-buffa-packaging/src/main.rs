@@ -132,8 +132,61 @@ fn generate(request: &CodeGeneratorRequest) -> Result<CodeGeneratorResponse, Str
         .filter_map(Result::transpose)
         .collect::<Result<Vec<(String, &str)>, String>>()?;
 
-    let borrowed: Vec<(&str, &str)> = entries.iter().map(|(f, p)| (f.as_str(), *p)).collect();
-    let content = buffa_codegen::generate_module_tree(&borrowed, "", true);
+    // For each owned file, also include its four ancillary siblings:
+    // `.__view.rs`, `.__ext.rs`, `.__oneofs.rs`, `.__view_oneofs.rs`.
+    // protoc-gen-buffa always emits all five siblings (empty-bodied if
+    // there's nothing to put in them) specifically so this packager can
+    // produce stable `include!` paths without inspecting the filesystem.
+    let file_names: Vec<(String, String, String, String, String, &str)> = entries
+        .iter()
+        .map(|(owned, pkg)| {
+            let stem = owned
+                .strip_suffix(".rs")
+                .unwrap_or(owned.as_str())
+                .to_string();
+            (
+                owned.clone(),
+                format!("{stem}.__view.rs"),
+                format!("{stem}.__ext.rs"),
+                format!("{stem}.__oneofs.rs"),
+                format!("{stem}.__view_oneofs.rs"),
+                *pkg,
+            )
+        })
+        .collect();
+    let module_entries: Vec<buffa_codegen::ModuleTreeEntry<'_>> = file_names
+        .iter()
+        .flat_map(|(owned, view, ext, oneofs, view_oneofs, pkg)| {
+            [
+                buffa_codegen::ModuleTreeEntry {
+                    file_name: owned.as_str(),
+                    package: pkg,
+                    kind: buffa_codegen::GeneratedFileKind::Owned,
+                },
+                buffa_codegen::ModuleTreeEntry {
+                    file_name: view.as_str(),
+                    package: pkg,
+                    kind: buffa_codegen::GeneratedFileKind::View,
+                },
+                buffa_codegen::ModuleTreeEntry {
+                    file_name: ext.as_str(),
+                    package: pkg,
+                    kind: buffa_codegen::GeneratedFileKind::Ext,
+                },
+                buffa_codegen::ModuleTreeEntry {
+                    file_name: oneofs.as_str(),
+                    package: pkg,
+                    kind: buffa_codegen::GeneratedFileKind::Oneofs,
+                },
+                buffa_codegen::ModuleTreeEntry {
+                    file_name: view_oneofs.as_str(),
+                    package: pkg,
+                    kind: buffa_codegen::GeneratedFileKind::ViewOneofs,
+                },
+            ]
+        })
+        .collect();
+    let content = buffa_codegen::generate_module_tree(&module_entries, "", true);
 
     Ok(CodeGeneratorResponse {
         supported_features: Some(feature_flags()),

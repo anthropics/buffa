@@ -154,7 +154,7 @@ fn test_oneof_comment_in_generated_code() {
     )
     .expect("generation should succeed");
 
-    let content = &result[0].content;
+    let content = all_content(&result);
     assert!(
         content.contains("The event payload variant."),
         "oneof doc comment should appear, got:\n{content}"
@@ -204,9 +204,13 @@ fn test_view_gets_same_comment_as_message() {
     let result = generate(&[file], &["view_comment.proto".to_string()], &config)
         .expect("generation should succeed");
 
-    let content = &result[0].content;
-    // The comment should appear on both the owned struct and the view struct
-    let count = content.matches("A greeter message.").count();
+    // The comment should appear on both the owned struct and the view
+    // struct. Under PR 1 they live in separate sibling files (`.rs` +
+    // `.__view.rs`), so count across all outputs for this proto.
+    let count: usize = result
+        .iter()
+        .map(|f| f.content.matches("A greeter message.").count())
+        .sum();
     assert!(
         count >= 2,
         "comment should appear on both Greeter and GreeterView, found {count} occurrence(s)"

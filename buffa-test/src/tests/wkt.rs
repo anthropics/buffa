@@ -13,7 +13,8 @@ fn test_wkt_in_oneof_from_impls() {
     //
     // The fact that this test compiles IS the test: wkt_usage.proto has
     // Envelope.content with Any/Timestamp (extern) + Event (local) variants.
-    use crate::wkt::{envelope, Envelope, Event};
+    use crate::wkt::oneofs::envelope;
+    use crate::wkt::{Envelope, Event};
     use buffa_types::google::protobuf::Any;
 
     // Local variant: both From impls exist.
@@ -23,27 +24,27 @@ fn test_wkt_in_oneof_from_impls() {
     };
     assert!(matches!(
         env.content,
-        Some(envelope::ContentOneof::EventContent(_))
+        Some(envelope::Content::EventContent(_))
     ));
 
     // Extern variant: only From<T> for Content exists — Some() is explicit.
     let env = Envelope {
-        content: Some(envelope::ContentOneof::from(Any::default())),
+        content: Some(envelope::Content::from(Any::default())),
         ..Default::default()
     };
     assert!(matches!(
         env.content,
-        Some(envelope::ContentOneof::AnyContent(_))
+        Some(envelope::Content::AnyContent(_))
     ));
 
     // The From<T> for Option<Content> impl for extern T does NOT exist.
     // The following would not compile (uncomment to verify):
-    // let _: Option<envelope::ContentOneof> = Any::default().into();
+    // let _: Option<envelope::Content> = Any::default().into();
 
     let decoded = round_trip(&env);
     assert!(matches!(
         decoded.content,
-        Some(envelope::ContentOneof::AnyContent(_))
+        Some(envelope::Content::AnyContent(_))
     ));
 }
 
@@ -85,7 +86,8 @@ fn test_wkt_view_with_extern_path() {
     // appends "View" to the last path segment: crate::wkt::Timestamp
     // → crate::wkt::TimestampView (which is re-exported from buffa-types'
     // generated code).
-    use crate::wkt::{Event, EventView};
+    use crate::wkt::view::EventView;
+    use crate::wkt::Event;
     use buffa::MessageView;
     let msg = Event {
         created_at: buffa::MessageField::some(buffa_types::google::protobuf::Timestamp {

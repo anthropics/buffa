@@ -315,8 +315,11 @@ pub fn generate_message_impl(
         .map(|f| repeated_merge_arm(ctx, f, proto_fqn, features, preserve_unknown_fields))
         .collect::<Result<Vec<_>, _>>()?;
 
-    // Collect oneof compute/write/merge tokens.
-    let mod_ident = crate::message::make_field_ident(&crate::oneof::to_snake_case(rust_name));
+    // Collect oneof compute/write/merge tokens. The oneof enum lives
+    // in the parallel `oneofs::` tree; `oneofs_prefix` is the token
+    // stream path from the current emission scope (owned message
+    // impl) to the oneofs sub-module for this message.
+    let oneofs_prefix = crate::message::oneofs_path_prefix(current_package, proto_fqn, nesting);
     let mut oneof_compute_stmts: Vec<TokenStream> = Vec::new();
     let mut oneof_write_stmts: Vec<TokenStream> = Vec::new();
     let mut oneof_merge_arms: Vec<TokenStream> = Vec::new();
@@ -326,7 +329,7 @@ pub fn generate_message_impl(
             enum_ident,
             oneof_name,
             fields,
-            &mod_ident,
+            &oneofs_prefix,
             proto_fqn,
             features,
             preserve_unknown_fields,
@@ -2119,14 +2122,16 @@ fn generate_oneof_impls(
     enum_ident: &proc_macro2::Ident,
     oneof_name: &str,
     fields: &[&FieldDescriptorProto],
-    mod_ident: &proc_macro2::Ident,
+    oneofs_prefix: &TokenStream,
     proto_fqn: &str,
     features: &ResolvedFeatures,
     preserve_unknown_fields: bool,
 ) -> Result<(TokenStream, TokenStream, Vec<TokenStream>), CodeGenError> {
     let field_ident = make_field_ident(oneof_name);
-    // Module-qualified path: the oneof enum lives in the message's module.
-    let qualified_enum: TokenStream = quote! { #mod_ident::#enum_ident };
+    // Module-qualified path: the oneof enum lives in the parallel
+    // `oneofs::` tree at `<oneofs_prefix>::<Kind>`. `oneofs_prefix`
+    // already ends with `::`.
+    let qualified_enum: TokenStream = quote! { #oneofs_prefix #enum_ident };
 
     let mut size_arms: Vec<TokenStream> = Vec::new();
     let mut write_arms: Vec<TokenStream> = Vec::new();

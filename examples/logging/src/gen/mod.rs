@@ -14,6 +14,22 @@ pub mod buffa {
             pub mod v1 {
                 use super::*;
                 include!("context.v1.context.rs");
+                #[allow(non_camel_case_types, dead_code, unused_imports, clippy::derivable_impls, clippy::match_single_binding, clippy::uninlined_format_args, clippy::doc_lazy_continuation)]
+                pub mod view {
+                    include!("context.v1.context.__view.rs");
+                    #[allow(non_camel_case_types, dead_code, unused_imports, clippy::derivable_impls, clippy::match_single_binding, clippy::uninlined_format_args, clippy::doc_lazy_continuation)]
+                    pub mod oneofs {
+                        include!("context.v1.context.__view_oneofs.rs");
+                    }
+                }
+                #[allow(non_camel_case_types, dead_code, unused_imports, clippy::derivable_impls, clippy::match_single_binding, clippy::uninlined_format_args, clippy::doc_lazy_continuation)]
+                pub mod ext {
+                    include!("context.v1.context.__ext.rs");
+                }
+                #[allow(non_camel_case_types, dead_code, unused_imports, clippy::derivable_impls, clippy::match_single_binding, clippy::uninlined_format_args, clippy::doc_lazy_continuation)]
+                pub mod oneofs {
+                    include!("context.v1.context.__oneofs.rs");
+                }
             }
         }
         #[allow(non_camel_case_types, dead_code, unused_imports, clippy::derivable_impls, clippy::match_single_binding, clippy::uninlined_format_args, clippy::doc_lazy_continuation)]
@@ -23,6 +39,22 @@ pub mod buffa {
             pub mod v1 {
                 use super::*;
                 include!("log.v1.log.rs");
+                #[allow(non_camel_case_types, dead_code, unused_imports, clippy::derivable_impls, clippy::match_single_binding, clippy::uninlined_format_args, clippy::doc_lazy_continuation)]
+                pub mod view {
+                    include!("log.v1.log.__view.rs");
+                    #[allow(non_camel_case_types, dead_code, unused_imports, clippy::derivable_impls, clippy::match_single_binding, clippy::uninlined_format_args, clippy::doc_lazy_continuation)]
+                    pub mod oneofs {
+                        include!("log.v1.log.__view_oneofs.rs");
+                    }
+                }
+                #[allow(non_camel_case_types, dead_code, unused_imports, clippy::derivable_impls, clippy::match_single_binding, clippy::uninlined_format_args, clippy::doc_lazy_continuation)]
+                pub mod ext {
+                    include!("log.v1.log.__ext.rs");
+                }
+                #[allow(non_camel_case_types, dead_code, unused_imports, clippy::derivable_impls, clippy::match_single_binding, clippy::uninlined_format_args, clippy::doc_lazy_continuation)]
+                pub mod oneofs {
+                    include!("log.v1.log.__oneofs.rs");
+                }
             }
         }
     }

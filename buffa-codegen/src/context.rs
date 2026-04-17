@@ -173,6 +173,17 @@ impl<'a> CodeGenContext<'a> {
         self.type_map.get(proto_fqn).map(|s| s.as_str())
     }
 
+    /// Look up the proto package of a fully-qualified protobuf type name.
+    ///
+    /// `proto_fqn` uses dotted form without the leading dot
+    /// (e.g. `"google.protobuf.Timestamp"`). Returns `None` for types
+    /// not present in the compilation set (extern types fall through to
+    /// the fallback path at call sites — view-path resolution uses this
+    /// to distinguish top-level vs nested targets).
+    pub(crate) fn package_of(&self, proto_fqn: &str) -> Option<&str> {
+        self.package_of.get(proto_fqn).map(|s| s.as_str())
+    }
+
     /// Look up the source comment for a protobuf element by FQN.
     ///
     /// `fqn` uses the same dotted form as `proto_fqn` throughout codegen
@@ -361,6 +372,13 @@ pub(crate) struct MessageScope<'a> {
     /// sits inside.  Controls the count of `super::` prefixes in type
     /// references via [`CodeGenContext::rust_type_relative`].
     pub nesting: usize,
+    /// `true` when the scope is emitting code into the top-level `view::`
+    /// module (the view tree at package scope). `false` for owned-type
+    /// scopes AND for nested-message views, which continue to live inside
+    /// the owner's message sub-module as `FooView<'a>` (the pre-namespace
+    /// layout). Threaded so view-path helpers can choose between the
+    /// `super::view::FooView<'a>` and legacy `FooView<'a>` rewrites.
+    pub in_view_tree: bool,
 }
 
 impl<'a> MessageScope<'a> {
@@ -372,14 +390,18 @@ impl<'a> MessageScope<'a> {
             proto_fqn,
             features,
             nesting: self.nesting + 1,
+            in_view_tree: self.in_view_tree,
         }
     }
 
     /// Return a copy of this scope with the nesting depth incremented by 1.
     ///
-    /// Use this when generating code that will live inside the message's own
-    /// `pub mod` (e.g. oneof view enums) without changing the identity
-    /// (`proto_fqn`, `features`).
+    /// Previously used for oneof-view-enum emission (one module deeper
+    /// than the view struct). The `oneofs::` tree lift takes emission
+    /// two levels deeper (into `view::oneofs::<owner>`) rather than
+    /// one, so view.rs now constructs the scope explicitly; this
+    /// helper remains as a general utility for future consumers.
+    #[allow(dead_code)]
     pub fn deeper(&self) -> MessageScope<'a> {
         MessageScope {
             nesting: self.nesting + 1,

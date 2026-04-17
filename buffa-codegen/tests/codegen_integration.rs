@@ -88,12 +88,14 @@ fn generate_proto(proto: &str, config: &CodeGenConfig) -> String {
     let files = buffa_codegen::generate(&fds.file, &["test.proto".into()], config)
         .unwrap_or_else(|e| panic!("codegen failed: {e}\n\nProto:\n{proto}"));
 
-    assert_eq!(
-        files.len(),
-        1,
-        "generate_proto expects single-file output; use compile_protos directly for multi-file"
-    );
-    files.into_iter().next().unwrap().content
+    // Each proto produces up to three sibling files (owned, view, ext).
+    // Inline tests concatenate all of them so string-search assertions
+    // find items regardless of which stream emits them.
+    files
+        .iter()
+        .map(|f| f.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Helper: run codegen on a proto file from buffa-test/protos/.
@@ -124,15 +126,20 @@ fn json_no_views() -> CodeGenConfig {
 fn codegen_basic() {
     let files = generate_for("basic.proto", &CodeGenConfig::default());
     assert!(!files.is_empty());
-    assert!(files[0].content.contains("@generated"));
+    assert!(files.iter().any(|f| f.content.contains("@generated")));
 }
 
 #[test]
 fn codegen_basic_views_vs_no_views() {
+    // With views the `.__view.rs` sibling carries the view tree; without
+    // views it's empty. Compare the total content size across siblings.
+    fn total_len(files: &[GeneratedFile]) -> usize {
+        files.iter().map(|f| f.content.len()).sum()
+    }
     let with_views = generate_for("basic.proto", &CodeGenConfig::default());
     let without_views = generate_for("basic.proto", &no_views());
     assert!(
-        without_views[0].content.len() < with_views[0].content.len(),
+        total_len(&without_views) < total_len(&with_views),
         "disabling views should produce shorter output"
     );
 }
@@ -140,7 +147,12 @@ fn codegen_basic_views_vs_no_views() {
 #[test]
 fn codegen_keywords() {
     let files = generate_for("keywords.proto", &no_views());
-    let content = &files[0].content;
+    let content = files
+        .iter()
+        .map(|f| f.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let content = &content;
     assert!(content.contains("pub mod r#type"));
     assert!(content.contains("self_:"));
     assert!(content.contains("r#type:"));
@@ -149,7 +161,12 @@ fn codegen_keywords() {
 #[test]
 fn codegen_proto2_defaults() {
     let files = generate_for("proto2_defaults.proto", &no_views());
-    let content = &files[0].content;
+    let content = files
+        .iter()
+        .map(|f| f.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let content = &content;
     assert!(content.contains("pub struct WithDefaults"));
     assert!(content.contains("pub struct Proto2Message"));
     assert!(content.contains("pub name:"));
@@ -159,7 +176,12 @@ fn codegen_proto2_defaults() {
 #[test]
 fn codegen_json_produces_serde_derives() {
     let files = generate_for("json_types.proto", &json_no_views());
-    let content = &files[0].content;
+    let content = files
+        .iter()
+        .map(|f| f.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let content = &content;
     assert!(content.contains("::serde::Serialize"));
     assert!(content.contains("::serde::Deserialize"));
 }
@@ -167,13 +189,20 @@ fn codegen_json_produces_serde_derives() {
 #[test]
 fn codegen_json_disabled_has_no_serde() {
     let files = generate_for("json_types.proto", &no_views());
-    assert!(!files[0].content.contains("::serde::Serialize"));
+    assert!(!files
+        .iter()
+        .any(|f| f.content.contains("::serde::Serialize")));
 }
 
 #[test]
 fn codegen_nested_deep() {
     let files = generate_for("nested_deep.proto", &no_views());
-    let content = &files[0].content;
+    let content = files
+        .iter()
+        .map(|f| f.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let content = &content;
     assert!(content.contains("pub mod outer"));
     assert!(content.contains("pub mod middle"));
     assert!(content.contains("pub struct Inner"));
@@ -182,7 +211,12 @@ fn codegen_nested_deep() {
 #[test]
 fn codegen_wkt_auto_mapping() {
     let files = generate_for("wkt_usage.proto", &no_views());
-    let content = &files[0].content;
+    let content = files
+        .iter()
+        .map(|f| f.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let content = &content;
     assert!(content.contains("::buffa_types::google::protobuf::Timestamp"));
     assert!(content.contains("::buffa_types::google::protobuf::Duration"));
 }
@@ -194,7 +228,12 @@ fn codegen_wkt_explicit_extern_overrides_auto() {
         .extern_paths
         .push((".google.protobuf".into(), "::my_custom_wkts".into()));
     let files = generate_for("wkt_usage.proto", &config);
-    let content = &files[0].content;
+    let content = files
+        .iter()
+        .map(|f| f.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let content = &content;
     assert!(content.contains("::my_custom_wkts::Timestamp"));
     assert!(!content.contains("::buffa_types::"));
 }
@@ -202,7 +241,12 @@ fn codegen_wkt_explicit_extern_overrides_auto() {
 #[test]
 fn codegen_name_collisions() {
     let files = generate_for("name_collisions.proto", &no_views());
-    let content = &files[0].content;
+    let content = files
+        .iter()
+        .map(|f| f.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let content = &content;
     assert!(content.contains("pub struct Vec"));
     assert!(content.contains("pub struct String"));
     assert!(content.contains("pub struct Option"));
@@ -224,17 +268,30 @@ fn codegen_cross_package_uses_super() {
     );
     let files = buffa_codegen::generate(&fds.file, &["cross_package.proto".into()], &no_views())
         .expect("codegen failed");
-    assert!(files[0].content.contains("super::"));
+    assert!(files.iter().any(|f| f.content.contains("super::")));
 }
 
 // ── Module tree generation ──────────────────────────────────────────────
 
 #[test]
 fn module_tree_basic() {
+    use buffa_codegen::{GeneratedFileKind, ModuleTreeEntry};
     let entries = vec![
-        ("foo.rs", "my.pkg"),
-        ("bar.rs", "my.pkg"),
-        ("baz.rs", "other"),
+        ModuleTreeEntry {
+            file_name: "foo.rs",
+            package: "my.pkg",
+            kind: GeneratedFileKind::Owned,
+        },
+        ModuleTreeEntry {
+            file_name: "bar.rs",
+            package: "my.pkg",
+            kind: GeneratedFileKind::Owned,
+        },
+        ModuleTreeEntry {
+            file_name: "baz.rs",
+            package: "other",
+            kind: GeneratedFileKind::Owned,
+        },
     ];
     let tree = buffa_codegen::generate_module_tree(&entries, "", false);
     assert!(tree.contains("pub mod my"));
@@ -245,7 +302,12 @@ fn module_tree_basic() {
 
 #[test]
 fn module_tree_inner_allow() {
-    let entries = vec![("f.rs", "pkg")];
+    use buffa_codegen::{GeneratedFileKind, ModuleTreeEntry};
+    let entries = vec![ModuleTreeEntry {
+        file_name: "f.rs",
+        package: "pkg",
+        kind: GeneratedFileKind::Owned,
+    }];
     let with = buffa_codegen::generate_module_tree(&entries, "", true);
     let without = buffa_codegen::generate_module_tree(&entries, "", false);
     assert!(with.contains("#![allow("));
@@ -254,9 +316,93 @@ fn module_tree_inner_allow() {
 
 #[test]
 fn module_tree_keyword_escaping() {
-    let entries = vec![("t.rs", "google.type")];
+    use buffa_codegen::{GeneratedFileKind, ModuleTreeEntry};
+    let entries = vec![ModuleTreeEntry {
+        file_name: "t.rs",
+        package: "google.type",
+        kind: GeneratedFileKind::Owned,
+    }];
     let tree = buffa_codegen::generate_module_tree(&entries, "", false);
     assert!(tree.contains("pub mod r#type"));
+}
+
+#[test]
+fn module_tree_coalesces_view_and_ext_per_package() {
+    // Two files in the same proto package — `my.pkg` — each contributing
+    // all five sibling kinds. The module tree must wrap them in a single
+    // `pub mod view { … pub mod oneofs { … } }`, a single `pub mod ext`,
+    // and a single outer `pub mod oneofs` per package, not one per source
+    // file.
+    use buffa_codegen::{GeneratedFileKind, ModuleTreeEntry};
+    let entries = vec![
+        ModuleTreeEntry {
+            file_name: "foo.rs",
+            package: "my.pkg",
+            kind: GeneratedFileKind::Owned,
+        },
+        ModuleTreeEntry {
+            file_name: "foo.__view.rs",
+            package: "my.pkg",
+            kind: GeneratedFileKind::View,
+        },
+        ModuleTreeEntry {
+            file_name: "foo.__ext.rs",
+            package: "my.pkg",
+            kind: GeneratedFileKind::Ext,
+        },
+        ModuleTreeEntry {
+            file_name: "foo.__oneofs.rs",
+            package: "my.pkg",
+            kind: GeneratedFileKind::Oneofs,
+        },
+        ModuleTreeEntry {
+            file_name: "foo.__view_oneofs.rs",
+            package: "my.pkg",
+            kind: GeneratedFileKind::ViewOneofs,
+        },
+        ModuleTreeEntry {
+            file_name: "bar.rs",
+            package: "my.pkg",
+            kind: GeneratedFileKind::Owned,
+        },
+        ModuleTreeEntry {
+            file_name: "bar.__view.rs",
+            package: "my.pkg",
+            kind: GeneratedFileKind::View,
+        },
+        ModuleTreeEntry {
+            file_name: "bar.__ext.rs",
+            package: "my.pkg",
+            kind: GeneratedFileKind::Ext,
+        },
+        ModuleTreeEntry {
+            file_name: "bar.__oneofs.rs",
+            package: "my.pkg",
+            kind: GeneratedFileKind::Oneofs,
+        },
+        ModuleTreeEntry {
+            file_name: "bar.__view_oneofs.rs",
+            package: "my.pkg",
+            kind: GeneratedFileKind::ViewOneofs,
+        },
+    ];
+    let tree = buffa_codegen::generate_module_tree(&entries, "", false);
+    // One `pub mod view` per package, containing one inner `pub mod oneofs`
+    // for the view-oneof kind, plus one `pub mod ext` and one outer
+    // `pub mod oneofs` for the owned-oneof kind.
+    assert_eq!(tree.matches("pub mod view {").count(), 1);
+    assert_eq!(tree.matches("pub mod ext {").count(), 1);
+    // Two `pub mod oneofs {` occurrences: one nested inside `view::` for
+    // view-of-oneofs, and one at the package root for owned oneofs.
+    assert_eq!(tree.matches("pub mod oneofs {").count(), 2);
+    assert!(tree.contains(r#"include!("foo.__view.rs")"#));
+    assert!(tree.contains(r#"include!("bar.__view.rs")"#));
+    assert!(tree.contains(r#"include!("foo.__ext.rs")"#));
+    assert!(tree.contains(r#"include!("bar.__ext.rs")"#));
+    assert!(tree.contains(r#"include!("foo.__oneofs.rs")"#));
+    assert!(tree.contains(r#"include!("bar.__oneofs.rs")"#));
+    assert!(tree.contains(r#"include!("foo.__view_oneofs.rs")"#));
+    assert!(tree.contains(r#"include!("bar.__view_oneofs.rs")"#));
 }
 
 // ── Inline proto tests ──────────────────────────────────────────────────
@@ -363,8 +509,9 @@ fn inline_oneof() {
         "#,
         &no_views(),
     );
-    assert!(content.contains("pub info: Option<contact::InfoOneof>"));
-    assert!(content.contains("pub enum InfoOneof"));
+    // Oneof enum now lives in the parallel `oneofs::` tree per package.
+    assert!(content.contains("pub info: Option<oneofs::contact::Info>"));
+    assert!(content.contains("pub enum Info"));
     assert!(content.contains("Email("));
     assert!(content.contains("Phone("));
 }
@@ -512,10 +659,12 @@ fn inline_oneof_duplicate_message_type_no_from_collision() {
         "#,
         &no_views(),
     );
-    // Box on both message variants.
+    // Box on both message variants. The oneof enum now lives at
+    // `oneofs::t::Kind`, so references to the sibling-at-package-root
+    // `Placeholder` and `T` go through `super::super::`.
     assert_eq!(
         content
-            .matches("::buffa::alloc::boxed::Box<super::Placeholder>")
+            .matches("::buffa::alloc::boxed::Box<super::super::Placeholder>")
             .count(),
         2,
         "both Placeholder variants should be boxed: {content}"
@@ -523,13 +672,15 @@ fn inline_oneof_duplicate_message_type_no_from_collision() {
     // Only ONE From impl (for T, which appears once), not two for Placeholder.
     assert_eq!(
         content
-            .matches("impl From<super::Placeholder> for Kind")
+            .matches("impl From<super::super::Placeholder> for Kind")
             .count(),
         0,
         "duplicate-type From impls must be skipped: {content}"
     );
     assert_eq!(
-        content.matches("impl From<super::T> for Kind").count(),
+        content
+            .matches("impl From<super::super::T> for Kind")
+            .count(),
         1,
         "unique-type From impl must still be generated: {content}"
     );
@@ -664,7 +815,12 @@ fn inline_cross_package_super() {
     );
     let files = buffa_codegen::generate(&fds.file, &["main.proto".into()], &no_views())
         .expect("codegen failed");
-    let content = &files[0].content;
+    let content = files
+        .iter()
+        .map(|f| f.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let content = &content;
     // Cross-package ref should use super:: to reach sibling package.
     assert!(
         content.contains("super::dep::Shared"),

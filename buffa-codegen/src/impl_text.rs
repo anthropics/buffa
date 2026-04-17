@@ -30,7 +30,7 @@ use crate::impl_message::{
     is_supported_field_type,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident};
-use crate::oneof::{is_boxed_variant, to_snake_case};
+use crate::oneof::is_boxed_variant;
 use crate::CodeGenError;
 
 /// Generate `impl ::buffa::text::TextFormat for #name_ident { ... }`.
@@ -98,7 +98,8 @@ pub(crate) fn generate_text_impl(
     }
 
     let name_ident = format_ident!("{}", rust_name);
-    let mod_ident = make_field_ident(&to_snake_case(rust_name));
+    // Path prefix to this message's oneof enums in the `oneofs::` tree.
+    let oneofs_prefix = crate::message::oneofs_path_prefix(current_package, proto_fqn, nesting);
 
     // ── field grouping (mirrors generate_message_impl) ──────────────────────
 
@@ -163,7 +164,7 @@ pub(crate) fn generate_text_impl(
     let oneof_encode: Vec<_> = oneof_groups
         .iter()
         .map(|(name, enum_ident, fields)| {
-            oneof_encode_stmt(ctx, enum_ident, name, fields, &mod_ident, features)
+            oneof_encode_stmt(ctx, enum_ident, name, fields, &oneofs_prefix, features)
         })
         .collect::<Result<_, _>>()?;
     let map_encode: Vec<_> = map_fields
@@ -188,7 +189,7 @@ pub(crate) fn generate_text_impl(
             enum_ident,
             name,
             fields,
-            &mod_ident,
+            &oneofs_prefix,
             current_package,
             proto_fqn,
             features,
@@ -723,11 +724,11 @@ fn oneof_encode_stmt(
     enum_ident: &proc_macro2::Ident,
     oneof_name: &str,
     fields: &[&FieldDescriptorProto],
-    mod_ident: &proc_macro2::Ident,
+    oneofs_prefix: &TokenStream,
     parent_features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
     let field_ident = make_field_ident(oneof_name);
-    let qualified: TokenStream = quote! { #mod_ident::#enum_ident };
+    let qualified: TokenStream = quote! { #oneofs_prefix #enum_ident };
 
     let mut arms: Vec<TokenStream> = Vec::new();
     for field in fields {
@@ -782,14 +783,14 @@ fn oneof_merge_arms(
     enum_ident: &proc_macro2::Ident,
     oneof_name: &str,
     fields: &[&FieldDescriptorProto],
-    mod_ident: &proc_macro2::Ident,
+    oneofs_prefix: &TokenStream,
     current_package: &str,
     proto_fqn: &str,
     parent_features: &ResolvedFeatures,
     nesting: usize,
 ) -> Result<Vec<TokenStream>, CodeGenError> {
     let field_ident = make_field_ident(oneof_name);
-    let qualified: TokenStream = quote! { #mod_ident::#enum_ident };
+    let qualified: TokenStream = quote! { #oneofs_prefix #enum_ident };
 
     let mut arms: Vec<TokenStream> = Vec::new();
     for field in fields {

@@ -36,6 +36,14 @@ pub(super) fn make_field(name: &str, number: i32, label: Label, ty: Type) -> Fie
     }
 }
 
+/// Concatenate every sibling file's content for search-based assertions.
+/// Under PR 1 each proto produces three files (owned, view, ext); tests
+/// that look for a generated item need to search across all of them
+/// since the content may live in any of the three streams.
+pub(super) fn all_content(files: &[crate::GeneratedFile]) -> String {
+    files.iter().map(|f| f.content.as_str()).collect()
+}
+
 mod comments;
 mod custom_attributes;
 mod generation;

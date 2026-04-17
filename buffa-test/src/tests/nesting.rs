@@ -19,7 +19,7 @@ fn test_deep_nesting_round_trip() {
             }),
             ..Default::default()
         }),
-        content: Some(nested::outer::ContentOneof::Text("hello".into())),
+        content: Some(nested::oneofs::outer::Content::Text("hello".into())),
         ..Default::default()
     };
     let decoded = round_trip(&msg);
@@ -64,37 +64,41 @@ fn test_multi_oneof_variants() {
     // Test each variant type round-trips correctly.
     let cases: Vec<MultiOneof> = vec![
         MultiOneof {
-            value: Some(nested::multi_oneof::ValueOneof::IntVal(42)),
+            value: Some(nested::oneofs::multi_oneof::Value::IntVal(42)),
             ..Default::default()
         },
         MultiOneof {
-            value: Some(nested::multi_oneof::ValueOneof::LongVal(i64::MAX)),
+            value: Some(nested::oneofs::multi_oneof::Value::LongVal(i64::MAX)),
             ..Default::default()
         },
         MultiOneof {
-            value: Some(nested::multi_oneof::ValueOneof::FloatVal(1.5)),
+            value: Some(nested::oneofs::multi_oneof::Value::FloatVal(1.5)),
             ..Default::default()
         },
         MultiOneof {
-            value: Some(nested::multi_oneof::ValueOneof::DoubleVal(
+            value: Some(nested::oneofs::multi_oneof::Value::DoubleVal(
                 std::f64::consts::PI,
             )),
             ..Default::default()
         },
         MultiOneof {
-            value: Some(nested::multi_oneof::ValueOneof::BoolVal(true)),
+            value: Some(nested::oneofs::multi_oneof::Value::BoolVal(true)),
             ..Default::default()
         },
         MultiOneof {
-            value: Some(nested::multi_oneof::ValueOneof::StringVal("hello".into())),
+            value: Some(nested::oneofs::multi_oneof::Value::StringVal(
+                "hello".into(),
+            )),
             ..Default::default()
         },
         MultiOneof {
-            value: Some(nested::multi_oneof::ValueOneof::BytesVal(vec![0xFF, 0x00])),
+            value: Some(nested::oneofs::multi_oneof::Value::BytesVal(vec![
+                0xFF, 0x00,
+            ])),
             ..Default::default()
         },
         MultiOneof {
-            value: Some(nested::multi_oneof::ValueOneof::MessageVal(Box::new(
+            value: Some(nested::oneofs::multi_oneof::Value::MessageVal(Box::new(
                 nested::outer::middle::Inner {
                     data: vec![1, 2, 3],
                     active: true,
@@ -116,21 +120,22 @@ fn test_recursive_oneof_direct() {
     // Expr { kind { Expr negated = 3; } } is directly self-recursive
     // through the oneof. Message/group variants are always boxed to
     // break the infinite-size cycle.
-    use crate::nested::{expr, Expr};
+    use crate::nested::oneofs::expr;
+    use crate::nested::Expr;
     let inner = Expr {
-        kind: Some(expr::KindOneof::IntLiteral(42)),
+        kind: Some(expr::Kind::IntLiteral(42)),
         ..Default::default()
     };
     let outer = Expr {
-        kind: Some(expr::KindOneof::Negated(Box::new(inner))),
+        kind: Some(expr::Kind::Negated(Box::new(inner))),
         ..Default::default()
     };
     let decoded = round_trip(&outer);
     assert_eq!(decoded, outer);
     // Verify deref through Box works transparently in pattern matching.
     match &decoded.kind {
-        Some(expr::KindOneof::Negated(e)) => match &e.kind {
-            Some(expr::KindOneof::IntLiteral(n)) => assert_eq!(*n, 42),
+        Some(expr::Kind::Negated(e)) => match &e.kind {
+            Some(expr::Kind::IntLiteral(n)) => assert_eq!(*n, 42),
             other => panic!("expected IntLiteral, got {other:?}"),
         },
         other => panic!("expected Negated, got {other:?}"),
@@ -142,13 +147,14 @@ fn test_recursive_oneof_mutual() {
     // Expr -> BinaryOp -> Expr mutual recursion. BinaryOp fields use
     // MessageField (already boxed); the Expr.kind.binary variant is
     // the boxed side of the cycle.
-    use crate::nested::{expr, BinaryOp, Expr};
+    use crate::nested::oneofs::expr;
+    use crate::nested::{BinaryOp, Expr};
     let lhs = Expr {
-        kind: Some(expr::KindOneof::IntLiteral(1)),
+        kind: Some(expr::Kind::IntLiteral(1)),
         ..Default::default()
     };
     let rhs = Expr {
-        kind: Some(expr::KindOneof::IntLiteral(2)),
+        kind: Some(expr::Kind::IntLiteral(2)),
         ..Default::default()
     };
     let op = BinaryOp {
@@ -159,7 +165,7 @@ fn test_recursive_oneof_mutual() {
     };
     // Use the generated From impl instead of manual Box::new.
     let expr = Expr {
-        kind: Some(expr::KindOneof::from(op)),
+        kind: Some(expr::Kind::from(op)),
         ..Default::default()
     };
     let decoded = round_trip(&expr);
@@ -170,7 +176,8 @@ fn test_recursive_oneof_mutual() {
 fn test_from_msg_for_option_oneof() {
     // `From<Msg> for Option<Oneof>` lets struct-literal construction skip both
     // the explicit `Some(...)` and `Box::new(...)` for message-typed variants.
-    use crate::nested::{expr, BinaryOp, Expr};
+    use crate::nested::oneofs::expr;
+    use crate::nested::{BinaryOp, Expr};
     let op = BinaryOp {
         op: "*".into(),
         ..Default::default()
@@ -182,7 +189,7 @@ fn test_from_msg_for_option_oneof() {
         ..Default::default()
     };
     let explicit = Expr {
-        kind: Some(expr::KindOneof::Binary(Box::new(op))),
+        kind: Some(expr::Kind::Binary(Box::new(op))),
         ..Default::default()
     };
     assert_eq!(terse, explicit);
@@ -190,7 +197,7 @@ fn test_from_msg_for_option_oneof() {
     // Round-trip sanity.
     let decoded = round_trip(&terse);
     match decoded.kind {
-        Some(expr::KindOneof::Binary(b)) => assert_eq!(b.op, "*"),
+        Some(expr::Kind::Binary(b)) => assert_eq!(b.op, "*"),
         other => panic!("expected Binary, got {other:?}"),
     }
 
@@ -206,12 +213,13 @@ fn test_from_msg_for_option_oneof() {
 fn test_recursive_oneof_merge_semantics() {
     // When the same message-typed oneof variant appears twice on the
     // wire, the second occurrence merges into the first (proto3 spec).
-    use crate::nested::{expr, BinaryOp, Expr};
+    use crate::nested::oneofs::expr;
+    use crate::nested::{BinaryOp, Expr};
     let first = Expr {
-        kind: Some(expr::KindOneof::from(BinaryOp {
+        kind: Some(expr::Kind::from(BinaryOp {
             op: "+".into(),
             lhs: buffa::MessageField::some(Expr {
-                kind: Some(expr::KindOneof::IntLiteral(1)),
+                kind: Some(expr::Kind::IntLiteral(1)),
                 ..Default::default()
             }),
             ..Default::default()
@@ -219,9 +227,9 @@ fn test_recursive_oneof_merge_semantics() {
         ..Default::default()
     };
     let second = Expr {
-        kind: Some(expr::KindOneof::from(BinaryOp {
+        kind: Some(expr::Kind::from(BinaryOp {
             rhs: buffa::MessageField::some(Expr {
-                kind: Some(expr::KindOneof::IntLiteral(2)),
+                kind: Some(expr::Kind::IntLiteral(2)),
                 ..Default::default()
             }),
             ..Default::default()
@@ -233,7 +241,7 @@ fn test_recursive_oneof_merge_semantics() {
     let merged = Expr::decode(&mut bytes.as_slice()).expect("decode");
     // Both lhs (from first) and rhs (from second) should be present.
     match &merged.kind {
-        Some(expr::KindOneof::Binary(b)) => {
+        Some(expr::Kind::Binary(b)) => {
             assert_eq!(b.op, "+");
             assert!(b.lhs.is_set(), "lhs from first merge lost");
             assert!(b.rhs.is_set(), "rhs from second merge lost");
@@ -246,22 +254,24 @@ fn test_recursive_oneof_merge_semantics() {
 fn test_view_oneof_boxed_message_variant() {
     // View oneof enums box message/group variants for the same reason
     // as owned enums. The Box holds a lifetime-bound view struct.
-    use crate::nested::{expr, Expr, ExprView};
+    use crate::nested::oneofs::expr;
+    use crate::nested::view::ExprView;
+    use crate::nested::Expr;
     use buffa::MessageView;
     let inner = Expr {
-        kind: Some(expr::KindOneof::IntLiteral(42)),
+        kind: Some(expr::Kind::IntLiteral(42)),
         ..Default::default()
     };
     let outer = Expr {
-        kind: Some(expr::KindOneof::Negated(Box::new(inner))),
+        kind: Some(expr::Kind::Negated(Box::new(inner))),
         ..Default::default()
     };
     let bytes = outer.encode_to_vec();
     let view = ExprView::decode_view(&bytes).expect("decode_view");
     // Pattern-matched binding auto-derefs through Box<ExprView<'_>>.
     match &view.kind {
-        Some(expr::KindOneofView::Negated(v)) => match &v.kind {
-            Some(expr::KindOneofView::IntLiteral(n)) => assert_eq!(*n, 42),
+        Some(crate::nested::view::oneofs::expr::Kind::Negated(v)) => match &v.kind {
+            Some(crate::nested::view::oneofs::expr::Kind::IntLiteral(n)) => assert_eq!(*n, 42),
             other => panic!("expected IntLiteral, got {other:?}"),
         },
         other => panic!("expected Negated, got {other:?}"),
@@ -274,10 +284,11 @@ fn test_view_oneof_boxed_message_variant() {
 #[test]
 fn test_view_oneof_message_variant_to_owned() {
     // Non-recursive message variant: Middle in Outer.content.structured.
-    use crate::nested::{self, Outer, OuterView};
+    use crate::nested::view::OuterView;
+    use crate::nested::{self, Outer};
     use buffa::MessageView;
     let msg = Outer {
-        content: Some(nested::outer::ContentOneof::Structured(Box::new(
+        content: Some(nested::oneofs::outer::Content::Structured(Box::new(
             nested::outer::Middle {
                 value: 7,
                 ..Default::default()
@@ -288,7 +299,7 @@ fn test_view_oneof_message_variant_to_owned() {
     let bytes = msg.encode_to_vec();
     let view = OuterView::decode_view(&bytes).expect("decode_view");
     match &view.content {
-        Some(nested::outer::ContentOneofView::Structured(m)) => assert_eq!(m.value, 7),
+        Some(crate::nested::view::oneofs::outer::Content::Structured(m)) => assert_eq!(m.value, 7),
         other => panic!("expected Structured, got {other:?}"),
     }
     assert_eq!(view.to_owned_message(), msg);
@@ -323,7 +334,8 @@ fn test_recursive_singular_message_field() {
 fn test_view_recursive_singular_message_field() {
     // View path through the same cycle. MessageFieldView boxes internally,
     // Deref returns &V transparently.
-    use crate::nested::{corecursive, Corecursive, CorecursiveView};
+    use crate::nested::view::CorecursiveView;
+    use crate::nested::{corecursive, Corecursive};
     use buffa::MessageView;
     let msg = Corecursive {
         name: "root".into(),
@@ -352,7 +364,8 @@ fn test_view_message_field_merge_semantics() {
     // When a singular message field appears twice on the wire, the
     // second occurrence merges into the first field-by-field (proto
     // spec). The view decoder must do this, not replace.
-    use crate::nested::{corecursive, Corecursive, CorecursiveView};
+    use crate::nested::view::CorecursiveView;
+    use crate::nested::{corecursive, Corecursive};
     use buffa::MessageView;
     // First: nested.value = 1, nested.back.name = "from_first"
     let first = Corecursive {
@@ -394,14 +407,16 @@ fn test_view_message_field_merge_semantics() {
 #[test]
 fn test_view_oneof_message_variant_merge_semantics() {
     // Same merge semantics for message-typed oneof variants.
-    use crate::nested::{expr, BinaryOp, Expr, ExprView};
+    use crate::nested::oneofs::expr;
+    use crate::nested::view::ExprView;
+    use crate::nested::{BinaryOp, Expr};
     use buffa::MessageView;
     // First: binary with lhs set
     let first = Expr {
-        kind: Some(expr::KindOneof::from(BinaryOp {
+        kind: Some(expr::Kind::from(BinaryOp {
             op: "+".into(),
             lhs: buffa::MessageField::some(Expr {
-                kind: Some(expr::KindOneof::IntLiteral(1)),
+                kind: Some(expr::Kind::IntLiteral(1)),
                 ..Default::default()
             }),
             ..Default::default()
@@ -410,9 +425,9 @@ fn test_view_oneof_message_variant_merge_semantics() {
     };
     // Second: binary with rhs set (no op, no lhs)
     let second = Expr {
-        kind: Some(expr::KindOneof::from(BinaryOp {
+        kind: Some(expr::Kind::from(BinaryOp {
             rhs: buffa::MessageField::some(Expr {
-                kind: Some(expr::KindOneof::IntLiteral(2)),
+                kind: Some(expr::Kind::IntLiteral(2)),
                 ..Default::default()
             }),
             ..Default::default()
@@ -424,7 +439,7 @@ fn test_view_oneof_message_variant_merge_semantics() {
 
     let view = ExprView::decode_view(&wire).unwrap();
     match &view.kind {
-        Some(expr::KindOneofView::Binary(b)) => {
+        Some(crate::nested::view::oneofs::expr::Kind::Binary(b)) => {
             assert_eq!(b.op, "+", "op from first (second didn't set it)");
             assert!(b.lhs.is_set(), "lhs from first must survive merge");
             assert!(b.rhs.is_set(), "rhs from second");

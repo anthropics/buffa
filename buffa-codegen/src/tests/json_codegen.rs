@@ -200,7 +200,7 @@ fn test_json_oneof_field_is_flattened() {
 
     let files = generate(&[file], &["oneof_json.proto".to_string()], &json_config())
         .expect("should generate");
-    let content = &files[0].content;
+    let content = all_content(&files);
     // The oneof field uses flatten so its variants appear as top-level JSON fields.
     assert!(
         content.contains("serde(flatten)"),
@@ -426,17 +426,21 @@ fn test_register_types_emitted_with_json_any_only() {
     });
     let files =
         generate(&[file], &["reg.proto".to_string()], &json_config()).expect("should generate");
-    let content = &files[0].content;
+    let content = all_content(&files);
     assert!(
         content.contains("pub fn register_types(reg: &mut ::buffa::type_registry::TypeRegistry)"),
         "missing register_types fn: {content}"
     );
+    // register_types lives inside `pub mod ext { ... }` at the package
+    // level (wrapped by generate_module_tree) — inside the generated
+    // `.__ext.rs` file it references Any consts with `super::` to climb
+    // out of ext:: to package scope.
     assert!(
-        content.contains("reg.register_json_any(__FOO_JSON_ANY)"),
+        content.contains("reg.register_json_any(super::__FOO_JSON_ANY)"),
         "missing Foo JSON Any registration: {content}"
     );
     assert!(
-        content.contains("reg.register_json_any(__BAR_JSON_ANY)"),
+        content.contains("reg.register_json_any(super::__BAR_JSON_ANY)"),
         "missing Bar JSON Any registration: {content}"
     );
     // No generate_text → no register_text_* calls in the body.
@@ -461,13 +465,14 @@ fn test_register_types_includes_nested_message_any_entries() {
     });
     let files = generate(&[file], &["nested_any.proto".to_string()], &json_config())
         .expect("should generate");
-    let content = &files[0].content;
+    let content = all_content(&files);
+    // From inside `ext::`, package-scope Any consts need a `super::`.
     assert!(
-        content.contains("reg.register_json_any(__OUTER_JSON_ANY)"),
+        content.contains("reg.register_json_any(super::__OUTER_JSON_ANY)"),
         "missing top-level Outer: {content}"
     );
     assert!(
-        content.contains("reg.register_json_any(outer::__INNER_JSON_ANY)"),
+        content.contains("reg.register_json_any(super::outer::__INNER_JSON_ANY)"),
         "missing nested Inner path: {content}"
     );
 }
@@ -511,7 +516,7 @@ fn test_text_any_emitted_independent_of_json() {
         ..Default::default()
     };
     let files = generate(&[file], &["textonly.proto".to_string()], &cfg).expect("should generate");
-    let content = &files[0].content;
+    let content = all_content(&files);
     assert!(
         content.contains("pub const __MSG_TEXT_ANY: ::buffa::type_registry::TextAnyEntry"),
         "missing TEXT_ANY const: {content}"
@@ -525,7 +530,7 @@ fn test_text_any_emitted_independent_of_json() {
         "JSON_ANY must be absent with generate_json off: {content}"
     );
     assert!(
-        content.contains("reg.register_text_any(__MSG_TEXT_ANY)"),
+        content.contains("reg.register_text_any(super::__MSG_TEXT_ANY)"),
         "missing register_text_any call: {content}"
     );
     assert!(

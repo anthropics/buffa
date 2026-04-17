@@ -22,7 +22,6 @@ Multiple files in the same package are included in the same module.
 """
 
 import sys
-import os
 from collections import defaultdict
 from pathlib import Path
 
@@ -74,47 +73,77 @@ def main():
         print("No .rs files found in", gen_dir, file=sys.stderr)
         sys.exit(1)
 
-    # Group files by package path (all segments except the last one,
-    # which is the proto file name).
-    # e.g. "google.api.expr.v1alpha1.checked.rs" -> package ["google", "api", "expr", "v1alpha1"]
-    packages = defaultdict(list)
+    # Each proto file produces five output siblings:
+    #   - `<stem>.rs`                 (owned tree)
+    #   - `<stem>.__view.rs`          (view-tree contents, inside `pub mod view`)
+    #   - `<stem>.__ext.rs`           (ext-tree contents, inside `pub mod ext`)
+    #   - `<stem>.__oneofs.rs`        (owned oneofs, inside `pub mod oneofs`)
+    #   - `<stem>.__view_oneofs.rs`   (view-of-oneofs, inside `pub mod view { pub mod oneofs {} }`)
+    # where `<stem>` is the dotted proto path, e.g.
+    # `google.api.expr.v1alpha1.checked`.
+    #
+    # Group them per package and per kind. Inside the module tree we emit
+    # a single `pub mod view { include!(a.__view.rs); include!(b.__view.rs); }`
+    # per package (and likewise `pub mod ext { … }`, `pub mod oneofs { … }`)
+    # so sibling files share one wrapper module instead of colliding on
+    # per-file wrappers. The `view_oneofs` kind nests inside the `view`
+    # wrapper: `pub mod view { … pub mod oneofs { <view_oneofs files> } }`.
+    packages = defaultdict(lambda: {"owned": [], "view": [], "ext": [], "oneofs": [], "view_oneofs": []})
     excluded = []
+    # Check the longer suffix before the shorter one — `.__view_oneofs`
+    # must match before `.__view`.
     for rs_file in rs_files:
         if rs_file.name in exclude_files:
             excluded.append(rs_file.name)
             continue
         stem = rs_file.stem  # e.g. "google.api.expr.v1alpha1.checked"
+        kind = "owned"
+        if stem.endswith(".__view_oneofs"):
+            kind = "view_oneofs"
+            stem = stem[: -len(".__view_oneofs")]
+        elif stem.endswith(".__view"):
+            kind = "view"
+            stem = stem[: -len(".__view")]
+        elif stem.endswith(".__ext"):
+            kind = "ext"
+            stem = stem[: -len(".__ext")]
+        elif stem.endswith(".__oneofs"):
+            kind = "oneofs"
+            stem = stem[: -len(".__oneofs")]
         parts = stem.split(".")
         # The package is everything except the last segment.
         pkg = tuple(parts[:-1])
-        packages[pkg].append(rs_file.name)
+        packages[pkg][kind].append(rs_file.name)
 
     if excluded:
         print(f"Excluded {len(excluded)} files: {', '.join(excluded)}",
               file=sys.stderr)
 
-    # Build a tree structure.
-    tree = {}
-    for pkg, files in packages.items():
-        node = tree
-        for seg in pkg:
-            if seg not in node:
-                node[seg] = {"__children": {}, "__files": []}
-            node = node[seg]["__children"]
-        # We're past all segments; go back to the last node.
-        # Actually, let me restructure: the files go on the package node.
-        pass
+    # Build the tree directly. Each node tracks per-kind file lists so we
+    # can emit a single wrapper per kind per package.
+    def new_node():
+        return {
+            "__owned": [],
+            "__view": [],
+            "__ext": [],
+            "__oneofs": [],
+            "__view_oneofs": [],
+            "__children": {},
+        }
 
-    # Simpler approach: build the tree directly.
-    tree = {"__files": [], "__children": {}}
+    tree = new_node()
 
-    for pkg, files in packages.items():
+    for pkg, kinds in packages.items():
         node = tree
         for seg in pkg:
             if seg not in node["__children"]:
-                node["__children"][seg] = {"__files": [], "__children": {}}
+                node["__children"][seg] = new_node()
             node = node["__children"][seg]
-        node["__files"].extend(files)
+        node["__owned"].extend(kinds["owned"])
+        node["__view"].extend(kinds["view"])
+        node["__ext"].extend(kinds["ext"])
+        node["__oneofs"].extend(kinds["oneofs"])
+        node["__view_oneofs"].extend(kinds["view_oneofs"])
 
     # Generate lib.rs.
     lines = [
@@ -127,8 +156,32 @@ def main():
 
     def emit(node, indent=0):
         prefix = "    " * indent
-        for filename in sorted(node["__files"]):
+        for filename in sorted(node["__owned"]):
             lines.append(f'{prefix}include!("{include_prefix}{filename}");')
+        if node["__view"] or node["__view_oneofs"]:
+            lines.append(f"{prefix}#[allow(non_camel_case_types, dead_code, unused_imports, clippy::derivable_impls, clippy::match_single_binding)]")
+            lines.append(f"{prefix}pub mod view {{")
+            for filename in sorted(node["__view"]):
+                lines.append(f'{prefix}    include!("{include_prefix}{filename}");')
+            if node["__view_oneofs"]:
+                lines.append(f"{prefix}    #[allow(non_camel_case_types, dead_code, unused_imports, clippy::derivable_impls, clippy::match_single_binding)]")
+                lines.append(f"{prefix}    pub mod oneofs {{")
+                for filename in sorted(node["__view_oneofs"]):
+                    lines.append(f'{prefix}        include!("{include_prefix}{filename}");')
+                lines.append(f"{prefix}    }}")
+            lines.append(f"{prefix}}}")
+        if node["__ext"]:
+            lines.append(f"{prefix}#[allow(non_camel_case_types, dead_code, unused_imports, clippy::derivable_impls, clippy::match_single_binding)]")
+            lines.append(f"{prefix}pub mod ext {{")
+            for filename in sorted(node["__ext"]):
+                lines.append(f'{prefix}    include!("{include_prefix}{filename}");')
+            lines.append(f"{prefix}}}")
+        if node["__oneofs"]:
+            lines.append(f"{prefix}#[allow(non_camel_case_types, dead_code, unused_imports, clippy::derivable_impls, clippy::match_single_binding)]")
+            lines.append(f"{prefix}pub mod oneofs {{")
+            for filename in sorted(node["__oneofs"]):
+                lines.append(f'{prefix}    include!("{include_prefix}{filename}");')
+            lines.append(f"{prefix}}}")
         for seg in sorted(node["__children"].keys()):
             child = node["__children"][seg]
             escaped = escape_ident(seg)

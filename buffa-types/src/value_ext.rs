@@ -5,13 +5,14 @@
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 
-use crate::google::protobuf::{value::KindOneof, ListValue, NullValue, Struct, Value};
+use crate::google::protobuf::oneofs::value::Kind;
+use crate::google::protobuf::{ListValue, NullValue, Struct, Value};
 
 impl Value {
     /// Construct a [`Value`] that represents a protobuf `null`.
     pub fn null() -> Self {
         Self {
-            kind: Some(KindOneof::NullValue(buffa::EnumValue::from(
+            kind: Some(Kind::NullValue(buffa::EnumValue::from(
                 NullValue::NULL_VALUE,
             ))),
             ..Default::default()
@@ -20,13 +21,13 @@ impl Value {
 
     /// Returns `true` if this value is the null variant.
     pub fn is_null(&self) -> bool {
-        matches!(self.kind, Some(KindOneof::NullValue(_)))
+        matches!(self.kind, Some(Kind::NullValue(_)))
     }
 
     /// Returns the `f64` value if this is a number, otherwise `None`.
     pub fn as_number(&self) -> Option<f64> {
         match &self.kind {
-            Some(KindOneof::NumberValue(n)) => Some(*n),
+            Some(Kind::NumberValue(n)) => Some(*n),
             _ => None,
         }
     }
@@ -34,7 +35,7 @@ impl Value {
     /// Returns the string value if this is a string, otherwise `None`.
     pub fn as_str(&self) -> Option<&str> {
         match &self.kind {
-            Some(KindOneof::StringValue(s)) => Some(s.as_str()),
+            Some(Kind::StringValue(s)) => Some(s.as_str()),
             _ => None,
         }
     }
@@ -42,7 +43,7 @@ impl Value {
     /// Returns the bool value if this is a bool, otherwise `None`.
     pub fn as_bool(&self) -> Option<bool> {
         match &self.kind {
-            Some(KindOneof::BoolValue(b)) => Some(*b),
+            Some(Kind::BoolValue(b)) => Some(*b),
             _ => None,
         }
     }
@@ -50,7 +51,7 @@ impl Value {
     /// Returns a reference to the [`Struct`] if this is a struct value.
     pub fn as_struct(&self) -> Option<&Struct> {
         match &self.kind {
-            Some(KindOneof::StructValue(s)) => Some(s),
+            Some(Kind::StructValue(s)) => Some(s),
             _ => None,
         }
     }
@@ -58,7 +59,7 @@ impl Value {
     /// Returns a reference to the [`ListValue`] if this is a list value.
     pub fn as_list(&self) -> Option<&ListValue> {
         match &self.kind {
-            Some(KindOneof::ListValue(l)) => Some(l),
+            Some(Kind::ListValue(l)) => Some(l),
             _ => None,
         }
     }
@@ -66,7 +67,7 @@ impl Value {
     /// Returns a mutable reference to the [`Struct`] if this is a struct value.
     pub fn as_struct_mut(&mut self) -> Option<&mut Struct> {
         match &mut self.kind {
-            Some(KindOneof::StructValue(s)) => Some(s),
+            Some(Kind::StructValue(s)) => Some(s),
             _ => None,
         }
     }
@@ -74,7 +75,7 @@ impl Value {
     /// Returns a mutable reference to the [`ListValue`] if this is a list value.
     pub fn as_list_mut(&mut self) -> Option<&mut ListValue> {
         match &mut self.kind {
-            Some(KindOneof::ListValue(l)) => Some(l),
+            Some(Kind::ListValue(l)) => Some(l),
             _ => None,
         }
     }
@@ -83,7 +84,7 @@ impl Value {
 impl From<f64> for Value {
     fn from(n: f64) -> Self {
         Self {
-            kind: Some(KindOneof::NumberValue(n)),
+            kind: Some(Kind::NumberValue(n)),
             ..Default::default()
         }
     }
@@ -92,7 +93,7 @@ impl From<f64> for Value {
 impl From<String> for Value {
     fn from(s: String) -> Self {
         Self {
-            kind: Some(KindOneof::StringValue(s)),
+            kind: Some(Kind::StringValue(s)),
             ..Default::default()
         }
     }
@@ -101,7 +102,7 @@ impl From<String> for Value {
 impl From<&str> for Value {
     fn from(s: &str) -> Self {
         Self {
-            kind: Some(KindOneof::StringValue(s.to_string())),
+            kind: Some(Kind::StringValue(s.to_string())),
             ..Default::default()
         }
     }
@@ -120,7 +121,7 @@ impl From<f32> for Value {
 impl From<bool> for Value {
     fn from(b: bool) -> Self {
         Self {
-            kind: Some(KindOneof::BoolValue(b)),
+            kind: Some(Kind::BoolValue(b)),
             ..Default::default()
         }
     }
@@ -171,7 +172,7 @@ impl From<u64> for Value {
 impl From<Struct> for Value {
     fn from(s: Struct) -> Self {
         Self {
-            kind: Some(KindOneof::StructValue(Box::new(s))),
+            kind: Some(Kind::StructValue(Box::new(s))),
             ..Default::default()
         }
     }
@@ -180,7 +181,7 @@ impl From<Struct> for Value {
 impl From<ListValue> for Value {
     fn from(l: ListValue) -> Self {
         Self {
-            kind: Some(KindOneof::ListValue(Box::new(l))),
+            kind: Some(Kind::ListValue(Box::new(l))),
             ..Default::default()
         }
     }
@@ -308,8 +309,8 @@ impl serde::Serialize for Value {
     /// string encoding `"NaN"` / `"Infinity"` / `"-Infinity"`).
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         match &self.kind {
-            None | Some(KindOneof::NullValue(_)) => s.serialize_unit(),
-            Some(KindOneof::NumberValue(n)) => {
+            None | Some(Kind::NullValue(_)) => s.serialize_unit(),
+            Some(Kind::NumberValue(n)) => {
                 if !n.is_finite() {
                     return Err(serde::ser::Error::custom(
                         "Value.number_value must be finite; NaN and Infinity are not valid JSON numbers",
@@ -317,10 +318,10 @@ impl serde::Serialize for Value {
                 }
                 s.serialize_f64(*n)
             }
-            Some(KindOneof::StringValue(v)) => s.serialize_str(v),
-            Some(KindOneof::BoolValue(b)) => s.serialize_bool(*b),
-            Some(KindOneof::StructValue(st)) => st.serialize(s),
-            Some(KindOneof::ListValue(l)) => l.serialize(s),
+            Some(Kind::StringValue(v)) => s.serialize_str(v),
+            Some(Kind::BoolValue(b)) => s.serialize_bool(*b),
+            Some(Kind::StructValue(st)) => st.serialize(s),
+            Some(Kind::ListValue(l)) => l.serialize(s),
         }
     }
 }
