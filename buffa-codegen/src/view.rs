@@ -23,7 +23,6 @@ use crate::impl_message::{
     validated_field_number, wire_type_byte, wire_type_check, wire_type_token,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident, rust_path_to_tokens};
-use crate::oneof::to_pascal_case;
 use crate::CodeGenError;
 
 /// Token stream that pushes a closed-enum unknown value's raw wire span to
@@ -633,7 +632,7 @@ fn generate_oneof_view_enum(
                 .name
                 .as_deref()
                 .ok_or(CodeGenError::MissingField("field.name"))?;
-            let variant = format_ident!("{}", to_pascal_case(name));
+            let variant = crate::oneof::oneof_variant_ident(name);
             let ty = effective_type(ctx, f, features);
             let f_features = crate::features::resolve_field(ctx, f, features);
             let vty = match ty {
@@ -1120,7 +1119,7 @@ fn oneof_decode_arms(
             let field_number = validated_field_number(field)?;
             let ty = effective_type(ctx, field, features);
             let field_features = crate::features::resolve_field(ctx, field, features);
-            let variant = format_ident!("{}", to_pascal_case(name));
+            let variant = crate::oneof::oneof_variant_ident(name);
             let wire_type = wire_type_token(ty);
             let expected_byte = wire_type_byte(ty);
             let wire_check = wire_type_check(field_number, &wire_type, expected_byte);
@@ -1277,7 +1276,7 @@ fn build_to_owned_fields(
                     .name
                     .as_deref()
                     .ok_or(CodeGenError::MissingField("field.name"))?;
-                let variant = format_ident!("{}", to_pascal_case(fname));
+                let variant = crate::oneof::oneof_variant_ident(fname);
                 let ty = effective_type(ctx, f, features);
                 let conv = oneof_variant_to_owned(scope, ty, fname);
                 Ok(quote! {

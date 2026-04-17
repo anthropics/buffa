@@ -2139,7 +2139,7 @@ fn generate_oneof_impls(
             .ok_or(CodeGenError::MissingField("field.name"))?;
         let field_number = validated_field_number(field)?;
         let ty = effective_type(ctx, field, features);
-        let variant_ident = format_ident!("{}", crate::oneof::to_pascal_case(field_name));
+        let variant_ident = crate::oneof::oneof_variant_ident(field_name);
         let tag_len = tag_encoded_len(field_number, wire_type_byte(ty));
         let wire_type = wire_type_token(ty);
 

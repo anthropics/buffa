@@ -719,3 +719,63 @@ fn test_message_with_oneof_field_named_type() {
         "missing struct Type: {content}"
     );
 }
+
+#[test]
+fn test_oneof_variant_named_self_escapes_to_self_underscore() {
+    // Regression for #47. A oneof variant whose proto name PascalCases to
+    // a reserved Rust identifier (only `Self` is reachable: no other
+    // lowercase Rust keyword PascalCases to another reserved ident) must
+    // be sanitized; otherwise codegen emits `pub enum X { Self(...) }`,
+    // which is a parse error.
+    let mut file = proto3_file("self_variant.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Identity".to_string()),
+        field: vec![
+            FieldDescriptorProto {
+                name: Some("self".to_string()),
+                number: Some(1),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_BOOL),
+                oneof_index: Some(0),
+                ..Default::default()
+            },
+            FieldDescriptorProto {
+                name: Some("manager".to_string()),
+                number: Some(2),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_STRING),
+                oneof_index: Some(0),
+                ..Default::default()
+            },
+        ],
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("identity".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+
+    let files = generate(
+        &[file],
+        &["self_variant.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("oneof with `self` variant must compile");
+    let content = &files[0].content;
+    // The reserved `Self` is suffixed to `Self_` by `make_field_ident`;
+    // the bare `Manager` variant is unaffected.
+    assert!(
+        content.contains("Self_(bool)"),
+        "expected `Self_(bool)` variant; got:\n{content}"
+    );
+    assert!(
+        content.contains("Manager(::buffa::alloc::string::String)"),
+        "non-keyword variant must remain unrenamed; got:\n{content}"
+    );
+    // Defense in depth: no bare `Self(` (which would not parse).
+    assert!(
+        !content.contains(" Self("),
+        "raw `Self(` survived in generated code:\n{content}"
+    );
+}
