@@ -13,7 +13,7 @@ impl Any {
     pub fn pack(msg: &impl buffa::Message, type_url: impl Into<String>) -> Self {
         Self {
             type_url: type_url.into(),
-            value: msg.encode_to_vec(),
+            value: msg.encode_to_bytes(),
             ..Default::default()
         }
     }
@@ -29,7 +29,7 @@ impl Any {
     ///
     /// Returns a [`buffa::DecodeError`] if the bytes cannot be decoded as `T`.
     pub fn unpack_unchecked<T: buffa::Message>(&self) -> Result<T, buffa::DecodeError> {
-        T::decode(&mut self.value.as_slice())
+        T::decode(&mut self.value.as_ref())
     }
 
     /// Unpack the contained message as `T`, but only if the `type_url`
@@ -48,7 +48,7 @@ impl Any {
         if self.type_url != expected_type_url {
             return Ok(None);
         }
-        T::decode(&mut self.value.as_slice()).map(Some)
+        T::decode(&mut self.value.as_ref()).map(Some)
     }
 
     /// Returns `true` if this [`Any`]'s `type_url` matches the given string.
@@ -180,11 +180,11 @@ impl buffa::text::TextFormat for Any {
         while let Some(name) = dec.read_field_name()? {
             match name {
                 "type_url" => self.type_url = dec.read_string()?.into_owned(),
-                "value" => self.value = dec.read_bytes()?,
+                "value" => self.value = dec.read_bytes()?.into(),
                 _ if name.starts_with('[') => {
                     let (url, bytes) = dec.read_any_expansion(name)?;
                     self.type_url = url.into();
-                    self.value = bytes;
+                    self.value = bytes.into();
                 }
                 _ => dec.skip_value()?,
             }
@@ -205,7 +205,7 @@ mod text_tests {
         // generated impl did.
         let orig = Any {
             type_url: "type.example.com/Foo".into(),
-            value: alloc::vec![0x08, 0x2A], // field 1 = varint 42
+            value: alloc::vec![0x08, 0x2A].into(), // field 1 = varint 42
             ..Default::default()
         };
         let text = encode_to_string(&orig);
@@ -337,7 +337,7 @@ impl<'de> serde::Deserialize<'de> for Any {
 
         Ok(Self {
             type_url,
-            value,
+            value: value.into(),
             ..Default::default()
         })
     }
@@ -392,6 +392,18 @@ mod tests {
             .unpack_if("type.googleapis.com/google.protobuf.Duration")
             .unwrap();
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn clone_shares_payload_buffer() {
+        let orig = Any {
+            type_url: "type.googleapis.com/example.Msg".into(),
+            value: alloc::vec![0xAB; 1024].into(),
+            ..Default::default()
+        };
+        let dup = orig.clone();
+        assert_eq!(orig.value.as_ptr(), dup.value.as_ptr());
+        assert_eq!(orig.value.len(), dup.value.len());
     }
 
     #[test]
@@ -596,7 +608,7 @@ mod tests {
             without_registry(|| {
                 let any = Any {
                     type_url: "type.googleapis.com/unknown.Type".into(),
-                    value: vec![0x08, 0x96, 0x01],
+                    value: vec![0x08, 0x96, 0x01].into(),
                     ..Default::default()
                 };
                 let json = serde_json::to_string(&any).unwrap();
@@ -621,7 +633,7 @@ mod tests {
             with_registry(|| {
                 let any = Any {
                     type_url: "type.googleapis.com/unknown.Type".into(),
-                    value: vec![0x08, 0x96, 0x01],
+                    value: vec![0x08, 0x96, 0x01].into(),
                     ..Default::default()
                 };
                 let json = serde_json::to_string(&any).unwrap();
@@ -706,7 +718,7 @@ mod tests {
                 let any = Any {
                     type_url: "type.example.com/user.Thing".into(),
                     // field 1, varint 42: tag=0x08, value=0x2A
-                    value: vec![0x08, 0x2A],
+                    value: vec![0x08, 0x2A].into(),
                     ..Default::default()
                 };
 
@@ -741,7 +753,7 @@ mod tests {
             with_user_type_registry(|| {
                 let original = Any {
                     type_url: "type.example.com/user.Thing".into(),
-                    value: vec![0x08, 0x07], // id=7
+                    value: vec![0x08, 0x07].into(), // id=7
                     ..Default::default()
                 };
                 let json = serde_json::to_string(&original).unwrap();
@@ -769,7 +781,7 @@ mod tests {
 
             let any = Any {
                 type_url: "type.example.com/user.BadType".into(),
-                value: vec![],
+                value: vec![].into(),
                 ..Default::default()
             };
             let result = serde_json::to_string(&any);

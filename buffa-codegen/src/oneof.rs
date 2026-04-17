@@ -98,7 +98,7 @@ fn collect_variant_info(
                 .as_deref()
                 .ok_or(CodeGenError::MissingField("field.name"))?;
             let json_name = field.json_name.as_deref().unwrap_or(proto_name).to_string();
-            let variant_ident = format_ident!("{}", to_pascal_case(proto_name));
+            let variant_ident = oneof_variant_ident(proto_name);
             let field_type = crate::impl_message::effective_type(ctx, field, features);
             // bytes_fields config override: scalar_or_message_type_nested goes
             // through scalar_rust_type which hardcodes Vec<u8> for TYPE_BYTES.
@@ -584,6 +584,17 @@ pub(crate) fn resolve_oneof_idents(
         }
     }
     Ok(result)
+}
+
+/// Build the Rust variant identifier for a oneof field.
+///
+/// PascalCase the proto field name, then sanitize against reserved Rust
+/// idents — the only lowercase Rust keyword whose PascalCase form is also
+/// reserved is `self` → `Self`, which would otherwise produce
+/// `pub enum Foo { Self(...) }` and fail to parse. `make_field_ident`
+/// suffixes such names with `_` so the variant becomes `Self_`.
+pub(crate) fn oneof_variant_ident(proto_name: &str) -> proc_macro2::Ident {
+    crate::idents::make_field_ident(&to_pascal_case(proto_name))
 }
 
 /// Convert a snake_case identifier to PascalCase.

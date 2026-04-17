@@ -9,6 +9,15 @@ fn attr_config(
     field_attrs: Vec<(&str, &str)>,
     message_attrs: Vec<(&str, &str)>,
 ) -> CodeGenConfig {
+    attr_config_full(type_attrs, field_attrs, message_attrs, vec![])
+}
+
+fn attr_config_full(
+    type_attrs: Vec<(&str, &str)>,
+    field_attrs: Vec<(&str, &str)>,
+    message_attrs: Vec<(&str, &str)>,
+    enum_attrs: Vec<(&str, &str)>,
+) -> CodeGenConfig {
     CodeGenConfig {
         generate_views: false,
         type_attributes: type_attrs
@@ -20,6 +29,10 @@ fn attr_config(
             .map(|(p, a)| (p.to_string(), a.to_string()))
             .collect(),
         message_attributes: message_attrs
+            .into_iter()
+            .map(|(p, a)| (p.to_string(), a.to_string()))
+            .collect(),
+        enum_attributes: enum_attrs
             .into_iter()
             .map(|(p, a)| (p.to_string(), a.to_string()))
             .collect(),
@@ -130,6 +143,118 @@ fn test_message_attribute_on_struct_not_enum() {
     assert!(
         attr_pos > enum_pos && attr_pos < struct_pos,
         "serde(default) should appear after enum, before struct: {content}"
+    );
+}
+
+// ── enum_attribute tests ────────────────────────────────────────────
+
+fn mixed_msg_enum_file() -> FileDescriptorProto {
+    let mut file = proto3_file("mixed.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("Msg".to_string()),
+        field: vec![make_field("id", 1, Label::LABEL_OPTIONAL, Type::TYPE_INT32)],
+        ..Default::default()
+    });
+    file.enum_type.push(EnumDescriptorProto {
+        name: Some("Status".to_string()),
+        value: vec![enum_value("UNKNOWN", 0), enum_value("ACTIVE", 1)],
+        ..Default::default()
+    });
+    file
+}
+
+#[test]
+fn test_enum_attribute_on_enum_not_struct() {
+    let file = mixed_msg_enum_file();
+    let config = attr_config_full(vec![], vec![], vec![], vec![(".", "#[derive(Hash)]")]);
+    let files = generate(&[file], &["mixed.proto".to_string()], &config).expect("should generate");
+    let content = &files[0].content;
+    // Hash already appears in the enum's built-in derive, so we use the
+    // expanded `,` separator inside the user-supplied derive to avoid a
+    // false-positive substring match. enum_attribute injects a *separate*
+    // `#[derive(Hash)]` line after the built-in derive, so look for the
+    // standalone form.
+    assert!(
+        content.contains("#[derive(Hash)]"),
+        "enum_attribute should appear on the enum: {content}"
+    );
+    let enum_pos = content.find("pub enum Status").expect("Status enum");
+    let attr_pos = content.find("#[derive(Hash)]").unwrap();
+    let struct_pos = content.find("pub struct Msg").expect("Msg struct");
+    // The injected attribute lands above the `pub enum`, not above the struct.
+    assert!(
+        attr_pos < enum_pos,
+        "#[derive(Hash)] should sit above the enum: {content}"
+    );
+    assert!(
+        attr_pos < struct_pos,
+        "#[derive(Hash)] should not appear above the struct: {content}"
+    );
+}
+
+#[test]
+fn test_enum_attribute_scoped_to_specific_enum() {
+    let mut file = proto3_file("two_enums.proto");
+    file.enum_type.push(EnumDescriptorProto {
+        name: Some("Targeted".to_string()),
+        value: vec![enum_value("A", 0)],
+        ..Default::default()
+    });
+    file.enum_type.push(EnumDescriptorProto {
+        name: Some("Untouched".to_string()),
+        value: vec![enum_value("B", 0)],
+        ..Default::default()
+    });
+    let config = attr_config_full(
+        vec![],
+        vec![],
+        vec![],
+        vec![(".Targeted", "#[allow(non_camel_case_types)]")],
+    );
+    let files =
+        generate(&[file], &["two_enums.proto".to_string()], &config).expect("should generate");
+    let content = &files[0].content;
+    let count = content.matches("non_camel_case_types").count();
+    assert_eq!(
+        count, 1,
+        "attribute should land on Targeted only, found {count} matches: {content}"
+    );
+    // Verify the single match is associated with `Targeted`, not `Untouched`.
+    let attr_pos = content.find("non_camel_case_types").unwrap();
+    let targeted_pos = content.find("pub enum Targeted").expect("Targeted enum");
+    let untouched_pos = content.find("pub enum Untouched").expect("Untouched enum");
+    assert!(
+        attr_pos < targeted_pos && attr_pos < untouched_pos,
+        "attribute should sit above Targeted (and therefore not above Untouched): {content}"
+    );
+    assert!(
+        targeted_pos < untouched_pos,
+        "test relies on Targeted being emitted before Untouched"
+    );
+}
+
+#[test]
+fn test_enum_attribute_does_not_apply_to_struct() {
+    let file = mixed_msg_enum_file();
+    // Catch-all enum_attribute must not bleed onto messages.
+    let config = attr_config_full(
+        vec![],
+        vec![],
+        vec![],
+        vec![(".", "#[doc = \"enum_only_marker\"]")],
+    );
+    let files = generate(&[file], &["mixed.proto".to_string()], &config).expect("should generate");
+    let content = &files[0].content;
+    let total = content.matches("enum_only_marker").count();
+    assert_eq!(
+        total, 1,
+        "enum_only_marker must appear exactly once (on the enum): {content}"
+    );
+    let attr_pos = content.find("enum_only_marker").unwrap();
+    let struct_pos = content.find("pub struct Msg").expect("Msg struct");
+    assert!(
+        attr_pos < struct_pos,
+        "enum_attribute must not land on the struct: {content}"
     );
 }
 

@@ -30,7 +30,7 @@ use crate::impl_message::{
     is_supported_field_type,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident};
-use crate::oneof::{is_boxed_variant, to_pascal_case, to_snake_case};
+use crate::oneof::{is_boxed_variant, to_snake_case};
 use crate::CodeGenError;
 
 /// Generate `impl ::buffa::text::TextFormat for #name_ident { ... }`.
@@ -736,7 +736,7 @@ fn oneof_encode_stmt(
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?;
-        let variant = format_ident!("{}", to_pascal_case(proto_name));
+        let variant = crate::oneof::oneof_variant_ident(proto_name);
         let ty = effective_type(ctx, field, &features);
         let (name_lit, _) = text_field_name(proto_name, field, ty);
         let boxed = is_boxed_variant(ty);
@@ -798,7 +798,7 @@ fn oneof_merge_arms(
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?;
-        let variant = format_ident!("{}", to_pascal_case(proto_name));
+        let variant = crate::oneof::oneof_variant_ident(proto_name);
         let ty = effective_type(ctx, field, &features);
         let (_, name_pat) = text_field_name(proto_name, field, ty);
         let use_bytes = ty == Type::TYPE_BYTES && field_uses_bytes(ctx, proto_fqn, proto_name);

@@ -376,6 +376,35 @@ impl Config {
         self
     }
 
+    /// Add a custom attribute to generated enum types only (not message
+    /// structs, not oneof enums) matching a proto path prefix.
+    ///
+    /// Same path-matching semantics as [`type_attribute`](Self::type_attribute) —
+    /// leading `.` auto-prepended, trailing `.` trimmed, proto-segment-aware
+    /// prefix matching, accumulation in insertion order. A malformed attribute
+    /// produces a compile-time error. Useful when you want to inject an
+    /// attribute on every enum in a package without also matching the
+    /// (often more numerous) messages that share the path prefix — e.g.
+    /// `#[derive(strum::EnumIter)]`, which only makes sense on enums.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// buffa_build::Config::new()
+    ///     .enum_attribute(".my.pkg", "#[derive(strum::EnumIter)]")
+    ///     .files(&["proto/my_service.proto"])
+    ///     .includes(&["proto/"])
+    ///     .compile()
+    ///     .unwrap();
+    /// ```
+    #[must_use]
+    pub fn enum_attribute(mut self, path: impl Into<String>, attribute: impl Into<String>) -> Self {
+        self.codegen_config
+            .enum_attributes
+            .push((normalize_attr_path(path.into()), attribute.into()));
+        self
+    }
+
     /// Use `buf build` instead of `protoc` for descriptor generation.
     ///
     /// `buf` is often easier to install and keep current than `protoc`
@@ -1072,6 +1101,22 @@ mod tests {
             cfg.codegen_config.message_attributes,
             vec![(".".to_string(), "#[serde(default)]".to_string())]
         );
+    }
+
+    #[test]
+    fn enum_attribute_forwards_normalized_path() {
+        let cfg = Config::new().enum_attribute("my.pkg.", "#[derive(strum::EnumIter)]");
+        assert_eq!(
+            cfg.codegen_config.enum_attributes,
+            vec![(
+                ".my.pkg".to_string(),
+                "#[derive(strum::EnumIter)]".to_string(),
+            )]
+        );
+        // Other attribute lists must remain untouched.
+        assert!(cfg.codegen_config.type_attributes.is_empty());
+        assert!(cfg.codegen_config.message_attributes.is_empty());
+        assert!(cfg.codegen_config.field_attributes.is_empty());
     }
 
     #[test]
