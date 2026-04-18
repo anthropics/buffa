@@ -76,7 +76,7 @@
 
 use crate::error::DecodeError;
 use crate::message::Message as _;
-use bytes::Bytes;
+use bytes::{BufMut, Bytes};
 
 /// Trait for zero-copy borrowed message views.
 ///
@@ -110,6 +110,86 @@ pub trait MessageView<'a>: Sized {
     ///
     /// This allocates and copies all borrowed fields.
     fn to_owned_message(&self) -> Self::Owned;
+}
+
+/// Serialize a [`MessageView`] directly from its borrowed fields.
+///
+/// Symmetric with [`Message`](crate::Message)'s two-pass
+/// `compute_size` / `write_to` model, but the `&'a str` / `&'a [u8]` /
+/// [`MapView`] / [`RepeatedView`] fields are written by borrow — no
+/// owned-struct intermediary, no per-field `String`/`Vec<u8>` allocations.
+///
+/// Generated `*View<'a>` types implement this trait when codegen is
+/// configured with `view_encode(true)`; off by default. Each implementing
+/// view struct gains a `__buffa_cached_size` field for the cached-size
+/// pass — same `AtomicU32`-backed [`CachedSize`](crate::__private::CachedSize)
+/// as owned messages, so views remain `Send + Sync`.
+///
+/// ## When to use
+///
+/// Reach for `ViewEncode` when the source data is already in memory and
+/// you would otherwise allocate an owned message just to encode-then-drop
+/// it — e.g. an RPC handler serializing from app state. If you already
+/// hold the owned message, use [`Message::encode`](crate::Message::encode)
+/// instead; the wire output is identical.
+///
+/// ```rust,ignore
+/// let view = PersonView {
+///     name: "borrowed",
+///     tags: ["a", "b"].iter().copied().collect(),
+///     ..Default::default()
+/// };
+/// let bytes = view.encode_to_vec();
+/// ```
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` does not implement `ViewEncode` — view encoding was not generated for this type",
+    note = "enable `view_encode(true)` in your buffa-build / buffa-codegen config to generate encode methods on view types"
+)]
+pub trait ViewEncode<'a>: MessageView<'a> {
+    /// Compute and cache the encoded byte size of this view.
+    ///
+    /// Recursively computes sizes for sub-message views and stores them in
+    /// each view's `CachedSize` field. Must be called before
+    /// [`write_to`](Self::write_to).
+    fn compute_size(&self) -> u32;
+
+    /// Write this view's encoded bytes to a buffer.
+    ///
+    /// Assumes [`compute_size`](Self::compute_size) has already been called.
+    /// Uses cached sizes for length-delimited sub-message headers.
+    fn write_to(&self, buf: &mut impl BufMut);
+
+    /// Return the size cached by the most recent [`compute_size`](Self::compute_size).
+    fn cached_size(&self) -> u32;
+
+    /// Convenience: compute size, then write. Primary view-encode entry point.
+    fn encode(&self, buf: &mut impl BufMut) {
+        self.compute_size();
+        self.write_to(buf);
+    }
+
+    /// Encode this view as a length-delimited byte sequence.
+    fn encode_length_delimited(&self, buf: &mut impl BufMut) {
+        let len = self.compute_size();
+        crate::encoding::encode_varint(len as u64, buf);
+        self.write_to(buf);
+    }
+
+    /// Encode this view to a new `Vec<u8>`.
+    fn encode_to_vec(&self) -> alloc::vec::Vec<u8> {
+        let size = self.compute_size() as usize;
+        let mut buf = alloc::vec::Vec::with_capacity(size);
+        self.write_to(&mut buf);
+        buf
+    }
+
+    /// Encode this view to a new [`bytes::Bytes`].
+    fn encode_to_bytes(&self) -> Bytes {
+        let size = self.compute_size() as usize;
+        let mut buf = bytes::BytesMut::with_capacity(size);
+        self.write_to(&mut buf);
+        buf.freeze()
+    }
 }
 
 /// Provides access to a lazily-initialized default view instance.
@@ -182,6 +262,13 @@ impl<V> MessageFieldView<V> {
         }
     }
 
+    /// Alias for [`set`](Self::set), mirroring owned
+    /// [`MessageField::some`](crate::MessageField::some).
+    #[inline]
+    pub fn some(v: V) -> Self {
+        Self::set(v)
+    }
+
     /// Returns `true` if the field has a value.
     #[inline]
     pub fn is_set(&self) -> bool {
@@ -210,10 +297,43 @@ impl<V> MessageFieldView<V> {
     }
 }
 
+impl<'a, V: ViewEncode<'a>> MessageFieldView<V> {
+    /// Forward to the inner view's [`compute_size`](ViewEncode::compute_size),
+    /// or `0` if unset. Generated `compute_size` calls this for nested-message
+    /// fields, mirroring [`MessageField`](crate::MessageField) on the owned side.
+    #[inline]
+    pub fn compute_size(&self) -> u32 {
+        self.inner.as_deref().map_or(0, V::compute_size)
+    }
+
+    /// Forward to the inner view's [`cached_size`](ViewEncode::cached_size),
+    /// or `0` if unset.
+    #[inline]
+    pub fn cached_size(&self) -> u32 {
+        self.inner.as_deref().map_or(0, V::cached_size)
+    }
+
+    /// Forward to the inner view's [`write_to`](ViewEncode::write_to);
+    /// no-op if unset.
+    #[inline]
+    pub fn write_to(&self, buf: &mut impl BufMut) {
+        if let Some(v) = self.inner.as_deref() {
+            v.write_to(buf);
+        }
+    }
+}
+
 impl<V> Default for MessageFieldView<V> {
     #[inline]
     fn default() -> Self {
         Self::unset()
+    }
+}
+
+impl<V> From<V> for MessageFieldView<V> {
+    #[inline]
+    fn from(v: V) -> Self {
+        Self::set(v)
     }
 }
 
@@ -363,6 +483,18 @@ impl<'b, 'a, T> IntoIterator for &'b RepeatedView<'a, T> {
     }
 }
 
+impl<'a, T> From<alloc::vec::Vec<T>> for RepeatedView<'a, T> {
+    fn from(elements: alloc::vec::Vec<T>) -> Self {
+        Self::new(elements)
+    }
+}
+
+impl<'a, T> FromIterator<T> for RepeatedView<'a, T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        Self::new(iter.into_iter().collect())
+    }
+}
+
 /// A borrowed view of a map field.
 ///
 /// Protobuf `map<K, V>` fields are encoded as repeated sub-messages, each
@@ -397,6 +529,17 @@ pub struct MapView<'a, K, V> {
 }
 
 impl<'a, K, V> MapView<'a, K, V> {
+    /// Construct from a `Vec` of entries, for [`ViewEncode`] use.
+    ///
+    /// Duplicate keys are kept and all encoded — valid protobuf wire data
+    /// (decoders apply last-write-wins). Mirrors [`RepeatedView::new`].
+    pub fn new(entries: alloc::vec::Vec<(K, V)>) -> Self {
+        Self {
+            entries,
+            _marker: core::marker::PhantomData,
+        }
+    }
+
     /// Returns the number of entries (including duplicates).
     pub fn len(&self) -> usize {
         self.entries.len()
@@ -456,6 +599,19 @@ impl<'a, K, V> MapView<'a, K, V> {
     }
 }
 
+impl<'a, K, V> From<alloc::vec::Vec<(K, V)>> for MapView<'a, K, V> {
+    fn from(entries: alloc::vec::Vec<(K, V)>) -> Self {
+        Self::new(entries)
+    }
+}
+
+/// Duplicate keys are kept and all encoded; see [`MapView::new`].
+impl<'a, K, V> FromIterator<(K, V)> for MapView<'a, K, V> {
+    fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
+        Self::new(iter.into_iter().collect())
+    }
+}
+
 impl<'a, K, V> Default for MapView<'a, K, V> {
     fn default() -> Self {
         Self {
@@ -512,6 +668,15 @@ impl<'a> UnknownFieldsView<'a> {
     /// Total byte length of all unknown field data.
     pub fn encoded_len(&self) -> usize {
         self.raw_spans.iter().map(|s| s.len()).sum()
+    }
+
+    /// Write all unknown-field bytes verbatim. Each span is a complete
+    /// `(tag, value)` record as it appeared on the wire, so concatenating
+    /// them produces a valid encoding.
+    pub fn write_to(&self, buf: &mut impl BufMut) {
+        for span in &self.raw_spans {
+            buf.put_slice(span);
+        }
     }
 
     /// Convert to an owned [`UnknownFields`](crate::UnknownFields) by parsing all stored raw byte spans.
@@ -1225,6 +1390,38 @@ mod tests {
                 id: self.id,
                 name: self.name.into(),
             }
+        }
+    }
+
+    impl<'a> ViewEncode<'a> for SimpleMessageView<'a> {
+        fn compute_size(&self) -> u32 {
+            let mut size = 0u32;
+            if self.id != 0 {
+                size += 1 + crate::types::int32_encoded_len(self.id) as u32;
+            }
+            if !self.name.is_empty() {
+                size += 1 + crate::types::string_encoded_len(self.name) as u32;
+            }
+            size
+        }
+
+        fn write_to(&self, buf: &mut impl bytes::BufMut) {
+            if self.id != 0 {
+                crate::encoding::Tag::new(1, crate::encoding::WireType::Varint).encode(buf);
+                crate::types::encode_int32(self.id, buf);
+            }
+            if !self.name.is_empty() {
+                crate::encoding::Tag::new(2, crate::encoding::WireType::LengthDelimited)
+                    .encode(buf);
+                crate::types::encode_string(self.name, buf);
+            }
+        }
+
+        fn cached_size(&self) -> u32 {
+            // Test-only stub: SimpleMessageView has no nested messages,
+            // so nothing reads cached_size. Real impls return the value
+            // stored by compute_size.
+            0
         }
     }
 

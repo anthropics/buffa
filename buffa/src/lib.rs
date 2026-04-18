@@ -207,7 +207,7 @@ pub use unknown_fields::{UnknownField, UnknownFieldData, UnknownFields};
 pub use text::TextFormat;
 pub use view::{
     DefaultViewInstance, HasDefaultViewInstance, MapView, MessageFieldView, MessageView, OwnedView,
-    RepeatedView, UnknownFieldsView,
+    RepeatedView, UnknownFieldsView, ViewEncode,
 };
 
 /// Private re-exports used exclusively by generated code.
