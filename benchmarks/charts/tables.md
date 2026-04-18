@@ -22,7 +22,10 @@
 
 | Message | buffa | buffa (view) |
 |---------|------:|------:|
-| LogRecord | 522 | 3,012 (+477%) |
+| ApiResponse | 790 | 1,799 (+128%) |
+| LogRecord | 531 | 3,080 (+480%) |
+| AnalyticsEvent | 408 | 1,178 (+189%) |
+| GoogleMessage1 | 935 | 1,251 (+34%) |
 
 ### JSON encode
 

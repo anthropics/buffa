@@ -276,58 +276,188 @@ bench_view_encode!(
     "../../datasets/google_message1_proto3.pb"
 );
 
-/// Build a `LogRecord` from borrowed source data and encode, vs build a
-/// `LogRecordView` from the same borrows and encode. Unlike `encode` /
-/// `encode_view` above (which serialize a pre-built struct), this includes
-/// the build phase — the per-field `String`/`HashMap` allocs that the view
-/// path avoids.
-fn bench_log_record_build_encode(c: &mut Criterion) {
-    let labels: Vec<(&str, &str)> = (0..15)
-        .map(|i| {
-            (
-                Box::leak(format!("k8s.io/label-key-{i:02}").into_boxed_str()) as &str,
-                Box::leak(format!("label-value-{i:04}").into_boxed_str()) as &str,
-            )
-        })
-        .collect();
-    let service = "inventory-service-2a";
-    let msg = "GET /api/v1/items?tenant=acme-corp&warehouse=us-west-2a&page=1400 200 17ms";
-    let mut group = c.benchmark_group("buffa/log_record");
-    let probe = LogRecord {
-        service_name: service.into(),
-        message: msg.into(),
-        labels: labels.iter().map(|(k, v)| ((*k).into(), (*v).into())).collect(),
-        ..Default::default()
-    }
-    .encode_to_vec();
-    group.throughput(Throughput::Bytes(probe.len() as u64));
-
-    group.bench_function("build_encode", |b| {
-        b.iter(|| {
-            let owned = LogRecord {
-                service_name: service.into(),
-                message: msg.into(),
-                labels: labels.iter().map(|(k, v)| ((*k).into(), (*v).into())).collect(),
-                ..Default::default()
-            };
-            criterion::black_box(owned.encode_to_vec())
-        });
-    });
-
-    group.bench_function("build_encode_view", |b| {
-        b.iter(|| {
-            let view = LogRecordView {
-                service_name: service,
-                message: msg,
-                labels: labels.iter().copied().collect(),
-                ..Default::default()
-            };
-            criterion::black_box(view.encode_to_vec())
-        });
-    });
-
-    group.finish();
+/// Build-then-encode benches: unlike `encode`/`encode_view` (which serialize
+/// a pre-built struct), these include the cost of populating the message from
+/// borrowed source — the per-field `String`/`Vec`/`HashMap` allocs that the
+/// view path avoids. Each uses a synthetic fixture representative of the
+/// message's shape; both paths populate identical fields, throughput is the
+/// encoded length.
+///
+/// `bench_build_encode!(fn_name, group, OwnedTy, owned_expr, view_expr)` —
+/// the two exprs share the source bindings declared above the macro call.
+/// Asserts decode-equivalence (not byte-equality, since `HashMap` vs
+/// `MapView` iteration order may differ on the wire).
+macro_rules! bench_build_encode {
+    ($fn_name:ident, $group:literal, $owned_ty:ty, $owned:expr, $view:expr $(,)?) => {
+        fn $fn_name(c: &mut Criterion) {
+            let probe = ($owned).encode_to_vec();
+            let view_bytes = ($view).encode_to_vec();
+            assert_eq!(probe.len(), view_bytes.len(), "fixture encode-len mismatch");
+            assert_eq!(
+                <$owned_ty>::decode_from_slice(&probe).unwrap(),
+                <$owned_ty>::decode_from_slice(&view_bytes).unwrap(),
+                "owned/view fixtures must decode-equal"
+            );
+            let mut group = c.benchmark_group($group);
+            group.throughput(Throughput::Bytes(probe.len() as u64));
+            group.bench_function("build_encode", |b| {
+                b.iter(|| criterion::black_box(($owned).encode_to_vec()));
+            });
+            group.bench_function("build_encode_view", |b| {
+                b.iter(|| criterion::black_box(($view).encode_to_vec()));
+            });
+            group.finish();
+        }
+    };
 }
+
+const TAGS: [&str; 5] = ["payments", "us-west-2a", "canary", "v3.14.2", "k8s"];
+
+bench_build_encode!(
+    bench_api_response_build_encode,
+    "buffa/api_response",
+    ApiResponse,
+    ApiResponse {
+        request_id: 9_001_234_567_890,
+        status_code: 200,
+        message: "transaction accepted".into(),
+        latency_ms: 17.42,
+        cached: true,
+        trace_id: Some("4bf92f3577b34da6a3ce929d0e0e4736".into()),
+        retry_after_ms: None,
+        tags: TAGS.iter().map(|s| (*s).into()).collect(),
+        ..Default::default()
+    },
+    ApiResponseView {
+        request_id: 9_001_234_567_890,
+        status_code: 200,
+        message: "transaction accepted",
+        latency_ms: 17.42,
+        cached: true,
+        trace_id: Some("4bf92f3577b34da6a3ce929d0e0e4736"),
+        retry_after_ms: None,
+        tags: TAGS.iter().copied().collect(),
+        ..Default::default()
+    },
+);
+
+const LABELS: [(&str, &str); 15] = [
+    ("k8s.io/label-key-00", "label-value-0000"),
+    ("k8s.io/label-key-01", "label-value-0001"),
+    ("k8s.io/label-key-02", "label-value-0002"),
+    ("k8s.io/label-key-03", "label-value-0003"),
+    ("k8s.io/label-key-04", "label-value-0004"),
+    ("k8s.io/label-key-05", "label-value-0005"),
+    ("k8s.io/label-key-06", "label-value-0006"),
+    ("k8s.io/label-key-07", "label-value-0007"),
+    ("k8s.io/label-key-08", "label-value-0008"),
+    ("k8s.io/label-key-09", "label-value-0009"),
+    ("k8s.io/label-key-10", "label-value-0010"),
+    ("k8s.io/label-key-11", "label-value-0011"),
+    ("k8s.io/label-key-12", "label-value-0012"),
+    ("k8s.io/label-key-13", "label-value-0013"),
+    ("k8s.io/label-key-14", "label-value-0014"),
+];
+const LOG_SVC: &str = "inventory-service-2a";
+const LOG_MSG: &str = "GET /api/v1/items?tenant=acme-corp&warehouse=us-west-2a&page=1400 200 17ms";
+
+bench_build_encode!(
+    bench_log_record_build_encode,
+    "buffa/log_record",
+    LogRecord,
+    LogRecord {
+        service_name: LOG_SVC.into(),
+        message: LOG_MSG.into(),
+        labels: LABELS.iter().map(|(k, v)| ((*k).into(), (*v).into())).collect(),
+        ..Default::default()
+    },
+    LogRecordView {
+        service_name: LOG_SVC,
+        message: LOG_MSG,
+        labels: LABELS.iter().copied().collect(),
+        ..Default::default()
+    },
+);
+
+const PROPS: [(&str, &str); 8] = [
+    ("page", "/checkout/confirm"),
+    ("referrer", "https://example.com/cart"),
+    ("session", "f0e1d2c3b4a59687"),
+    ("variant", "control"),
+    ("locale", "en-US"),
+    ("device", "desktop"),
+    ("browser", "firefox-125"),
+    ("ab_bucket", "treatment-7"),
+];
+
+// `sections` (recursive Nested) omitted: building nested views means a
+// `Box<NestedView>` per child — that conflates the alloc-avoidance signal
+// with the documented `MessageFieldView` boxing follow-up.
+bench_build_encode!(
+    bench_analytics_event_build_encode,
+    "buffa/analytics_event",
+    AnalyticsEvent,
+    AnalyticsEvent {
+        event_id: "evt_01HW3K9QXAMPLE".into(),
+        timestamp: 1_700_000_000_000,
+        user_id: "usr_8f7e6d5c4b3a2910".into(),
+        properties: PROPS
+            .iter()
+            .map(|(k, v)| analytics_event::Property {
+                key: (*k).into(),
+                value: Some(analytics_event::property::ValueOneof::StringValue((*v).into())),
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    },
+    AnalyticsEventView {
+        event_id: "evt_01HW3K9QXAMPLE",
+        timestamp: 1_700_000_000_000,
+        user_id: "usr_8f7e6d5c4b3a2910",
+        properties: PROPS
+            .iter()
+            .map(|(k, v)| analytics_event::PropertyView {
+                key: k,
+                value: Some(analytics_event::property::ValueOneofView::StringValue(v)),
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    },
+);
+
+bench_build_encode!(
+    bench_google_message1_build_encode,
+    "buffa/google_message1_proto3",
+    bench_buffa::proto3::GoogleMessage1,
+    bench_buffa::proto3::GoogleMessage1 {
+        field1: "the quick brown fox".into(),
+        field9: "jumps over the lazy dog".into(),
+        field2: 42,
+        field3: 17,
+        field6: 9001,
+        field22: 1_234_567_890_123,
+        field12: true,
+        field14: true,
+        field100: 100,
+        field101: 101,
+        ..Default::default()
+    },
+    bench_buffa::proto3::GoogleMessage1View {
+        field1: "the quick brown fox",
+        field9: "jumps over the lazy dog",
+        field2: 42,
+        field3: 17,
+        field6: 9001,
+        field22: 1_234_567_890_123,
+        field12: true,
+        field14: true,
+        field100: 100,
+        field101: 101,
+        ..Default::default()
+    },
+);
 
 fn bench_api_response(c: &mut Criterion) {
     benchmark_decode::<ApiResponse>(
@@ -429,7 +559,10 @@ criterion_group!(
     bench_log_record_view_encode,
     bench_analytics_event_view_encode,
     bench_google_message1_view_encode,
+    bench_api_response_build_encode,
     bench_log_record_build_encode,
+    bench_analytics_event_build_encode,
+    bench_google_message1_build_encode,
 );
 
 criterion_group!(

@@ -260,8 +260,19 @@ fn test_view_map_empty() {
 
 #[test]
 fn test_compute_size_matches_encode_len() {
-    // View type, not owned — covers nested-message, repeated-message,
-    // and oneof-message cached-size dispatch through MessageFieldView/Box.
+    let mut msg = Person::default();
+    msg.id = 99;
+    msg.name = "Bob".into();
+    msg.tags = vec!["a".into(), "b".into()];
+    let size = msg.compute_size() as usize;
+    let bytes = msg.encode_to_vec();
+    assert_eq!(size, bytes.len());
+}
+
+#[test]
+fn test_compute_size_matches_encode_len_view() {
+    // Covers nested-message, repeated-message, and oneof-message cached-size
+    // dispatch through MessageFieldView/Box.
     let addr = AddressView {
         street: "1 Main St",
         city: "Springfield",

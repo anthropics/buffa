@@ -214,43 +214,30 @@ pub(crate) fn closed_enum_unknown_route(
     }
 }
 
-/// Generate `unsafe impl DefaultInstance` and `impl Message` for a message.
-///
-/// `preserve_unknown_fields`: when `true`, the generated merge collects
-/// unknown fields into `self.__buffa_unknown_fields` and both `compute_size` and
-/// `write_to` include them.
-#[allow(clippy::too_many_arguments)]
-pub fn generate_message_impl(
-    ctx: &CodeGenContext,
-    msg: &DescriptorProto,
-    preserve_unknown_fields: bool,
-    rust_name: &str,
-    current_package: &str,
-    proto_fqn: &str,
-    features: &ResolvedFeatures,
-    oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
-    oneof_prefix: &TokenStream,
-    nesting: usize,
-) -> Result<TokenStream, CodeGenError> {
-    let name_ident = format_ident!("{}", rust_name);
+/// Partition a message's fields by encode-dispatch shape. Shared between
+/// [`generate_message_impl`] (owned) and [`build_view_encode_methods`] (view)
+/// so a new field category only needs adding here.
+struct ClassifiedFields<'a> {
+    scalar: Vec<&'a FieldDescriptorProto>,
+    repeated: Vec<&'a FieldDescriptorProto>,
+    map: Vec<&'a FieldDescriptorProto>,
+    oneof_groups: Vec<(String, proc_macro2::Ident, Vec<&'a FieldDescriptorProto>)>,
+}
 
-    let scalar_fields: Vec<_> = msg
+fn classify_fields<'a>(
+    msg: &'a DescriptorProto,
+    oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
+) -> ClassifiedFields<'a> {
+    let scalar = msg
         .field
         .iter()
         .filter(|f| {
-            // Real oneof members are excluded (handled via the oneof enum).
-            if is_real_oneof_member(f) {
-                return false;
-            }
-            if f.label.unwrap_or_default() == Label::LABEL_REPEATED {
-                return false;
-            }
-            is_supported_field_type(f.r#type.unwrap_or_default())
+            !is_real_oneof_member(f)
+                && f.label.unwrap_or_default() != Label::LABEL_REPEATED
+                && is_supported_field_type(f.r#type.unwrap_or_default())
         })
         .collect();
-
-    // Repeated fields (excluding map entries, which are handled separately).
-    let repeated_fields: Vec<_> = msg
+    let repeated = msg
         .field
         .iter()
         .filter(|f| {
@@ -259,9 +246,15 @@ pub fn generate_message_impl(
                 && is_supported_field_type(f.r#type.unwrap_or_default())
         })
         .collect();
-
-    // Non-synthetic oneof groups: each entry is (oneof_name, enum_ident, fields[]).
-    let oneof_groups: Vec<(String, proc_macro2::Ident, Vec<&FieldDescriptorProto>)> = msg
+    let map = msg
+        .field
+        .iter()
+        .filter(|f| {
+            f.label.unwrap_or_default() == Label::LABEL_REPEATED
+                && crate::message::is_map_field(msg, f)
+        })
+        .collect();
+    let oneof_groups = msg
         .oneof_decl
         .iter()
         .enumerate()
@@ -282,6 +275,40 @@ pub fn generate_message_impl(
             ))
         })
         .collect();
+    ClassifiedFields {
+        scalar,
+        repeated,
+        map,
+        oneof_groups,
+    }
+}
+
+/// Generate `unsafe impl DefaultInstance` and `impl Message` for a message.
+///
+/// `preserve_unknown_fields`: when `true`, the generated merge collects
+/// unknown fields into `self.__buffa_unknown_fields` and both `compute_size` and
+/// `write_to` include them.
+#[allow(clippy::too_many_arguments)]
+pub fn generate_message_impl(
+    ctx: &CodeGenContext,
+    msg: &DescriptorProto,
+    preserve_unknown_fields: bool,
+    rust_name: &str,
+    current_package: &str,
+    proto_fqn: &str,
+    features: &ResolvedFeatures,
+    oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
+    oneof_prefix: &TokenStream,
+    nesting: usize,
+) -> Result<TokenStream, CodeGenError> {
+    let name_ident = format_ident!("{}", rust_name);
+
+    let ClassifiedFields {
+        scalar: scalar_fields,
+        repeated: repeated_fields,
+        map: map_fields,
+        oneof_groups,
+    } = classify_fields(msg, oneof_idents);
 
     let compute_stmts = scalar_fields
         .iter()
@@ -335,16 +362,6 @@ pub fn generate_message_impl(
         oneof_write_stmts.push(ws);
         oneof_merge_arms.extend(mas);
     }
-
-    // Map fields.
-    let map_fields: Vec<_> = msg
-        .field
-        .iter()
-        .filter(|f| {
-            f.label.unwrap_or_default() == Label::LABEL_REPEATED
-                && crate::message::is_map_field(msg, f)
-        })
-        .collect();
 
     let mut map_compute_stmts: Vec<TokenStream> = Vec::new();
     let mut map_write_stmts: Vec<TokenStream> = Vec::new();
@@ -617,57 +634,12 @@ pub(crate) fn build_view_encode_methods(
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
     view_oneof_prefix: &TokenStream,
 ) -> Result<TokenStream, CodeGenError> {
-    let scalar_fields: Vec<_> = msg
-        .field
-        .iter()
-        .filter(|f| {
-            if is_real_oneof_member(f) {
-                return false;
-            }
-            if f.label.unwrap_or_default() == Label::LABEL_REPEATED {
-                return false;
-            }
-            is_supported_field_type(f.r#type.unwrap_or_default())
-        })
-        .collect();
-    let repeated_fields: Vec<_> = msg
-        .field
-        .iter()
-        .filter(|f| {
-            f.label.unwrap_or_default() == Label::LABEL_REPEATED
-                && !crate::message::is_map_field(msg, f)
-                && is_supported_field_type(f.r#type.unwrap_or_default())
-        })
-        .collect();
-    let oneof_groups: Vec<(String, proc_macro2::Ident, Vec<&FieldDescriptorProto>)> = msg
-        .oneof_decl
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, oneof)| {
-            let enum_ident = oneof_idents.get(&idx)?;
-            let fields: Vec<_> = msg
-                .field
-                .iter()
-                .filter(|f| is_real_oneof_member(f) && f.oneof_index == Some(idx as i32))
-                .collect();
-            if fields.is_empty() {
-                return None;
-            }
-            Some((
-                oneof.name.as_deref()?.to_string(),
-                enum_ident.clone(),
-                fields,
-            ))
-        })
-        .collect();
-    let map_fields: Vec<_> = msg
-        .field
-        .iter()
-        .filter(|f| {
-            f.label.unwrap_or_default() == Label::LABEL_REPEATED
-                && crate::message::is_map_field(msg, f)
-        })
-        .collect();
+    let ClassifiedFields {
+        scalar: scalar_fields,
+        repeated: repeated_fields,
+        map: map_fields,
+        oneof_groups,
+    } = classify_fields(msg, oneof_idents);
 
     let compute_stmts = scalar_fields
         .iter()
@@ -735,6 +707,11 @@ pub(crate) fn build_view_encode_methods(
         });
     }
 
+    // map_{compute_size,write_to}_stmt emit `for (k, v) in &self.field { ... }`.
+    // For owned `&HashMap<K,V>` that yields `(&K, &V)` directly. For
+    // `&MapView<'_,K,V>` it yields `&(K,V)`, but match-ergonomics binds the
+    // pattern `(k, v)` to `(&K, &V)` either way — so the same generated body
+    // works on both without modification.
     let mut map_compute_stmts: Vec<TokenStream> = Vec::new();
     let mut map_write_stmts: Vec<TokenStream> = Vec::new();
     for f in &map_fields {
@@ -747,6 +724,11 @@ pub(crate) fn build_view_encode_methods(
     } else {
         quote! {}
     };
+    // MessageSet (option message_set_wire_format = true) needs no special
+    // handling here: `UnknownFieldsView` stores raw verbatim wire spans, so the
+    // Item-group framing is already in the bytes and `write_to` is a passthrough.
+    // The owned path (see `generate_message_impl`) re-wraps because owned
+    // `UnknownFields` stores parsed `(number, data)` pairs.
     let unknown_fields_write_stmt = if preserve_unknown_fields {
         quote! { self.__buffa_unknown_fields.write_to(buf); }
     } else {
