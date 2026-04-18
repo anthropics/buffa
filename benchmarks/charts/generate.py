@@ -188,10 +188,15 @@ def build_tables(
         ]),
         ("binary-encode", [
             ("buffa",         lambda ms, md: _get(buffa, "buffa", ms, "encode")),
+            ("buffa (view)",  lambda ms, md: _get(buffa, "buffa", ms, "encode_view")),
             ("prost",         lambda ms, md: _get(prost, "prost", ms, "encode")),
             ("prost (bytes)", lambda ms, md: _get(prost_bytes, "prost-bytes", ms, "encode")),
             ("protobuf-v4",   lambda ms, md: _get(google, "google", ms, "encode")),
             ("Go",            lambda ms, md: _get_go(go, "BinaryEncode", md)),
+        ]),
+        ("build-encode", [
+            ("buffa",        lambda ms, md: _get(buffa, "buffa", ms, "build_encode")),
+            ("buffa (view)", lambda ms, md: _get(buffa, "buffa", ms, "build_encode_view")),
         ]),
         ("json-encode", [
             ("buffa",        lambda ms, md: _get(buffa, "buffa", ms, "json_encode")),
@@ -213,6 +218,11 @@ def build_tables(
         tables[chart] = table
 
     return tables
+
+
+def messages_with_data(table: dict[str, dict[str, float | None]]) -> list[str]:
+    """Subset of MESSAGES that have at least one non-None value in this table."""
+    return [m for m in MESSAGES if any(table[s].get(m) for s in table)]
 
 
 # ── SVG chart generation ───────────────────────────────────────────────
@@ -366,6 +376,7 @@ def generate_readme_tables(tables: dict[str, dict[str, dict[str, float | None]]]
     chart_meta = {
         "binary-decode": ("Binary decode", "buffa"),
         "binary-encode": ("Binary encode", "buffa"),
+        "build-encode": ("Build + binary encode", "buffa"),
         "json-encode": ("JSON encode", "buffa"),
         "json-decode": ("JSON decode", "buffa"),
     }
@@ -377,7 +388,7 @@ def generate_readme_tables(tables: dict[str, dict[str, dict[str, float | None]]]
         sep = "|---------|" + "|".join("------:" for _ in series_names) + "|"
 
         rows: list[str] = []
-        for msg in MESSAGES:
+        for msg in messages_with_data(table):
             baseline = table[baseline_name].get(msg)
             cells = [_pct(table[s].get(msg), baseline) for s in series_names]
             rows.append(f"| {msg} | " + " | ".join(cells) + " |")
@@ -429,6 +440,7 @@ def main() -> None:
     chart_titles = {
         "binary-decode": "Binary Decode Throughput",
         "binary-encode": "Binary Encode Throughput",
+        "build-encode": "Build + Binary Encode Throughput (from borrowed source data)",
         "json-encode": "JSON Encode Throughput",
         "json-decode": "JSON Decode Throughput",
     }
