@@ -4,6 +4,7 @@ fn main() {
         .files(&["protos/basic.proto"])
         .includes(&["protos/"])
         .generate_text(true)
+        .view_encode(true)
         .compile()
         .expect("buffa_build failed for basic.proto");
 
@@ -12,6 +13,7 @@ fn main() {
     buffa_build::Config::new()
         .files(&["protos/proto3_semantics.proto"])
         .includes(&["protos/"])
+        .view_encode(true)
         .compile()
         .expect("buffa_build failed for proto3_semantics.proto");
 
@@ -29,6 +31,7 @@ fn main() {
     buffa_build::Config::new()
         .files(&["protos/nested_deep.proto"])
         .includes(&["protos/"])
+        .view_encode(true)
         .compile()
         .expect("buffa_build failed for nested_deep.proto");
 
@@ -36,6 +39,7 @@ fn main() {
     buffa_build::Config::new()
         .files(&["protos/wkt_usage.proto"])
         .includes(&["protos/"])
+        .view_encode(true)
         .compile()
         .expect("buffa_build failed for wkt_usage.proto");
 
@@ -63,6 +67,7 @@ fn main() {
         .files(&["protos/proto2_defaults.proto"])
         .includes(&["protos/"])
         .generate_text(true)
+        .view_encode(true)
         .compile()
         .expect("buffa_build failed for proto2_defaults.proto");
 
@@ -114,6 +119,7 @@ fn main() {
         .includes(&["protos/"])
         .strict_utf8_mapping(true)
         .generate_json(true)
+        .view_encode(true)
         .compile()
         .expect("buffa_build failed for utf8_validation.proto");
 
@@ -123,7 +129,8 @@ fn main() {
         .files(&["protos/edge_cases.proto"])
         .includes(&["protos/"])
         .generate_json(true)
-        .generate_views(false)
+        .generate_views(true)
+        .view_encode(true)
         .compile()
         .expect("buffa_build failed for edge_cases.proto");
 
@@ -144,6 +151,7 @@ fn main() {
         .includes(&["protos/"])
         .use_bytes_type()
         .generate_json(true)
+        .view_encode(true)
         .out_dir(bytes_out)
         .compile()
         .expect("buffa_build failed for basic.proto with use_bytes_type");
@@ -159,6 +167,7 @@ fn main() {
         .files(&["protos/basic.proto"])
         .includes(&["protos/"])
         .preserve_unknown_fields(false)
+        .view_encode(true)
         .out_dir(no_uf_out)
         .compile()
         .expect("buffa_build failed for basic.proto with preserve_unknown_fields=false");

@@ -40,10 +40,12 @@ message Person {
   optional int32 maybe_age = 11;
   optional string maybe_nickname = 12;
 
-  // Oneof field
+  // Oneof field — string and message variants. The message variant
+  // exercises ViewEncode dispatch through Box<AddressView<'a>>.
   oneof contact {
     string email = 13;
     string phone = 14;
+    Address home_address = 15;
   }
 }
 
