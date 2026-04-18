@@ -7,6 +7,7 @@ fn main() {
         ])
         .includes(&["../proto/"])
         .generate_json(true)
+        .view_encode(true)
         .compile()
         .expect("failed to compile benchmark protos");
 }

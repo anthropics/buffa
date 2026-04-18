@@ -1,4 +1,4 @@
-use buffa::{Message, MessageView};
+use buffa::{Message, MessageView, ViewEncode};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use serde::{de::DeserializeOwned, Serialize};
 
@@ -209,6 +209,126 @@ fn bench_media_frame_view(c: &mut Criterion) {
     group.finish();
 }
 
+/// Add `encode_view` to a concrete per-dataset bench group: pre-decode
+/// payloads into views, assert wire-compat against owned decode, then bench
+/// re-encoding from the views' borrowed fields. The owned `encode` baseline
+/// is in [`benchmark_decode`] — same group name, so throughputs sit side by
+/// side.
+///
+/// Per-dataset functions are concrete (not generic over `V`) because the
+/// views borrow from the locally-decoded `dataset.payload`; a `<'a, V>` fn
+/// signature can't tie `'a` to a local. Same shape as `decode_view` above.
+macro_rules! bench_view_encode {
+    ($fn_name:ident, $owned:ty, $view:ty, $group:literal, $dataset:literal) => {
+        fn $fn_name(c: &mut Criterion) {
+            let dataset = load_dataset(include_bytes!($dataset));
+            let bytes = total_payload_bytes(&dataset);
+            let views: Vec<$view> = dataset
+                .payload
+                .iter()
+                .map(|p| <$view>::decode_view(p).unwrap())
+                .collect();
+            for (v, p) in views.iter().zip(&dataset.payload) {
+                let from_view = <$owned>::decode_from_slice(&v.encode_to_vec()).unwrap();
+                let from_wire = <$owned>::decode_from_slice(p).unwrap();
+                assert!(from_view == from_wire, "view-encode wire mismatch");
+            }
+            let mut group = c.benchmark_group($group);
+            group.throughput(Throughput::Bytes(bytes));
+            group.bench_function("encode_view", |b| {
+                b.iter(|| {
+                    for v in &views {
+                        criterion::black_box(v.encode_to_vec());
+                    }
+                });
+            });
+            group.finish();
+        }
+    };
+}
+
+bench_view_encode!(
+    bench_api_response_view_encode,
+    ApiResponse,
+    ApiResponseView,
+    "buffa/api_response",
+    "../../datasets/api_response.pb"
+);
+bench_view_encode!(
+    bench_log_record_view_encode,
+    LogRecord,
+    LogRecordView,
+    "buffa/log_record",
+    "../../datasets/log_record.pb"
+);
+bench_view_encode!(
+    bench_analytics_event_view_encode,
+    AnalyticsEvent,
+    AnalyticsEventView,
+    "buffa/analytics_event",
+    "../../datasets/analytics_event.pb"
+);
+bench_view_encode!(
+    bench_google_message1_view_encode,
+    bench_buffa::proto3::GoogleMessage1,
+    bench_buffa::proto3::GoogleMessage1View,
+    "buffa/google_message1_proto3",
+    "../../datasets/google_message1_proto3.pb"
+);
+
+/// Build a `LogRecord` from borrowed source data and encode, vs build a
+/// `LogRecordView` from the same borrows and encode. Unlike `encode` /
+/// `encode_view` above (which serialize a pre-built struct), this includes
+/// the build phase — the per-field `String`/`HashMap` allocs that the view
+/// path avoids.
+fn bench_log_record_build_encode(c: &mut Criterion) {
+    let labels: Vec<(&str, &str)> = (0..15)
+        .map(|i| {
+            (
+                Box::leak(format!("k8s.io/label-key-{i:02}").into_boxed_str()) as &str,
+                Box::leak(format!("label-value-{i:04}").into_boxed_str()) as &str,
+            )
+        })
+        .collect();
+    let service = "inventory-service-2a";
+    let msg = "GET /api/v1/items?tenant=acme-corp&warehouse=us-west-2a&page=1400 200 17ms";
+    let mut group = c.benchmark_group("buffa/log_record");
+    let probe = LogRecord {
+        service_name: service.into(),
+        message: msg.into(),
+        labels: labels.iter().map(|(k, v)| ((*k).into(), (*v).into())).collect(),
+        ..Default::default()
+    }
+    .encode_to_vec();
+    group.throughput(Throughput::Bytes(probe.len() as u64));
+
+    group.bench_function("build_encode", |b| {
+        b.iter(|| {
+            let owned = LogRecord {
+                service_name: service.into(),
+                message: msg.into(),
+                labels: labels.iter().map(|(k, v)| ((*k).into(), (*v).into())).collect(),
+                ..Default::default()
+            };
+            criterion::black_box(owned.encode_to_vec())
+        });
+    });
+
+    group.bench_function("build_encode_view", |b| {
+        b.iter(|| {
+            let view = LogRecordView {
+                service_name: service,
+                message: msg,
+                labels: labels.iter().copied().collect(),
+                ..Default::default()
+            };
+            criterion::black_box(view.encode_to_vec())
+        });
+    });
+
+    group.finish();
+}
+
 fn bench_api_response(c: &mut Criterion) {
     benchmark_decode::<ApiResponse>(
         c,
@@ -305,6 +425,11 @@ criterion_group!(
     bench_analytics_event_view,
     bench_google_message1_view,
     bench_media_frame_view,
+    bench_api_response_view_encode,
+    bench_log_record_view_encode,
+    bench_analytics_event_view_encode,
+    bench_google_message1_view_encode,
+    bench_log_record_build_encode,
 );
 
 criterion_group!(
