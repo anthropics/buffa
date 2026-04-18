@@ -92,6 +92,13 @@ fn main() {
     config.generate_arbitrary = true;
     config.generate_json = false;
     config.generate_text = true;
+    //   view_encode = true          WKTs are commonly nested inside
+    //        application messages (Timestamp, Any, Struct/Value); a
+    //        consumer that opts into ViewEncode needs the WKT view
+    //        types to implement it for the nested-message dispatch to
+    //        compile. The extra `__buffa_cached_size` field is 4 bytes
+    //        per WKT view — negligible.
+    config.view_encode = true;
     config.emit_register_fn = false;
     // `Any.value` carries arbitrary encoded payloads that callers commonly
     // cache and clone into `repeated google.protobuf.Any` response fields.

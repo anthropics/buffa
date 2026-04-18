@@ -20,6 +20,8 @@ pub struct StructView<'a> {
         super::super::__buffa::view::ValueView<'a>,
     >,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
+    #[doc(hidden)]
+    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl<'a> StructView<'a> {
     /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
@@ -157,6 +159,64 @@ impl<'a> ::buffa::MessageView<'a> for StructView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewEncode<'a> for StructView<'a> {
+    #[allow(clippy::needless_borrow)]
+    fn compute_size(&self) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        for (k, v) in &self.fields {
+            let entry_size: u32 = 1u32 + ::buffa::types::string_encoded_len(k) as u32
+                + 1u32
+                + {
+                    let inner = v.compute_size();
+                    ::buffa::encoding::varint_len(inner as u64) as u32 + inner
+                };
+            size
+                += 1u32 + ::buffa::encoding::varint_len(entry_size as u64) as u32
+                    + entry_size;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        self.__buffa_cached_size.set(size);
+        size
+    }
+    #[allow(clippy::needless_borrow)]
+    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        for (k, v) in &self.fields {
+            let entry_size: u32 = 1u32 + ::buffa::types::string_encoded_len(k) as u32
+                + 1u32
+                + {
+                    let inner = v.compute_size();
+                    ::buffa::encoding::varint_len(inner as u64) as u32 + inner
+                };
+            ::buffa::encoding::Tag::new(
+                    1u32,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )
+                .encode(buf);
+            ::buffa::encoding::encode_varint(entry_size as u64, buf);
+            ::buffa::encoding::Tag::new(
+                    1u32,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )
+                .encode(buf);
+            ::buffa::types::encode_string(k, buf);
+            ::buffa::encoding::Tag::new(
+                    2u32,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )
+                .encode(buf);
+            ::buffa::encoding::encode_varint(v.cached_size() as u64, buf);
+            v.write_to(buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+    fn cached_size(&self) -> u32 {
+        self.__buffa_cached_size.get()
+    }
+}
 unsafe impl ::buffa::DefaultViewInstance for StructView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<StructView<'static>> = ::buffa::__private::OnceBox::new();
@@ -178,6 +238,8 @@ pub struct ValueView<'a> {
         super::super::__buffa::view::oneof::value::Kind<'a>,
     >,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
+    #[doc(hidden)]
+    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl<'a> ValueView<'a> {
     /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
@@ -404,6 +466,108 @@ impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewEncode<'a> for ValueView<'a> {
+    #[allow(clippy::needless_borrow)]
+    fn compute_size(&self) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if let ::core::option::Option::Some(ref v) = self.kind {
+            match v {
+                super::super::__buffa::view::oneof::value::Kind::NullValue(x) => {
+                    size += 1u32 + ::buffa::types::int32_encoded_len(x.to_i32()) as u32;
+                }
+                super::super::__buffa::view::oneof::value::Kind::NumberValue(_x) => {
+                    size += 1u32 + ::buffa::types::FIXED64_ENCODED_LEN as u32;
+                }
+                super::super::__buffa::view::oneof::value::Kind::StringValue(x) => {
+                    size += 1u32 + ::buffa::types::string_encoded_len(x) as u32;
+                }
+                super::super::__buffa::view::oneof::value::Kind::BoolValue(_x) => {
+                    size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
+                }
+                super::super::__buffa::view::oneof::value::Kind::StructValue(x) => {
+                    let inner = x.compute_size();
+                    size
+                        += 1u32 + ::buffa::encoding::varint_len(inner as u64) as u32
+                            + inner;
+                }
+                super::super::__buffa::view::oneof::value::Kind::ListValue(x) => {
+                    let inner = x.compute_size();
+                    size
+                        += 1u32 + ::buffa::encoding::varint_len(inner as u64) as u32
+                            + inner;
+                }
+            }
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        self.__buffa_cached_size.set(size);
+        size
+    }
+    #[allow(clippy::needless_borrow)]
+    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref v) = self.kind {
+            match v {
+                super::super::__buffa::view::oneof::value::Kind::NullValue(x) => {
+                    ::buffa::encoding::Tag::new(
+                            1u32,
+                            ::buffa::encoding::WireType::Varint,
+                        )
+                        .encode(buf);
+                    ::buffa::types::encode_int32(x.to_i32(), buf);
+                }
+                super::super::__buffa::view::oneof::value::Kind::NumberValue(x) => {
+                    ::buffa::encoding::Tag::new(
+                            2u32,
+                            ::buffa::encoding::WireType::Fixed64,
+                        )
+                        .encode(buf);
+                    ::buffa::types::encode_double(*x, buf);
+                }
+                super::super::__buffa::view::oneof::value::Kind::StringValue(x) => {
+                    ::buffa::encoding::Tag::new(
+                            3u32,
+                            ::buffa::encoding::WireType::LengthDelimited,
+                        )
+                        .encode(buf);
+                    ::buffa::types::encode_string(x, buf);
+                }
+                super::super::__buffa::view::oneof::value::Kind::BoolValue(x) => {
+                    ::buffa::encoding::Tag::new(
+                            4u32,
+                            ::buffa::encoding::WireType::Varint,
+                        )
+                        .encode(buf);
+                    ::buffa::types::encode_bool(*x, buf);
+                }
+                super::super::__buffa::view::oneof::value::Kind::StructValue(x) => {
+                    ::buffa::encoding::Tag::new(
+                            5u32,
+                            ::buffa::encoding::WireType::LengthDelimited,
+                        )
+                        .encode(buf);
+                    ::buffa::encoding::encode_varint(x.cached_size() as u64, buf);
+                    x.write_to(buf);
+                }
+                super::super::__buffa::view::oneof::value::Kind::ListValue(x) => {
+                    ::buffa::encoding::Tag::new(
+                            6u32,
+                            ::buffa::encoding::WireType::LengthDelimited,
+                        )
+                        .encode(buf);
+                    ::buffa::encoding::encode_varint(x.cached_size() as u64, buf);
+                    x.write_to(buf);
+                }
+            }
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+    fn cached_size(&self) -> u32 {
+        self.__buffa_cached_size.get()
+    }
+}
 unsafe impl ::buffa::DefaultViewInstance for ValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<ValueView<'static>> = ::buffa::__private::OnceBox::new();
@@ -423,6 +587,8 @@ pub struct ListValueView<'a> {
     /// Field 1: `values`
     pub values: ::buffa::RepeatedView<'a, super::super::__buffa::view::ValueView<'a>>,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
+    #[doc(hidden)]
+    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl<'a> ListValueView<'a> {
     /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
@@ -517,6 +683,41 @@ impl<'a> ::buffa::MessageView<'a> for ListValueView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewEncode<'a> for ListValueView<'a> {
+    #[allow(clippy::needless_borrow)]
+    fn compute_size(&self) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        for v in &self.values {
+            let inner_size = v.compute_size();
+            size
+                += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32
+                    + inner_size;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        self.__buffa_cached_size.set(size);
+        size
+    }
+    #[allow(clippy::needless_borrow)]
+    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        for v in &self.values {
+            ::buffa::encoding::Tag::new(
+                    1u32,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )
+                .encode(buf);
+            ::buffa::encoding::encode_varint(v.cached_size() as u64, buf);
+            v.write_to(buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+    fn cached_size(&self) -> u32 {
+        self.__buffa_cached_size.get()
     }
 }
 unsafe impl ::buffa::DefaultViewInstance for ListValueView<'static> {

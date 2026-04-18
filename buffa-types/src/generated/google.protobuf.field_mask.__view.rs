@@ -231,6 +231,8 @@ pub struct FieldMaskView<'a> {
     /// Field 1: `paths`
     pub paths: ::buffa::RepeatedView<'a, &'a str>,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
+    #[doc(hidden)]
+    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl<'a> FieldMaskView<'a> {
     /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
@@ -315,6 +317,37 @@ impl<'a> ::buffa::MessageView<'a> for FieldMaskView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewEncode<'a> for FieldMaskView<'a> {
+    #[allow(clippy::needless_borrow)]
+    fn compute_size(&self) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        for v in &self.paths {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        self.__buffa_cached_size.set(size);
+        size
+    }
+    #[allow(clippy::needless_borrow)]
+    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        for v in &self.paths {
+            ::buffa::encoding::Tag::new(
+                    1u32,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+    fn cached_size(&self) -> u32 {
+        self.__buffa_cached_size.get()
     }
 }
 unsafe impl ::buffa::DefaultViewInstance for FieldMaskView<'static> {

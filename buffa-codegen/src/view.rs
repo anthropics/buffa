@@ -156,7 +156,7 @@ pub(crate) fn generate_view_with_nesting(
             ctx.config.preserve_unknown_fields,
             features,
             &oneof_idents,
-            &mod_ident,
+            &view_oneof_prefix,
         )?;
         (
             quote! {

@@ -615,7 +615,7 @@ pub(crate) fn build_view_encode_methods(
     preserve_unknown_fields: bool,
     features: &ResolvedFeatures,
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
-    mod_ident: &proc_macro2::Ident,
+    view_oneof_prefix: &TokenStream,
 ) -> Result<TokenStream, CodeGenError> {
     let scalar_fields: Vec<_> = msg
         .field
@@ -700,8 +700,7 @@ pub(crate) fn build_view_encode_methods(
     let mut oneof_write_stmts: Vec<TokenStream> = Vec::new();
     for (oneof_name, enum_ident, fields) in &oneof_groups {
         let field_ident = make_field_ident(oneof_name);
-        let view_enum = format_ident!("{}View", enum_ident);
-        let qualified: TokenStream = quote! { #mod_ident::#view_enum };
+        let qualified: TokenStream = quote! { #view_oneof_prefix #enum_ident };
         let mut size_arms: Vec<TokenStream> = Vec::new();
         let mut write_arms: Vec<TokenStream> = Vec::new();
         for field in fields {

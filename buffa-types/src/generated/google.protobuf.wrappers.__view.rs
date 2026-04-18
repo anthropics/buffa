@@ -11,6 +11,8 @@ pub struct DoubleValueView<'a> {
     /// Field 1: `value`
     pub value: f64,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
+    #[doc(hidden)]
+    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl<'a> DoubleValueView<'a> {
     /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
@@ -97,6 +99,34 @@ impl<'a> ::buffa::MessageView<'a> for DoubleValueView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewEncode<'a> for DoubleValueView<'a> {
+    #[allow(clippy::needless_borrow)]
+    fn compute_size(&self) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if self.value.to_bits() != 0u64 {
+            size += 1u32 + ::buffa::types::FIXED64_ENCODED_LEN as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        self.__buffa_cached_size.set(size);
+        size
+    }
+    #[allow(clippy::needless_borrow)]
+    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.value.to_bits() != 0u64 {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Fixed64)
+                .encode(buf);
+            ::buffa::types::encode_double(self.value, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+    fn cached_size(&self) -> u32 {
+        self.__buffa_cached_size.get()
+    }
+}
 unsafe impl ::buffa::DefaultViewInstance for DoubleValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<DoubleValueView<'static>> = ::buffa::__private::OnceBox::new();
@@ -116,6 +146,8 @@ pub struct FloatValueView<'a> {
     /// Field 1: `value`
     pub value: f32,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
+    #[doc(hidden)]
+    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl<'a> FloatValueView<'a> {
     /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
@@ -202,6 +234,34 @@ impl<'a> ::buffa::MessageView<'a> for FloatValueView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewEncode<'a> for FloatValueView<'a> {
+    #[allow(clippy::needless_borrow)]
+    fn compute_size(&self) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if self.value.to_bits() != 0u32 {
+            size += 1u32 + ::buffa::types::FIXED32_ENCODED_LEN as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        self.__buffa_cached_size.set(size);
+        size
+    }
+    #[allow(clippy::needless_borrow)]
+    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.value.to_bits() != 0u32 {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Fixed32)
+                .encode(buf);
+            ::buffa::types::encode_float(self.value, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+    fn cached_size(&self) -> u32 {
+        self.__buffa_cached_size.get()
+    }
+}
 unsafe impl ::buffa::DefaultViewInstance for FloatValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<FloatValueView<'static>> = ::buffa::__private::OnceBox::new();
@@ -221,6 +281,8 @@ pub struct Int64ValueView<'a> {
     /// Field 1: `value`
     pub value: i64,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
+    #[doc(hidden)]
+    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl<'a> Int64ValueView<'a> {
     /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
@@ -307,6 +369,34 @@ impl<'a> ::buffa::MessageView<'a> for Int64ValueView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewEncode<'a> for Int64ValueView<'a> {
+    #[allow(clippy::needless_borrow)]
+    fn compute_size(&self) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if self.value != 0i64 {
+            size += 1u32 + ::buffa::types::int64_encoded_len(self.value) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        self.__buffa_cached_size.set(size);
+        size
+    }
+    #[allow(clippy::needless_borrow)]
+    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.value != 0i64 {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
+                .encode(buf);
+            ::buffa::types::encode_int64(self.value, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+    fn cached_size(&self) -> u32 {
+        self.__buffa_cached_size.get()
+    }
+}
 unsafe impl ::buffa::DefaultViewInstance for Int64ValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<Int64ValueView<'static>> = ::buffa::__private::OnceBox::new();
@@ -326,6 +416,8 @@ pub struct UInt64ValueView<'a> {
     /// Field 1: `value`
     pub value: u64,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
+    #[doc(hidden)]
+    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl<'a> UInt64ValueView<'a> {
     /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
@@ -412,6 +504,34 @@ impl<'a> ::buffa::MessageView<'a> for UInt64ValueView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewEncode<'a> for UInt64ValueView<'a> {
+    #[allow(clippy::needless_borrow)]
+    fn compute_size(&self) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if self.value != 0u64 {
+            size += 1u32 + ::buffa::types::uint64_encoded_len(self.value) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        self.__buffa_cached_size.set(size);
+        size
+    }
+    #[allow(clippy::needless_borrow)]
+    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.value != 0u64 {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
+                .encode(buf);
+            ::buffa::types::encode_uint64(self.value, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+    fn cached_size(&self) -> u32 {
+        self.__buffa_cached_size.get()
+    }
+}
 unsafe impl ::buffa::DefaultViewInstance for UInt64ValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<UInt64ValueView<'static>> = ::buffa::__private::OnceBox::new();
@@ -431,6 +551,8 @@ pub struct Int32ValueView<'a> {
     /// Field 1: `value`
     pub value: i32,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
+    #[doc(hidden)]
+    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl<'a> Int32ValueView<'a> {
     /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
@@ -517,6 +639,34 @@ impl<'a> ::buffa::MessageView<'a> for Int32ValueView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewEncode<'a> for Int32ValueView<'a> {
+    #[allow(clippy::needless_borrow)]
+    fn compute_size(&self) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if self.value != 0i32 {
+            size += 1u32 + ::buffa::types::int32_encoded_len(self.value) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        self.__buffa_cached_size.set(size);
+        size
+    }
+    #[allow(clippy::needless_borrow)]
+    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.value != 0i32 {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
+                .encode(buf);
+            ::buffa::types::encode_int32(self.value, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+    fn cached_size(&self) -> u32 {
+        self.__buffa_cached_size.get()
+    }
+}
 unsafe impl ::buffa::DefaultViewInstance for Int32ValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<Int32ValueView<'static>> = ::buffa::__private::OnceBox::new();
@@ -536,6 +686,8 @@ pub struct UInt32ValueView<'a> {
     /// Field 1: `value`
     pub value: u32,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
+    #[doc(hidden)]
+    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl<'a> UInt32ValueView<'a> {
     /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
@@ -622,6 +774,34 @@ impl<'a> ::buffa::MessageView<'a> for UInt32ValueView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewEncode<'a> for UInt32ValueView<'a> {
+    #[allow(clippy::needless_borrow)]
+    fn compute_size(&self) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if self.value != 0u32 {
+            size += 1u32 + ::buffa::types::uint32_encoded_len(self.value) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        self.__buffa_cached_size.set(size);
+        size
+    }
+    #[allow(clippy::needless_borrow)]
+    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.value != 0u32 {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
+                .encode(buf);
+            ::buffa::types::encode_uint32(self.value, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+    fn cached_size(&self) -> u32 {
+        self.__buffa_cached_size.get()
+    }
+}
 unsafe impl ::buffa::DefaultViewInstance for UInt32ValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<UInt32ValueView<'static>> = ::buffa::__private::OnceBox::new();
@@ -641,6 +821,8 @@ pub struct BoolValueView<'a> {
     /// Field 1: `value`
     pub value: bool,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
+    #[doc(hidden)]
+    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl<'a> BoolValueView<'a> {
     /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
@@ -727,6 +909,34 @@ impl<'a> ::buffa::MessageView<'a> for BoolValueView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewEncode<'a> for BoolValueView<'a> {
+    #[allow(clippy::needless_borrow)]
+    fn compute_size(&self) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if self.value {
+            size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        self.__buffa_cached_size.set(size);
+        size
+    }
+    #[allow(clippy::needless_borrow)]
+    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.value {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
+                .encode(buf);
+            ::buffa::types::encode_bool(self.value, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+    fn cached_size(&self) -> u32 {
+        self.__buffa_cached_size.get()
+    }
+}
 unsafe impl ::buffa::DefaultViewInstance for BoolValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<BoolValueView<'static>> = ::buffa::__private::OnceBox::new();
@@ -746,6 +956,8 @@ pub struct StringValueView<'a> {
     /// Field 1: `value`
     pub value: &'a str,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
+    #[doc(hidden)]
+    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl<'a> StringValueView<'a> {
     /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
@@ -832,6 +1044,37 @@ impl<'a> ::buffa::MessageView<'a> for StringValueView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewEncode<'a> for StringValueView<'a> {
+    #[allow(clippy::needless_borrow)]
+    fn compute_size(&self) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if !self.value.is_empty() {
+            size += 1u32 + ::buffa::types::string_encoded_len(&self.value) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        self.__buffa_cached_size.set(size);
+        size
+    }
+    #[allow(clippy::needless_borrow)]
+    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if !self.value.is_empty() {
+            ::buffa::encoding::Tag::new(
+                    1u32,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )
+                .encode(buf);
+            ::buffa::types::encode_string(&self.value, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+    fn cached_size(&self) -> u32 {
+        self.__buffa_cached_size.get()
+    }
+}
 unsafe impl ::buffa::DefaultViewInstance for StringValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<StringValueView<'static>> = ::buffa::__private::OnceBox::new();
@@ -851,6 +1094,8 @@ pub struct BytesValueView<'a> {
     /// Field 1: `value`
     pub value: &'a [u8],
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
+    #[doc(hidden)]
+    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl<'a> BytesValueView<'a> {
     /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
@@ -935,6 +1180,37 @@ impl<'a> ::buffa::MessageView<'a> for BytesValueView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewEncode<'a> for BytesValueView<'a> {
+    #[allow(clippy::needless_borrow)]
+    fn compute_size(&self) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if !self.value.is_empty() {
+            size += 1u32 + ::buffa::types::bytes_encoded_len(&self.value) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        self.__buffa_cached_size.set(size);
+        size
+    }
+    #[allow(clippy::needless_borrow)]
+    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if !self.value.is_empty() {
+            ::buffa::encoding::Tag::new(
+                    1u32,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )
+                .encode(buf);
+            ::buffa::types::encode_bytes(&self.value, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+    fn cached_size(&self) -> u32 {
+        self.__buffa_cached_size.get()
     }
 }
 unsafe impl ::buffa::DefaultViewInstance for BytesValueView<'static> {

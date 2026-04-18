@@ -136,6 +136,8 @@ pub struct AnyView<'a> {
     /// Field 2: `value`
     pub value: &'a [u8],
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
+    #[doc(hidden)]
+    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl<'a> AnyView<'a> {
     /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
@@ -231,6 +233,48 @@ impl<'a> ::buffa::MessageView<'a> for AnyView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewEncode<'a> for AnyView<'a> {
+    #[allow(clippy::needless_borrow)]
+    fn compute_size(&self) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if !self.type_url.is_empty() {
+            size += 1u32 + ::buffa::types::string_encoded_len(&self.type_url) as u32;
+        }
+        if !self.value.is_empty() {
+            size += 1u32 + ::buffa::types::bytes_encoded_len(&self.value) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        self.__buffa_cached_size.set(size);
+        size
+    }
+    #[allow(clippy::needless_borrow)]
+    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if !self.type_url.is_empty() {
+            ::buffa::encoding::Tag::new(
+                    1u32,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )
+                .encode(buf);
+            ::buffa::types::encode_string(&self.type_url, buf);
+        }
+        if !self.value.is_empty() {
+            ::buffa::encoding::Tag::new(
+                    2u32,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )
+                .encode(buf);
+            ::buffa::types::encode_bytes(&self.value, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+    fn cached_size(&self) -> u32 {
+        self.__buffa_cached_size.get()
     }
 }
 unsafe impl ::buffa::DefaultViewInstance for AnyView<'static> {

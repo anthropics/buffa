@@ -13,6 +13,8 @@
 #[derive(Clone, Debug, Default)]
 pub struct EmptyView<'a> {
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
+    #[doc(hidden)]
+    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl<'a> EmptyView<'a> {
     /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
@@ -86,6 +88,26 @@ impl<'a> ::buffa::MessageView<'a> for EmptyView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewEncode<'a> for EmptyView<'a> {
+    #[allow(clippy::needless_borrow)]
+    fn compute_size(&self) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        self.__buffa_cached_size.set(size);
+        size
+    }
+    #[allow(clippy::needless_borrow)]
+    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+    fn cached_size(&self) -> u32 {
+        self.__buffa_cached_size.get()
     }
 }
 unsafe impl ::buffa::DefaultViewInstance for EmptyView<'static> {
