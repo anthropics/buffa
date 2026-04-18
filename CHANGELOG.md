@@ -8,12 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Breaking changes
 
-- **WKT view structs gain a `__buffa_cached_size` field** when `buffa-types`
-  is built with the new `view_encode` capability enabled (which it is, so
-  nested-WKT views are encodable out of the box). Code that constructs
-  `TimestampView { seconds, nanos, __buffa_unknown_fields }` without
-  `..Default::default()` will fail to compile; use the trailing
-  `..Default::default()` per the documented convention.
+- **All generated `*View<'a>` structs gain a `__buffa_cached_size` field**
+  for the new `ViewEncode` impl. Code that constructs a view literal
+  without `..Default::default()` will fail to compile; use the trailing
+  `..Default::default()` per the documented convention. Applies to WKT
+  view structs in `buffa-types` and to consumer-generated views.
 - **`google.protobuf.Any.value` is now `::bytes::Bytes` instead of `Vec<u8>`.**
   Makes `Any::clone()` a cheap refcount bump (up to ~170x faster for large
   payloads) instead of a full memcpy. Call sites constructing an `Any` by hand
@@ -23,13 +22,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- **`ViewEncode<'a>` — opt-in serialization from borrowed view types.**
-  `Config::view_encode(true)` makes generated `*View<'a>` types implement
-  `ViewEncode` with the same two-pass `compute_size`/`write_to` model as
-  `Message`. Views can be constructed from borrowed `&'a str` / `&'a [u8]`
-  and encoded without intermediate `String`/`Vec` allocation. Benchmarks:
-  parity on serialize-only; ~6× on build+encode for a 15-label string-map
-  message.
+- **`ViewEncode<'a>` — serialization from borrowed view types.** Generated
+  `*View<'a>` types implement `ViewEncode` (whenever views are generated,
+  i.e. `generate_views(true)`, the default) with the same two-pass
+  `compute_size`/`write_to` model as `Message`. Views can be constructed
+  from borrowed `&'a str` / `&'a [u8]` and encoded without intermediate
+  `String`/`Vec` allocation. Benchmarks: parity on serialize-only; ~6× on
+  build+encode for a 15-label string-map message.
 - **`MapView::new(Vec)` / `From<Vec>` / `FromIterator`** for constructing
   map views directly (for `ViewEncode`).
 

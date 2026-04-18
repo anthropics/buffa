@@ -196,20 +196,6 @@ pub struct CodeGenConfig {
     /// When this is `true`, the downstream crate must enable the `buffa/text`
     /// feature for the runtime encoder/decoder.
     pub generate_text: bool,
-    /// Whether to emit `impl buffa::ViewEncode` on generated `*View<'a>` types
-    /// so views can be serialized directly from borrowed fields.
-    ///
-    /// When `true`, each view struct gains a `__buffa_cached_size` field and
-    /// an `impl ViewEncode<'a>` block whose `compute_size` / `write_to`
-    /// reuse the same per-field encode logic as the owned `Message` impl —
-    /// the field encoders take `&str` / `&[u8]` so they apply to view field
-    /// types unchanged.
-    ///
-    /// Default `false`: View remains the zero-copy *read* path per
-    /// [DESIGN.md §2](../DESIGN.md). Enable for high-throughput servers
-    /// that build messages from borrowed data and want to skip the owned
-    /// `String` allocation per field on the encode path.
-    pub view_encode: bool,
     /// Whether the per-package `.mod.rs` stitcher emits
     /// `__buffa::register_types(&mut TypeRegistry)`.
     ///
@@ -262,7 +248,6 @@ impl Default for CodeGenConfig {
             strict_utf8_mapping: false,
             allow_message_set: false,
             generate_text: false,
-            view_encode: false,
             emit_register_fn: true,
             type_attributes: Vec::new(),
             field_attributes: Vec::new(),

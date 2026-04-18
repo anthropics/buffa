@@ -119,11 +119,11 @@ pub trait MessageView<'a>: Sized {
 /// [`MapView`] / [`RepeatedView`] fields are written by borrow — no
 /// owned-struct intermediary, no per-field `String`/`Vec<u8>` allocations.
 ///
-/// Generated `*View<'a>` types implement this trait when codegen is
-/// configured with `view_encode(true)`; off by default. Each implementing
-/// view struct gains a `__buffa_cached_size` field for the cached-size
-/// pass — same `AtomicU32`-backed [`CachedSize`](crate::__private::CachedSize)
-/// as owned messages, so views remain `Send + Sync`.
+/// Generated `*View<'a>` types implement this trait whenever views are
+/// generated (`generate_views(true)`, the default). Each view struct
+/// carries a `__buffa_cached_size` field for the cached-size pass — same
+/// `AtomicU32`-backed [`CachedSize`](crate::__private::CachedSize) as
+/// owned messages, so views remain `Send + Sync`.
 ///
 /// ## When to use
 ///
@@ -142,8 +142,8 @@ pub trait MessageView<'a>: Sized {
 /// let bytes = view.encode_to_vec();
 /// ```
 #[diagnostic::on_unimplemented(
-    message = "`{Self}` does not implement `ViewEncode` — view encoding was not generated for this type",
-    note = "enable `view_encode(true)` in your buffa-build / buffa-codegen config to generate encode methods on view types"
+    message = "`{Self}` does not implement `ViewEncode` — view types were not generated for this message",
+    note = "ViewEncode is implemented on every generated `*View<'a>` type; enable `generate_views(true)` (on by default) in your buffa-build / buffa-codegen config"
 )]
 pub trait ViewEncode<'a>: MessageView<'a> {
     /// Compute and cache the encoded byte size of this view.

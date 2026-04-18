@@ -149,28 +149,22 @@ pub(crate) fn generate_view_with_nesting(
     } else {
         quote! {}
     };
-    let (cached_size_field, view_encode_impl) = if ctx.config.view_encode {
-        let methods = crate::impl_message::build_view_encode_methods(
-            ctx,
-            msg,
-            ctx.config.preserve_unknown_fields,
-            features,
-            &oneof_idents,
-            &view_oneof_prefix,
-        )?;
-        (
-            quote! {
-                #[doc(hidden)]
-                pub __buffa_cached_size: ::buffa::__private::CachedSize,
-            },
-            quote! {
-                impl<'a> ::buffa::ViewEncode<'a> for #view_ident<'a> {
-                    #methods
-                }
-            },
-        )
-    } else {
-        (quote! {}, quote! {})
+    let view_encode_methods = crate::impl_message::build_view_encode_methods(
+        ctx,
+        msg,
+        ctx.config.preserve_unknown_fields,
+        features,
+        &oneof_idents,
+        &view_oneof_prefix,
+    )?;
+    let cached_size_field = quote! {
+        #[doc(hidden)]
+        pub __buffa_cached_size: ::buffa::__private::CachedSize,
+    };
+    let view_encode_impl = quote! {
+        impl<'a> ::buffa::ViewEncode<'a> for #view_ident<'a> {
+            #view_encode_methods
+        }
     };
 
     // When preserving unknowns we capture `before_tag` so we can compute the
