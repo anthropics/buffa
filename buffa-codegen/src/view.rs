@@ -149,6 +149,29 @@ pub(crate) fn generate_view_with_nesting(
     } else {
         quote! {}
     };
+    let (cached_size_field, view_encode_impl) = if ctx.config.view_encode {
+        let methods = crate::impl_message::build_view_encode_methods(
+            ctx,
+            msg,
+            ctx.config.preserve_unknown_fields,
+            features,
+            &oneof_idents,
+            &mod_ident,
+        )?;
+        (
+            quote! {
+                #[doc(hidden)]
+                pub __buffa_cached_size: ::buffa::__private::CachedSize,
+            },
+            quote! {
+                impl<'a> ::buffa::ViewEncode<'a> for #view_ident<'a> {
+                    #methods
+                }
+            },
+        )
+    } else {
+        (quote! {}, quote! {})
+    };
 
     // When preserving unknowns we capture `before_tag` so we can compute the
     // raw byte span after `skip_field` advances the cursor.
@@ -205,6 +228,7 @@ pub(crate) fn generate_view_with_nesting(
             #(#direct_fields)*
             #(#oneof_struct_fields)*
             #unknown_fields_field
+            #cached_size_field
             #phantom_field
         }
 
@@ -297,6 +321,8 @@ pub(crate) fn generate_view_with_nesting(
                 }
             }
         }
+
+        #view_encode_impl
 
         // SAFETY: The static default instance is lazily initialized via OnceBox
         // and never mutated after publication.

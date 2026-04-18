@@ -125,6 +125,18 @@ impl Config {
         self
     }
 
+    /// Enable or disable `impl buffa::ViewEncode` on generated `*View<'a>`
+    /// types (default: false).
+    ///
+    /// When enabled, view types can be serialized directly from their
+    /// borrowed `&'a str` / `&'a [u8]` fields without building an owned
+    /// message. Each view struct gains a `__buffa_cached_size` field.
+    #[must_use]
+    pub fn view_encode(mut self, enabled: bool) -> Self {
+        self.codegen_config.view_encode = enabled;
+        self
+    }
+
     /// Enable or disable `#[derive(arbitrary::Arbitrary)]` on generated
     /// types (default: false).
     ///

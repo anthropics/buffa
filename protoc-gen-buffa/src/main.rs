@@ -127,6 +127,7 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
         if let Some((key, value)) = param.split_once('=') {
             match key.trim() {
                 "views" => codegen.generate_views = value.trim() == "true",
+                "view_encode" => codegen.view_encode = value.trim() == "true",
                 "unknown_fields" => codegen.preserve_unknown_fields = value.trim() != "false",
                 "json" => codegen.generate_json = value.trim() == "true",
                 "text" => codegen.generate_text = value.trim() == "true",

@@ -604,6 +604,212 @@ pub fn generate_message_impl(
     })
 }
 
+/// Build the `compute_size` / `write_to` / `cached_size` method tokens for a
+/// **view** type. Reuses the same per-field stmt builders as
+/// [`generate_message_impl`] — they emit `&self.field`-relative code that is
+/// duck-type-compatible with view field types (`&'a str`, `RepeatedView`,
+/// `MapView`, `MessageFieldView`).
+pub(crate) fn build_view_encode_methods(
+    ctx: &CodeGenContext,
+    msg: &DescriptorProto,
+    preserve_unknown_fields: bool,
+    features: &ResolvedFeatures,
+    oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
+    mod_ident: &proc_macro2::Ident,
+) -> Result<TokenStream, CodeGenError> {
+    let scalar_fields: Vec<_> = msg
+        .field
+        .iter()
+        .filter(|f| {
+            if is_real_oneof_member(f) {
+                return false;
+            }
+            if f.label.unwrap_or_default() == Label::LABEL_REPEATED {
+                return false;
+            }
+            is_supported_field_type(f.r#type.unwrap_or_default())
+        })
+        .collect();
+    let repeated_fields: Vec<_> = msg
+        .field
+        .iter()
+        .filter(|f| {
+            f.label.unwrap_or_default() == Label::LABEL_REPEATED
+                && !crate::message::is_map_field(msg, f)
+                && is_supported_field_type(f.r#type.unwrap_or_default())
+        })
+        .collect();
+    let oneof_groups: Vec<(String, proc_macro2::Ident, Vec<&FieldDescriptorProto>)> = msg
+        .oneof_decl
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, oneof)| {
+            let enum_ident = oneof_idents.get(&idx)?;
+            let fields: Vec<_> = msg
+                .field
+                .iter()
+                .filter(|f| is_real_oneof_member(f) && f.oneof_index == Some(idx as i32))
+                .collect();
+            if fields.is_empty() {
+                return None;
+            }
+            Some((
+                oneof.name.as_deref()?.to_string(),
+                enum_ident.clone(),
+                fields,
+            ))
+        })
+        .collect();
+    let map_fields: Vec<_> = msg
+        .field
+        .iter()
+        .filter(|f| {
+            f.label.unwrap_or_default() == Label::LABEL_REPEATED
+                && crate::message::is_map_field(msg, f)
+        })
+        .collect();
+
+    let compute_stmts = scalar_fields
+        .iter()
+        .copied()
+        .map(|f| scalar_compute_size_stmt(ctx, f, features))
+        .collect::<Result<Vec<_>, _>>()?;
+    let repeated_compute_stmts = repeated_fields
+        .iter()
+        .copied()
+        .map(|f| repeated_compute_size_stmt(ctx, f, features))
+        .collect::<Result<Vec<_>, _>>()?;
+    let write_stmts = scalar_fields
+        .iter()
+        .copied()
+        .map(|f| scalar_write_to_stmt(ctx, f, features))
+        .collect::<Result<Vec<_>, _>>()?;
+    let repeated_write_stmts = repeated_fields
+        .iter()
+        .copied()
+        .map(|f| repeated_write_to_stmt(ctx, f, features))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // The view-side oneof enum (`mod::FooOneofView<'a>`) has the same variant
+    // *names* as the owned `mod::FooOneof` but borrowed payload types
+    // (`&'a str` / `Box<FooView<'a>>` vs `String` / `Box<Foo>`). The arm
+    // builders only emit the enum path + variant name and call duck-typed
+    // primitives (`string_encoded_len(x)`, `x.compute_size()`), so they work
+    // unchanged once pointed at the view enum.
+    let mut oneof_compute_stmts: Vec<TokenStream> = Vec::new();
+    let mut oneof_write_stmts: Vec<TokenStream> = Vec::new();
+    for (oneof_name, enum_ident, fields) in &oneof_groups {
+        let field_ident = make_field_ident(oneof_name);
+        let view_enum = format_ident!("{}View", enum_ident);
+        let qualified: TokenStream = quote! { #mod_ident::#view_enum };
+        let mut size_arms: Vec<TokenStream> = Vec::new();
+        let mut write_arms: Vec<TokenStream> = Vec::new();
+        for field in fields {
+            let field_number = validated_field_number(field)?;
+            let ty = effective_type(ctx, field, features);
+            let variant = crate::oneof::oneof_variant_ident(
+                field
+                    .name
+                    .as_deref()
+                    .ok_or(CodeGenError::MissingField("field.name"))?,
+            );
+            let tag_len = tag_encoded_len(field_number, wire_type_byte(ty));
+            let wire_type = wire_type_token(ty);
+            size_arms.push(oneof_size_arm(&qualified, &variant, tag_len, ty));
+            write_arms.push(oneof_write_arm(
+                &qualified,
+                &variant,
+                field_number,
+                ty,
+                &wire_type,
+            ));
+        }
+        oneof_compute_stmts.push(quote! {
+            if let ::core::option::Option::Some(ref v) = self.#field_ident {
+                match v { #(#size_arms)* }
+            }
+        });
+        oneof_write_stmts.push(quote! {
+            if let ::core::option::Option::Some(ref v) = self.#field_ident {
+                match v { #(#write_arms)* }
+            }
+        });
+    }
+
+    let mut map_compute_stmts: Vec<TokenStream> = Vec::new();
+    let mut map_write_stmts: Vec<TokenStream> = Vec::new();
+    for f in &map_fields {
+        map_compute_stmts.push(map_compute_size_stmt(ctx, msg, f, features)?);
+        map_write_stmts.push(map_write_to_stmt(ctx, msg, f, features)?);
+    }
+
+    let unknown_fields_size_stmt = if preserve_unknown_fields {
+        quote! { size += self.__buffa_unknown_fields.encoded_len() as u32; }
+    } else {
+        quote! {}
+    };
+    let unknown_fields_write_stmt = if preserve_unknown_fields {
+        quote! { self.__buffa_unknown_fields.write_to(buf); }
+    } else {
+        quote! {}
+    };
+
+    let has_compute = !scalar_fields.is_empty()
+        || !repeated_fields.is_empty()
+        || !oneof_compute_stmts.is_empty()
+        || !map_compute_stmts.is_empty()
+        || preserve_unknown_fields;
+    let size_decl = if has_compute {
+        quote! { let mut size = 0u32; }
+    } else {
+        quote! { let size = 0u32; }
+    };
+    let has_write = !write_stmts.is_empty()
+        || !repeated_write_stmts.is_empty()
+        || !oneof_write_stmts.is_empty()
+        || !map_write_stmts.is_empty()
+        || preserve_unknown_fields;
+    let buf_param = if has_write {
+        quote! { buf: &mut impl ::buffa::bytes::BufMut }
+    } else {
+        quote! { _buf: &mut impl ::buffa::bytes::BufMut }
+    };
+
+    Ok(quote! {
+        // needless_borrow: stmt builders emit `&self.field` so they work on
+        // owned `String`/`Vec<u8>`; on view fields (`&'a str`/`&'a [u8]`)
+        // the borrow is redundant but harmless.
+        #[allow(clippy::needless_borrow)]
+        fn compute_size(&self) -> u32 {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            #size_decl
+            #(#compute_stmts)*
+            #(#repeated_compute_stmts)*
+            #(#oneof_compute_stmts)*
+            #(#map_compute_stmts)*
+            #unknown_fields_size_stmt
+            self.__buffa_cached_size.set(size);
+            size
+        }
+
+        #[allow(clippy::needless_borrow)]
+        fn write_to(&self, #buf_param) {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            #(#write_stmts)*
+            #(#repeated_write_stmts)*
+            #(#oneof_write_stmts)*
+            #(#map_write_stmts)*
+            #unknown_fields_write_stmt
+        }
+
+        fn cached_size(&self) -> u32 {
+            self.__buffa_cached_size.get()
+        }
+    })
+}
+
 /// Generate a clear statement for a scalar (non-repeated, non-oneof) field.
 ///
 /// Returns a `TokenStream` that clears the field to its default value while
