@@ -129,7 +129,9 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                 "views" => codegen.generate_views = value.trim() == "true",
                 "unknown_fields" => codegen.preserve_unknown_fields = value.trim() != "false",
                 "json" => codegen.generate_json = value.trim() == "true",
+                "text" => codegen.generate_text = value.trim() == "true",
                 "arbitrary" => codegen.generate_arbitrary = value.trim() == "true",
+                "allow_message_set" => codegen.allow_message_set = value.trim() == "true",
                 "strict_utf8" | "strict_utf8_mapping" => {
                     codegen.strict_utf8_mapping = value.trim() == "true"
                 }
@@ -288,5 +290,29 @@ mod tests {
     fn mod_file_errors_with_migration_hint() {
         let err = parse_config("mod_file=mod.rs").err().unwrap();
         assert!(err.contains("protoc-gen-buffa-packaging"));
+    }
+
+    #[test]
+    fn text_true() {
+        let config = parse_config("text=true").unwrap();
+        assert!(config.codegen.generate_text);
+    }
+
+    #[test]
+    fn text_default_is_false() {
+        let config = parse_config("").unwrap();
+        assert!(!config.codegen.generate_text);
+    }
+
+    #[test]
+    fn allow_message_set_true() {
+        let config = parse_config("allow_message_set=true").unwrap();
+        assert!(config.codegen.allow_message_set);
+    }
+
+    #[test]
+    fn allow_message_set_default_is_false() {
+        let config = parse_config("").unwrap();
+        assert!(!config.codegen.allow_message_set);
     }
 }
