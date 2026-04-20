@@ -829,23 +829,7 @@ fn generate_include_file(entries: &[(String, String)], relative: bool) -> String
     use std::fmt::Write;
 
     fn escape_mod_name(name: &str) -> String {
-        const KEYWORDS: &[&str] = &[
-            "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn",
-            "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref",
-            "return", "self", "Self", "static", "struct", "super", "trait", "true", "type",
-            "unsafe", "use", "where", "while", "async", "await", "dyn", "gen", "abstract",
-            "become", "box", "do", "final", "macro", "override", "priv", "try", "typeof",
-            "unsized", "virtual", "yield",
-        ];
-        if KEYWORDS.contains(&name) {
-            if matches!(name, "self" | "super" | "Self" | "crate") {
-                format!("{name}_")
-            } else {
-                format!("r#{name}")
-            }
-        } else {
-            name.to_string()
-        }
+        buffa_codegen::idents::escape_mod_ident(name)
     }
 
     #[derive(Default)]
