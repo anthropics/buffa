@@ -38,11 +38,12 @@ COLORS = {
     "buffa": "#4C78A8",
     "buffa (view)": "#72B7B2",
     "prost": "#F58518",
+    "prost (bytes)": "#EEAE62",
     "protobuf-v4": "#E45756",
     "Go": "#54A24B",
 }
 
-MESSAGES = ["ApiResponse", "LogRecord", "AnalyticsEvent", "GoogleMessage1"]
+MESSAGES = ["ApiResponse", "LogRecord", "AnalyticsEvent", "GoogleMessage1", "MediaFrame"]
 
 # Map from snake_case benchmark names to display names.
 MSG_DISPLAY = {
@@ -50,6 +51,7 @@ MSG_DISPLAY = {
     "log_record": "LogRecord",
     "analytics_event": "AnalyticsEvent",
     "google_message1_proto3": "GoogleMessage1",
+    "media_frame": "MediaFrame",
 }
 
 # ── Parsers ─────────────────────────────────────────────────────────────
@@ -165,6 +167,7 @@ def _get_go(data: dict[str, float], op: str, msg_display: str) -> float | None:
 def build_tables(
     buffa: dict[str, float],
     prost: dict[str, float],
+    prost_bytes: dict[str, float],
     google: dict[str, float],
     go: dict[str, float],
 ) -> dict[str, dict[str, dict[str, float | None]]]:
@@ -176,17 +179,19 @@ def build_tables(
 
     for chart, series_defs in [
         ("binary-decode", [
-            ("buffa",        lambda ms, md: _get(buffa, "buffa", ms, "decode")),
-            ("buffa (view)", lambda ms, md: _get(buffa, "buffa", ms, "decode_view")),
-            ("prost",        lambda ms, md: _get(prost, "prost", ms, "decode")),
-            ("protobuf-v4",  lambda ms, md: _get(google, "google", ms, "decode")),
-            ("Go",           lambda ms, md: _get_go(go, "BinaryDecode", md)),
+            ("buffa",         lambda ms, md: _get(buffa, "buffa", ms, "decode")),
+            ("buffa (view)",  lambda ms, md: _get(buffa, "buffa", ms, "decode_view")),
+            ("prost",         lambda ms, md: _get(prost, "prost", ms, "decode")),
+            ("prost (bytes)", lambda ms, md: _get(prost_bytes, "prost-bytes", ms, "decode")),
+            ("protobuf-v4",   lambda ms, md: _get(google, "google", ms, "decode")),
+            ("Go",            lambda ms, md: _get_go(go, "BinaryDecode", md)),
         ]),
         ("binary-encode", [
-            ("buffa",        lambda ms, md: _get(buffa, "buffa", ms, "encode")),
-            ("prost",        lambda ms, md: _get(prost, "prost", ms, "encode")),
-            ("protobuf-v4",  lambda ms, md: _get(google, "google", ms, "encode")),
-            ("Go",           lambda ms, md: _get_go(go, "BinaryEncode", md)),
+            ("buffa",         lambda ms, md: _get(buffa, "buffa", ms, "encode")),
+            ("prost",         lambda ms, md: _get(prost, "prost", ms, "encode")),
+            ("prost (bytes)", lambda ms, md: _get(prost_bytes, "prost-bytes", ms, "encode")),
+            ("protobuf-v4",   lambda ms, md: _get(google, "google", ms, "encode")),
+            ("Go",            lambda ms, md: _get_go(go, "BinaryEncode", md)),
         ]),
         ("json-encode", [
             ("buffa",        lambda ms, md: _get(buffa, "buffa", ms, "json_encode")),
@@ -383,16 +388,18 @@ def main() -> None:
 
     buffa = load_criterion("buffa")
     prost = load_criterion("prost")
+    prost_bytes = load_criterion("prost-bytes")
     google = load_criterion("google")
 
     go_path = results_dir / "go.txt"
     go = parse_go(go_path.read_text()) if go_path.exists() else {}
 
     print(f"Parsed: {len(buffa)} buffa, {len(prost)} prost, "
-          f"{len(google)} google, {len(go)} Go benchmarks")
+          f"{len(prost_bytes)} prost-bytes, {len(google)} google, "
+          f"{len(go)} Go benchmarks")
 
     # Build structured tables.
-    tables = build_tables(buffa, prost, google, go)
+    tables = build_tables(buffa, prost, prost_bytes, google, go)
 
     # Generate SVGs.
     chart_titles = {

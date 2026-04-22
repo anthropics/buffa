@@ -1,0 +1,23 @@
+[package]
+name = "bench-prost-bytes"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Disable lib benchmarks so `cargo bench` only hits the criterion binary.
+[lib]
+bench = false
+
+[dependencies]
+prost = "0.13"
+bytes = "1"
+
+[build-dependencies]
+prost-build = "0.13"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "protobuf"
+harness = false

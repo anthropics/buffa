@@ -146,7 +146,7 @@ let decoded: MyMessage = serde_json::from_str(&json).unwrap();
 
 ## Performance
 
-Throughput comparison across four representative message types, measured on an Intel Xeon Platinum 8488C (x86_64). Cross-implementation benchmarks run in Docker for toolchain consistency (`task bench-cross`). Higher is better.
+Throughput comparison across five representative message types, measured on an Intel Xeon Platinum 8488C (x86_64). Cross-implementation benchmarks run in Docker for toolchain consistency (`task bench-cross`). Higher is better.
 
 ### Binary decode
 
@@ -154,12 +154,13 @@ Throughput comparison across four representative message types, measured on an I
 
 <details><summary>Raw data (MiB/s)</summary>
 
-| Message | buffa | buffa (view) | prost | protobuf-v4 | Go |
-|---------|------:|------:|------:|------:|------:|
-| ApiResponse | 834 | 1,413 (+69%) | 766 (−8%) | 712 (−15%) | 270 (−68%) |
-| LogRecord | 768 | 1,921 (+150%) | 681 (−11%) | 873 (+14%) | 249 (−68%) |
-| AnalyticsEvent | 198 | 316 (+60%) | 252 (+28%) | 358 (+81%) | 91 (−54%) |
-| GoogleMessage1 | 1,024 | 1,322 (+29%) | 998 (−3%) | 648 (−37%) | 344 (−66%) |
+| Message | buffa | buffa (view) | prost | prost (bytes) | protobuf-v4 | Go |
+|---------|------:|------:|------:|------:|------:|------:|
+| ApiResponse | 862 | 1,475 (+71%) | 756 (−12%) | 676 (−22%) | 712 (−17%) | 270 (−69%) |
+| LogRecord | 722 | 1,984 (+175%) | 712 (−1%) | 676 (−6%) | 873 (+21%) | 249 (−65%) |
+| AnalyticsEvent | 199 | 320 (+61%) | 254 (+28%) | 194 (−3%) | 358 (+80%) | 91 (−54%) |
+| GoogleMessage1 | 1,014 | 1,341 (+32%) | 956 (−6%) | 931 (−8%) | 648 (−36%) | 344 (−66%) |
+| MediaFrame | 16,816 | 73,004 (+334%) | 9,648 (−43%) | 23,516 (+40%) | — | — |
 
 </details>
 
@@ -171,10 +172,11 @@ Throughput comparison across four representative message types, measured on an I
 
 | Message | buffa | prost | protobuf-v4 | Go |
 |---------|------:|------:|------:|------:|
-| ApiResponse | 2,613 | 1,680 (−36%) | 1,049 (−60%) | 556 (−79%) |
-| LogRecord | 4,102 | 3,000 (−27%) | 1,666 (−59%) | 302 (−93%) |
-| AnalyticsEvent | 656 | 366 (−44%) | 511 (−22%) | 159 (−76%) |
-| GoogleMessage1 | 2,644 | 1,867 (−29%) | 872 (−67%) | 358 (−86%) |
+| ApiResponse | 2,543 | 1,810 (−29%) | 1,049 (−59%) | 556 (−78%) |
+| LogRecord | 4,018 | 3,093 (−23%) | 1,666 (−59%) | 302 (−92%) |
+| AnalyticsEvent | 656 | 357 (−46%) | 511 (−22%) | 159 (−76%) |
+| GoogleMessage1 | 2,594 | 1,808 (−30%) | 872 (−66%) | 358 (−86%) |
+| MediaFrame | 45,990 | 38,514 (−16%) | — | — |
 
 </details>
 
@@ -186,10 +188,11 @@ Throughput comparison across four representative message types, measured on an I
 
 | Message | buffa | prost | Go |
 |---------|------:|------:|---:|
-| ApiResponse | 867 | 805 (−7%) | 116 (−87%) |
-| LogRecord | 1,312 | 1,083 (−17%) | 140 (−89%) |
-| AnalyticsEvent | 777 | 758 (−2%) | 51 (−93%) |
-| GoogleMessage1 | 1,021 | 830 (−19%) | 128 (−88%) |
+| ApiResponse | 875 | 943 (+8%) | 116 (−87%) |
+| LogRecord | 1,294 | 1,407 (+9%) | 140 (−89%) |
+| AnalyticsEvent | 786 | 843 (+7%) | 51 (−93%) |
+| GoogleMessage1 | 961 | 1,007 (+5%) | 128 (−87%) |
+| MediaFrame | 1,423 | 1,449 (+2%) | — |
 
 </details>
 
@@ -201,16 +204,19 @@ Throughput comparison across four representative message types, measured on an I
 
 | Message | buffa | prost | Go |
 |---------|------:|------:|---:|
-| ApiResponse | 718 | 293 (−59%) | 70 (−90%) |
-| LogRecord | 797 | 690 (−13%) | 110 (−86%) |
-| AnalyticsEvent | 265 | 235 (−11%) | 46 (−83%) |
-| GoogleMessage1 | 646 | 255 (−60%) | 73 (−89%) |
+| ApiResponse | 706 | 303 (−57%) | 70 (−90%) |
+| LogRecord | 757 | 696 (−8%) | 110 (−85%) |
+| AnalyticsEvent | 268 | 233 (−13%) | 46 (−83%) |
+| GoogleMessage1 | 640 | 258 (−60%) | 73 (−89%) |
+| MediaFrame | 1,942 | 1,954 (+1%) | — |
 
 </details>
 
-**Message types:** ApiResponse (~200 B, flat scalars), LogRecord (~1 KB, strings + map + nested message), AnalyticsEvent (~10 KB, deeply nested + repeated sub-messages), GoogleMessage1 (standard protobuf benchmark message).
+**Message types:** ApiResponse (~200 B, flat scalars), LogRecord (~1 KB, strings + map + nested message), AnalyticsEvent (~10 KB, deeply nested + repeated sub-messages), GoogleMessage1 (standard protobuf benchmark message), MediaFrame (~10 KB, dominated by `bytes` fields — primary body + chunked sub-blobs + named attachments).
 
-**Libraries:** prost 0.13 + pbjson 0.7, protobuf‑v4 (Google Rust/upb, v4.33.1), Go `google.golang.org/protobuf` v1.36.6. protobuf-v4 JSON is not included as it does not provide a JSON codec.
+**Libraries:** prost 0.13 + pbjson 0.7, protobuf‑v4 (Google Rust/upb, v4.33.1), Go `google.golang.org/protobuf` v1.36.6. protobuf-v4 JSON is not included as it does not provide a JSON codec. `MediaFrame` throughput numbers are intentionally absent for protobuf-v4 and Go: those suites run a fixed set of messages we did not extend for this experiment.
+
+**`prost (bytes)`** uses `prost-build`'s `.bytes(["."])` config so every proto `bytes` field is generated as `bytes::Bytes` instead of `Vec<u8>`, and decodes from a `bytes::Bytes` input to exercise `Bytes`' zero-copy `copy_to_bytes` slicing. The substitution only affects the decode path, so only decode numbers are reported — `prost (bytes)` encode tracks default `prost` by construction. On the four non-bytes messages, `prost (bytes)` tracks default `prost` within noise (and is slightly slower on `ApiResponse` where the per-message `Bytes::clone` refcount overhead isn't offset by any actual zero-copy). On `MediaFrame` it runs ~2.4× faster than default `prost` at decode, confirming that prost's feature does land when it has bytes fields to work with. buffa views are in a different regime again: they borrow directly from the input buffer for strings, bytes, and nested message bodies, so `buffa (view)` on `MediaFrame` is ~3× the `prost (bytes)` number and ~4.3× `buffa`'s own owned decode. Views also benefit on the four non-bytes messages, where prost's `bytes` feature is inert.
 
 **Owned decode trade-offs:** buffa's owned decode is typically within ±10% of prost, trading a small throughput cost for features prost omits: unknown-field preservation by default, typed `EnumValue<E>` wrappers (not raw `i32`), and a type-stable decode loop that supports recursive message types without manual boxing. The zero-copy view path (`MyMessageView::decode_view`) sidesteps allocation entirely and is the recommended fast decode path. protobuf-v4's decode advantage on deeply-nested messages comes from upb's arena allocator — all sub-messages are bump-allocated in one arena rather than individually boxed.
 

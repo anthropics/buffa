@@ -76,3 +76,17 @@ message AnalyticsEvent {
   }
   repeated Nested sections = 5;
 }
+
+// Binary-payload-heavy message: exercises the `bytes` field type, both as a
+// single large blob and as repeated / mapped sub-blobs. Used to contrast
+// prost's `prost-build`'s `.bytes(["."])` zero-copy substitution with buffa
+// views.
+// Target payload: ~3-25KB.
+message MediaFrame {
+  string frame_id = 1;
+  int64 timestamp_nanos = 2;
+  string content_type = 3;
+  bytes body = 4;                     // primary payload, ~1-10 KB
+  repeated bytes chunks = 5;          // 2-6 sub-chunks, ~200-2000 bytes each
+  map<string, bytes> attachments = 6; // 0-4 named sub-blobs
+}
