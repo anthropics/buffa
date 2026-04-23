@@ -275,6 +275,13 @@ bench_view_encode!(
     "buffa/google_message1_proto3",
     "../../datasets/google_message1_proto3.pb"
 );
+bench_view_encode!(
+    bench_media_frame_view_encode,
+    MediaFrame,
+    MediaFrameView,
+    "buffa/media_frame",
+    "../../datasets/media_frame.pb"
+);
 
 /// Build-then-encode benches: unlike `encode`/`encode_view` (which serialize
 /// a pre-built struct), these include the cost of populating the message from
@@ -459,6 +466,36 @@ bench_build_encode!(
     },
 );
 
+static MF_BODY: [u8; 4096] = [0xAB; 4096];
+static MF_CHUNKS: [[u8; 1024]; 4] = [[0xC0; 1024], [0xC1; 1024], [0xC2; 1024], [0xC3; 1024]];
+static MF_ATT_A: [u8; 512] = [0xA0; 512];
+static MF_ATT_B: [u8; 768] = [0xB0; 768];
+const MF_ATTACH: [(&str, &[u8]); 2] = [("thumbnail", &MF_ATT_A), ("metadata", &MF_ATT_B)];
+
+bench_build_encode!(
+    bench_media_frame_build_encode,
+    "buffa/media_frame",
+    MediaFrame,
+    MediaFrame {
+        frame_id: "frame-001a2b3c".into(),
+        timestamp_nanos: 1_700_000_000_000_000_000,
+        content_type: "video/h264".into(),
+        body: MF_BODY.to_vec(),
+        chunks: MF_CHUNKS.iter().map(|c| c.to_vec()).collect(),
+        attachments: MF_ATTACH.iter().map(|(k, v)| ((*k).into(), v.to_vec())).collect(),
+        ..Default::default()
+    },
+    MediaFrameView {
+        frame_id: "frame-001a2b3c",
+        timestamp_nanos: 1_700_000_000_000_000_000,
+        content_type: "video/h264",
+        body: &MF_BODY,
+        chunks: MF_CHUNKS.iter().map(|c| &c[..]).collect(),
+        attachments: MF_ATTACH.iter().copied().collect(),
+        ..Default::default()
+    },
+);
+
 fn bench_api_response(c: &mut Criterion) {
     benchmark_decode::<ApiResponse>(
         c,
@@ -559,10 +596,12 @@ criterion_group!(
     bench_log_record_view_encode,
     bench_analytics_event_view_encode,
     bench_google_message1_view_encode,
+    bench_media_frame_view_encode,
     bench_api_response_build_encode,
     bench_log_record_build_encode,
     bench_analytics_event_build_encode,
     bench_google_message1_build_encode,
+    bench_media_frame_build_encode,
 );
 
 criterion_group!(
