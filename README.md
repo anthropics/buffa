@@ -150,7 +150,11 @@ Throughput comparison across five representative message types, measured on an I
 
 ### Binary decode
 
-![Binary decode throughput](benchmarks/charts/binary-decode.svg)
+![Binary decode — ApiResponse](benchmarks/charts/binary-decode-api_response.svg)
+![Binary decode — LogRecord](benchmarks/charts/binary-decode-log_record.svg)
+![Binary decode — AnalyticsEvent](benchmarks/charts/binary-decode-analytics_event.svg)
+![Binary decode — GoogleMessage1](benchmarks/charts/binary-decode-google_message1_proto3.svg)
+![Binary decode — MediaFrame](benchmarks/charts/binary-decode-media_frame.svg)
 
 <details><summary>Raw data (MiB/s)</summary>
 
@@ -166,7 +170,11 @@ Throughput comparison across five representative message types, measured on an I
 
 ### Binary encode
 
-![Binary encode throughput](benchmarks/charts/binary-encode.svg)
+![Binary encode — ApiResponse](benchmarks/charts/binary-encode-api_response.svg)
+![Binary encode — LogRecord](benchmarks/charts/binary-encode-log_record.svg)
+![Binary encode — AnalyticsEvent](benchmarks/charts/binary-encode-analytics_event.svg)
+![Binary encode — GoogleMessage1](benchmarks/charts/binary-encode-google_message1_proto3.svg)
+![Binary encode — MediaFrame](benchmarks/charts/binary-encode-media_frame.svg)
 
 <details><summary>Raw data (MiB/s)</summary>
 
@@ -182,7 +190,11 @@ Throughput comparison across five representative message types, measured on an I
 
 ### JSON encode
 
-![JSON encode throughput](benchmarks/charts/json-encode.svg)
+![JSON encode — ApiResponse](benchmarks/charts/json-encode-api_response.svg)
+![JSON encode — LogRecord](benchmarks/charts/json-encode-log_record.svg)
+![JSON encode — AnalyticsEvent](benchmarks/charts/json-encode-analytics_event.svg)
+![JSON encode — GoogleMessage1](benchmarks/charts/json-encode-google_message1_proto3.svg)
+![JSON encode — MediaFrame](benchmarks/charts/json-encode-media_frame.svg)
 
 <details><summary>Raw data (MiB/s)</summary>
 
@@ -198,7 +210,11 @@ Throughput comparison across five representative message types, measured on an I
 
 ### JSON decode
 
-![JSON decode throughput](benchmarks/charts/json-decode.svg)
+![JSON decode — ApiResponse](benchmarks/charts/json-decode-api_response.svg)
+![JSON decode — LogRecord](benchmarks/charts/json-decode-log_record.svg)
+![JSON decode — AnalyticsEvent](benchmarks/charts/json-decode-analytics_event.svg)
+![JSON decode — GoogleMessage1](benchmarks/charts/json-decode-google_message1_proto3.svg)
+![JSON decode — MediaFrame](benchmarks/charts/json-decode-media_frame.svg)
 
 <details><summary>Raw data (MiB/s)</summary>
 

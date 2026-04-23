@@ -409,17 +409,29 @@ def main() -> None:
         "json-decode": "JSON Decode Throughput",
     }
 
+    # Per-message SVGs: one file per (chart, message) so each can use its own
+    # throughput scale. MediaFrame's ~70 GiB/s view decode would otherwise
+    # compress the other four messages' bars into a few pixels.
+    # Reverse-map display name → snake-case filename stem.
+    snake_for: dict[str, str] = {v: k for k, v in MSG_DISPLAY.items()}
     for chart_name, table in tables.items():
-        series_list = [
-            Series(name=name, color=COLORS[name],
-                   data={m: v for m, v in vals.items() if v is not None})
-            for name, vals in table.items()
-        ]
-        svg = generate_chart(chart_titles[chart_name], "MiB/s",
-                             MESSAGES, series_list)
-        path = charts_dir / f"{chart_name}.svg"
-        path.write_text(svg + "\n")
-        print(f"  wrote {path}")
+        title_base = chart_titles[chart_name]
+        for msg in MESSAGES:
+            series_list = [
+                Series(name=name, color=COLORS[name],
+                       data={msg: vals[msg]} if vals.get(msg) is not None else {})
+                for name, vals in table.items()
+            ]
+            # Drop series that have no value for this message (e.g. google/go
+            # for MediaFrame) so the chart doesn't render empty bars.
+            series_list = [s for s in series_list if s.data]
+            if not series_list:
+                continue
+            svg = generate_chart(f"{title_base} — {msg}", "MiB/s",
+                                 [msg], series_list)
+            path = charts_dir / f"{chart_name}-{snake_for[msg]}.svg"
+            path.write_text(svg + "\n")
+            print(f"  wrote {path}")
 
     # Print README-ready tables.
     readme = generate_readme_tables(tables)
