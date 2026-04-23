@@ -407,6 +407,55 @@ fn test_reserved_sentinel_message_name_rejected() {
 }
 
 #[test]
+fn test_reserved_sentinel_file_level_enum_rejected() {
+    // File-level `enum buffa_` emits `pub enum buffa_` at package root —
+    // E0428 against `pub mod buffa_`. Nested enums (inside a message)
+    // live in the owner's module and cannot collide, so are not checked.
+    let mut file = proto3_file("test.proto");
+    file.package = Some("pkg".to_string());
+    file.enum_type = vec![EnumDescriptorProto {
+        name: Some("buffa_".to_string()),
+        value: vec![enum_value("V", 0)],
+        ..Default::default()
+    }];
+    let err = generate(
+        &[file],
+        &["test.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("file-level enum buffa_ must be rejected");
+    assert!(
+        matches!(err, CodeGenError::ReservedModuleName { .. }),
+        "expected ReservedModuleName, got {err:?}"
+    );
+    let msg = err.to_string();
+    assert!(msg.contains("enum 'pkg.buffa_'"), "should locate it: {msg}");
+}
+
+#[test]
+fn test_nested_enum_named_buffa_allowed() {
+    // Nested enums emit inside the owner message's module, not at
+    // package root, so `Foo { enum buffa_ }` is fine.
+    let mut file = proto3_file("test.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type = vec![DescriptorProto {
+        name: Some("Foo".to_string()),
+        enum_type: vec![EnumDescriptorProto {
+            name: Some("buffa_".to_string()),
+            value: vec![enum_value("V", 0)],
+            ..Default::default()
+        }],
+        ..Default::default()
+    }];
+    generate(
+        &[file],
+        &["test.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("nested enum buffa_ should be allowed");
+}
+
+#[test]
 fn test_proto3_optional_field_name_matches_nested_enum_no_conflict() {
     // Proto3 `optional MatchOperator match_operator = 4;` creates a synthetic
     // oneof named `_match_operator`.  `to_pascal_case("_match_operator")` yields

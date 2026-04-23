@@ -227,7 +227,7 @@ println!("name: {}", view.name);  // Deref, zero-copy, 'static + Send
 
 **Generated code layout — the `buffa_::` sentinel tree:**
 
-Ancillary generated items (views, oneof enums, file-level extensions, the per-package `register_types` fn) live under a single reserved module per package — `buffa_::` — instead of being interleaved with owned types. The sentinel is the **only** name buffa reserves in user namespace; codegen errors with `ReservedModuleName` if a proto package segment or message name would snake_case to `buffa_`.
+Ancillary generated items (views, oneof enums, file-level extensions, the per-package `register_types` fn) live under a single reserved module per package — `buffa_::` — instead of being interleaved with owned types. The sentinel is the **only** name buffa reserves in user namespace; codegen errors with `ReservedModuleName` if a proto package segment, message name, or file-level enum name would emit a `buffa_` item at package root.
 
 ```text
 <pkg>::Foo                                # owned struct (unchanged)

@@ -439,11 +439,12 @@ pub enum IncludeMode<'a> {
 ///   with generated `__buffa_unknown_fields` / `__buffa_cached_size`).
 /// - **Module-name conflicts**: no two sibling messages snake_case to the
 ///   same module name (e.g. `HTTPRequest` vs `HttpRequest`).
-/// - **Reserved sentinel**: no package segment or message-module name
-///   equals [`SENTINEL_MOD`](context::SENTINEL_MOD). Ancillary types live
-///   under `pkg::buffa_::…`; a proto element emitting `pub mod buffa_` at
-///   any level would produce E0428. This is the only name buffa reserves
-///   in user namespace.
+/// - **Reserved sentinel**: no package segment, message-module name, or
+///   file-level enum name equals [`SENTINEL_MOD`](context::SENTINEL_MOD).
+///   Ancillary types live under `pkg::buffa_::…`; a proto element
+///   emitting an item named `buffa_` at package root would produce
+///   E0428 against `pub mod buffa_`. This is the only name buffa
+///   reserves in user namespace.
 fn validate_file(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
     use std::collections::HashMap;
 
@@ -454,6 +455,20 @@ fn validate_file(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
             name: sentinel.to_string(),
             location: format!("package '{package}'"),
         });
+    }
+    // File-level enums emit `pub enum <name>` at package root with the
+    // proto name preserved verbatim (no PascalCase normalization), so a
+    // proto `enum buffa_` would land beside `pub mod buffa_`. Nested
+    // enums live inside their owner message's module and cannot collide
+    // with the package-root sentinel, so only file-level is checked.
+    for enum_type in &file.enum_type {
+        let name = enum_type.name.as_deref().unwrap_or("");
+        if name == sentinel {
+            return Err(CodeGenError::ReservedModuleName {
+                name: sentinel.to_string(),
+                location: format!("enum '{package}.{name}'"),
+            });
+        }
     }
 
     fn walk(
@@ -861,14 +876,14 @@ pub enum CodeGenError {
         name_b: String,
         module_name: String,
     },
-    /// A proto package segment or message name would emit a Rust module
-    /// matching the reserved sentinel `buffa_`.
+    /// A proto package segment, message name, or file-level enum name
+    /// would emit a Rust item matching the reserved sentinel `buffa_`.
     ///
     /// This is the only name buffa reserves in user namespace. Resolve by
     /// renaming the proto element.
     #[error(
-        "reserved module name '{name}' at {location}: this name is reserved \
-         for buffa's generated ancillary types (views, oneof enums, \
+        "reserved name '{name}' at {location}: this name is reserved for \
+         buffa's generated ancillary types (views, oneof enums, \
          extensions). Rename the proto element."
     )]
     ReservedModuleName { name: String, location: String },

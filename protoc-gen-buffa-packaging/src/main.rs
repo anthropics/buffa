@@ -1,15 +1,13 @@
-//! protoc-gen-buffa-packaging — emits a `mod.rs` module tree for buffa-style
-//! per-file output.
+//! protoc-gen-buffa-packaging — emits a `mod.rs` module tree for buffa's
+//! per-package `<pkg>.mod.rs` stitcher output.
 //!
-//! This plugin reads the proto package structure (not message/service bodies)
-//! and writes a `mod.rs` that `include!`s each generated file at the right
-//! module nesting. Requires `strategy: all` so the plugin sees the full file
-//! set in a single invocation.
-//!
-//! Works with any codegen plugin that emits per-file output named via
-//! [`buffa_codegen::proto_path_to_rust_module`] (`foo/v1/bar.proto` →
-//! `foo.v1.bar.rs`). This includes `protoc-gen-buffa` itself and plugins
-//! layered on top of it.
+//! This plugin reads the proto package structure (not message/service
+//! bodies) and writes a `mod.rs` that `include!`s each per-package
+//! stitcher (see [`buffa_codegen::package_to_mod_filename`]) at the right
+//! module nesting. The per-proto content files are reached transitively
+//! via `include!` from the stitchers, so this plugin only wires up one
+//! file per package. Requires `strategy: all` so the plugin sees the full
+//! file set in a single invocation.
 //!
 //! # buf.gen.yaml
 //!
@@ -29,9 +27,9 @@
 //!
 //! # Options
 //!
-//! - `filter=services` — only include proto files that declare at least one
-//!   `service`. Useful when packaging output from a service-stub generator
-//!   that skips files without services.
+//! - `filter=services` — only include packages where at least one
+//!   `.proto` declares a `service`. Useful when packaging output from a
+//!   service-stub generator that skips files without services.
 //!
 //! Invoke the plugin once per output tree — use multiple entries in
 //! buf.gen.yaml with different `out:` directories and filters to package
@@ -39,16 +37,17 @@
 //!
 //! # Matching a codegen plugin's output set
 //!
-//! This plugin cannot see the filesystem — it derives the set of files to
-//! `include!` from `file_to_generate` and the chosen filter. The filter
-//! must produce the same set the codegen plugin actually emitted, or the
-//! `mod.rs` will reference nonexistent files (or miss real ones).
+//! This plugin cannot see the filesystem — it derives the set of packages
+//! to `include!` from `file_to_generate` and the chosen filter. The
+//! filter must produce the same set the codegen plugin actually emitted,
+//! or the `mod.rs` will reference nonexistent stitchers (or miss real
+//! ones).
 //!
-//! `protoc-gen-buffa` emits one file per proto file unconditionally, so no
-//! filter is needed. A service-stub generator that skips files without a
-//! `service` declaration needs `filter=services`. If a codegen plugin's
-//! skip condition is not expressible as a predicate on `FileDescriptorProto`,
-//! it is not packageable by this plugin.
+//! `protoc-gen-buffa` emits a stitcher for every package unconditionally,
+//! so no filter is needed. A service-stub generator that skips packages
+//! without a `service` declaration needs `filter=services`. If a codegen
+//! plugin's skip condition is not expressible as a predicate on
+//! `FileDescriptorProto`, it is not packageable by this plugin.
 
 use std::io::{self, Read, Write};
 
