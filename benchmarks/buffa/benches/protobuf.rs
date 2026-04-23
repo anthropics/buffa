@@ -2,10 +2,10 @@ use buffa::{Message, MessageView};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use serde::{de::DeserializeOwned, Serialize};
 
-use bench_buffa::bench::buffa_::view::*;
+use bench_buffa::bench::__buffa::view::*;
 use bench_buffa::bench::*;
 use bench_buffa::benchmarks::BenchmarkDataset;
-use bench_buffa::proto3::buffa_::view::GoogleMessage1View;
+use bench_buffa::proto3::__buffa::view::GoogleMessage1View;
 
 fn load_dataset(data: &[u8]) -> BenchmarkDataset {
     BenchmarkDataset::decode_from_slice(data).expect("failed to decode dataset")

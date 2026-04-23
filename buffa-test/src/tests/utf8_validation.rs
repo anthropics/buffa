@@ -46,7 +46,7 @@ fn view_none_fields_are_byte_slices() {
         ..Default::default()
     };
     let bytes = msg.encode_to_vec();
-    let view = buffa_::view::StringNoValidationView::decode_view(&bytes).unwrap();
+    let view = __buffa::view::StringNoValidationView::decode_view(&bytes).unwrap();
     // raw_name is Option<&[u8]>, validated_name is Option<&str>.
     let raw: Option<&[u8]> = view.raw_name;
     let validated: Option<&str> = view.validated_name;
@@ -57,13 +57,13 @@ fn view_none_fields_are_byte_slices() {
 #[test]
 fn view_none_accepts_invalid_utf8() {
     let wire = [0x0A, 0x02, 0xFF, 0xFE];
-    let view = buffa_::view::StringNoValidationView::decode_view(&wire).unwrap();
+    let view = __buffa::view::StringNoValidationView::decode_view(&wire).unwrap();
     assert_eq!(view.raw_name, Some(&[0xFF, 0xFE][..]));
 }
 
 #[test]
 fn oneof_none_variant_is_vec_u8() {
-    use crate::utf8test::buffa_::oneof::oneof_no_validation::Content as ContentOneof;
+    use crate::utf8test::__buffa::oneof::oneof_no_validation::Content as ContentOneof;
     let msg = OneofNoValidation {
         content: Some(ContentOneof::RawText(b"bytes".to_vec())),
         ..Default::default()

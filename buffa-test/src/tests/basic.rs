@@ -1,7 +1,7 @@
 //! Basic round-trips: Empty, Person, Address, unknown-field preservation.
 
 use super::round_trip;
-use crate::basic::buffa_::oneof;
+use crate::basic::__buffa::oneof;
 use crate::basic::*;
 use buffa::Message;
 

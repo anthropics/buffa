@@ -46,7 +46,7 @@ fn test_keyword_expression_with_oneof() {
             ..Default::default()
         }),
         match_mode: buffa::EnumValue::Known(keywords::Match::MATCH_EXACT),
-        value: Some(keywords::buffa_::oneof::expression::Value::Literal(
+        value: Some(keywords::__buffa::oneof::expression::Value::Literal(
             "42".into(),
         )),
         ..Default::default()
@@ -55,7 +55,7 @@ fn test_keyword_expression_with_oneof() {
     assert_eq!(decoded.result_type.name, "bool");
     assert_eq!(
         decoded.value,
-        Some(keywords::buffa_::oneof::expression::Value::Literal(
+        Some(keywords::__buffa::oneof::expression::Value::Literal(
             "42".into()
         ))
     );

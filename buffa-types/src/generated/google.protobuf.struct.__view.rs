@@ -14,7 +14,11 @@ pub struct StructView<'a> {
     /// Unordered map of dynamically typed values.
     ///
     /// Field 1: `fields` (map)
-    pub fields: ::buffa::MapView<'a, &'a str, super::super::buffa_::view::ValueView<'a>>,
+    pub fields: ::buffa::MapView<
+        'a,
+        &'a str,
+        super::super::__buffa::view::ValueView<'a>,
+    >,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
 impl<'a> StructView<'a> {
@@ -96,7 +100,7 @@ impl<'a> StructView<'a> {
                                     return Err(::buffa::DecodeError::RecursionLimitExceeded);
                                 }
                                 let sub = ::buffa::types::borrow_bytes(&mut entry_cur)?;
-                                val = super::super::buffa_::view::ValueView::_decode_depth(
+                                val = super::super::__buffa::view::ValueView::_decode_depth(
                                     sub,
                                     depth - 1,
                                 )?;
@@ -170,7 +174,9 @@ unsafe impl<'a> ::buffa::HasDefaultViewInstance for StructView<'a> {
 /// The JSON representation for `Value` is JSON value.
 #[derive(Clone, Debug, Default)]
 pub struct ValueView<'a> {
-    pub kind: ::core::option::Option<super::super::buffa_::view::oneof::value::Kind<'a>>,
+    pub kind: ::core::option::Option<
+        super::super::__buffa::view::oneof::value::Kind<'a>,
+    >,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
 impl<'a> ValueView<'a> {
@@ -220,7 +226,7 @@ impl<'a> ValueView<'a> {
                         });
                     }
                     view.kind = Some(
-                        super::super::buffa_::view::oneof::value::Kind::NullValue(
+                        super::super::__buffa::view::oneof::value::Kind::NullValue(
                             ::buffa::EnumValue::from(
                                 ::buffa::types::decode_int32(&mut cur)?,
                             ),
@@ -236,7 +242,7 @@ impl<'a> ValueView<'a> {
                         });
                     }
                     view.kind = Some(
-                        super::super::buffa_::view::oneof::value::Kind::NumberValue(
+                        super::super::__buffa::view::oneof::value::Kind::NumberValue(
                             ::buffa::types::decode_double(&mut cur)?,
                         ),
                     );
@@ -250,7 +256,7 @@ impl<'a> ValueView<'a> {
                         });
                     }
                     view.kind = Some(
-                        super::super::buffa_::view::oneof::value::Kind::StringValue(
+                        super::super::__buffa::view::oneof::value::Kind::StringValue(
                             ::buffa::types::borrow_str(&mut cur)?,
                         ),
                     );
@@ -264,7 +270,7 @@ impl<'a> ValueView<'a> {
                         });
                     }
                     view.kind = Some(
-                        super::super::buffa_::view::oneof::value::Kind::BoolValue(
+                        super::super::__buffa::view::oneof::value::Kind::BoolValue(
                             ::buffa::types::decode_bool(&mut cur)?,
                         ),
                     );
@@ -282,7 +288,7 @@ impl<'a> ValueView<'a> {
                     }
                     let sub = ::buffa::types::borrow_bytes(&mut cur)?;
                     if let Some(
-                        super::super::buffa_::view::oneof::value::Kind::StructValue(
+                        super::super::__buffa::view::oneof::value::Kind::StructValue(
                             ref mut existing,
                         ),
                     ) = view.kind
@@ -290,9 +296,9 @@ impl<'a> ValueView<'a> {
                         existing._merge_into_view(sub, depth - 1)?;
                     } else {
                         view.kind = Some(
-                            super::super::buffa_::view::oneof::value::Kind::StructValue(
+                            super::super::__buffa::view::oneof::value::Kind::StructValue(
                                 ::buffa::alloc::boxed::Box::new(
-                                    super::super::buffa_::view::StructView::_decode_depth(
+                                    super::super::__buffa::view::StructView::_decode_depth(
                                         sub,
                                         depth - 1,
                                     )?,
@@ -314,7 +320,7 @@ impl<'a> ValueView<'a> {
                     }
                     let sub = ::buffa::types::borrow_bytes(&mut cur)?;
                     if let Some(
-                        super::super::buffa_::view::oneof::value::Kind::ListValue(
+                        super::super::__buffa::view::oneof::value::Kind::ListValue(
                             ref mut existing,
                         ),
                     ) = view.kind
@@ -322,9 +328,9 @@ impl<'a> ValueView<'a> {
                         existing._merge_into_view(sub, depth - 1)?;
                     } else {
                         view.kind = Some(
-                            super::super::buffa_::view::oneof::value::Kind::ListValue(
+                            super::super::__buffa::view::oneof::value::Kind::ListValue(
                                 ::buffa::alloc::boxed::Box::new(
-                                    super::super::buffa_::view::ListValueView::_decode_depth(
+                                    super::super::__buffa::view::ListValueView::_decode_depth(
                                         sub,
                                         depth - 1,
                                     )?,
@@ -364,27 +370,27 @@ impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
                 .kind
                 .as_ref()
                 .map(|v| match v {
-                    super::super::buffa_::view::oneof::value::Kind::NullValue(v) => {
-                        super::super::buffa_::oneof::value::Kind::NullValue(*v)
+                    super::super::__buffa::view::oneof::value::Kind::NullValue(v) => {
+                        super::super::__buffa::oneof::value::Kind::NullValue(*v)
                     }
-                    super::super::buffa_::view::oneof::value::Kind::NumberValue(v) => {
-                        super::super::buffa_::oneof::value::Kind::NumberValue(*v)
+                    super::super::__buffa::view::oneof::value::Kind::NumberValue(v) => {
+                        super::super::__buffa::oneof::value::Kind::NumberValue(*v)
                     }
-                    super::super::buffa_::view::oneof::value::Kind::StringValue(v) => {
-                        super::super::buffa_::oneof::value::Kind::StringValue(
+                    super::super::__buffa::view::oneof::value::Kind::StringValue(v) => {
+                        super::super::__buffa::oneof::value::Kind::StringValue(
                             v.to_string(),
                         )
                     }
-                    super::super::buffa_::view::oneof::value::Kind::BoolValue(v) => {
-                        super::super::buffa_::oneof::value::Kind::BoolValue(*v)
+                    super::super::__buffa::view::oneof::value::Kind::BoolValue(v) => {
+                        super::super::__buffa::oneof::value::Kind::BoolValue(*v)
                     }
-                    super::super::buffa_::view::oneof::value::Kind::StructValue(v) => {
-                        super::super::buffa_::oneof::value::Kind::StructValue(
+                    super::super::__buffa::view::oneof::value::Kind::StructValue(v) => {
+                        super::super::__buffa::oneof::value::Kind::StructValue(
                             ::buffa::alloc::boxed::Box::new(v.to_owned_message()),
                         )
                     }
-                    super::super::buffa_::view::oneof::value::Kind::ListValue(v) => {
-                        super::super::buffa_::oneof::value::Kind::ListValue(
+                    super::super::__buffa::view::oneof::value::Kind::ListValue(v) => {
+                        super::super::__buffa::oneof::value::Kind::ListValue(
                             ::buffa::alloc::boxed::Box::new(v.to_owned_message()),
                         )
                     }
@@ -415,7 +421,7 @@ pub struct ListValueView<'a> {
     /// Repeated field of dynamically typed values.
     ///
     /// Field 1: `values`
-    pub values: ::buffa::RepeatedView<'a, super::super::buffa_::view::ValueView<'a>>,
+    pub values: ::buffa::RepeatedView<'a, super::super::__buffa::view::ValueView<'a>>,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
 impl<'a> ListValueView<'a> {
@@ -470,7 +476,7 @@ impl<'a> ListValueView<'a> {
                     let sub = ::buffa::types::borrow_bytes(&mut cur)?;
                     view.values
                         .push(
-                            super::super::buffa_::view::ValueView::_decode_depth(
+                            super::super::__buffa::view::ValueView::_decode_depth(
                                 sub,
                                 depth - 1,
                             )?,

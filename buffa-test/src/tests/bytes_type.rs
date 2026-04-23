@@ -49,7 +49,7 @@ fn test_bytes_type_view_to_owned() {
     // Views borrow &[u8]; to_owned_message must produce Bytes (not Vec<u8>)
     // when use_bytes_type() is active. Previously this emitted .to_vec()
     // unconditionally, failing to compile.
-    use crate::basic_bytes::buffa_::view::PersonView;
+    use crate::basic_bytes::__buffa::view::PersonView;
     use buffa::MessageView;
     let msg = Person {
         id: 7,
@@ -82,8 +82,8 @@ fn test_bytes_type_view_to_owned() {
 // The bytes_variant build block compiles BytesContexts with use_bytes_type()
 // + generate_views=true; compilation alone is the primary assertion.
 
-use crate::basic_bytes::buffa_::oneof::bytes_contexts::Choice as ChoiceOneof;
-use crate::basic_bytes::buffa_::view::BytesContextsView;
+use crate::basic_bytes::__buffa::oneof::bytes_contexts::Choice as ChoiceOneof;
+use crate::basic_bytes::__buffa::view::BytesContextsView;
 use crate::basic_bytes::BytesContexts;
 
 #[test]

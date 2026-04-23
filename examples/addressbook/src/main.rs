@@ -19,7 +19,7 @@ mod proto {
 }
 
 use buffa::{EnumValue, Message};
-use proto::buffa::examples::addressbook::v1::buffa_::oneof::person::Address as AddressOneof;
+use proto::buffa::examples::addressbook::v1::__buffa::oneof::person::Address as AddressOneof;
 use proto::buffa::examples::addressbook::v1::{
     person::{PhoneNumber, PhoneType},
     AddressBook, Person, StructuredAddress,

@@ -19,7 +19,7 @@ fn test_deep_nesting_round_trip() {
             }),
             ..Default::default()
         }),
-        content: Some(nested::buffa_::oneof::outer::Content::Text("hello".into())),
+        content: Some(nested::__buffa::oneof::outer::Content::Text("hello".into())),
         ..Default::default()
     };
     let decoded = round_trip(&msg);
@@ -64,41 +64,43 @@ fn test_multi_oneof_variants() {
     // Test each variant type round-trips correctly.
     let cases: Vec<MultiOneof> = vec![
         MultiOneof {
-            value: Some(nested::buffa_::oneof::multi_oneof::Value::IntVal(42)),
+            value: Some(nested::__buffa::oneof::multi_oneof::Value::IntVal(42)),
             ..Default::default()
         },
         MultiOneof {
-            value: Some(nested::buffa_::oneof::multi_oneof::Value::LongVal(i64::MAX)),
+            value: Some(nested::__buffa::oneof::multi_oneof::Value::LongVal(
+                i64::MAX,
+            )),
             ..Default::default()
         },
         MultiOneof {
-            value: Some(nested::buffa_::oneof::multi_oneof::Value::FloatVal(1.5)),
+            value: Some(nested::__buffa::oneof::multi_oneof::Value::FloatVal(1.5)),
             ..Default::default()
         },
         MultiOneof {
-            value: Some(nested::buffa_::oneof::multi_oneof::Value::DoubleVal(
+            value: Some(nested::__buffa::oneof::multi_oneof::Value::DoubleVal(
                 std::f64::consts::PI,
             )),
             ..Default::default()
         },
         MultiOneof {
-            value: Some(nested::buffa_::oneof::multi_oneof::Value::BoolVal(true)),
+            value: Some(nested::__buffa::oneof::multi_oneof::Value::BoolVal(true)),
             ..Default::default()
         },
         MultiOneof {
-            value: Some(nested::buffa_::oneof::multi_oneof::Value::StringVal(
+            value: Some(nested::__buffa::oneof::multi_oneof::Value::StringVal(
                 "hello".into(),
             )),
             ..Default::default()
         },
         MultiOneof {
-            value: Some(nested::buffa_::oneof::multi_oneof::Value::BytesVal(vec![
+            value: Some(nested::__buffa::oneof::multi_oneof::Value::BytesVal(vec![
                 0xFF, 0x00,
             ])),
             ..Default::default()
         },
         MultiOneof {
-            value: Some(nested::buffa_::oneof::multi_oneof::Value::MessageVal(
+            value: Some(nested::__buffa::oneof::multi_oneof::Value::MessageVal(
                 Box::new(nested::outer::middle::Inner {
                     data: vec![1, 2, 3],
                     active: true,
@@ -120,7 +122,7 @@ fn test_recursive_oneof_direct() {
     // Expr { kind { Expr negated = 3; } } is directly self-recursive
     // through the oneof. Message/group variants are always boxed to
     // break the infinite-size cycle.
-    use crate::nested::buffa_::oneof::expr;
+    use crate::nested::__buffa::oneof::expr;
     use crate::nested::Expr;
     let inner = Expr {
         kind: Some(expr::Kind::IntLiteral(42)),
@@ -147,7 +149,7 @@ fn test_recursive_oneof_mutual() {
     // Expr -> BinaryOp -> Expr mutual recursion. BinaryOp fields use
     // MessageField (already boxed); the Expr.kind.binary variant is
     // the boxed side of the cycle.
-    use crate::nested::buffa_::oneof::expr;
+    use crate::nested::__buffa::oneof::expr;
     use crate::nested::{BinaryOp, Expr};
     let lhs = Expr {
         kind: Some(expr::Kind::IntLiteral(1)),
@@ -176,7 +178,7 @@ fn test_recursive_oneof_mutual() {
 fn test_from_msg_for_option_oneof() {
     // `From<Msg> for Option<Oneof>` lets struct-literal construction skip both
     // the explicit `Some(...)` and `Box::new(...)` for message-typed variants.
-    use crate::nested::buffa_::oneof::expr;
+    use crate::nested::__buffa::oneof::expr;
     use crate::nested::{BinaryOp, Expr};
     let op = BinaryOp {
         op: "*".into(),
@@ -213,7 +215,7 @@ fn test_from_msg_for_option_oneof() {
 fn test_recursive_oneof_merge_semantics() {
     // When the same message-typed oneof variant appears twice on the
     // wire, the second occurrence merges into the first (proto3 spec).
-    use crate::nested::buffa_::oneof::expr;
+    use crate::nested::__buffa::oneof::expr;
     use crate::nested::{BinaryOp, Expr};
     let first = Expr {
         kind: Some(expr::Kind::from(BinaryOp {
@@ -254,8 +256,8 @@ fn test_recursive_oneof_merge_semantics() {
 fn test_view_oneof_boxed_message_variant() {
     // View oneof enums box message/group variants for the same reason
     // as owned enums. The Box holds a lifetime-bound view struct.
-    use crate::nested::buffa_::oneof::expr;
-    use crate::nested::buffa_::view::ExprView;
+    use crate::nested::__buffa::oneof::expr;
+    use crate::nested::__buffa::view::ExprView;
     use crate::nested::Expr;
     use buffa::MessageView;
     let inner = Expr {
@@ -270,8 +272,8 @@ fn test_view_oneof_boxed_message_variant() {
     let view = ExprView::decode_view(&bytes).expect("decode_view");
     // Pattern-matched binding auto-derefs through Box<ExprView<'_>>.
     match &view.kind {
-        Some(crate::nested::buffa_::view::oneof::expr::Kind::Negated(v)) => match &v.kind {
-            Some(crate::nested::buffa_::view::oneof::expr::Kind::IntLiteral(n)) => {
+        Some(crate::nested::__buffa::view::oneof::expr::Kind::Negated(v)) => match &v.kind {
+            Some(crate::nested::__buffa::view::oneof::expr::Kind::IntLiteral(n)) => {
                 assert_eq!(*n, 42)
             }
             other => panic!("expected IntLiteral, got {other:?}"),
@@ -286,22 +288,22 @@ fn test_view_oneof_boxed_message_variant() {
 #[test]
 fn test_view_oneof_message_variant_to_owned() {
     // Non-recursive message variant: Middle in Outer.content.structured.
-    use crate::nested::buffa_::view::OuterView;
+    use crate::nested::__buffa::view::OuterView;
     use crate::nested::{self, Outer};
     use buffa::MessageView;
     let msg = Outer {
-        content: Some(nested::buffa_::oneof::outer::Content::Structured(Box::new(
-            nested::outer::Middle {
+        content: Some(nested::__buffa::oneof::outer::Content::Structured(
+            Box::new(nested::outer::Middle {
                 value: 7,
                 ..Default::default()
-            },
-        ))),
+            }),
+        )),
         ..Default::default()
     };
     let bytes = msg.encode_to_vec();
     let view = OuterView::decode_view(&bytes).expect("decode_view");
     match &view.content {
-        Some(nested::buffa_::view::oneof::outer::Content::Structured(m)) => assert_eq!(m.value, 7),
+        Some(nested::__buffa::view::oneof::outer::Content::Structured(m)) => assert_eq!(m.value, 7),
         other => panic!("expected Structured, got {other:?}"),
     }
     assert_eq!(view.to_owned_message(), msg);
@@ -336,7 +338,7 @@ fn test_recursive_singular_message_field() {
 fn test_view_recursive_singular_message_field() {
     // View path through the same cycle. MessageFieldView boxes internally,
     // Deref returns &V transparently.
-    use crate::nested::buffa_::view::CorecursiveView;
+    use crate::nested::__buffa::view::CorecursiveView;
     use crate::nested::{corecursive, Corecursive};
     use buffa::MessageView;
     let msg = Corecursive {
@@ -366,7 +368,7 @@ fn test_view_message_field_merge_semantics() {
     // When a singular message field appears twice on the wire, the
     // second occurrence merges into the first field-by-field (proto
     // spec). The view decoder must do this, not replace.
-    use crate::nested::buffa_::view::CorecursiveView;
+    use crate::nested::__buffa::view::CorecursiveView;
     use crate::nested::{corecursive, Corecursive};
     use buffa::MessageView;
     // First: nested.value = 1, nested.back.name = "from_first"
@@ -409,8 +411,8 @@ fn test_view_message_field_merge_semantics() {
 #[test]
 fn test_view_oneof_message_variant_merge_semantics() {
     // Same merge semantics for message-typed oneof variants.
-    use crate::nested::buffa_::oneof::expr;
-    use crate::nested::buffa_::view::ExprView;
+    use crate::nested::__buffa::oneof::expr;
+    use crate::nested::__buffa::view::ExprView;
     use crate::nested::{BinaryOp, Expr};
     use buffa::MessageView;
     // First: binary with lhs set
@@ -441,7 +443,7 @@ fn test_view_oneof_message_variant_merge_semantics() {
 
     let view = ExprView::decode_view(&wire).unwrap();
     match &view.kind {
-        Some(crate::nested::buffa_::view::oneof::expr::Kind::Binary(b)) => {
+        Some(crate::nested::__buffa::view::oneof::expr::Kind::Binary(b)) => {
             assert_eq!(b.op, "+", "op from first (second didn't set it)");
             assert!(b.lhs.is_set(), "lhs from first must survive merge");
             assert!(b.rhs.is_set(), "rhs from second");

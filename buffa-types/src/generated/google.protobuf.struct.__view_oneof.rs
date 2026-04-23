@@ -12,12 +12,12 @@ pub mod value {
         BoolValue(bool),
         StructValue(
             ::buffa::alloc::boxed::Box<
-                super::super::super::super::buffa_::view::StructView<'a>,
+                super::super::super::super::__buffa::view::StructView<'a>,
             >,
         ),
         ListValue(
             ::buffa::alloc::boxed::Box<
-                super::super::super::super::buffa_::view::ListValueView<'a>,
+                super::super::super::super::__buffa::view::ListValueView<'a>,
             >,
         ),
     }

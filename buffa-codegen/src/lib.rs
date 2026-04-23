@@ -53,6 +53,9 @@ pub const ALLOW_LINTS: &[&str] = &[
     "clippy::match_single_binding",
     "clippy::uninlined_format_args",
     "clippy::doc_lazy_continuation",
+    // A user `message View { message Inner }` produces
+    // `__buffa::view::view::InnerView`; harmless but trips this lint.
+    "clippy::module_inception",
 ];
 
 /// Render [`ALLOW_LINTS`] as a `#[allow(…)]` attribute token stream.
@@ -70,7 +73,7 @@ pub fn allow_lints_attr() -> TokenStream {
 /// `<stem>.__view.rs`, `<stem>.__oneof.rs`, `<stem>.__view_oneof.rs`,
 /// `<stem>.__ext.rs`) and each proto package produces one
 /// `<dotted.pkg>.mod.rs` **stitcher** that `include!`s the content files
-/// and authors the `pub mod buffa_ { … }` ancillary tree.
+/// and authors the `pub mod __buffa { … }` ancillary tree.
 /// See `DESIGN.md` → "Generated code layout".
 ///
 /// Consumers normally only need to wire up the
@@ -194,7 +197,7 @@ pub struct CodeGenConfig {
     /// feature for the runtime encoder/decoder.
     pub generate_text: bool,
     /// Whether the per-package `.mod.rs` stitcher emits
-    /// `buffa_::register_types(&mut TypeRegistry)`.
+    /// `__buffa::register_types(&mut TypeRegistry)`.
     ///
     /// Default `true`. The fn aggregates `Any` type entries and extension
     /// entries for every message in the package. Set to `false` for
@@ -441,9 +444,9 @@ pub enum IncludeMode<'a> {
 ///   same module name (e.g. `HTTPRequest` vs `HttpRequest`).
 /// - **Reserved sentinel**: no package segment, message-module name, or
 ///   file-level enum name equals [`SENTINEL_MOD`](context::SENTINEL_MOD).
-///   Ancillary types live under `pkg::buffa_::…`; a proto element
-///   emitting an item named `buffa_` at package root would produce
-///   E0428 against `pub mod buffa_`. This is the only name buffa
+///   Ancillary types live under `pkg::__buffa::…`; a proto element
+///   emitting an item named `__buffa` at package root would produce
+///   E0428 against `pub mod __buffa`. This is the only name buffa
 ///   reserves in user namespace.
 fn validate_file(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
     use std::collections::HashMap;
@@ -458,7 +461,7 @@ fn validate_file(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
     }
     // File-level enums emit `pub enum <name>` at package root with the
     // proto name preserved verbatim (no PascalCase normalization), so a
-    // proto `enum buffa_` would land beside `pub mod buffa_`. Nested
+    // proto `enum __buffa` would land beside `pub mod __buffa`. Nested
     // enums live inside their owner message's module and cannot collide
     // with the package-root sentinel, so only file-level is checked.
     for enum_type in &file.enum_type {
@@ -619,7 +622,7 @@ fn generate_proto_content(
         view_oneof.extend(msg_view_oneof);
     }
 
-    // File-level `extend` declarations → `buffa_::ext::` (depth 2).
+    // File-level `extend` declarations → `__buffa::ext::` (depth 2).
     let (file_ext_tokens, file_ext_json, file_ext_text) = extension::generate_extensions(
         ctx,
         &file.extension,
@@ -656,7 +659,7 @@ fn generate_package(
     out: &mut Vec<GeneratedFile>,
 ) -> Result<(), CodeGenError> {
     // Registry paths are package-root-relative; `register_types` lives at
-    // `buffa_::register_types` (one level deep), so each path gets a
+    // `__buffa::register_types` (one level deep), so each path gets a
     // single `super::` prefix when emitted into the fn body.
     let mut reg = message::RegistryPaths::default();
     let mut stems: Vec<String> = Vec::new();
@@ -809,7 +812,7 @@ fn format_tokens(tokens: TokenStream, source: &str) -> Result<String, CodeGenErr
 ///
 /// e.g., `"google.protobuf"` → `"google.protobuf.mod.rs"`. The unnamed
 /// package uses the [`SENTINEL_MOD`](context::SENTINEL_MOD) name as its
-/// filename stem — `package buffa_;` is already rejected by
+/// filename stem — `package __buffa;` is already rejected by
 /// [`validate_file`], so the unnamed-package stitcher cannot
 /// collide with any real package's.
 pub fn package_to_mod_filename(package: &str) -> String {
@@ -877,7 +880,7 @@ pub enum CodeGenError {
         module_name: String,
     },
     /// A proto package segment, message name, or file-level enum name
-    /// would emit a Rust item matching the reserved sentinel `buffa_`.
+    /// would emit a Rust item matching the reserved sentinel `__buffa`.
     ///
     /// This is the only name buffa reserves in user namespace. Resolve by
     /// renaming the proto element.

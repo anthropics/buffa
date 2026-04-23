@@ -13,13 +13,13 @@ use crate::CodeGenConfig;
 /// See `DESIGN.md` → "Generated code layout" for the full layout. The name
 /// is checked against proto package segments and message-module names by
 /// [`crate::validate_file`]; a collision is a hard error.
-pub const SENTINEL_MOD: &str = "buffa_";
+pub const SENTINEL_MOD: &str = "__buffa";
 
 /// A Rust type path split at the target-package boundary.
 ///
 /// Returned by [`CodeGenContext::rust_type_relative_split`]. The full owned
 /// path is `to_package + within_package` (concatenated with `::`); ancillary
-/// kinds insert their `buffa_::<kind>::` prefix between the two halves.
+/// kinds insert their `__buffa::<kind>::` prefix between the two halves.
 #[derive(Debug, Clone)]
 pub struct SplitPath {
     /// Path from the current emission scope to the **target package root**.
@@ -322,14 +322,14 @@ impl<'a> CodeGenContext<'a> {
     /// Like [`rust_type_relative`](Self::rust_type_relative) but returns the
     /// path split at the target-package boundary.
     ///
-    /// Ancillary kinds (views, oneof enums) live in the `buffa_::<kind>::`
+    /// Ancillary kinds (views, oneof enums) live in the `__buffa::<kind>::`
     /// sub-tree of each package; callers compose the final path as
-    /// `to_package + "::buffa_::" + <kind> + "::" + within_package`.
+    /// `to_package + "::__buffa::" + <kind> + "::" + within_package`.
     ///
     /// `nesting` is the **total** module depth of the caller's emission
     /// scope below the current package root — i.e. message-nesting plus any
-    /// `buffa_::<kind>::` levels the caller is already inside (0 for owned
-    /// types, +2 for `buffa_::view::`, +3 for `buffa_::view::oneof::`).
+    /// `__buffa::<kind>::` levels the caller is already inside (0 for owned
+    /// types, +2 for `__buffa::view::`, +3 for `__buffa::view::oneof::`).
     pub fn rust_type_relative_split(
         &self,
         proto_fqn: &str,
@@ -537,13 +537,13 @@ impl<'a> MessageScope<'a> {
 
 /// Kind of ancillary tree under the [`SENTINEL_MOD`] module.
 ///
-/// `path_segments()` returns the module path *inside* `buffa_::` (not
+/// `path_segments()` returns the module path *inside* `__buffa::` (not
 /// including the sentinel itself).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AncillaryKind {
-    /// `buffa_::oneof::<msg_path>::` — owned oneof enums.
+    /// `__buffa::oneof::<msg_path>::` — owned oneof enums.
     Oneof,
-    /// `buffa_::view::oneof::<msg_path>::` — view oneof enums.
+    /// `__buffa::view::oneof::<msg_path>::` — view oneof enums.
     ViewOneof,
 }
 
@@ -560,9 +560,9 @@ impl AncillaryKind {
 /// kind's location for the **current** message (`proto_fqn`).
 ///
 /// Always climbs to the package root via `super::` and re-descends through
-/// `buffa_::<kind>::<msg_path>::` — uniform regardless of where the caller
+/// `__buffa::<kind>::<msg_path>::` — uniform regardless of where the caller
 /// sits. `from_nesting` is the caller's total module depth below the
-/// package root (message-nesting plus any `buffa_::<kind>::` levels the
+/// package root (message-nesting plus any `__buffa::<kind>::` levels the
 /// caller is already inside).
 ///
 /// `proto_fqn` follows the dotless convention used throughout codegen

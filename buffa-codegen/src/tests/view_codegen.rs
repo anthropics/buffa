@@ -151,8 +151,8 @@ fn test_view_oneof_with_message_variant() {
     // (Prettyplease may wrap the path across lines, so check the
     // tail segment.)
     assert!(
-        content.contains("buffa_::view::oneof::request::Payload"),
-        "RequestView must reference buffa_::view::oneof::request::Payload: {content}"
+        content.contains("__buffa::view::oneof::request::Payload"),
+        "RequestView must reference __buffa::view::oneof::request::Payload: {content}"
     );
     // The oneof view enum must have both variants.
     assert!(

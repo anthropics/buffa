@@ -121,13 +121,13 @@ pub use ::bytes;
 /// Include the generated stitcher for a proto **package** from `OUT_DIR`.
 ///
 /// Codegen emits one `<pkg>.mod.rs` per package which `include!`s the
-/// per-proto content files and authors the `buffa_::{view, oneof, ext}`
+/// per-proto content files and authors the `__buffa::{view, oneof, ext}`
 /// ancillary tree, so a single macro call brings in everything.
 ///
 /// `$pkg` is the **dotted proto package literal** exactly as it appears
 /// in the `.proto`'s `package` declaration (e.g. `"google.protobuf"`,
 /// not a Rust path or the `.proto` file path). For protos with no
-/// `package` declaration, pass `"buffa_"` (the reserved sentinel; no
+/// `package` declaration, pass `"__buffa"` (the reserved sentinel; no
 /// real package can use it).
 ///
 /// ```ignore
@@ -151,7 +151,7 @@ macro_rules! include_proto {
 ///
 /// `$pkg` is the dotted proto package literal exactly as in the
 /// `.proto`'s `package` declaration; for the unnamed package pass
-/// `"buffa_"`. `$dir` is relative to the calling source file.
+/// `"__buffa"`. `$dir` is relative to the calling source file.
 ///
 /// ```ignore
 /// pub mod protobuf {

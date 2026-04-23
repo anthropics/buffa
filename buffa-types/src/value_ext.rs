@@ -5,7 +5,7 @@
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 
-use crate::google::protobuf::buffa_::oneof::value::Kind as KindOneof;
+use crate::google::protobuf::__buffa::oneof::value::Kind as KindOneof;
 use crate::google::protobuf::{ListValue, NullValue, Struct, Value};
 
 impl Value {

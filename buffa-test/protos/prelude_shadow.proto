@@ -55,3 +55,14 @@ message Outer {
   }
   optional Middle middle = 1;
 }
+
+// Regression for the kind-tree collision: a `message View` produces a
+// nested-type module `pub mod view { ... }`. Under the sentinel design
+// the kind-tree view wrapper is `pub mod __buffa { pub mod view { ... } }`,
+// so this no longer collides. Compilation is the assertion.
+message View {
+  message Inner {
+    optional string s = 1;
+  }
+  optional Inner inner = 1;
+}

@@ -61,7 +61,7 @@ fn test_empty_file() {
         .iter()
         .find(|f| f.kind == GeneratedFileKind::PackageMod)
         .expect("stitcher present");
-    assert_eq!(stitcher.name, "buffa_.mod.rs");
+    assert_eq!(stitcher.name, "__buffa.mod.rs");
     assert!(
         stitcher.content.contains("@generated"),
         "missing header comment"
@@ -75,7 +75,7 @@ fn test_package_to_mod_filename() {
         "google.protobuf.mod.rs"
     );
     assert_eq!(package_to_mod_filename("foo"), "foo.mod.rs");
-    assert_eq!(package_to_mod_filename(""), "buffa_.mod.rs");
+    assert_eq!(package_to_mod_filename(""), "__buffa.mod.rs");
     assert_eq!(
         proto_path_to_stem("google/protobuf/timestamp.proto"),
         "google.protobuf.timestamp"
@@ -113,11 +113,74 @@ fn test_multi_file_same_package_merged() {
     let content = &joined(&files);
     assert!(content.contains("pub struct A"));
     assert!(content.contains("pub struct B"));
-    // Exactly one `pub mod buffa_` (in the stitcher), and both content
+    // Exactly one `pub mod __buffa` (in the stitcher), and both content
     // files referenced from inside it.
-    assert_eq!(stitcher.content.matches("pub mod buffa_ {").count(), 1);
+    assert_eq!(stitcher.content.matches("pub mod __buffa {").count(), 1);
     assert!(stitcher.content.contains(r#"include!("a.__view.rs");"#));
     assert!(stitcher.content.contains(r#"include!("b.__view.rs");"#));
+}
+
+#[test]
+fn test_child_package_named_view_no_collision() {
+    // Regression: under the pre-sentinel design, `package foo.view`
+    // emitted `pub mod view { ... }` (child package) as a sibling of the
+    // kind-tree `pub mod view { ... }` inside `foo` — E0428. With the
+    // sentinel wrapper, the kind tree is `pub mod __buffa { pub mod view
+    // { ... } }`, so a child package literally named `view` is fine.
+    let mut a = proto3_file("a.proto");
+    a.package = Some("foo".to_string());
+    a.message_type.push(DescriptorProto {
+        name: Some("A".to_string()),
+        ..Default::default()
+    });
+    let mut b = proto3_file("b.proto");
+    b.package = Some("foo.view".to_string());
+    b.message_type.push(DescriptorProto {
+        name: Some("B".to_string()),
+        ..Default::default()
+    });
+    let files = generate(
+        &[a, b],
+        &["a.proto".to_string(), "b.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("`package foo.view` alongside `package foo` must compile");
+    // One stitcher per package.
+    let stitchers: Vec<_> = files
+        .iter()
+        .filter(|f| f.kind == GeneratedFileKind::PackageMod)
+        .collect();
+    assert_eq!(stitchers.len(), 2);
+    // Neither stitcher emits a bare `pub mod view {` at top level — the
+    // view kind tree is always nested under `pub mod __buffa {`.
+    for s in &stitchers {
+        let top_level_view = s
+            .content
+            .lines()
+            .any(|l| l.starts_with("pub mod view {") || l == "pub mod view {");
+        assert!(
+            !top_level_view,
+            "stitcher {} must not emit top-level `pub mod view`: {}",
+            s.name, s.content
+        );
+        assert!(s.content.contains("pub mod __buffa {"));
+    }
+    // The package tree assembled by `generate_module_tree` puts `view` as
+    // a child of `foo`, separate from `foo`'s `__buffa` wrapper.
+    let entries: Vec<_> = stitchers
+        .iter()
+        .map(|s| {
+            (
+                s.name.clone(),
+                s.name.trim_end_matches(".mod.rs").to_string(),
+            )
+        })
+        .collect();
+    let tree = crate::generate_module_tree(&entries, crate::IncludeMode::Relative(""), false);
+    assert!(
+        tree.contains("pub mod foo {") && tree.contains("pub mod view {"),
+        "tree must nest `view` under `foo`: {tree}"
+    );
 }
 
 #[test]

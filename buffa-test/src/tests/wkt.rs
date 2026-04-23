@@ -13,7 +13,7 @@ fn test_wkt_in_oneof_from_impls() {
     //
     // The fact that this test compiles IS the test: wkt_usage.proto has
     // Envelope.content with Any/Timestamp (extern) + Event (local) variants.
-    use crate::wkt::buffa_::oneof::envelope;
+    use crate::wkt::__buffa::oneof::envelope;
     use crate::wkt::{Envelope, Event};
     use buffa_types::google::protobuf::Any;
 
@@ -86,7 +86,7 @@ fn test_wkt_view_with_extern_path() {
     // appends "View" to the last path segment: crate::wkt::Timestamp
     // → crate::wkt::TimestampView (which is re-exported from buffa-types'
     // generated code).
-    use crate::wkt::buffa_::view::EventView;
+    use crate::wkt::__buffa::view::EventView;
     use crate::wkt::Event;
     use buffa::MessageView;
     let msg = Event {

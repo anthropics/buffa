@@ -106,7 +106,7 @@ fn collect_variant_info(
             // without codegen changes; only decode and JSON-deser need an
             // explicit Vec<u8>→Bytes conversion (see oneof_merge_arm and
             // oneof_variant_deser_arm).
-            // Oneof enums live at `buffa_::oneof::<msg_path>::`, which is
+            // Oneof enums live at `__buffa::oneof::<msg_path>::`, which is
             // `2 + (msg_nesting + 1)` levels below the package root
             // (sentinel + `oneof` + one snake-case segment per message in
             // the FQN path). `nesting` here is the owning message's
@@ -487,7 +487,7 @@ pub(crate) fn oneof_variant_deser_arm(input: &OneofVariantDeserInput<'_>) -> Tok
 /// Build the Rust identifier for a oneof enum: `{PascalCase(oneof_name)}`.
 ///
 /// No suffix and no collision check — oneof enums live in the dedicated
-/// `buffa_::oneof::<msg>::` tree where they cannot collide with nested
+/// `__buffa::oneof::<msg>::` tree where they cannot collide with nested
 /// types, nested enums, or view structs. Two sibling oneofs would only
 /// produce the same ident if they share a proto name, which protoc
 /// rejects at parse time.
@@ -499,7 +499,7 @@ fn oneof_enum_ident(oneof_name: &str) -> proc_macro2::Ident {
 ///
 /// Returns a map from oneof declaration index to its Rust enum `Ident`.
 /// Synthetic oneofs (proto3 `optional`) are omitted. Infallible: oneof
-/// enums live in the `buffa_::oneof::` tree where collisions with
+/// enums live in the `__buffa::oneof::` tree where collisions with
 /// nested types are structurally impossible.
 pub(crate) fn resolve_oneof_idents(
     msg: &DescriptorProto,

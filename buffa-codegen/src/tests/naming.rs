@@ -142,7 +142,7 @@ fn test_different_snake_case_names_no_conflict() {
 #[test]
 fn test_nested_type_oneof_coexist_in_separate_trees() {
     // Nested message "MyField" and oneof "my_field" coexist structurally:
-    // the oneof enum lives at `buffa_::oneof::parent::MyField`, the nested
+    // the oneof enum lives at `__buffa::oneof::parent::MyField`, the nested
     // struct at `parent::MyField`.
     let msg = DescriptorProto {
         name: Some("Parent".to_string()),
@@ -242,7 +242,7 @@ fn test_nested_enum_oneof_coexists_with_suffix() {
     let files = result.expect("nested enum + oneof same-name should coexist");
     let content = &joined(&files);
     // Both `pub enum RegionCodes` declarations exist — one in the owned
-    // tree (the proto enum), one in `buffa_::oneof::` (the oneof enum).
+    // tree (the proto enum), one in `__buffa::oneof::` (the oneof enum).
     assert_eq!(
         content.matches("pub enum RegionCodes {").count(),
         2,
@@ -253,7 +253,7 @@ fn test_nested_enum_oneof_coexists_with_suffix() {
 #[test]
 fn test_sibling_oneof_view_names_do_not_collide() {
     // Two sibling oneofs `my_field` and `my_field_view`. Both live in
-    // `buffa_::oneof::parent::{MyField, MyFieldView}` — distinct because
+    // `__buffa::oneof::parent::{MyField, MyFieldView}` — distinct because
     // protoc rejects duplicate oneof names.
     let msg = DescriptorProto {
         name: Some("Parent".to_string()),
@@ -304,7 +304,7 @@ fn test_sibling_oneof_view_names_do_not_collide() {
 
 #[test]
 fn test_foo_and_fooview_siblings_coexist() {
-    // Messages "Foo" and "FooView" — Foo's view (`buffa_::view::FooView`)
+    // Messages "Foo" and "FooView" — Foo's view (`__buffa::view::FooView`)
     // and the owned `FooView` struct (`pkg::FooView`) live in different
     // trees. Previously rejected via ViewNameConflict.
     let mut file = proto3_file("test.proto");
@@ -325,7 +325,7 @@ fn test_foo_and_fooview_siblings_coexist() {
     let files = result.expect("Foo + FooView siblings should coexist");
     let content = &joined(&files);
     assert!(content.contains("pub struct Foo {"));
-    // pkg::FooView (owned) and buffa_::view::FooView<'a> (Foo's view).
+    // pkg::FooView (owned) and __buffa::view::FooView<'a> (Foo's view).
     assert!(content.contains("pub struct FooView {"));
     assert!(content.contains("pub struct FooView<'a>"));
 }
@@ -334,7 +334,7 @@ fn test_foo_and_fooview_siblings_coexist() {
 fn test_top_level_message_named_view_compiles() {
     // Regression vs PR #54's bug: a top-level `message View { Inner }`
     // emits `pub mod view {}` (its nested-type module). Ancillary types
-    // live under `buffa_::view::`, NOT a bare `pub mod view {}`, so no
+    // live under `__buffa::view::`, NOT a bare `pub mod view {}`, so no
     // E0428.
     let mut file = proto3_file("test.proto");
     file.package = Some("pkg".to_string());
@@ -363,13 +363,13 @@ fn test_top_level_message_named_view_compiles() {
     let content = joined(&files);
     // The sentinel wraps the ancillary tree; the message's own
     // `pub mod view` (its nested-type module) is in the owned content.
-    assert!(content.contains("pub mod buffa_ {"));
+    assert!(content.contains("pub mod __buffa {"));
 }
 
 #[test]
 fn test_reserved_sentinel_package_segment_rejected() {
     let mut file = proto3_file("test.proto");
-    file.package = Some("foo.buffa_".to_string());
+    file.package = Some("foo.__buffa".to_string());
     file.message_type = vec![DescriptorProto {
         name: Some("X".to_string()),
         ..Default::default()
@@ -379,7 +379,7 @@ fn test_reserved_sentinel_package_segment_rejected() {
         &["test.proto".to_string()],
         &CodeGenConfig::default(),
     )
-    .expect_err("buffa_ package segment must be rejected");
+    .expect_err("__buffa package segment must be rejected");
     assert!(
         matches!(err, CodeGenError::ReservedModuleName { .. }),
         "expected ReservedModuleName, got {err:?}"
@@ -388,11 +388,11 @@ fn test_reserved_sentinel_package_segment_rejected() {
 
 #[test]
 fn test_reserved_sentinel_message_name_rejected() {
-    // Message name `Buffa_` snake_cases to `buffa_`.
+    // Message name `__Buffa` snake_cases to `__buffa`.
     let mut file = proto3_file("test.proto");
     file.package = Some("pkg".to_string());
     file.message_type = vec![DescriptorProto {
-        name: Some("Buffa_".to_string()),
+        name: Some("__Buffa".to_string()),
         ..Default::default()
     }];
     let err = generate(
@@ -400,21 +400,21 @@ fn test_reserved_sentinel_message_name_rejected() {
         &["test.proto".to_string()],
         &CodeGenConfig::default(),
     )
-    .expect_err("Buffa_ message name must be rejected");
+    .expect_err("__Buffa message name must be rejected");
     let msg = err.to_string();
-    assert!(msg.contains("buffa_"), "error should name sentinel: {msg}");
-    assert!(msg.contains("pkg.Buffa_"), "error should locate it: {msg}");
+    assert!(msg.contains("__buffa"), "error should name sentinel: {msg}");
+    assert!(msg.contains("pkg.__Buffa"), "error should locate it: {msg}");
 }
 
 #[test]
 fn test_reserved_sentinel_file_level_enum_rejected() {
-    // File-level `enum buffa_` emits `pub enum buffa_` at package root —
-    // E0428 against `pub mod buffa_`. Nested enums (inside a message)
+    // File-level `enum __buffa` emits `pub enum __buffa` at package root —
+    // E0428 against `pub mod __buffa`. Nested enums (inside a message)
     // live in the owner's module and cannot collide, so are not checked.
     let mut file = proto3_file("test.proto");
     file.package = Some("pkg".to_string());
     file.enum_type = vec![EnumDescriptorProto {
-        name: Some("buffa_".to_string()),
+        name: Some("__buffa".to_string()),
         value: vec![enum_value("V", 0)],
         ..Default::default()
     }];
@@ -423,25 +423,28 @@ fn test_reserved_sentinel_file_level_enum_rejected() {
         &["test.proto".to_string()],
         &CodeGenConfig::default(),
     )
-    .expect_err("file-level enum buffa_ must be rejected");
+    .expect_err("file-level enum __buffa must be rejected");
     assert!(
         matches!(err, CodeGenError::ReservedModuleName { .. }),
         "expected ReservedModuleName, got {err:?}"
     );
     let msg = err.to_string();
-    assert!(msg.contains("enum 'pkg.buffa_'"), "should locate it: {msg}");
+    assert!(
+        msg.contains("enum 'pkg.__buffa'"),
+        "should locate it: {msg}"
+    );
 }
 
 #[test]
 fn test_nested_enum_named_buffa_allowed() {
     // Nested enums emit inside the owner message's module, not at
-    // package root, so `Foo { enum buffa_ }` is fine.
+    // package root, so `Foo { enum __buffa }` is fine.
     let mut file = proto3_file("test.proto");
     file.package = Some("pkg".to_string());
     file.message_type = vec![DescriptorProto {
         name: Some("Foo".to_string()),
         enum_type: vec![EnumDescriptorProto {
-            name: Some("buffa_".to_string()),
+            name: Some("__buffa".to_string()),
             value: vec![enum_value("V", 0)],
             ..Default::default()
         }],
@@ -452,7 +455,7 @@ fn test_nested_enum_named_buffa_allowed() {
         &["test.proto".to_string()],
         &CodeGenConfig::default(),
     )
-    .expect("nested enum buffa_ should be allowed");
+    .expect("nested enum __buffa should be allowed");
 }
 
 #[test]

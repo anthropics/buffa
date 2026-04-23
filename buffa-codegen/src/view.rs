@@ -65,10 +65,10 @@ fn bytes_to_owned(
 }
 
 /// `scope.nesting` is the **message-nesting** of the owning message (0 for
-/// top-level). View structs are emitted into `buffa_::view::<msg_path>::`,
+/// top-level). View structs are emitted into `__buffa::view::<msg_path>::`,
 /// so the view body's total depth below the package root is
 /// `scope.nesting + 2`; view-oneof enums go to
-/// `buffa_::view::oneof::<msg_path>::`, depth `scope.nesting + 4`.
+/// `__buffa::view::oneof::<msg_path>::`, depth `scope.nesting + 4`.
 pub(crate) fn generate_view_with_nesting(
     scope: MessageScope<'_>,
     msg: &DescriptorProto,
@@ -123,7 +123,7 @@ pub(crate) fn generate_view_with_nesting(
     let oneof_struct_fields =
         oneof_view_struct_fields(ctx, msg, &view_oneof_prefix, features, &oneof_idents)?;
 
-    // Oneof view enum definitions (go into `buffa_::view::oneof::<msg>::`).
+    // Oneof view enum definitions (go into `__buffa::view::oneof::<msg>::`).
     let oneof_view_enums = msg
         .oneof_decl
         .iter()
@@ -643,7 +643,7 @@ fn generate_oneof_view_enum(
     }
 
     // View-oneof enums share the owned oneof's identifier (no `View` suffix)
-    // — the `buffa_::view::oneof::` tree position disambiguates. They live
+    // — the `__buffa::view::oneof::` tree position disambiguates. They live
     // at depth `msg_nesting + 4` (sentinel + view + oneof + msg_path).
     let enum_body_depth = scope.nesting + 4;
     let body_scope = MessageScope {
@@ -1479,7 +1479,7 @@ fn resolve_enum_ty(
 }
 
 /// Resolve the view type tokens for a message field
-/// (e.g. `".pkg.Address"` → `super^n::buffa_::view::AddressView<'a>`).
+/// (e.g. `".pkg.Address"` → `super^n::__buffa::view::AddressView<'a>`).
 ///
 /// `scope.nesting` must be the **total** depth of the caller below the
 /// package root (msg-nesting + kind-depth offset already applied by the
@@ -1503,7 +1503,7 @@ fn resolve_view_decode_tokens(
 /// Compute the path to a message field's **view struct** from `scope`.
 ///
 /// Splits the resolved owned-type path at the target-package boundary and
-/// inserts `buffa_::view::` between the halves, appending `View` to the
+/// inserts `__buffa::view::` between the halves, appending `View` to the
 /// final identifier.
 fn resolve_view_path(
     scope: MessageScope<'_>,

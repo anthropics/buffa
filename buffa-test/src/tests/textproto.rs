@@ -96,7 +96,7 @@ fn person_roundtrip() {
         ..Default::default()
     }];
     p.maybe_age = Some(30);
-    p.contact = Some(crate::basic::buffa_::oneof::person::Contact::Email(
+    p.contact = Some(crate::basic::__buffa::oneof::person::Contact::Email(
         "alice@example.com".into(),
     ));
 
@@ -157,7 +157,7 @@ fn closed_enum_encode_decode() {
 #[test]
 fn oneof_variants() {
     let mut p = Person::default();
-    p.contact = Some(crate::basic::buffa_::oneof::person::Contact::Phone(
+    p.contact = Some(crate::basic::__buffa::oneof::person::Contact::Phone(
         "555-1234".into(),
     ));
     assert_eq!(encode_to_string(&p), r#"phone: "555-1234""#);
@@ -165,7 +165,7 @@ fn oneof_variants() {
     let p: Person = decode_from_str(r#"email: "x@y.com""#).unwrap();
     assert_eq!(
         p.contact,
-        Some(crate::basic::buffa_::oneof::person::Contact::Email(
+        Some(crate::basic::__buffa::oneof::person::Contact::Email(
             "x@y.com".into()
         ))
     );
@@ -174,7 +174,7 @@ fn oneof_variants() {
     let p: Person = decode_from_str(r#"email: "a" phone: "b""#).unwrap();
     assert_eq!(
         p.contact,
-        Some(crate::basic::buffa_::oneof::person::Contact::Phone(
+        Some(crate::basic::__buffa::oneof::person::Contact::Phone(
             "b".into()
         ))
     );
@@ -350,7 +350,7 @@ fn group_decode_accepts_both_names() {
 
 #[test]
 fn group_in_oneof_uses_type_name() {
-    use crate::proto2::buffa_::oneof::view_coverage::Choice as ChoiceOneof;
+    use crate::proto2::__buffa::oneof::view_coverage::Choice as ChoiceOneof;
     use crate::proto2::view_coverage::Payload;
     use crate::proto2::ViewCoverage;
 

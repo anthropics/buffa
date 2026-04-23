@@ -45,7 +45,7 @@ impl RegistryPaths {
 /// message `Foo` with nested `Bar` produces an `oneof_tree` containing
 /// `pub mod foo { /* Foo's oneofs */ pub mod bar { /* Bar's oneofs */ } }`.
 /// The package-level assembler in `lib.rs` places each tree under its
-/// `buffa_::<kind>::` root.
+/// `__buffa::<kind>::` root.
 #[derive(Default)]
 pub(crate) struct MessageOutput {
     /// Owned struct + impls — emitted at the message's owned-tree position.
@@ -54,13 +54,13 @@ pub(crate) struct MessageOutput {
     /// emitted inside the message's `pub mod {name} {}` in the owned tree.
     pub owned_mod: TokenStream,
     /// Oneof enum definitions, wrapped in `pub mod {msg_name} { … }`.
-    /// Destined for `buffa_::oneof::`.
+    /// Destined for `__buffa::oneof::`.
     pub oneof_tree: TokenStream,
     /// View struct + impls, wrapped per-message-level. Destined for
-    /// `buffa_::view::`.
+    /// `__buffa::view::`.
     pub view_tree: TokenStream,
     /// Oneof view enum definitions, wrapped per-message-level. Destined
-    /// for `buffa_::view::oneof::`.
+    /// for `__buffa::view::oneof::`.
     pub view_oneof_tree: TokenStream,
     /// Registry const paths (relative to the package root).
     pub reg: RegistryPaths,
@@ -198,7 +198,7 @@ fn generate_message_with_nesting(
     let oneof_idents = crate::oneof::resolve_oneof_idents(msg);
 
     // Path prefix from this struct's emission scope to its oneof enums at
-    // `buffa_::oneof::<msg_path>::`. The owned struct sits at `nesting`
+    // `__buffa::oneof::<msg_path>::`. The owned struct sits at `nesting`
     // levels below the package root.
     let oneof_prefix = ancillary_prefix(AncillaryKind::Oneof, current_package, proto_fqn, nesting);
 

@@ -115,15 +115,15 @@ fn setup_type_registry() {
     // (JSON + text) + extension entries. `test_messages_proto3.proto`
     // has no extensions, so its register_types is Any-only;
     // `test_messages_proto2.proto` declares `extension_int32` at field 120.
-    proto3::buffa_::register_types(&mut reg);
-    proto2::buffa_::register_types(&mut reg);
+    proto3::__buffa::register_types(&mut reg);
+    proto2::__buffa::register_types(&mut reg);
     #[cfg(has_editions_protos)]
     {
-        editions_proto3::buffa_::register_types(&mut reg);
-        editions_proto2::buffa_::register_types(&mut reg);
+        editions_proto3::__buffa::register_types(&mut reg);
+        editions_proto2::__buffa::register_types(&mut reg);
         // Edition2023's `groupliketype` / `delimited_ext` extensions —
         // needed for the text `[pkg.ext] { ... }` bracket tests.
-        protobuf_test_messages_editions::buffa_::register_types(&mut reg);
+        protobuf_test_messages_editions::__buffa::register_types(&mut reg);
     }
 
     set_type_registry(reg);
@@ -329,21 +329,21 @@ fn process_via_view(req: &envelope::Request) -> envelope::Response {
 
     match req.message_type.as_str() {
         MSG_PROTO3 => roundtrip_proto3(
-            || decode_binary_via_view::<proto3::buffa_::view::TestAllTypesProto3View<'_>>(b),
+            || decode_binary_via_view::<proto3::__buffa::view::TestAllTypesProto3View<'_>>(b),
             encode_proto3_binary,
         ),
         MSG_PROTO2 => roundtrip_proto2(
-            || decode_binary_via_view::<proto2::buffa_::view::TestAllTypesProto2View<'_>>(b),
+            || decode_binary_via_view::<proto2::__buffa::view::TestAllTypesProto2View<'_>>(b),
             encode_proto2_binary,
         ),
         #[cfg(has_editions_protos)]
         MSG_EDITIONS_PROTO3 => roundtrip(
-            || decode_binary_via_view::<editions_proto3::buffa_::view::TestAllTypesProto3View<'_>>(b),
+            || decode_binary_via_view::<editions_proto3::__buffa::view::TestAllTypesProto3View<'_>>(b),
             encode_binary,
         ),
         #[cfg(has_editions_protos)]
         MSG_EDITIONS_PROTO2 => roundtrip(
-            || decode_binary_via_view::<editions_proto2::buffa_::view::TestAllTypesProto2View<'_>>(b),
+            || decode_binary_via_view::<editions_proto2::__buffa::view::TestAllTypesProto2View<'_>>(b),
             encode_binary,
         ),
         other => Response::Skipped(format!("message type '{other}' not in view dispatch")),

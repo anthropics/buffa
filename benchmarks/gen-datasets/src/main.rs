@@ -34,7 +34,7 @@ mod dataset_proto {
 }
 
 use proto::analytics_event::{Nested, Property};
-use proto::buffa_::oneof::analytics_event::property::Value;
+use proto::__buffa::oneof::analytics_event::property::Value;
 use proto::log_record::Context;
 use proto::*;
 

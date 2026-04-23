@@ -380,7 +380,7 @@ fn inline_oneof() {
         "#,
         &no_views(),
     );
-    assert!(content.contains("pub info: Option<buffa_::oneof::contact::Info>"));
+    assert!(content.contains("pub info: Option<__buffa::oneof::contact::Info>"));
     assert!(content.contains("pub enum Info"));
     assert!(content.contains("Email("));
     assert!(content.contains("Phone("));
@@ -530,7 +530,7 @@ fn inline_oneof_duplicate_message_type_no_from_collision() {
         &no_views(),
     );
     // Box on both message variants. Oneof body now sits at depth 3
-    // (`buffa_::oneof::t::`), so 3× super.
+    // (`__buffa::oneof::t::`), so 3× super.
     assert_eq!(
         content
             .matches("::buffa::alloc::boxed::Box<super::super::super::Placeholder>")

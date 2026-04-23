@@ -3,7 +3,7 @@
 
 use buffa::{Message, MessageView};
 use buffa_types::google::protobuf as wkt;
-use buffa_types::google::protobuf::buffa_::view as wkt_view;
+use buffa_types::google::protobuf::__buffa::view as wkt_view;
 
 fn encode_decode<T: Message>(msg: &T) -> T {
     let bytes = msg.encode_to_vec();

@@ -261,7 +261,7 @@ fn test_proto2_group_wire_format() {
 
 #[test]
 fn test_view_coverage_owned_round_trip() {
-    use crate::proto2::buffa_::oneof::view_coverage::Choice as ChoiceOneof;
+    use crate::proto2::__buffa::oneof::view_coverage::Choice as ChoiceOneof;
     use crate::proto2::view_coverage::Payload;
     use crate::proto2::{Priority, ViewCoverage};
 
@@ -305,8 +305,8 @@ fn test_view_coverage_via_view() {
     // View-decode → to_owned_message → encode round-trip.
     // Exercises: singular closed-enum view type, MapView<i32, &str>,
     // MapView<&str, ClosedEnum>, group-in-oneof view decode + merge.
-    use crate::proto2::buffa_::oneof::view_coverage::Choice as ChoiceOneof;
-    use crate::proto2::buffa_::view::ViewCoverageView;
+    use crate::proto2::__buffa::oneof::view_coverage::Choice as ChoiceOneof;
+    use crate::proto2::__buffa::view::ViewCoverageView;
     use crate::proto2::view_coverage::Payload;
     use crate::proto2::{Priority, ViewCoverage};
     use buffa::MessageView;
@@ -362,7 +362,7 @@ fn test_view_coverage_via_view() {
 fn test_view_coverage_required_enum_default() {
     // Required closed-enum field defaults to the first enum value (LOW=0).
     // View decode of empty buffer should also produce the default.
-    use crate::proto2::buffa_::view::ViewCoverageView;
+    use crate::proto2::__buffa::view::ViewCoverageView;
     use crate::proto2::{Priority, ViewCoverage};
     use buffa::MessageView;
 
@@ -377,8 +377,8 @@ fn test_view_coverage_required_enum_default() {
 fn test_view_coverage_group_in_oneof_merge() {
     // Proto spec: same oneof field on the wire twice → merge (for messages/
     // groups). Exercises the `_merge_into_view` branch for group-in-oneof.
-    use crate::proto2::buffa_::oneof::view_coverage::Choice as ChoiceOneof;
-    use crate::proto2::buffa_::view::ViewCoverageView;
+    use crate::proto2::__buffa::oneof::view_coverage::Choice as ChoiceOneof;
+    use crate::proto2::__buffa::view::ViewCoverageView;
     use crate::proto2::view_coverage::Payload;
     use crate::proto2::{Priority, ViewCoverage};
     use buffa::MessageView;
