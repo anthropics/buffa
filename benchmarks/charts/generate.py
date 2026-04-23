@@ -224,16 +224,33 @@ class Series:
     data: dict[str, float]
 
 
-def _format_value(v: float) -> str:
-    if v >= 1000:
-        return f"{v / 1000:.1f}k"
-    return str(int(v))
+def _format_axis(v: float, unit: str) -> str:
+    """Axis tick labels. Plain integers with commas for small values; 'k' suffix
+    only kicks in at ≥10,000 (so 1,200 isn't rendered as "1.2k"). When the
+    chart uses GiB/s, show one decimal place."""
+    if unit == "GiB/s":
+        return f"{v:.1f}"
+    if v >= 10_000:
+        return f"{v / 1000:.0f}k"
+    return f"{v:,.0f}"
+
+
+def _format_bar(v: float, unit: str) -> str:
+    """Inline value label next to each bar."""
+    if unit == "GiB/s":
+        return f"{v:.2f}"
+    return f"{int(v):,}"
 
 
 def _nice_max(values: list[float]) -> float:
     raw_max = max(values)
     magnitude = 10 ** math.floor(math.log10(raw_max))
     return math.ceil(raw_max / magnitude) * magnitude
+
+
+# Threshold at which we switch MiB/s → GiB/s for a chart: values ≥10 GiB/s
+# produce unwieldy MiB/s axis labels ("70k MiB/s" → "68.4 GiB/s" reads better).
+_MIB_TO_GIB_CUTOFF = 10 * 1024
 
 
 def generate_chart(title: str, unit: str, messages: list[str],
@@ -256,6 +273,13 @@ def generate_chart(title: str, unit: str, messages: list[str],
     svg_w = chart_left + chart_w + 80
 
     all_vals = [v for s in series_list for v in s.data.values() if v]
+    # Auto-rescale MiB/s → GiB/s on the chart when the max value is large
+    # enough to make integer-MiB axis labels unreadable.
+    scale_factor = 1.0
+    if unit == "MiB/s" and max(all_vals) >= _MIB_TO_GIB_CUTOFF:
+        unit = "GiB/s"
+        scale_factor = 1 / 1024
+    all_vals = [v * scale_factor for v in all_vals]
     max_val = _nice_max(all_vals)
     scale = chart_w / max_val
 
@@ -297,7 +321,7 @@ def generate_chart(title: str, unit: str, messages: list[str],
           f' x2="{x:.1f}" y2="{top_margin + total_chart_h}" class="grid"/>')
         a(f'  <text x="{x:.1f}" y="{top_margin + total_chart_h + 15}"'
           f' text-anchor="middle" class="axis-label">'
-          f'{_format_value(round(val))}</text>')
+          f'{_format_axis(val, unit)}</text>')
 
     a(f'  <text x="{chart_left + chart_w / 2}"'
       f' y="{svg_h - 5}" text-anchor="middle" class="axis-label">{unit}</text>')
@@ -309,13 +333,13 @@ def generate_chart(title: str, unit: str, messages: list[str],
           f' class="label">{msg}</text>')
 
         for si, s in enumerate(series_list):
-            val = s.data.get(msg, 0)
+            val = s.data.get(msg, 0) * scale_factor
             by = gy + si * (bar_h + bar_gap)
             bw = max(val * scale, 1)
             a(f'  <rect x="{chart_left}" y="{by:.1f}" width="{bw:.1f}"'
               f' height="{bar_h}" rx="2" fill="{s.color}"/>')
             a(f'  <text x="{chart_left + bw + 4:.1f}" y="{by + bar_h / 2 + 4:.1f}"'
-              f' class="value">{int(val):,}</text>')
+              f' class="value">{_format_bar(val, unit)}</text>')
 
     a('</svg>')
     return '\n'.join(lines)

@@ -19,25 +19,25 @@
   <rect x="393.5" y="35" width="14" height="14" rx="2" fill="#54A24B"/>
   <text x="411.5" y="46" class="legend-text">Go</text>
   <line x1="140.0" y1="80" x2="140.0" y2="180" class="grid"/>
-  <text x="140.0" y="195" text-anchor="middle" class="axis-label">0</text>
+  <text x="140.0" y="195" text-anchor="middle" class="axis-label">0.0</text>
   <line x1="256.0" y1="80" x2="256.0" y2="180" class="grid"/>
-  <text x="256.0" y="195" text-anchor="middle" class="axis-label">10.0k</text>
+  <text x="256.0" y="195" text-anchor="middle" class="axis-label">10.0</text>
   <line x1="372.0" y1="80" x2="372.0" y2="180" class="grid"/>
-  <text x="372.0" y="195" text-anchor="middle" class="axis-label">20.0k</text>
+  <text x="372.0" y="195" text-anchor="middle" class="axis-label">20.0</text>
   <line x1="488.0" y1="80" x2="488.0" y2="180" class="grid"/>
-  <text x="488.0" y="195" text-anchor="middle" class="axis-label">30.0k</text>
+  <text x="488.0" y="195" text-anchor="middle" class="axis-label">30.0</text>
   <line x1="604.0" y1="80" x2="604.0" y2="180" class="grid"/>
-  <text x="604.0" y="195" text-anchor="middle" class="axis-label">40.0k</text>
+  <text x="604.0" y="195" text-anchor="middle" class="axis-label">40.0</text>
   <line x1="720.0" y1="80" x2="720.0" y2="180" class="grid"/>
-  <text x="720.0" y="195" text-anchor="middle" class="axis-label">50.0k</text>
-  <text x="430.0" y="210" text-anchor="middle" class="axis-label">MiB/s</text>
+  <text x="720.0" y="195" text-anchor="middle" class="axis-label">50.0</text>
+  <text x="430.0" y="210" text-anchor="middle" class="axis-label">GiB/s</text>
   <text x="130" y="134.0" text-anchor="end" class="label">MediaFrame</text>
-  <rect x="140" y="80.0" width="533.5" height="22" rx="2" fill="#4C78A8"/>
-  <text x="677.5" y="95.0" class="value">45,990</text>
-  <rect x="140" y="106.0" width="446.8" height="22" rx="2" fill="#F58518"/>
-  <text x="590.8" y="121.0" class="value">38,514</text>
-  <rect x="140" y="132.0" width="121.4" height="22" rx="2" fill="#E45756"/>
-  <text x="265.4" y="147.0" class="value">10,462</text>
-  <rect x="140" y="158.0" width="19.1" height="22" rx="2" fill="#54A24B"/>
-  <text x="163.1" y="173.0" class="value">1,646</text>
+  <rect x="140" y="80.0" width="521.0" height="22" rx="2" fill="#4C78A8"/>
+  <text x="665.0" y="95.0" class="value">44.91</text>
+  <rect x="140" y="106.0" width="436.3" height="22" rx="2" fill="#F58518"/>
+  <text x="580.3" y="121.0" class="value">37.61</text>
+  <rect x="140" y="132.0" width="118.5" height="22" rx="2" fill="#E45756"/>
+  <text x="262.5" y="147.0" class="value">10.22</text>
+  <rect x="140" y="158.0" width="18.7" height="22" rx="2" fill="#54A24B"/>
+  <text x="162.7" y="173.0" class="value">1.61</text>
 </svg>
