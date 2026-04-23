@@ -2,6 +2,7 @@
 //! MapView iteration, oneof views, unknown-field preservation, recursion limit.
 
 use crate::basic::__buffa::oneof;
+use crate::basic::__buffa::view::oneof as view_oneof;
 use crate::basic::__buffa::view::*;
 use crate::basic::*;
 use buffa::{Message, MessageView, ViewEncode};
@@ -285,7 +286,7 @@ fn test_compute_size_matches_encode_len_view() {
         tags: ["a", "b"].iter().copied().collect(),
         address: addr.clone().into(),
         addresses: [addr.clone()].into_iter().collect(),
-        contact: Some(person::ContactOneofView::HomeAddress(Box::new(addr))),
+        contact: Some(view_oneof::person::Contact::HomeAddress(Box::new(addr))),
         ..Default::default()
     };
     let size = view.compute_size() as usize;
@@ -439,14 +440,14 @@ fn test_view_encode_construct_map_from_iter() {
 fn test_view_encode_oneof_roundtrip() {
     // String variant.
     let mut owned = Person::default();
-    owned.contact = Some(person::ContactOneof::Email("a@b.c".into()));
+    owned.contact = Some(oneof::person::Contact::Email("a@b.c".into()));
     let owned_bytes = owned.encode_to_vec();
     let view = PersonView::decode_view(&owned_bytes).unwrap();
     assert_eq!(owned_bytes, view.encode_to_vec());
 
     // Nested-message variant — exercises ViewEncode dispatch through Box<View>.
     let mut owned = Person::default();
-    owned.contact = Some(person::ContactOneof::HomeAddress(Box::new(Address {
+    owned.contact = Some(oneof::person::Contact::HomeAddress(Box::new(Address {
         street: "1 main".into(),
         city: "metro".into(),
         zip_code: 9,
@@ -471,7 +472,7 @@ fn test_view_encode_repeated_nested_and_oneof_from_borrows() {
         lucky_numbers: RepeatedView::new(vec![7, 11]),
         address: MessageFieldView::set(addr.clone()),
         addresses: RepeatedView::new(vec![addr.clone()]),
-        contact: Some(person::ContactOneofView::HomeAddress(Box::new(addr))),
+        contact: Some(view_oneof::person::Contact::HomeAddress(Box::new(addr))),
         ..Default::default()
     };
     let bytes = view.encode_to_vec();
@@ -480,7 +481,7 @@ fn test_view_encode_repeated_nested_and_oneof_from_borrows() {
     assert_eq!(decoded.lucky_numbers, [7, 11]);
     assert_eq!(decoded.address.street, "x");
     assert_eq!(decoded.addresses[0].zip_code, 9);
-    let Some(person::ContactOneof::HomeAddress(a)) = &decoded.contact else {
+    let Some(oneof::person::Contact::HomeAddress(a)) = &decoded.contact else {
         panic!("expected HomeAddress variant")
     };
     assert_eq!(a.city, "y");
@@ -501,7 +502,8 @@ fn test_view_encode_compute_size_matches_len() {
 
 #[test]
 fn test_view_encode_proto2_groups_roundtrip() {
-    use crate::proto2::{with_groups, WithGroups, WithGroupsView};
+    use crate::proto2::__buffa::view::WithGroupsView;
+    use crate::proto2::{with_groups, WithGroups};
     let owned = WithGroups {
         mygroup: with_groups::MyGroup {
             a: Some(7),
@@ -533,10 +535,12 @@ fn test_view_encode_proto2_groups_roundtrip() {
 
 #[test]
 fn test_view_encode_proto2_oneof_group_closed_enum_roundtrip() {
-    use crate::proto2::{view_coverage, Priority, ViewCoverage, ViewCoverageView};
+    use crate::proto2::__buffa::oneof::view_coverage as vc_oneof;
+    use crate::proto2::__buffa::view::ViewCoverageView;
+    use crate::proto2::{view_coverage, Priority, ViewCoverage};
     let mut owned = ViewCoverage {
         level: Priority::HIGH,
-        choice: Some(view_coverage::ChoiceOneof::Payload(Box::new(
+        choice: Some(vc_oneof::Choice::Payload(Box::new(
             view_coverage::Payload {
                 x: Some(42),
                 y: Some("oneof-group".into()),
