@@ -115,6 +115,11 @@ var cases = []benchCase{
 		dataset: "../datasets/google_message1_proto3.pb",
 		newMsg:  func() proto.Message { return &proto3pb.GoogleMessage1{} },
 	},
+	{
+		name:    "MediaFrame",
+		dataset: "../datasets/media_frame.pb",
+		newMsg:  func() proto.Message { return &benchpb.MediaFrame{} },
+	},
 }
 
 // benchBinaryEncode benchmarks proto.Marshal for a set of pre-decoded messages.

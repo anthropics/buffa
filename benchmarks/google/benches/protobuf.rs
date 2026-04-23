@@ -79,12 +79,21 @@ fn bench_google_message1(c: &mut Criterion) {
     );
 }
 
+fn bench_media_frame(c: &mut Criterion) {
+    benchmark_decode::<MediaFrame>(
+        c,
+        "google/media_frame",
+        include_bytes!("../../datasets/media_frame.pb"),
+    );
+}
+
 criterion_group!(
     benches,
     bench_api_response,
     bench_log_record,
     bench_analytics_event,
     bench_google_message1,
+    bench_media_frame,
 );
 
 criterion_main!(benches);

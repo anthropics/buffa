@@ -285,6 +285,15 @@ tasks:
     cmds:
       - cargo bench -- {{.CLI_ARGS}}
 
+  bench-prost-bytes:
+    desc: >-
+      Run the prost `bytes::Bytes` variant (prost-build `.bytes(["."])`
+      config + `Bytes` decode input). Intended as the fair comparison
+      point for buffa's view-based zero-copy decode.
+    dir: benchmarks/prost-bytes
+    cmds:
+      - cargo bench -- {{.CLI_ARGS}}
+
   # ── Cross-implementation comparison (Docker) ───────────────────────
   #
   # Docker is required for google-rs (needs cmake + specific protoc 33.1)
@@ -304,6 +313,12 @@ tasks:
     cmds:
       - docker build -t buffa-bench-prost -f benchmarks/Dockerfile.bench-prost .
       - docker run --rm buffa-bench-prost
+
+  bench-cross-prost-bytes:
+    desc: Run prost-bytes benchmarks in Docker (for bench-cross).
+    cmds:
+      - docker build -t buffa-bench-prost-bytes -f benchmarks/Dockerfile.bench-prost-bytes .
+      - docker run --rm buffa-bench-prost-bytes
 
   bench-cross-google:
     desc: Run Google protobuf-v4 benchmarks in Docker (for bench-cross).
@@ -325,7 +340,7 @@ tasks:
       fast dev-loop regression checking.
     cmds:
       - mkdir -p benchmarks/results
-      - rm -rf benchmarks/results/criterion-buffa benchmarks/results/criterion-prost
+      - rm -rf benchmarks/results/criterion-buffa benchmarks/results/criterion-prost benchmarks/results/criterion-prost-bytes
       - |
         echo "Running buffa benchmarks..."
         docker build -t buffa-bench-buffa -f benchmarks/Dockerfile.bench-buffa .
@@ -339,6 +354,13 @@ tasks:
         CID=$(docker create buffa-bench-prost)
         docker start -a "$CID" > benchmarks/results/prost.json
         docker cp "$CID:/workspace/benchmarks/prost/target/criterion/." benchmarks/results/criterion-prost/ || echo "(criterion extract failed)"
+        docker rm "$CID" > /dev/null
+      - |
+        echo "Running prost-bytes benchmarks..."
+        docker build -t buffa-bench-prost-bytes -f benchmarks/Dockerfile.bench-prost-bytes .
+        CID=$(docker create buffa-bench-prost-bytes)
+        docker start -a "$CID" > benchmarks/results/prost-bytes.json
+        docker cp "$CID:/workspace/benchmarks/prost-bytes/target/criterion/." benchmarks/results/criterion-prost-bytes/ || echo "(criterion extract failed)"
         docker rm "$CID" > /dev/null
       - |
         echo "Running google benchmarks..."
