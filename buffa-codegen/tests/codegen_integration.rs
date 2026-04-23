@@ -237,7 +237,11 @@ fn module_tree_basic() {
         ("bar.rs", "my.pkg"),
         ("baz.rs", "other"),
     ];
-    let tree = buffa_codegen::generate_module_tree(&entries, "", false);
+    let tree = buffa_codegen::generate_module_tree(
+        &entries,
+        buffa_codegen::IncludeMode::Relative(""),
+        false,
+    );
     assert!(tree.contains("pub mod my"));
     assert!(tree.contains("pub mod pkg"));
     assert!(tree.contains("pub mod other"));
@@ -247,8 +251,16 @@ fn module_tree_basic() {
 #[test]
 fn module_tree_inner_allow() {
     let entries = vec![("f.rs", "pkg")];
-    let with = buffa_codegen::generate_module_tree(&entries, "", true);
-    let without = buffa_codegen::generate_module_tree(&entries, "", false);
+    let with = buffa_codegen::generate_module_tree(
+        &entries,
+        buffa_codegen::IncludeMode::Relative(""),
+        true,
+    );
+    let without = buffa_codegen::generate_module_tree(
+        &entries,
+        buffa_codegen::IncludeMode::Relative(""),
+        false,
+    );
     assert!(with.contains("#![allow("));
     assert!(!without.contains("#![allow("));
 }
@@ -256,7 +268,11 @@ fn module_tree_inner_allow() {
 #[test]
 fn module_tree_keyword_escaping() {
     let entries = vec![("t.rs", "google.type")];
-    let tree = buffa_codegen::generate_module_tree(&entries, "", false);
+    let tree = buffa_codegen::generate_module_tree(
+        &entries,
+        buffa_codegen::IncludeMode::Relative(""),
+        false,
+    );
     assert!(tree.contains("pub mod r#type"));
 }
 

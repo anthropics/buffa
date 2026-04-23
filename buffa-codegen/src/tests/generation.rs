@@ -61,7 +61,7 @@ fn test_empty_file() {
         .iter()
         .find(|f| f.kind == GeneratedFileKind::PackageMod)
         .expect("stitcher present");
-    assert_eq!(stitcher.name, "_.mod.rs");
+    assert_eq!(stitcher.name, "buffa_.mod.rs");
     assert!(
         stitcher.content.contains("@generated"),
         "missing header comment"
@@ -75,7 +75,7 @@ fn test_package_to_mod_filename() {
         "google.protobuf.mod.rs"
     );
     assert_eq!(package_to_mod_filename("foo"), "foo.mod.rs");
-    assert_eq!(package_to_mod_filename(""), "_.mod.rs");
+    assert_eq!(package_to_mod_filename(""), "buffa_.mod.rs");
     assert_eq!(
         proto_path_to_stem("google/protobuf/timestamp.proto"),
         "google.protobuf.timestamp"

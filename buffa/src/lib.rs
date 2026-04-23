@@ -130,8 +130,9 @@ pub use ::bytes;
 /// }
 /// ```
 ///
-/// For the unnamed package, pass `"_"`. For checked-in generated code
-/// (no `OUT_DIR`), use [`include_proto_relative!`].
+/// For the unnamed package, pass `"buffa_"` (the reserved sentinel — no
+/// real package can use it). For checked-in generated code (no
+/// `OUT_DIR`), use [`include_proto_relative!`].
 #[macro_export]
 macro_rules! include_proto {
     ($pkg:literal) => {

@@ -88,7 +88,6 @@ pub(crate) fn generate_view_with_nesting(
     let oneof_idents = crate::oneof::resolve_oneof_idents(msg);
 
     let view_ident = format_ident!("{}View", rust_name);
-    let owned_ident = format_ident!("{}", rust_name);
 
     // Total module depth of the view-struct body below the package root.
     // All field-type / decode-arm / to-owned helpers below resolve paths
@@ -189,7 +188,11 @@ pub(crate) fn generate_view_with_nesting(
         let dotted = format!(".{proto_fqn}");
         let p = ctx
             .rust_type_relative(&dotted, current_package, view_depth)
-            .unwrap_or_else(|| owned_ident.to_string());
+            .ok_or_else(|| {
+                CodeGenError::Other(format!(
+                    "owned type for '{proto_fqn}' not resolvable from view tree"
+                ))
+            })?;
         rust_path_to_tokens(&p)
     };
 

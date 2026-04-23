@@ -12,7 +12,7 @@ use crate::CodeGenConfig;
 ///
 /// See `DESIGN.md` → "Generated code layout" for the full layout. The name
 /// is checked against proto package segments and message-module names by
-/// [`crate::check_reserved_sentinel`]; a collision is a hard error.
+/// [`crate::validate_file`]; a collision is a hard error.
 pub const SENTINEL_MOD: &str = "buffa_";
 
 /// A Rust type path split at the target-package boundary.
@@ -373,6 +373,15 @@ impl<'a> CodeGenContext<'a> {
             // Count the segments and strip that many from full_path.
             let within_segs = within_proto.split('.').count();
             let full_segs: Vec<&str> = full_path.split("::").collect();
+            // Invariant: `full_path` was built by `CodeGenContext::new` as
+            // `<rust_module>::<within>`, so it always has at least
+            // `within_segs` trailing segments. If this fires the type_map
+            // and package_of maps are out of sync.
+            debug_assert!(
+                full_segs.len() >= within_segs,
+                "extern path '{full_path}' has fewer segments than \
+                 within-package proto path '{within_proto}'"
+            );
             let cut = full_segs.len().saturating_sub(within_segs);
             full_segs[..cut].join("::")
         } else {
@@ -567,12 +576,10 @@ pub(crate) fn ancillary_prefix(
     use crate::idents::make_field_ident;
     use quote::quote;
 
-    let supers = "super::".repeat(from_nesting);
-    let supers_tokens: proc_macro2::TokenStream = if supers.is_empty() {
-        proc_macro2::TokenStream::new()
-    } else {
-        syn::parse_str(&supers).expect("valid super:: chain")
-    };
+    let mut supers_tokens = proc_macro2::TokenStream::new();
+    for _ in 0..from_nesting {
+        supers_tokens.extend(quote! { super:: });
+    }
 
     let sentinel = make_field_ident(SENTINEL_MOD);
     let kind_segs: Vec<_> = kind
@@ -1263,6 +1270,61 @@ mod tests {
         // `r#type` happens later in `idents::rust_path_to_tokens`.
         let result = resolve_extern_prefix("google.type", &[(".".into(), "crate::proto".into())]);
         assert_eq!(result, Some("crate::proto::google::type".into()));
+    }
+
+    // ── rust_type_relative_split — extern branch ────────────────────────
+
+    #[test]
+    fn test_split_extern_top_level() {
+        let outer = msg_with_nested("Value", vec![msg("Inner")]);
+        let files = [make_file(
+            "struct.proto",
+            "google.protobuf",
+            vec![outer],
+            vec![],
+        )];
+        let config = CodeGenConfig::default();
+        let extern_paths = vec![(
+            ".google.protobuf".into(),
+            "::buffa_types::google::protobuf".into(),
+        )];
+        let ctx = CodeGenContext::new(&files, &config, &extern_paths);
+
+        let split = ctx
+            .rust_type_relative_split(".google.protobuf.Value", "my.pkg", 3)
+            .expect("type resolves");
+        assert!(split.is_extern);
+        // Extern path is absolute → nesting irrelevant.
+        assert_eq!(split.to_package, "::buffa_types::google::protobuf");
+        assert_eq!(split.within_package, "Value");
+    }
+
+    #[test]
+    fn test_split_extern_nested_type() {
+        // Nested `.google.protobuf.Value.Inner` →
+        // extern path `::buffa_types::google::protobuf::value::Inner`.
+        // Segment-count slice: 2 within-package segments → cut after the
+        // extern module prefix.
+        let outer = msg_with_nested("Value", vec![msg("Inner")]);
+        let files = [make_file(
+            "struct.proto",
+            "google.protobuf",
+            vec![outer],
+            vec![],
+        )];
+        let config = CodeGenConfig::default();
+        let extern_paths = vec![(
+            ".google.protobuf".into(),
+            "::buffa_types::google::protobuf".into(),
+        )];
+        let ctx = CodeGenContext::new(&files, &config, &extern_paths);
+
+        let split = ctx
+            .rust_type_relative_split(".google.protobuf.Value.Inner", "my.pkg", 0)
+            .expect("nested type resolves");
+        assert!(split.is_extern);
+        assert_eq!(split.to_package, "::buffa_types::google::protobuf");
+        assert_eq!(split.within_package, "value::Inner");
     }
 
     #[test]

@@ -132,7 +132,11 @@ fn generate(request: &CodeGeneratorRequest) -> Result<CodeGeneratorResponse, Str
         .iter()
         .map(|(f, p)| (f.as_str(), p.as_str()))
         .collect();
-    let content = buffa_codegen::generate_module_tree(&borrowed, "", true);
+    let content = buffa_codegen::generate_module_tree(
+        &borrowed,
+        buffa_codegen::IncludeMode::Relative(""),
+        true,
+    );
 
     Ok(CodeGeneratorResponse {
         supported_features: Some(feature_flags()),
