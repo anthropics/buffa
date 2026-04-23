@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "buffa"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bytes",
  "hashbrown",
@@ -16,9 +16,10 @@ dependencies = [
 
 [[package]]
 name = "buffa-types"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "buffa",
+ "bytes",
  "serde",
  "serde_json",
  "thiserror",

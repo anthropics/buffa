@@ -319,164 +319,6 @@ pub const __STRUCT_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::typ
     text_encode: ::buffa::type_registry::any_encode_text::<Struct>,
     text_merge: ::buffa::type_registry::any_merge_text::<Struct>,
 };
-/// `Struct` represents a structured data value, consisting of fields
-/// which map to dynamically typed values. In some languages, `Struct`
-/// might be supported by a native representation. For example, in
-/// scripting languages like JS a struct is represented as an
-/// object. The details of that representation are described together
-/// with the proto support for the language.
-///
-/// The JSON representation for `Struct` is JSON object.
-#[derive(Clone, Debug, Default)]
-pub struct StructView<'a> {
-    /// Unordered map of dynamically typed values.
-    ///
-    /// Field 1: `fields` (map)
-    pub fields: ::buffa::MapView<'a, &'a str, ValueView<'a>>,
-    pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
-}
-impl<'a> StructView<'a> {
-    /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
-    ///
-    /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
-    /// and by generated sub-message decode arms with `depth - 1`.
-    ///
-    /// **Not part of the public API.** Named with a leading underscore to
-    /// signal that it is for generated-code use only.
-    #[doc(hidden)]
-    pub fn _decode_depth(
-        buf: &'a [u8],
-        depth: u32,
-    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        let mut view = Self::default();
-        view._merge_into_view(buf, depth)?;
-        ::core::result::Result::Ok(view)
-    }
-    /// Merge fields from `buf` into this view (proto merge semantics).
-    ///
-    /// Repeated fields append; singular fields last-wins; singular
-    /// MESSAGE fields merge recursively. Used by sub-message decode
-    /// arms when the same field appears multiple times on the wire.
-    ///
-    /// **Not part of the public API.**
-    #[doc(hidden)]
-    pub fn _merge_into_view(
-        &mut self,
-        buf: &'a [u8],
-        depth: u32,
-    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-        let _ = depth;
-        #[allow(unused_variables)]
-        let view = self;
-        let mut cur: &'a [u8] = buf;
-        while !cur.is_empty() {
-            let before_tag = cur;
-            let tag = ::buffa::encoding::Tag::decode(&mut cur)?;
-            match tag.field_number() {
-                1u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 1u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
-                    let entry_bytes = ::buffa::types::borrow_bytes(&mut cur)?;
-                    let mut entry_cur: &'a [u8] = entry_bytes;
-                    let mut key = "";
-                    let mut val = ::core::default::Default::default();
-                    while !entry_cur.is_empty() {
-                        let entry_tag = ::buffa::encoding::Tag::decode(&mut entry_cur)?;
-                        match entry_tag.field_number() {
-                            1 => {
-                                if entry_tag.wire_type()
-                                    != ::buffa::encoding::WireType::LengthDelimited
-                                {
-                                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                                        field_number: entry_tag.field_number(),
-                                        expected: 2u8,
-                                        actual: entry_tag.wire_type() as u8,
-                                    });
-                                }
-                                key = ::buffa::types::borrow_str(&mut entry_cur)?;
-                            }
-                            2 => {
-                                if entry_tag.wire_type()
-                                    != ::buffa::encoding::WireType::LengthDelimited
-                                {
-                                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                                        field_number: entry_tag.field_number(),
-                                        expected: 2u8,
-                                        actual: entry_tag.wire_type() as u8,
-                                    });
-                                }
-                                if depth == 0 {
-                                    return Err(::buffa::DecodeError::RecursionLimitExceeded);
-                                }
-                                let sub = ::buffa::types::borrow_bytes(&mut entry_cur)?;
-                                val = ValueView::_decode_depth(sub, depth - 1)?;
-                            }
-                            _ => {
-                                ::buffa::encoding::skip_field_depth(
-                                    entry_tag,
-                                    &mut entry_cur,
-                                    depth,
-                                )?;
-                            }
-                        }
-                    }
-                    view.fields.push(key, val);
-                }
-                _ => {
-                    ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
-                    let span_len = before_tag.len() - cur.len();
-                    view.__buffa_unknown_fields.push_raw(&before_tag[..span_len]);
-                }
-            }
-        }
-        ::core::result::Result::Ok(())
-    }
-}
-impl<'a> ::buffa::MessageView<'a> for StructView<'a> {
-    type Owned = Struct;
-    fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
-    }
-    fn decode_view_with_limit(
-        buf: &'a [u8],
-        depth: u32,
-    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        Self::_decode_depth(buf, depth)
-    }
-    /// Convert this view to the owned message type.
-    #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> Struct {
-        #[allow(unused_imports)]
-        use ::buffa::alloc::string::ToString as _;
-        Struct {
-            fields: self
-                .fields
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_owned_message()))
-                .collect(),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
-            ..::core::default::Default::default()
-        }
-    }
-}
-unsafe impl ::buffa::DefaultViewInstance for StructView<'static> {
-    fn default_view_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<StructView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
-unsafe impl<'a> ::buffa::HasDefaultViewInstance for StructView<'a> {
-    type Static = StructView<'static>;
-}
 /// `Value` represents a dynamically typed value which can be either
 /// null, a number, a string, a boolean, a recursive struct value, or a
 /// list of values. A producer of value is expected to set one of these
@@ -486,7 +328,7 @@ unsafe impl<'a> ::buffa::HasDefaultViewInstance for StructView<'a> {
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct Value {
-    pub kind: Option<value::KindOneof>,
+    pub kind: Option<buffa_::oneof::value::Kind>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
     #[doc(hidden)]
@@ -522,25 +364,25 @@ impl ::buffa::Message for Value {
         let mut size = 0u32;
         if let ::core::option::Option::Some(ref v) = self.kind {
             match v {
-                value::KindOneof::NullValue(x) => {
+                buffa_::oneof::value::Kind::NullValue(x) => {
                     size += 1u32 + ::buffa::types::int32_encoded_len(x.to_i32()) as u32;
                 }
-                value::KindOneof::NumberValue(_x) => {
+                buffa_::oneof::value::Kind::NumberValue(_x) => {
                     size += 1u32 + ::buffa::types::FIXED64_ENCODED_LEN as u32;
                 }
-                value::KindOneof::StringValue(x) => {
+                buffa_::oneof::value::Kind::StringValue(x) => {
                     size += 1u32 + ::buffa::types::string_encoded_len(x) as u32;
                 }
-                value::KindOneof::BoolValue(_x) => {
+                buffa_::oneof::value::Kind::BoolValue(_x) => {
                     size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
                 }
-                value::KindOneof::StructValue(x) => {
+                buffa_::oneof::value::Kind::StructValue(x) => {
                     let inner = x.compute_size();
                     size
                         += 1u32 + ::buffa::encoding::varint_len(inner as u64) as u32
                             + inner;
                 }
-                value::KindOneof::ListValue(x) => {
+                buffa_::oneof::value::Kind::ListValue(x) => {
                     let inner = x.compute_size();
                     size
                         += 1u32 + ::buffa::encoding::varint_len(inner as u64) as u32
@@ -557,7 +399,7 @@ impl ::buffa::Message for Value {
         use ::buffa::Enumeration as _;
         if let ::core::option::Option::Some(ref v) = self.kind {
             match v {
-                value::KindOneof::NullValue(x) => {
+                buffa_::oneof::value::Kind::NullValue(x) => {
                     ::buffa::encoding::Tag::new(
                             1u32,
                             ::buffa::encoding::WireType::Varint,
@@ -565,7 +407,7 @@ impl ::buffa::Message for Value {
                         .encode(buf);
                     ::buffa::types::encode_int32(x.to_i32(), buf);
                 }
-                value::KindOneof::NumberValue(x) => {
+                buffa_::oneof::value::Kind::NumberValue(x) => {
                     ::buffa::encoding::Tag::new(
                             2u32,
                             ::buffa::encoding::WireType::Fixed64,
@@ -573,7 +415,7 @@ impl ::buffa::Message for Value {
                         .encode(buf);
                     ::buffa::types::encode_double(*x, buf);
                 }
-                value::KindOneof::StringValue(x) => {
+                buffa_::oneof::value::Kind::StringValue(x) => {
                     ::buffa::encoding::Tag::new(
                             3u32,
                             ::buffa::encoding::WireType::LengthDelimited,
@@ -581,7 +423,7 @@ impl ::buffa::Message for Value {
                         .encode(buf);
                     ::buffa::types::encode_string(x, buf);
                 }
-                value::KindOneof::BoolValue(x) => {
+                buffa_::oneof::value::Kind::BoolValue(x) => {
                     ::buffa::encoding::Tag::new(
                             4u32,
                             ::buffa::encoding::WireType::Varint,
@@ -589,7 +431,7 @@ impl ::buffa::Message for Value {
                         .encode(buf);
                     ::buffa::types::encode_bool(*x, buf);
                 }
-                value::KindOneof::StructValue(x) => {
+                buffa_::oneof::value::Kind::StructValue(x) => {
                     ::buffa::encoding::Tag::new(
                             5u32,
                             ::buffa::encoding::WireType::LengthDelimited,
@@ -598,7 +440,7 @@ impl ::buffa::Message for Value {
                     ::buffa::encoding::encode_varint(x.cached_size() as u64, buf);
                     x.write_to(buf);
                 }
-                value::KindOneof::ListValue(x) => {
+                buffa_::oneof::value::Kind::ListValue(x) => {
                     ::buffa::encoding::Tag::new(
                             6u32,
                             ::buffa::encoding::WireType::LengthDelimited,
@@ -631,7 +473,7 @@ impl ::buffa::Message for Value {
                     });
                 }
                 self.kind = ::core::option::Option::Some(
-                    value::KindOneof::NullValue(
+                    buffa_::oneof::value::Kind::NullValue(
                         ::buffa::EnumValue::from(::buffa::types::decode_int32(buf)?),
                     ),
                 );
@@ -645,7 +487,9 @@ impl ::buffa::Message for Value {
                     });
                 }
                 self.kind = ::core::option::Option::Some(
-                    value::KindOneof::NumberValue(::buffa::types::decode_double(buf)?),
+                    buffa_::oneof::value::Kind::NumberValue(
+                        ::buffa::types::decode_double(buf)?,
+                    ),
                 );
             }
             3u32 => {
@@ -657,7 +501,9 @@ impl ::buffa::Message for Value {
                     });
                 }
                 self.kind = ::core::option::Option::Some(
-                    value::KindOneof::StringValue(::buffa::types::decode_string(buf)?),
+                    buffa_::oneof::value::Kind::StringValue(
+                        ::buffa::types::decode_string(buf)?,
+                    ),
                 );
             }
             4u32 => {
@@ -669,7 +515,9 @@ impl ::buffa::Message for Value {
                     });
                 }
                 self.kind = ::core::option::Option::Some(
-                    value::KindOneof::BoolValue(::buffa::types::decode_bool(buf)?),
+                    buffa_::oneof::value::Kind::BoolValue(
+                        ::buffa::types::decode_bool(buf)?,
+                    ),
                 );
             }
             5u32 => {
@@ -681,7 +529,7 @@ impl ::buffa::Message for Value {
                     });
                 }
                 if let ::core::option::Option::Some(
-                    value::KindOneof::StructValue(ref mut existing),
+                    buffa_::oneof::value::Kind::StructValue(ref mut existing),
                 ) = self.kind
                 {
                     ::buffa::Message::merge_length_delimited(
@@ -693,7 +541,7 @@ impl ::buffa::Message for Value {
                     let mut val = ::core::default::Default::default();
                     ::buffa::Message::merge_length_delimited(&mut val, buf, depth)?;
                     self.kind = ::core::option::Option::Some(
-                        value::KindOneof::StructValue(
+                        buffa_::oneof::value::Kind::StructValue(
                             ::buffa::alloc::boxed::Box::new(val),
                         ),
                     );
@@ -708,7 +556,7 @@ impl ::buffa::Message for Value {
                     });
                 }
                 if let ::core::option::Option::Some(
-                    value::KindOneof::ListValue(ref mut existing),
+                    buffa_::oneof::value::Kind::ListValue(ref mut existing),
                 ) = self.kind
                 {
                     ::buffa::Message::merge_length_delimited(
@@ -720,7 +568,9 @@ impl ::buffa::Message for Value {
                     let mut val = ::core::default::Default::default();
                     ::buffa::Message::merge_length_delimited(&mut val, buf, depth)?;
                     self.kind = ::core::option::Option::Some(
-                        value::KindOneof::ListValue(::buffa::alloc::boxed::Box::new(val)),
+                        buffa_::oneof::value::Kind::ListValue(
+                            ::buffa::alloc::boxed::Box::new(val),
+                        ),
                     );
                 }
             }
@@ -758,7 +608,7 @@ impl ::buffa::text::TextFormat for Value {
         use ::buffa::Enumeration as _;
         if let ::core::option::Option::Some(ref __v) = self.kind {
             match __v {
-                value::KindOneof::NullValue(__v) => {
+                buffa_::oneof::value::Kind::NullValue(__v) => {
                     enc.write_field_name("null_value")?;
                     match __v {
                         ::buffa::EnumValue::Known(__e) => {
@@ -767,23 +617,23 @@ impl ::buffa::text::TextFormat for Value {
                         ::buffa::EnumValue::Unknown(__n) => enc.write_enum_number(*__n)?,
                     }
                 }
-                value::KindOneof::NumberValue(__v) => {
+                buffa_::oneof::value::Kind::NumberValue(__v) => {
                     enc.write_field_name("number_value")?;
                     enc.write_f64(*__v)?;
                 }
-                value::KindOneof::StringValue(__v) => {
+                buffa_::oneof::value::Kind::StringValue(__v) => {
                     enc.write_field_name("string_value")?;
                     enc.write_string(__v)?;
                 }
-                value::KindOneof::BoolValue(__v) => {
+                buffa_::oneof::value::Kind::BoolValue(__v) => {
                     enc.write_field_name("bool_value")?;
                     enc.write_bool(*__v)?;
                 }
-                value::KindOneof::StructValue(__v) => {
+                buffa_::oneof::value::Kind::StructValue(__v) => {
                     enc.write_field_name("struct_value")?;
                     enc.write_message(&**__v)?;
                 }
-                value::KindOneof::ListValue(__v) => {
+                buffa_::oneof::value::Kind::ListValue(__v) => {
                     enc.write_field_name("list_value")?;
                     enc.write_message(&**__v)?;
                 }
@@ -802,7 +652,7 @@ impl ::buffa::text::TextFormat for Value {
             match __name {
                 "null_value" => {
                     self.kind = ::core::option::Option::Some(
-                        value::KindOneof::NullValue(
+                        buffa_::oneof::value::Kind::NullValue(
                             dec
                                 .read_enum_by_name::<NullValue>()
                                 .map(::buffa::EnumValue::from)?,
@@ -811,22 +661,24 @@ impl ::buffa::text::TextFormat for Value {
                 }
                 "number_value" => {
                     self.kind = ::core::option::Option::Some(
-                        value::KindOneof::NumberValue(dec.read_f64()?),
+                        buffa_::oneof::value::Kind::NumberValue(dec.read_f64()?),
                     );
                 }
                 "string_value" => {
                     self.kind = ::core::option::Option::Some(
-                        value::KindOneof::StringValue(dec.read_string()?.into_owned()),
+                        buffa_::oneof::value::Kind::StringValue(
+                            dec.read_string()?.into_owned(),
+                        ),
                     );
                 }
                 "bool_value" => {
                     self.kind = ::core::option::Option::Some(
-                        value::KindOneof::BoolValue(dec.read_bool()?),
+                        buffa_::oneof::value::Kind::BoolValue(dec.read_bool()?),
                     );
                 }
                 "struct_value" => {
                     if let ::core::option::Option::Some(
-                        value::KindOneof::StructValue(ref mut __existing),
+                        buffa_::oneof::value::Kind::StructValue(ref mut __existing),
                     ) = self.kind
                     {
                         dec.merge_message(&mut **__existing)?;
@@ -834,7 +686,7 @@ impl ::buffa::text::TextFormat for Value {
                         let mut __m = ::core::default::Default::default();
                         dec.merge_message(&mut __m)?;
                         self.kind = ::core::option::Option::Some(
-                            value::KindOneof::StructValue(
+                            buffa_::oneof::value::Kind::StructValue(
                                 ::buffa::alloc::boxed::Box::new(__m),
                             ),
                         );
@@ -842,7 +694,7 @@ impl ::buffa::text::TextFormat for Value {
                 }
                 "list_value" => {
                     if let ::core::option::Option::Some(
-                        value::KindOneof::ListValue(ref mut __existing),
+                        buffa_::oneof::value::Kind::ListValue(ref mut __existing),
                     ) = self.kind
                     {
                         dec.merge_message(&mut **__existing)?;
@@ -850,7 +702,7 @@ impl ::buffa::text::TextFormat for Value {
                         let mut __m = ::core::default::Default::default();
                         dec.merge_message(&mut __m)?;
                         self.kind = ::core::option::Option::Some(
-                            value::KindOneof::ListValue(
+                            buffa_::oneof::value::Kind::ListValue(
                                 ::buffa::alloc::boxed::Box::new(__m),
                             ),
                         );
@@ -868,278 +720,6 @@ pub const __VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type
     text_encode: ::buffa::type_registry::any_encode_text::<Value>,
     text_merge: ::buffa::type_registry::any_merge_text::<Value>,
 };
-/// `Value` represents a dynamically typed value which can be either
-/// null, a number, a string, a boolean, a recursive struct value, or a
-/// list of values. A producer of value is expected to set one of these
-/// variants. Absence of any variant indicates an error.
-///
-/// The JSON representation for `Value` is JSON value.
-#[derive(Clone, Debug, Default)]
-pub struct ValueView<'a> {
-    pub kind: ::core::option::Option<value::KindOneofView<'a>>,
-    pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
-}
-impl<'a> ValueView<'a> {
-    /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
-    ///
-    /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
-    /// and by generated sub-message decode arms with `depth - 1`.
-    ///
-    /// **Not part of the public API.** Named with a leading underscore to
-    /// signal that it is for generated-code use only.
-    #[doc(hidden)]
-    pub fn _decode_depth(
-        buf: &'a [u8],
-        depth: u32,
-    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        let mut view = Self::default();
-        view._merge_into_view(buf, depth)?;
-        ::core::result::Result::Ok(view)
-    }
-    /// Merge fields from `buf` into this view (proto merge semantics).
-    ///
-    /// Repeated fields append; singular fields last-wins; singular
-    /// MESSAGE fields merge recursively. Used by sub-message decode
-    /// arms when the same field appears multiple times on the wire.
-    ///
-    /// **Not part of the public API.**
-    #[doc(hidden)]
-    pub fn _merge_into_view(
-        &mut self,
-        buf: &'a [u8],
-        depth: u32,
-    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-        let _ = depth;
-        #[allow(unused_variables)]
-        let view = self;
-        let mut cur: &'a [u8] = buf;
-        while !cur.is_empty() {
-            let before_tag = cur;
-            let tag = ::buffa::encoding::Tag::decode(&mut cur)?;
-            match tag.field_number() {
-                1u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 1u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
-                    view.kind = Some(
-                        value::KindOneofView::NullValue(
-                            ::buffa::EnumValue::from(
-                                ::buffa::types::decode_int32(&mut cur)?,
-                            ),
-                        ),
-                    );
-                }
-                2u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Fixed64 {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 2u32,
-                            expected: 1u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
-                    view.kind = Some(
-                        value::KindOneofView::NumberValue(
-                            ::buffa::types::decode_double(&mut cur)?,
-                        ),
-                    );
-                }
-                3u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 3u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
-                    view.kind = Some(
-                        value::KindOneofView::StringValue(
-                            ::buffa::types::borrow_str(&mut cur)?,
-                        ),
-                    );
-                }
-                4u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 4u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
-                    view.kind = Some(
-                        value::KindOneofView::BoolValue(
-                            ::buffa::types::decode_bool(&mut cur)?,
-                        ),
-                    );
-                }
-                5u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 5u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
-                    if depth == 0 {
-                        return Err(::buffa::DecodeError::RecursionLimitExceeded);
-                    }
-                    let sub = ::buffa::types::borrow_bytes(&mut cur)?;
-                    if let Some(value::KindOneofView::StructValue(ref mut existing)) = view
-                        .kind
-                    {
-                        existing._merge_into_view(sub, depth - 1)?;
-                    } else {
-                        view.kind = Some(
-                            value::KindOneofView::StructValue(
-                                ::buffa::alloc::boxed::Box::new(
-                                    StructView::_decode_depth(sub, depth - 1)?,
-                                ),
-                            ),
-                        );
-                    }
-                }
-                6u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 6u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
-                    if depth == 0 {
-                        return Err(::buffa::DecodeError::RecursionLimitExceeded);
-                    }
-                    let sub = ::buffa::types::borrow_bytes(&mut cur)?;
-                    if let Some(value::KindOneofView::ListValue(ref mut existing)) = view
-                        .kind
-                    {
-                        existing._merge_into_view(sub, depth - 1)?;
-                    } else {
-                        view.kind = Some(
-                            value::KindOneofView::ListValue(
-                                ::buffa::alloc::boxed::Box::new(
-                                    ListValueView::_decode_depth(sub, depth - 1)?,
-                                ),
-                            ),
-                        );
-                    }
-                }
-                _ => {
-                    ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
-                    let span_len = before_tag.len() - cur.len();
-                    view.__buffa_unknown_fields.push_raw(&before_tag[..span_len]);
-                }
-            }
-        }
-        ::core::result::Result::Ok(())
-    }
-}
-impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
-    type Owned = Value;
-    fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
-    }
-    fn decode_view_with_limit(
-        buf: &'a [u8],
-        depth: u32,
-    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        Self::_decode_depth(buf, depth)
-    }
-    /// Convert this view to the owned message type.
-    #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> Value {
-        #[allow(unused_imports)]
-        use ::buffa::alloc::string::ToString as _;
-        Value {
-            kind: self
-                .kind
-                .as_ref()
-                .map(|v| match v {
-                    value::KindOneofView::NullValue(v) => value::KindOneof::NullValue(*v),
-                    value::KindOneofView::NumberValue(v) => {
-                        value::KindOneof::NumberValue(*v)
-                    }
-                    value::KindOneofView::StringValue(v) => {
-                        value::KindOneof::StringValue(v.to_string())
-                    }
-                    value::KindOneofView::BoolValue(v) => value::KindOneof::BoolValue(*v),
-                    value::KindOneofView::StructValue(v) => {
-                        value::KindOneof::StructValue(
-                            ::buffa::alloc::boxed::Box::new(v.to_owned_message()),
-                        )
-                    }
-                    value::KindOneofView::ListValue(v) => {
-                        value::KindOneof::ListValue(
-                            ::buffa::alloc::boxed::Box::new(v.to_owned_message()),
-                        )
-                    }
-                }),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
-            ..::core::default::Default::default()
-        }
-    }
-}
-unsafe impl ::buffa::DefaultViewInstance for ValueView<'static> {
-    fn default_view_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<ValueView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
-unsafe impl<'a> ::buffa::HasDefaultViewInstance for ValueView<'a> {
-    type Static = ValueView<'static>;
-}
-pub mod value {
-    #[allow(unused_imports)]
-    use super::*;
-    /// The kind of value.
-    #[derive(Clone, PartialEq, Debug)]
-    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
-    pub enum KindOneof {
-        NullValue(::buffa::EnumValue<super::NullValue>),
-        NumberValue(f64),
-        StringValue(::buffa::alloc::string::String),
-        BoolValue(bool),
-        StructValue(::buffa::alloc::boxed::Box<super::Struct>),
-        ListValue(::buffa::alloc::boxed::Box<super::ListValue>),
-    }
-    impl ::buffa::Oneof for KindOneof {}
-    impl From<super::Struct> for KindOneof {
-        fn from(v: super::Struct) -> Self {
-            Self::StructValue(::buffa::alloc::boxed::Box::new(v))
-        }
-    }
-    impl From<super::Struct> for ::core::option::Option<KindOneof> {
-        fn from(v: super::Struct) -> Self {
-            Self::Some(KindOneof::from(v))
-        }
-    }
-    impl From<super::ListValue> for KindOneof {
-        fn from(v: super::ListValue) -> Self {
-            Self::ListValue(::buffa::alloc::boxed::Box::new(v))
-        }
-    }
-    impl From<super::ListValue> for ::core::option::Option<KindOneof> {
-        fn from(v: super::ListValue) -> Self {
-            Self::Some(KindOneof::from(v))
-        }
-    }
-    #[derive(Clone, Debug)]
-    pub enum KindOneofView<'a> {
-        NullValue(::buffa::EnumValue<super::NullValue>),
-        NumberValue(f64),
-        StringValue(&'a str),
-        BoolValue(bool),
-        StructValue(::buffa::alloc::boxed::Box<super::StructView<'a>>),
-        ListValue(::buffa::alloc::boxed::Box<super::ListValueView<'a>>),
-    }
-}
 /// `ListValue` is a wrapper around a repeated field of values.
 ///
 /// The JSON representation for `ListValue` is JSON array.
@@ -1299,112 +879,3 @@ pub const __LIST_VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa:
     text_encode: ::buffa::type_registry::any_encode_text::<ListValue>,
     text_merge: ::buffa::type_registry::any_merge_text::<ListValue>,
 };
-/// `ListValue` is a wrapper around a repeated field of values.
-///
-/// The JSON representation for `ListValue` is JSON array.
-#[derive(Clone, Debug, Default)]
-pub struct ListValueView<'a> {
-    /// Repeated field of dynamically typed values.
-    ///
-    /// Field 1: `values`
-    pub values: ::buffa::RepeatedView<'a, ValueView<'a>>,
-    pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
-}
-impl<'a> ListValueView<'a> {
-    /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
-    ///
-    /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
-    /// and by generated sub-message decode arms with `depth - 1`.
-    ///
-    /// **Not part of the public API.** Named with a leading underscore to
-    /// signal that it is for generated-code use only.
-    #[doc(hidden)]
-    pub fn _decode_depth(
-        buf: &'a [u8],
-        depth: u32,
-    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        let mut view = Self::default();
-        view._merge_into_view(buf, depth)?;
-        ::core::result::Result::Ok(view)
-    }
-    /// Merge fields from `buf` into this view (proto merge semantics).
-    ///
-    /// Repeated fields append; singular fields last-wins; singular
-    /// MESSAGE fields merge recursively. Used by sub-message decode
-    /// arms when the same field appears multiple times on the wire.
-    ///
-    /// **Not part of the public API.**
-    #[doc(hidden)]
-    pub fn _merge_into_view(
-        &mut self,
-        buf: &'a [u8],
-        depth: u32,
-    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-        let _ = depth;
-        #[allow(unused_variables)]
-        let view = self;
-        let mut cur: &'a [u8] = buf;
-        while !cur.is_empty() {
-            let before_tag = cur;
-            let tag = ::buffa::encoding::Tag::decode(&mut cur)?;
-            match tag.field_number() {
-                1u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 1u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
-                    if depth == 0 {
-                        return Err(::buffa::DecodeError::RecursionLimitExceeded);
-                    }
-                    let sub = ::buffa::types::borrow_bytes(&mut cur)?;
-                    view.values.push(ValueView::_decode_depth(sub, depth - 1)?);
-                }
-                _ => {
-                    ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
-                    let span_len = before_tag.len() - cur.len();
-                    view.__buffa_unknown_fields.push_raw(&before_tag[..span_len]);
-                }
-            }
-        }
-        ::core::result::Result::Ok(())
-    }
-}
-impl<'a> ::buffa::MessageView<'a> for ListValueView<'a> {
-    type Owned = ListValue;
-    fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
-    }
-    fn decode_view_with_limit(
-        buf: &'a [u8],
-        depth: u32,
-    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        Self::_decode_depth(buf, depth)
-    }
-    /// Convert this view to the owned message type.
-    #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> ListValue {
-        #[allow(unused_imports)]
-        use ::buffa::alloc::string::ToString as _;
-        ListValue {
-            values: self.values.iter().map(|v| v.to_owned_message()).collect(),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
-            ..::core::default::Default::default()
-        }
-    }
-}
-unsafe impl ::buffa::DefaultViewInstance for ListValueView<'static> {
-    fn default_view_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<ListValueView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
-unsafe impl<'a> ::buffa::HasDefaultViewInstance for ListValueView<'a> {
-    type Static = ListValueView<'static>;
-}

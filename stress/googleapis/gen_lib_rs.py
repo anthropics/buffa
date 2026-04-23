@@ -68,24 +68,24 @@ def main():
             line = line.strip()
             if line and not line.startswith("#"):
                 exclude_files.add(line)
-    rs_files = sorted(gen_dir.glob("*.rs"))
+    # Only the per-package `<pkg>.mod.rs` stitchers need wiring; the
+    # per-proto content files (`*.rs`, `*.__view.rs`, …) are reached via
+    # `include!` from the stitcher.
+    rs_files = sorted(gen_dir.glob("*.mod.rs"))
 
     if not rs_files:
-        print("No .rs files found in", gen_dir, file=sys.stderr)
+        print("No .mod.rs files found in", gen_dir, file=sys.stderr)
         sys.exit(1)
 
-    # Group files by package path (all segments except the last one,
-    # which is the proto file name).
-    # e.g. "google.api.expr.v1alpha1.checked.rs" -> package ["google", "api", "expr", "v1alpha1"]
+    # `<pkg>.mod.rs` → stem `<pkg>.mod` → parts[:-1] = package segments.
     packages = defaultdict(list)
     excluded = []
     for rs_file in rs_files:
         if rs_file.name in exclude_files:
             excluded.append(rs_file.name)
             continue
-        stem = rs_file.stem  # e.g. "google.api.expr.v1alpha1.checked"
+        stem = rs_file.stem  # e.g. "google.api.expr.v1alpha1.mod"
         parts = stem.split(".")
-        # The package is everything except the last segment.
         pkg = tuple(parts[:-1])
         packages[pkg].append(rs_file.name)
 

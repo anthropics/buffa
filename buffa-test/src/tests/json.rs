@@ -51,7 +51,7 @@ fn test_json_oneof_round_trip() {
     use crate::json_types::WithOneof;
 
     let msg = WithOneof {
-        value: Some(crate::json_types::with_oneof::ValueOneof::Text(
+        value: Some(crate::json_types::buffa_::oneof::with_oneof::Value::Text(
             "hello".into(),
         )),
         ..Default::default()
@@ -66,7 +66,7 @@ fn test_json_oneof_all_scalar_types_round_trip() {
     // Exercises serde_helper_path dispatch for all proto3-JSON-special
     // scalar types in oneof position, and the corresponding runtime
     // json_helpers::{int64, uint32, uint64, float, double, bytes} paths.
-    use crate::json_types::with_oneof_types::KindOneof;
+    use crate::json_types::buffa_::oneof::with_oneof_types::Kind as KindOneof;
     use crate::json_types::WithOneofTypes;
 
     #[rustfmt::skip]
@@ -106,7 +106,7 @@ fn test_json_oneof_all_scalar_types_round_trip() {
 #[test]
 fn test_json_oneof_float_special_values() {
     // NaN/Infinity/-Infinity serialize as string tokens per proto3-JSON spec.
-    use crate::json_types::with_oneof_types::KindOneof;
+    use crate::json_types::buffa_::oneof::with_oneof_types::Kind as KindOneof;
     use crate::json_types::WithOneofTypes;
 
     #[rustfmt::skip]
@@ -151,7 +151,7 @@ fn test_json_oneof_float_special_values() {
 fn test_json_oneof_null_value() {
     // google.protobuf.NullValue in a oneof serializes as JSON null.
     // On deserialize, JSON null populates the NullValue variant (not unset).
-    use crate::json_types::with_oneof_types::KindOneof;
+    use crate::json_types::buffa_::oneof::with_oneof_types::Kind as KindOneof;
     use crate::json_types::WithOneofTypes;
     use buffa_types::google::protobuf::NullValue;
 
@@ -174,7 +174,7 @@ fn test_json_oneof_null_value() {
 fn test_json_oneof_float_deserialize_from_integer() {
     // proto3-JSON: float/double fields accept integer JSON values.
     // Exercises json_helpers::float::visit_i64/visit_u64.
-    use crate::json_types::with_oneof_types::KindOneof;
+    use crate::json_types::buffa_::oneof::with_oneof_types::Kind as KindOneof;
     use crate::json_types::WithOneofTypes;
 
     let decoded: WithOneofTypes = serde_json::from_str(r#"{"f32": 42}"#).unwrap();
@@ -437,7 +437,7 @@ fn test_json_optional_open_enum_integer_deserialize() {
 
 #[test]
 fn test_json_mixed_oneof_and_fields_round_trip() {
-    use crate::json_types::mixed_oneof_and_fields::ChoiceOneof;
+    use crate::json_types::buffa_::oneof::mixed_oneof_and_fields::Choice as ChoiceOneof;
     use crate::json_types::{MixedOneofAndFields, Scalar};
 
     let msg = MixedOneofAndFields {
@@ -490,7 +490,8 @@ fn test_json_mixed_value_field_null_forwarding() {
     // not "field absent". The custom Deserialize must forward null to
     // Value's own Deserialize rather than skipping the field.
     use crate::json_types::MixedOneofAndFields;
-    use buffa_types::google::protobuf::{value::KindOneof, NullValue};
+    use buffa_types::google::protobuf::buffa_::oneof::value::Kind as KindOneof;
+    use buffa_types::google::protobuf::NullValue;
 
     let decoded: MixedOneofAndFields = serde_json::from_str(r#"{"dynamic": null}"#).unwrap();
     assert!(decoded.dynamic.is_set(), "null should set the Value field");

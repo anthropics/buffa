@@ -50,7 +50,7 @@ fn test_type_attribute_on_message() {
     });
     let config = attr_config(vec![(".", "#[derive(Hash)]")], vec![], vec![]);
     let files = generate(&[file], &["msg.proto".to_string()], &config).expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     assert!(
         content.contains("derive(Hash)"),
         "type_attribute should appear on struct: {content}"
@@ -68,7 +68,7 @@ fn test_type_attribute_on_enum() {
     // Use an attribute not in the default enum derive set.
     let config = attr_config(vec![(".", "#[derive(serde::Serialize)]")], vec![], vec![]);
     let files = generate(&[file], &["color.proto".to_string()], &config).expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     assert!(
         content.contains("derive(serde::Serialize)"),
         "type_attribute should appear on enum: {content}"
@@ -95,7 +95,7 @@ fn test_type_attribute_scoped_to_specific_type() {
         vec![],
     );
     let files = generate(&[file], &["multi.proto".to_string()], &config).expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     // Attribute should only appear in the Targeted region, not near Other.
     let targeted_pos = content
         .find("pub struct Targeted")
@@ -129,7 +129,7 @@ fn test_message_attribute_on_struct_not_enum() {
     });
     let config = attr_config(vec![], vec![], vec![(".", "#[serde(default)]")]);
     let files = generate(&[file], &["mixed.proto".to_string()], &config).expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     // Exactly one occurrence: on the struct, not the enum.
     let total = content.matches("serde(default)").count();
     assert_eq!(
@@ -168,7 +168,7 @@ fn test_enum_attribute_on_enum_not_struct() {
     let file = mixed_msg_enum_file();
     let config = attr_config_full(vec![], vec![], vec![], vec![(".", "#[derive(Hash)]")]);
     let files = generate(&[file], &["mixed.proto".to_string()], &config).expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     // Hash already appears in the enum's built-in derive, so we use the
     // expanded `,` separator inside the user-supplied derive to avoid a
     // false-positive substring match. enum_attribute injects a *separate*
@@ -209,18 +209,18 @@ fn test_enum_attribute_scoped_to_specific_enum() {
         vec![],
         vec![],
         vec![],
-        vec![(".Targeted", "#[allow(non_camel_case_types)]")],
+        vec![(".Targeted", "#[derive(Ord, PartialOrd)]")],
     );
     let files =
         generate(&[file], &["two_enums.proto".to_string()], &config).expect("should generate");
-    let content = &files[0].content;
-    let count = content.matches("non_camel_case_types").count();
+    let content = &joined(&files);
+    let count = content.matches("derive(Ord, PartialOrd)").count();
     assert_eq!(
         count, 1,
         "attribute should land on Targeted only, found {count} matches: {content}"
     );
     // Verify the single match is associated with `Targeted`, not `Untouched`.
-    let attr_pos = content.find("non_camel_case_types").unwrap();
+    let attr_pos = content.find("derive(Ord, PartialOrd)").unwrap();
     let targeted_pos = content.find("pub enum Targeted").expect("Targeted enum");
     let untouched_pos = content.find("pub enum Untouched").expect("Untouched enum");
     assert!(
@@ -244,7 +244,7 @@ fn test_enum_attribute_does_not_apply_to_struct() {
         vec![(".", "#[doc = \"enum_only_marker\"]")],
     );
     let files = generate(&[file], &["mixed.proto".to_string()], &config).expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     let total = content.matches("enum_only_marker").count();
     assert_eq!(
         total, 1,
@@ -278,7 +278,7 @@ fn test_field_attribute_on_specific_field() {
         vec![],
     );
     let files = generate(&[file], &["fields.proto".to_string()], &config).expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     // Exactly one occurrence, and it must be near secret_key not public_name.
     let total = content.matches("serde(skip)").count();
     assert_eq!(
@@ -309,7 +309,7 @@ fn test_field_attribute_catchall() {
     let config = attr_config(vec![], vec![(".", "#[doc = \"custom\"]")], vec![]);
     let files =
         generate(&[file], &["allfields.proto".to_string()], &config).expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     // Both fields should have the attribute.
     let count = content.matches("custom").count();
     assert!(
@@ -351,7 +351,7 @@ fn test_type_attribute_reaches_oneof_enum() {
         vec![],
     );
     let files = generate(&[file], &["oo.proto".to_string()], &config).expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     assert!(
         content.contains("#[derive(Hash)]"),
         "type_attribute should reach oneof enum: {content}"
@@ -371,7 +371,7 @@ fn test_field_attribute_reaches_oneof_variant() {
         vec![],
     );
     let files = generate(&[file], &["oo.proto".to_string()], &config).expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     assert!(
         content.contains("only_a"),
         "field_attribute should reach oneof variant: {content}"
@@ -423,7 +423,7 @@ fn test_no_custom_attributes_by_default() {
         &CodeGenConfig::default(),
     )
     .expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     // No custom derives beyond the standard set.
     assert!(
         !content.contains("serde"),

@@ -585,24 +585,14 @@ impl Config {
                 .collect()
         };
 
-        // Generate Rust source.
+        // Generate Rust source. Per-proto content files plus a per-package
+        // `.mod.rs` stitcher; only the stitchers need wiring into the
+        // module tree (content files are reached via `include!` from
+        // there).
         let generated =
             buffa_codegen::generate(&fds.file, &files_to_generate, &self.codegen_config)?;
 
-        // Build a map from generated file name to proto package for the
-        // module tree generator.
-        let file_to_package: std::collections::HashMap<String, String> = fds
-            .file
-            .iter()
-            .map(|fd| {
-                let proto_name = fd.name.as_deref().unwrap_or("");
-                let rs_name = buffa_codegen::proto_path_to_rust_module(proto_name);
-                let package = fd.package.as_deref().unwrap_or("").to_string();
-                (rs_name, package)
-            })
-            .collect();
-
-        // Write output files and collect (name, package) pairs.
+        // Write output files; collect (name, package) for PackageMod entries.
         let mut output_entries: Vec<(String, String)> = Vec::new();
         for file in generated {
             let path = out_dir.join(&file.name);
@@ -610,8 +600,9 @@ impl Config {
                 std::fs::create_dir_all(parent)?;
             }
             write_if_changed(&path, file.content.as_bytes())?;
-            let package = file_to_package.get(&file.name).cloned().unwrap_or_default();
-            output_entries.push((file.name, package));
+            if file.kind == buffa_codegen::GeneratedFileKind::PackageMod {
+                output_entries.push((file.name, file.package));
+            }
         }
 
         // Generate the include file if requested.

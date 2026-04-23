@@ -1,6 +1,7 @@
 //! Basic round-trips: Empty, Person, Address, unknown-field preservation.
 
 use super::round_trip;
+use crate::basic::buffa_::oneof;
 use crate::basic::*;
 use buffa::Message;
 
@@ -191,19 +192,19 @@ fn test_map_empty_round_trip() {
 fn test_oneof_round_trip() {
     // Set the email variant.
     let mut msg = Person::default();
-    msg.contact = Some(person::ContactOneof::Email("alice@example.com".into()));
+    msg.contact = Some(oneof::person::Contact::Email("alice@example.com".into()));
     let decoded = round_trip(&msg);
     assert_eq!(
         decoded.contact,
-        Some(person::ContactOneof::Email("alice@example.com".into()))
+        Some(oneof::person::Contact::Email("alice@example.com".into()))
     );
 
     // Overwrite with phone variant — last write wins.
-    msg.contact = Some(person::ContactOneof::Phone("+1-555-1234".into()));
+    msg.contact = Some(oneof::person::Contact::Phone("+1-555-1234".into()));
     let decoded = round_trip(&msg);
     assert_eq!(
         decoded.contact,
-        Some(person::ContactOneof::Phone("+1-555-1234".into()))
+        Some(oneof::person::Contact::Phone("+1-555-1234".into()))
     );
 
     // Unset.

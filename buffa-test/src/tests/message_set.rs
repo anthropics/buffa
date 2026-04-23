@@ -8,7 +8,8 @@
 //! `{number: type_id, data: LengthDelimited(payload)}`. Decode unwraps the
 //! group; encode rewraps it.
 
-use crate::msgset::{Container, Marker, Payload, MARKER_EXT, PAYLOAD_EXT};
+use crate::msgset::buffa_::ext::{MARKER_EXT, PAYLOAD_EXT};
+use crate::msgset::{Container, Marker, Payload};
 use buffa::{ExtensionSet, Message};
 
 #[test]

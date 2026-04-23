@@ -118,6 +118,43 @@ pub extern crate alloc;
 #[doc(hidden)]
 pub use ::bytes;
 
+/// Include the generated stitcher for a proto **package** from `OUT_DIR`.
+///
+/// Codegen emits one `<pkg>.mod.rs` per package which `include!`s the
+/// per-proto content files and authors the `buffa_::{view, oneof, ext}`
+/// ancillary tree, so a single macro call brings in everything.
+///
+/// ```ignore
+/// pub mod my_pkg {
+///     buffa::include_proto!("my.pkg");
+/// }
+/// ```
+///
+/// For the unnamed package, pass `"_"`. For checked-in generated code
+/// (no `OUT_DIR`), use [`include_proto_relative!`].
+#[macro_export]
+macro_rules! include_proto {
+    ($pkg:literal) => {
+        include!(concat!(env!("OUT_DIR"), "/", $pkg, ".mod.rs"));
+    };
+}
+
+/// Like [`include_proto!`] but takes a relative directory instead of
+/// reading `OUT_DIR` — for crates that check generated code into the
+/// source tree (e.g. `buffa-types`, `buffa-descriptor`).
+///
+/// ```ignore
+/// pub mod protobuf {
+///     buffa::include_proto_relative!("generated", "google.protobuf");
+/// }
+/// ```
+#[macro_export]
+macro_rules! include_proto_relative {
+    ($dir:literal, $pkg:literal) => {
+        include!(concat!($dir, "/", $pkg, ".mod.rs"));
+    };
+}
+
 #[cfg(feature = "json")]
 pub mod any_registry;
 mod cached_size;

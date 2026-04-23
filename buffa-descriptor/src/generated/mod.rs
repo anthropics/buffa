@@ -19,7 +19,7 @@
 pub mod descriptor {
     // Re-export the buffa crate so `::buffa::` paths in generated code resolve.
     use buffa;
-    include!("google.protobuf.descriptor.rs");
+    include!("google.protobuf.mod.rs");
 }
 
 // Re-export the specific descriptor types referenced via `super::` from the
@@ -42,5 +42,5 @@ pub mod compiler {
     pub use crate::generated::descriptor::GeneratedCodeInfo;
 
     use buffa;
-    include!("google.protobuf.compiler.plugin.rs");
+    include!("google.protobuf.compiler.mod.rs");
 }

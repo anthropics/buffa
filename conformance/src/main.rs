@@ -41,18 +41,12 @@ pub mod protobuf_test_messages {
 
     pub mod proto3 {
         pub use super::google;
-        include!(concat!(
-            env!("OUT_DIR"),
-            "/google.protobuf.test_messages_proto3.rs"
-        ));
+        buffa::include_proto!("protobuf_test_messages.proto3");
     }
 
     pub mod proto2 {
         pub use super::google;
-        include!(concat!(
-            env!("OUT_DIR"),
-            "/google.protobuf.test_messages_proto2.rs"
-        ));
+        buffa::include_proto!("protobuf_test_messages.proto2");
     }
 }
 
@@ -69,27 +63,18 @@ pub mod protobuf_test_messages_editions {
 
     pub mod proto3 {
         pub use super::google;
-        include!(concat!(
-            env!("OUT_DIR"),
-            "/editions.golden.test_messages_proto3_editions.rs"
-        ));
+        buffa::include_proto!("protobuf_test_messages.editions.proto3");
     }
 
     pub mod proto2 {
         pub use super::google;
-        include!(concat!(
-            env!("OUT_DIR"),
-            "/editions.golden.test_messages_proto2_editions.rs"
-        ));
+        buffa::include_proto!("protobuf_test_messages.editions.proto2");
     }
 
     // Pure edition 2023: file-level DELIMITED message encoding. Binary-only
     // — no JSON generation. The package is `protobuf_test_messages.editions`
     // so the module path here matches where the suite expects to find it.
-    include!(concat!(
-        env!("OUT_DIR"),
-        "/conformance.test_protos.test_messages_edition2023.rs"
-    ));
+    buffa::include_proto!("protobuf_test_messages.editions");
 }
 
 #[cfg(has_editions_protos)]
@@ -130,15 +115,15 @@ fn setup_type_registry() {
     // (JSON + text) + extension entries. `test_messages_proto3.proto`
     // has no extensions, so its register_types is Any-only;
     // `test_messages_proto2.proto` declares `extension_int32` at field 120.
-    proto3::register_types(&mut reg);
-    proto2::register_types(&mut reg);
+    proto3::buffa_::register_types(&mut reg);
+    proto2::buffa_::register_types(&mut reg);
     #[cfg(has_editions_protos)]
     {
-        editions_proto3::register_types(&mut reg);
-        editions_proto2::register_types(&mut reg);
+        editions_proto3::buffa_::register_types(&mut reg);
+        editions_proto2::buffa_::register_types(&mut reg);
         // Edition2023's `groupliketype` / `delimited_ext` extensions —
         // needed for the text `[pkg.ext] { ... }` bracket tests.
-        protobuf_test_messages_editions::register_types(&mut reg);
+        protobuf_test_messages_editions::buffa_::register_types(&mut reg);
     }
 
     set_type_registry(reg);
@@ -344,21 +329,21 @@ fn process_via_view(req: &envelope::Request) -> envelope::Response {
 
     match req.message_type.as_str() {
         MSG_PROTO3 => roundtrip_proto3(
-            || decode_binary_via_view::<proto3::TestAllTypesProto3View<'_>>(b),
+            || decode_binary_via_view::<proto3::buffa_::view::TestAllTypesProto3View<'_>>(b),
             encode_proto3_binary,
         ),
         MSG_PROTO2 => roundtrip_proto2(
-            || decode_binary_via_view::<proto2::TestAllTypesProto2View<'_>>(b),
+            || decode_binary_via_view::<proto2::buffa_::view::TestAllTypesProto2View<'_>>(b),
             encode_proto2_binary,
         ),
         #[cfg(has_editions_protos)]
         MSG_EDITIONS_PROTO3 => roundtrip(
-            || decode_binary_via_view::<editions_proto3::TestAllTypesProto3View<'_>>(b),
+            || decode_binary_via_view::<editions_proto3::buffa_::view::TestAllTypesProto3View<'_>>(b),
             encode_binary,
         ),
         #[cfg(has_editions_protos)]
         MSG_EDITIONS_PROTO2 => roundtrip(
-            || decode_binary_via_view::<editions_proto2::TestAllTypesProto2View<'_>>(b),
+            || decode_binary_via_view::<editions_proto2::buffa_::view::TestAllTypesProto2View<'_>>(b),
             encode_binary,
         ),
         other => Response::Skipped(format!("message type '{other}' not in view dispatch")),

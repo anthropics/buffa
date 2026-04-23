@@ -3,6 +3,7 @@
 
 use buffa::{Message, MessageView};
 use buffa_types::google::protobuf as wkt;
+use buffa_types::google::protobuf::buffa_::view as wkt_view;
 
 fn encode_decode<T: Message>(msg: &T) -> T {
     let bytes = msg.encode_to_vec();
@@ -233,7 +234,7 @@ fn timestamp_view_roundtrip() {
         ..Default::default()
     };
     let bytes = ts.encode_to_vec();
-    assert_eq!(view_roundtrip::<wkt::TimestampView>(&bytes), ts);
+    assert_eq!(view_roundtrip::<wkt_view::TimestampView>(&bytes), ts);
 }
 
 #[test]
@@ -244,14 +245,14 @@ fn duration_view_roundtrip() {
         ..Default::default()
     };
     let bytes = d.encode_to_vec();
-    assert_eq!(view_roundtrip::<wkt::DurationView>(&bytes), d);
+    assert_eq!(view_roundtrip::<wkt_view::DurationView>(&bytes), d);
 }
 
 #[test]
 fn empty_view_roundtrip() {
     let e = wkt::Empty::default();
     let bytes = e.encode_to_vec();
-    assert_eq!(view_roundtrip::<wkt::EmptyView>(&bytes), e);
+    assert_eq!(view_roundtrip::<wkt_view::EmptyView>(&bytes), e);
 }
 
 #[test]
@@ -262,7 +263,7 @@ fn any_view_roundtrip() {
         ..Default::default()
     };
     let bytes = any.encode_to_vec();
-    let owned = view_roundtrip::<wkt::AnyView>(&bytes);
+    let owned = view_roundtrip::<wkt_view::AnyView>(&bytes);
     assert_eq!(owned.type_url, any.type_url);
     assert_eq!(owned.value, any.value);
 }
@@ -274,7 +275,7 @@ fn field_mask_view_roundtrip() {
         ..Default::default()
     };
     let bytes = fm.encode_to_vec();
-    assert_eq!(view_roundtrip::<wkt::FieldMaskView>(&bytes), fm);
+    assert_eq!(view_roundtrip::<wkt_view::FieldMaskView>(&bytes), fm);
 }
 
 #[test]
@@ -284,7 +285,7 @@ fn string_value_view_roundtrip() {
         ..Default::default()
     };
     let bytes = w.encode_to_vec();
-    assert_eq!(view_roundtrip::<wkt::StringValueView>(&bytes), w);
+    assert_eq!(view_roundtrip::<wkt_view::StringValueView>(&bytes), w);
 }
 
 #[test]
@@ -294,7 +295,7 @@ fn bytes_value_view_roundtrip() {
         ..Default::default()
     };
     let bytes = w.encode_to_vec();
-    assert_eq!(view_roundtrip::<wkt::BytesValueView>(&bytes), w);
+    assert_eq!(view_roundtrip::<wkt_view::BytesValueView>(&bytes), w);
 }
 
 #[test]
@@ -304,5 +305,5 @@ fn int64_value_view_roundtrip() {
         ..Default::default()
     };
     let bytes = w.encode_to_vec();
-    assert_eq!(view_roundtrip::<wkt::Int64ValueView>(&bytes), w);
+    assert_eq!(view_roundtrip::<wkt_view::Int64ValueView>(&bytes), w);
 }

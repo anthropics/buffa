@@ -365,13 +365,17 @@ fn enum_unknown_value_preserved_map() {
 #[test]
 fn enum_unknown_value_preserved_oneof() {
     let msg = EnumContexts {
-        choice: Some(enum_contexts::ChoiceOneof::Picked(EnumValue::Unknown(77))),
+        choice: Some(
+            crate::proto3sem::buffa_::oneof::enum_contexts::Choice::Picked(EnumValue::Unknown(77)),
+        ),
         ..Default::default()
     };
     let decoded = round_trip(&msg);
     assert_eq!(
         decoded.choice,
-        Some(enum_contexts::ChoiceOneof::Picked(EnumValue::Unknown(77)))
+        Some(
+            crate::proto3sem::buffa_::oneof::enum_contexts::Choice::Picked(EnumValue::Unknown(77))
+        )
     );
 }
 
@@ -566,7 +570,7 @@ fn view_implicit_presence_matches_owned() {
         ..Default::default()
     };
     let bytes = msg.encode_to_vec();
-    let view = ImplicitScalarsView::decode_view(&bytes).unwrap();
+    let view = buffa_::view::ImplicitScalarsView::decode_view(&bytes).unwrap();
     assert_eq!(view.i32, 42);
     assert_eq!(view.s, "view");
     assert_eq!(view.by, &[0xAA, 0xBB]);
@@ -587,7 +591,7 @@ fn view_optional_some_zero_matches_owned() {
         ..Default::default()
     };
     let bytes = msg.encode_to_vec();
-    let view = OptionalAllTypesView::decode_view(&bytes).unwrap();
+    let view = buffa_::view::OptionalAllTypesView::decode_view(&bytes).unwrap();
     assert_eq!(view.i32, Some(0));
     assert_eq!(view.s, Some(""));
     assert_eq!(view.b, Some(false));
@@ -604,7 +608,7 @@ fn view_open_enum_unknown_preserved() {
         ..Default::default()
     };
     let bytes = msg.encode_to_vec();
-    let view = EnumContextsView::decode_view(&bytes).unwrap();
+    let view = buffa_::view::EnumContextsView::decode_view(&bytes).unwrap();
     assert_eq!(view.singular, EnumValue::Unknown(55));
     let rep_collected: Vec<_> = view.rep.iter().copied().collect();
     assert_eq!(

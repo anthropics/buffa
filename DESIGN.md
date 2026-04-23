@@ -225,6 +225,52 @@ let view = OwnedView::<PersonView>::decode(bytes)?;
 println!("name: {}", view.name);  // Deref, zero-copy, 'static + Send
 ```
 
+**Generated code layout — the `buffa_::` sentinel tree:**
+
+Ancillary generated items (views, oneof enums, file-level extensions, the per-package `register_types` fn) live under a single reserved module per package — `buffa_::` — instead of being interleaved with owned types. The sentinel is the **only** name buffa reserves in user namespace; codegen errors with `ReservedModuleName` if a proto package segment or message name would snake_case to `buffa_`.
+
+```text
+<pkg>::Foo                                # owned struct (unchanged)
+<pkg>::foo::Bar                           # nested owned (unchanged)
+<pkg>::buffa_::view::FooView<'a>          # view struct
+<pkg>::buffa_::view::foo::BarView<'a>     # nested view (mirrors owned tree)
+<pkg>::buffa_::view::oneof::foo::Kind<'a> # view oneof enum (no suffix)
+<pkg>::buffa_::oneof::foo::Kind           # owned oneof enum (no suffix)
+<pkg>::buffa_::ext::MY_EXT                # file-level extension const
+<pkg>::buffa_::register_types(…)          # one fn per package
+```
+
+Oneof and view-oneof enums drop the `Oneof`/`View` suffix — the tree position disambiguates. View structs keep the `View` suffix because owned and view types are routinely co-imported (`use pkg::{Foo, buffa_::view::FooView}`).
+
+This makes name collisions **structurally impossible**: a oneof `kind` and a nested message `Kind` can coexist because they land in different trees. There is no suffix-escalation or rename escape hatch; codegen emits proto names verbatim.
+
+**File layout — five content files + one stitcher:**
+
+Each `.proto` emits five sibling content files into `OUT_DIR`:
+
+| File                      | Contents                                  |
+|---------------------------|-------------------------------------------|
+| `<stem>.rs`               | Owned structs, enums, nested extensions   |
+| `<stem>.__view.rs`        | View structs                              |
+| `<stem>.__oneof.rs`       | Owned oneof enums                         |
+| `<stem>.__view_oneof.rs`  | View oneof enums                          |
+| `<stem>.__ext.rs`         | File-level extension consts               |
+
+Each proto **package** additionally emits one `<dotted.pkg>.mod.rs` stitcher that `include!`s the content files and authors the `pub mod buffa_ { … }` wrapper. Consumers wire up only the stitcher:
+
+```rust,ignore
+pub mod my_pkg {
+    buffa::include_proto!("my.pkg");  // → include!(OUT_DIR/my.pkg.mod.rs)
+}
+```
+
+`buffa::include_proto_relative!("dir", "my.pkg")` does the same for checked-in generated code (no `OUT_DIR`). `buffa-build`'s `_include.rs` and `protoc-gen-buffa-packaging` both emit module trees that reference only the stitchers.
+
+The per-proto content files mean editing one `.proto` regenerates only its five siblings (incremental friendly); the per-package stitcher means `register_types` is naturally one fn per package, so multi-file packages (e.g. seven WKT files in `google.protobuf`) no longer collide.
+
+<!-- TODO: optional convenience re-exports `pub use buffa_::oneof::foo::Kind` in
+     `pkg::foo::` (omitted on collision) for prost-adjacent ergonomics. -->
+
 ### 3. MessageField\<T\> — Ergonomic Optional Messages
 
 Prost uses `Option<Box<M>>` for optional message fields, which creates unwrapping ceremony everywhere:

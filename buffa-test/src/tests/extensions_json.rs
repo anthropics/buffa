@@ -2,9 +2,9 @@
 //! round-trip through `serde_json` via the generated `register_types` +
 //! the runtime's `#[serde(flatten)]` wrapper.
 
-use crate::extjson::{
-    register_types, Ann, Carrier, Color, ANN, ANNS, BIGS, COLOR, COLORS, NUMS, WEIGHT,
-};
+use crate::extjson::buffa_::ext::{ANN, ANNS, BIGS, COLOR, COLORS, NUMS, WEIGHT};
+use crate::extjson::buffa_::register_types;
+use crate::extjson::{Ann, Carrier, Color};
 use buffa::type_registry::{set_type_registry, TypeRegistry};
 use buffa::{Enumeration, ExtensionSet};
 

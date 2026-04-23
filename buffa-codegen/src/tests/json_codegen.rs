@@ -27,7 +27,7 @@ fn test_json_enum_has_custom_impls_and_from_proto_name() {
     });
     let files =
         generate(&[file], &["color.proto".to_string()], &json_config()).expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     // Custom Serialize impl uses proto_name
     assert!(
         content.contains("impl ::serde::Serialize for Color"),
@@ -67,7 +67,7 @@ fn test_json_enum_alias_in_from_proto_name() {
     });
     let files =
         generate(&[file], &["status.proto".to_string()], &json_config()).expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     // Primary name must be in from_proto_name
     assert!(
         content.contains(r#""STARTED" => ::core::option::Option::Some(Self::STARTED)"#),
@@ -124,7 +124,7 @@ fn test_json_message_has_derive_and_field_attrs() {
 
     let files = generate(&[file], &["scalars_json.proto".to_string()], &json_config())
         .expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     // Struct gets serde derive and default
     assert!(
         content.contains("derive(::serde::Serialize, ::serde::Deserialize)"),
@@ -200,7 +200,7 @@ fn test_json_oneof_field_is_flattened() {
 
     let files = generate(&[file], &["oneof_json.proto".to_string()], &json_config())
         .expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     // The oneof field uses flatten so its variants appear as top-level JSON fields.
     assert!(
         content.contains("serde(flatten)"),
@@ -247,7 +247,7 @@ fn test_json_oneof_deserialize_null_and_duplicate_handling() {
 
     let files = generate(&[file], &["oneof_deser.proto".to_string()], &json_config())
         .expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
 
     // Null handling: each arm wraps with NullableDeserializeSeed
     assert!(
@@ -332,7 +332,7 @@ fn test_json_oneof_value_variant_forwards_null() {
         &json_config(),
     )
     .expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     // The `meta` (Value) arm should use DefaultDeserializeSeed directly
     // (forward null), not NullableDeserializeSeed (intercept null).
     // Look for the meta match arm pattern: it should NOT be nullable.
@@ -364,7 +364,7 @@ fn test_no_serde_attrs_without_generate_json_flag() {
         &CodeGenConfig::default(),
     )
     .expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     assert!(
         !content.contains("serde"),
         "serde attrs must be absent without generate_json: {content}"
@@ -383,7 +383,7 @@ fn test_json_any_const_emitted_per_message() {
     });
     let files = generate(&[file], &["any_entry.proto".to_string()], &json_config())
         .expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     assert!(
         content.contains("pub const __WIDGET_JSON_ANY: ::buffa::type_registry::JsonAnyEntry"),
         "missing JSON Any const: {content}"
@@ -426,17 +426,17 @@ fn test_register_types_emitted_with_json_any_only() {
     });
     let files =
         generate(&[file], &["reg.proto".to_string()], &json_config()).expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     assert!(
         content.contains("pub fn register_types(reg: &mut ::buffa::type_registry::TypeRegistry)"),
         "missing register_types fn: {content}"
     );
     assert!(
-        content.contains("reg.register_json_any(__FOO_JSON_ANY)"),
+        content.contains("reg.register_json_any(super::__FOO_JSON_ANY)"),
         "missing Foo JSON Any registration: {content}"
     );
     assert!(
-        content.contains("reg.register_json_any(__BAR_JSON_ANY)"),
+        content.contains("reg.register_json_any(super::__BAR_JSON_ANY)"),
         "missing Bar JSON Any registration: {content}"
     );
     // No generate_text → no register_text_* calls in the body.
@@ -461,13 +461,13 @@ fn test_register_types_includes_nested_message_any_entries() {
     });
     let files = generate(&[file], &["nested_any.proto".to_string()], &json_config())
         .expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     assert!(
-        content.contains("reg.register_json_any(__OUTER_JSON_ANY)"),
+        content.contains("reg.register_json_any(super::__OUTER_JSON_ANY)"),
         "missing top-level Outer: {content}"
     );
     assert!(
-        content.contains("reg.register_json_any(outer::__INNER_JSON_ANY)"),
+        content.contains("reg.register_json_any(super::outer::__INNER_JSON_ANY)"),
         "missing nested Inner path: {content}"
     );
 }
@@ -485,7 +485,7 @@ fn test_any_entry_not_emitted_without_generate_json_or_text() {
         &CodeGenConfig::default(),
     )
     .expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     assert!(
         !content.contains("_JSON_ANY") && !content.contains("_TEXT_ANY"),
         "Any consts must be absent: {content}"
@@ -511,7 +511,7 @@ fn test_text_any_emitted_independent_of_json() {
         ..Default::default()
     };
     let files = generate(&[file], &["textonly.proto".to_string()], &cfg).expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     assert!(
         content.contains("pub const __MSG_TEXT_ANY: ::buffa::type_registry::TextAnyEntry"),
         "missing TEXT_ANY const: {content}"
@@ -525,7 +525,7 @@ fn test_text_any_emitted_independent_of_json() {
         "JSON_ANY must be absent with generate_json off: {content}"
     );
     assert!(
-        content.contains("reg.register_text_any(__MSG_TEXT_ANY)"),
+        content.contains("reg.register_text_any(super::__MSG_TEXT_ANY)"),
         "missing register_text_any call: {content}"
     );
     assert!(
@@ -562,7 +562,7 @@ fn message_named_result_does_not_shadow_std_result_in_serde() {
     let files =
         generate(&[file], &["job.proto".to_string()], &json_config()).expect("should generate");
 
-    let content = &files[0].content;
+    let content = &joined(&files);
 
     // The custom Deserialize impl for Result must use ::core::result::Result,
     // not bare `Result` which would resolve to the proto message type.

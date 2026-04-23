@@ -140,10 +140,10 @@ fn test_different_snake_case_names_no_conflict() {
 }
 
 #[test]
-fn test_nested_type_oneof_coexists_with_suffix() {
-    // Nested message "MyField" and oneof "my_field" coexist: the oneof
-    // enum is always named "MyFieldOneof" under the uniform-suffix rule,
-    // which happens to be collision-free against the nested struct.
+fn test_nested_type_oneof_coexist_in_separate_trees() {
+    // Nested message "MyField" and oneof "my_field" coexist structurally:
+    // the oneof enum lives at `buffa_::oneof::parent::MyField`, the nested
+    // struct at `parent::MyField`.
     let msg = DescriptorProto {
         name: Some("Parent".to_string()),
         nested_type: vec![DescriptorProto {
@@ -168,11 +168,11 @@ fn test_nested_type_oneof_coexists_with_suffix() {
 
     let config = CodeGenConfig::default();
     let result = generate(&[file], &["test.proto".to_string()], &config);
-    let files = result.expect("nested type + oneof name collision should resolve, not error");
-    let content = &files[0].content;
+    let files = result.expect("nested type + oneof same-name should coexist");
+    let content = &joined(&files);
     assert!(
-        content.contains("MyFieldOneof"),
-        "oneof enum should be suffixed with Oneof: {content}"
+        content.contains("pub enum MyField {"),
+        "oneof enum should drop Oneof suffix: {content}"
     );
     assert!(
         content.contains("pub struct MyField"),
@@ -239,105 +239,22 @@ fn test_nested_enum_oneof_coexists_with_suffix() {
 
     let config = CodeGenConfig::default();
     let result = generate(&[file], &["test.proto".to_string()], &config);
-    let files = result.expect("nested enum + oneof name collision should resolve, not error");
-    let content = &files[0].content;
-    assert!(
-        content.contains("RegionCodesOneof"),
-        "oneof enum should be suffixed with Oneof: {content}"
-    );
-    assert!(
-        content.contains("pub enum RegionCodes"),
-        "nested enum should keep its original name: {content}"
-    );
-}
-
-#[test]
-fn test_nested_type_oneof_view_uses_suffix() {
-    // When view generation is on, the view enum uses the uniform
-    // suffixed name (MyFieldOneofView) alongside its owned counterpart.
-    let msg = DescriptorProto {
-        name: Some("Parent".to_string()),
-        nested_type: vec![DescriptorProto {
-            name: Some("MyField".to_string()),
-            ..Default::default()
-        }],
-        oneof_decl: vec![OneofDescriptorProto {
-            name: Some("my_field".to_string()),
-            ..Default::default()
-        }],
-        field: vec![{
-            let mut f = make_field("val", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
-            f.oneof_index = Some(0);
-            f
-        }],
-        ..Default::default()
-    };
-    let mut file = proto3_file("test.proto");
-    file.package = Some("pkg".to_string());
-    file.message_type = vec![msg];
-
-    let config = CodeGenConfig::default(); // views enabled by default
-    let result = generate(&[file], &["test.proto".to_string()], &config);
-    let files = result.expect("view codegen should handle oneof rename");
-    let content = &files[0].content;
-    assert!(
-        content.contains("MyFieldOneofView"),
-        "view enum should use suffixed name: {content}"
-    );
-}
-
-#[test]
-fn test_oneof_coexists_with_nested_view_struct_name() {
-    // Nested message `MyFieldView` + oneof `my_field` with views enabled:
-    // under the uniform-suffix rule the oneof enum is `MyFieldOneof` and
-    // its view is `MyFieldOneofView`; neither name collides with the
-    // nested message's view struct (also `MyFieldView`).
-    let msg = DescriptorProto {
-        name: Some("Parent".to_string()),
-        nested_type: vec![DescriptorProto {
-            name: Some("MyFieldView".to_string()),
-            ..Default::default()
-        }],
-        oneof_decl: vec![OneofDescriptorProto {
-            name: Some("my_field".to_string()),
-            ..Default::default()
-        }],
-        field: vec![{
-            let mut f = make_field("val", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
-            f.oneof_index = Some(0);
-            f
-        }],
-        ..Default::default()
-    };
-    let mut file = proto3_file("test.proto");
-    file.package = Some("pkg".to_string());
-    file.message_type = vec![msg];
-
-    let config = CodeGenConfig::default();
-    let files = generate(&[file], &["test.proto".to_string()], &config)
-        .expect("uniform suffix keeps the oneof clear of nested view name");
-    let content = &files[0].content;
-    assert!(
-        content.contains("pub enum MyFieldOneof {"),
-        "owned oneof enum should be MyFieldOneof: {content}"
-    );
-    assert!(
-        content.contains("pub enum MyFieldOneofView<"),
-        "view oneof enum should be MyFieldOneofView<'a>: {content}"
-    );
-    // The nested message's own view struct remains unchanged.
-    assert!(
-        content.contains("pub struct MyFieldView"),
-        "nested message view struct must be preserved: {content}"
+    let files = result.expect("nested enum + oneof same-name should coexist");
+    let content = &joined(&files);
+    // Both `pub enum RegionCodes` declarations exist — one in the owned
+    // tree (the proto enum), one in `buffa_::oneof::` (the oneof enum).
+    assert_eq!(
+        content.matches("pub enum RegionCodes {").count(),
+        2,
+        "expected two RegionCodes enums (proto + oneof): {content}"
     );
 }
 
 #[test]
 fn test_sibling_oneof_view_names_do_not_collide() {
-    // Two sibling oneofs `my_field` and `my_field_view`. Under the
-    // uniform-suffix rule they become `MyFieldOneof`/`MyFieldOneofView`
-    // and `MyFieldViewOneof`/`MyFieldViewOneofView` — never collide with
-    // each other or with their own view counterparts.
+    // Two sibling oneofs `my_field` and `my_field_view`. Both live in
+    // `buffa_::oneof::parent::{MyField, MyFieldView}` — distinct because
+    // protoc rejects duplicate oneof names.
     let msg = DescriptorProto {
         name: Some("Parent".to_string()),
         oneof_decl: vec![
@@ -374,212 +291,119 @@ fn test_sibling_oneof_view_names_do_not_collide() {
         &CodeGenConfig::default(),
     )
     .expect("sibling oneof names must resolve without collision");
-    let content = &files[0].content;
+    let content = &joined(&files);
     assert!(
-        content.contains("pub enum MyFieldOneof {"),
-        "first oneof owned enum should be MyFieldOneof: {content}"
+        content.contains("pub enum MyField {"),
+        "first oneof owned enum: {content}"
     );
     assert!(
-        content.contains("pub enum MyFieldOneofView<"),
-        "first oneof view enum should be MyFieldOneofView<'a>: {content}"
-    );
-    assert!(
-        content.contains("pub enum MyFieldViewOneof {"),
-        "second oneof owned enum should be MyFieldViewOneof: {content}"
-    );
-    assert!(
-        content.contains("pub enum MyFieldViewOneofView<"),
-        "second oneof view enum should be MyFieldViewOneofView<'a>: {content}"
+        content.contains("pub enum MyFieldView {"),
+        "second oneof owned enum: {content}"
     );
 }
 
 #[test]
-fn test_oneof_suffix_conflict_error_includes_scope() {
-    // Verify the diagnostic carries the parent message's FQN so users can
-    // locate which message triggered the error in a large descriptor set.
-    let msg = DescriptorProto {
-        name: Some("Parent".to_string()),
-        nested_type: vec![
-            DescriptorProto {
-                name: Some("MyField".to_string()),
-                ..Default::default()
-            },
-            DescriptorProto {
-                name: Some("MyFieldOneof".to_string()),
-                ..Default::default()
-            },
-        ],
-        oneof_decl: vec![OneofDescriptorProto {
-            name: Some("my_field".to_string()),
-            ..Default::default()
-        }],
-        field: vec![{
-            let mut f = make_field("val", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
-            f.oneof_index = Some(0);
-            f
-        }],
-        ..Default::default()
-    };
+fn test_foo_and_fooview_siblings_coexist() {
+    // Messages "Foo" and "FooView" — Foo's view (`buffa_::view::FooView`)
+    // and the owned `FooView` struct (`pkg::FooView`) live in different
+    // trees. Previously rejected via ViewNameConflict.
     let mut file = proto3_file("test.proto");
     file.package = Some("pkg".to_string());
-    file.message_type = vec![msg];
+    file.message_type = vec![
+        DescriptorProto {
+            name: Some("Foo".to_string()),
+            ..Default::default()
+        },
+        DescriptorProto {
+            name: Some("FooView".to_string()),
+            ..Default::default()
+        },
+    ];
 
+    let config = CodeGenConfig::default();
+    let result = generate(&[file], &["test.proto".to_string()], &config);
+    let files = result.expect("Foo + FooView siblings should coexist");
+    let content = &joined(&files);
+    assert!(content.contains("pub struct Foo {"));
+    // pkg::FooView (owned) and buffa_::view::FooView<'a> (Foo's view).
+    assert!(content.contains("pub struct FooView {"));
+    assert!(content.contains("pub struct FooView<'a>"));
+}
+
+#[test]
+fn test_top_level_message_named_view_compiles() {
+    // Regression vs PR #54's bug: a top-level `message View { Inner }`
+    // emits `pub mod view {}` (its nested-type module). Ancillary types
+    // live under `buffa_::view::`, NOT a bare `pub mod view {}`, so no
+    // E0428.
+    let mut file = proto3_file("test.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type = vec![DescriptorProto {
+        name: Some("View".to_string()),
+        nested_type: vec![DescriptorProto {
+            name: Some("Inner".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }];
+
+    let result = generate(
+        &[file],
+        &["test.proto".to_string()],
+        &CodeGenConfig::default(),
+    );
+    let files = result.expect("top-level `message View` must compile");
+    // Each content file must parse individually.
+    for f in files
+        .iter()
+        .filter(|f| f.kind != GeneratedFileKind::PackageMod)
+    {
+        syn::parse_str::<syn::File>(&f.content).expect("generated content must parse");
+    }
+    let content = joined(&files);
+    // The sentinel wraps the ancillary tree; the message's own
+    // `pub mod view` (its nested-type module) is in the owned content.
+    assert!(content.contains("pub mod buffa_ {"));
+}
+
+#[test]
+fn test_reserved_sentinel_package_segment_rejected() {
+    let mut file = proto3_file("test.proto");
+    file.package = Some("foo.buffa_".to_string());
+    file.message_type = vec![DescriptorProto {
+        name: Some("X".to_string()),
+        ..Default::default()
+    }];
     let err = generate(
         &[file],
         &["test.proto".to_string()],
         &CodeGenConfig::default(),
     )
-    .expect_err("double collision must error");
-    match err {
-        CodeGenError::OneofNameConflict {
-            scope,
-            oneof_name,
-            attempted,
-        } => {
-            assert_eq!(scope, "pkg.Parent");
-            assert_eq!(oneof_name, "my_field");
-            assert_eq!(attempted, "MyFieldOneof");
-        }
-        other => panic!("expected OneofNameConflict, got {other:?}"),
-    }
-}
-
-#[test]
-fn test_oneof_name_conflict_errors() {
-    // A nested type literally named "MyFieldOneof" alongside oneof
-    // "my_field" leaves the uniform-suffix name with nowhere to go —
-    // users must rename one side in the `.proto`.
-    let msg = DescriptorProto {
-        name: Some("Parent".to_string()),
-        nested_type: vec![DescriptorProto {
-            name: Some("MyFieldOneof".to_string()),
-            ..Default::default()
-        }],
-        oneof_decl: vec![OneofDescriptorProto {
-            name: Some("my_field".to_string()),
-            ..Default::default()
-        }],
-        field: vec![{
-            let mut f = make_field("val", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
-            f.oneof_index = Some(0);
-            f
-        }],
-        ..Default::default()
-    };
-    let mut file = proto3_file("test.proto");
-    file.package = Some("pkg".to_string());
-    file.message_type = vec![msg];
-
-    let config = CodeGenConfig::default();
-    let result = generate(&[file], &["test.proto".to_string()], &config);
-    assert!(result.is_err());
-    let err = result.unwrap_err().to_string();
+    .expect_err("buffa_ package segment must be rejected");
     assert!(
-        err.contains("MyFieldOneof"),
-        "error should mention the attempted name: {err}"
+        matches!(err, CodeGenError::ReservedModuleName { .. }),
+        "expected ReservedModuleName, got {err:?}"
     );
 }
 
 #[test]
-fn test_sibling_oneofs_get_distinct_names() {
-    // Two oneofs `my_field` and `my_field_oneof` — both want
-    // `MyFieldOneof` as their Rust name. Sequential allocation must
-    // assign distinct names, e.g. `MyFieldOneof` and `MyFieldOneofOneof`.
-    let msg = DescriptorProto {
-        name: Some("Parent".to_string()),
-        oneof_decl: vec![
-            OneofDescriptorProto {
-                name: Some("my_field".to_string()),
-                ..Default::default()
-            },
-            OneofDescriptorProto {
-                name: Some("my_field_oneof".to_string()),
-                ..Default::default()
-            },
-        ],
-        field: vec![
-            {
-                let mut f = make_field("a", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
-                f.oneof_index = Some(0);
-                f
-            },
-            {
-                let mut f = make_field("b", 2, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
-                f.oneof_index = Some(1);
-                f
-            },
-        ],
-        ..Default::default()
-    };
+fn test_reserved_sentinel_message_name_rejected() {
+    // Message name `Buffa_` snake_cases to `buffa_`.
     let mut file = proto3_file("test.proto");
     file.package = Some("pkg".to_string());
-    file.message_type = vec![msg];
-
-    let config = CodeGenConfig {
-        generate_views: false,
+    file.message_type = vec![DescriptorProto {
+        name: Some("Buffa_".to_string()),
         ..Default::default()
-    };
-    let result = generate(&[file], &["test.proto".to_string()], &config);
-    let files = result.expect("sibling oneofs should get distinct names");
-    let content = &files[0].content;
-    assert!(
-        content.contains("MyFieldOneof"),
-        "first oneof should be suffixed: {content}"
-    );
-    assert!(
-        content.contains("MyFieldOneofOneof"),
-        "second oneof should be double-suffixed: {content}"
-    );
-}
-
-#[test]
-fn test_view_name_conflict_detected() {
-    // Messages "Foo" and "FooView" — Foo's view type collides with FooView struct.
-    let mut file = proto3_file("test.proto");
-    file.package = Some("pkg".to_string());
-    file.message_type = vec![
-        DescriptorProto {
-            name: Some("Foo".to_string()),
-            ..Default::default()
-        },
-        DescriptorProto {
-            name: Some("FooView".to_string()),
-            ..Default::default()
-        },
-    ];
-
-    let config = CodeGenConfig::default(); // views enabled by default
-    let result = generate(&[file], &["test.proto".to_string()], &config);
-    assert!(result.is_err());
-    let err = result.unwrap_err().to_string();
-    assert!(err.contains("Foo"), "should mention owned message: {err}");
-    assert!(
-        err.contains("FooView"),
-        "should mention view collision: {err}"
-    );
-}
-
-#[test]
-fn test_view_name_conflict_not_checked_when_views_disabled() {
-    let mut file = proto3_file("test.proto");
-    file.package = Some("pkg".to_string());
-    file.message_type = vec![
-        DescriptorProto {
-            name: Some("Foo".to_string()),
-            ..Default::default()
-        },
-        DescriptorProto {
-            name: Some("FooView".to_string()),
-            ..Default::default()
-        },
-    ];
-
-    let config = CodeGenConfig {
-        generate_views: false,
-        ..Default::default()
-    };
-    let result = generate(&[file], &["test.proto".to_string()], &config);
-    assert!(result.is_ok(), "no conflict when views are disabled");
+    }];
+    let err = generate(
+        &[file],
+        &["test.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("Buffa_ message name must be rejected");
+    let msg = err.to_string();
+    assert!(msg.contains("buffa_"), "error should name sentinel: {msg}");
+    assert!(msg.contains("pkg.Buffa_"), "error should locate it: {msg}");
 }
 
 #[test]
@@ -667,7 +491,7 @@ fn test_nested_message_named_option_does_not_shadow_prelude() {
     };
     let result = generate(&[file], &["option_shadow.proto".to_string()], &config);
     let files = result.expect("nested Option message should not break codegen");
-    let content = &files[0].content;
+    let content = &joined(&files);
     assert!(
         content.contains("pub struct Option"),
         "nested Option struct must exist: {content}"
@@ -717,7 +541,7 @@ fn test_top_level_message_named_option_qualifies_option() {
     };
     let result = generate(&[file], &["option_top.proto".to_string()], &config);
     let files = result.expect("top-level Option should not break codegen");
-    let content = &files[0].content;
+    let content = &joined(&files);
     // The Wrapper struct must use qualified Option for its optional field.
     assert!(
         content.contains("::core::option::Option<"),
@@ -786,7 +610,7 @@ fn test_nested_option_blocked_propagates_through_sibling_subtree() {
     };
     let files = generate(&[file], &["option_deep.proto".to_string()], &config)
         .expect("nested Option sibling should not break codegen");
-    let content = &files[0].content;
+    let content = &joined(&files);
     // `Middle.note` lives in `mod outer` (Option in scope); `Inner.x` lives
     // in `mod outer::middle` (Option in scope via `use super::*`). Both must
     // be qualified.
@@ -834,7 +658,7 @@ fn test_message_named_type_with_nested() {
     };
     let result = generate(&[file], &["type_test.proto".to_string()], &config);
     let files = result.expect("message named Type should generate valid code");
-    let content = &files[0].content;
+    let content = &joined(&files);
     assert!(
         content.contains("pub struct Type"),
         "missing struct Type: {content}"
@@ -888,7 +712,7 @@ fn test_message_with_oneof_field_named_type() {
     };
     let result = generate(&[file], &["checked.proto".to_string()], &config);
     let files = result.expect("Type message with oneof 'type' field should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     assert!(
         content.contains("pub struct Type"),
         "missing struct Type: {content}"
@@ -937,7 +761,7 @@ fn test_oneof_variant_named_self_escapes_to_self_underscore() {
         &CodeGenConfig::default(),
     )
     .expect("oneof with `self` variant must compile");
-    let content = &files[0].content;
+    let content = &joined(&files);
     // The reserved `Self` is suffixed to `Self_` by `make_field_ident`;
     // the bare `Manager` variant is unaffected.
     assert!(

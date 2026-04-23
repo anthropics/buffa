@@ -32,7 +32,7 @@ fn test_proto2_optional_scalar_is_option() {
         &CodeGenConfig::default(),
     )
     .expect("proto2 optional scalar should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     assert!(
         content.contains("pub count: Option<i32>"),
         "proto2 optional int32 must be Option<i32>: {content}"
@@ -58,7 +58,7 @@ fn test_proto2_required_scalar_is_bare_type_and_always_encoded() {
         &CodeGenConfig::default(),
     )
     .expect("proto2 required scalar should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     // Required fields use the bare type, not Option<T>.
     assert!(
         content.contains("pub count: i32"),
@@ -91,7 +91,7 @@ fn test_proto2_repeated_scalar_is_unpacked_by_default() {
         &CodeGenConfig::default(),
     )
     .expect("proto2 repeated scalar should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     // Unpacked write_to: no packed-payload size accumulation.
     // (The view decode arm uses `let payload = borrow_bytes(...)` for its
     // lenient packed-accept path, so we look for the typed accumulator
@@ -133,7 +133,7 @@ fn test_proto2_optional_enum_is_option_enum_value() {
         &CodeGenConfig::default(),
     )
     .expect("proto2 optional enum should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     assert!(
         content.contains("pub color: Option<Color>"),
         "proto2 optional enum must be Option<Color> (closed enum): {content}"
@@ -161,7 +161,7 @@ fn test_proto2_enum_default_is_first_declared_variant() {
         &CodeGenConfig::default(),
     )
     .expect("proto2 enum default should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     // Default impl must use HIGH (first declared), not NONE (zero-valued).
     assert!(
         content.contains("impl ::core::default::Default for Priority"),

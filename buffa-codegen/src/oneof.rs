@@ -106,6 +106,11 @@ fn collect_variant_info(
             // without codegen changes; only decode and JSON-deser need an
             // explicit Vec<u8>→Bytes conversion (see oneof_merge_arm and
             // oneof_variant_deser_arm).
+            // Oneof enums live at `buffa_::oneof::<msg_path>::`, which is
+            // `2 + (msg_nesting + 1)` levels below the package root
+            // (sentinel + `oneof` + one snake-case segment per message in
+            // the FQN path). `nesting` here is the owning message's
+            // msg_nesting, so the enum body sits at `nesting + 3`.
             let rust_type =
                 if field_type == Type::TYPE_BYTES && field_uses_bytes(ctx, proto_fqn, proto_name) {
                     quote! { ::bytes::Bytes }
@@ -114,7 +119,7 @@ fn collect_variant_info(
                         ctx,
                         field,
                         current_package,
-                        nesting + 1,
+                        nesting + 3,
                         features,
                         resolver,
                     )?
@@ -479,92 +484,26 @@ pub(crate) fn oneof_variant_deser_arm(input: &OneofVariantDeserInput<'_>) -> Tok
     }
 }
 
-/// Collect the names already claimed in a message's Rust module that a
-/// oneof enum must not collide with: nested message names, nested enum
-/// names, and — when view generation is enabled — each nested message's
-/// `{name}View` struct (emitted in the same module).
-fn reserved_names_for_msg(
-    msg: &DescriptorProto,
-    generate_views: bool,
-) -> std::collections::HashSet<String> {
-    let mut reserved = std::collections::HashSet::new();
-    for nested in &msg.nested_type {
-        if let Some(name) = &nested.name {
-            reserved.insert(name.clone());
-            if generate_views {
-                reserved.insert(format!("{name}View"));
-            }
-        }
-    }
-    for nested_enum in &msg.enum_type {
-        if let Some(name) = &nested_enum.name {
-            reserved.insert(name.clone());
-        }
-    }
-    reserved
-}
-
-/// Build the Rust identifier for a oneof enum.
+/// Build the Rust identifier for a oneof enum: `{PascalCase(oneof_name)}`.
 ///
-/// With module-based nesting the enum lives inside the owning message's
-/// module (`pub mod msg_name { pub enum FooOneof { ... } }`), so no
-/// message prefix is needed. The enum name is always
-/// `{PascalCase(oneof_name)}Oneof` regardless of whether siblings would
-/// collide — uniform naming makes the generated type discoverable from
-/// the `.proto` alone and prevents source-breaking renames when nested
-/// types are added later.
-///
-/// # Errors
-///
-/// Returns [`CodeGenError::OneofNameConflict`] when a nested type or a
-/// prior oneof in the same message already claims the suffixed name
-/// (e.g. a nested message literally named `FooOneof` alongside
-/// `oneof foo`). Users resolve these by renaming in the `.proto`.
-fn oneof_enum_ident(
-    oneof_name: &str,
-    reserved: &std::collections::HashSet<String>,
-    views_enabled: bool,
-    scope: &str,
-) -> Result<proc_macro2::Ident, CodeGenError> {
-    let pascal = to_pascal_case(oneof_name);
-    let name = format!("{pascal}Oneof");
-    if reserved.contains(&name) || (views_enabled && reserved.contains(&format!("{name}View"))) {
-        return Err(CodeGenError::OneofNameConflict {
-            scope: scope.to_string(),
-            oneof_name: oneof_name.to_string(),
-            attempted: name,
-        });
-    }
-    Ok(format_ident!("{}", name))
+/// No suffix and no collision check — oneof enums live in the dedicated
+/// `buffa_::oneof::<msg>::` tree where they cannot collide with nested
+/// types, nested enums, or view structs. Two sibling oneofs would only
+/// produce the same ident if they share a proto name, which protoc
+/// rejects at parse time.
+fn oneof_enum_ident(oneof_name: &str) -> proc_macro2::Ident {
+    format_ident!("{}", to_pascal_case(oneof_name))
 }
 
 /// Compute oneof enum identifiers for all non-synthetic oneofs in a message.
 ///
-/// Every oneof enum is named `{PascalCase(oneof_name)}Oneof`; the reserved
-/// set is grown after each allocation so two sibling oneofs cannot both
-/// claim the same name (which could happen if the user declared e.g.
-/// `oneof foo` alongside `oneof foo` — disallowed by protoc — or via a
-/// hand-crafted descriptor).
-///
-/// `scope` is the parent message's fully-qualified proto name, used only
-/// in error diagnostics. `generate_views` must match
-/// [`CodeGenContext::config.generate_views`](crate::context::CodeGenContext);
-/// when true, nested `{n}View` names are added to the reserved set so the
-/// view-side oneof enum (`{Name}OneofView`) also avoids collisions.
-///
 /// Returns a map from oneof declaration index to its Rust enum `Ident`.
-/// Synthetic oneofs (proto3 `optional`) are omitted.
-///
-/// # Errors
-///
-/// Propagates [`CodeGenError::OneofNameConflict`] from
-/// [`oneof_enum_ident`].
+/// Synthetic oneofs (proto3 `optional`) are omitted. Infallible: oneof
+/// enums live in the `buffa_::oneof::` tree where collisions with
+/// nested types are structurally impossible.
 pub(crate) fn resolve_oneof_idents(
     msg: &DescriptorProto,
-    scope: &str,
-    generate_views: bool,
-) -> Result<std::collections::HashMap<usize, Ident>, CodeGenError> {
-    let mut reserved = reserved_names_for_msg(msg, generate_views);
+) -> std::collections::HashMap<usize, Ident> {
     let mut result = std::collections::HashMap::new();
     for (idx, oneof) in msg.oneof_decl.iter().enumerate() {
         let has_real_fields = msg.field.iter().any(|f| {
@@ -574,16 +513,10 @@ pub(crate) fn resolve_oneof_idents(
             continue;
         }
         if let Some(oneof_name) = &oneof.name {
-            let ident = oneof_enum_ident(oneof_name, &reserved, generate_views, scope)?;
-            let owned = ident.to_string();
-            if generate_views {
-                reserved.insert(format!("{owned}View"));
-            }
-            reserved.insert(owned);
-            result.insert(idx, ident);
+            result.insert(idx, oneof_enum_ident(oneof_name));
         }
     }
-    Ok(result)
+    result
 }
 
 /// Build the Rust variant identifier for a oneof field.

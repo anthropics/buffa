@@ -10,7 +10,7 @@
     dead_code
 )]
 pub mod bench {
-    include!(concat!(env!("OUT_DIR"), "/bench_messages.rs"));
+    buffa::include_proto!("bench");
 }
 
 #[allow(
@@ -23,7 +23,7 @@ pub mod bench {
     dead_code
 )]
 pub mod benchmarks {
-    include!(concat!(env!("OUT_DIR"), "/benchmarks.rs"));
+    buffa::include_proto!("benchmarks");
 }
 
 #[allow(
@@ -36,5 +36,5 @@ pub mod benchmarks {
     dead_code
 )]
 pub mod proto3 {
-    include!(concat!(env!("OUT_DIR"), "/benchmark_message1_proto3.rs"));
+    buffa::include_proto!("benchmarks.proto3");
 }

@@ -18,7 +18,7 @@ use std::path::Path;
     dead_code
 )]
 mod proto {
-    include!(concat!(env!("OUT_DIR"), "/bench_messages.rs"));
+    buffa::include_proto!("bench");
 }
 #[allow(
     clippy::derivable_impls,
@@ -30,11 +30,11 @@ mod proto {
     dead_code
 )]
 mod dataset_proto {
-    include!(concat!(env!("OUT_DIR"), "/benchmarks.rs"));
+    buffa::include_proto!("benchmarks");
 }
 
-use proto::analytics_event::property::ValueOneof as Value;
 use proto::analytics_event::{Nested, Property};
+use proto::buffa_::oneof::analytics_event::property::Value;
 use proto::log_record::Context;
 use proto::*;
 

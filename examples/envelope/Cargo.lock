@@ -22,7 +22,7 @@ checksum = "843867be96c8daad0d758b57df9392b6d8d271134fce549de6ce169ff98a92af"
 
 [[package]]
 name = "buffa"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64",
  "bytes",
@@ -35,7 +35,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-build"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "buffa",
  "buffa-codegen",
@@ -44,14 +44,22 @@ dependencies = [
 
 [[package]]
 name = "buffa-codegen"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "buffa",
+ "buffa-descriptor",
  "prettyplease",
  "proc-macro2",
  "quote",
  "syn",
  "thiserror",
+]
+
+[[package]]
+name = "buffa-descriptor"
+version = "0.3.0"
+dependencies = [
+ "buffa",
 ]
 
 [[package]]

@@ -33,7 +33,7 @@ fn test_view_explicit_presence_scalar_is_option() {
         &CodeGenConfig::default(),
     )
     .expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     // View struct field should be Option<i32>.
     assert!(
         content.contains("pub value: Option<i32>"),
@@ -78,7 +78,7 @@ fn test_view_repeated_message_field() {
         &CodeGenConfig::default(),
     )
     .expect("should generate");
-    let content = &files[0].content;
+    let content = &joined(&files);
     // Both Item and Container views should be generated.
     assert!(
         content.contains("pub struct ItemView"),
@@ -146,20 +146,22 @@ fn test_view_oneof_with_message_variant() {
         &CodeGenConfig::default(),
     )
     .expect("should generate");
-    let content = &files[0].content;
-    // View struct must have an optional PayloadOneofView field.
+    let content = &joined(&files);
+    // View struct must reference its view-oneof enum at the sentinel path.
+    // (Prettyplease may wrap the path across lines, so check the
+    // tail segment.)
     assert!(
-        content.contains("pub payload: ::core::option::Option<request::PayloadOneofView"),
-        "RequestView must have payload: ::core::option::Option<request::PayloadOneofView>: {content}"
+        content.contains("buffa_::view::oneof::request::Payload"),
+        "RequestView must reference buffa_::view::oneof::request::Payload: {content}"
     );
     // The oneof view enum must have both variants.
     assert!(
         content.contains("Count(i32)"),
-        "PayloadView must have Count(i32): {content}"
+        "Payload view must have Count(i32): {content}"
     );
     assert!(
-        content.contains("Body(::buffa::alloc::boxed::Box<super::BodyView"),
-        "PayloadView must have Body boxed: {content}"
+        content.contains("BodyView") && content.contains("::buffa::alloc::boxed::Box<"),
+        "Payload view must have boxed BodyView variant: {content}"
     );
     // Decode arm for the message variant must check recursion depth.
     assert!(

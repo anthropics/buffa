@@ -81,23 +81,27 @@ fn test_oneof_name_matching_parent_message() {
     use crate::collisions;
 
     let msg = collisions::Status {
-        status: Some(collisions::status::StatusOneof::Code(42)),
+        status: Some(collisions::buffa_::oneof::status::Status::Code(42)),
         ..core::default::Default::default()
     };
     let decoded = round_trip(&msg);
     assert_eq!(
         decoded.status,
-        Some(collisions::status::StatusOneof::Code(42))
+        Some(collisions::buffa_::oneof::status::Status::Code(42))
     );
 
     let msg2 = collisions::Status {
-        status: Some(collisions::status::StatusOneof::Message("error".into())),
+        status: Some(collisions::buffa_::oneof::status::Status::Message(
+            "error".into(),
+        )),
         ..core::default::Default::default()
     };
     let decoded = round_trip(&msg2);
     assert_eq!(
         decoded.status,
-        Some(collisions::status::StatusOneof::Message("error".into()))
+        Some(collisions::buffa_::oneof::status::Status::Message(
+            "error".into()
+        ))
     );
 }
 
@@ -115,7 +119,7 @@ fn test_container_references_collision_types() {
             ..core::default::Default::default()
         }),
         status: buffa::MessageField::some(collisions::Status {
-            status: Some(collisions::status::StatusOneof::Code(1)),
+            status: Some(collisions::buffa_::oneof::status::Status::Code(1)),
             ..core::default::Default::default()
         }),
         ..core::default::Default::default()
@@ -135,7 +139,7 @@ fn test_nested_option_message_round_trip() {
     let msg = prelude_shadow::Picker {
         options: vec![picker::Option {
             title: Some("a".into()),
-            value: Some(picker::option::ValueOneof::IntValue(7)),
+            value: Some(prelude_shadow::buffa_::oneof::picker::option::Value::IntValue(7)),
             ..core::default::Default::default()
         }],
         label: Some("L".into()),

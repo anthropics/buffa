@@ -22,7 +22,7 @@ checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
 
 [[package]]
 name = "buffa"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64",
  "bytes",
@@ -35,7 +35,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-build"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "buffa",
  "buffa-codegen",
@@ -44,7 +44,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-codegen"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "buffa",
  "buffa-descriptor",
@@ -57,16 +57,17 @@ dependencies = [
 
 [[package]]
 name = "buffa-descriptor"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "buffa",
 ]
 
 [[package]]
 name = "buffa-types"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "buffa",
+ "bytes",
  "serde",
  "serde_json",
  "thiserror",

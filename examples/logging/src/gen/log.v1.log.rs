@@ -55,6 +55,16 @@ impl ::buffa::Enumeration for Severity {
             _ => ::core::option::Option::None,
         }
     }
+    fn values() -> &'static [Self] {
+        &[
+            Self::SEVERITY_UNSPECIFIED,
+            Self::DEBUG,
+            Self::INFO,
+            Self::WARN,
+            Self::ERROR,
+            Self::FATAL,
+        ]
+    }
 }
 /// A single structured log entry.
 #[derive(Clone, PartialEq, Default)]

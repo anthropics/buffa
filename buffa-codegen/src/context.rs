@@ -7,6 +7,37 @@ use crate::generated::descriptor::{DescriptorProto, EnumDescriptorProto, FileDes
 use crate::oneof::to_snake_case;
 use crate::CodeGenConfig;
 
+/// The single reserved module name under which all ancillary generated types
+/// (views, oneof enums, extensions, `register_types`) live.
+///
+/// See `DESIGN.md` → "Generated code layout" for the full layout. The name
+/// is checked against proto package segments and message-module names by
+/// [`crate::check_reserved_sentinel`]; a collision is a hard error.
+pub const SENTINEL_MOD: &str = "buffa_";
+
+/// A Rust type path split at the target-package boundary.
+///
+/// Returned by [`CodeGenContext::rust_type_relative_split`]. The full owned
+/// path is `to_package + within_package` (concatenated with `::`); ancillary
+/// kinds insert their `buffa_::<kind>::` prefix between the two halves.
+#[derive(Debug, Clone)]
+pub struct SplitPath {
+    /// Path from the current emission scope to the **target package root**.
+    ///
+    /// One of:
+    /// - empty (same package, nesting 0)
+    /// - `"super::super"` (same package, nesting > 0)
+    /// - `"super::…::other_pkg"` (cross-package local)
+    /// - `"::extern_crate::pkg"` (extern type — absolute, nesting-independent)
+    pub to_package: String,
+    /// Path from the target package root to the type itself
+    /// (e.g. `"Foo"` or `"outer::Inner"`).
+    pub within_package: String,
+    /// `true` when `to_package` is an absolute (`::`/`crate::`) extern path.
+    /// Extern paths don't depend on the caller's nesting depth.
+    pub is_extern: bool,
+}
+
 /// Shared context for a code generation run.
 ///
 /// Holds the full set of file descriptors and a mapping from fully-qualified
@@ -288,6 +319,125 @@ impl<'a> CodeGenContext<'a> {
         Some(result)
     }
 
+    /// Like [`rust_type_relative`](Self::rust_type_relative) but returns the
+    /// path split at the target-package boundary.
+    ///
+    /// Ancillary kinds (views, oneof enums) live in the `buffa_::<kind>::`
+    /// sub-tree of each package; callers compose the final path as
+    /// `to_package + "::buffa_::" + <kind> + "::" + within_package`.
+    ///
+    /// `nesting` is the **total** module depth of the caller's emission
+    /// scope below the current package root — i.e. message-nesting plus any
+    /// `buffa_::<kind>::` levels the caller is already inside (0 for owned
+    /// types, +2 for `buffa_::view::`, +3 for `buffa_::view::oneof::`).
+    pub fn rust_type_relative_split(
+        &self,
+        proto_fqn: &str,
+        current_package: &str,
+        nesting: usize,
+    ) -> Option<SplitPath> {
+        let full_path = self.type_map.get(proto_fqn)?;
+
+        let target_package = self
+            .package_of
+            .get(proto_fqn)
+            .map(|s| s.as_str())
+            .unwrap_or("");
+
+        // Compute the type's path within its package (everything after the
+        // package module prefix). For extern types the prefix is the
+        // configured rust_module (e.g. `::buffa_types::google::protobuf`),
+        // not the bare dotted package, so derive it the same way `new()`
+        // populated the map.
+        let target_rust_module = if full_path.starts_with("::") || full_path.starts_with("crate::")
+        {
+            // Reconstruct the extern module prefix by stripping the
+            // within-package suffix length. We know the proto FQN's
+            // within-package portion (FQN minus package), so the full_path's
+            // last N segments correspond to it.
+            //
+            // Simpler: re-derive via `resolve_extern_prefix` would need the
+            // original extern_paths list. Instead, compute within-package
+            // from the proto FQN (which we know) and slice full_path.
+            let fqn_no_dot = proto_fqn.strip_prefix('.').unwrap_or(proto_fqn);
+            let within_proto = if target_package.is_empty() {
+                fqn_no_dot
+            } else {
+                fqn_no_dot
+                    .strip_prefix(target_package)
+                    .and_then(|s| s.strip_prefix('.'))
+                    .unwrap_or(fqn_no_dot)
+            };
+            // within_proto is dotted (e.g. "Outer.Inner"); within full_path
+            // it's `outer::Inner` (snake_case modules + final PascalCase).
+            // Count the segments and strip that many from full_path.
+            let within_segs = within_proto.split('.').count();
+            let full_segs: Vec<&str> = full_path.split("::").collect();
+            let cut = full_segs.len().saturating_sub(within_segs);
+            full_segs[..cut].join("::")
+        } else {
+            target_package.replace('.', "::")
+        };
+
+        let type_suffix = if target_rust_module.is_empty() {
+            full_path.as_str()
+        } else {
+            full_path
+                .strip_prefix(&format!("{}::", target_rust_module))
+                .unwrap_or(full_path)
+        };
+
+        // Extern: absolute path; nesting irrelevant.
+        if full_path.starts_with("::") || full_path.starts_with("crate::") {
+            return Some(SplitPath {
+                to_package: target_rust_module,
+                within_package: type_suffix.to_string(),
+                is_extern: true,
+            });
+        }
+
+        if current_package == target_package {
+            let to_package = if nesting == 0 {
+                String::new()
+            } else {
+                (0..nesting).map(|_| "super").collect::<Vec<_>>().join("::")
+            };
+            return Some(SplitPath {
+                to_package,
+                within_package: type_suffix.to_string(),
+                is_extern: false,
+            });
+        }
+
+        // Cross-package local.
+        let current_parts: Vec<&str> = if current_package.is_empty() {
+            vec![]
+        } else {
+            current_package.split('.').collect()
+        };
+        let target_parts: Vec<&str> = if target_package.is_empty() {
+            vec![]
+        } else {
+            target_package.split('.').collect()
+        };
+        let common_len = current_parts
+            .iter()
+            .zip(&target_parts)
+            .take_while(|(a, b)| a == b)
+            .count();
+        let up_count = (current_parts.len() - common_len) + nesting;
+        let down_parts = &target_parts[common_len..];
+
+        let mut segments: Vec<&str> = vec!["super"; up_count];
+        segments.extend_from_slice(down_parts);
+
+        Some(SplitPath {
+            to_package: segments.join("::"),
+            within_package: type_suffix.to_string(),
+            is_extern: false,
+        })
+    }
+
     /// Collect custom attributes matching a fully-qualified proto path.
     ///
     /// Returns a `TokenStream` of all `#[...]` attributes whose path prefix
@@ -374,18 +524,79 @@ impl<'a> MessageScope<'a> {
             nesting: self.nesting + 1,
         }
     }
+}
 
-    /// Return a copy of this scope with the nesting depth incremented by 1.
-    ///
-    /// Use this when generating code that will live inside the message's own
-    /// `pub mod` (e.g. oneof view enums) without changing the identity
-    /// (`proto_fqn`, `features`).
-    pub fn deeper(&self) -> MessageScope<'a> {
-        MessageScope {
-            nesting: self.nesting + 1,
-            ..*self
+/// Kind of ancillary tree under the [`SENTINEL_MOD`] module.
+///
+/// `path_segments()` returns the module path *inside* `buffa_::` (not
+/// including the sentinel itself).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AncillaryKind {
+    /// `buffa_::oneof::<msg_path>::` — owned oneof enums.
+    Oneof,
+    /// `buffa_::view::oneof::<msg_path>::` — view oneof enums.
+    ViewOneof,
+}
+
+impl AncillaryKind {
+    fn path_segments(self) -> &'static [&'static str] {
+        match self {
+            Self::Oneof => &["oneof"],
+            Self::ViewOneof => &["view", "oneof"],
         }
     }
+}
+
+/// Build a token-stream path prefix from an emission scope to an ancillary
+/// kind's location for the **current** message (`proto_fqn`).
+///
+/// Always climbs to the package root via `super::` and re-descends through
+/// `buffa_::<kind>::<msg_path>::` — uniform regardless of where the caller
+/// sits. `from_nesting` is the caller's total module depth below the
+/// package root (message-nesting plus any `buffa_::<kind>::` levels the
+/// caller is already inside).
+///
+/// Returned tokens always end with `::` so callers append the type
+/// identifier directly: `quote! { #prefix #ident }`.
+pub(crate) fn ancillary_prefix(
+    kind: AncillaryKind,
+    current_package: &str,
+    proto_fqn: &str,
+    from_nesting: usize,
+) -> proc_macro2::TokenStream {
+    use crate::idents::make_field_ident;
+    use quote::quote;
+
+    let supers = "super::".repeat(from_nesting);
+    let supers_tokens: proc_macro2::TokenStream = if supers.is_empty() {
+        proc_macro2::TokenStream::new()
+    } else {
+        syn::parse_str(&supers).expect("valid super:: chain")
+    };
+
+    let sentinel = make_field_ident(SENTINEL_MOD);
+    let kind_segs: Vec<_> = kind
+        .path_segments()
+        .iter()
+        .map(|s| make_field_ident(s))
+        .collect();
+
+    // Snake-cased message path within the package (e.g. "outer::inner::").
+    let within_pkg = if current_package.is_empty() {
+        proto_fqn
+    } else {
+        proto_fqn
+            .strip_prefix(current_package)
+            .and_then(|s| s.strip_prefix('.'))
+            .unwrap_or(proto_fqn)
+    };
+    let msg_segs: Vec<_> = within_pkg
+        .split('.')
+        .filter(|s| !s.is_empty())
+        .map(|name| make_field_ident(&to_snake_case(name)))
+        .collect();
+
+    quote! { #supers_tokens #sentinel :: #(#kind_segs ::)* #(#msg_segs ::)* }
 }
 
 /// Proto-segment-aware prefix match: `prefix` matches `fqn_dotted` if

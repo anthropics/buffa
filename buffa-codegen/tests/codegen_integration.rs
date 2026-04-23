@@ -88,12 +88,12 @@ fn generate_proto(proto: &str, config: &CodeGenConfig) -> String {
     let files = buffa_codegen::generate(&fds.file, &["test.proto".into()], config)
         .unwrap_or_else(|e| panic!("codegen failed: {e}\n\nProto:\n{proto}"));
 
-    assert_eq!(
-        files.len(),
-        1,
-        "generate_proto expects single-file output; use compile_protos directly for multi-file"
-    );
-    files.into_iter().next().unwrap().content
+    // 5 content files + 1 stitcher per package; concat for substring asserts.
+    files
+        .into_iter()
+        .map(|f| f.content)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Helper: run codegen on a proto file from buffa-test/protos/.
@@ -129,10 +129,11 @@ fn codegen_basic() {
 
 #[test]
 fn codegen_basic_views_vs_no_views() {
+    let total = |files: &[GeneratedFile]| files.iter().map(|f| f.content.len()).sum::<usize>();
     let with_views = generate_for("basic.proto", &CodeGenConfig::default());
     let without_views = generate_for("basic.proto", &no_views());
     assert!(
-        without_views[0].content.len() < with_views[0].content.len(),
+        total(&without_views) < total(&with_views),
         "disabling views should produce shorter output"
     );
 }
@@ -363,8 +364,8 @@ fn inline_oneof() {
         "#,
         &no_views(),
     );
-    assert!(content.contains("pub info: Option<contact::InfoOneof>"));
-    assert!(content.contains("pub enum InfoOneof"));
+    assert!(content.contains("pub info: Option<buffa_::oneof::contact::Info>"));
+    assert!(content.contains("pub enum Info"));
     assert!(content.contains("Email("));
     assert!(content.contains("Phone("));
 }
@@ -512,10 +513,11 @@ fn inline_oneof_duplicate_message_type_no_from_collision() {
         "#,
         &no_views(),
     );
-    // Box on both message variants.
+    // Box on both message variants. Oneof body now sits at depth 3
+    // (`buffa_::oneof::t::`), so 3× super.
     assert_eq!(
         content
-            .matches("::buffa::alloc::boxed::Box<super::Placeholder>")
+            .matches("::buffa::alloc::boxed::Box<super::super::super::Placeholder>")
             .count(),
         2,
         "both Placeholder variants should be boxed: {content}"
@@ -523,13 +525,15 @@ fn inline_oneof_duplicate_message_type_no_from_collision() {
     // Only ONE From impl (for T, which appears once), not two for Placeholder.
     assert_eq!(
         content
-            .matches("impl From<super::Placeholder> for Kind")
+            .matches("impl From<super::super::super::Placeholder> for Kind")
             .count(),
         0,
         "duplicate-type From impls must be skipped: {content}"
     );
     assert_eq!(
-        content.matches("impl From<super::T> for Kind").count(),
+        content
+            .matches("impl From<super::super::super::T> for Kind")
+            .count(),
         1,
         "unique-type From impl must still be generated: {content}"
     );
@@ -704,8 +708,8 @@ fn inline_view_keyword_package_path() {
     .expect("codegen failed for keyword package with views");
     let marker = files
         .iter()
-        .find(|f| f.name.contains("marker"))
-        .expect("marker.rs not generated");
+        .find(|f| f.package == "google.maps")
+        .expect("google.maps.rs not generated");
     // Must emit r#type (raw ident), not plain `type`.
     assert!(
         marker.content.contains("r#type"),

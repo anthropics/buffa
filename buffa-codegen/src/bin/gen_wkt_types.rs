@@ -80,11 +80,12 @@ fn main() {
     //        correct. `buffa/text` is zero-dep — enabled unconditionally
     //        in buffa-types so no feature-gate wrapping is needed.
     //
-    //   emit_register_fn = false    All seven WKT files are `include!`d into
-    //        one namespace — seven `register_types` fns would collide. WKTs
-    //        register via the hand-written `register_wkt_types` in
-    //        `any_ext.rs` anyway. Per-message `__*_TEXT_ANY` consts are
-    //        still emitted (harmless `#[doc(hidden)] pub`).
+    //   emit_register_fn = false    Per-package output means one fn would
+    //        be emitted (all seven WKTs share `google.protobuf`), so the
+    //        old multi-file collision is gone — but WKTs register via the
+    //        hand-written `register_wkt_types` in `any_ext.rs` (which knows
+    //        the JSON-Any `is_wkt` special-casing the generic fn doesn't),
+    //        so the generated fn would be redundant.
     let mut config = buffa_codegen::CodeGenConfig::default();
     config.generate_views = true;
     config.preserve_unknown_fields = true;

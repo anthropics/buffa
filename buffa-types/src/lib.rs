@@ -68,13 +68,7 @@ mod wrapper_ext;
 )]
 pub mod google {
     pub mod protobuf {
-        include!("generated/google.protobuf.any.rs");
-        include!("generated/google.protobuf.duration.rs");
-        include!("generated/google.protobuf.empty.rs");
-        include!("generated/google.protobuf.field_mask.rs");
-        include!("generated/google.protobuf.struct.rs");
-        include!("generated/google.protobuf.timestamp.rs");
-        include!("generated/google.protobuf.wrappers.rs");
+        include!("generated/google.protobuf.mod.rs");
     }
 }
 

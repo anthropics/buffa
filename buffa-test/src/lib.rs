@@ -6,7 +6,7 @@
 // - match_single_binding: empty messages generate a single-arm wildcard merge match
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod basic {
-    include!(concat!(env!("OUT_DIR"), "/basic.rs"));
+    buffa::include_proto!("basic");
 }
 
 #[allow(
@@ -15,7 +15,7 @@ pub mod basic {
     non_camel_case_types
 )]
 pub mod proto3sem {
-    include!(concat!(env!("OUT_DIR"), "/proto3_semantics.rs"));
+    buffa::include_proto!("test.proto3sem");
 }
 
 #[allow(
@@ -25,37 +25,37 @@ pub mod proto3sem {
     dead_code
 )]
 pub mod keywords {
-    include!(concat!(env!("OUT_DIR"), "/keywords.rs"));
+    buffa::include_proto!("test.keywords");
 }
 
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod nested {
-    include!(concat!(env!("OUT_DIR"), "/nested_deep.rs"));
+    buffa::include_proto!("test.nested");
 }
 
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod wkt {
-    include!(concat!(env!("OUT_DIR"), "/wkt_usage.rs"));
+    buffa::include_proto!("test.wkt");
 }
 
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod cross {
-    include!(concat!(env!("OUT_DIR"), "/cross_package.rs"));
+    buffa::include_proto!("test.cross");
 }
 
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod cross_syntax {
-    include!(concat!(env!("OUT_DIR"), "/cross_syntax.rs"));
+    buffa::include_proto!("test.cross_syntax");
 }
 
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod collisions {
-    include!(concat!(env!("OUT_DIR"), "/name_collisions.rs"));
+    buffa::include_proto!("test.collisions");
 }
 
 #[allow(clippy::derivable_impls, clippy::match_single_binding, dead_code)]
 pub mod prelude_shadow {
-    include!(concat!(env!("OUT_DIR"), "/prelude_shadow.rs"));
+    buffa::include_proto!("test.prelude_shadow");
 }
 
 #[allow(
@@ -64,7 +64,7 @@ pub mod prelude_shadow {
     non_camel_case_types
 )]
 pub mod proto2 {
-    include!(concat!(env!("OUT_DIR"), "/proto2_defaults.rs"));
+    buffa::include_proto!("test.proto2");
 }
 
 #[allow(
@@ -74,7 +74,7 @@ pub mod proto2 {
     dead_code
 )]
 pub mod json_types {
-    include!(concat!(env!("OUT_DIR"), "/json_types.rs"));
+    buffa::include_proto!("test.json");
 }
 
 #[allow(
@@ -83,7 +83,7 @@ pub mod json_types {
     non_camel_case_types
 )]
 pub mod p2json {
-    include!(concat!(env!("OUT_DIR"), "/proto2_json.rs"));
+    buffa::include_proto!("test.p2json");
 }
 
 #[allow(
@@ -92,7 +92,7 @@ pub mod p2json {
     non_camel_case_types
 )]
 pub mod utf8test {
-    include!(concat!(env!("OUT_DIR"), "/utf8_validation.rs"));
+    buffa::include_proto!("utf8test");
 }
 
 #[allow(
@@ -103,7 +103,7 @@ pub mod utf8test {
     dead_code
 )]
 pub mod edenumjson {
-    include!(concat!(env!("OUT_DIR"), "/editions_enum_json.rs"));
+    buffa::include_proto!("test.edenumjson");
 }
 
 #[allow(
@@ -113,7 +113,7 @@ pub mod edenumjson {
     dead_code
 )]
 pub mod edge {
-    include!(concat!(env!("OUT_DIR"), "/edge_cases.rs"));
+    buffa::include_proto!("test.edge");
 }
 
 #[allow(
@@ -123,7 +123,7 @@ pub mod edge {
     dead_code
 )]
 pub mod custopts {
-    include!(concat!(env!("OUT_DIR"), "/custom_options.rs"));
+    buffa::include_proto!("buffa.test.options");
 }
 
 #[allow(
@@ -133,7 +133,7 @@ pub mod custopts {
     dead_code
 )]
 pub mod extjson {
-    include!(concat!(env!("OUT_DIR"), "/ext_json.rs"));
+    buffa::include_proto!("buffa.test.extjson");
 }
 
 #[allow(
@@ -143,7 +143,7 @@ pub mod extjson {
     dead_code
 )]
 pub mod groupext {
-    include!(concat!(env!("OUT_DIR"), "/group_ext.rs"));
+    buffa::include_proto!("buffa.test.groupext");
 }
 
 #[allow(
@@ -153,7 +153,7 @@ pub mod groupext {
     dead_code
 )]
 pub mod msgset {
-    include!(concat!(env!("OUT_DIR"), "/messageset.rs"));
+    buffa::include_proto!("buffa.test.messageset");
 }
 
 #[cfg(has_edition_2024)]
@@ -164,7 +164,7 @@ pub mod msgset {
     dead_code
 )]
 pub mod ed2024 {
-    include!(concat!(env!("OUT_DIR"), "/editions_2024.rs"));
+    buffa::include_proto!("test.ed2024");
 }
 
 // Regression: use_bytes_type() previously produced uncompilable decode code.
@@ -177,7 +177,7 @@ pub mod ed2024 {
     dead_code
 )]
 pub mod basic_bytes {
-    include!(concat!(env!("OUT_DIR"), "/bytes_variant/basic.rs"));
+    include!(concat!(env!("OUT_DIR"), "/bytes_variant/basic.mod.rs"));
 }
 
 // Views + preserve_unknown_fields=false: covers the else-branches in view
@@ -189,7 +189,7 @@ pub mod basic_bytes {
     dead_code
 )]
 pub mod basic_no_uf {
-    include!(concat!(env!("OUT_DIR"), "/no_unknown_views/basic.rs"));
+    include!(concat!(env!("OUT_DIR"), "/no_unknown_views/basic.mod.rs"));
 }
 
 // These tests intentionally use the field-assignment style

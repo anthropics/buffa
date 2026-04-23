@@ -39,7 +39,7 @@ fn test_message_comment_in_generated_code() {
     )
     .expect("generation should succeed");
 
-    let content = &result[0].content;
+    let content = &joined(&result);
     assert!(
         content.contains("Represents a person in the system."),
         "message doc comment should appear in generated code, got:\n{content}"
@@ -74,7 +74,7 @@ fn test_field_comment_in_generated_code() {
     )
     .expect("generation should succeed");
 
-    let content = &result[0].content;
+    let content = &joined(&result);
     assert!(
         content.contains("The user's email address."),
         "field doc comment should appear in generated code, got:\n{content}"
@@ -105,7 +105,7 @@ fn test_enum_comment_in_generated_code() {
     )
     .expect("generation should succeed");
 
-    let content = &result[0].content;
+    let content = &joined(&result);
     assert!(
         content.contains("Available colors."),
         "enum doc comment should appear, got:\n{content}"
@@ -154,7 +154,7 @@ fn test_oneof_comment_in_generated_code() {
     )
     .expect("generation should succeed");
 
-    let content = &result[0].content;
+    let content = &joined(&result);
     assert!(
         content.contains("The event payload variant."),
         "oneof doc comment should appear, got:\n{content}"
@@ -204,7 +204,7 @@ fn test_view_gets_same_comment_as_message() {
     let result = generate(&[file], &["view_comment.proto".to_string()], &config)
         .expect("generation should succeed");
 
-    let content = &result[0].content;
+    let content = &joined(&result);
     // The comment should appear on both the owned struct and the view struct
     let count = content.matches("A greeter message.").count();
     assert!(

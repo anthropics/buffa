@@ -19,8 +19,9 @@ mod proto {
 }
 
 use buffa::{EnumValue, Message};
+use proto::buffa::examples::addressbook::v1::buffa_::oneof::person::Address as AddressOneof;
 use proto::buffa::examples::addressbook::v1::{
-    person::{AddressOneof, PhoneNumber, PhoneType},
+    person::{PhoneNumber, PhoneType},
     AddressBook, Person, StructuredAddress,
 };
 use std::io::{self, BufRead, Write};

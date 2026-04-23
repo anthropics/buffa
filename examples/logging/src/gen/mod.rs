@@ -13,7 +13,7 @@ pub mod buffa {
             #[allow(non_camel_case_types, dead_code, unused_imports, clippy::derivable_impls, clippy::match_single_binding, clippy::uninlined_format_args, clippy::doc_lazy_continuation)]
             pub mod v1 {
                 use super::*;
-                include!("context.v1.context.rs");
+                include!("buffa.examples.context.v1.mod.rs");
             }
         }
         #[allow(non_camel_case_types, dead_code, unused_imports, clippy::derivable_impls, clippy::match_single_binding, clippy::uninlined_format_args, clippy::doc_lazy_continuation)]
@@ -22,7 +22,7 @@ pub mod buffa {
             #[allow(non_camel_case_types, dead_code, unused_imports, clippy::derivable_impls, clippy::match_single_binding, clippy::uninlined_format_args, clippy::doc_lazy_continuation)]
             pub mod v1 {
                 use super::*;
-                include!("log.v1.log.rs");
+                include!("buffa.examples.log.v1.mod.rs");
             }
         }
     }

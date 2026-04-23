@@ -229,6 +229,7 @@ pub fn generate_message_impl(
     proto_fqn: &str,
     features: &ResolvedFeatures,
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
+    oneof_prefix: &TokenStream,
     nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     let name_ident = format_ident!("{}", rust_name);
@@ -316,7 +317,6 @@ pub fn generate_message_impl(
         .collect::<Result<Vec<_>, _>>()?;
 
     // Collect oneof compute/write/merge tokens.
-    let mod_ident = crate::message::make_field_ident(&crate::oneof::to_snake_case(rust_name));
     let mut oneof_compute_stmts: Vec<TokenStream> = Vec::new();
     let mut oneof_write_stmts: Vec<TokenStream> = Vec::new();
     let mut oneof_merge_arms: Vec<TokenStream> = Vec::new();
@@ -326,7 +326,7 @@ pub fn generate_message_impl(
             enum_ident,
             oneof_name,
             fields,
-            &mod_ident,
+            oneof_prefix,
             proto_fqn,
             features,
             preserve_unknown_fields,
@@ -2119,14 +2119,13 @@ fn generate_oneof_impls(
     enum_ident: &proc_macro2::Ident,
     oneof_name: &str,
     fields: &[&FieldDescriptorProto],
-    mod_ident: &proc_macro2::Ident,
+    oneof_prefix: &TokenStream,
     proto_fqn: &str,
     features: &ResolvedFeatures,
     preserve_unknown_fields: bool,
 ) -> Result<(TokenStream, TokenStream, Vec<TokenStream>), CodeGenError> {
     let field_ident = make_field_ident(oneof_name);
-    // Module-qualified path: the oneof enum lives in the message's module.
-    let qualified_enum: TokenStream = quote! { #mod_ident::#enum_ident };
+    let qualified_enum: TokenStream = quote! { #oneof_prefix #enum_ident };
 
     let mut size_arms: Vec<TokenStream> = Vec::new();
     let mut write_arms: Vec<TokenStream> = Vec::new();

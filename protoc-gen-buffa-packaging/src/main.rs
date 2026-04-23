@@ -113,26 +113,25 @@ fn run() -> Result<(), String> {
 fn generate(request: &CodeGeneratorRequest) -> Result<CodeGeneratorResponse, String> {
     let filter = parse_filter(request.parameter.as_deref().unwrap_or(""))?;
 
-    let entries = request
-        .file_to_generate
+    // Module tree wires up one `<pkg>.mod.rs` per package; collect the
+    // distinct packages of the requested files (filtered).
+    let mut packages = std::collections::BTreeSet::new();
+    for proto_name in &request.file_to_generate {
+        let fd = find_descriptor(&request.proto_file, proto_name).ok_or_else(|| {
+            format!("file_to_generate entry {proto_name:?} has no FileDescriptorProto")
+        })?;
+        if filter.include(fd) {
+            packages.insert(fd.package.as_deref().unwrap_or("").to_string());
+        }
+    }
+    let entries: Vec<(String, String)> = packages
+        .into_iter()
+        .map(|p| (buffa_codegen::package_to_mod_filename(&p), p))
+        .collect();
+    let borrowed: Vec<(&str, &str)> = entries
         .iter()
-        .map(|proto_name| {
-            let fd = find_descriptor(&request.proto_file, proto_name).ok_or_else(|| {
-                format!("file_to_generate entry {proto_name:?} has no FileDescriptorProto")
-            })?;
-            if !filter.include(fd) {
-                return Ok(None);
-            }
-            let package = fd.package.as_deref().unwrap_or("");
-            Ok(Some((
-                buffa_codegen::proto_path_to_rust_module(proto_name),
-                package,
-            )))
-        })
-        .filter_map(Result::transpose)
-        .collect::<Result<Vec<(String, &str)>, String>>()?;
-
-    let borrowed: Vec<(&str, &str)> = entries.iter().map(|(f, p)| (f.as_str(), *p)).collect();
+        .map(|(f, p)| (f.as_str(), p.as_str()))
+        .collect();
     let content = buffa_codegen::generate_module_tree(&borrowed, "", true);
 
     Ok(CodeGeneratorResponse {
@@ -225,29 +224,32 @@ mod tests {
             None,
             vec![
                 file("foo/v1/svc.proto", "foo.v1", true),
-                file("foo/v1/types.proto", "foo.v1", false),
+                file("bar/v1/types.proto", "bar.v1", false),
             ],
         );
         let resp = generate(&req).unwrap();
         assert_eq!(resp.file.len(), 1);
         let content = resp.file[0].content.as_deref().unwrap();
-        assert!(content.contains("foo.v1.svc.rs"));
-        assert!(content.contains("foo.v1.types.rs"));
+        // Module tree wires up one `<pkg>.mod.rs` per package.
+        assert!(content.contains("foo.v1.mod.rs"));
+        assert!(content.contains("bar.v1.mod.rs"));
     }
 
     #[test]
     fn services_filter_excludes_non_service_files() {
+        // Filter is per-file; a package is included if any file in it
+        // declares a service. `bar.v1` has no service files → excluded.
         let req = request(
             Some("filter=services"),
             vec![
                 file("foo/v1/svc.proto", "foo.v1", true),
-                file("foo/v1/types.proto", "foo.v1", false),
+                file("bar/v1/types.proto", "bar.v1", false),
             ],
         );
         let resp = generate(&req).unwrap();
         let content = resp.file[0].content.as_deref().unwrap();
-        assert!(content.contains("foo.v1.svc.rs"));
-        assert!(!content.contains("foo.v1.types.rs"));
+        assert!(content.contains("foo.v1.mod.rs"));
+        assert!(!content.contains("bar.v1.mod.rs"));
     }
 
     #[test]
