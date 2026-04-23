@@ -2,7 +2,11 @@ use buffa::{Message, MessageView, ViewEncode};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use serde::{de::DeserializeOwned, Serialize};
 
-use bench_buffa::bench::__buffa::view::*;
+use bench_buffa::bench::__buffa::view::{
+    analytics_event::PropertyView, AnalyticsEventView, ApiResponseView, LogRecordView,
+    MediaFrameView,
+};
+use bench_buffa::bench::__buffa::{oneof, view::oneof as view_oneof};
 use bench_buffa::bench::*;
 use bench_buffa::benchmarks::BenchmarkDataset;
 use bench_buffa::proto3::__buffa::view::GoogleMessage1View;
@@ -271,7 +275,7 @@ bench_view_encode!(
 bench_view_encode!(
     bench_google_message1_view_encode,
     bench_buffa::proto3::GoogleMessage1,
-    bench_buffa::proto3::GoogleMessage1View,
+    GoogleMessage1View,
     "buffa/google_message1_proto3",
     "../../datasets/google_message1_proto3.pb"
 );
@@ -412,7 +416,9 @@ bench_build_encode!(
             .iter()
             .map(|(k, v)| analytics_event::Property {
                 key: (*k).into(),
-                value: Some(analytics_event::property::ValueOneof::StringValue((*v).into())),
+                value: Some(oneof::analytics_event::property::Value::StringValue(
+                    (*v).into(),
+                )),
                 ..Default::default()
             })
             .collect(),
@@ -424,9 +430,9 @@ bench_build_encode!(
         user_id: "usr_8f7e6d5c4b3a2910",
         properties: PROPS
             .iter()
-            .map(|(k, v)| analytics_event::PropertyView {
+            .map(|(k, v)| PropertyView {
                 key: k,
-                value: Some(analytics_event::property::ValueOneofView::StringValue(v)),
+                value: Some(view_oneof::analytics_event::property::Value::StringValue(v)),
                 ..Default::default()
             })
             .collect(),
@@ -451,7 +457,7 @@ bench_build_encode!(
         field101: 101,
         ..Default::default()
     },
-    bench_buffa::proto3::GoogleMessage1View {
+    GoogleMessage1View {
         field1: "the quick brown fox",
         field9: "jumps over the lazy dog",
         field2: 42,
