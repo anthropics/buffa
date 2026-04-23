@@ -1,5 +1,27 @@
 //! Generated protobuf types for buffa benchmarks.
 
+macro_rules! include_generated {
+    ($stem:literal) => {
+        include!(concat!(env!("OUT_DIR"), "/", $stem, ".rs"));
+        #[allow(non_camel_case_types, unused_imports, dead_code)]
+        pub mod view {
+            include!(concat!(env!("OUT_DIR"), "/", $stem, ".__view.rs"));
+            #[allow(non_camel_case_types, unused_imports, dead_code)]
+            pub mod oneofs {
+                include!(concat!(env!("OUT_DIR"), "/", $stem, ".__view_oneofs.rs"));
+            }
+        }
+        #[allow(non_camel_case_types, unused_imports, dead_code)]
+        pub mod ext {
+            include!(concat!(env!("OUT_DIR"), "/", $stem, ".__ext.rs"));
+        }
+        #[allow(non_camel_case_types, unused_imports, dead_code)]
+        pub mod oneofs {
+            include!(concat!(env!("OUT_DIR"), "/", $stem, ".__oneofs.rs"));
+        }
+    };
+}
+
 #[allow(
     clippy::derivable_impls,
     clippy::enum_variant_names,
@@ -10,7 +32,7 @@
     dead_code
 )]
 pub mod bench {
-    include!(concat!(env!("OUT_DIR"), "/bench_messages.rs"));
+    include_generated!("bench_messages");
 }
 
 #[allow(
@@ -23,7 +45,7 @@ pub mod bench {
     dead_code
 )]
 pub mod benchmarks {
-    include!(concat!(env!("OUT_DIR"), "/benchmarks.rs"));
+    include_generated!("benchmarks");
 }
 
 #[allow(
@@ -36,5 +58,5 @@ pub mod benchmarks {
     dead_code
 )]
 pub mod proto3 {
-    include!(concat!(env!("OUT_DIR"), "/benchmark_message1_proto3.rs"));
+    include_generated!("benchmark_message1_proto3");
 }

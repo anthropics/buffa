@@ -8,6 +8,28 @@ use rand::{Rng, SeedableRng};
 use std::fs;
 use std::path::Path;
 
+macro_rules! include_generated {
+    ($stem:literal) => {
+        include!(concat!(env!("OUT_DIR"), "/", $stem, ".rs"));
+        #[allow(non_camel_case_types, unused_imports, dead_code)]
+        pub mod view {
+            include!(concat!(env!("OUT_DIR"), "/", $stem, ".__view.rs"));
+            #[allow(non_camel_case_types, unused_imports, dead_code)]
+            pub mod oneofs {
+                include!(concat!(env!("OUT_DIR"), "/", $stem, ".__view_oneofs.rs"));
+            }
+        }
+        #[allow(non_camel_case_types, unused_imports, dead_code)]
+        pub mod ext {
+            include!(concat!(env!("OUT_DIR"), "/", $stem, ".__ext.rs"));
+        }
+        #[allow(non_camel_case_types, unused_imports, dead_code)]
+        pub mod oneofs {
+            include!(concat!(env!("OUT_DIR"), "/", $stem, ".__oneofs.rs"));
+        }
+    };
+}
+
 #[allow(
     clippy::derivable_impls,
     clippy::enum_variant_names,
@@ -18,7 +40,7 @@ use std::path::Path;
     dead_code
 )]
 mod proto {
-    include!(concat!(env!("OUT_DIR"), "/bench_messages.rs"));
+    include_generated!("bench_messages");
 }
 #[allow(
     clippy::derivable_impls,
@@ -30,12 +52,12 @@ mod proto {
     dead_code
 )]
 mod dataset_proto {
-    include!(concat!(env!("OUT_DIR"), "/benchmarks.rs"));
+    include_generated!("benchmarks");
 }
 
-use proto::analytics_event::property::ValueOneof as Value;
 use proto::analytics_event::{Nested, Property};
 use proto::log_record::Context;
+use proto::oneofs::analytics_event::property::Value;
 use proto::*;
 
 const NUM_PAYLOADS: usize = 50;
