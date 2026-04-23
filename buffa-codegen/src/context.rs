@@ -565,6 +565,9 @@ impl AncillaryKind {
 /// package root (message-nesting plus any `buffa_::<kind>::` levels the
 /// caller is already inside).
 ///
+/// `proto_fqn` follows the dotless convention used throughout codegen
+/// (e.g. `"google.protobuf.Value"`, not `".google.protobuf.Value"`).
+///
 /// Returned tokens always end with `::` so callers append the type
 /// identifier directly: `quote! { #prefix #ident }`.
 pub(crate) fn ancillary_prefix(
@@ -575,6 +578,11 @@ pub(crate) fn ancillary_prefix(
 ) -> proc_macro2::TokenStream {
     use crate::idents::make_field_ident;
     use quote::quote;
+
+    debug_assert!(
+        !proto_fqn.starts_with('.'),
+        "ancillary_prefix expects dotless FQN, got {proto_fqn:?}"
+    );
 
     let mut supers_tokens = proc_macro2::TokenStream::new();
     for _ in 0..from_nesting {

@@ -124,15 +124,20 @@ pub use ::bytes;
 /// per-proto content files and authors the `buffa_::{view, oneof, ext}`
 /// ancillary tree, so a single macro call brings in everything.
 ///
+/// `$pkg` is the **dotted proto package literal** exactly as it appears
+/// in the `.proto`'s `package` declaration (e.g. `"google.protobuf"`,
+/// not a Rust path or the `.proto` file path). For protos with no
+/// `package` declaration, pass `"buffa_"` (the reserved sentinel; no
+/// real package can use it).
+///
 /// ```ignore
 /// pub mod my_pkg {
 ///     buffa::include_proto!("my.pkg");
 /// }
 /// ```
 ///
-/// For the unnamed package, pass `"buffa_"` (the reserved sentinel — no
-/// real package can use it). For checked-in generated code (no
-/// `OUT_DIR`), use [`include_proto_relative!`].
+/// For checked-in generated code (no `OUT_DIR`), use
+/// [`include_proto_relative!`].
 #[macro_export]
 macro_rules! include_proto {
     ($pkg:literal) => {
@@ -143,6 +148,10 @@ macro_rules! include_proto {
 /// Like [`include_proto!`] but takes a relative directory instead of
 /// reading `OUT_DIR` — for crates that check generated code into the
 /// source tree (e.g. `buffa-types`, `buffa-descriptor`).
+///
+/// `$pkg` is the dotted proto package literal exactly as in the
+/// `.proto`'s `package` declaration; for the unnamed package pass
+/// `"buffa_"`. `$dir` is relative to the calling source file.
 ///
 /// ```ignore
 /// pub mod protobuf {

@@ -816,10 +816,6 @@ fn proto_relative_name(file: &Path, includes: &[PathBuf]) -> String {
 /// instead of the `env!("OUT_DIR")` prefix, so the include file works when
 /// checked into the source tree and referenced via `mod`.
 fn generate_include_file(entries: &[(String, String)], relative: bool) -> String {
-    let borrowed: Vec<(&str, &str)> = entries
-        .iter()
-        .map(|(f, p)| (f.as_str(), p.as_str()))
-        .collect();
     let mode = if relative {
         buffa_codegen::IncludeMode::Relative("")
     } else {
@@ -827,7 +823,7 @@ fn generate_include_file(entries: &[(String, String)], relative: bool) -> String
     };
     // Inner-allow off: this output is consumed via `include!` from
     // user-authored `lib.rs`, where `#![allow(...)]` is not valid.
-    buffa_codegen::generate_module_tree(&borrowed, mode, false)
+    buffa_codegen::generate_module_tree(entries, mode, false)
 }
 
 #[cfg(test)]

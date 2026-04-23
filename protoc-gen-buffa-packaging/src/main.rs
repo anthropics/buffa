@@ -128,12 +128,8 @@ fn generate(request: &CodeGeneratorRequest) -> Result<CodeGeneratorResponse, Str
         .into_iter()
         .map(|p| (buffa_codegen::package_to_mod_filename(&p), p))
         .collect();
-    let borrowed: Vec<(&str, &str)> = entries
-        .iter()
-        .map(|(f, p)| (f.as_str(), p.as_str()))
-        .collect();
     let content = buffa_codegen::generate_module_tree(
-        &borrowed,
+        &entries,
         buffa_codegen::IncludeMode::Relative(""),
         true,
     );

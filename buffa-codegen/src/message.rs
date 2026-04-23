@@ -28,6 +28,8 @@ pub(crate) struct RegistryPaths {
 }
 
 impl RegistryPaths {
+    /// True when no entries were collected — gates whether the package
+    /// stitcher emits `register_types` at all.
     pub(crate) fn is_empty(&self) -> bool {
         self.json_any.is_empty()
             && self.text_any.is_empty()
