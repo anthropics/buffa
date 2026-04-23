@@ -268,8 +268,7 @@ pub mod my_pkg {
 
 The per-proto content files mean editing one `.proto` regenerates only its five siblings (incremental friendly); the per-package stitcher means `register_types` is naturally one fn per package, so multi-file packages (e.g. seven WKT files in `google.protobuf`) no longer collide.
 
-<!-- TODO: optional convenience re-exports `pub use buffa_::oneof::foo::Kind` in
-     `pkg::foo::` (omitted on collision) for prost-adjacent ergonomics. -->
+**No convenience re-exports.** Short-path aliases like `pub use buffa_::view::*` at package level are deliberately not emitted. They would make `pkg::FooView` work in the common case but silently change meaning (or disappear) when a user-defined `message FooView` exists — a "clean 95% / surprising 5%" pattern that trades predictability for brevity. The canonical `buffa_::` path is the only path; it is unconditional.
 
 ### 3. MessageField\<T\> — Ergonomic Optional Messages
 
