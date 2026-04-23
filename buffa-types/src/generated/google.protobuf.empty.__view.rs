@@ -63,7 +63,7 @@ impl<'a> EmptyView<'a> {
     }
 }
 impl<'a> ::buffa::MessageView<'a> for EmptyView<'a> {
-    type Owned = super::Empty;
+    type Owned = super::super::Empty;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
@@ -75,10 +75,10 @@ impl<'a> ::buffa::MessageView<'a> for EmptyView<'a> {
     }
     /// Convert this view to the owned message type.
     #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> super::Empty {
+    fn to_owned_message(&self) -> super::super::Empty {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
-        super::Empty {
+        super::super::Empty {
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields
                 .to_owned()

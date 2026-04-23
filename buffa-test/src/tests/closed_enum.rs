@@ -182,7 +182,7 @@ fn test_closed_enum_negative_unknown_value_sign_extension() {
 
 #[test]
 fn test_view_closed_enum_optional_unknown_to_unknown_fields() {
-    use crate::proto2::view::ClosedEnumContextsView;
+    use crate::proto2::__buffa::view::ClosedEnumContextsView;
     use buffa::MessageView;
     let wire = varint_field(1, 99);
     let view = ClosedEnumContextsView::decode_view(&wire).unwrap();
@@ -195,7 +195,7 @@ fn test_view_closed_enum_optional_unknown_to_unknown_fields() {
 
 #[test]
 fn test_view_closed_enum_repeated_unpacked_unknown_preserved() {
-    use crate::proto2::view::ClosedEnumContextsView;
+    use crate::proto2::__buffa::view::ClosedEnumContextsView;
     use crate::proto2::Priority;
     use buffa::MessageView;
     // Field 2 (unpacked): [LOW=0, 99, HIGH=2]
@@ -220,7 +220,7 @@ fn test_view_closed_enum_repeated_unpacked_unknown_preserved() {
 
 #[test]
 fn test_view_closed_enum_oneof_unknown_to_unknown_fields() {
-    use crate::proto2::view::ClosedEnumContextsView;
+    use crate::proto2::__buffa::view::ClosedEnumContextsView;
     use buffa::MessageView;
     let wire = varint_field(4, 99);
     let view = ClosedEnumContextsView::decode_view(&wire).unwrap();
@@ -232,7 +232,7 @@ fn test_view_closed_enum_oneof_unknown_to_unknown_fields() {
 
 #[test]
 fn test_view_closed_enum_known_not_routed() {
-    use crate::proto2::view::ClosedEnumContextsView;
+    use crate::proto2::__buffa::view::ClosedEnumContextsView;
     use crate::proto2::Priority;
     use buffa::MessageView;
     let wire = varint_field(1, 2); // HIGH = 2
@@ -245,7 +245,7 @@ fn test_view_closed_enum_known_not_routed() {
 fn test_view_owned_parity_for_closed_enum_unknowns() {
     // Whatever the owned decoder produces, the view path must produce
     // byte-identical output after to_owned_message().encode_to_vec().
-    use crate::proto2::view::ClosedEnumContextsView;
+    use crate::proto2::__buffa::view::ClosedEnumContextsView;
     use crate::proto2::ClosedEnumContexts;
     use buffa::{Message, MessageView};
     let mut wire = Vec::new();

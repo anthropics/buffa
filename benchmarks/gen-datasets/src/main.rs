@@ -12,20 +12,19 @@ macro_rules! include_generated {
     ($stem:literal) => {
         include!(concat!(env!("OUT_DIR"), "/", $stem, ".rs"));
         #[allow(non_camel_case_types, unused_imports, dead_code)]
-        pub mod view {
-            include!(concat!(env!("OUT_DIR"), "/", $stem, ".__view.rs"));
-            #[allow(non_camel_case_types, unused_imports, dead_code)]
-            pub mod oneofs {
-                include!(concat!(env!("OUT_DIR"), "/", $stem, ".__view_oneofs.rs"));
+        pub mod __buffa {
+            pub mod view {
+                include!(concat!(env!("OUT_DIR"), "/", $stem, ".__view.rs"));
+                pub mod oneofs {
+                    include!(concat!(env!("OUT_DIR"), "/", $stem, ".__view_oneofs.rs"));
+                }
             }
-        }
-        #[allow(non_camel_case_types, unused_imports, dead_code)]
-        pub mod ext {
-            include!(concat!(env!("OUT_DIR"), "/", $stem, ".__ext.rs"));
-        }
-        #[allow(non_camel_case_types, unused_imports, dead_code)]
-        pub mod oneofs {
-            include!(concat!(env!("OUT_DIR"), "/", $stem, ".__oneofs.rs"));
+            pub mod ext {
+                include!(concat!(env!("OUT_DIR"), "/", $stem, ".__ext.rs"));
+            }
+            pub mod oneofs {
+                include!(concat!(env!("OUT_DIR"), "/", $stem, ".__oneofs.rs"));
+            }
         }
     };
 }
@@ -55,9 +54,9 @@ mod dataset_proto {
     include_generated!("benchmarks");
 }
 
+use proto::__buffa::oneofs::analytics_event::property::Value;
 use proto::analytics_event::{Nested, Property};
 use proto::log_record::Context;
-use proto::oneofs::analytics_event::property::Value;
 use proto::*;
 
 const NUM_PAYLOADS: usize = 50;

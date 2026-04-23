@@ -518,6 +518,122 @@ fn test_top_level_view_no_longer_collides_with_named_view_message() {
 }
 
 #[test]
+fn test_enum_named_buffa_reserved_rejected() {
+    let mut file = proto3_file("test.proto");
+    file.package = Some("pkg".to_string());
+    file.enum_type = vec![EnumDescriptorProto {
+        name: Some("__buffa".to_string()),
+        value: vec![enum_value("UNSPECIFIED", 0)],
+        ..Default::default()
+    }];
+
+    let config = CodeGenConfig::default();
+    let result = generate(&[file], &["test.proto".to_string()], &config);
+    let err = result.expect_err("__buffa enum name should be rejected");
+    assert!(matches!(err, CodeGenError::ReservedName { .. }), "{err}");
+}
+
+#[test]
+fn test_package_segment_buffa_reserved_rejected() {
+    let mut file = proto3_file("test.proto");
+    file.package = Some("foo.__buffa.bar".to_string());
+
+    let config = CodeGenConfig::default();
+    let result = generate(&[file], &["test.proto".to_string()], &config);
+    let err = result.expect_err("__buffa package segment should be rejected");
+    assert!(
+        err.to_string().contains("__buffa"),
+        "error should name the reserved segment: {err}"
+    );
+}
+
+#[test]
+fn test_message_named_view_with_nested_type_no_kind_tree_collision() {
+    // Regression: pre-`__buffa::` wrapper, a `message View { message Inner
+    // {} }` produced `pub mod view { Inner }` (owned nested-type module)
+    // as a sibling of `pub mod view { ...views... }` (kind-tree wrapper),
+    // causing E0428. With the `__buffa::` parent the kind tree lives at
+    // `pkg::__buffa::view::`, leaving `pkg::view::` free for the user.
+    let mut file = proto3_file("test.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type = vec![DescriptorProto {
+        name: Some("View".to_string()),
+        nested_type: vec![DescriptorProto {
+            name: Some("Inner".to_string()),
+            field: vec![{
+                let mut f = make_field("s", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
+                f.proto3_optional = Some(true);
+                f.oneof_index = Some(0);
+                f
+            }],
+            oneof_decl: vec![OneofDescriptorProto {
+                name: Some("_s".to_string()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    }];
+    let config = CodeGenConfig::default();
+    let files = generate(&[file], &["test.proto".to_string()], &config)
+        .expect("`message View` must not collide with the kind-tree wrapper");
+    // Stitch via generate_module_tree and parse the result — proves no
+    // duplicate `mod view` at the same depth (E0428 would fail parsing
+    // here via the duplicate-definition error from rustc, but syn accepts
+    // duplicates, so additionally assert single occurrence at top level).
+    let entries: Vec<_> = files
+        .iter()
+        .map(|f| crate::ModuleTreeEntry {
+            file_name: &f.name,
+            package: &f.package,
+            kind: f.kind,
+        })
+        .collect();
+    let tree = crate::generate_module_tree(&entries, "", false);
+    // The owned nested-type module is `pub mod view {` at the package
+    // depth; the kind-tree wrapper is `pub mod __buffa { pub mod view {`.
+    // Count `pub mod view` occurrences NOT preceded by `__buffa { ` on
+    // the same indentation — must be exactly one (the user's message).
+    assert!(
+        tree.contains("pub mod __buffa {"),
+        "kind trees must be wrapped: {tree}"
+    );
+    // Each owned file's `pub mod view { ... Inner ... }` is inside the
+    // `.rs` file content, not the tree — the tree only has includes. So
+    // verify the view-tree wrapper is namespaced and the OWNED file
+    // emits `pub mod view` (the user's nested-type module).
+    let owned = files.iter().find(|f| f.name == "test.rs").unwrap();
+    assert!(
+        owned.content.contains("pub mod view {"),
+        "owned nested-type module for `View` should be `pub mod view`: {}",
+        owned.content
+    );
+}
+
+#[test]
+fn test_reserved_buffa_module_name_rejected() {
+    // A proto message that snake-cases to `__buffa` (or any
+    // `__buffa`-prefixed name) would collide with the kind-tree wrapper.
+    // Codegen must reject it with a clear error rather than emit E0428.
+    let mut file = proto3_file("test.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type = vec![DescriptorProto {
+        name: Some("__buffa".to_string()),
+        ..Default::default()
+    }];
+    let result = generate(
+        &[file],
+        &["test.proto".to_string()],
+        &CodeGenConfig::default(),
+    );
+    let err = result.expect_err("__buffa-prefixed message names must be rejected");
+    assert!(
+        err.to_string().contains("__buffa"),
+        "error should mention the reserved prefix: {err}"
+    );
+}
+
+#[test]
 fn test_proto3_optional_field_name_matches_nested_enum_no_conflict() {
     // Proto3 `optional MatchOperator match_operator = 4;` creates a synthetic
     // oneof named `_match_operator`.  `to_pascal_case("_match_operator")` yields

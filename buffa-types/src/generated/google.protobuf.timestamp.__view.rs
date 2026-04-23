@@ -188,7 +188,7 @@ impl<'a> TimestampView<'a> {
     }
 }
 impl<'a> ::buffa::MessageView<'a> for TimestampView<'a> {
-    type Owned = super::Timestamp;
+    type Owned = super::super::Timestamp;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
@@ -200,10 +200,10 @@ impl<'a> ::buffa::MessageView<'a> for TimestampView<'a> {
     }
     /// Convert this view to the owned message type.
     #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> super::Timestamp {
+    fn to_owned_message(&self) -> super::super::Timestamp {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
-        super::Timestamp {
+        super::super::Timestamp {
             seconds: self.seconds,
             nanos: self.nanos,
             __buffa_unknown_fields: self

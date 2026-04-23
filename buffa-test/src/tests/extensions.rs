@@ -1,6 +1,6 @@
 //! Integration tests for `extend` codegen and the `ExtensionSet` runtime API.
 
-use crate::custopts::ext::{
+use crate::custopts::__buffa::ext::{
     ACTIVE, ANN, C_ACTIVE, C_ANN, C_FLAG, C_LABEL, C_MARKER, C_PRIORITY, C_TAGS, C_WEIGHT,
     IS_INTERNAL, LABEL, PRIORITY, TAGS, WEIGHT,
 };
@@ -273,7 +273,7 @@ fn proto2_default_after_roundtrip() {
 // Group-encoded extensions (editions DELIMITED)
 // ────────────────────────────────────────────────────────────────────────────
 
-use crate::groupext::ext::{DELIM_INNER, DELIM_REPEATED};
+use crate::groupext::__buffa::ext::{DELIM_INNER, DELIM_REPEATED};
 use crate::groupext::{Carrier as GroupCarrier, Inner};
 use buffa::extension::codecs::{GroupCodec, Repeated};
 

@@ -877,59 +877,51 @@ fn generate_include_file(
         for file in &node.owned_files {
             write_include(out, &indent, file, relative);
         }
-        // `pub mod view { … pub mod oneofs { … } }` — the view-oneofs
-        // modifier wraps the oneofs kind (DESIGN.md → "Generated code
-        // layout"). Multi-file packages coalesce into one wrapper each.
+        // All ancillary kind trees (view / ext / oneofs) live under a
+        // single `pub mod __buffa { ... }` so they cannot collide with
+        // proto-derived module names (e.g. a user `message View { ... }`
+        // or `package foo.view;`). The `__buffa` prefix is reserved by
+        // codegen validation. Multi-file packages coalesce into one
+        // wrapper each.
         let emit_view = !node.view_files.is_empty() || !node.view_oneofs_files.is_empty();
-        if emit_view {
+        let emit_buffa = emit_view || !node.ext_files.is_empty() || !node.oneofs_files.is_empty();
+        if emit_buffa {
             writeln!(
                 out,
                 "{indent}#[allow(non_camel_case_types, dead_code, unused_imports, \
-                 clippy::derivable_impls, clippy::match_single_binding)]"
+                 clippy::derivable_impls, clippy::match_single_binding, \
+                 clippy::module_inception, clippy::uninlined_format_args, \
+                 clippy::doc_lazy_continuation)]"
             )
             .unwrap();
-            writeln!(out, "{indent}pub mod view {{").unwrap();
-            for file in &node.view_files {
-                write_include(out, &format!("{indent}    "), file, relative);
+            writeln!(out, "{indent}pub mod __buffa {{").unwrap();
+            if emit_view {
+                writeln!(out, "{indent}    pub mod view {{").unwrap();
+                for file in &node.view_files {
+                    write_include(out, &format!("{indent}        "), file, relative);
+                }
+                if !node.view_oneofs_files.is_empty() {
+                    writeln!(out, "{indent}        pub mod oneofs {{").unwrap();
+                    for file in &node.view_oneofs_files {
+                        write_include(out, &format!("{indent}            "), file, relative);
+                    }
+                    writeln!(out, "{indent}        }}").unwrap();
+                }
+                writeln!(out, "{indent}    }}").unwrap();
             }
-            if !node.view_oneofs_files.is_empty() {
-                writeln!(
-                    out,
-                    "{indent}    #[allow(non_camel_case_types, dead_code, unused_imports, \
-                     clippy::derivable_impls, clippy::match_single_binding)]"
-                )
-                .unwrap();
-                writeln!(out, "{indent}    pub mod oneofs {{").unwrap();
-                for file in &node.view_oneofs_files {
+            if !node.ext_files.is_empty() {
+                writeln!(out, "{indent}    pub mod ext {{").unwrap();
+                for file in &node.ext_files {
                     write_include(out, &format!("{indent}        "), file, relative);
                 }
                 writeln!(out, "{indent}    }}").unwrap();
             }
-            writeln!(out, "{indent}}}").unwrap();
-        }
-        if !node.ext_files.is_empty() {
-            writeln!(
-                out,
-                "{indent}#[allow(non_camel_case_types, dead_code, unused_imports, \
-                 clippy::derivable_impls, clippy::match_single_binding)]"
-            )
-            .unwrap();
-            writeln!(out, "{indent}pub mod ext {{").unwrap();
-            for file in &node.ext_files {
-                write_include(out, &format!("{indent}    "), file, relative);
-            }
-            writeln!(out, "{indent}}}").unwrap();
-        }
-        if !node.oneofs_files.is_empty() {
-            writeln!(
-                out,
-                "{indent}#[allow(non_camel_case_types, dead_code, unused_imports, \
-                 clippy::derivable_impls, clippy::match_single_binding)]"
-            )
-            .unwrap();
-            writeln!(out, "{indent}pub mod oneofs {{").unwrap();
-            for file in &node.oneofs_files {
-                write_include(out, &format!("{indent}    "), file, relative);
+            if !node.oneofs_files.is_empty() {
+                writeln!(out, "{indent}    pub mod oneofs {{").unwrap();
+                for file in &node.oneofs_files {
+                    write_include(out, &format!("{indent}        "), file, relative);
+                }
+                writeln!(out, "{indent}    }}").unwrap();
             }
             writeln!(out, "{indent}}}").unwrap();
         }
@@ -1093,6 +1085,49 @@ mod tests {
             "both files share one `mod b`: {out}"
         );
         assert!(!out.contains("OUT_DIR"));
+    }
+
+    #[test]
+    fn include_file_kind_tree_under_buffa_no_package_segment_collision() {
+        // Regression: `package foo` alongside `package foo.view` previously
+        // produced two `pub mod view {}` siblings at `foo::` depth — one
+        // for the kind-tree wrapper, one for the child-package module.
+        // With the `__buffa::` parent the kind tree lives at
+        // `foo::__buffa::view::`, leaving `foo::view::` free for the
+        // child package.
+        use buffa_codegen::GeneratedFileKind;
+        let entries = vec![
+            (
+                "foo.rs".to_string(),
+                "foo".to_string(),
+                GeneratedFileKind::Owned,
+            ),
+            (
+                "foo.__view.rs".to_string(),
+                "foo".to_string(),
+                GeneratedFileKind::View,
+            ),
+            (
+                "foo.view.bar.rs".to_string(),
+                "foo.view".to_string(),
+                GeneratedFileKind::Owned,
+            ),
+        ];
+        let out = generate_include_file(&entries, true);
+        // The kind-tree wrapper is `pub mod __buffa { pub mod view { ... } }`,
+        // and the child-package module is a separate `pub mod view { ... }`
+        // sibling. Count `pub mod view {` at depth 1 (4-space indent inside
+        // `pub mod foo {`): exactly one — the child package.
+        let depth1 = "    pub mod view {";
+        assert_eq!(
+            out.lines().filter(|l| *l == depth1).count(),
+            1,
+            "only the child-package `view` module at foo:: depth: {out}"
+        );
+        assert!(
+            out.contains("pub mod __buffa {"),
+            "kind tree wrapped in __buffa: {out}"
+        );
     }
 
     #[test]

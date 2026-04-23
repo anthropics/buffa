@@ -7,7 +7,7 @@ mod proto {
 }
 
 use buffa::{ExtensionSet, Message};
-use proto::buffa::examples::envelope::ext::{PRIORITY, RETRY_COUNT, ROUTING_HOPS, TRACE};
+use proto::buffa::examples::envelope::__buffa::ext::{PRIORITY, RETRY_COUNT, ROUTING_HOPS, TRACE};
 use proto::buffa::examples::envelope::{Envelope, TraceContext};
 
 fn main() {
@@ -134,7 +134,7 @@ fn json_roundtrip() {
     let mut reg = TypeRegistry::new();
     // Codegen emits this per file. It registers extension JSON converters,
     // extension text converters, and `Any` type entries — one call covers all.
-    proto::buffa::examples::envelope::ext::register_types(&mut reg);
+    proto::buffa::examples::envelope::__buffa::ext::register_types(&mut reg);
     set_type_registry(reg);
 
     let mut env = Envelope {

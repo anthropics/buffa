@@ -87,10 +87,10 @@ fn bytes_to_owned(
 /// InnerView<'a>`.
 ///
 /// Nesting: `scope.nesting` counts module hops from package root to the
-/// CURRENT point in the view tree. Top-level view items live at depth 1
-/// (inside `pub mod view`). Nested views of `Foo` live at depth 2
-/// (inside `view::foo`). Owned-type references climb out via that many
-/// `super::` segments.
+/// CURRENT point in the view tree. Top-level view items live at depth 2
+/// (inside `pub mod __buffa { pub mod view { ... } }`). Nested views of
+/// `Foo` live at depth 3 (inside `__buffa::view::foo`). Owned-type
+/// references climb out via that many `super::` segments.
 /// View generation result for a single proto message.
 ///
 /// The content is split across two streams because the view `items` and
@@ -123,8 +123,9 @@ pub fn generate_view(
         current_package,
         proto_fqn,
         features,
-        // One `super::` hop to escape `pub mod view { ... }`.
-        nesting: 1,
+        // Two `super::` hops to escape `pub mod __buffa { pub mod view {
+        // ... } }` back to the package root.
+        nesting: 2,
         in_view_tree: true,
     };
     generate_view_items(scope, msg, rust_name)
@@ -207,21 +208,19 @@ fn generate_view_items(
     let owned_mod_tokens: TokenStream = crate::idents::rust_path_to_tokens(&owned_mod_suffix);
 
     // Path prefix to this message's view-of-oneof sub-module within
-    // the parallel `view::oneofs::` tree, relative to the current
-    // view-struct emission scope. For a view struct at `view::` (depth
-    // 1) targeting `view::oneofs::foo::Kind`: `oneofs::foo::` (sibling
-    // in our `view::` module). For a nested view struct at
-    // `view::foo::InnerView` (depth 2) targeting
-    // `view::oneofs::foo::inner::Kind`: `super::oneofs::foo::inner::`
-    // (climb out to `view::`, then descend).
+    // the parallel `__buffa::view::oneofs::` tree, relative to the
+    // current view-struct emission scope. For a view struct at
+    // `__buffa::view::` (depth 2) targeting
+    // `__buffa::view::oneofs::foo::Kind`: `oneofs::foo::` (sibling in
+    // our `view::` module). For a nested view struct at
+    // `__buffa::view::foo::InnerView` (depth 3) targeting
+    // `__buffa::view::oneofs::foo::inner::Kind`:
+    // `super::oneofs::foo::inner::` (climb out to `view::`, then
+    // descend).
     //
-    // Formally: (scope.nesting - 1) `super::`s + `oneofs::` + owned
+    // Formally: (scope.nesting - 2) `super::`s + `oneofs::` + owned
     // module path chain (same as owned_mod_suffix).
-    let view_oneofs_supers = if scope.nesting > 1 {
-        "super::".repeat(scope.nesting - 1)
-    } else {
-        String::new()
-    };
+    let view_oneofs_supers = "super::".repeat(scope.nesting.saturating_sub(2));
     let view_oneofs_supers_tokens: TokenStream =
         syn::parse_str(&view_oneofs_supers).unwrap_or_default();
     let view_oneofs_prefix: TokenStream = quote! {
@@ -229,15 +228,18 @@ fn generate_view_items(
     };
 
     // Path prefix to this message's OWNED oneof sub-module within the
-    // parallel `oneofs::` tree, reachable from the current view-struct
-    // scope. From view:: at depth N, climb N supers to the package,
-    // then descend into `oneofs::<owner_chain>::<self>::` — N is
-    // `scope.nesting`.
+    // parallel `__buffa::oneofs::` tree, reachable from the current
+    // view-struct scope. From `__buffa::view::` at depth N, climb N-1
+    // supers to `__buffa::`, then descend into
+    // `oneofs::<owner_chain>::<self>::`.
     //
     // Used by `build_to_owned_fields` to reach the OWNED `Kind` enum
     // when materializing an owned message from a view.
+    let owned_oneofs_supers = "super::".repeat(scope.nesting.saturating_sub(1));
+    let owned_oneofs_supers_tokens: TokenStream =
+        syn::parse_str(&owned_oneofs_supers).unwrap_or_default();
     let owned_oneofs_prefix: TokenStream = quote! {
-        #supers_tokens oneofs:: #owned_mod_tokens ::
+        #owned_oneofs_supers_tokens oneofs:: #owned_mod_tokens ::
     };
 
     // View struct fields (excludes real-oneof members, map fields, and
@@ -1814,47 +1816,47 @@ fn rewrite_to_view_path(
     // The view tree mirrors the owned tree inside each package. Rewrite
     // rules:
     //
-    //   owned `super::Foo`                         → `Foo<'a>`
-    //   owned `super::super::Foo`                  → `super::FooView<'a>`
-    //   owned `super::outer::Inner`                → `outer::InnerView<'a>`
-    //   owned `super::super::outer::Inner`         → `super::outer::InnerView<'a>`
-    //   owned `super::super::pkg_b::Foo`           → `super::pkg_b::view::FooView<'a>`
-    //   owned `super::super::pkg_b::outer::Inner`  → `super::pkg_b::view::outer::InnerView<'a>`
+    //   owned `super::super::Foo`          → `FooView<'a>`
+    //   owned `super::super::super::Foo`   → `super::FooView<'a>`
+    //   owned `super::super::outer::Inner` → `outer::InnerView<'a>`
+    //   owned `super::super::super::pkg_b::Foo`
+    //          → `super::super::super::pkg_b::__buffa::view::FooView<'a>`
     //   owned `::buffa_types::google::protobuf::Timestamp`
-    //          → `::buffa_types::google::protobuf::view::TimestampView<'a>`
+    //          → `::buffa_types::google::protobuf::__buffa::view::TimestampView<'a>`
     //
     // Algorithm:
     //
     // SAME-PACKAGE target (our own view tree mirrors the owned tree):
-    //   Strip one leading `super::` (the hop that escapes our view::
-    //   to the package root, which we don't need when the target is
-    //   in our own view tree). Keep the rest, swap the final ident.
-    //   owned `super::Foo`                → `Foo<'a>`
-    //   owned `super::super::Foo`         → `super::FooView<'a>`
-    //   owned `super::outer::Inner`       → `outer::InnerView<'a>`
-    //   owned `super::attribute::Peer`    → `attribute::PeerView<'a>`
+    //   Strip the two leading `super::`s (the hops that escape
+    //   `__buffa::view::` to the package root, which we don't need when
+    //   the target is in our own view tree). Keep the rest, swap the
+    //   final ident.
     //
     // CROSS-PACKAGE target (same crate, different proto package):
     //   Keep the owned prefix verbatim (the climb reaches out through
-    //   however many packages), then inject `view::` before the final
-    //   ident to re-enter the target package's view tree.
-    //   owned `super::super::super::pkg_b::Foo`
-    //        → `super::super::super::pkg_b::view::FooView<'a>`
+    //   however many packages), then inject `__buffa::view::` before
+    //   the final ident to re-enter the target package's view tree.
     //
     // EXTERN target (`::crate::…`):
-    //   Same rewrite as cross-package: preserve prefix, inject `view::`
-    //   before the final ident. Matches `buffa-types`'s layout.
-    //   owned `::buffa_types::google::protobuf::Timestamp`
-    //        → `::buffa_types::google::protobuf::view::TimestampView<'a>`
+    //   Same rewrite as cross-package: preserve prefix, inject
+    //   `__buffa::view::` before the final ident. Matches
+    //   `buffa-types`'s layout.
     if target_same_package {
-        let stripped = owned.strip_prefix("super::").unwrap_or(owned);
+        // Strip the two `super::` hops that escape `__buffa::view::`
+        // back to the package root — within our own view tree the
+        // mirrored position needs no climb.
+        let stripped = owned
+            .strip_prefix("super::super::")
+            .or_else(|| owned.strip_prefix("super::"))
+            .unwrap_or(owned);
         let (remainder_prefix, _) = split_path_last(stripped);
         return quote! { #remainder_prefix #view_ident #lifetime };
     }
 
     // Cross-package / extern: keep the full owned prefix, inject
-    // `view::` before the final ident.
-    quote! { #prefix_tokens view:: #view_ident #lifetime }
+    // `__buffa::view::` before the final ident to re-enter the target
+    // package's view tree.
+    quote! { #prefix_tokens __buffa::view:: #view_ident #lifetime }
 }
 
 /// Split `"a::b::Foo"` into (tokens for `a::b::`, `"Foo"`).

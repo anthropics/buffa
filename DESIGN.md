@@ -227,33 +227,33 @@ println!("name: {}", view.name);  // Deref, zero-copy, 'static + Send
 
 **Generated code layout — parallel trees per kind:**
 
-Ancillary generated types live in **kind-namespaced parallel trees** at the package root, not interleaved with the owned messages. The kind segment is outermost; for kinds that modify other kinds (only `view` today), the modifier wraps the modified:
+Ancillary generated types live in **kind-namespaced parallel trees** under a single reserved `__buffa::` parent at the package root, not interleaved with the owned messages. The `__buffa` prefix is reserved by codegen validation, so the kind trees can never collide with proto-derived module names like `message View {}` or `package foo.view`. The kind segment sits inside `__buffa::`; for kinds that modify other kinds (only `view` today), the modifier wraps the modified:
 
 ```text
-<package>::<proto-path>::<ident>                         # owned messages / enums
-<package>::<kind>::<proto-path>::<ident>                 # ancillary kind
-<package>::<modifier>::<kind>::<proto-path>::<ident>     # modifier wrapping kind (view of oneofs)
+<package>::<proto-path>::<ident>                                  # owned messages / enums
+<package>::__buffa::<kind>::<proto-path>::<ident>                 # ancillary kind
+<package>::__buffa::<modifier>::<kind>::<proto-path>::<ident>     # modifier wrapping kind (view of oneofs)
 ```
 
 Current kinds are `view`, `oneofs`, and `ext`; only `view` is a modifier. Concretely, for proto package `my.pkg` containing message `Foo` with oneof `bar` and extension `baz`:
 
-| Item                       | Generated path                              |
-|----------------------------|---------------------------------------------|
-| Owned message struct       | `my::pkg::Foo`                              |
-| View message struct        | `my::pkg::view::FooView<'a>`                |
-| Oneof enum (owned)         | `my::pkg::oneofs::foo::Bar`                 |
-| Oneof enum (view)          | `my::pkg::view::oneofs::foo::Bar<'a>`       |
-| File-level extension const | `my::pkg::ext::BAZ`                         |
+| Item                       | Generated path                                       |
+|----------------------------|------------------------------------------------------|
+| Owned message struct       | `my::pkg::Foo`                                       |
+| View message struct        | `my::pkg::__buffa::view::FooView<'a>`                |
+| Oneof enum (owned)         | `my::pkg::__buffa::oneofs::foo::Bar`                 |
+| Oneof enum (view)          | `my::pkg::__buffa::view::oneofs::foo::Bar<'a>`       |
+| File-level extension const | `my::pkg::__buffa::ext::BAZ`                         |
 
 Two things to note:
 
 - The **owner module** in the `oneofs::` tree (`foo` above) is snake-cased from the owner message name. The oneof enum keeps its PascalCase proto name (`Bar`) — no `Kind` suffix, no `View` suffix on view-of-oneof enums. The tree prefix (`oneofs::` vs `view::oneofs::`) disambiguates.
-- **View message structs keep the `View` suffix** (`FooView<'a>`) even though they live in `view::`. This is a deliberate exception: users routinely import the owned type and the view type together (`use pkg::{Foo, FooView}`) and a bare `View` would shadow too commonly.
+- **View message structs keep the `View` suffix** (`FooView<'a>`) even though they live in `view::`. This is a deliberate exception: users routinely import the owned type and the view type together (`use pkg::{Foo, __buffa::view::FooView}`) and a bare `View` would shadow too commonly.
 
 This layout has three structural benefits:
 
-1. **Collision-free.** A oneof whose owner name matches an existing nested type / enum / extension can't fight over the package-root namespace, because each lives in a different kind tree. The codegen has no reserved-name escape hatch; it simply emits verbatim proto names.
-2. **Predictable.** Every proto package emits exactly five sibling files per `.proto`: `<stem>.rs`, `<stem>.__view.rs`, `<stem>.__ext.rs`, `<stem>.__oneofs.rs`, `<stem>.__view_oneofs.rs` — empty-bodied when the kind has no content. `buffa-build` and the packaging plugin stitch these into `pub mod view { … pub mod oneofs { … } }`, `pub mod ext { … }`, and `pub mod oneofs { … }` wrappers per package.
+1. **Collision-free.** A oneof whose owner name matches an existing nested type / enum / extension can't fight over the package-root namespace, because each lives in a different kind tree. The single `__buffa` reserved name is the only constraint codegen places on proto names.
+2. **Predictable.** Every proto package emits exactly five sibling files per `.proto`: `<stem>.rs`, `<stem>.__view.rs`, `<stem>.__ext.rs`, `<stem>.__oneofs.rs`, `<stem>.__view_oneofs.rs` — empty-bodied when the kind has no content. `buffa-build` and the packaging plugin stitch these into `pub mod __buffa { pub mod view { … pub mod oneofs { … } } pub mod ext { … } pub mod oneofs { … } }` per package.
 3. **Feature-gatable.** View and extension support are codegen options; disabling them simply leaves those trees empty. The structural layout is stable regardless.
 
 ### 3. MessageField\<T\> — Ergonomic Optional Messages

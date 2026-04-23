@@ -6,7 +6,7 @@ pub mod value {
     use super::*;
     #[derive(Clone, Debug)]
     pub enum Kind<'a> {
-        NullValue(::buffa::EnumValue<super::super::super::NullValue>),
+        NullValue(::buffa::EnumValue<super::super::super::super::NullValue>),
         NumberValue(f64),
         StringValue(&'a str),
         BoolValue(bool),

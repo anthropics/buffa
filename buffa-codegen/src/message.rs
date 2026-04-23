@@ -16,24 +16,25 @@ use crate::CodeGenError;
 ///
 /// Owned-tree scope at module depth `nesting` (counted from the package
 /// root) wants to reference an oneof enum `Kind` living at
-/// `<pkg>::oneofs::<owner_chain>::<self_mod>::Kind`, where
+/// `<pkg>::__buffa::oneofs::<owner_chain>::<self_mod>::Kind`, where
 /// `<owner_chain>::<self_mod>` mirrors the proto nesting of the current
 /// message.
 ///
-/// Emitted prefix has the form `super::super::...::oneofs::<owner_chain>::<self_mod>::`
-/// with one `super::` per `nesting` level (to climb out to package scope)
-/// plus `oneofs::` plus the snake_cased owner chain plus the current
-/// message's own snake_cased module name. Trailing `::` is included so
-/// callers can append the enum ident directly.
+/// Emitted prefix has the form
+/// `super::super::...::__buffa::oneofs::<owner_chain>::<self_mod>::`
+/// with one `super::` per `nesting` level (to climb out to package
+/// scope) plus `__buffa::oneofs::` plus the snake_cased owner chain
+/// plus the current message's own snake_cased module name. Trailing
+/// `::` is included so callers can append the enum ident directly.
 ///
 /// Examples:
 ///
 /// ```ignore
 /// // Top-level `Foo` at package scope (nesting=0):
-/// oneofs_path_prefix(scope with nesting=0, proto_fqn="pkg.Foo") → `oneofs::foo::`
+/// oneofs_path_prefix(scope with nesting=0, proto_fqn="pkg.Foo") → `__buffa::oneofs::foo::`
 ///
 /// // Nested `Outer.Inner` at depth 1 (inside `pub mod outer`):
-/// oneofs_path_prefix(scope with nesting=1, proto_fqn="pkg.Outer.Inner") → `super::oneofs::outer::inner::`
+/// oneofs_path_prefix(scope with nesting=1, proto_fqn="pkg.Outer.Inner") → `super::__buffa::oneofs::outer::inner::`
 /// ```
 pub(crate) fn oneofs_path_prefix(
     current_package: &str,
@@ -64,7 +65,7 @@ pub(crate) fn oneofs_path_prefix(
         })
         .collect();
 
-    quote! { #supers_tokens oneofs:: #(#snake_segments)* }
+    quote! { #supers_tokens __buffa::oneofs:: #(#snake_segments)* }
 }
 
 /// Qualified paths to the per-message / per-extension registry `const` items
@@ -391,12 +392,13 @@ fn generate_message_with_nesting(
         && (has_real_oneofs || (has_extension_ranges && ctx.config.preserve_unknown_fields));
 
     // Oneof enum definitions. The enums live in the parallel
-    // `pkg::oneofs::<owner_chain>::<self_mod>::Kind` tree, one level
-    // deeper than the previous layout (which embedded them as
-    // `pkg::<self_mod>::Kind`). Bumping the nesting argument by ONE
-    // absorbs that extra hop for variant-type path resolution:
-    // `generate_oneof_enum` internally adds 1 more to account for the
-    // enum sitting inside its own `pub mod <self_mod>` wrapper.
+    // `pkg::__buffa::oneofs::<owner_chain>::<self_mod>::Kind` tree,
+    // two levels deeper than the legacy layout (which embedded them as
+    // `pkg::<self_mod>::Kind`). Bumping the nesting argument by TWO
+    // absorbs the `__buffa::oneofs::` hops for variant-type path
+    // resolution: `generate_oneof_enum` internally adds 1 more to
+    // account for the enum sitting inside its own `pub mod <self_mod>`
+    // wrapper.
     let oneof_enums = msg
         .oneof_decl
         .iter()
@@ -412,7 +414,7 @@ fn generate_message_with_nesting(
                 features,
                 resolver,
                 &oneof_idents,
-                nesting + 1,
+                nesting + 2,
             )
         })
         .collect::<Result<Vec<_>, _>>()?;

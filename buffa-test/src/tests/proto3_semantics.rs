@@ -9,7 +9,9 @@
 //! 4. Packed repeated scalars by default.
 //! 5. Synthetic oneofs for `optional` fields filtered from user-visible API.
 
-use crate::proto3sem::view::{EnumContextsView, ImplicitScalarsView, OptionalAllTypesView};
+use crate::proto3sem::__buffa::view::{
+    EnumContextsView, ImplicitScalarsView, OptionalAllTypesView,
+};
 use crate::proto3sem::*;
 use buffa::{EnumValue, Message, MessageView};
 
@@ -366,17 +368,21 @@ fn enum_unknown_value_preserved_map() {
 #[test]
 fn enum_unknown_value_preserved_oneof() {
     let msg = EnumContexts {
-        choice: Some(crate::proto3sem::oneofs::enum_contexts::Choice::Picked(
-            EnumValue::Unknown(77),
-        )),
+        choice: Some(
+            crate::proto3sem::__buffa::oneofs::enum_contexts::Choice::Picked(EnumValue::Unknown(
+                77,
+            )),
+        ),
         ..Default::default()
     };
     let decoded = round_trip(&msg);
     assert_eq!(
         decoded.choice,
-        Some(crate::proto3sem::oneofs::enum_contexts::Choice::Picked(
-            EnumValue::Unknown(77)
-        ))
+        Some(
+            crate::proto3sem::__buffa::oneofs::enum_contexts::Choice::Picked(EnumValue::Unknown(
+                77
+            ))
+        )
     );
 }
 

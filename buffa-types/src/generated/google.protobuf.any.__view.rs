@@ -206,7 +206,7 @@ impl<'a> AnyView<'a> {
     }
 }
 impl<'a> ::buffa::MessageView<'a> for AnyView<'a> {
-    type Owned = super::Any;
+    type Owned = super::super::Any;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
@@ -218,10 +218,10 @@ impl<'a> ::buffa::MessageView<'a> for AnyView<'a> {
     }
     /// Convert this view to the owned message type.
     #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> super::Any {
+    fn to_owned_message(&self) -> super::super::Any {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
-        super::Any {
+        super::super::Any {
             type_url: self.type_url.to_string(),
             value: ::bytes::Bytes::copy_from_slice(self.value),
             __buffa_unknown_fields: self

@@ -1,4 +1,4 @@
-use crate::utf8test::view::StringNoValidationView;
+use crate::utf8test::__buffa::view::StringNoValidationView;
 use crate::utf8test::*;
 use buffa::{Message, MessageView};
 
@@ -64,7 +64,7 @@ fn view_none_accepts_invalid_utf8() {
 
 #[test]
 fn oneof_none_variant_is_vec_u8() {
-    use crate::utf8test::oneofs::oneof_no_validation::Content;
+    use crate::utf8test::__buffa::oneofs::oneof_no_validation::Content;
     let msg = OneofNoValidation {
         content: Some(Content::RawText(b"bytes".to_vec())),
         ..Default::default()

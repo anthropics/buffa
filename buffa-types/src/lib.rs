@@ -75,70 +75,64 @@ pub mod google {
         include!("generated/google.protobuf.struct.rs");
         include!("generated/google.protobuf.timestamp.rs");
         include!("generated/google.protobuf.wrappers.rs");
-        // View tree — `view::<proto-path>::*View` for every message.
-        // The inner `view::oneofs::<proto-path>::*` sub-module carries
-        // view-of-oneof enums (see DESIGN.md → "Generated code layout").
+        // All ancillary kind trees (view / ext / oneofs) live under a
+        // single `pub mod __buffa { ... }` so they cannot collide with
+        // proto-derived module names. See DESIGN.md → "Generated code
+        // layout".
         #[allow(
             clippy::derivable_impls,
             clippy::match_single_binding,
-            non_camel_case_types
-        )]
-        pub mod view {
-            include!("generated/google.protobuf.any.__view.rs");
-            include!("generated/google.protobuf.duration.__view.rs");
-            include!("generated/google.protobuf.empty.__view.rs");
-            include!("generated/google.protobuf.field_mask.__view.rs");
-            include!("generated/google.protobuf.struct.__view.rs");
-            include!("generated/google.protobuf.timestamp.__view.rs");
-            include!("generated/google.protobuf.wrappers.__view.rs");
-            #[allow(
-                clippy::derivable_impls,
-                clippy::match_single_binding,
-                non_camel_case_types,
-                unused_imports
-            )]
-            pub mod oneofs {
-                include!("generated/google.protobuf.any.__view_oneofs.rs");
-                include!("generated/google.protobuf.duration.__view_oneofs.rs");
-                include!("generated/google.protobuf.empty.__view_oneofs.rs");
-                include!("generated/google.protobuf.field_mask.__view_oneofs.rs");
-                include!("generated/google.protobuf.struct.__view_oneofs.rs");
-                include!("generated/google.protobuf.timestamp.__view_oneofs.rs");
-                include!("generated/google.protobuf.wrappers.__view_oneofs.rs");
-            }
-        }
-        // WKTs have no file-level extensions, so the .__ext.rs files are
-        // empty and register_types is suppressed. We still include them
-        // to keep the sibling-file invariant — simplifies diffs if any
-        // WKT gains an extension in a future revision.
-        #[allow(unused_imports, dead_code)]
-        pub mod ext {
-            include!("generated/google.protobuf.any.__ext.rs");
-            include!("generated/google.protobuf.duration.__ext.rs");
-            include!("generated/google.protobuf.empty.__ext.rs");
-            include!("generated/google.protobuf.field_mask.__ext.rs");
-            include!("generated/google.protobuf.struct.__ext.rs");
-            include!("generated/google.protobuf.timestamp.__ext.rs");
-            include!("generated/google.protobuf.wrappers.__ext.rs");
-        }
-        // Owned oneofs tree — `oneofs::<proto-path>::Kind` for every
-        // oneof. All seven WKT files contribute (most are empty — only
-        // Value has a `kind` oneof, which lands at
-        // `oneofs::value::Kind` inside this module).
-        #[allow(
-            clippy::derivable_impls,
-            clippy::match_single_binding,
+            non_snake_case,
             non_camel_case_types,
-            unused_imports
+            unused_imports,
+            dead_code
         )]
-        pub mod oneofs {
-            include!("generated/google.protobuf.any.__oneofs.rs");
-            include!("generated/google.protobuf.duration.__oneofs.rs");
-            include!("generated/google.protobuf.empty.__oneofs.rs");
-            include!("generated/google.protobuf.field_mask.__oneofs.rs");
-            include!("generated/google.protobuf.struct.__oneofs.rs");
-            include!("generated/google.protobuf.timestamp.__oneofs.rs");
-            include!("generated/google.protobuf.wrappers.__oneofs.rs");
+        pub mod __buffa {
+            // View tree — `view::<proto-path>::*View` for every message.
+            // The inner `view::oneofs::<proto-path>::*` sub-module
+            // carries view-of-oneof enums.
+            pub mod view {
+                include!("generated/google.protobuf.any.__view.rs");
+                include!("generated/google.protobuf.duration.__view.rs");
+                include!("generated/google.protobuf.empty.__view.rs");
+                include!("generated/google.protobuf.field_mask.__view.rs");
+                include!("generated/google.protobuf.struct.__view.rs");
+                include!("generated/google.protobuf.timestamp.__view.rs");
+                include!("generated/google.protobuf.wrappers.__view.rs");
+                pub mod oneofs {
+                    include!("generated/google.protobuf.any.__view_oneofs.rs");
+                    include!("generated/google.protobuf.duration.__view_oneofs.rs");
+                    include!("generated/google.protobuf.empty.__view_oneofs.rs");
+                    include!("generated/google.protobuf.field_mask.__view_oneofs.rs");
+                    include!("generated/google.protobuf.struct.__view_oneofs.rs");
+                    include!("generated/google.protobuf.timestamp.__view_oneofs.rs");
+                    include!("generated/google.protobuf.wrappers.__view_oneofs.rs");
+                }
+            }
+            // WKTs have no file-level extensions, so the .__ext.rs files
+            // are empty and register_types is suppressed. We still
+            // include them to keep the sibling-file invariant.
+            pub mod ext {
+                include!("generated/google.protobuf.any.__ext.rs");
+                include!("generated/google.protobuf.duration.__ext.rs");
+                include!("generated/google.protobuf.empty.__ext.rs");
+                include!("generated/google.protobuf.field_mask.__ext.rs");
+                include!("generated/google.protobuf.struct.__ext.rs");
+                include!("generated/google.protobuf.timestamp.__ext.rs");
+                include!("generated/google.protobuf.wrappers.__ext.rs");
+            }
+            // Owned oneofs tree — `oneofs::<proto-path>::Kind` for every
+            // oneof. Only Value has a `kind` oneof, which lands at
+            // `oneofs::value::Kind` inside this module.
+            pub mod oneofs {
+                include!("generated/google.protobuf.any.__oneofs.rs");
+                include!("generated/google.protobuf.duration.__oneofs.rs");
+                include!("generated/google.protobuf.empty.__oneofs.rs");
+                include!("generated/google.protobuf.field_mask.__oneofs.rs");
+                include!("generated/google.protobuf.struct.__oneofs.rs");
+                include!("generated/google.protobuf.timestamp.__oneofs.rs");
+                include!("generated/google.protobuf.wrappers.__oneofs.rs");
+            }
         }
     }
 }

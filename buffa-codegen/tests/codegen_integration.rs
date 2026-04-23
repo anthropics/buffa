@@ -509,8 +509,9 @@ fn inline_oneof() {
         "#,
         &no_views(),
     );
-    // Oneof enum now lives in the parallel `oneofs::` tree per package.
-    assert!(content.contains("pub info: Option<oneofs::contact::Info>"));
+    // Oneof enum now lives in the parallel `__buffa::oneofs::` tree per
+    // package.
+    assert!(content.contains("pub info: Option<__buffa::oneofs::contact::Info>"));
     assert!(content.contains("pub enum Info"));
     assert!(content.contains("Email("));
     assert!(content.contains("Phone("));
@@ -660,11 +661,12 @@ fn inline_oneof_duplicate_message_type_no_from_collision() {
         &no_views(),
     );
     // Box on both message variants. The oneof enum now lives at
-    // `oneofs::t::Kind`, so references to the sibling-at-package-root
-    // `Placeholder` and `T` go through `super::super::`.
+    // `__buffa::oneofs::t::Kind`, so references to the
+    // sibling-at-package-root `Placeholder` and `T` go through
+    // `super::super::super::`.
     assert_eq!(
         content
-            .matches("::buffa::alloc::boxed::Box<super::super::Placeholder>")
+            .matches("::buffa::alloc::boxed::Box<super::super::super::Placeholder>")
             .count(),
         2,
         "both Placeholder variants should be boxed: {content}"
@@ -672,14 +674,14 @@ fn inline_oneof_duplicate_message_type_no_from_collision() {
     // Only ONE From impl (for T, which appears once), not two for Placeholder.
     assert_eq!(
         content
-            .matches("impl From<super::super::Placeholder> for Kind")
+            .matches("impl From<super::super::super::Placeholder> for Kind")
             .count(),
         0,
         "duplicate-type From impls must be skipped: {content}"
     );
     assert_eq!(
         content
-            .matches("impl From<super::super::T> for Kind")
+            .matches("impl From<super::super::super::T> for Kind")
             .count(),
         1,
         "unique-type From impl must still be generated: {content}"

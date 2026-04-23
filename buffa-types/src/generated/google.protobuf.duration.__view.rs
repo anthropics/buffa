@@ -153,7 +153,7 @@ impl<'a> DurationView<'a> {
     }
 }
 impl<'a> ::buffa::MessageView<'a> for DurationView<'a> {
-    type Owned = super::Duration;
+    type Owned = super::super::Duration;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
@@ -165,10 +165,10 @@ impl<'a> ::buffa::MessageView<'a> for DurationView<'a> {
     }
     /// Convert this view to the owned message type.
     #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> super::Duration {
+    fn to_owned_message(&self) -> super::super::Duration {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
-        super::Duration {
+        super::super::Duration {
             seconds: self.seconds,
             nanos: self.nanos,
             __buffa_unknown_fields: self

@@ -81,23 +81,27 @@ fn test_oneof_name_matching_parent_message() {
     use crate::collisions;
 
     let msg = collisions::Status {
-        status: Some(collisions::oneofs::status::Status::Code(42)),
+        status: Some(collisions::__buffa::oneofs::status::Status::Code(42)),
         ..core::default::Default::default()
     };
     let decoded = round_trip(&msg);
     assert_eq!(
         decoded.status,
-        Some(collisions::oneofs::status::Status::Code(42))
+        Some(collisions::__buffa::oneofs::status::Status::Code(42))
     );
 
     let msg2 = collisions::Status {
-        status: Some(collisions::oneofs::status::Status::Message("error".into())),
+        status: Some(collisions::__buffa::oneofs::status::Status::Message(
+            "error".into(),
+        )),
         ..core::default::Default::default()
     };
     let decoded = round_trip(&msg2);
     assert_eq!(
         decoded.status,
-        Some(collisions::oneofs::status::Status::Message("error".into()))
+        Some(collisions::__buffa::oneofs::status::Status::Message(
+            "error".into()
+        ))
     );
 }
 
@@ -115,7 +119,7 @@ fn test_container_references_collision_types() {
             ..core::default::Default::default()
         }),
         status: buffa::MessageField::some(collisions::Status {
-            status: Some(collisions::oneofs::status::Status::Code(1)),
+            status: Some(collisions::__buffa::oneofs::status::Status::Code(1)),
             ..core::default::Default::default()
         }),
         ..core::default::Default::default()
@@ -130,7 +134,8 @@ fn test_nested_option_message_round_trip() {
     // gh#36: nested `message Option` shadows core::option::Option in the
     // message's `pub mod { use super::*; }` scope. The proto is built with
     // views + JSON enabled so all Option<...> emission paths compile.
-    use crate::prelude_shadow::{self, oneofs, picker};
+    use crate::prelude_shadow::__buffa::oneofs;
+    use crate::prelude_shadow::{self, picker};
 
     let msg = prelude_shadow::Picker {
         options: vec![picker::Option {

@@ -20,7 +20,7 @@ mod proto {
 
 use buffa::{EnumValue, Message};
 use proto::buffa::examples::addressbook::v1::{
-    oneofs::person::Address,
+    __buffa::oneofs::person::Address,
     person::{PhoneNumber, PhoneType},
     AddressBook, Person, StructuredAddress,
 };

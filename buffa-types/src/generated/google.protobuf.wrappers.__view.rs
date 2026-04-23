@@ -71,7 +71,7 @@ impl<'a> DoubleValueView<'a> {
     }
 }
 impl<'a> ::buffa::MessageView<'a> for DoubleValueView<'a> {
-    type Owned = super::DoubleValue;
+    type Owned = super::super::DoubleValue;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
@@ -83,10 +83,10 @@ impl<'a> ::buffa::MessageView<'a> for DoubleValueView<'a> {
     }
     /// Convert this view to the owned message type.
     #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> super::DoubleValue {
+    fn to_owned_message(&self) -> super::super::DoubleValue {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
-        super::DoubleValue {
+        super::super::DoubleValue {
             value: self.value,
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields
@@ -176,7 +176,7 @@ impl<'a> FloatValueView<'a> {
     }
 }
 impl<'a> ::buffa::MessageView<'a> for FloatValueView<'a> {
-    type Owned = super::FloatValue;
+    type Owned = super::super::FloatValue;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
@@ -188,10 +188,10 @@ impl<'a> ::buffa::MessageView<'a> for FloatValueView<'a> {
     }
     /// Convert this view to the owned message type.
     #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> super::FloatValue {
+    fn to_owned_message(&self) -> super::super::FloatValue {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
-        super::FloatValue {
+        super::super::FloatValue {
             value: self.value,
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields
@@ -281,7 +281,7 @@ impl<'a> Int64ValueView<'a> {
     }
 }
 impl<'a> ::buffa::MessageView<'a> for Int64ValueView<'a> {
-    type Owned = super::Int64Value;
+    type Owned = super::super::Int64Value;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
@@ -293,10 +293,10 @@ impl<'a> ::buffa::MessageView<'a> for Int64ValueView<'a> {
     }
     /// Convert this view to the owned message type.
     #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> super::Int64Value {
+    fn to_owned_message(&self) -> super::super::Int64Value {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
-        super::Int64Value {
+        super::super::Int64Value {
             value: self.value,
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields
@@ -386,7 +386,7 @@ impl<'a> UInt64ValueView<'a> {
     }
 }
 impl<'a> ::buffa::MessageView<'a> for UInt64ValueView<'a> {
-    type Owned = super::UInt64Value;
+    type Owned = super::super::UInt64Value;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
@@ -398,10 +398,10 @@ impl<'a> ::buffa::MessageView<'a> for UInt64ValueView<'a> {
     }
     /// Convert this view to the owned message type.
     #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> super::UInt64Value {
+    fn to_owned_message(&self) -> super::super::UInt64Value {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
-        super::UInt64Value {
+        super::super::UInt64Value {
             value: self.value,
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields
@@ -491,7 +491,7 @@ impl<'a> Int32ValueView<'a> {
     }
 }
 impl<'a> ::buffa::MessageView<'a> for Int32ValueView<'a> {
-    type Owned = super::Int32Value;
+    type Owned = super::super::Int32Value;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
@@ -503,10 +503,10 @@ impl<'a> ::buffa::MessageView<'a> for Int32ValueView<'a> {
     }
     /// Convert this view to the owned message type.
     #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> super::Int32Value {
+    fn to_owned_message(&self) -> super::super::Int32Value {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
-        super::Int32Value {
+        super::super::Int32Value {
             value: self.value,
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields
@@ -596,7 +596,7 @@ impl<'a> UInt32ValueView<'a> {
     }
 }
 impl<'a> ::buffa::MessageView<'a> for UInt32ValueView<'a> {
-    type Owned = super::UInt32Value;
+    type Owned = super::super::UInt32Value;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
@@ -608,10 +608,10 @@ impl<'a> ::buffa::MessageView<'a> for UInt32ValueView<'a> {
     }
     /// Convert this view to the owned message type.
     #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> super::UInt32Value {
+    fn to_owned_message(&self) -> super::super::UInt32Value {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
-        super::UInt32Value {
+        super::super::UInt32Value {
             value: self.value,
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields
@@ -701,7 +701,7 @@ impl<'a> BoolValueView<'a> {
     }
 }
 impl<'a> ::buffa::MessageView<'a> for BoolValueView<'a> {
-    type Owned = super::BoolValue;
+    type Owned = super::super::BoolValue;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
@@ -713,10 +713,10 @@ impl<'a> ::buffa::MessageView<'a> for BoolValueView<'a> {
     }
     /// Convert this view to the owned message type.
     #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> super::BoolValue {
+    fn to_owned_message(&self) -> super::super::BoolValue {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
-        super::BoolValue {
+        super::super::BoolValue {
             value: self.value,
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields
@@ -806,7 +806,7 @@ impl<'a> StringValueView<'a> {
     }
 }
 impl<'a> ::buffa::MessageView<'a> for StringValueView<'a> {
-    type Owned = super::StringValue;
+    type Owned = super::super::StringValue;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
@@ -818,10 +818,10 @@ impl<'a> ::buffa::MessageView<'a> for StringValueView<'a> {
     }
     /// Convert this view to the owned message type.
     #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> super::StringValue {
+    fn to_owned_message(&self) -> super::super::StringValue {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
-        super::StringValue {
+        super::super::StringValue {
             value: self.value.to_string(),
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields
@@ -911,7 +911,7 @@ impl<'a> BytesValueView<'a> {
     }
 }
 impl<'a> ::buffa::MessageView<'a> for BytesValueView<'a> {
-    type Owned = super::BytesValue;
+    type Owned = super::super::BytesValue;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
@@ -923,10 +923,10 @@ impl<'a> ::buffa::MessageView<'a> for BytesValueView<'a> {
     }
     /// Convert this view to the owned message type.
     #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> super::BytesValue {
+    fn to_owned_message(&self) -> super::super::BytesValue {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
-        super::BytesValue {
+        super::super::BytesValue {
             value: (self.value).to_vec(),
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields

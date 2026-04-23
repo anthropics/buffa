@@ -291,7 +291,7 @@ impl<'a> FieldMaskView<'a> {
     }
 }
 impl<'a> ::buffa::MessageView<'a> for FieldMaskView<'a> {
-    type Owned = super::FieldMask;
+    type Owned = super::super::FieldMask;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
@@ -303,10 +303,10 @@ impl<'a> ::buffa::MessageView<'a> for FieldMaskView<'a> {
     }
     /// Convert this view to the owned message type.
     #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> super::FieldMask {
+    fn to_owned_message(&self) -> super::super::FieldMask {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
-        super::FieldMask {
+        super::super::FieldMask {
             paths: self.paths.iter().map(|s| s.to_string()).collect(),
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields

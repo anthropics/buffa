@@ -55,3 +55,15 @@ message Outer {
   }
   optional Middle middle = 1;
 }
+
+// Regression for the kind-tree wrapper collision: a user message named
+// `View` with a nested type produces `pub mod view { Inner }` in the
+// owned tree. Under the `__buffa::` parent, the kind-tree wrapper lives
+// at `pkg::__buffa::view::`, leaving `pkg::view::` free for this
+// nested-type module. Compilation alone is the assertion.
+message View {
+  message Inner {
+    optional string s = 1;
+  }
+  optional Inner inner = 1;
+}

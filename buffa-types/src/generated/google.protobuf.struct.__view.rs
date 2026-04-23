@@ -120,7 +120,7 @@ impl<'a> StructView<'a> {
     }
 }
 impl<'a> ::buffa::MessageView<'a> for StructView<'a> {
-    type Owned = super::Struct;
+    type Owned = super::super::Struct;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
@@ -132,10 +132,10 @@ impl<'a> ::buffa::MessageView<'a> for StructView<'a> {
     }
     /// Convert this view to the owned message type.
     #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> super::Struct {
+    fn to_owned_message(&self) -> super::super::Struct {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
-        super::Struct {
+        super::super::Struct {
             fields: self
                 .fields
                 .iter()
@@ -329,7 +329,7 @@ impl<'a> ValueView<'a> {
     }
 }
 impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
-    type Owned = super::Value;
+    type Owned = super::super::Value;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
@@ -341,10 +341,10 @@ impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
     }
     /// Convert this view to the owned message type.
     #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> super::Value {
+    fn to_owned_message(&self) -> super::super::Value {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
-        super::Value {
+        super::super::Value {
             kind: self
                 .kind
                 .as_ref()
@@ -464,7 +464,7 @@ impl<'a> ListValueView<'a> {
     }
 }
 impl<'a> ::buffa::MessageView<'a> for ListValueView<'a> {
-    type Owned = super::ListValue;
+    type Owned = super::super::ListValue;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
@@ -476,10 +476,10 @@ impl<'a> ::buffa::MessageView<'a> for ListValueView<'a> {
     }
     /// Convert this view to the owned message type.
     #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    fn to_owned_message(&self) -> super::ListValue {
+    fn to_owned_message(&self) -> super::super::ListValue {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
-        super::ListValue {
+        super::super::ListValue {
             values: self.values.iter().map(|v| v.to_owned_message()).collect(),
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields
