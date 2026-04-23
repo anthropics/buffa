@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="189" viewBox="0 0 800 189">
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .title { font-size: 16px; font-weight: 600; fill: #24292f; }
+    .label { font-size: 12px; fill: #24292f; }
+    .value { font-size: 11px; fill: #57606a; }
+    .axis-label { font-size: 11px; fill: #57606a; }
+    .legend-text { font-size: 12px; fill: #24292f; }
+    .grid { stroke: #d0d7de; stroke-width: 0.5; }
+  </style>
+  <rect width="100%" height="100%" fill="white"/>
+  <text x="400.0" y="25" text-anchor="middle" class="title">JSON Encode Throughput — LogRecord</text>
+  <rect x="140" y="35" width="14" height="14" rx="2" fill="#4C78A8"/>
+  <text x="158" y="46" class="legend-text">buffa</text>
+  <rect x="209.5" y="35" width="14" height="14" rx="2" fill="#F58518"/>
+  <text x="227.5" y="46" class="legend-text">prost</text>
+  <rect x="279.0" y="35" width="14" height="14" rx="2" fill="#54A24B"/>
+  <text x="297.0" y="46" class="legend-text">Go</text>
+  <line x1="140.0" y1="80" x2="140.0" y2="154" class="grid"/>
+  <text x="140.0" y="169" text-anchor="middle" class="axis-label">0</text>
+  <line x1="256.0" y1="80" x2="256.0" y2="154" class="grid"/>
+  <text x="256.0" y="169" text-anchor="middle" class="axis-label">400</text>
+  <line x1="372.0" y1="80" x2="372.0" y2="154" class="grid"/>
+  <text x="372.0" y="169" text-anchor="middle" class="axis-label">800</text>
+  <line x1="488.0" y1="80" x2="488.0" y2="154" class="grid"/>
+  <text x="488.0" y="169" text-anchor="middle" class="axis-label">1,200</text>
+  <line x1="604.0" y1="80" x2="604.0" y2="154" class="grid"/>
+  <text x="604.0" y="169" text-anchor="middle" class="axis-label">1,600</text>
+  <line x1="720.0" y1="80" x2="720.0" y2="154" class="grid"/>
+  <text x="720.0" y="169" text-anchor="middle" class="axis-label">2,000</text>
+  <text x="430.0" y="184" text-anchor="middle" class="axis-label">MiB/s</text>
+  <text x="130" y="121.0" text-anchor="end" class="label">LogRecord</text>
+  <rect x="140" y="80.0" width="375.2" height="22" rx="2" fill="#4C78A8"/>
+  <text x="519.2" y="95.0" class="value">1,293</text>
+  <rect x="140" y="106.0" width="408.1" height="22" rx="2" fill="#F58518"/>
+  <text x="552.1" y="121.0" class="value">1,407</text>
+  <rect x="140" y="132.0" width="39.5" height="22" rx="2" fill="#54A24B"/>
+  <text x="183.5" y="147.0" class="value">136</text>
+</svg>

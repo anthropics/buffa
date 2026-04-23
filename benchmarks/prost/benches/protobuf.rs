@@ -148,12 +148,19 @@ fn bench_google_message1(c: &mut Criterion) {
     );
 }
 
+fn bench_media_frame(c: &mut Criterion) {
+    let data = include_bytes!("../../datasets/media_frame.pb");
+    benchmark_decode::<MediaFrame>(c, "prost/media_frame", data);
+    benchmark_json::<MediaFrame>(c, "prost/media_frame", data);
+}
+
 criterion_group!(
     benches,
     bench_api_response,
     bench_log_record,
     bench_analytics_event,
     bench_google_message1,
+    bench_media_frame,
 );
 
 criterion_main!(benches);

@@ -14,6 +14,7 @@ exclude = [
     "benchmarks/gen-datasets",
     "benchmarks/buffa",
     "benchmarks/prost",
+    "benchmarks/prost-bytes",
     "benchmarks/google",
     "benchmarks/go",
     "examples/addressbook",

@@ -38,11 +38,12 @@ COLORS = {
     "buffa": "#4C78A8",
     "buffa (view)": "#72B7B2",
     "prost": "#F58518",
+    "prost (bytes)": "#EEAE62",
     "protobuf-v4": "#E45756",
     "Go": "#54A24B",
 }
 
-MESSAGES = ["ApiResponse", "LogRecord", "AnalyticsEvent", "GoogleMessage1"]
+MESSAGES = ["ApiResponse", "LogRecord", "AnalyticsEvent", "GoogleMessage1", "MediaFrame"]
 
 # Map from snake_case benchmark names to display names.
 MSG_DISPLAY = {
@@ -50,6 +51,7 @@ MSG_DISPLAY = {
     "log_record": "LogRecord",
     "analytics_event": "AnalyticsEvent",
     "google_message1_proto3": "GoogleMessage1",
+    "media_frame": "MediaFrame",
 }
 
 # ── Parsers ─────────────────────────────────────────────────────────────
@@ -165,6 +167,7 @@ def _get_go(data: dict[str, float], op: str, msg_display: str) -> float | None:
 def build_tables(
     buffa: dict[str, float],
     prost: dict[str, float],
+    prost_bytes: dict[str, float],
     google: dict[str, float],
     go: dict[str, float],
 ) -> dict[str, dict[str, dict[str, float | None]]]:
@@ -176,17 +179,19 @@ def build_tables(
 
     for chart, series_defs in [
         ("binary-decode", [
-            ("buffa",        lambda ms, md: _get(buffa, "buffa", ms, "decode")),
-            ("buffa (view)", lambda ms, md: _get(buffa, "buffa", ms, "decode_view")),
-            ("prost",        lambda ms, md: _get(prost, "prost", ms, "decode")),
-            ("protobuf-v4",  lambda ms, md: _get(google, "google", ms, "decode")),
-            ("Go",           lambda ms, md: _get_go(go, "BinaryDecode", md)),
+            ("buffa",         lambda ms, md: _get(buffa, "buffa", ms, "decode")),
+            ("buffa (view)",  lambda ms, md: _get(buffa, "buffa", ms, "decode_view")),
+            ("prost",         lambda ms, md: _get(prost, "prost", ms, "decode")),
+            ("prost (bytes)", lambda ms, md: _get(prost_bytes, "prost-bytes", ms, "decode")),
+            ("protobuf-v4",   lambda ms, md: _get(google, "google", ms, "decode")),
+            ("Go",            lambda ms, md: _get_go(go, "BinaryDecode", md)),
         ]),
         ("binary-encode", [
-            ("buffa",        lambda ms, md: _get(buffa, "buffa", ms, "encode")),
-            ("prost",        lambda ms, md: _get(prost, "prost", ms, "encode")),
-            ("protobuf-v4",  lambda ms, md: _get(google, "google", ms, "encode")),
-            ("Go",           lambda ms, md: _get_go(go, "BinaryEncode", md)),
+            ("buffa",         lambda ms, md: _get(buffa, "buffa", ms, "encode")),
+            ("prost",         lambda ms, md: _get(prost, "prost", ms, "encode")),
+            ("prost (bytes)", lambda ms, md: _get(prost_bytes, "prost-bytes", ms, "encode")),
+            ("protobuf-v4",   lambda ms, md: _get(google, "google", ms, "encode")),
+            ("Go",            lambda ms, md: _get_go(go, "BinaryEncode", md)),
         ]),
         ("json-encode", [
             ("buffa",        lambda ms, md: _get(buffa, "buffa", ms, "json_encode")),
@@ -219,16 +224,33 @@ class Series:
     data: dict[str, float]
 
 
-def _format_value(v: float) -> str:
-    if v >= 1000:
-        return f"{v / 1000:.1f}k"
-    return str(int(v))
+def _format_axis(v: float, unit: str) -> str:
+    """Axis tick labels. Plain integers with commas for small values; 'k' suffix
+    only kicks in at ≥10,000 (so 1,200 isn't rendered as "1.2k"). When the
+    chart uses GiB/s, show one decimal place."""
+    if unit == "GiB/s":
+        return f"{v:.1f}"
+    if v >= 10_000:
+        return f"{v / 1000:.0f}k"
+    return f"{v:,.0f}"
+
+
+def _format_bar(v: float, unit: str) -> str:
+    """Inline value label next to each bar."""
+    if unit == "GiB/s":
+        return f"{v:.2f}"
+    return f"{int(v):,}"
 
 
 def _nice_max(values: list[float]) -> float:
     raw_max = max(values)
     magnitude = 10 ** math.floor(math.log10(raw_max))
     return math.ceil(raw_max / magnitude) * magnitude
+
+
+# Threshold at which we switch MiB/s → GiB/s for a chart: values ≥10 GiB/s
+# produce unwieldy MiB/s axis labels ("70k MiB/s" → "68.4 GiB/s" reads better).
+_MIB_TO_GIB_CUTOFF = 10 * 1024
 
 
 def generate_chart(title: str, unit: str, messages: list[str],
@@ -251,6 +273,13 @@ def generate_chart(title: str, unit: str, messages: list[str],
     svg_w = chart_left + chart_w + 80
 
     all_vals = [v for s in series_list for v in s.data.values() if v]
+    # Auto-rescale MiB/s → GiB/s on the chart when the max value is large
+    # enough to make integer-MiB axis labels unreadable.
+    scale_factor = 1.0
+    if unit == "MiB/s" and max(all_vals) >= _MIB_TO_GIB_CUTOFF:
+        unit = "GiB/s"
+        scale_factor = 1 / 1024
+    all_vals = [v * scale_factor for v in all_vals]
     max_val = _nice_max(all_vals)
     scale = chart_w / max_val
 
@@ -292,7 +321,7 @@ def generate_chart(title: str, unit: str, messages: list[str],
           f' x2="{x:.1f}" y2="{top_margin + total_chart_h}" class="grid"/>')
         a(f'  <text x="{x:.1f}" y="{top_margin + total_chart_h + 15}"'
           f' text-anchor="middle" class="axis-label">'
-          f'{_format_value(round(val))}</text>')
+          f'{_format_axis(val, unit)}</text>')
 
     a(f'  <text x="{chart_left + chart_w / 2}"'
       f' y="{svg_h - 5}" text-anchor="middle" class="axis-label">{unit}</text>')
@@ -304,13 +333,13 @@ def generate_chart(title: str, unit: str, messages: list[str],
           f' class="label">{msg}</text>')
 
         for si, s in enumerate(series_list):
-            val = s.data.get(msg, 0)
+            val = s.data.get(msg, 0) * scale_factor
             by = gy + si * (bar_h + bar_gap)
             bw = max(val * scale, 1)
             a(f'  <rect x="{chart_left}" y="{by:.1f}" width="{bw:.1f}"'
               f' height="{bar_h}" rx="2" fill="{s.color}"/>')
             a(f'  <text x="{chart_left + bw + 4:.1f}" y="{by + bar_h / 2 + 4:.1f}"'
-              f' class="value">{int(val):,}</text>')
+              f' class="value">{_format_bar(val, unit)}</text>')
 
     a('</svg>')
     return '\n'.join(lines)
@@ -383,16 +412,18 @@ def main() -> None:
 
     buffa = load_criterion("buffa")
     prost = load_criterion("prost")
+    prost_bytes = load_criterion("prost-bytes")
     google = load_criterion("google")
 
     go_path = results_dir / "go.txt"
     go = parse_go(go_path.read_text()) if go_path.exists() else {}
 
     print(f"Parsed: {len(buffa)} buffa, {len(prost)} prost, "
-          f"{len(google)} google, {len(go)} Go benchmarks")
+          f"{len(prost_bytes)} prost-bytes, {len(google)} google, "
+          f"{len(go)} Go benchmarks")
 
     # Build structured tables.
-    tables = build_tables(buffa, prost, google, go)
+    tables = build_tables(buffa, prost, prost_bytes, google, go)
 
     # Generate SVGs.
     chart_titles = {
@@ -402,17 +433,29 @@ def main() -> None:
         "json-decode": "JSON Decode Throughput",
     }
 
+    # Per-message SVGs: one file per (chart, message) so each can use its own
+    # throughput scale. MediaFrame's ~70 GiB/s view decode would otherwise
+    # compress the other four messages' bars into a few pixels.
+    # Reverse-map display name → snake-case filename stem.
+    snake_for: dict[str, str] = {v: k for k, v in MSG_DISPLAY.items()}
     for chart_name, table in tables.items():
-        series_list = [
-            Series(name=name, color=COLORS[name],
-                   data={m: v for m, v in vals.items() if v is not None})
-            for name, vals in table.items()
-        ]
-        svg = generate_chart(chart_titles[chart_name], "MiB/s",
-                             MESSAGES, series_list)
-        path = charts_dir / f"{chart_name}.svg"
-        path.write_text(svg + "\n")
-        print(f"  wrote {path}")
+        title_base = chart_titles[chart_name]
+        for msg in MESSAGES:
+            series_list = [
+                Series(name=name, color=COLORS[name],
+                       data={msg: vals[msg]} if vals.get(msg) is not None else {})
+                for name, vals in table.items()
+            ]
+            # Drop series that have no value for this message (e.g. google/go
+            # for MediaFrame) so the chart doesn't render empty bars.
+            series_list = [s for s in series_list if s.data]
+            if not series_list:
+                continue
+            svg = generate_chart(f"{title_base} — {msg}", "MiB/s",
+                                 [msg], series_list)
+            path = charts_dir / f"{chart_name}-{snake_for[msg]}.svg"
+            path.write_text(svg + "\n")
+            print(f"  wrote {path}")
 
     # Print README-ready tables.
     readme = generate_readme_tables(tables)

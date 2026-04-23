@@ -1,0 +1,25 @@
+# Build and run prost benchmarks with `prost-build`'s `.bytes(["."])`
+# substitution enabled, decoding from `bytes::Bytes` input. Intended as a
+# comparison point for buffa's view-based zero-copy decode — see the README's
+# Performance section.
+#
+# Usage:
+#   docker build -t buffa-bench-prost-bytes -f benchmarks/Dockerfile.bench-prost-bytes .
+#   docker run --rm buffa-bench-prost-bytes
+
+FROM rust:1.85-slim AS builder
+
+RUN apt-get update && apt-get install -y \
+    protobuf-compiler pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+COPY benchmarks/proto/        benchmarks/proto/
+COPY benchmarks/datasets/     benchmarks/datasets/
+COPY benchmarks/prost-bytes/  benchmarks/prost-bytes/
+
+RUN cargo install cargo-criterion \
+    && cargo bench --manifest-path benchmarks/prost-bytes/Cargo.toml --no-run
+
+ENTRYPOINT ["cargo", "criterion", "--manifest-path", "benchmarks/prost-bytes/Cargo.toml", "--bench", "protobuf", "--message-format=json", "--", "--warm-up-time", "3", "--measurement-time", "5"]
