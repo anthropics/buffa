@@ -117,7 +117,7 @@ pub mod collisions {
 
 #[allow(clippy::derivable_impls, clippy::match_single_binding, dead_code)]
 pub mod prelude_shadow {
-    include!(concat!(env!("OUT_DIR"), "/prelude_shadow.rs"));
+    include_generated!("prelude_shadow");
 }
 
 #[allow(

@@ -130,12 +130,12 @@ fn test_nested_option_message_round_trip() {
     // gh#36: nested `message Option` shadows core::option::Option in the
     // message's `pub mod { use super::*; }` scope. The proto is built with
     // views + JSON enabled so all Option<...> emission paths compile.
-    use crate::prelude_shadow::{self, picker};
+    use crate::prelude_shadow::{self, oneofs, picker};
 
     let msg = prelude_shadow::Picker {
         options: vec![picker::Option {
             title: Some("a".into()),
-            value: Some(picker::option::ValueOneof::IntValue(7)),
+            value: Some(oneofs::picker::option::Value::IntValue(7)),
             ..core::default::Default::default()
         }],
         label: Some("L".into()),
