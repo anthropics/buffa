@@ -34,6 +34,6 @@
   <text x="650.3" y="95.0" class="value">785</text>
   <rect x="140" y="106.0" width="543.6" height="22" rx="2" fill="#F58518"/>
   <text x="687.6" y="121.0" class="value">843</text>
-  <rect x="140" y="132.0" width="33.1" height="22" rx="2" fill="#54A24B"/>
-  <text x="177.1" y="147.0" class="value">51</text>
+  <rect x="140" y="132.0" width="33.0" height="22" rx="2" fill="#54A24B"/>
+  <text x="177.0" y="147.0" class="value">51</text>
 </svg>

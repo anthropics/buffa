@@ -36,8 +36,8 @@
   <text x="635.6" y="95.0" class="value">2,542</text>
   <rect x="140" y="106.0" width="349.9" height="22" rx="2" fill="#F58518"/>
   <text x="493.9" y="121.0" class="value">1,809</text>
-  <rect x="140" y="132.0" width="202.8" height="22" rx="2" fill="#E45756"/>
-  <text x="346.8" y="147.0" class="value">1,048</text>
-  <rect x="140" y="158.0" width="107.5" height="22" rx="2" fill="#54A24B"/>
-  <text x="251.5" y="173.0" class="value">555</text>
+  <rect x="140" y="132.0" width="195.8" height="22" rx="2" fill="#E45756"/>
+  <text x="339.8" y="147.0" class="value">1,012</text>
+  <rect x="140" y="158.0" width="108.3" height="22" rx="2" fill="#54A24B"/>
+  <text x="252.3" y="173.0" class="value">560</text>
 </svg>

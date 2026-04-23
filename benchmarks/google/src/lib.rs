@@ -7,7 +7,4 @@
 // Include the generated entry point at the crate root.  The generated.rs
 // file uses `#[path = "..."]` attributes with relative paths, so it must
 // be included from its containing directory.
-include!(concat!(
-    env!("OUT_DIR"),
-    "/protobuf_generated/generated.rs"
-));
+include!(concat!(env!("OUT_DIR"), "/protobuf_generated/generated.rs"));
