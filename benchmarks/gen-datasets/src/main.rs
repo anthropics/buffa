@@ -8,14 +8,32 @@ use rand::{Rng, SeedableRng};
 use std::fs;
 use std::path::Path;
 
+#[allow(
+    clippy::derivable_impls,
+    clippy::enum_variant_names,
+    clippy::match_single_binding,
+    clippy::upper_case_acronyms,
+    non_camel_case_types,
+    unused_imports,
+    dead_code
+)]
 mod proto {
     include!(concat!(env!("OUT_DIR"), "/bench_messages.rs"));
 }
+#[allow(
+    clippy::derivable_impls,
+    clippy::enum_variant_names,
+    clippy::match_single_binding,
+    clippy::upper_case_acronyms,
+    non_camel_case_types,
+    unused_imports,
+    dead_code
+)]
 mod dataset_proto {
     include!(concat!(env!("OUT_DIR"), "/benchmarks.rs"));
 }
 
-use proto::analytics_event::property::Value;
+use proto::analytics_event::property::ValueOneof as Value;
 use proto::analytics_event::{Nested, Property};
 use proto::log_record::Context;
 use proto::*;
@@ -120,6 +138,41 @@ fn gen_nested(rng: &mut impl Rng, depth: usize) -> Nested {
     }
 }
 
+fn random_bytes(rng: &mut impl Rng, min_len: usize, max_len: usize) -> Vec<u8> {
+    let len = rng.random_range(min_len..=max_len);
+    let mut buf = vec![0u8; len];
+    rng.fill_bytes(&mut buf);
+    buf
+}
+
+fn gen_media_frame(rng: &mut impl Rng) -> MediaFrame {
+    let num_chunks = rng.random_range(2..=6);
+    let num_attachments = rng.random_range(0..=4);
+    MediaFrame {
+        frame_id: random_hex(rng, 32),
+        timestamp_nanos: rng.random_range(1_700_000_000_000_000_000i64..1_800_000_000_000_000_000),
+        content_type: (*choose(
+            &[
+                "application/octet-stream",
+                "image/jpeg",
+                "image/png",
+                "video/mp4",
+                "audio/opus",
+            ],
+            rng,
+        ))
+        .to_string(),
+        body: random_bytes(rng, 1024, 10_240),
+        chunks: (0..num_chunks)
+            .map(|_| random_bytes(rng, 200, 2000))
+            .collect(),
+        attachments: (0..num_attachments)
+            .map(|_| (random_string(rng, 5, 20), random_bytes(rng, 50, 500)))
+            .collect(),
+        ..Default::default()
+    }
+}
+
 fn gen_analytics_event(rng: &mut impl Rng) -> AnalyticsEvent {
     let num_props = rng.random_range(3..=10);
     let num_sections = rng.random_range(2..=5);
@@ -184,6 +237,15 @@ fn main() {
         output_dir,
         (0..NUM_PAYLOADS)
             .map(|_| gen_analytics_event(&mut rng))
+            .collect(),
+    );
+
+    write_dataset(
+        "media_frame",
+        "bench.MediaFrame",
+        output_dir,
+        (0..NUM_PAYLOADS)
+            .map(|_| gen_media_frame(&mut rng))
             .collect(),
     );
 

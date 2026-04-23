@@ -189,6 +189,24 @@ fn bench_google_message1_view(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_media_frame_view(c: &mut Criterion) {
+    let dataset = load_dataset(include_bytes!("../../datasets/media_frame.pb"));
+    let bytes = total_payload_bytes(&dataset);
+    let mut group = c.benchmark_group("buffa/media_frame");
+    group.throughput(Throughput::Bytes(bytes));
+
+    group.bench_function("decode_view", |b| {
+        b.iter(|| {
+            for payload in &dataset.payload {
+                let view = MediaFrameView::decode_view(payload).unwrap();
+                criterion::black_box(&view);
+            }
+        });
+    });
+
+    group.finish();
+}
+
 fn bench_api_response(c: &mut Criterion) {
     benchmark_decode::<ApiResponse>(
         c,
@@ -218,6 +236,14 @@ fn bench_google_message1(c: &mut Criterion) {
         c,
         "buffa/google_message1_proto3",
         include_bytes!("../../datasets/google_message1_proto3.pb"),
+    );
+}
+
+fn bench_media_frame(c: &mut Criterion) {
+    benchmark_decode::<MediaFrame>(
+        c,
+        "buffa/media_frame",
+        include_bytes!("../../datasets/media_frame.pb"),
     );
 }
 
@@ -253,12 +279,21 @@ fn bench_google_message1_json(c: &mut Criterion) {
     );
 }
 
+fn bench_media_frame_json(c: &mut Criterion) {
+    benchmark_json::<MediaFrame>(
+        c,
+        "buffa/media_frame",
+        include_bytes!("../../datasets/media_frame.pb"),
+    );
+}
+
 criterion_group!(
     owned,
     bench_api_response,
     bench_log_record,
     bench_analytics_event,
     bench_google_message1,
+    bench_media_frame,
 );
 
 criterion_group!(
@@ -267,6 +302,7 @@ criterion_group!(
     bench_log_record_view,
     bench_analytics_event_view,
     bench_google_message1_view,
+    bench_media_frame_view,
 );
 
 criterion_group!(
@@ -275,6 +311,7 @@ criterion_group!(
     bench_log_record_json,
     bench_analytics_event_json,
     bench_google_message1_json,
+    bench_media_frame_json,
 );
 
 criterion_main!(owned, views, json);

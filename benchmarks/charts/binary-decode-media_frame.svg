@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="267" viewBox="0 0 800 267">
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .title { font-size: 16px; font-weight: 600; fill: #24292f; }
+    .label { font-size: 12px; fill: #24292f; }
+    .value { font-size: 11px; fill: #57606a; }
+    .axis-label { font-size: 11px; fill: #57606a; }
+    .legend-text { font-size: 12px; fill: #24292f; }
+    .grid { stroke: #d0d7de; stroke-width: 0.5; }
+  </style>
+  <rect width="100%" height="100%" fill="white"/>
+  <text x="400.0" y="25" text-anchor="middle" class="title">Binary Decode Throughput — MediaFrame</text>
+  <rect x="140" y="35" width="14" height="14" rx="2" fill="#4C78A8"/>
+  <text x="158" y="46" class="legend-text">buffa</text>
+  <rect x="209.5" y="35" width="14" height="14" rx="2" fill="#72B7B2"/>
+  <text x="227.5" y="46" class="legend-text">buffa (view)</text>
+  <rect x="331.5" y="35" width="14" height="14" rx="2" fill="#F58518"/>
+  <text x="349.5" y="46" class="legend-text">prost</text>
+  <rect x="401.0" y="35" width="14" height="14" rx="2" fill="#EEAE62"/>
+  <text x="419.0" y="46" class="legend-text">prost (bytes)</text>
+  <rect x="530.5" y="35" width="14" height="14" rx="2" fill="#E45756"/>
+  <text x="548.5" y="46" class="legend-text">protobuf-v4</text>
+  <rect x="645.0" y="35" width="14" height="14" rx="2" fill="#54A24B"/>
+  <text x="663.0" y="46" class="legend-text">Go</text>
+  <line x1="140.0" y1="80" x2="140.0" y2="232" class="grid"/>
+  <text x="140.0" y="247" text-anchor="middle" class="axis-label">0.0</text>
+  <line x1="256.0" y1="80" x2="256.0" y2="232" class="grid"/>
+  <text x="256.0" y="247" text-anchor="middle" class="axis-label">16.0</text>
+  <line x1="372.0" y1="80" x2="372.0" y2="232" class="grid"/>
+  <text x="372.0" y="247" text-anchor="middle" class="axis-label">32.0</text>
+  <line x1="488.0" y1="80" x2="488.0" y2="232" class="grid"/>
+  <text x="488.0" y="247" text-anchor="middle" class="axis-label">48.0</text>
+  <line x1="604.0" y1="80" x2="604.0" y2="232" class="grid"/>
+  <text x="604.0" y="247" text-anchor="middle" class="axis-label">64.0</text>
+  <line x1="720.0" y1="80" x2="720.0" y2="232" class="grid"/>
+  <text x="720.0" y="247" text-anchor="middle" class="axis-label">80.0</text>
+  <text x="430.0" y="262" text-anchor="middle" class="axis-label">GiB/s</text>
+  <text x="130" y="160.0" text-anchor="end" class="label">MediaFrame</text>
+  <rect x="140" y="80.0" width="119.1" height="22" rx="2" fill="#4C78A8"/>
+  <text x="263.1" y="95.0" class="value">16.42</text>
+  <rect x="140" y="106.0" width="516.9" height="22" rx="2" fill="#72B7B2"/>
+  <text x="660.9" y="121.0" class="value">71.29</text>
+  <rect x="140" y="132.0" width="68.3" height="22" rx="2" fill="#F58518"/>
+  <text x="212.3" y="147.0" class="value">9.42</text>
+  <rect x="140" y="158.0" width="166.5" height="22" rx="2" fill="#EEAE62"/>
+  <text x="310.5" y="173.0" class="value">22.96</text>
+  <rect x="140" y="184.0" width="124.8" height="22" rx="2" fill="#E45756"/>
+  <text x="268.8" y="199.0" class="value">17.22</text>
+  <rect x="140" y="210.0" width="8.8" height="22" rx="2" fill="#54A24B"/>
+  <text x="152.8" y="225.0" class="value">1.21</text>
+</svg>
