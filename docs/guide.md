@@ -878,6 +878,47 @@ async fn handle(
 }
 ```
 
+### Encoding from views (`ViewEncode`)
+
+View types also implement `ViewEncode<'a>`, which provides the same
+two-pass `compute_size`/`write_to` model as `Message`. This lets you
+build a message from borrowed `&str` / `&[u8]` data and serialize it
+**without** allocating intermediate `String` / `Vec<u8>` fields:
+
+```rust,ignore
+use buffa::ViewEncode;
+use my_pkg::__buffa::view::LogRecordView;
+
+let labels: &[(&str, &str)] = &[("env", "prod"), ("region", "us-west-2")];
+
+let view = LogRecordView {
+    message: "request handled",
+    severity: 3,
+    labels: labels.iter().copied().collect(),  // MapView from borrowed pairs
+    ..Default::default()
+};
+let wire: Vec<u8> = view.encode_to_vec();
+```
+
+This is the natural fit for high-throughput emit paths (logging, metrics,
+tracing) where the source data is already borrowed. Benchmarks show ~6×
+speedup over the equivalent owned `Message` build+encode for a 15-label
+string-map message — the win is the eliminated per-field allocation, not
+the wire write itself.
+
+`ViewEncode` is also useful as a **proxy fast path**: decode a request
+view, inspect a few fields, re-encode the same view onward — no
+`to_owned_message()` round-trip:
+
+```rust,ignore
+let view = RequestView::decode_view(&inbound)?;
+if view.tenant_id != expected { return Err(..); }
+let outbound = view.encode_to_vec();   // wire-identical to inbound for set fields
+```
+
+`MapView` gains `From<Vec<(K, V)>>` and `FromIterator<(K, V)>` constructors
+to make hand-building map views ergonomic.
+
 ## JSON serialization
 
 Enable the `json` feature and `generate_json(true)` in your build config:
