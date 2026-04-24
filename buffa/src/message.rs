@@ -83,6 +83,8 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// is `u32`, so messages whose encoded size exceeds `u32::MAX` (4 GiB)
     /// will produce a wrapped (undefined) size and a truncated encoding.
     /// Stay well within the 2 GiB spec limit.
+    #[must_use = "compute_size has the side-effect of populating cached sizes; \
+                  if you only need that, call encode() instead"]
     fn compute_size(&self) -> u32;
 
     /// Write this message's encoded bytes to a buffer.
@@ -93,7 +95,7 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
 
     /// Convenience: compute size, then write. This is the primary encoding API.
     fn encode(&self, buf: &mut impl BufMut) {
-        self.compute_size();
+        let _ = self.compute_size();
         self.write_to(buf);
     }
 
@@ -105,6 +107,7 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     }
 
     /// Encode this message to a new `Vec<u8>`.
+    #[must_use]
     fn encode_to_vec(&self) -> alloc::vec::Vec<u8> {
         let size = self.compute_size() as usize;
         let mut buf = alloc::vec::Vec::with_capacity(size);
@@ -120,6 +123,7 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// This is equivalent to `Bytes::from(self.encode_to_vec())` — both
     /// are zero-copy with respect to the encoded bytes — but saves readers
     /// from having to know that `From<Vec<u8>> for Bytes` is zero-copy.
+    #[must_use]
     fn encode_to_bytes(&self) -> bytes::Bytes {
         let size = self.compute_size() as usize;
         let mut buf = bytes::BytesMut::with_capacity(size);
@@ -377,6 +381,7 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// The cached encoded size from the last `compute_size()` call.
     ///
     /// Returns 0 if `compute_size()` has never been called.
+    #[must_use]
     fn cached_size(&self) -> u32;
 
     /// Clear all fields to their default values.

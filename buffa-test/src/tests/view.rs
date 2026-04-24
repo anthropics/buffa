@@ -560,3 +560,26 @@ fn test_view_encode_proto2_oneof_group_closed_enum_roundtrip() {
     let redecoded = ViewCoverage::decode_from_slice(&view_bytes).unwrap();
     assert_eq!(redecoded, owned);
 }
+
+#[test]
+fn test_view_encode_closed_enum_unknown_value_preserved() {
+    // Unknown closed-enum value on the wire: view decode cannot represent
+    // 99 as a `Priority` so the typed `level` field stays at default and the
+    // raw bytes go to UnknownFieldsView. ViewEncode must re-emit those
+    // unknown bytes so a downstream owned decoder sees the same result as
+    // decoding the original wire directly.
+    use crate::proto2::__buffa::view::ViewCoverageView;
+    use crate::proto2::{Priority, ViewCoverage};
+    // field 1 (level) varint = tag 0x08, value 99 (not a Priority variant).
+    let wire: &[u8] = &[0x08, 99];
+    let owned_direct = ViewCoverage::decode_from_slice(wire).unwrap();
+    let view = ViewCoverageView::decode_view(wire).unwrap();
+    // The typed field is NOT 99 — it's the proto2 first-variant default.
+    assert_eq!(view.level, Priority::LOW);
+    let view_bytes = view.encode_to_vec();
+    let owned_via_view = ViewCoverage::decode_from_slice(&view_bytes).unwrap();
+    assert_eq!(
+        owned_via_view, owned_direct,
+        "view-encode must preserve unknown closed-enum semantics"
+    );
+}

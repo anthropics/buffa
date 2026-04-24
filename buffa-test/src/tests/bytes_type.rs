@@ -269,3 +269,39 @@ fn test_bytes_type_map_value_stays_vec() {
     let owned: BytesContexts = view.to_owned_message();
     assert_eq!(owned.by_key.get("k").map(Vec::as_slice), Some(&b"v"[..]));
 }
+
+#[test]
+fn test_bytes_type_view_encode_roundtrip() {
+    // ViewEncode × use_bytes_type: view-side bytes fields are `&[u8]` while
+    // owned-side are `bytes::Bytes`. The encode-stmt builders duck-type
+    // through `encode_bytes(&self.#ident, buf)` (AsRef<[u8]>) so this should
+    // be wire-identical to the owned encode across all bytes-field shapes.
+    use buffa::{MessageView, ViewEncode};
+    let msg = BytesContexts {
+        many: vec![
+            bytes::Bytes::from_static(b"a"),
+            bytes::Bytes::from_static(b"bc"),
+        ],
+        maybe: Some(bytes::Bytes::from_static(&[0x00, 0xFF])),
+        choice: Some(ChoiceOneof::Raw(bytes::Bytes::from_static(b"o"))),
+        by_key: [("k".to_string(), b"v".to_vec())].into_iter().collect(),
+        ..Default::default()
+    };
+    let wire = msg.encode_to_vec();
+    let view = BytesContextsView::decode_view(&wire).expect("decode_view");
+    let view_wire = view.encode_to_vec();
+    // Decode-then-compare rather than byte-equality (map iteration order is
+    // hash-seed dependent on the owned side).
+    let back = BytesContexts::decode_from_slice(&view_wire).expect("decode");
+    assert_eq!(back, msg);
+    // Singular bytes field via Person.avatar (no map → byte-exact).
+    use crate::basic_bytes::__buffa::view::PersonView;
+    let p = Person {
+        id: 1,
+        avatar: bytes::Bytes::from_static(&[0xCA, 0xFE, 0xBE, 0xEF]),
+        ..Default::default()
+    };
+    let p_wire = p.encode_to_vec();
+    let p_view = PersonView::decode_view(&p_wire).expect("decode_view");
+    assert_eq!(p_view.encode_to_vec(), p_wire);
+}

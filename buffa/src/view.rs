@@ -151,6 +151,8 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     /// Recursively computes sizes for sub-message views and stores them in
     /// each view's `CachedSize` field. Must be called before
     /// [`write_to`](Self::write_to).
+    #[must_use = "compute_size has the side-effect of populating cached sizes; \
+                  if you only need that, call encode() instead"]
     fn compute_size(&self) -> u32;
 
     /// Write this view's encoded bytes to a buffer.
@@ -160,11 +162,12 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     fn write_to(&self, buf: &mut impl BufMut);
 
     /// Return the size cached by the most recent [`compute_size`](Self::compute_size).
+    #[must_use]
     fn cached_size(&self) -> u32;
 
     /// Convenience: compute size, then write. Primary view-encode entry point.
     fn encode(&self, buf: &mut impl BufMut) {
-        self.compute_size();
+        let _ = self.compute_size();
         self.write_to(buf);
     }
 
@@ -176,6 +179,7 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     }
 
     /// Encode this view to a new `Vec<u8>`.
+    #[must_use]
     fn encode_to_vec(&self) -> alloc::vec::Vec<u8> {
         let size = self.compute_size() as usize;
         let mut buf = alloc::vec::Vec::with_capacity(size);
@@ -184,6 +188,7 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     }
 
     /// Encode this view to a new [`bytes::Bytes`].
+    #[must_use]
     fn encode_to_bytes(&self) -> Bytes {
         let size = self.compute_size() as usize;
         let mut buf = bytes::BytesMut::with_capacity(size);
