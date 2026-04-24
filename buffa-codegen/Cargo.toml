@@ -11,7 +11,7 @@ categories = ["development-tools::build-utils"]
 
 [dependencies]
 # `path` wins for local workspace development; `version` is used on publish.
-buffa = { path = "../buffa", version = "0.3.0" }
+buffa = { path = "../buffa", version = "0.4.0" }
 buffa-descriptor = { workspace = true }
 prettyplease = { workspace = true }
 proc-macro2 = { workspace = true }
