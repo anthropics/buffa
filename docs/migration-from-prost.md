@@ -65,7 +65,16 @@ With configuration:
 +    .compile()?;
 ```
 
-The `include!()` pattern in `src/lib.rs` is unchanged.
+In `src/lib.rs`, replace prost's per-file `include!` with buffa's per-package macro:
+
+```diff
+ pub mod proto {
+-    include!(concat!(env!("OUT_DIR"), "/my.package.rs"));
++    buffa::include_proto!("my.package");
+ }
+```
+
+Or use `.include_file("_include.rs")` in the build config and `include!` that single file — recommended when your protos span multiple packages.
 
 ## 3. Optional message fields
 
@@ -235,6 +244,7 @@ These are buffa features with no prost equivalent:
 
 ```rust,ignore
 use buffa::MessageView;
+use my_crate::pkg::__buffa::view::PersonView;
 
 let view = PersonView::decode_view(&bytes)?;
 println!("name: {}", view.name);  // &str, no allocation

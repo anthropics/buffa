@@ -76,10 +76,10 @@ This guide covers migration from both versions of the `protobuf` crate:
 -// v4
 -include!(concat!(env!("OUT_DIR"), "/protobuf_generated/generated.rs"));
 +// buffa
-+include!(concat!(env!("OUT_DIR"), "/my_package.rs"));
++buffa::include_proto!("my.package");
 ```
 
-The output filename is derived from the proto package name (e.g., `my.package` → `my.package.rs`).
+The macro argument is the dotted protobuf package name. For multi-package builds, prefer `.include_file("_include.rs")` in the build config and `include!` that single file — it sets up the package module tree and `buffa::include_proto!` calls for you.
 
 ## 3. Encoding and decoding
 
@@ -255,34 +255,33 @@ v4 uses `ProtoStr` / `ProtoString` instead of standard Rust string types. Buffa 
 
 ## 7. Oneofs
 
+Buffa places oneof enums in a parallel `__buffa::oneof::` tree. The enum is named `{PascalCase(oneof_name)}` (no suffix) at `pkg::__buffa::oneof::<owner_snake_path>::`.
+
 ### From v3
 
-v3 uses `Option<OneofEnum>` — same pattern as buffa:
+v3 uses `Option<OneofEnum>` — same shape, different path:
 
 ```diff
--match &msg.value {
++use my_crate::pkg::__buffa::oneof;
+ match &msg.value {
 -    Some(my_message::Value_oneof::StringValue(s)) => { /* ... */ }
--    None => {}
--}
-+match &msg.value {
-+    Some(my_message::Value::StringValue(s)) => { /* ... */ }
-+    None => {}
-+}
++    Some(oneof::my_message::Value::StringValue(s)) => { /* ... */ }
+     None => {}
+ }
 ```
-
-The variant names follow the same pattern; only the enum name may differ (buffa uses the proto oneof name in PascalCase, without a `_oneof` suffix).
 
 ### From v4
 
 v4 uses individual `has_/get/set` accessors plus a case enum:
 
 ```diff
++use my_crate::pkg::__buffa::oneof;
  // v4: individual accessors
 -if msg.has_string_value() {
 -    let s: &ProtoStr = msg.string_value();
 -}
 +// buffa: pattern match on the oneof enum
-+if let Some(my_message::Value::StringValue(s)) = &msg.value {
++if let Some(oneof::my_message::Value::StringValue(s)) = &msg.value {
 +    println!("{}", s);
 +}
 ```
