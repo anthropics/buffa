@@ -66,3 +66,12 @@ message View {
   }
   optional Inner inner = 1;
 }
+
+// gh#64: top-level sibling of `message Option` with a oneof — verifies the
+// file-level resolver qualifies the struct-field `Option<...>` wrapper.
+message Container {
+  oneof choice {
+    string a = 1;
+    int32 b = 2;
+  }
+}
