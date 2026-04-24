@@ -86,8 +86,8 @@ fn test_wkt_view_with_extern_path() {
     // appends "View" to the last path segment: crate::wkt::Timestamp
     // → crate::wkt::TimestampView (which is re-exported from buffa-types'
     // generated code).
-    use crate::wkt::Event;
     use crate::wkt::__buffa::view::EventView;
+    use crate::wkt::Event;
     use buffa::MessageView;
     let msg = Event {
         created_at: buffa::MessageField::some(buffa_types::google::protobuf::Timestamp {

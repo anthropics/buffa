@@ -122,8 +122,8 @@ fn test_recursive_oneof_direct() {
     // Expr { kind { Expr negated = 3; } } is directly self-recursive
     // through the oneof. Message/group variants are always boxed to
     // break the infinite-size cycle.
-    use crate::nested::Expr;
     use crate::nested::__buffa::oneof::expr;
+    use crate::nested::Expr;
     let inner = Expr {
         kind: Some(expr::Kind::IntLiteral(42)),
         ..Default::default()
@@ -256,9 +256,9 @@ fn test_recursive_oneof_merge_semantics() {
 fn test_view_oneof_boxed_message_variant() {
     // View oneof enums box message/group variants for the same reason
     // as owned enums. The Box holds a lifetime-bound view struct.
-    use crate::nested::Expr;
     use crate::nested::__buffa::oneof::expr;
     use crate::nested::__buffa::view::ExprView;
+    use crate::nested::Expr;
     use buffa::MessageView;
     let inner = Expr {
         kind: Some(expr::Kind::IntLiteral(42)),

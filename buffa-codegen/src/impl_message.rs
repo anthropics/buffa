@@ -662,12 +662,13 @@ pub(crate) fn build_view_encode_methods(
         .map(|f| repeated_write_to_stmt(ctx, f, features))
         .collect::<Result<Vec<_>, _>>()?;
 
-    // The view-side oneof enum (`mod::FooOneofView<'a>`) has the same variant
-    // *names* as the owned `mod::FooOneof` but borrowed payload types
-    // (`&'a str` / `Box<FooView<'a>>` vs `String` / `Box<Foo>`). The arm
-    // builders only emit the enum path + variant name and call duck-typed
-    // primitives (`string_encoded_len(x)`, `x.compute_size()`), so they work
-    // unchanged once pointed at the view enum.
+    // The view-side oneof enum (in the parallel `__buffa::view::oneof::` tree)
+    // has the same variant *names* as the owned `__buffa::oneof::<owner>::Kind`
+    // but borrowed payload types (`&'a str` / `Box<FooView<'a>>` vs `String` /
+    // `Box<Foo>`). The arm builders only emit the enum path + variant name and
+    // call duck-typed primitives (`string_encoded_len(x)`, `x.compute_size()`),
+    // so they work unchanged once pointed at the view enum via
+    // `view_oneof_prefix` (no `View` suffix — the tree disambiguates).
     let mut oneof_compute_stmts: Vec<TokenStream> = Vec::new();
     let mut oneof_write_stmts: Vec<TokenStream> = Vec::new();
     for (oneof_name, enum_ident, fields) in &oneof_groups {
