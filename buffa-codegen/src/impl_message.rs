@@ -2539,50 +2539,38 @@ fn map_compute_size_stmt(
     } else {
         map_element_size_expr(val_ty, &v)
     };
-    let key_const = map_element_size_is_constant(key_ty);
-    let val_const = map_element_size_is_constant(val_ty);
-    // Iterate only the side(s) whose size varies: avoids unused-variable
-    // and clippy::for_kv_map lints for bool/fixed* map key or value types.
-    //
-    // The (true, false) arm uses `.values()` here while `map_write_to_stmt`
-    // uses `for (k, v) in &map`. SizeCache slot order must match between the
-    // two passes. For `HashMap` (both std and hashbrown), `.values()` and
-    // `.iter()` walk the same table slots in the same order — identical
-    // sequence for an unmodified instance, which `&self` guarantees across
-    // both passes. For `MapView`, both are insertion-order over a `Vec`.
-    Ok(match (key_const, val_const) {
-        (true, true) => quote! {
+    // Both passes iterate `for (k, v) in &self.#ident`, identical to
+    // `map_write_to_stmt`, so SizeCache slot order matches by construction.
+    // When both key and value are fixed-width (no cache slots reserved) the
+    // entry size is constant and we fold to `len() * const`.
+    if map_element_size_is_constant(key_ty) && map_element_size_is_constant(val_ty) {
+        return Ok(quote! {
             {
                 let entry_size: u32 = #key_tag_len + #key_size + #val_tag_len + #val_size;
                 size += self.#ident.len() as u32 * (#outer_tag_len
                     + ::buffa::encoding::varint_len(entry_size as u64) as u32
                     + entry_size);
             }
-        },
-        (true, false) => quote! {
-            for #v in self.#ident.values() {
-                let entry_size: u32 = #key_tag_len + #key_size + #val_tag_len + #val_size;
-                size += #outer_tag_len
-                    + ::buffa::encoding::varint_len(entry_size as u64) as u32
-                    + entry_size;
-            }
-        },
-        (false, true) => quote! {
-            for #k in self.#ident.keys() {
-                let entry_size: u32 = #key_tag_len + #key_size + #val_tag_len + #val_size;
-                size += #outer_tag_len
-                    + ::buffa::encoding::varint_len(entry_size as u64) as u32
-                    + entry_size;
-            }
-        },
-        (false, false) => quote! {
-            for (#k, #v) in &self.#ident {
-                let entry_size: u32 = #key_tag_len + #key_size + #val_tag_len + #val_size;
-                size += #outer_tag_len
-                    + ::buffa::encoding::varint_len(entry_size as u64) as u32
-                    + entry_size;
-            }
-        },
+        });
+    }
+    let k_bind = if map_element_size_is_constant(key_ty) {
+        format_ident!("_{}", k)
+    } else {
+        k
+    };
+    let v_bind = if map_element_size_is_constant(val_ty) {
+        format_ident!("_{}", v)
+    } else {
+        v
+    };
+    Ok(quote! {
+        #[allow(clippy::for_kv_map)]
+        for (#k_bind, #v_bind) in &self.#ident {
+            let entry_size: u32 = #key_tag_len + #key_size + #val_tag_len + #val_size;
+            size += #outer_tag_len
+                + ::buffa::encoding::varint_len(entry_size as u64) as u32
+                + entry_size;
+        }
     })
 }
 

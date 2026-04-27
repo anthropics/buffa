@@ -165,6 +165,7 @@ impl<'a> ::buffa::ViewEncode<'a> for StructView<'a> {
         use ::buffa::Enumeration as _;
         let _ = &__cache;
         let mut size = 0u32;
+        #[allow(clippy::for_kv_map)]
         for (k, v) in &self.fields {
             let entry_size: u32 = 1u32 + ::buffa::types::string_encoded_len(k) as u32
                 + 1u32

@@ -78,6 +78,7 @@ impl ::buffa::Message for RequestContext {
         if !self.path.is_empty() {
             size += 1u32 + ::buffa::types::string_encoded_len(&self.path) as u32;
         }
+        #[allow(clippy::for_kv_map)]
         for (k, v) in &self.metadata {
             let entry_size: u32 = 1u32 + ::buffa::types::string_encoded_len(k) as u32
                 + 1u32 + ::buffa::types::string_encoded_len(v) as u32;

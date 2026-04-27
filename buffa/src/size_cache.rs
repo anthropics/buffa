@@ -25,7 +25,6 @@
 //! uphold the same ordering.
 
 use alloc::vec::Vec;
-use core::mem::MaybeUninit;
 
 /// Number of nested-message sizes stored inline (no heap allocation).
 ///
@@ -49,21 +48,12 @@ const INLINE_CAP: usize = 16;
 ///
 /// Reusable across encodes: call [`clear`](Self::clear) between uses to
 /// retain the spill allocation.
+#[derive(Debug)]
 pub struct SizeCache {
-    inline: [MaybeUninit<u32>; INLINE_CAP],
+    inline: [u32; INLINE_CAP],
     spill: Vec<u32>,
     len: u32,
     cursor: u32,
-}
-
-impl core::fmt::Debug for SizeCache {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("SizeCache")
-            .field("len", &self.len)
-            .field("cursor", &self.cursor)
-            .field("spilled", &self.spill.len())
-            .finish()
-    }
 }
 
 impl Default for SizeCache {
@@ -74,16 +64,12 @@ impl Default for SizeCache {
 }
 
 impl SizeCache {
-    /// Create an empty cache. No heap allocation; the inline slot array is
-    /// left uninitialized so this is effectively free.
+    /// Create an empty cache. No heap allocation.
     #[inline]
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            // SAFETY: an array of `MaybeUninit<u32>` needs no initialization.
-            // Slots are written by `set()` before being read by `next_size()`
-            // — see the safety note on `next_size`.
-            inline: [const { MaybeUninit::uninit() }; INLINE_CAP],
+            inline: [0u32; INLINE_CAP],
             spill: Vec::new(),
             len: 0,
             cursor: 0,
@@ -108,11 +94,9 @@ impl SizeCache {
     pub fn reserve(&mut self) -> usize {
         let idx = self.len as usize;
         if idx < INLINE_CAP {
-            // Placeholder so the slot is always initialized — keeps
-            // `next_size`'s `assume_init` sound even if a buggy caller
-            // never calls `set()`. One unconditional store; cheaper than
-            // zeroing the whole array in `new()`.
-            self.inline[idx].write(0);
+            // Placeholder so a buggy caller that reserves-without-set reads
+            // a deterministic 0, including after `clear()` reuse.
+            self.inline[idx] = 0;
         } else {
             self.spill.push(0);
         }
@@ -137,7 +121,7 @@ impl SizeCache {
             self.len
         );
         if idx < INLINE_CAP {
-            self.inline[idx].write(size);
+            self.inline[idx] = size;
         } else {
             self.spill[idx - INLINE_CAP] = size;
         }
@@ -164,13 +148,7 @@ impl SizeCache {
         }
         self.cursor += 1;
         if idx < INLINE_CAP {
-            // SAFETY: `idx < len`, and `reserve()` writes a placeholder `0`
-            // to every inline slot it hands out (below), so every slot in
-            // `0..len` is initialized regardless of whether the caller has
-            // called `set()` yet. (The two-pass protocol additionally
-            // guarantees `set()` was called, but soundness here does not
-            // depend on caller discipline.)
-            unsafe { self.inline[idx].assume_init() }
+            self.inline[idx]
         } else {
             self.spill[idx - INLINE_CAP]
         }
@@ -287,6 +265,26 @@ mod tests {
         let s = c.reserve();
         c.set(s, 99);
         assert_eq!(c.next_size(), 99);
+    }
+
+    #[test]
+    fn reserve_without_set_yields_zero() {
+        let mut c = SizeCache::new();
+        let _ = c.reserve();
+        assert_eq!(c.next_size(), 0);
+    }
+
+    #[test]
+    fn clear_then_reserve_without_set_yields_zero() {
+        let mut c = SizeCache::new();
+        for i in 0..(INLINE_CAP + 3) {
+            let s = c.reserve();
+            c.set(s, (i + 100) as u32);
+        }
+        c.clear();
+        // After clear, a fresh reserve() must overwrite stale inline data.
+        let _ = c.reserve();
+        assert_eq!(c.next_size(), 0);
     }
 
     #[test]

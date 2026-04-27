@@ -164,6 +164,7 @@ impl ::buffa::Message for LogEntry {
                 += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32
                     + inner_size;
         }
+        #[allow(clippy::for_kv_map)]
         for (k, v) in &self.fields {
             let entry_size: u32 = 1u32 + ::buffa::types::string_encoded_len(k) as u32
                 + 1u32 + ::buffa::types::string_encoded_len(v) as u32;
