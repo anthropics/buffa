@@ -234,6 +234,28 @@ pub trait ViewEncode<'a>: MessageView<'a> {
 /// coerces it to `&'a MyView<'v>` iff `MyView` is covariant in `'v` —
 /// non-covariant view types fail to compile here rather than risk an
 /// unsound cast.
+///
+/// # Non-covariant types are rejected
+///
+/// A type that is invariant in its lifetime parameter cannot satisfy the
+/// recommended pattern, because the `&'static T<'static> → &'a T<'v>`
+/// coercion is refused:
+///
+/// ```compile_fail
+/// # use core::marker::PhantomData;
+/// // `fn(&'v ()) -> &'v ()` is invariant in 'v, making `Invariant<'v>` invariant.
+/// struct Invariant<'v>(PhantomData<fn(&'v ()) -> &'v ()>);
+/// static INST: Invariant<'static> = Invariant(PhantomData);
+///
+/// impl<'v> buffa::view::DefaultViewInstance for Invariant<'v> {
+///     fn default_view_instance<'a>() -> &'a Self where Self: 'a {
+///         // error: lifetime may not live long enough
+///         //   note: requirement occurs because of the type `Invariant<'_>`,
+///         //         which makes the generic argument `'_` invariant
+///         &INST
+///     }
+/// }
+/// ```
 pub trait DefaultViewInstance {
     /// Return a reference to the single default view instance.
     ///
