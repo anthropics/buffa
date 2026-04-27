@@ -318,20 +318,17 @@ pub(crate) fn generate_view_with_nesting(
 
         #view_encode_impl
 
-        impl ::buffa::DefaultViewInstance for #view_ident<'static> {
-            fn default_view_instance() -> &'static Self {
+        impl<'v> ::buffa::DefaultViewInstance for #view_ident<'v> {
+            fn default_view_instance<'a>() -> &'a Self
+            where
+                Self: 'a,
+            {
                 static VALUE: ::buffa::__private::OnceBox<#view_ident<'static>>
                     = ::buffa::__private::OnceBox::new();
                 VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                    Self::default(),
+                    <#view_ident<'static>>::default(),
                 ))
             }
-        }
-
-        // SAFETY: View types are covariant in `'a` (all fields are `&'a str`,
-        // `&'a [u8]`, etc.) and layout-identical across lifetimes.
-        unsafe impl<'a> ::buffa::HasDefaultViewInstance for #view_ident<'a> {
-            type Static = #view_ident<'static>;
         }
     };
 

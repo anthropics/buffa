@@ -253,12 +253,15 @@ impl<'a> ::buffa::ViewEncode<'a> for TimestampView<'a> {
         self.__buffa_cached_size.get()
     }
 }
-impl ::buffa::DefaultViewInstance for TimestampView<'static> {
-    fn default_view_instance() -> &'static Self {
+impl<'v> ::buffa::DefaultViewInstance for TimestampView<'v> {
+    fn default_view_instance<'a>() -> &'a Self
+    where
+        Self: 'a,
+    {
         static VALUE: ::buffa::__private::OnceBox<TimestampView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+        VALUE
+            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
+                <TimestampView<'static>>::default(),
+            ))
     }
-}
-unsafe impl<'a> ::buffa::HasDefaultViewInstance for TimestampView<'a> {
-    type Static = TimestampView<'static>;
 }

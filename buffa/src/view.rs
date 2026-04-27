@@ -204,18 +204,19 @@ pub trait ViewEncode<'a>: MessageView<'a> {
 /// does for owned types via [`DefaultInstance`](crate::DefaultInstance).
 ///
 /// Generated view types like `FooView<'a>` contain only covariant borrows
-/// (`&'a str`, `&'a [u8]`, etc.). A default view contains only `'static`
-/// data (`""`, `&[]`, `0`), so a `&'static FooView<'static>` can be safely
-/// reinterpreted as `&'static FooView<'a>` for any `'a` via covariance.
-///
-/// This trait is implemented for the `'static` instantiation (e.g.,
-/// `FooView<'static>`). The [`MessageFieldView`] `Deref` impl serves it for
-/// any `'a` via the covariance contract on the companion
-/// [`HasDefaultViewInstance`] — which **is** an `unsafe trait`, since that
-/// layout/covariance contract is what backs the lifetime cast.
-pub trait DefaultViewInstance: Default + 'static {
+/// (`&'a str`, `&'a [u8]`, etc.). A default view holds only `'static` data
+/// (`""`, `&[]`, `0`), so an implementation stores a single
+/// `&'static FooView<'static>` and returns it at the caller's lifetime via
+/// ordinary covariant subtyping — the compiler verifies covariance at the
+/// `impl` site, so no `unsafe` is required.
+pub trait DefaultViewInstance {
     /// Return a reference to the single default view instance.
-    fn default_view_instance() -> &'static Self;
+    ///
+    /// The lifetime `'a` is caller-chosen up to `Self: 'a`, so a
+    /// `FooView<'v>` can serve its `'static` default at any `'a ≤ 'v`.
+    fn default_view_instance<'a>() -> &'a Self
+    where
+        Self: 'a;
 }
 
 /// A borrowed view of an optional message field.
@@ -226,7 +227,7 @@ pub trait DefaultViewInstance: Default + 'static {
 /// otherwise have infinite size. The box is API-transparent: `Deref`
 /// returns `&V`, and `set()` takes `V` by value.
 ///
-/// When `V` implements [`HasDefaultViewInstance`], this type implements
+/// When `V` implements [`DefaultViewInstance`], this type implements
 /// [`Deref<Target = V>`](core::ops::Deref), returning a reference to a
 /// static default instance when the field is unset — making view code
 /// identical to owned code for field access:
@@ -335,47 +336,14 @@ impl<V> From<V> for MessageFieldView<V> {
     }
 }
 
-/// Marker trait linking a lifetime-parameterized view type `V` (e.g.,
-/// `FooView<'a>`) to its `'static` instantiation that implements
-/// [`DefaultViewInstance`]. Generated code implements this for every
-/// view type.
-///
-/// The `default_view_ptr` method returns a raw pointer to avoid forcing
-/// `Self: 'static` — view types have a lifetime parameter that may not
-/// be `'static`, but the default instance only contains `'static` data
-/// and the types are covariant, so the pointer cast is sound.
-///
-/// # Safety
-///
-/// `Self` must be layout-identical to `Self::Static` (i.e., the only
-/// difference is the lifetime parameter), and `Self` must be covariant
-/// in that lifetime.
-pub unsafe trait HasDefaultViewInstance {
-    /// The `'static` instantiation of this view type.
-    type Static: DefaultViewInstance;
-
-    /// Return a pointer to the static default instance, erasing the
-    /// lifetime so it can be used for any `'a`.
-    fn default_view_ptr() -> *const u8 {
-        // Return as a thin `*const u8` to avoid Sized constraints on Self.
-        Self::Static::default_view_instance() as *const Self::Static as *const u8
-    }
-}
-
-impl<V: HasDefaultViewInstance> core::ops::Deref for MessageFieldView<V> {
+impl<V: DefaultViewInstance> core::ops::Deref for MessageFieldView<V> {
     type Target = V;
 
     #[inline]
     fn deref(&self) -> &V {
-        match &self.inner {
-            Some(v) => v,
-            // SAFETY: `default_view_ptr` returns a pointer to a `'static`
-            // default instance. The `HasDefaultViewInstance` safety contract
-            // guarantees the type is covariant, so the `'static` instance
-            // is valid at any shorter lifetime. The pointer is non-null and
-            // points to an initialized, immutable, `'static` value.
-            None => unsafe { &*(V::default_view_ptr() as *const V) },
-        }
+        self.inner
+            .as_deref()
+            .unwrap_or_else(V::default_view_instance)
     }
 }
 
@@ -386,9 +354,9 @@ impl<V: HasDefaultViewInstance> core::ops::Deref for MessageFieldView<V> {
 /// so `view_a == view_b` agrees with
 /// `view_a.to_owned_message() == view_b.to_owned_message()`.
 ///
-/// The comparison against the default reuses the same covariant-lifetime
-/// pointer cast already established by the [`Deref`](core::ops::Deref) impl.
-impl<V: PartialEq + HasDefaultViewInstance> PartialEq for MessageFieldView<V> {
+/// The comparison against the default routes through the
+/// [`Deref`](core::ops::Deref) impl.
+impl<V: PartialEq + DefaultViewInstance> PartialEq for MessageFieldView<V> {
     fn eq(&self, other: &Self) -> bool {
         match (&self.inner, &other.inner) {
             // Short-circuit: two unset fields are equal regardless of whether
@@ -402,7 +370,7 @@ impl<V: PartialEq + HasDefaultViewInstance> PartialEq for MessageFieldView<V> {
     }
 }
 
-impl<V: Eq + HasDefaultViewInstance> Eq for MessageFieldView<V> {}
+impl<V: Eq + DefaultViewInstance> Eq for MessageFieldView<V> {}
 
 /// A borrowed view of a repeated field.
 ///
@@ -1022,17 +990,15 @@ mod tests {
         pub value: &'a str,
     }
 
-    impl DefaultViewInstance for TinyView<'static> {
-        fn default_view_instance() -> &'static Self {
+    impl<'v> DefaultViewInstance for TinyView<'v> {
+        fn default_view_instance<'a>() -> &'a Self
+        where
+            Self: 'a,
+        {
             static INST: crate::__private::OnceBox<TinyView<'static>> =
                 crate::__private::OnceBox::new();
             INST.get_or_init(|| alloc::boxed::Box::new(TinyView::default()))
         }
-    }
-
-    // SAFETY: TinyView is covariant in 'a (only contains &'a str).
-    unsafe impl<'a> HasDefaultViewInstance for TinyView<'a> {
-        type Static = TinyView<'static>;
     }
 
     #[test]

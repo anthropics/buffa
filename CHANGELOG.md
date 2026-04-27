@@ -8,13 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Breaking changes
 
-- **`DefaultInstance` and `DefaultViewInstance` are no longer `unsafe` traits.**
-  Both invariants previously documented under `# Safety` (liveness and
-  immutability) are fully encoded by the `&'static Self` return type and
-  cannot be violated by a safe implementation. Generated code now emits
-  plain `impl` blocks. Hand-written `unsafe impl DefaultInstance for T`
-  must drop the `unsafe` keyword. `HasDefaultViewInstance` remains `unsafe`
-  — its layout/covariance contract still backs a real pointer cast.
+- **`DefaultInstance` and `DefaultViewInstance` are no longer `unsafe` traits,
+  and `HasDefaultViewInstance` is removed.** The liveness and immutability
+  invariants are fully encoded by the return type and cannot be violated by
+  a safe implementation. `DefaultViewInstance` is now implemented for
+  `FooView<'v>` at every lifetime (not just `'static`), with
+  `fn default_view_instance<'a>() -> &'a Self where Self: 'a`; the
+  covariant lifetime coercion happens in the impl body where the compiler
+  checks it via ordinary subtyping, eliminating the raw pointer cast in
+  `Deref for MessageFieldView`. Hand-written impls must drop the `unsafe`
+  keyword and adopt the new method signature; the separate
+  `HasDefaultViewInstance` impl is no longer needed.
   ([#68](https://github.com/anthropics/buffa/issues/68),
   [#69](https://github.com/anthropics/buffa/issues/69))
 - **All generated `*View<'a>` structs gain a `__buffa_cached_size` field**

@@ -206,8 +206,8 @@ pub use unknown_fields::{UnknownField, UnknownFieldData, UnknownFields};
 #[cfg(feature = "text")]
 pub use text::TextFormat;
 pub use view::{
-    DefaultViewInstance, HasDefaultViewInstance, MapView, MessageFieldView, MessageView, OwnedView,
-    RepeatedView, UnknownFieldsView, ViewEncode,
+    DefaultViewInstance, MapView, MessageFieldView, MessageView, OwnedView, RepeatedView,
+    UnknownFieldsView, ViewEncode,
 };
 
 /// Private re-exports used exclusively by generated code.
