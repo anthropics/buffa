@@ -209,6 +209,31 @@ pub trait ViewEncode<'a>: MessageView<'a> {
 /// `&'static FooView<'static>` and returns it at the caller's lifetime via
 /// ordinary covariant subtyping — the compiler verifies covariance at the
 /// `impl` site, so no `unsafe` is required.
+///
+/// # Recommended implementation
+///
+/// The pattern codegen uses (and the recommended pattern for hand-written
+/// view types) stores the instance in a static
+/// [`once_cell::race::OnceBox`] (re-exported as
+/// `::buffa::__private::OnceBox`):
+///
+/// ```rust,ignore
+/// impl<'v> DefaultViewInstance for MyView<'v> {
+///     fn default_view_instance<'a>() -> &'a Self
+///     where
+///         Self: 'a,
+///     {
+///         static VALUE: ::buffa::__private::OnceBox<MyView<'static>>
+///             = ::buffa::__private::OnceBox::new();
+///         VALUE.get_or_init(|| Box::new(<MyView<'static>>::default()))
+///     }
+/// }
+/// ```
+///
+/// The return expression has type `&'static MyView<'static>`; the compiler
+/// coerces it to `&'a MyView<'v>` iff `MyView` is covariant in `'v` —
+/// non-covariant view types fail to compile here rather than risk an
+/// unsound cast.
 pub trait DefaultViewInstance {
     /// Return a reference to the single default view instance.
     ///
@@ -997,7 +1022,7 @@ mod tests {
         {
             static INST: crate::__private::OnceBox<TinyView<'static>> =
                 crate::__private::OnceBox::new();
-            INST.get_or_init(|| alloc::boxed::Box::new(TinyView::default()))
+            INST.get_or_init(|| alloc::boxed::Box::new(<TinyView<'static>>::default()))
         }
     }
 
