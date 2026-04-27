@@ -447,7 +447,7 @@ Owned message structs and their nested-type modules sit at the package level, ex
 | Extension const | `pkg::__buffa::ext::MY_EXT` |
 | Registration fn | `pkg::__buffa::register_types` |
 
-`__buffa` is the **only** name codegen reserves at user scope. It aligns with the `__buffa_` reserved field-name prefix (`__buffa_cached_size`, `__buffa_unknown_fields`), so the rule is uniformly "anything starting `__buffa` is buffa-internal." A proto message, file-level enum, or package segment that snake-cases to `__buffa` is rejected at codegen time.
+`__buffa` is the **only** name codegen reserves at user scope. It aligns with the `__buffa_` reserved field-name prefix (`__buffa_unknown_fields`, `__buffa_phantom`), so the rule is uniformly "anything starting `__buffa` is buffa-internal." A proto message, file-level enum, or package segment that snake-cases to `__buffa` is rejected at codegen time.
 
 A common pattern is to alias the ancillary trees once at the top of a module that uses them heavily:
 
