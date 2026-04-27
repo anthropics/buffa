@@ -65,9 +65,11 @@ fn benchmark_decode<M: Message + Default>(c: &mut Criterion, name: &str, dataset
             .iter()
             .map(|p| M::decode_from_slice(p).unwrap())
             .collect();
+        let mut cache = buffa::SizeCache::new();
         b.iter(|| {
             for msg in &messages {
-                let size = msg.compute_size();
+                cache.clear();
+                let size = msg.compute_size(&mut cache);
                 criterion::black_box(size);
             }
         });
@@ -379,7 +381,10 @@ bench_build_encode!(
     LogRecord {
         service_name: LOG_SVC.into(),
         message: LOG_MSG.into(),
-        labels: LABELS.iter().map(|(k, v)| ((*k).into(), (*v).into())).collect(),
+        labels: LABELS
+            .iter()
+            .map(|(k, v)| ((*k).into(), (*v).into()))
+            .collect(),
         ..Default::default()
     },
     LogRecordView {
@@ -488,7 +493,10 @@ bench_build_encode!(
         content_type: "video/h264".into(),
         body: MF_BODY.to_vec(),
         chunks: MF_CHUNKS.iter().map(|c| c.to_vec()).collect(),
-        attachments: MF_ATTACH.iter().map(|(k, v)| ((*k).into(), v.to_vec())).collect(),
+        attachments: MF_ATTACH
+            .iter()
+            .map(|(k, v)| ((*k).into(), v.to_vec()))
+            .collect(),
         ..Default::default()
     },
     MediaFrameView {
