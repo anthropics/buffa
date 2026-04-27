@@ -114,10 +114,9 @@ impl ::buffa::Message for Duration {
     /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
-    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if self.seconds != 0i64 {
             size += 1u32 + ::buffa::types::int64_encoded_len(self.seconds) as u32;
@@ -130,12 +129,11 @@ impl ::buffa::Message for Duration {
     }
     fn write_to(
         &self,
-        __cache: &mut ::buffa::SizeCache,
+        _cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if self.seconds != 0i64 {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
                 .encode(buf);

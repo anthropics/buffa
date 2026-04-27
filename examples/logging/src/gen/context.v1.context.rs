@@ -61,10 +61,9 @@ impl ::buffa::Message for RequestContext {
     /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
-    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if !self.request_id.is_empty() {
             size += 1u32 + ::buffa::types::string_encoded_len(&self.request_id) as u32;
@@ -91,12 +90,11 @@ impl ::buffa::Message for RequestContext {
     }
     fn write_to(
         &self,
-        __cache: &mut ::buffa::SizeCache,
+        _cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if !self.request_id.is_empty() {
             ::buffa::encoding::Tag::new(
                     1u32,

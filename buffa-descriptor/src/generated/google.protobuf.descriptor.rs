@@ -208,9 +208,8 @@ impl ::buffa::Message for FileDescriptorSet {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         for v in &self.file {
             let __slot = __cache.reserve();
@@ -228,16 +227,15 @@ impl ::buffa::Message for FileDescriptorSet {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         for v in &self.file {
             ::buffa::encoding::Tag::new(
                     1u32,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -395,9 +393,8 @@ impl ::buffa::Message for FileDescriptorProto {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if let Some(ref v) = self.name {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
@@ -479,9 +476,8 @@ impl ::buffa::Message for FileDescriptorProto {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(ref v) = self.name {
             ::buffa::encoding::Tag::new(
                     1u32,
@@ -504,7 +500,7 @@ impl ::buffa::Message for FileDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.options.write_to(__cache, buf);
         }
         if self.source_code_info.is_set() {
@@ -513,7 +509,7 @@ impl ::buffa::Message for FileDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.source_code_info.write_to(__cache, buf);
         }
         if let Some(ref v) = self.syntax {
@@ -561,7 +557,7 @@ impl ::buffa::Message for FileDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         for v in &self.enum_type {
@@ -570,7 +566,7 @@ impl ::buffa::Message for FileDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         for v in &self.service {
@@ -579,7 +575,7 @@ impl ::buffa::Message for FileDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         for v in &self.extension {
@@ -588,7 +584,7 @@ impl ::buffa::Message for FileDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -925,9 +921,8 @@ impl ::buffa::Message for DescriptorProto {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if let Some(ref v) = self.name {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
@@ -1010,9 +1005,8 @@ impl ::buffa::Message for DescriptorProto {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(ref v) = self.name {
             ::buffa::encoding::Tag::new(
                     1u32,
@@ -1027,7 +1021,7 @@ impl ::buffa::Message for DescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.options.write_to(__cache, buf);
         }
         if let Some(ref v) = self.visibility {
@@ -1041,7 +1035,7 @@ impl ::buffa::Message for DescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         for v in &self.extension {
@@ -1050,7 +1044,7 @@ impl ::buffa::Message for DescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         for v in &self.nested_type {
@@ -1059,7 +1053,7 @@ impl ::buffa::Message for DescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         for v in &self.enum_type {
@@ -1068,7 +1062,7 @@ impl ::buffa::Message for DescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         for v in &self.extension_range {
@@ -1077,7 +1071,7 @@ impl ::buffa::Message for DescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         for v in &self.oneof_decl {
@@ -1086,7 +1080,7 @@ impl ::buffa::Message for DescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         for v in &self.reserved_range {
@@ -1095,7 +1089,7 @@ impl ::buffa::Message for DescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         for v in &self.reserved_name {
@@ -1340,9 +1334,8 @@ pub mod descriptor_proto {
         /// compliant message will never overflow this type.
         #[allow(clippy::let_and_return)]
         fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-            #[allow(unused_variables, unused_imports)]
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             let mut size = 0u32;
             if let Some(v) = self.start {
                 size += 1u32 + ::buffa::types::int32_encoded_len(v) as u32;
@@ -1366,9 +1359,8 @@ pub mod descriptor_proto {
             __cache: &mut ::buffa::SizeCache,
             buf: &mut impl ::buffa::bytes::BufMut,
         ) {
-            #[allow(unused_variables, unused_imports)]
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             if let Some(v) = self.start {
                 ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
                     .encode(buf);
@@ -1385,7 +1377,7 @@ pub mod descriptor_proto {
                         ::buffa::encoding::WireType::LengthDelimited,
                     )
                     .encode(buf);
-                ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+                ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
                 self.options.write_to(__cache, buf);
             }
             self.__buffa_unknown_fields.write_to(buf);
@@ -1506,10 +1498,9 @@ pub mod descriptor_proto {
         /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
         /// compliant message will never overflow this type.
         #[allow(clippy::let_and_return)]
-        fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-            #[allow(unused_variables, unused_imports)]
+        fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             let mut size = 0u32;
             if let Some(v) = self.start {
                 size += 1u32 + ::buffa::types::int32_encoded_len(v) as u32;
@@ -1522,12 +1513,11 @@ pub mod descriptor_proto {
         }
         fn write_to(
             &self,
-            __cache: &mut ::buffa::SizeCache,
+            _cache: &mut ::buffa::SizeCache,
             buf: &mut impl ::buffa::bytes::BufMut,
         ) {
-            #[allow(unused_variables, unused_imports)]
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             if let Some(v) = self.start {
                 ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
                     .encode(buf);
@@ -1654,9 +1644,8 @@ impl ::buffa::Message for ExtensionRangeOptions {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if self.features.is_set() {
             let __slot = __cache.reserve();
@@ -1693,16 +1682,15 @@ impl ::buffa::Message for ExtensionRangeOptions {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if self.features.is_set() {
             ::buffa::encoding::Tag::new(
                     50u32,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.features.write_to(__cache, buf);
         }
         if let Some(ref v) = self.verification {
@@ -1716,7 +1704,7 @@ impl ::buffa::Message for ExtensionRangeOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         for v in &self.declaration {
@@ -1725,7 +1713,7 @@ impl ::buffa::Message for ExtensionRangeOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -1930,10 +1918,9 @@ pub mod extension_range_options {
         /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
         /// compliant message will never overflow this type.
         #[allow(clippy::let_and_return)]
-        fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-            #[allow(unused_variables, unused_imports)]
+        fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             let mut size = 0u32;
             if let Some(v) = self.number {
                 size += 1u32 + ::buffa::types::int32_encoded_len(v) as u32;
@@ -1955,12 +1942,11 @@ pub mod extension_range_options {
         }
         fn write_to(
             &self,
-            __cache: &mut ::buffa::SizeCache,
+            _cache: &mut ::buffa::SizeCache,
             buf: &mut impl ::buffa::bytes::BufMut,
         ) {
-            #[allow(unused_variables, unused_imports)]
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             if let Some(v) = self.number {
                 ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
                     .encode(buf);
@@ -2210,9 +2196,8 @@ impl ::buffa::Message for FieldDescriptorProto {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if let Some(ref v) = self.name {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
@@ -2260,9 +2245,8 @@ impl ::buffa::Message for FieldDescriptorProto {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(ref v) = self.name {
             ::buffa::encoding::Tag::new(
                     1u32,
@@ -2329,7 +2313,7 @@ impl ::buffa::Message for FieldDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.options.write_to(__cache, buf);
         }
         if let Some(v) = self.proto3_optional {
@@ -2773,9 +2757,8 @@ impl ::buffa::Message for OneofDescriptorProto {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if let Some(ref v) = self.name {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
@@ -2796,9 +2779,8 @@ impl ::buffa::Message for OneofDescriptorProto {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(ref v) = self.name {
             ::buffa::encoding::Tag::new(
                     1u32,
@@ -2813,7 +2795,7 @@ impl ::buffa::Message for OneofDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.options.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -2940,9 +2922,8 @@ impl ::buffa::Message for EnumDescriptorProto {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if let Some(ref v) = self.name {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
@@ -2985,9 +2966,8 @@ impl ::buffa::Message for EnumDescriptorProto {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(ref v) = self.name {
             ::buffa::encoding::Tag::new(
                     1u32,
@@ -3002,7 +2982,7 @@ impl ::buffa::Message for EnumDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.options.write_to(__cache, buf);
         }
         if let Some(ref v) = self.visibility {
@@ -3016,7 +2996,7 @@ impl ::buffa::Message for EnumDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         for v in &self.reserved_range {
@@ -3025,7 +3005,7 @@ impl ::buffa::Message for EnumDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         for v in &self.reserved_name {
@@ -3207,10 +3187,9 @@ pub mod enum_descriptor_proto {
         /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
         /// compliant message will never overflow this type.
         #[allow(clippy::let_and_return)]
-        fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-            #[allow(unused_variables, unused_imports)]
+        fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             let mut size = 0u32;
             if let Some(v) = self.start {
                 size += 1u32 + ::buffa::types::int32_encoded_len(v) as u32;
@@ -3223,12 +3202,11 @@ pub mod enum_descriptor_proto {
         }
         fn write_to(
             &self,
-            __cache: &mut ::buffa::SizeCache,
+            _cache: &mut ::buffa::SizeCache,
             buf: &mut impl ::buffa::bytes::BufMut,
         ) {
-            #[allow(unused_variables, unused_imports)]
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             if let Some(v) = self.start {
                 ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
                     .encode(buf);
@@ -3341,9 +3319,8 @@ impl ::buffa::Message for EnumValueDescriptorProto {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if let Some(ref v) = self.name {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
@@ -3367,9 +3344,8 @@ impl ::buffa::Message for EnumValueDescriptorProto {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(ref v) = self.name {
             ::buffa::encoding::Tag::new(
                     1u32,
@@ -3389,7 +3365,7 @@ impl ::buffa::Message for EnumValueDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.options.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -3509,9 +3485,8 @@ impl ::buffa::Message for ServiceDescriptorProto {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if let Some(ref v) = self.name {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
@@ -3540,9 +3515,8 @@ impl ::buffa::Message for ServiceDescriptorProto {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(ref v) = self.name {
             ::buffa::encoding::Tag::new(
                     1u32,
@@ -3557,7 +3531,7 @@ impl ::buffa::Message for ServiceDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.options.write_to(__cache, buf);
         }
         for v in &self.method {
@@ -3566,7 +3540,7 @@ impl ::buffa::Message for ServiceDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -3702,9 +3676,8 @@ impl ::buffa::Message for MethodDescriptorProto {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if let Some(ref v) = self.name {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
@@ -3737,9 +3710,8 @@ impl ::buffa::Message for MethodDescriptorProto {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(ref v) = self.name {
             ::buffa::encoding::Tag::new(
                     1u32,
@@ -3770,7 +3742,7 @@ impl ::buffa::Message for MethodDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.options.write_to(__cache, buf);
         }
         if let Some(v) = self.client_streaming {
@@ -4118,9 +4090,8 @@ impl ::buffa::Message for FileOptions {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if let Some(ref v) = self.java_package {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
@@ -4203,9 +4174,8 @@ impl ::buffa::Message for FileOptions {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(ref v) = self.java_package {
             ::buffa::encoding::Tag::new(
                     1u32,
@@ -4337,7 +4307,7 @@ impl ::buffa::Message for FileOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.features.write_to(__cache, buf);
         }
         for v in &self.uninterpreted_option {
@@ -4346,7 +4316,7 @@ impl ::buffa::Message for FileOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -4882,9 +4852,8 @@ impl ::buffa::Message for MessageOptions {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if self.message_set_wire_format.is_some() {
             size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
@@ -4925,9 +4894,8 @@ impl ::buffa::Message for MessageOptions {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(v) = self.message_set_wire_format {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
                 .encode(buf);
@@ -4959,7 +4927,7 @@ impl ::buffa::Message for MessageOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.features.write_to(__cache, buf);
         }
         for v in &self.uninterpreted_option {
@@ -4968,7 +4936,7 @@ impl ::buffa::Message for MessageOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -5244,9 +5212,8 @@ impl ::buffa::Message for FieldOptions {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if let Some(ref v) = self.ctype {
             size += 1u32 + ::buffa::types::int32_encoded_len(v.to_i32()) as u32;
@@ -5318,9 +5285,8 @@ impl ::buffa::Message for FieldOptions {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(ref v) = self.ctype {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
                 .encode(buf);
@@ -5372,7 +5338,7 @@ impl ::buffa::Message for FieldOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.features.write_to(__cache, buf);
         }
         if self.feature_support.is_set() {
@@ -5381,7 +5347,7 @@ impl ::buffa::Message for FieldOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.feature_support.write_to(__cache, buf);
         }
         for v in &self.targets {
@@ -5395,7 +5361,7 @@ impl ::buffa::Message for FieldOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         for v in &self.uninterpreted_option {
@@ -5404,7 +5370,7 @@ impl ::buffa::Message for FieldOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -5985,10 +5951,9 @@ pub mod field_options {
         /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
         /// compliant message will never overflow this type.
         #[allow(clippy::let_and_return)]
-        fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-            #[allow(unused_variables, unused_imports)]
+        fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             let mut size = 0u32;
             if let Some(ref v) = self.edition {
                 size += 1u32 + ::buffa::types::int32_encoded_len(v.to_i32()) as u32;
@@ -6001,12 +5966,11 @@ pub mod field_options {
         }
         fn write_to(
             &self,
-            __cache: &mut ::buffa::SizeCache,
+            _cache: &mut ::buffa::SizeCache,
             buf: &mut impl ::buffa::bytes::BufMut,
         ) {
-            #[allow(unused_variables, unused_imports)]
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             if let Some(ref v) = self.edition {
                 ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::Varint)
                     .encode(buf);
@@ -6149,10 +6113,9 @@ pub mod field_options {
         /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
         /// compliant message will never overflow this type.
         #[allow(clippy::let_and_return)]
-        fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-            #[allow(unused_variables, unused_imports)]
+        fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             let mut size = 0u32;
             if let Some(ref v) = self.edition_introduced {
                 size += 1u32 + ::buffa::types::int32_encoded_len(v.to_i32()) as u32;
@@ -6171,12 +6134,11 @@ pub mod field_options {
         }
         fn write_to(
             &self,
-            __cache: &mut ::buffa::SizeCache,
+            _cache: &mut ::buffa::SizeCache,
             buf: &mut impl ::buffa::bytes::BufMut,
         ) {
-            #[allow(unused_variables, unused_imports)]
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             if let Some(ref v) = self.edition_introduced {
                 ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
                     .encode(buf);
@@ -6361,9 +6323,8 @@ impl ::buffa::Message for OneofOptions {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if self.features.is_set() {
             let __slot = __cache.reserve();
@@ -6389,16 +6350,15 @@ impl ::buffa::Message for OneofOptions {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if self.features.is_set() {
             ::buffa::encoding::Tag::new(
                     1u32,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.features.write_to(__cache, buf);
         }
         for v in &self.uninterpreted_option {
@@ -6407,7 +6367,7 @@ impl ::buffa::Message for OneofOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -6543,9 +6503,8 @@ impl ::buffa::Message for EnumOptions {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if self.allow_alias.is_some() {
             size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
@@ -6580,9 +6539,8 @@ impl ::buffa::Message for EnumOptions {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(v) = self.allow_alias {
             ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::Varint)
                 .encode(buf);
@@ -6604,7 +6562,7 @@ impl ::buffa::Message for EnumOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.features.write_to(__cache, buf);
         }
         for v in &self.uninterpreted_option {
@@ -6613,7 +6571,7 @@ impl ::buffa::Message for EnumOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -6781,9 +6739,8 @@ impl ::buffa::Message for EnumValueOptions {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if self.deprecated.is_some() {
             size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
@@ -6823,9 +6780,8 @@ impl ::buffa::Message for EnumValueOptions {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(v) = self.deprecated {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
                 .encode(buf);
@@ -6837,7 +6793,7 @@ impl ::buffa::Message for EnumValueOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.features.write_to(__cache, buf);
         }
         if let Some(v) = self.debug_redact {
@@ -6851,7 +6807,7 @@ impl ::buffa::Message for EnumValueOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.feature_support.write_to(__cache, buf);
         }
         for v in &self.uninterpreted_option {
@@ -6860,7 +6816,7 @@ impl ::buffa::Message for EnumValueOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -7023,9 +6979,8 @@ impl ::buffa::Message for ServiceOptions {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if self.features.is_set() {
             let __slot = __cache.reserve();
@@ -7054,16 +7009,15 @@ impl ::buffa::Message for ServiceOptions {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if self.features.is_set() {
             ::buffa::encoding::Tag::new(
                     34u32,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.features.write_to(__cache, buf);
         }
         if let Some(v) = self.deprecated {
@@ -7077,7 +7031,7 @@ impl ::buffa::Message for ServiceOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -7215,9 +7169,8 @@ impl ::buffa::Message for MethodOptions {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if self.deprecated.is_some() {
             size += 2u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
@@ -7249,9 +7202,8 @@ impl ::buffa::Message for MethodOptions {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(v) = self.deprecated {
             ::buffa::encoding::Tag::new(33u32, ::buffa::encoding::WireType::Varint)
                 .encode(buf);
@@ -7268,7 +7220,7 @@ impl ::buffa::Message for MethodOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.features.write_to(__cache, buf);
         }
         for v in &self.uninterpreted_option {
@@ -7277,7 +7229,7 @@ impl ::buffa::Message for MethodOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -7492,9 +7444,8 @@ impl ::buffa::Message for UninterpretedOption {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if let Some(ref v) = self.identifier_value {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
@@ -7530,9 +7481,8 @@ impl ::buffa::Message for UninterpretedOption {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(ref v) = self.identifier_value {
             ::buffa::encoding::Tag::new(
                     3u32,
@@ -7578,7 +7528,7 @@ impl ::buffa::Message for UninterpretedOption {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -7757,10 +7707,9 @@ pub mod uninterpreted_option {
         /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
         /// compliant message will never overflow this type.
         #[allow(clippy::let_and_return)]
-        fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-            #[allow(unused_variables, unused_imports)]
+        fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             let mut size = 0u32;
             size += 1u32 + ::buffa::types::string_encoded_len(&self.name_part) as u32;
             size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
@@ -7769,12 +7718,11 @@ pub mod uninterpreted_option {
         }
         fn write_to(
             &self,
-            __cache: &mut ::buffa::SizeCache,
+            _cache: &mut ::buffa::SizeCache,
             buf: &mut impl ::buffa::bytes::BufMut,
         ) {
-            #[allow(unused_variables, unused_imports)]
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             ::buffa::encoding::Tag::new(
                     1u32,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -7908,10 +7856,9 @@ impl ::buffa::Message for FeatureSet {
     /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
-    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if let Some(ref v) = self.field_presence {
             size += 1u32 + ::buffa::types::int32_encoded_len(v.to_i32()) as u32;
@@ -7942,12 +7889,11 @@ impl ::buffa::Message for FeatureSet {
     }
     fn write_to(
         &self,
-        __cache: &mut ::buffa::SizeCache,
+        _cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(ref v) = self.field_presence {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
                 .encode(buf);
@@ -8560,22 +8506,20 @@ pub mod feature_set {
         /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
         /// compliant message will never overflow this type.
         #[allow(clippy::let_and_return)]
-        fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-            #[allow(unused_variables, unused_imports)]
+        fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             let mut size = 0u32;
             size += self.__buffa_unknown_fields.encoded_len() as u32;
             size
         }
         fn write_to(
             &self,
-            __cache: &mut ::buffa::SizeCache,
+            _cache: &mut ::buffa::SizeCache,
             buf: &mut impl ::buffa::bytes::BufMut,
         ) {
-            #[allow(unused_variables, unused_imports)]
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             self.__buffa_unknown_fields.write_to(buf);
         }
         fn merge_field(
@@ -8742,9 +8686,8 @@ impl ::buffa::Message for FeatureSetDefaults {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if let Some(ref v) = self.minimum_edition {
             size += 1u32 + ::buffa::types::int32_encoded_len(v.to_i32()) as u32;
@@ -8768,9 +8711,8 @@ impl ::buffa::Message for FeatureSetDefaults {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(ref v) = self.minimum_edition {
             ::buffa::encoding::Tag::new(4u32, ::buffa::encoding::WireType::Varint)
                 .encode(buf);
@@ -8787,7 +8729,7 @@ impl ::buffa::Message for FeatureSetDefaults {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -8932,9 +8874,8 @@ pub mod feature_set_defaults {
         /// compliant message will never overflow this type.
         #[allow(clippy::let_and_return)]
         fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-            #[allow(unused_variables, unused_imports)]
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             let mut size = 0u32;
             if let Some(ref v) = self.edition {
                 size += 1u32 + ::buffa::types::int32_encoded_len(v.to_i32()) as u32;
@@ -8963,9 +8904,8 @@ pub mod feature_set_defaults {
             __cache: &mut ::buffa::SizeCache,
             buf: &mut impl ::buffa::bytes::BufMut,
         ) {
-            #[allow(unused_variables, unused_imports)]
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             if let Some(ref v) = self.edition {
                 ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::Varint)
                     .encode(buf);
@@ -8977,7 +8917,7 @@ pub mod feature_set_defaults {
                         ::buffa::encoding::WireType::LengthDelimited,
                     )
                     .encode(buf);
-                ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+                ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
                 self.overridable_features.write_to(__cache, buf);
             }
             if self.fixed_features.is_set() {
@@ -8986,7 +8926,7 @@ pub mod feature_set_defaults {
                         ::buffa::encoding::WireType::LengthDelimited,
                     )
                     .encode(buf);
-                ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+                ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
                 self.fixed_features.write_to(__cache, buf);
             }
             self.__buffa_unknown_fields.write_to(buf);
@@ -9159,9 +9099,8 @@ impl ::buffa::Message for SourceCodeInfo {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         for v in &self.location {
             let __slot = __cache.reserve();
@@ -9179,16 +9118,15 @@ impl ::buffa::Message for SourceCodeInfo {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         for v in &self.location {
             ::buffa::encoding::Tag::new(
                     1u32,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -9372,10 +9310,9 @@ pub mod source_code_info {
         /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
         /// compliant message will never overflow this type.
         #[allow(clippy::let_and_return)]
-        fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-            #[allow(unused_variables, unused_imports)]
+        fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             let mut size = 0u32;
             if let Some(ref v) = self.leading_comments {
                 size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
@@ -9411,12 +9348,11 @@ pub mod source_code_info {
         }
         fn write_to(
             &self,
-            __cache: &mut ::buffa::SizeCache,
+            _cache: &mut ::buffa::SizeCache,
             buf: &mut impl ::buffa::bytes::BufMut,
         ) {
-            #[allow(unused_variables, unused_imports)]
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             if let Some(ref v) = self.leading_comments {
                 ::buffa::encoding::Tag::new(
                         3u32,
@@ -9652,9 +9588,8 @@ impl ::buffa::Message for GeneratedCodeInfo {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         for v in &self.annotation {
             let __slot = __cache.reserve();
@@ -9672,16 +9607,15 @@ impl ::buffa::Message for GeneratedCodeInfo {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         for v in &self.annotation {
             ::buffa::encoding::Tag::new(
                     1u32,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -9793,10 +9727,9 @@ pub mod generated_code_info {
         /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
         /// compliant message will never overflow this type.
         #[allow(clippy::let_and_return)]
-        fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-            #[allow(unused_variables, unused_imports)]
+        fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             let mut size = 0u32;
             if let Some(ref v) = self.source_file {
                 size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
@@ -9825,12 +9758,11 @@ pub mod generated_code_info {
         }
         fn write_to(
             &self,
-            __cache: &mut ::buffa::SizeCache,
+            _cache: &mut ::buffa::SizeCache,
             buf: &mut impl ::buffa::bytes::BufMut,
         ) {
-            #[allow(unused_variables, unused_imports)]
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             if let Some(ref v) = self.source_file {
                 ::buffa::encoding::Tag::new(
                         2u32,

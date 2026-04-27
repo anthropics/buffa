@@ -18,7 +18,7 @@
 //! # Traversal-order invariant
 //!
 //! `reserve`/`set` calls during `compute_size` must occur in the same
-//! order as `next_size` calls during `write_to`. Generated code guarantees
+//! order as `consume_next` calls during `write_to`. Generated code guarantees
 //! this by iterating fields identically in both functions and by guarding
 //! both with identical presence checks (both take `&self`, so the message
 //! is immutable between passes). Manual `Message` implementations must
@@ -47,7 +47,9 @@ const INLINE_CAP: usize = 16;
 /// so a fresh cache is allocation-free for typical messages.
 ///
 /// Reusable across encodes: call [`clear`](Self::clear) between uses to
-/// retain the spill allocation.
+/// retain the spill allocation. `SizeCache` is intentionally not `Clone`
+/// — it is transient encode state, not data. Reuse via
+/// [`clear()`](Self::clear).
 #[derive(Debug)]
 pub struct SizeCache {
     inline: [u32; INLINE_CAP],
@@ -92,6 +94,7 @@ impl SizeCache {
     /// Used by generated `compute_size` implementations.
     #[inline]
     pub fn reserve(&mut self) -> usize {
+        debug_assert!(self.len < u32::MAX, "SizeCache slot count overflow");
         let idx = self.len as usize;
         if idx < INLINE_CAP {
             // Placeholder so a buggy caller that reserves-without-set reads
@@ -138,10 +141,9 @@ impl SizeCache {
     /// `write_to` traversal diverges from `compute_size` traversal. For
     /// generated code this indicates a codegen bug; for manual `Message`
     /// implementations it indicates a traversal-order mismatch.
-    ///
     #[inline]
     #[track_caller]
-    pub fn next_size(&mut self) -> u32 {
+    pub fn consume_next(&mut self) -> u32 {
         let idx = self.cursor as usize;
         if idx >= self.len as usize {
             Self::overrun(idx, self.len);
@@ -189,7 +191,7 @@ mod tests {
         }
         assert_eq!(c.spill.len(), N - INLINE_CAP);
         for i in 0..N {
-            assert_eq!(c.next_size(), i as u32 * 7);
+            assert_eq!(c.consume_next(), i as u32 * 7);
         }
     }
 
@@ -205,9 +207,9 @@ mod tests {
         c.set(s, 999);
         assert_eq!(c.spill.len(), 1);
         for i in 0..INLINE_CAP {
-            assert_eq!(c.next_size(), i as u32);
+            assert_eq!(c.consume_next(), i as u32);
         }
-        assert_eq!(c.next_size(), 999);
+        assert_eq!(c.consume_next(), 999);
     }
 
     #[test]
@@ -217,8 +219,8 @@ mod tests {
         let s1 = c.reserve();
         c.set(s0, 10);
         c.set(s1, 20);
-        assert_eq!(c.next_size(), 10);
-        assert_eq!(c.next_size(), 20);
+        assert_eq!(c.consume_next(), 10);
+        assert_eq!(c.consume_next(), 20);
     }
 
     #[test]
@@ -244,9 +246,9 @@ mod tests {
         c.set(slot_b, 3);
 
         // write_to root consumes A, X, B in pre-order:
-        assert_eq!(c.next_size(), 7); // A's length prefix
-        assert_eq!(c.next_size(), 5); // X's length prefix (inside A.write_to)
-        assert_eq!(c.next_size(), 3); // B's length prefix
+        assert_eq!(c.consume_next(), 7); // A's length prefix
+        assert_eq!(c.consume_next(), 5); // X's length prefix (inside A.write_to)
+        assert_eq!(c.consume_next(), 3); // B's length prefix
     }
 
     #[test]
@@ -264,14 +266,14 @@ mod tests {
         // Reusable after clear:
         let s = c.reserve();
         c.set(s, 99);
-        assert_eq!(c.next_size(), 99);
+        assert_eq!(c.consume_next(), 99);
     }
 
     #[test]
     fn reserve_without_set_yields_zero() {
         let mut c = SizeCache::new();
         let _ = c.reserve();
-        assert_eq!(c.next_size(), 0);
+        assert_eq!(c.consume_next(), 0);
     }
 
     #[test]
@@ -284,13 +286,13 @@ mod tests {
         c.clear();
         // After clear, a fresh reserve() must overwrite stale inline data.
         let _ = c.reserve();
-        assert_eq!(c.next_size(), 0);
+        assert_eq!(c.consume_next(), 0);
     }
 
     #[test]
     #[should_panic(expected = "SizeCache cursor overrun")]
     fn next_past_end_panics() {
         let mut c = SizeCache::new();
-        c.next_size();
+        c.consume_next();
     }
 }

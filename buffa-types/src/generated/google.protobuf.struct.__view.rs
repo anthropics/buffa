@@ -161,9 +161,8 @@ impl<'a> ::buffa::MessageView<'a> for StructView<'a> {
 impl<'a> ::buffa::ViewEncode<'a> for StructView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         #[allow(clippy::for_kv_map)]
         for (k, v) in &self.fields {
@@ -188,11 +187,10 @@ impl<'a> ::buffa::ViewEncode<'a> for StructView<'a> {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         for (k, v) in &self.fields {
-            let __v_len = __cache.next_size();
+            let __v_len = __cache.consume_next();
             let entry_size: u32 = 1u32 + ::buffa::types::string_encoded_len(k) as u32
                 + 1u32
                 + (::buffa::encoding::varint_len(__v_len as u64) as u32 + __v_len);
@@ -473,9 +471,8 @@ impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
 impl<'a> ::buffa::ViewEncode<'a> for ValueView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if let ::core::option::Option::Some(ref v) = self.kind {
             match v {
@@ -518,9 +515,8 @@ impl<'a> ::buffa::ViewEncode<'a> for ValueView<'a> {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let ::core::option::Option::Some(ref v) = self.kind {
             match v {
                 super::super::__buffa::view::oneof::value::Kind::NullValue(x) => {
@@ -561,7 +557,7 @@ impl<'a> ::buffa::ViewEncode<'a> for ValueView<'a> {
                             ::buffa::encoding::WireType::LengthDelimited,
                         )
                         .encode(buf);
-                    ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+                    ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
                     x.write_to(__cache, buf);
                 }
                 super::super::__buffa::view::oneof::value::Kind::ListValue(x) => {
@@ -570,7 +566,7 @@ impl<'a> ::buffa::ViewEncode<'a> for ValueView<'a> {
                             ::buffa::encoding::WireType::LengthDelimited,
                         )
                         .encode(buf);
-                    ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+                    ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
                     x.write_to(__cache, buf);
                 }
             }
@@ -700,9 +696,8 @@ impl<'a> ::buffa::MessageView<'a> for ListValueView<'a> {
 impl<'a> ::buffa::ViewEncode<'a> for ListValueView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         for v in &self.values {
             let __slot = __cache.reserve();
@@ -721,16 +716,15 @@ impl<'a> ::buffa::ViewEncode<'a> for ListValueView<'a> {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         for v in &self.values {
             ::buffa::encoding::Tag::new(
                     1u32,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);

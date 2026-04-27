@@ -236,10 +236,9 @@ impl<'a> ::buffa::MessageView<'a> for AnyView<'a> {
 }
 impl<'a> ::buffa::ViewEncode<'a> for AnyView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
-    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if !self.type_url.is_empty() {
             size += 1u32 + ::buffa::types::string_encoded_len(&self.type_url) as u32;
@@ -253,12 +252,11 @@ impl<'a> ::buffa::ViewEncode<'a> for AnyView<'a> {
     #[allow(clippy::needless_borrow)]
     fn write_to(
         &self,
-        __cache: &mut ::buffa::SizeCache,
+        _cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if !self.type_url.is_empty() {
             ::buffa::encoding::Tag::new(
                     1u32,

@@ -48,10 +48,9 @@ impl ::buffa::Message for Version {
     /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
-    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if let Some(v) = self.major {
             size += 1u32 + ::buffa::types::int32_encoded_len(v) as u32;
@@ -70,12 +69,11 @@ impl ::buffa::Message for Version {
     }
     fn write_to(
         &self,
-        __cache: &mut ::buffa::SizeCache,
+        _cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(v) = self.major {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
                 .encode(buf);
@@ -265,9 +263,8 @@ impl ::buffa::Message for CodeGeneratorRequest {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if let Some(ref v) = self.parameter {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
@@ -307,9 +304,8 @@ impl ::buffa::Message for CodeGeneratorRequest {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(ref v) = self.parameter {
             ::buffa::encoding::Tag::new(
                     2u32,
@@ -324,7 +320,7 @@ impl ::buffa::Message for CodeGeneratorRequest {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.compiler_version.write_to(__cache, buf);
         }
         for v in &self.file_to_generate {
@@ -341,7 +337,7 @@ impl ::buffa::Message for CodeGeneratorRequest {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         for v in &self.source_file_descriptors {
@@ -350,7 +346,7 @@ impl ::buffa::Message for CodeGeneratorRequest {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -524,9 +520,8 @@ impl ::buffa::Message for CodeGeneratorResponse {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if let Some(ref v) = self.error {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
@@ -556,9 +551,8 @@ impl ::buffa::Message for CodeGeneratorResponse {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if let Some(ref v) = self.error {
             ::buffa::encoding::Tag::new(
                     1u32,
@@ -588,7 +582,7 @@ impl ::buffa::Message for CodeGeneratorResponse {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -846,9 +840,8 @@ pub mod code_generator_response {
         /// compliant message will never overflow this type.
         #[allow(clippy::let_and_return)]
         fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-            #[allow(unused_variables, unused_imports)]
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             let mut size = 0u32;
             if let Some(ref v) = self.name {
                 size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
@@ -875,9 +868,8 @@ pub mod code_generator_response {
             __cache: &mut ::buffa::SizeCache,
             buf: &mut impl ::buffa::bytes::BufMut,
         ) {
-            #[allow(unused_variables, unused_imports)]
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             if let Some(ref v) = self.name {
                 ::buffa::encoding::Tag::new(
                         1u32,
@@ -908,7 +900,7 @@ pub mod code_generator_response {
                         ::buffa::encoding::WireType::LengthDelimited,
                     )
                     .encode(buf);
-                ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+                ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
                 self.generated_code_info.write_to(__cache, buf);
             }
             self.__buffa_unknown_fields.write_to(buf);

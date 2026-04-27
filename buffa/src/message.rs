@@ -110,6 +110,14 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
         self.write_to(&mut cache, buf);
     }
 
+    /// Encode using a caller-supplied [`SizeCache`](crate::SizeCache), for
+    /// reuse across many encodes in a hot loop. Clears the cache first.
+    fn encode_with_cache(&self, cache: &mut crate::SizeCache, buf: &mut impl BufMut) {
+        cache.clear();
+        self.compute_size(cache);
+        self.write_to(cache, buf);
+    }
+
     /// Compute the encoded byte size of this message.
     ///
     /// Walks the message tree, discarding the intermediate [`SizeCache`].

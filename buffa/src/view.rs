@@ -166,6 +166,14 @@ pub trait ViewEncode<'a>: MessageView<'a> {
         self.write_to(&mut cache, buf);
     }
 
+    /// Encode using a caller-supplied [`SizeCache`](crate::SizeCache), for
+    /// reuse across many encodes in a hot loop. Clears the cache first.
+    fn encode_with_cache(&self, cache: &mut crate::SizeCache, buf: &mut impl BufMut) {
+        cache.clear();
+        self.compute_size(cache);
+        self.write_to(cache, buf);
+    }
+
     /// Compute the encoded byte size of this view.
     ///
     /// Walks the view tree, discarding the intermediate

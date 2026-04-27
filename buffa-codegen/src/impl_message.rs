@@ -283,6 +283,37 @@ fn classify_fields<'a>(
     }
 }
 
+/// True if `compute_size` / `write_to` for this message reference the
+/// threaded `SizeCache` — i.e. it has any sub-message-typed (LEN-delimited
+/// or group) field, oneof variant, or map value. Leaf messages (scalars
+/// only) take the cache as `_cache` to make the dead parameter explicit.
+fn message_uses_size_cache(
+    ctx: &CodeGenContext,
+    msg: &DescriptorProto,
+    classified: &ClassifiedFields<'_>,
+    features: &ResolvedFeatures,
+) -> bool {
+    let is_nested = |f: &FieldDescriptorProto| {
+        matches!(
+            effective_type(ctx, f, features),
+            Type::TYPE_MESSAGE | Type::TYPE_GROUP
+        )
+    };
+    classified.scalar.iter().copied().any(is_nested)
+        || classified.repeated.iter().copied().any(is_nested)
+        || classified
+            .oneof_groups
+            .iter()
+            .any(|(_, _, fields)| fields.iter().copied().any(is_nested))
+        || classified.map.iter().any(|f| {
+            find_map_entry_fields(msg, f)
+                .map(|(_, val_fd)| {
+                    effective_type_in_map_entry(ctx, val_fd, features) == Type::TYPE_MESSAGE
+                })
+                .unwrap_or(false)
+        })
+}
+
 /// Generate `impl DefaultInstance` and `impl Message` for a message.
 ///
 /// `preserve_unknown_fields`: when `true`, the generated merge collects
@@ -303,12 +334,18 @@ pub fn generate_message_impl(
 ) -> Result<TokenStream, CodeGenError> {
     let name_ident = format_ident!("{}", rust_name);
 
+    let classified = classify_fields(msg, oneof_idents);
+    let cache_ident = if message_uses_size_cache(ctx, msg, &classified, features) {
+        format_ident!("__cache")
+    } else {
+        format_ident!("_cache")
+    };
     let ClassifiedFields {
         scalar: scalar_fields,
         repeated: repeated_fields,
         map: map_fields,
         oneof_groups,
-    } = classify_fields(msg, oneof_idents);
+    } = classified;
 
     let compute_stmts = scalar_fields
         .iter()
@@ -558,10 +595,9 @@ pub fn generate_message_impl(
             /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
             /// compliant message will never overflow this type.
             #[allow(clippy::let_and_return)]
-            fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-                #[allow(unused_variables, unused_imports)]
+            fn compute_size(&self, #cache_ident: &mut ::buffa::SizeCache) -> u32 {
+                #[allow(unused_imports)]
                 use ::buffa::Enumeration as _;
-                let _ = &__cache;
                 #size_decl
                 #(#compute_stmts)*
                 #(#repeated_compute_stmts)*
@@ -573,12 +609,11 @@ pub fn generate_message_impl(
 
             fn write_to(
                 &self,
-                __cache: &mut ::buffa::SizeCache,
+                #cache_ident: &mut ::buffa::SizeCache,
                 #buf_param,
             ) {
-                #[allow(unused_variables, unused_imports)]
+                #[allow(unused_imports)]
                 use ::buffa::Enumeration as _;
-                let _ = &__cache;
                 #(#write_stmts)*
                 #(#repeated_write_stmts)*
                 #(#oneof_write_stmts)*
@@ -632,12 +667,18 @@ pub(crate) fn build_view_encode_methods(
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
     view_oneof_prefix: &TokenStream,
 ) -> Result<TokenStream, CodeGenError> {
+    let classified = classify_fields(msg, oneof_idents);
+    let cache_ident = if message_uses_size_cache(ctx, msg, &classified, features) {
+        format_ident!("__cache")
+    } else {
+        format_ident!("_cache")
+    };
     let ClassifiedFields {
         scalar: scalar_fields,
         repeated: repeated_fields,
         map: map_fields,
         oneof_groups,
-    } = classify_fields(msg, oneof_idents);
+    } = classified;
 
     let compute_stmts = scalar_fields
         .iter()
@@ -760,10 +801,9 @@ pub(crate) fn build_view_encode_methods(
         // owned `String`/`Vec<u8>`; on view fields (`&'a str`/`&'a [u8]`)
         // the borrow is redundant but harmless.
         #[allow(clippy::needless_borrow, clippy::let_and_return)]
-        fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-            #[allow(unused_variables, unused_imports)]
+        fn compute_size(&self, #cache_ident: &mut ::buffa::SizeCache) -> u32 {
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             #size_decl
             #(#compute_stmts)*
             #(#repeated_compute_stmts)*
@@ -774,10 +814,9 @@ pub(crate) fn build_view_encode_methods(
         }
 
         #[allow(clippy::needless_borrow)]
-        fn write_to(&self, __cache: &mut ::buffa::SizeCache, #buf_param) {
-            #[allow(unused_variables, unused_imports)]
+        fn write_to(&self, #cache_ident: &mut ::buffa::SizeCache, #buf_param) {
+            #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let _ = &__cache;
             #(#write_stmts)*
             #(#repeated_write_stmts)*
             #(#oneof_write_stmts)*
@@ -1350,7 +1389,7 @@ fn scalar_write_to_stmt(
                         #field_number,
                         ::buffa::encoding::WireType::LengthDelimited,
                     ).encode(buf);
-                    ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+                    ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
                     self.#ident.write_to(__cache, buf);
                 }
             });
@@ -1808,7 +1847,7 @@ fn repeated_write_to_stmt(
                     #field_number,
                     ::buffa::encoding::WireType::LengthDelimited,
                 ).encode(buf);
-                ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+                ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
                 v.write_to(__cache, buf);
             }
         });
@@ -2144,7 +2183,7 @@ fn oneof_write_arm(
                 ::buffa::encoding::Tag::new(
                     #field_number, ::buffa::encoding::WireType::LengthDelimited,
                 ).encode(buf);
-                ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+                ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
                 x.write_to(__cache, buf);
             }
         },
@@ -2596,7 +2635,7 @@ fn map_write_to_stmt(
     let key_size = map_element_size_expr(key_ty, &k);
     let (val_len_bind, val_size) = if val_ty == Type::TYPE_MESSAGE {
         (
-            quote! { let __v_len = __cache.next_size(); },
+            quote! { let __v_len = __cache.consume_next(); },
             quote! { (::buffa::encoding::varint_len(__v_len as u64) as u32 + __v_len) },
         )
     } else {

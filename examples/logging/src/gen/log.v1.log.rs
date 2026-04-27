@@ -132,9 +132,8 @@ impl ::buffa::Message for LogEntry {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if self.timestamp.is_set() {
             let __slot = __cache.reserve();
@@ -180,16 +179,15 @@ impl ::buffa::Message for LogEntry {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if self.timestamp.is_set() {
             ::buffa::encoding::Tag::new(
                     1u32,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.timestamp.write_to(__cache, buf);
         }
         {
@@ -222,7 +220,7 @@ impl ::buffa::Message for LogEntry {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.context.write_to(__cache, buf);
         }
         for (k, v) in &self.fields {
@@ -443,9 +441,8 @@ impl ::buffa::Message for LogBatch {
     /// compliant message will never overflow this type.
     #[allow(clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         for v in &self.entries {
             let __slot = __cache.reserve();
@@ -463,16 +460,15 @@ impl ::buffa::Message for LogBatch {
         __cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         for v in &self.entries {
             ::buffa::encoding::Tag::new(
                     1u32,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )
                 .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.next_size() as u64, buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);

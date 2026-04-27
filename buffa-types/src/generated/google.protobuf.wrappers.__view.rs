@@ -100,10 +100,9 @@ impl<'a> ::buffa::MessageView<'a> for DoubleValueView<'a> {
 }
 impl<'a> ::buffa::ViewEncode<'a> for DoubleValueView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
-    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if self.value.to_bits() != 0u64 {
             size += 1u32 + ::buffa::types::FIXED64_ENCODED_LEN as u32;
@@ -114,12 +113,11 @@ impl<'a> ::buffa::ViewEncode<'a> for DoubleValueView<'a> {
     #[allow(clippy::needless_borrow)]
     fn write_to(
         &self,
-        __cache: &mut ::buffa::SizeCache,
+        _cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if self.value.to_bits() != 0u64 {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Fixed64)
                 .encode(buf);
@@ -239,10 +237,9 @@ impl<'a> ::buffa::MessageView<'a> for FloatValueView<'a> {
 }
 impl<'a> ::buffa::ViewEncode<'a> for FloatValueView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
-    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if self.value.to_bits() != 0u32 {
             size += 1u32 + ::buffa::types::FIXED32_ENCODED_LEN as u32;
@@ -253,12 +250,11 @@ impl<'a> ::buffa::ViewEncode<'a> for FloatValueView<'a> {
     #[allow(clippy::needless_borrow)]
     fn write_to(
         &self,
-        __cache: &mut ::buffa::SizeCache,
+        _cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if self.value.to_bits() != 0u32 {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Fixed32)
                 .encode(buf);
@@ -378,10 +374,9 @@ impl<'a> ::buffa::MessageView<'a> for Int64ValueView<'a> {
 }
 impl<'a> ::buffa::ViewEncode<'a> for Int64ValueView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
-    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if self.value != 0i64 {
             size += 1u32 + ::buffa::types::int64_encoded_len(self.value) as u32;
@@ -392,12 +387,11 @@ impl<'a> ::buffa::ViewEncode<'a> for Int64ValueView<'a> {
     #[allow(clippy::needless_borrow)]
     fn write_to(
         &self,
-        __cache: &mut ::buffa::SizeCache,
+        _cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if self.value != 0i64 {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
                 .encode(buf);
@@ -517,10 +511,9 @@ impl<'a> ::buffa::MessageView<'a> for UInt64ValueView<'a> {
 }
 impl<'a> ::buffa::ViewEncode<'a> for UInt64ValueView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
-    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if self.value != 0u64 {
             size += 1u32 + ::buffa::types::uint64_encoded_len(self.value) as u32;
@@ -531,12 +524,11 @@ impl<'a> ::buffa::ViewEncode<'a> for UInt64ValueView<'a> {
     #[allow(clippy::needless_borrow)]
     fn write_to(
         &self,
-        __cache: &mut ::buffa::SizeCache,
+        _cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if self.value != 0u64 {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
                 .encode(buf);
@@ -656,10 +648,9 @@ impl<'a> ::buffa::MessageView<'a> for Int32ValueView<'a> {
 }
 impl<'a> ::buffa::ViewEncode<'a> for Int32ValueView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
-    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if self.value != 0i32 {
             size += 1u32 + ::buffa::types::int32_encoded_len(self.value) as u32;
@@ -670,12 +661,11 @@ impl<'a> ::buffa::ViewEncode<'a> for Int32ValueView<'a> {
     #[allow(clippy::needless_borrow)]
     fn write_to(
         &self,
-        __cache: &mut ::buffa::SizeCache,
+        _cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if self.value != 0i32 {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
                 .encode(buf);
@@ -795,10 +785,9 @@ impl<'a> ::buffa::MessageView<'a> for UInt32ValueView<'a> {
 }
 impl<'a> ::buffa::ViewEncode<'a> for UInt32ValueView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
-    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if self.value != 0u32 {
             size += 1u32 + ::buffa::types::uint32_encoded_len(self.value) as u32;
@@ -809,12 +798,11 @@ impl<'a> ::buffa::ViewEncode<'a> for UInt32ValueView<'a> {
     #[allow(clippy::needless_borrow)]
     fn write_to(
         &self,
-        __cache: &mut ::buffa::SizeCache,
+        _cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if self.value != 0u32 {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
                 .encode(buf);
@@ -934,10 +922,9 @@ impl<'a> ::buffa::MessageView<'a> for BoolValueView<'a> {
 }
 impl<'a> ::buffa::ViewEncode<'a> for BoolValueView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
-    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if self.value {
             size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
@@ -948,12 +935,11 @@ impl<'a> ::buffa::ViewEncode<'a> for BoolValueView<'a> {
     #[allow(clippy::needless_borrow)]
     fn write_to(
         &self,
-        __cache: &mut ::buffa::SizeCache,
+        _cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if self.value {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
                 .encode(buf);
@@ -1073,10 +1059,9 @@ impl<'a> ::buffa::MessageView<'a> for StringValueView<'a> {
 }
 impl<'a> ::buffa::ViewEncode<'a> for StringValueView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
-    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if !self.value.is_empty() {
             size += 1u32 + ::buffa::types::string_encoded_len(&self.value) as u32;
@@ -1087,12 +1072,11 @@ impl<'a> ::buffa::ViewEncode<'a> for StringValueView<'a> {
     #[allow(clippy::needless_borrow)]
     fn write_to(
         &self,
-        __cache: &mut ::buffa::SizeCache,
+        _cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if !self.value.is_empty() {
             ::buffa::encoding::Tag::new(
                     1u32,
@@ -1215,10 +1199,9 @@ impl<'a> ::buffa::MessageView<'a> for BytesValueView<'a> {
 }
 impl<'a> ::buffa::ViewEncode<'a> for BytesValueView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
-    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
-        #[allow(unused_variables, unused_imports)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         let mut size = 0u32;
         if !self.value.is_empty() {
             size += 1u32 + ::buffa::types::bytes_encoded_len(&self.value) as u32;
@@ -1229,12 +1212,11 @@ impl<'a> ::buffa::ViewEncode<'a> for BytesValueView<'a> {
     #[allow(clippy::needless_borrow)]
     fn write_to(
         &self,
-        __cache: &mut ::buffa::SizeCache,
+        _cache: &mut ::buffa::SizeCache,
         buf: &mut impl ::buffa::bytes::BufMut,
     ) {
-        #[allow(unused_variables, unused_imports)]
+        #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let _ = &__cache;
         if !self.value.is_empty() {
             ::buffa::encoding::Tag::new(
                     1u32,
