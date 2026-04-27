@@ -739,7 +739,7 @@ fn test_message_proto3_optional() {
         "missing struct: {content}"
     );
     assert!(
-        content.contains("pub count: Option<i32>"),
+        content.contains("pub count: ::core::option::Option<i32>"),
         "missing optional field: {content}"
     );
     // impl Message should use if-let pattern for optional
@@ -782,7 +782,7 @@ fn test_message_proto3_optional_string() {
     .expect("proto3 optional string should generate");
     let content = &joined(&files);
     assert!(
-        content.contains("pub label: Option<::buffa::alloc::string::String>"),
+        content.contains("pub label: ::core::option::Option<::buffa::alloc::string::String>"),
         "missing optional string field: {content}"
     );
     assert!(

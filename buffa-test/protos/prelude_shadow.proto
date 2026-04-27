@@ -13,8 +13,7 @@ syntax = "proto3";
 
 package test.prelude_shadow;
 
-// Top-level — already detected by `ImportResolver::for_file` pre-gh#36,
-// but exercises the JSON path here (skip_serializing_if, deser temps).
+// Top-level — exercises the JSON path (skip_serializing_if, deser temps).
 message Option {
   optional string title = 1;
   oneof value {
@@ -23,9 +22,8 @@ message Option {
   }
 }
 
-// 1-level nested — the original gh#36 reproduction. Requires
-// `ImportResolver::child_for_message` to block `Option` inside
-// `mod picker { use super::*; ... }`.
+// 1-level nested — the original gh#36 reproduction. `Option` is declared
+// inside `mod picker { use super::*; ... }`, shadowing the prelude there.
 message Picker {
   message Option {
     optional string title = 1;
@@ -40,8 +38,8 @@ message Picker {
 
 // Sibling propagation — `Option` and `Middle` are both nested in `Outer`,
 // so `mod outer` declares `struct Option` (shadowing the prelude there and
-// in `mod outer::middle` via `use super::*`). The child resolver must
-// inherit the parent's blocked set so `Inner.x` is qualified.
+// in `mod outer::middle` via `use super::*`). `Inner.x` must use the
+// fully-qualified path.
 message Outer {
   message Option {
     bool present = 1;

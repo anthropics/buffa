@@ -48,11 +48,17 @@ fn main() {
         .compile()
         .expect("buffa_build failed for name_collisions.proto");
 
-    // Prelude shadowing (gh#36) — nested `message Option` with optional/oneof
-    // fields, built with views + JSON so all `Option<...>` emission paths are
-    // exercised. Compilation is the assertion.
+    // Prelude shadowing (gh#36, gh#64) — nested + cross-file `message Option`
+    // with optional/oneof fields, built with views + JSON so all `Option<...>`
+    // emission paths are exercised. The sibling file shares the package, so
+    // its `Wrapper.kind: Option<...>` would resolve to the proto-defined
+    // `Option` struct unless the codegen path is fully qualified.
+    // Compilation is the assertion.
     buffa_build::Config::new()
-        .files(&["protos/prelude_shadow.proto"])
+        .files(&[
+            "protos/prelude_shadow.proto",
+            "protos/prelude_shadow_sibling.proto",
+        ])
         .includes(&["protos/"])
         .generate_json(true)
         .compile()

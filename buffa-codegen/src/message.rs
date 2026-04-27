@@ -144,11 +144,6 @@ fn generate_message_with_nesting(
     // Nested messages (skip map entry synthetics) — simple name, emitted
     // inside the message's module.
     //
-    // The child resolver inherits parent-scope blocked names (via
-    // `use super::*`) and adds this message's nested types/enums, so that
-    // a nested message named `Option` causes `::core::option::Option` to
-    // be emitted in struct fields within this module scope.
-    let child_resolver = resolver.child_for_message(msg);
     let nested_msgs = msg
         .nested_type
         .iter()
@@ -168,7 +163,7 @@ fn generate_message_with_nesting(
                 scope.nested(&nested_fqn, &msg_features),
                 nested,
                 nested_proto_name,
-                &child_resolver,
+                resolver,
             )
         })
         .collect::<Result<Vec<_>, _>>()?;

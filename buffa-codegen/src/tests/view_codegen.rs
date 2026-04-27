@@ -36,8 +36,8 @@ fn test_view_explicit_presence_scalar_is_option() {
     let content = &joined(&files);
     // View struct field should be Option<i32>.
     assert!(
-        content.contains("pub value: Option<i32>"),
-        "view field for proto3 optional i32 must be Option<i32>: {content}"
+        content.contains("pub value: ::core::option::Option<i32>"),
+        "view field for proto3 optional i32 must be ::core::option::Option<i32>: {content}"
     );
     // The synthetic oneof must not produce a view enum (it only wraps one field).
     // No `_ValueView` enum should appear.

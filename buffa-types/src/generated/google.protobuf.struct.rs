@@ -328,7 +328,7 @@ pub const __STRUCT_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::typ
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct Value {
-    pub kind: Option<__buffa::oneof::value::Kind>,
+    pub kind: ::core::option::Option<__buffa::oneof::value::Kind>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
     #[doc(hidden)]

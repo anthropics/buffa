@@ -5,16 +5,16 @@
 #[derive(Clone, PartialEq, Default)]
 pub struct Version {
     /// Field 1: `major`
-    pub major: Option<i32>,
+    pub major: ::core::option::Option<i32>,
     /// Field 2: `minor`
-    pub minor: Option<i32>,
+    pub minor: ::core::option::Option<i32>,
     /// Field 3: `patch`
-    pub patch: Option<i32>,
+    pub patch: ::core::option::Option<i32>,
     /// A suffix for alpha, beta or rc release, e.g., "alpha-1", "rc2". It should
     /// be empty for mainline stable releases.
     ///
     /// Field 4: `suffix`
-    pub suffix: Option<::buffa::alloc::string::String>,
+    pub suffix: ::core::option::Option<::buffa::alloc::string::String>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
     #[doc(hidden)]
@@ -197,7 +197,7 @@ pub struct CodeGeneratorRequest {
     /// The generator parameter passed on the command-line.
     ///
     /// Field 2: `parameter`
-    pub parameter: Option<::buffa::alloc::string::String>,
+    pub parameter: ::core::option::Option<::buffa::alloc::string::String>,
     /// FileDescriptorProtos for all files in files_to_generate and everything
     /// they import.  The files will appear in topological order, so each file
     /// appears before any file that imports it.
@@ -464,26 +464,26 @@ pub struct CodeGeneratorResponse {
     /// exiting with a non-zero status code.
     ///
     /// Field 1: `error`
-    pub error: Option<::buffa::alloc::string::String>,
+    pub error: ::core::option::Option<::buffa::alloc::string::String>,
     /// A bitmask of supported features that the code generator supports.
     /// This is a bitwise "or" of values from the Feature enum.
     ///
     /// Field 2: `supported_features`
-    pub supported_features: Option<u64>,
+    pub supported_features: ::core::option::Option<u64>,
     /// The minimum edition this plugin supports.  This will be treated as an
     /// Edition enum, but we want to allow unknown values.  It should be specified
     /// according the edition enum value, *not* the edition number.  Only takes
     /// effect for plugins that have FEATURE_SUPPORTS_EDITIONS set.
     ///
     /// Field 3: `minimum_edition`
-    pub minimum_edition: Option<i32>,
+    pub minimum_edition: ::core::option::Option<i32>,
     /// The maximum edition this plugin supports.  This will be treated as an
     /// Edition enum, but we want to allow unknown values.  It should be specified
     /// according the edition enum value, *not* the edition number.  Only takes
     /// effect for plugins that have FEATURE_SUPPORTS_EDITIONS set.
     ///
     /// Field 4: `maximum_edition`
-    pub maximum_edition: Option<i32>,
+    pub maximum_edition: ::core::option::Option<i32>,
     /// Field 15: `file`
     pub file: ::buffa::alloc::vec::Vec<code_generator_response::File>,
     #[doc(hidden)]
@@ -756,7 +756,7 @@ pub mod code_generator_response {
         /// CodeGeneratorResponse before writing files to disk.
         ///
         /// Field 1: `name`
-        pub name: Option<::buffa::alloc::string::String>,
+        pub name: ::core::option::Option<::buffa::alloc::string::String>,
         /// If non-empty, indicates that the named file should already exist, and the
         /// content here is to be inserted into that file at a defined insertion
         /// point.  This feature allows a code generator to extend the output
@@ -796,11 +796,11 @@ pub mod code_generator_response {
         /// If |insertion_point| is present, |name| must also be present.
         ///
         /// Field 2: `insertion_point`
-        pub insertion_point: Option<::buffa::alloc::string::String>,
+        pub insertion_point: ::core::option::Option<::buffa::alloc::string::String>,
         /// The file contents.
         ///
         /// Field 15: `content`
-        pub content: Option<::buffa::alloc::string::String>,
+        pub content: ::core::option::Option<::buffa::alloc::string::String>,
         /// Information describing the file content being inserted. If an insertion
         /// point is used, this information will be appropriately offset and inserted
         /// into the code generation metadata for the generated files.

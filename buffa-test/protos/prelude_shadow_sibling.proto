@@ -1,0 +1,20 @@
+// gh#64 cross-file case: this file shares the `test.prelude_shadow` package
+// with prelude_shadow.proto (which defines a top-level `message Option`).
+// The per-package stitcher merges both into one Rust module, so the sibling
+// file's `pub struct Option` shadows the prelude here. Per-file detection
+// cannot catch this; the fix is unconditional `::core::option::Option`
+// qualification.
+//
+// Compilation alone is the assertion.
+
+syntax = "proto3";
+
+package test.prelude_shadow;
+
+message CrossFileWrapper {
+  oneof kind {
+    string a = 1;
+    int32 b = 2;
+  }
+  optional string label = 3;
+}

@@ -380,7 +380,7 @@ fn inline_oneof() {
         "#,
         &no_views(),
     );
-    assert!(content.contains("pub info: Option<__buffa::oneof::contact::Info>"));
+    assert!(content.contains("pub info: ::core::option::Option<__buffa::oneof::contact::Info>"));
     assert!(content.contains("pub enum Info"));
     assert!(content.contains("Email("));
     assert!(content.contains("Phone("));
@@ -399,8 +399,8 @@ fn inline_proto3_optional() {
         "#,
         &no_views(),
     );
-    assert!(content.contains("pub count: Option<i32>"));
-    assert!(content.contains("pub label: Option<::buffa::alloc::string::String>"));
+    assert!(content.contains("pub count: ::core::option::Option<i32>"));
+    assert!(content.contains("pub label: ::core::option::Option<::buffa::alloc::string::String>"));
 }
 
 #[test]
@@ -638,8 +638,8 @@ fn inline_proto2_optional() {
         "#,
         &no_views(),
     );
-    // Proto2 optional → Option<T>
-    assert!(content.contains("pub count: Option<i32>"));
+    // Proto2 optional → ::core::option::Option<T>
+    assert!(content.contains("pub count: ::core::option::Option<i32>"));
     // Proto2 required → bare type (always encoded)
     assert!(content.contains("pub name: ::buffa::alloc::string::String"));
 }
@@ -657,8 +657,8 @@ fn inline_proto2_closed_enum() {
     );
     // Proto2 closed enum → bare type (not EnumValue<T>)
     assert!(
-        content.contains("pub status: Option<Status>"),
-        "proto2 closed enum should be Option<Status>, not EnumValue: {content}"
+        content.contains("pub status: ::core::option::Option<Status>"),
+        "proto2 closed enum should be ::core::option::Option<Status>, not EnumValue: {content}"
     );
 }
 

@@ -34,8 +34,8 @@ fn test_proto2_optional_scalar_is_option() {
     .expect("proto2 optional scalar should generate");
     let content = &joined(&files);
     assert!(
-        content.contains("pub count: Option<i32>"),
-        "proto2 optional int32 must be Option<i32>: {content}"
+        content.contains("pub count: ::core::option::Option<i32>"),
+        "proto2 optional int32 must be ::core::option::Option<i32>: {content}"
     );
 }
 
@@ -135,8 +135,8 @@ fn test_proto2_optional_enum_is_option_enum_value() {
     .expect("proto2 optional enum should generate");
     let content = &joined(&files);
     assert!(
-        content.contains("pub color: Option<Color>"),
-        "proto2 optional enum must be Option<Color> (closed enum): {content}"
+        content.contains("pub color: ::core::option::Option<Color>"),
+        "proto2 optional enum must be ::core::option::Option<Color> (closed enum): {content}"
     );
 }
 
