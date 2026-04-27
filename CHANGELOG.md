@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-04-24
+## [0.4.0] - 2026-04-27
 
 ### Breaking changes
 
@@ -136,8 +136,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   fully-qualified `::core::option::Option`.
   ([#36](https://github.com/anthropics/buffa/issues/36),
   [#64](https://github.com/anthropics/buffa/issues/64))
-- Oneof variant names that PascalCase to a reserved Rust identifier (e.g.
-  proto field `r#type` → variant `Type`) are now escaped.
+- Oneof variant names that PascalCase to a reserved Rust identifier (in
+  practice, proto field `self` → variant `Self`) are now escaped.
+  ([#47](https://github.com/anthropics/buffa/issues/47))
 - Nested type and oneof sharing the same name (the gh#31 `RegionCodes`
   case) and `Foo` next to `FooView` (gh#32) — both now structurally
   resolved by the `__buffa::` namespacing above.
