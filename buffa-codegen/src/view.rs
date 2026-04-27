@@ -157,10 +157,6 @@ pub(crate) fn generate_view_with_nesting(
         &oneof_idents,
         &view_oneof_prefix,
     )?;
-    let cached_size_field = quote! {
-        #[doc(hidden)]
-        pub __buffa_cached_size: ::buffa::__private::CachedSize,
-    };
     let view_encode_impl = quote! {
         impl<'a> ::buffa::ViewEncode<'a> for #view_ident<'a> {
             #view_encode_methods
@@ -222,7 +218,6 @@ pub(crate) fn generate_view_with_nesting(
             #(#direct_fields)*
             #(#oneof_struct_fields)*
             #unknown_fields_field
-            #cached_size_field
             #phantom_field
         }
 
@@ -306,6 +301,7 @@ pub(crate) fn generate_view_with_nesting(
             // unify the `UnknownFields` (no-wrapper) and `__<Name>ExtJson`
             // (generate_json wrapper) cases; no-op in the former.
             #[allow(clippy::redundant_closure, clippy::useless_conversion)]
+            #[allow(clippy::needless_update)]
             fn to_owned_message(&self) -> #owned_path {
                 #[allow(unused_imports)]
                 use ::buffa::alloc::string::ToString as _;

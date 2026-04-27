@@ -1134,8 +1134,8 @@ fn test_repeated_message_field() {
         "missing merge_length_delimited for repeated msg: {content}"
     );
     assert!(
-        content.contains("cached_size"),
-        "missing cached_size in write_to: {content}"
+        content.contains("__cache.next_size()"),
+        "missing SizeCache consume in write_to: {content}"
     );
 }
 

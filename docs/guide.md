@@ -419,8 +419,6 @@ pub struct Person {
     pub nickname: Option<String>,
     #[doc(hidden)]
     pub __buffa_unknown_fields: buffa::UnknownFields,
-    #[doc(hidden)]
-    pub __buffa_cached_size: buffa::__private::CachedSize,
 }
 ```
 
@@ -429,8 +427,8 @@ Key design choices:
 - **`MessageField<T>`** for sub-message fields (not `Option<Box<T>>`)
 - **`EnumValue<E>`** for open enum fields (not raw `i32`)
 - **`__buffa_unknown_fields`** preserves fields from newer schema versions
-- **`__buffa_cached_size`** enables linear-time serialization
 - **Module nesting** for nested message types (`outer::Inner`, not `OuterInner`)
+- **No serialization state** — sizes live in an external [`SizeCache`](https://docs.rs/buffa/latest/buffa/struct.SizeCache.html), so the struct holds only its proto fields plus the unknown-fields plumbing, with no interior mutability
 
 ### `MessageField<T>` — ergonomic optional messages
 
@@ -660,10 +658,10 @@ msg.clear();
 
 Buffa uses a two-pass model to avoid the exponential-time size computation that affects prost with deeply nested messages:
 
-1. **`compute_size()`** — walks the message tree bottom-up, caching each sub-message's encoded size in its `CachedSize` field.
-2. **`write_to()`** — walks the tree again, writing bytes and using cached sizes for length-delimited sub-message headers.
+1. **`compute_size(&self, cache)`** — walks the message tree, recording each length-delimited sub-message's encoded size in a [`SizeCache`](https://docs.rs/buffa/latest/buffa/struct.SizeCache.html).
+2. **`write_to(&self, cache, buf)`** — walks the tree again, consuming cached sizes for length-delimited sub-message headers.
 
-`encode()`, `encode_to_vec()`, and `encode_to_bytes()` perform both passes automatically. If you serialize the same message multiple times without mutation, you can call `compute_size()` once and `write_to()` repeatedly.
+`encode()`, `encode_to_vec()`, and `encode_to_bytes()` perform both passes with a fresh `SizeCache` automatically — most callers never name the cache. Use `encoded_len()` if you only need the size.
 
 ### Error handling
 
@@ -1348,13 +1346,12 @@ message Int64Range {
 }
 ```
 
-The generated code would produce a struct with `start: i64` and `end: i64` fields. But in Rust, it's more natural to work with `std::ops::Range<i64>`. You can implement `Message` on a thin newtype that wraps the standard range type — no `UnknownFields` or `CachedSize` fields needed for a simple leaf message like this:
+The generated code would produce a struct with `start: i64` and `end: i64` fields. But in Rust, it's more natural to work with `std::ops::Range<i64>`. You can implement `Message` on a thin newtype that wraps the standard range type — no `UnknownFields` field needed for a simple leaf message like this:
 
 ```rust,ignore
 // my-common-protos/src/lib.rs
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic::{AtomicU32, Ordering};
-use buffa::Message;
+use buffa::{Message, SizeCache};
 use buffa::error::DecodeError;
 
 /// A protobuf `Int64Range` backed by `std::ops::Range<i64>`.
@@ -1364,15 +1361,11 @@ use buffa::error::DecodeError;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Int64Range {
     inner: std::ops::Range<i64>,
-    /// Cached encoded size — internal bookkeeping, not a user-visible field.
-    /// Needed when this type is used as a sub-message field (the parent's
-    /// write_to reads the cached size for the length prefix).
-    cached_size: AtomicU32,
 }
 
 impl Int64Range {
     pub fn new(range: std::ops::Range<i64>) -> Self {
-        Self { inner: range, cached_size: AtomicU32::new(0) }
+        Self { inner: range }
     }
 }
 
@@ -1394,7 +1387,12 @@ impl From<Int64Range> for std::ops::Range<i64> {
 }
 
 impl Message for Int64Range {
-    fn compute_size(&self) -> u32 {
+    fn compute_size(&self, _cache: &mut SizeCache) -> u32 {
+        // Leaf message (no nested message fields), so the cache is unused.
+        // For a type with a nested message field `m`, the pattern is:
+        //   let slot = cache.reserve();
+        //   let inner = self.m.compute_size(cache);
+        //   cache.set(slot, inner);
         let mut size = 0u32;
         if self.inner.start != 0 {
             size += 1 + buffa::types::int64_encoded_len(self.inner.start) as u32;
@@ -1402,11 +1400,10 @@ impl Message for Int64Range {
         if self.inner.end != 0 {
             size += 1 + buffa::types::int64_encoded_len(self.inner.end) as u32;
         }
-        self.cached_size.store(size, Ordering::Relaxed);
         size
     }
 
-    fn write_to(&self, buf: &mut impl bytes::BufMut) {
+    fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl bytes::BufMut) {
         if self.inner.start != 0 {
             buffa::encoding::Tag::new(1, buffa::encoding::WireType::Varint)
                 .encode(buf);
@@ -1433,13 +1430,8 @@ impl Message for Int64Range {
         Ok(())
     }
 
-    fn cached_size(&self) -> u32 {
-        self.cached_size.load(Ordering::Relaxed)
-    }
-
     fn clear(&mut self) {
         self.inner = 0..0;
-        self.cached_size.store(0, Ordering::Relaxed);
     }
 }
 
@@ -1455,7 +1447,7 @@ impl buffa::DefaultInstance for Int64Range {
 Note what's *not* needed:
 
 - **`UnknownFields`** — omitted since this is a simple leaf type where round-trip preservation of unknown fields isn't important. Unknown tags are silently skipped via `skip_field`.
-- **`CachedSize` as a public field** — the cached size is an internal `AtomicU32` that satisfies the `Message` trait contract. It doesn't need to be part of the public API.
+- **Any size-caching field** — sizes live in the external `SizeCache` threaded through `compute_size` / `write_to`. A leaf type like this doesn't touch the cache; types with nested message fields reserve a slot before recursing (see the `compute_size` comment above).
 
 ### View types for custom implementations
 

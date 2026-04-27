@@ -167,7 +167,6 @@ macro_rules! include_proto_relative {
 
 #[cfg(feature = "json")]
 pub mod any_registry;
-mod cached_size;
 pub mod editions;
 pub mod encoding;
 pub mod enumeration;
@@ -183,6 +182,7 @@ pub mod message;
 pub mod message_field;
 pub mod message_set;
 pub mod oneof;
+mod size_cache;
 #[cfg(feature = "text")]
 pub mod text;
 #[cfg(any(feature = "json", feature = "text"))]
@@ -201,6 +201,7 @@ pub use extension::{Extension, ExtensionCodec, ExtensionSet};
 pub use message::{DecodeOptions, Message, RECURSION_LIMIT};
 pub use message_field::{DefaultInstance, MessageField};
 pub use oneof::Oneof;
+pub use size_cache::SizeCache;
 pub use unknown_fields::{UnknownField, UnknownFieldData, UnknownFields};
 
 #[cfg(feature = "text")]
@@ -237,13 +238,6 @@ pub mod __private {
     pub use hashbrown::HashMap;
     #[cfg(feature = "std")]
     pub use std::collections::HashMap;
-
-    /// Cached encoded size for the two-pass serialization model.
-    ///
-    /// Emitted as a `#[doc(hidden)]` field on every generated message struct.
-    /// The size is accessed through [`Message::cached_size`](crate::Message::cached_size),
-    /// not this type directly. See the `cached_size` module docs for design notes.
-    pub use crate::cached_size::CachedSize;
 }
 
 /// Minimal fixture types for compile-checking doc examples.
@@ -274,10 +268,10 @@ pub mod __doctest_fixtures {
     }
 
     impl Message for Person {
-        fn compute_size(&self) -> u32 {
+        fn compute_size(&self, _cache: &mut SizeCache) -> u32 {
             0
         }
-        fn write_to(&self, _buf: &mut impl bytes::BufMut) {}
+        fn write_to(&self, _cache: &mut SizeCache, _buf: &mut impl bytes::BufMut) {}
         fn merge_field(
             &mut self,
             tag: crate::encoding::Tag,
@@ -285,9 +279,6 @@ pub mod __doctest_fixtures {
             _depth: u32,
         ) -> Result<(), DecodeError> {
             crate::encoding::skip_field(tag, buf)
-        }
-        fn cached_size(&self) -> u32 {
-            0
         }
         fn clear(&mut self) {
             *self = Self::default();

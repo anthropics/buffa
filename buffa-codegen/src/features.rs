@@ -503,11 +503,10 @@ mod tests {
             let entry = defaults
                 .defaults
                 .iter()
-                .filter(|d| {
+                .rfind(|d| {
                     d.edition
                         .is_some_and(|e| (e as i32) <= (target_edition as i32))
                 })
-                .last()
                 .unwrap_or_else(|| panic!("no defaults entry for edition {target_edition:?}"));
 
             let resolved = resolve_protoc_defaults(

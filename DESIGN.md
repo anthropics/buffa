@@ -39,7 +39,7 @@ The runtime library that generated code depends on. Contains:
 - **`MessageView` trait**: The trait for borrowed/zero-copy message views.
 - **`OwnedView<V>`**: Self-referential container that pairs a `Bytes` buffer with a decoded view, producing a `'static + Send + Sync` type suitable for async and RPC frameworks.
 - **`MessageField<T>`**: Ergonomic wrapper for optional message fields that dereferences to a default instance when unset.
-- **`CachedSize`**: Per-message cached encoded size for linear-time serialization.
+- **`SizeCache`**: External pre-order size cache threaded through `compute_size` / `write_to` for linear-time serialization.
 - **`EnumValue<T>`**: Type-safe wrapper for open enum fields that preserves unknown values.
 - **Wire format codec**: Varint, fixed-width, length-delimited, and group encoding/decoding using `bytes::{Buf, BufMut}`.
 - **Unknown field storage**: Preserves unknown fields for round-trip fidelity.
@@ -177,9 +177,8 @@ pub struct Person {
     pub avatar: Vec<u8>,
     pub tags: Vec<String>,
     pub address: buffa::MessageField<Address>,
-    // internal fields (excluded from Debug output):
+    // internal field (excluded from Debug output):
     //   __buffa_unknown_fields: buffa::UnknownFields,
-    //   __buffa_cached_size: buffa::__private::CachedSize,
 }
 
 // Generated impls: Clone, PartialEq, Debug, Default, Message
@@ -316,37 +315,35 @@ For **open enums** (default in editions), the field type is `EnumValue<PhoneType
 
 For **closed enums**, the field type is `PhoneType` directly, and unknown values are routed to unknown fields during decoding.
 
-### 5. Cached Encoded Size — Linear-Time Serialization
+### 5. External Size Cache — Linear-Time Serialization
 
-Prost recomputes message sizes at every nesting level during serialization, leading to potentially exponential time for deeply nested messages. Buffa fixes this with `CachedSize`:
+Prost recomputes message sizes at every nesting level during serialization, leading to potentially exponential time for deeply nested messages. Buffa fixes this with `SizeCache`:
 
 ```rust,ignore
-pub struct CachedSize {
-    size: AtomicU32,  // Relaxed ordering — free on all major platforms
+pub struct SizeCache {
+    sizes: Vec<u32>,   // pre-order DFS slot per nested message
+    cursor: usize,
 }
 ```
 
-Each generated message struct contains a `CachedSize` field. Serialization is a two-pass process:
+The cache is **external** to message structs — generated types contain only their proto fields (plus `__buffa_unknown_fields`), with no serialization plumbing and no interior mutability. `Message::encode*` constructs and discards a `SizeCache` internally; `compute_size` / `write_to` thread it explicitly so manual `Message` implementations can recurse into nested fields.
 
-1. **`compute_size()`** — walks the message tree, computes sizes bottom-up, caches each message's size in its `CachedSize` field.
-2. **`write_to()`** — walks the tree again, writing bytes and using cached sizes for length-prefixed sub-message headers.
+Serialization is a two-pass process over the same `SizeCache`:
 
-Both passes are O(n) in the total message size. The C++ protobuf implementation has used this approach from the start.
+1. **`compute_size(&self, cache)`** — walks the message tree, reserving a slot before recursing into each length-delimited sub-message and filling it with the computed size on return (pre-order reservation, post-order fill).
+2. **`write_to(&self, cache, buf)`** — walks the tree in the same order, consuming cached sizes for length-prefixed sub-message headers.
 
-**`AtomicU32` over `Cell<u32>`:** An earlier design used `Cell<u32>` on the assumption that avoiding atomics would be faster, since serialization is single-threaded. In practice, `Relaxed`-ordered atomic load/store compiles to identical machine instructions as a plain memory access on every major platform (x86/x86_64 TSO, ARM64, ARM32, RISC-V) — the only difference is a compiler reordering barrier, which has zero runtime cost. Switching to `AtomicU32` makes messages `Sync`, enabling `Arc<Message>` and read-sharing across threads, at no measurable overhead. The `DefaultInstance` trait requires `T: Sync` for its `static` lazy-initializer pattern; `!Sync` messages made it impossible to compile the generated `DefaultInstance` impl, which was the decisive factor.
-
-Serialization must still be sequenced: `compute_size()` and `write_to()` must be called in order without interleaving from another thread. `merge()` requires `&mut self`, so mutation is still exclusive. `Sync` enables shared read access to a fully-built message, not concurrent serialization.
+Both passes are O(n) in the total message size. The C++ protobuf implementation has used a per-message cached-size field for the same purpose; buffa's external cache achieves the same linearity while keeping generated structs free of hidden state, so `Send + Sync` is structural and concurrent encodes of the same `&Message` from multiple threads are sound (each thread uses its own `SizeCache`).
 
 The `Message` trait reflects this two-pass model:
 
 ```rust,ignore
 pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     // Required methods (implemented by codegen per message type):
-    fn compute_size(&self) -> u32;     // Pass 1: compute and cache
-    fn write_to(&self, buf: &mut impl BufMut);  // Pass 2: write (infallible)
+    fn compute_size(&self, cache: &mut SizeCache) -> u32;  // Pass 1
+    fn write_to(&self, cache: &mut SizeCache, buf: &mut impl BufMut);  // Pass 2
     fn merge_field(&mut self, tag: Tag, buf: &mut impl Buf, depth: u32)
         -> Result<(), DecodeError>;     // Per-field decode dispatch
-    fn cached_size(&self) -> u32;
     fn clear(&mut self);
 
     // Provided methods (default impls):

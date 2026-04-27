@@ -739,10 +739,10 @@ mod tests {
     }
 
     impl crate::Message for TestMsg {
-        fn compute_size(&self) -> u32 {
+        fn compute_size(&self, _cache: &mut crate::SizeCache) -> u32 {
             0
         }
-        fn write_to(&self, _buf: &mut impl bytes::BufMut) {}
+        fn write_to(&self, _cache: &mut crate::SizeCache, _buf: &mut impl bytes::BufMut) {}
         fn merge_field(
             &mut self,
             tag: crate::encoding::Tag,
@@ -750,9 +750,6 @@ mod tests {
             _depth: u32,
         ) -> Result<(), crate::DecodeError> {
             crate::encoding::skip_field(tag, buf)
-        }
-        fn cached_size(&self) -> u32 {
-            0
         }
         fn clear(&mut self) {
             *self = Self::default();
@@ -1263,10 +1260,10 @@ mod tests {
             }
         }
         impl crate::Message for Strict {
-            fn compute_size(&self) -> u32 {
+            fn compute_size(&self, _: &mut crate::SizeCache) -> u32 {
                 0
             }
-            fn write_to(&self, _: &mut impl bytes::BufMut) {}
+            fn write_to(&self, _: &mut crate::SizeCache, _: &mut impl bytes::BufMut) {}
             fn merge_field(
                 &mut self,
                 t: crate::encoding::Tag,
@@ -1274,9 +1271,6 @@ mod tests {
                 _: u32,
             ) -> Result<(), crate::DecodeError> {
                 crate::encoding::skip_field(t, b)
-            }
-            fn cached_size(&self) -> u32 {
-                0
             }
             fn clear(&mut self) {}
         }

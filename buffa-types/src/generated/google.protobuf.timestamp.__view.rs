@@ -118,8 +118,6 @@ pub struct TimestampView<'a> {
     /// Field 2: `nanos`
     pub nanos: i32,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
-    #[doc(hidden)]
-    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl<'a> TimestampView<'a> {
     /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
@@ -202,6 +200,7 @@ impl<'a> ::buffa::MessageView<'a> for TimestampView<'a> {
     }
     /// Convert this view to the owned message type.
     #[allow(clippy::redundant_closure, clippy::useless_conversion)]
+    #[allow(clippy::needless_update)]
     fn to_owned_message(&self) -> super::super::Timestamp {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
@@ -218,10 +217,11 @@ impl<'a> ::buffa::MessageView<'a> for TimestampView<'a> {
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for TimestampView<'a> {
-    #[allow(clippy::needless_borrow)]
-    fn compute_size(&self) -> u32 {
-        #[allow(unused_imports)]
+    #[allow(clippy::needless_borrow, clippy::let_and_return)]
+    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
+        let _ = &__cache;
         let mut size = 0u32;
         if self.seconds != 0i64 {
             size += 1u32 + ::buffa::types::int64_encoded_len(self.seconds) as u32;
@@ -230,13 +230,17 @@ impl<'a> ::buffa::ViewEncode<'a> for TimestampView<'a> {
             size += 1u32 + ::buffa::types::int32_encoded_len(self.nanos) as u32;
         }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
-        self.__buffa_cached_size.set(size);
         size
     }
     #[allow(clippy::needless_borrow)]
-    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
-        #[allow(unused_imports)]
+    fn write_to(
+        &self,
+        __cache: &mut ::buffa::SizeCache,
+        buf: &mut impl ::buffa::bytes::BufMut,
+    ) {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
+        let _ = &__cache;
         if self.seconds != 0i64 {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
                 .encode(buf);
@@ -248,9 +252,6 @@ impl<'a> ::buffa::ViewEncode<'a> for TimestampView<'a> {
             ::buffa::types::encode_int32(self.nanos, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
-    }
-    fn cached_size(&self) -> u32 {
-        self.__buffa_cached_size.get()
     }
 }
 impl<'v> ::buffa::DefaultViewInstance for TimestampView<'v> {

@@ -828,9 +828,10 @@ fn inline_empty_message() {
     assert!(content.contains("pub struct Empty"));
     // Empty message should still implement Message.
     assert!(content.contains("impl ::buffa::Message for Empty"));
-    // Should have internal fields but no user fields.
+    // Should have the unknown-fields plumbing but no user fields and no
+    // serialization-state field — sizes live in the external SizeCache.
     assert!(content.contains("__buffa_unknown_fields"));
-    assert!(content.contains("__buffa_cached_size"));
+    assert!(!content.contains("__buffa_cached_size"));
 }
 
 #[test]

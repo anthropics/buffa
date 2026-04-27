@@ -21,11 +21,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `HasDefaultViewInstance` impl is no longer needed.
   ([#68](https://github.com/anthropics/buffa/issues/68),
   [#69](https://github.com/anthropics/buffa/issues/69))
-- **All generated `*View<'a>` structs gain a `__buffa_cached_size` field**
-  for the new `ViewEncode` impl. Code that constructs a view literal
-  without `..Default::default()` will fail to compile; use the trailing
-  `..Default::default()` per the documented convention. Applies to WKT
-  view structs in `buffa-types` and to consumer-generated views.
+- **`__buffa_cached_size` is removed from all generated structs (owned and
+  view); `Message::compute_size` / `write_to` and `ViewEncode::compute_size` /
+  `write_to` now take a `&mut SizeCache` parameter.** Sizes are recorded in an
+  external pre-order `Vec<u32>` cache that the provided `encode*` methods
+  construct internally, so generated types contain only their proto fields
+  plus `__buffa_unknown_fields` — no interior mutability, structurally
+  `Send + Sync`, and concurrent `encode()` of the same `&msg` from multiple
+  threads is sound. `Message::cached_size()` and `ViewEncode::cached_size()`
+  are removed; use the new provided `encoded_len()` to get the size alone.
+  `__private::CachedSize` is removed. Hand-written `Message` / `ViewEncode`
+  impls must add the `cache: &mut SizeCache` parameter, drop `cached_size()`,
+  and (for nested message fields) wrap recursion in `cache.reserve()` /
+  `cache.set()`; see the [custom-types section of the user
+  guide](docs/guide.md#custom-type-implementations) for the pattern.
+  ([#14](https://github.com/anthropics/buffa/issues/14),
+  [#22](https://github.com/anthropics/buffa/pull/22))
 - **`google.protobuf.Any.value` is now `::bytes::Bytes` instead of `Vec<u8>`.**
   Makes `Any::clone()` a cheap refcount bump (up to ~170x faster for large
   payloads) instead of a full memcpy. Call sites constructing an `Any` by hand

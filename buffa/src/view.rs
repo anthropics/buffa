@@ -60,7 +60,6 @@
 //!     pub tags: Vec<String>,
 //!     pub address: MessageField<Address>,
 //!     #[doc(hidden)] pub __buffa_unknown_fields: UnknownFields,
-//!     #[doc(hidden)] pub __buffa_cached_size: /* internal */,
 //! }
 //!
 //! // Borrowed view type (zero-copy from input buffer)
@@ -120,10 +119,9 @@ pub trait MessageView<'a>: Sized {
 /// owned-struct intermediary, no per-field `String`/`Vec<u8>` allocations.
 ///
 /// Generated `*View<'a>` types implement this trait whenever views are
-/// generated (`generate_views(true)`, the default). Each view struct
-/// carries a `__buffa_cached_size` field for the cached-size pass — same
-/// `AtomicU32`-backed [`CachedSize`](crate::__private::CachedSize) as
-/// owned messages, so views remain `Send + Sync`.
+/// generated (`generate_views(true)`, the default). Serialization state
+/// lives in the external [`SizeCache`](crate::SizeCache), not the view —
+/// view structs hold no interior mutability and remain `Send + Sync`.
 ///
 /// ## When to use
 ///
@@ -146,53 +144,64 @@ pub trait MessageView<'a>: Sized {
     note = "ViewEncode is implemented on every generated `*View<'a>` type; enable `generate_views(true)` (on by default) in your buffa-build / buffa-codegen config"
 )]
 pub trait ViewEncode<'a>: MessageView<'a> {
-    /// Compute and cache the encoded byte size of this view.
+    /// Compute the encoded byte size of this view, recording nested
+    /// sub-message sizes in `cache` for [`write_to`](Self::write_to)
+    /// to consume.
     ///
-    /// Recursively computes sizes for sub-message views and stores them in
-    /// each view's `CachedSize` field. Must be called before
-    /// [`write_to`](Self::write_to).
-    #[must_use = "compute_size has the side-effect of populating cached sizes; \
-                  if you only need that, call encode() instead"]
-    fn compute_size(&self) -> u32;
+    /// Most callers should use [`encode`](Self::encode) instead, which runs
+    /// both passes with a fresh cache.
+    fn compute_size(&self, cache: &mut crate::SizeCache) -> u32;
 
-    /// Write this view's encoded bytes to a buffer.
+    /// Write this view's encoded bytes to a buffer, consuming
+    /// nested-message sizes from `cache` (populated by a prior
+    /// [`compute_size`](Self::compute_size) call on the same cache).
     ///
-    /// Assumes [`compute_size`](Self::compute_size) has already been called.
-    /// Uses cached sizes for length-delimited sub-message headers.
-    fn write_to(&self, buf: &mut impl BufMut);
+    /// Most callers should use [`encode`](Self::encode) instead.
+    fn write_to(&self, cache: &mut crate::SizeCache, buf: &mut impl BufMut);
 
-    /// Return the size cached by the most recent [`compute_size`](Self::compute_size).
-    #[must_use]
-    fn cached_size(&self) -> u32;
-
-    /// Convenience: compute size, then write. Primary view-encode entry point.
+    /// Compute size, then write. Primary view-encode entry point.
     fn encode(&self, buf: &mut impl BufMut) {
-        let _ = self.compute_size();
-        self.write_to(buf);
+        let mut cache = crate::SizeCache::new();
+        self.compute_size(&mut cache);
+        self.write_to(&mut cache, buf);
+    }
+
+    /// Compute the encoded byte size of this view.
+    ///
+    /// Walks the view tree, discarding the intermediate
+    /// [`SizeCache`](crate::SizeCache). If you also intend to encode,
+    /// prefer [`encode`](Self::encode) or [`encode_to_vec`](Self::encode_to_vec)
+    /// — they do a single size pass and reuse the cache for the write.
+    #[must_use]
+    fn encoded_len(&self) -> u32 {
+        self.compute_size(&mut crate::SizeCache::new())
     }
 
     /// Encode this view as a length-delimited byte sequence.
     fn encode_length_delimited(&self, buf: &mut impl BufMut) {
-        let len = self.compute_size();
+        let mut cache = crate::SizeCache::new();
+        let len = self.compute_size(&mut cache);
         crate::encoding::encode_varint(len as u64, buf);
-        self.write_to(buf);
+        self.write_to(&mut cache, buf);
     }
 
     /// Encode this view to a new `Vec<u8>`.
     #[must_use]
     fn encode_to_vec(&self) -> alloc::vec::Vec<u8> {
-        let size = self.compute_size() as usize;
+        let mut cache = crate::SizeCache::new();
+        let size = self.compute_size(&mut cache) as usize;
         let mut buf = alloc::vec::Vec::with_capacity(size);
-        self.write_to(&mut buf);
+        self.write_to(&mut cache, &mut buf);
         buf
     }
 
     /// Encode this view to a new [`bytes::Bytes`].
     #[must_use]
     fn encode_to_bytes(&self) -> Bytes {
-        let size = self.compute_size() as usize;
+        let mut cache = crate::SizeCache::new();
+        let size = self.compute_size(&mut cache) as usize;
         let mut buf = bytes::BytesMut::with_capacity(size);
-        self.write_to(&mut buf);
+        self.write_to(&mut cache, &mut buf);
         buf.freeze()
     }
 }
@@ -348,23 +357,16 @@ impl<'a, V: ViewEncode<'a>> MessageFieldView<V> {
     /// or `0` if unset. Generated `compute_size` calls this for nested-message
     /// fields, mirroring [`MessageField`](crate::MessageField) on the owned side.
     #[inline]
-    pub fn compute_size(&self) -> u32 {
-        self.inner.as_deref().map_or(0, V::compute_size)
-    }
-
-    /// Forward to the inner view's [`cached_size`](ViewEncode::cached_size),
-    /// or `0` if unset.
-    #[inline]
-    pub fn cached_size(&self) -> u32 {
-        self.inner.as_deref().map_or(0, V::cached_size)
+    pub fn compute_size(&self, cache: &mut crate::SizeCache) -> u32 {
+        self.inner.as_deref().map_or(0, |v| v.compute_size(cache))
     }
 
     /// Forward to the inner view's [`write_to`](ViewEncode::write_to);
     /// no-op if unset.
     #[inline]
-    pub fn write_to(&self, buf: &mut impl BufMut) {
+    pub fn write_to(&self, cache: &mut crate::SizeCache, buf: &mut impl BufMut) {
         if let Some(v) = self.inner.as_deref() {
-            v.write_to(buf);
+            v.write_to(cache, buf);
         }
     }
 }
@@ -1323,7 +1325,7 @@ mod tests {
     }
 
     impl crate::Message for SimpleMessage {
-        fn compute_size(&self) -> u32 {
+        fn compute_size(&self, _cache: &mut crate::SizeCache) -> u32 {
             let mut size = 0u32;
             if self.id != 0 {
                 size += 1 + crate::types::int32_encoded_len(self.id) as u32;
@@ -1334,7 +1336,7 @@ mod tests {
             size
         }
 
-        fn write_to(&self, buf: &mut impl bytes::BufMut) {
+        fn write_to(&self, _cache: &mut crate::SizeCache, buf: &mut impl bytes::BufMut) {
             if self.id != 0 {
                 crate::encoding::Tag::new(1, crate::encoding::WireType::Varint).encode(buf);
                 crate::types::encode_int32(self.id, buf);
@@ -1358,10 +1360,6 @@ mod tests {
                 _ => crate::encoding::skip_field(tag, buf)?,
             }
             Ok(())
-        }
-
-        fn cached_size(&self) -> u32 {
-            0
         }
 
         fn clear(&mut self) {
@@ -1403,7 +1401,7 @@ mod tests {
     }
 
     impl<'a> ViewEncode<'a> for SimpleMessageView<'a> {
-        fn compute_size(&self) -> u32 {
+        fn compute_size(&self, _cache: &mut crate::SizeCache) -> u32 {
             let mut size = 0u32;
             if self.id != 0 {
                 size += 1 + crate::types::int32_encoded_len(self.id) as u32;
@@ -1414,7 +1412,7 @@ mod tests {
             size
         }
 
-        fn write_to(&self, buf: &mut impl bytes::BufMut) {
+        fn write_to(&self, _cache: &mut crate::SizeCache, buf: &mut impl bytes::BufMut) {
             if self.id != 0 {
                 crate::encoding::Tag::new(1, crate::encoding::WireType::Varint).encode(buf);
                 crate::types::encode_int32(self.id, buf);
@@ -1424,13 +1422,6 @@ mod tests {
                     .encode(buf);
                 crate::types::encode_string(self.name, buf);
             }
-        }
-
-        fn cached_size(&self) -> u32 {
-            // Test-only stub: SimpleMessageView has no nested messages,
-            // so nothing reads cached_size. Real impls return the value
-            // stored by compute_size.
-            0
         }
     }
 

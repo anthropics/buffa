@@ -136,8 +136,6 @@ pub struct AnyView<'a> {
     /// Field 2: `value`
     pub value: &'a [u8],
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
-    #[doc(hidden)]
-    pub __buffa_cached_size: ::buffa::__private::CachedSize,
 }
 impl<'a> AnyView<'a> {
     /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
@@ -220,6 +218,7 @@ impl<'a> ::buffa::MessageView<'a> for AnyView<'a> {
     }
     /// Convert this view to the owned message type.
     #[allow(clippy::redundant_closure, clippy::useless_conversion)]
+    #[allow(clippy::needless_update)]
     fn to_owned_message(&self) -> super::super::Any {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
@@ -236,10 +235,11 @@ impl<'a> ::buffa::MessageView<'a> for AnyView<'a> {
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for AnyView<'a> {
-    #[allow(clippy::needless_borrow)]
-    fn compute_size(&self) -> u32 {
-        #[allow(unused_imports)]
+    #[allow(clippy::needless_borrow, clippy::let_and_return)]
+    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
+        let _ = &__cache;
         let mut size = 0u32;
         if !self.type_url.is_empty() {
             size += 1u32 + ::buffa::types::string_encoded_len(&self.type_url) as u32;
@@ -248,13 +248,17 @@ impl<'a> ::buffa::ViewEncode<'a> for AnyView<'a> {
             size += 1u32 + ::buffa::types::bytes_encoded_len(&self.value) as u32;
         }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
-        self.__buffa_cached_size.set(size);
         size
     }
     #[allow(clippy::needless_borrow)]
-    fn write_to(&self, buf: &mut impl ::buffa::bytes::BufMut) {
-        #[allow(unused_imports)]
+    fn write_to(
+        &self,
+        __cache: &mut ::buffa::SizeCache,
+        buf: &mut impl ::buffa::bytes::BufMut,
+    ) {
+        #[allow(unused_variables, unused_imports)]
         use ::buffa::Enumeration as _;
+        let _ = &__cache;
         if !self.type_url.is_empty() {
             ::buffa::encoding::Tag::new(
                     1u32,
@@ -272,9 +276,6 @@ impl<'a> ::buffa::ViewEncode<'a> for AnyView<'a> {
             ::buffa::types::encode_bytes(&self.value, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
-    }
-    fn cached_size(&self) -> u32 {
-        self.__buffa_cached_size.get()
     }
 }
 impl<'v> ::buffa::DefaultViewInstance for AnyView<'v> {

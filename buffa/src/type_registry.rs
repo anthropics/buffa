@@ -713,14 +713,14 @@ mod tests {
         }
 
         impl crate::Message for Inner {
-            fn compute_size(&self) -> u32 {
+            fn compute_size(&self, _cache: &mut crate::SizeCache) -> u32 {
                 if self.n != 0 {
                     1 + crate::encoding::varint_len(self.n as i64 as u64) as u32
                 } else {
                     0
                 }
             }
-            fn write_to(&self, buf: &mut impl bytes::BufMut) {
+            fn write_to(&self, _cache: &mut crate::SizeCache, buf: &mut impl bytes::BufMut) {
                 if self.n != 0 {
                     crate::encoding::Tag::new(1, crate::encoding::WireType::Varint).encode(buf);
                     crate::encoding::encode_varint(self.n as i64 as u64, buf);
@@ -738,9 +738,6 @@ mod tests {
                 } else {
                     crate::encoding::skip_field(tag, buf)
                 }
-            }
-            fn cached_size(&self) -> u32 {
-                self.compute_size()
             }
             fn clear(&mut self) {
                 self.n = 0;

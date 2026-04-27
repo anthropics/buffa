@@ -107,7 +107,7 @@ The output filename is derived from the proto package name (e.g., `my.package` â
  // Size
 -msg.compute_size();
 -let size = msg.cached_size() as usize;
-+let size = msg.compute_size() as usize;  // returns the size directly
++let size = msg.encoded_len() as usize;
 ```
 
 ### From v4

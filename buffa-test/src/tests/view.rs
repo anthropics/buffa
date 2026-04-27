@@ -265,7 +265,7 @@ fn test_compute_size_matches_encode_len() {
     msg.id = 99;
     msg.name = "Bob".into();
     msg.tags = vec!["a".into(), "b".into()];
-    let size = msg.compute_size() as usize;
+    let size = msg.encoded_len() as usize;
     let bytes = msg.encode_to_vec();
     assert_eq!(size, bytes.len());
 }
@@ -289,7 +289,7 @@ fn test_compute_size_matches_encode_len_view() {
         contact: Some(view_oneof::person::Contact::HomeAddress(Box::new(addr))),
         ..Default::default()
     };
-    let size = view.compute_size() as usize;
+    let size = view.encoded_len() as usize;
     let bytes = view.encode_to_vec();
     assert_eq!(size, bytes.len());
     // Round-trips through owned.
@@ -497,7 +497,7 @@ fn test_view_encode_compute_size_matches_len() {
     };
     let bytes = owned.encode_to_vec();
     let view = AddressView::decode_view(&bytes).unwrap();
-    assert_eq!(view.compute_size() as usize, view.encode_to_vec().len());
+    assert_eq!(view.encoded_len() as usize, view.encode_to_vec().len());
 }
 
 #[test]
@@ -530,7 +530,7 @@ fn test_view_encode_proto2_groups_roundtrip() {
     let view = WithGroupsView::decode_view(&owned_bytes).unwrap();
     let view_bytes = view.encode_to_vec();
     assert_eq!(owned_bytes, view_bytes);
-    assert_eq!(view.compute_size() as usize, view_bytes.len());
+    assert_eq!(view.encoded_len() as usize, view_bytes.len());
 }
 
 #[test]

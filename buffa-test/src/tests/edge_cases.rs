@@ -384,14 +384,14 @@ fn test_unpacked_fixed_width_wire_format() {
     assert_eq!(bytes[0], 0x0D); // tag for element 0
     assert_eq!(bytes[5], 0x0D); // tag for element 1
                                 // compute_size must match encode_to_vec length.
-    assert_eq!(msg.compute_size() as usize, bytes.len());
+    assert_eq!(msg.encoded_len() as usize, bytes.len());
 }
 
 #[test]
 fn test_unpacked_fixed_width_empty() {
     let msg = UnpackedFixedWidth::default();
     assert_eq!(msg.encode_to_vec().len(), 0);
-    assert_eq!(msg.compute_size(), 0);
+    assert_eq!(msg.encoded_len(), 0);
 }
 
 // ── Map with fixed-width key/value types ─────────────────────────────
@@ -425,7 +425,7 @@ fn test_map_fixed_width_compute_size_matches_encode() {
     msg.fx64_to_double.insert(100, f64::INFINITY);
     msg.sfx32_to_float.insert(-1, f32::NEG_INFINITY);
 
-    let size = msg.compute_size() as usize;
+    let size = msg.encoded_len() as usize;
     let bytes = msg.encode_to_vec();
     assert_eq!(size, bytes.len(), "compute_size mismatch");
 }
