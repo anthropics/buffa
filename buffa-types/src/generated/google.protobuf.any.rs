@@ -156,7 +156,7 @@ impl Any {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Any";
 }
-unsafe impl ::buffa::DefaultInstance for Any {
+impl ::buffa::DefaultInstance for Any {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<Any> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))

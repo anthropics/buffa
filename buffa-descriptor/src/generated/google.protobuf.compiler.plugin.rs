@@ -37,7 +37,7 @@ impl Version {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.compiler.Version";
 }
-unsafe impl ::buffa::DefaultInstance for Version {
+impl ::buffa::DefaultInstance for Version {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<Version> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
@@ -253,7 +253,7 @@ impl CodeGeneratorRequest {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.compiler.CodeGeneratorRequest";
 }
-unsafe impl ::buffa::DefaultInstance for CodeGeneratorRequest {
+impl ::buffa::DefaultInstance for CodeGeneratorRequest {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<CodeGeneratorRequest> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
@@ -509,7 +509,7 @@ impl CodeGeneratorResponse {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.compiler.CodeGeneratorResponse";
 }
-unsafe impl ::buffa::DefaultInstance for CodeGeneratorResponse {
+impl ::buffa::DefaultInstance for CodeGeneratorResponse {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<CodeGeneratorResponse> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
@@ -829,7 +829,7 @@ pub mod code_generator_response {
         /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
         pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.compiler.CodeGeneratorResponse.File";
     }
-    unsafe impl ::buffa::DefaultInstance for File {
+    impl ::buffa::DefaultInstance for File {
         fn default_instance() -> &'static Self {
             static VALUE: ::buffa::__private::OnceBox<File> = ::buffa::__private::OnceBox::new();
             VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))

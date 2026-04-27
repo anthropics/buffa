@@ -1424,8 +1424,7 @@ mod tests {
         unknown: UnknownFields,
     }
 
-    // SAFETY: static OnceBox per type, never mutated after init.
-    unsafe impl crate::DefaultInstance for TestMsg {
+    impl crate::DefaultInstance for TestMsg {
         fn default_instance() -> &'static Self {
             static INST: crate::__private::OnceBox<TestMsg> = crate::__private::OnceBox::new();
             INST.get_or_init(|| alloc::boxed::Box::new(TestMsg::default()))

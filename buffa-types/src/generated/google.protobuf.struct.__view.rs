@@ -217,7 +217,7 @@ impl<'a> ::buffa::ViewEncode<'a> for StructView<'a> {
         self.__buffa_cached_size.get()
     }
 }
-unsafe impl ::buffa::DefaultViewInstance for StructView<'static> {
+impl ::buffa::DefaultViewInstance for StructView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<StructView<'static>> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
@@ -568,7 +568,7 @@ impl<'a> ::buffa::ViewEncode<'a> for ValueView<'a> {
         self.__buffa_cached_size.get()
     }
 }
-unsafe impl ::buffa::DefaultViewInstance for ValueView<'static> {
+impl ::buffa::DefaultViewInstance for ValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<ValueView<'static>> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
@@ -720,7 +720,7 @@ impl<'a> ::buffa::ViewEncode<'a> for ListValueView<'a> {
         self.__buffa_cached_size.get()
     }
 }
-unsafe impl ::buffa::DefaultViewInstance for ListValueView<'static> {
+impl ::buffa::DefaultViewInstance for ListValueView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<ListValueView<'static>> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))

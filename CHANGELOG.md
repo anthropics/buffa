@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Breaking changes
 
+- **`DefaultInstance` and `DefaultViewInstance` are no longer `unsafe` traits.**
+  Both invariants previously documented under `# Safety` (liveness and
+  immutability) are fully encoded by the `&'static Self` return type and
+  cannot be violated by a safe implementation. Generated code now emits
+  plain `impl` blocks. Hand-written `unsafe impl DefaultInstance for T`
+  must drop the `unsafe` keyword. `HasDefaultViewInstance` remains `unsafe`
+  — its layout/covariance contract still backs a real pointer cast.
+  ([#68](https://github.com/anthropics/buffa/issues/68),
+  [#69](https://github.com/anthropics/buffa/issues/69))
 - **All generated `*View<'a>` structs gain a `__buffa_cached_size` field**
   for the new `ViewEncode` impl. Code that constructs a view literal
   without `..Default::default()` will fail to compile; use the trailing

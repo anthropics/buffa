@@ -120,7 +120,7 @@ impl LogEntry {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/buffa.examples.log.v1.LogEntry";
 }
-unsafe impl ::buffa::DefaultInstance for LogEntry {
+impl ::buffa::DefaultInstance for LogEntry {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<LogEntry> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
@@ -426,7 +426,7 @@ impl LogBatch {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/buffa.examples.log.v1.LogBatch";
 }
-unsafe impl ::buffa::DefaultInstance for LogBatch {
+impl ::buffa::DefaultInstance for LogBatch {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<LogBatch> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))

@@ -50,7 +50,7 @@ impl RequestContext {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/buffa.examples.context.v1.RequestContext";
 }
-unsafe impl ::buffa::DefaultInstance for RequestContext {
+impl ::buffa::DefaultInstance for RequestContext {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<RequestContext> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))

@@ -705,8 +705,7 @@ mod tests {
             n: i32,
         }
 
-        // SAFETY: static OnceBox per type, never mutated after init.
-        unsafe impl crate::DefaultInstance for Inner {
+        impl crate::DefaultInstance for Inner {
             fn default_instance() -> &'static Self {
                 static I: crate::__private::OnceBox<Inner> = crate::__private::OnceBox::new();
                 I.get_or_init(|| alloc::boxed::Box::new(Inner::default()))

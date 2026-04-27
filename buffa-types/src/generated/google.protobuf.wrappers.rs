@@ -28,7 +28,7 @@ impl DoubleValue {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.DoubleValue";
 }
-unsafe impl ::buffa::DefaultInstance for DoubleValue {
+impl ::buffa::DefaultInstance for DoubleValue {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<DoubleValue> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
@@ -169,7 +169,7 @@ impl FloatValue {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FloatValue";
 }
-unsafe impl ::buffa::DefaultInstance for FloatValue {
+impl ::buffa::DefaultInstance for FloatValue {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<FloatValue> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
@@ -310,7 +310,7 @@ impl Int64Value {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Int64Value";
 }
-unsafe impl ::buffa::DefaultInstance for Int64Value {
+impl ::buffa::DefaultInstance for Int64Value {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<Int64Value> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
@@ -451,7 +451,7 @@ impl UInt64Value {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.UInt64Value";
 }
-unsafe impl ::buffa::DefaultInstance for UInt64Value {
+impl ::buffa::DefaultInstance for UInt64Value {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<UInt64Value> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
@@ -592,7 +592,7 @@ impl Int32Value {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Int32Value";
 }
-unsafe impl ::buffa::DefaultInstance for Int32Value {
+impl ::buffa::DefaultInstance for Int32Value {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<Int32Value> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
@@ -733,7 +733,7 @@ impl UInt32Value {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.UInt32Value";
 }
-unsafe impl ::buffa::DefaultInstance for UInt32Value {
+impl ::buffa::DefaultInstance for UInt32Value {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<UInt32Value> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
@@ -874,7 +874,7 @@ impl BoolValue {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.BoolValue";
 }
-unsafe impl ::buffa::DefaultInstance for BoolValue {
+impl ::buffa::DefaultInstance for BoolValue {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<BoolValue> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
@@ -1015,7 +1015,7 @@ impl StringValue {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.StringValue";
 }
-unsafe impl ::buffa::DefaultInstance for StringValue {
+impl ::buffa::DefaultInstance for StringValue {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<StringValue> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
@@ -1159,7 +1159,7 @@ impl BytesValue {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.BytesValue";
 }
-unsafe impl ::buffa::DefaultInstance for BytesValue {
+impl ::buffa::DefaultInstance for BytesValue {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<BytesValue> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))

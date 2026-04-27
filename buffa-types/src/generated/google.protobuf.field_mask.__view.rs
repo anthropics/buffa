@@ -350,7 +350,7 @@ impl<'a> ::buffa::ViewEncode<'a> for FieldMaskView<'a> {
         self.__buffa_cached_size.get()
     }
 }
-unsafe impl ::buffa::DefaultViewInstance for FieldMaskView<'static> {
+impl ::buffa::DefaultViewInstance for FieldMaskView<'static> {
     fn default_view_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<FieldMaskView<'static>> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))

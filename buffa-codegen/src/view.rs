@@ -318,9 +318,7 @@ pub(crate) fn generate_view_with_nesting(
 
         #view_encode_impl
 
-        // SAFETY: The static default instance is lazily initialized via OnceBox
-        // and never mutated after publication.
-        unsafe impl ::buffa::DefaultViewInstance for #view_ident<'static> {
+        impl ::buffa::DefaultViewInstance for #view_ident<'static> {
             fn default_view_instance() -> &'static Self {
                 static VALUE: ::buffa::__private::OnceBox<#view_ident<'static>>
                     = ::buffa::__private::OnceBox::new();

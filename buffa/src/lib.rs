@@ -266,8 +266,7 @@ pub mod __doctest_fixtures {
         pub id: i32,
     }
 
-    // SAFETY: static OnceBox per type, never mutated after init.
-    unsafe impl DefaultInstance for Person {
+    impl DefaultInstance for Person {
         fn default_instance() -> &'static Self {
             static INST: __private::OnceBox<Person> = __private::OnceBox::new();
             INST.get_or_init(|| alloc::boxed::Box::new(Self::default()))

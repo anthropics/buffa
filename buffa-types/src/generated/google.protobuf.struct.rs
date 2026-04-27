@@ -74,7 +74,7 @@ impl Struct {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Struct";
 }
-unsafe impl ::buffa::DefaultInstance for Struct {
+impl ::buffa::DefaultInstance for Struct {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<Struct> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
@@ -346,7 +346,7 @@ impl Value {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Value";
 }
-unsafe impl ::buffa::DefaultInstance for Value {
+impl ::buffa::DefaultInstance for Value {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<Value> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
@@ -747,7 +747,7 @@ impl ListValue {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.ListValue";
 }
-unsafe impl ::buffa::DefaultInstance for ListValue {
+impl ::buffa::DefaultInstance for ListValue {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<ListValue> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))

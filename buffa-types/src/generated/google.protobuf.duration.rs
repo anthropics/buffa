@@ -103,7 +103,7 @@ impl Duration {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Duration";
 }
-unsafe impl ::buffa::DefaultInstance for Duration {
+impl ::buffa::DefaultInstance for Duration {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<Duration> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))

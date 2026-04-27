@@ -731,8 +731,7 @@ mod tests {
         child: Option<Box<TestMsg>>,
     }
 
-    // SAFETY: static OnceBox per type, never mutated after init.
-    unsafe impl crate::DefaultInstance for TestMsg {
+    impl crate::DefaultInstance for TestMsg {
         fn default_instance() -> &'static Self {
             static INST: crate::__private::OnceBox<TestMsg> = crate::__private::OnceBox::new();
             INST.get_or_init(|| Box::new(TestMsg::default()))
@@ -1257,7 +1256,7 @@ mod tests {
         struct Strict {
             i: i32,
         }
-        unsafe impl crate::DefaultInstance for Strict {
+        impl crate::DefaultInstance for Strict {
             fn default_instance() -> &'static Self {
                 static I: crate::__private::OnceBox<Strict> = crate::__private::OnceBox::new();
                 I.get_or_init(|| Box::new(Strict::default()))

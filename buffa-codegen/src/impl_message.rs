@@ -1,4 +1,4 @@
-//! Code generation for `impl Message` and `unsafe impl DefaultInstance`.
+//! Code generation for `impl Message` and `impl DefaultInstance`.
 //!
 //! Generates `compute_size`, `write_to`, and `merge` implementations
 //! covering all field types:
@@ -283,7 +283,7 @@ fn classify_fields<'a>(
     }
 }
 
-/// Generate `unsafe impl DefaultInstance` and `impl Message` for a message.
+/// Generate `impl DefaultInstance` and `impl Message` for a message.
 ///
 /// `preserve_unknown_fields`: when `true`, the generated merge collects
 /// unknown fields into `self.__buffa_unknown_fields` and both `compute_size` and
@@ -543,7 +543,7 @@ pub fn generate_message_impl(
     };
 
     Ok(quote! {
-        unsafe impl ::buffa::DefaultInstance for #name_ident {
+        impl ::buffa::DefaultInstance for #name_ident {
             fn default_instance() -> &'static Self {
                 static VALUE: ::buffa::__private::OnceBox<#name_ident>
                     = ::buffa::__private::OnceBox::new();

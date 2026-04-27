@@ -16,54 +16,20 @@ use core::ops::Deref;
 /// supertrait of [`Message`](crate::Message), so every generated message type
 /// must implement it.
 ///
-/// This is an `unsafe trait` because the compiler cannot verify the two
-/// invariants described below. **Codegen handles this automatically** — you
-/// only need to write `unsafe impl` when manually implementing
-/// [`Message`](crate::Message) for a hand-crafted type.
+/// **Codegen implements this automatically** for every generated message
+/// type. You only need to implement it by hand when manually implementing
+/// [`Message`](crate::Message) for a custom type.
 ///
-/// # Safety
+/// # Recommended implementation
 ///
-/// An implementation must uphold two invariants:
-///
-/// ## 1. Liveness
-///
-/// The returned reference must be valid for the entire program lifetime (`'static`).
-/// The referenced value must never be dropped or moved while any reference to it
-/// exists. In practice the instance must reside in a `'static` location — a
-/// `static` variable, or heap memory obtained from [`Box::leak`].
-///
-/// Violating this invariant produces a **dangling reference**, which is
-/// undefined behaviour.
-///
-/// ## 2. Immutability after publication
-///
-/// Once `default_instance()` has returned a reference, the pointed-to value
-/// must never be mutated through any other path for the remainder of the
-/// program. Shared Rust references (`&T`) require that the underlying data is
-/// not modified while the reference exists; because the returned
-/// `&'static Self` may be held indefinitely by any number of callers, the
-/// instance must be permanently read-only after its first publication.
-///
-/// Violating this invariant is a **data race** (if mutation is unsynchronized)
-/// or a **broken aliasing invariant** (if mutation is synchronized but the
-/// shared reference is still live). Both are undefined behaviour.
-///
-/// # Correct implementation
-///
-/// The instance **must** be stored in a `static` declared inside a **concrete**
-/// `impl` block, not inside a generic function. A `static` inside a generic
-/// function is not monomorphized — every type instantiation of that function
-/// shares the same storage location — which would allow an instance of type
-/// `A` to be aliased as type `B`. This is unsound regardless of how the pointer
-/// is obtained.
-///
-/// The recommended pattern — and what codegen generates — uses
-/// `::buffa::__private::OnceBox` (a re-export of [`once_cell::race::OnceBox`]),
-/// which works in both `no_std + alloc` and
+/// The pattern codegen uses — and the recommended pattern for manual
+/// implementations — stores the instance in a `static`
+/// [`once_cell::race::OnceBox`] (re-exported as
+/// `::buffa::__private::OnceBox`), which works in both `no_std + alloc` and
 /// `std` environments:
 ///
 /// ```rust,ignore
-/// unsafe impl DefaultInstance for MyMessage {
+/// impl DefaultInstance for MyMessage {
 ///     fn default_instance() -> &'static Self {
 ///         static VALUE: ::buffa::__private::OnceBox<MyMessage>
 ///             = ::buffa::__private::OnceBox::new();
@@ -72,22 +38,18 @@ use core::ops::Deref;
 /// }
 /// ```
 ///
-/// Note that the function body contains no `unsafe` blocks. The `unsafe`
-/// keyword appears only on the `impl` header, precisely scoping where the
-/// safety contract is acknowledged.
-///
 /// In `std`-only environments [`std::sync::OnceLock`] is also available and
 /// avoids the `alloc::boxed::Box` wrapping:
 ///
 /// ```rust,ignore
-/// unsafe impl DefaultInstance for MyMessage {
+/// impl DefaultInstance for MyMessage {
 ///     fn default_instance() -> &'static Self {
 ///         static VALUE: std::sync::OnceLock<MyMessage> = std::sync::OnceLock::new();
 ///         VALUE.get_or_init(MyMessage::default)
 ///     }
 /// }
 /// ```
-pub unsafe trait DefaultInstance: Default + 'static {
+pub trait DefaultInstance: Default + 'static {
     /// Return a reference to the single default instance of this type.
     fn default_instance() -> &'static Self;
 }
@@ -354,9 +316,7 @@ mod tests {
         name: alloc::string::String,
     }
 
-    // Sound: static VALUE is declared inside a *concrete* impl block.
-    // Each concrete type gets its own static; there is no generic sharing.
-    unsafe impl DefaultInstance for Inner {
+    impl DefaultInstance for Inner {
         fn default_instance() -> &'static Self {
             static VALUE: crate::__private::OnceBox<Inner> = crate::__private::OnceBox::new();
             VALUE.get_or_init(|| alloc::boxed::Box::new(Inner::default()))

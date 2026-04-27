@@ -209,18 +209,11 @@ pub trait ViewEncode<'a>: MessageView<'a> {
 /// reinterpreted as `&'static FooView<'a>` for any `'a` via covariance.
 ///
 /// This trait is implemented for the `'static` instantiation (e.g.,
-/// `FooView<'static>`) and the [`MessageFieldView`] `Deref` impl uses
-/// a lifetime transmute to serve it for any `'a`.
-///
-/// # Safety
-///
-/// Implementors must ensure:
-/// 1. The returned reference points to a validly-initialized default
-///    instance in a `'static` location that is never mutated.
-/// 2. The type is **covariant** in all lifetime parameters — the default
-///    `'static` instance must be safely reinterpretable at any shorter
-///    lifetime.
-pub unsafe trait DefaultViewInstance: Default + 'static {
+/// `FooView<'static>`). The [`MessageFieldView`] `Deref` impl serves it for
+/// any `'a` via the covariance contract on the companion
+/// [`HasDefaultViewInstance`] — which **is** an `unsafe trait`, since that
+/// layout/covariance contract is what backs the lifetime cast.
+pub trait DefaultViewInstance: Default + 'static {
     /// Return a reference to the single default view instance.
     fn default_view_instance() -> &'static Self;
 }
@@ -1029,8 +1022,7 @@ mod tests {
         pub value: &'a str,
     }
 
-    // SAFETY: Default TinyView contains only &'static str (""), which is 'static.
-    unsafe impl DefaultViewInstance for TinyView<'static> {
+    impl DefaultViewInstance for TinyView<'static> {
         fn default_view_instance() -> &'static Self {
             static INST: crate::__private::OnceBox<TinyView<'static>> =
                 crate::__private::OnceBox::new();
@@ -1309,8 +1301,7 @@ mod tests {
         pub name: alloc::string::String,
     }
 
-    // SAFETY: Returns a lazily-initialized static default instance.
-    unsafe impl crate::DefaultInstance for SimpleMessage {
+    impl crate::DefaultInstance for SimpleMessage {
         fn default_instance() -> &'static Self {
             static INST: crate::__private::OnceBox<SimpleMessage> =
                 crate::__private::OnceBox::new();

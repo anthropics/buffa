@@ -1443,7 +1443,7 @@ impl Message for Int64Range {
     }
 }
 
-unsafe impl buffa::DefaultInstance for Int64Range {
+impl buffa::DefaultInstance for Int64Range {
     fn default_instance() -> &'static Self {
         static INST: buffa::__private::OnceBox<Int64Range> =
             buffa::__private::OnceBox::new();

@@ -41,13 +41,13 @@ pub const RECURSION_LIMIT: u32 = 100;
 /// - You must correctly implement the two-pass serialization contract
 ///   (`compute_size` caches sizes before `write_to` uses them).
 /// - You must implement wire-format decoding in `merge_field`.
-/// - [`DefaultInstance`] is an `unsafe` supertrait; you must uphold its
-///   safety contract for the default-instance pointer.
+/// - You must implement the [`DefaultInstance`] supertrait, which provides
+///   the lazily-initialized static default that [`MessageField`](crate::MessageField)
+///   dereferences to when unset.
 ///
 /// If you still need to do this, see the [custom types section of the
 /// user guide](https://github.com/anthropics/buffa/blob/main/docs/guide.md#custom-type-implementations)
-/// for a complete worked example, and [`DefaultInstance`] for the safety
-/// contract.
+/// for a complete worked example.
 ///
 /// # Serialization model
 ///
@@ -676,7 +676,7 @@ mod tests {
         __buffa_cached_size: CachedSize,
     }
 
-    unsafe impl DefaultInstance for FlatMsg {
+    impl DefaultInstance for FlatMsg {
         fn default_instance() -> &'static Self {
             static INST: crate::__private::OnceBox<FlatMsg> = crate::__private::OnceBox::new();
             INST.get_or_init(|| alloc::boxed::Box::new(FlatMsg::default()))
