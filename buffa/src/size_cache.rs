@@ -25,6 +25,15 @@
 //! uphold the same ordering.
 
 use alloc::vec::Vec;
+use core::mem::MaybeUninit;
+
+/// Number of nested-message sizes stored inline (no heap allocation).
+///
+/// `Message::encode*` constructs a fresh `SizeCache` per call, so messages
+/// with ≤ `INLINE_CAP` length-delimited sub-messages encode with zero
+/// allocation for the cache. 16 covers the vast majority of message shapes
+/// (the official protobuf benchmark messages all fit) at 64 bytes of stack.
+const INLINE_CAP: usize = 16;
 
 /// Transient pre-order cache of nested-message sizes for the two-pass
 /// serialization model (`compute_size` populates, `write_to` consumes).
@@ -34,29 +43,58 @@ use alloc::vec::Vec;
 /// `compute_size` / `write_to` signatures so that manual `Message`
 /// implementations can thread it through nested-message recursion.
 ///
+/// Storage is a small inline `[u32; 16]` array with a `Vec<u32>` spill for
+/// the (uncommon) case of more than 16 nested length-delimited sub-messages,
+/// so a fresh cache is allocation-free for typical messages.
+///
 /// Reusable across encodes: call [`clear`](Self::clear) between uses to
-/// retain the allocation.
-#[derive(Debug, Default)]
+/// retain the spill allocation.
 pub struct SizeCache {
-    sizes: Vec<u32>,
-    cursor: usize,
+    inline: [MaybeUninit<u32>; INLINE_CAP],
+    spill: Vec<u32>,
+    len: u32,
+    cursor: u32,
+}
+
+impl core::fmt::Debug for SizeCache {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SizeCache")
+            .field("len", &self.len)
+            .field("cursor", &self.cursor)
+            .field("spilled", &self.spill.len())
+            .finish()
+    }
+}
+
+impl Default for SizeCache {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SizeCache {
-    /// Create an empty cache.
+    /// Create an empty cache. No heap allocation; the inline slot array is
+    /// left uninitialized so this is effectively free.
     #[inline]
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            sizes: Vec::new(),
+            // SAFETY: an array of `MaybeUninit<u32>` needs no initialization.
+            // Slots are written by `set()` before being read by `next_size()`
+            // — see the safety note on `next_size`.
+            inline: [const { MaybeUninit::uninit() }; INLINE_CAP],
+            spill: Vec::new(),
+            len: 0,
             cursor: 0,
         }
     }
 
-    /// Clear the cache for reuse. Retains the allocated capacity.
+    /// Clear the cache for reuse. Retains the spill allocation's capacity.
     #[inline]
     pub fn clear(&mut self) {
-        self.sizes.clear();
+        self.spill.clear();
+        self.len = 0;
         self.cursor = 0;
     }
 
@@ -68,17 +106,41 @@ impl SizeCache {
     /// Used by generated `compute_size` implementations.
     #[inline]
     pub fn reserve(&mut self) -> usize {
-        let idx = self.sizes.len();
-        self.sizes.push(0);
+        let idx = self.len as usize;
+        if idx < INLINE_CAP {
+            // Placeholder so the slot is always initialized — keeps
+            // `next_size`'s `assume_init` sound even if a buggy caller
+            // never calls `set()`. One unconditional store; cheaper than
+            // zeroing the whole array in `new()`.
+            self.inline[idx].write(0);
+        } else {
+            self.spill.push(0);
+        }
+        self.len += 1;
         idx
     }
 
     /// Fill a previously-reserved slot.
     ///
     /// Used by generated `compute_size` implementations.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `idx` was not returned by a prior [`reserve`](Self::reserve)
+    /// on this cache (i.e. `idx >= len`).
     #[inline]
+    #[track_caller]
     pub fn set(&mut self, idx: usize, size: u32) {
-        self.sizes[idx] = size;
+        assert!(
+            idx < self.len as usize,
+            "SizeCache::set: slot {idx} not reserved (len {})",
+            self.len
+        );
+        if idx < INLINE_CAP {
+            self.inline[idx].write(size);
+        } else {
+            self.spill[idx - INLINE_CAP] = size;
+        }
     }
 
     /// Consume the next cached size in pre-order.
@@ -92,19 +154,37 @@ impl SizeCache {
     /// `write_to` traversal diverges from `compute_size` traversal. For
     /// generated code this indicates a codegen bug; for manual `Message`
     /// implementations it indicates a traversal-order mismatch.
+    ///
     #[inline]
     #[track_caller]
     pub fn next_size(&mut self) -> u32 {
-        let size = *self.sizes.get(self.cursor).unwrap_or_else(|| {
-            panic!(
-                "SizeCache cursor overrun: write_to consumed {} slots but \
-                 compute_size produced {} (traversal-order mismatch)",
-                self.cursor + 1,
-                self.sizes.len()
-            )
-        });
+        let idx = self.cursor as usize;
+        if idx >= self.len as usize {
+            Self::overrun(idx, self.len);
+        }
         self.cursor += 1;
-        size
+        if idx < INLINE_CAP {
+            // SAFETY: `idx < len`, and `reserve()` writes a placeholder `0`
+            // to every inline slot it hands out (below), so every slot in
+            // `0..len` is initialized regardless of whether the caller has
+            // called `set()` yet. (The two-pass protocol additionally
+            // guarantees `set()` was called, but soundness here does not
+            // depend on caller discipline.)
+            unsafe { self.inline[idx].assume_init() }
+        } else {
+            self.spill[idx - INLINE_CAP]
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    #[track_caller]
+    fn overrun(idx: usize, len: u32) -> ! {
+        panic!(
+            "SizeCache cursor overrun: write_to consumed {} slots but \
+             compute_size produced {len} (traversal-order mismatch)",
+            idx + 1,
+        )
     }
 }
 
@@ -115,8 +195,41 @@ mod tests {
     #[test]
     fn empty_cache_is_default() {
         let c = SizeCache::new();
-        assert_eq!(c.sizes.len(), 0);
+        assert_eq!(c.len, 0);
         assert_eq!(c.cursor, 0);
+        assert!(c.spill.is_empty());
+    }
+
+    #[test]
+    fn spill_past_inline_cap_preserves_order() {
+        const N: usize = INLINE_CAP * 2 + 5;
+        let mut c = SizeCache::new();
+        let slots: alloc::vec::Vec<usize> = (0..N).map(|_| c.reserve()).collect();
+        // Fill in reverse to prove set() addresses by slot index, not push order.
+        for (i, &s) in slots.iter().enumerate().rev() {
+            c.set(s, i as u32 * 7);
+        }
+        assert_eq!(c.spill.len(), N - INLINE_CAP);
+        for i in 0..N {
+            assert_eq!(c.next_size(), i as u32 * 7);
+        }
+    }
+
+    #[test]
+    fn boundary_at_inline_cap() {
+        let mut c = SizeCache::new();
+        for i in 0..INLINE_CAP {
+            let s = c.reserve();
+            c.set(s, i as u32);
+        }
+        assert!(c.spill.is_empty(), "no spill at exactly INLINE_CAP");
+        let s = c.reserve();
+        c.set(s, 999);
+        assert_eq!(c.spill.len(), 1);
+        for i in 0..INLINE_CAP {
+            assert_eq!(c.next_size(), i as u32);
+        }
+        assert_eq!(c.next_size(), 999);
     }
 
     #[test]
@@ -161,13 +274,15 @@ mod tests {
     #[test]
     fn clear_resets_and_retains_capacity() {
         let mut c = SizeCache::new();
-        c.reserve();
-        c.set(0, 42);
-        let cap = c.sizes.capacity();
+        for _ in 0..(INLINE_CAP + 4) {
+            c.reserve();
+        }
+        let cap = c.spill.capacity();
+        assert!(cap >= 4);
         c.clear();
-        assert_eq!(c.sizes.len(), 0);
+        assert_eq!(c.len, 0);
         assert_eq!(c.cursor, 0);
-        assert!(c.sizes.capacity() >= cap);
+        assert!(c.spill.capacity() >= cap);
         // Reusable after clear:
         let s = c.reserve();
         c.set(s, 99);
