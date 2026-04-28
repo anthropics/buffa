@@ -198,12 +198,17 @@ impl<'a> ::buffa::MessageView<'a> for TimestampView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, depth)
     }
-    /// Convert this view to the owned message type.
-    #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    #[allow(clippy::needless_update)]
     fn to_owned_message(&self) -> super::super::Timestamp {
+        self.to_owned_from_source(None)
+    }
+    #[allow(clippy::useless_conversion, clippy::needless_update)]
+    fn to_owned_from_source(
+        &self,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
+    ) -> super::super::Timestamp {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
+        let _ = __buffa_src;
         super::super::Timestamp {
             seconds: self.seconds,
             nanos: self.nanos,

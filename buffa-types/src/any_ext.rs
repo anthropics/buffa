@@ -350,6 +350,44 @@ mod tests {
     use buffa::Message as _;
 
     #[test]
+    fn any_view_to_owned_from_source_is_zero_copy() {
+        use crate::google::protobuf::__buffa::view::AnyView;
+        use buffa::view::{MessageView as _, OwnedView};
+
+        let src = Any {
+            type_url: "type.googleapis.com/x".into(),
+            value: bytes::Bytes::from_static(&[1u8; 256]),
+            ..Default::default()
+        };
+        let buf = bytes::Bytes::from(src.encode_to_vec());
+
+        // Direct trait path: to_owned_from_source(Some(&buf)) → slice_ref.
+        let view = AnyView::decode_view(&buf).unwrap();
+        let owned = view.to_owned_from_source(Some(&buf));
+        assert_eq!(owned.value, src.value);
+        let value_ptr = owned.value.as_ptr() as usize;
+        let buf_range = (buf.as_ptr() as usize)..(buf.as_ptr() as usize + buf.len());
+        assert!(
+            buf_range.contains(&value_ptr),
+            "owned.value should point into buf (slice_ref), got {value_ptr:#x} outside {buf_range:#x?}"
+        );
+
+        // OwnedView path: the inherent OwnedView::to_owned_message routes
+        // through to_owned_from_source(Some(&self.bytes)). This is also the
+        // regression pin for inherent-method resolution shadowing the
+        // (full-copy) trait method reachable via Deref.
+        let ov = OwnedView::<AnyView<'static>>::decode(buf.clone()).unwrap();
+        let owned2 = ov.to_owned_message();
+        assert_eq!(owned2.value, src.value);
+        assert!(buf_range.contains(&(owned2.value.as_ptr() as usize)));
+
+        // No-source path still copies (correct, distinct allocation).
+        let copied = view.to_owned_message();
+        assert_eq!(copied.value, src.value);
+        assert!(!buf_range.contains(&(copied.value.as_ptr() as usize)));
+    }
+
+    #[test]
     fn pack_and_unpack() {
         let ts = Timestamp {
             seconds: 1_000_000_000,

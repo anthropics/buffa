@@ -429,3 +429,103 @@ fn test_map_fixed_width_compute_size_matches_encode() {
     let bytes = msg.encode_to_vec();
     assert_eq!(size, bytes.len(), "compute_size mismatch");
 }
+
+// ── #75 field-number emission order ───────────────────────────────────────
+
+/// Walk a serialized buffer and return the sequence of top-level tag field
+/// numbers in emission order.
+fn tag_order(mut buf: &[u8]) -> Vec<u32> {
+    use buffa::encoding::{skip_field, Tag};
+    let mut out = Vec::new();
+    while !buf.is_empty() {
+        let tag = Tag::decode(&mut buf).expect("tag");
+        out.push(tag.field_number());
+        skip_field(tag, &mut buf).expect("skip");
+    }
+    out
+}
+
+fn populated_field_ordering() -> FieldOrdering {
+    let mut m = FieldOrdering::default();
+    m.head = "h".into();
+    m.tags = vec![1, 2];
+    m.attrs.insert("k".into(), 1);
+    m.nested = buffa::MessageField::some(Part {
+        a: "a".into(),
+        ..Default::default()
+    });
+    m.choice = Some(__buffa::oneof::field_ordering::Choice::ChoiceA(7));
+    m.names = vec!["n".into()];
+    m.tail = Some(9);
+    m
+}
+
+#[test]
+fn write_to_emits_fields_in_number_order() {
+    let bytes = populated_field_ordering().encode_to_vec();
+    assert_eq!(tag_order(&bytes), vec![1, 2, 3, 4, 5, 7, 8]);
+}
+
+#[test]
+fn write_to_golden_bytes_mixed_kinds() {
+    // Map field omitted from this golden — HashMap iteration order is
+    // unspecified so multi-entry maps aren't byte-stable. Everything else is.
+    let mut m = FieldOrdering::default();
+    m.head = "h".into();
+    m.tags = vec![1, 2];
+    m.nested = buffa::MessageField::some(Part {
+        a: "a".into(),
+        ..Default::default()
+    });
+    m.choice = Some(__buffa::oneof::field_ordering::Choice::ChoiceA(7));
+    m.names = vec!["n".into()];
+    m.tail = Some(9);
+    #[rustfmt::skip]
+    let want: &[u8] = &[
+        0x0A, 0x01, 0x68,             // 1: string "h"
+        0x12, 0x02, 0x01, 0x02,       // 2: packed [1,2]
+        0x22, 0x03, 0x0A, 0x01, 0x61, // 4: Part{a:"a"}
+        0x28, 0x07,                   // 5: oneof ChoiceA(7)
+        0x3A, 0x01, 0x6E,             // 7: ["n"]
+        0x40, 0x09,                   // 8: tail=9
+    ];
+    assert_eq!(m.encode_to_vec(), want);
+}
+
+#[test]
+fn write_to_emits_fields_in_number_order_shuffled_decl() {
+    // Same field numbers, declared in reverse — sort key is the field number,
+    // not source declaration order.
+    let mut m = FieldOrderingShuffled::default();
+    m.head = "h".into();
+    m.tags = vec![1, 2];
+    m.attrs.insert("k".into(), 1);
+    m.nested = buffa::MessageField::some(Part {
+        a: "a".into(),
+        ..Default::default()
+    });
+    m.choice = Some(__buffa::oneof::field_ordering_shuffled::Choice::ChoiceA(7));
+    m.names = vec!["n".into()];
+    m.tail = Some(9);
+    assert_eq!(tag_order(&m.encode_to_vec()), vec![1, 2, 3, 4, 5, 7, 8]);
+}
+
+#[test]
+fn view_encode_emits_fields_in_number_order() {
+    use crate::edge::__buffa::view::FieldOrderingView;
+    use buffa::{MessageView, ViewEncode};
+    let owned_bytes = populated_field_ordering().encode_to_vec();
+    let view = FieldOrderingView::decode_view(&owned_bytes).expect("decode_view");
+    let view_bytes = view.encode_to_vec();
+    assert_eq!(tag_order(&view_bytes), vec![1, 2, 3, 4, 5, 7, 8]);
+    // Owned and view encoders share the ordered single-pass; they must agree
+    // byte-for-byte (which also catches any compute_size/write_to SizeCache
+    // misalignment introduced by the reorder).
+    assert_eq!(view_bytes, owned_bytes);
+}
+
+#[test]
+fn field_ordering_round_trips() {
+    let m = populated_field_ordering();
+    assert_eq!(round_trip(&m), m);
+}

@@ -44,13 +44,14 @@ fn closed_enum_view_unknown_route(preserve_unknown_fields: bool) -> TokenStream 
 
 /// Convert a borrowed bytes view to the owned field type.
 ///
-/// Emits `bytes::Bytes::copy_from_slice(expr)` when `use_bytes_type()`
-/// is active for this field (the borrow isn't `'static` so `from` won't
-/// work), otherwise `(expr).to_vec()`.
+/// When `use_bytes_type()` is active for this field, emits
+/// `::buffa::view::bytes_from_source(__buffa_src, expr)` so
+/// `to_owned_from_source(Some(buf))` produces a zero-copy `Bytes::slice_ref`;
+/// `None` falls back to `copy_from_slice`. Otherwise emits `(expr).to_vec()`.
 ///
 /// `expr` may be `&[u8]` (singular/optional) or `&&[u8]` (repeated-iter,
 /// oneof match-ergonomics). Both branches accept either: `.to_vec()` via
-/// method auto-deref, `copy_from_slice` via argument auto-deref.
+/// method auto-deref, `bytes_from_source`'s `&[u8]` arg via auto-deref.
 fn bytes_to_owned(
     ctx: &CodeGenContext,
     proto_fqn: &str,
@@ -58,7 +59,7 @@ fn bytes_to_owned(
     expr: TokenStream,
 ) -> TokenStream {
     if field_uses_bytes(ctx, proto_fqn, field_name) {
-        quote! { ::bytes::Bytes::copy_from_slice(#expr) }
+        quote! { ::buffa::view::bytes_from_source(__buffa_src, #expr) }
     } else {
         quote! { (#expr).to_vec() }
     }
@@ -292,19 +293,21 @@ pub(crate) fn generate_view_with_nesting(
                 Self::_decode_depth(buf, depth)
             }
 
-            /// Convert this view to the owned message type.
-            // redundant_closure: bytes_to_owned() emits `|b| Bytes::copy_from_slice(b)`
-            // for optional bytes — eta-reducible, but the non-bytes branch
-            // `|b| (b).to_vec()` is NOT (no fn path for the method), so the
-            // helper can't uniformly emit a fn path.
+            fn to_owned_message(&self) -> #owned_path {
+                self.to_owned_from_source(None)
+            }
+
             // useless_conversion: __buffa_unknown_fields uses `.into()` to
             // unify the `UnknownFields` (no-wrapper) and `__<Name>ExtJson`
             // (generate_json wrapper) cases; no-op in the former.
-            #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-            #[allow(clippy::needless_update)]
-            fn to_owned_message(&self) -> #owned_path {
+            #[allow(clippy::useless_conversion, clippy::needless_update)]
+            fn to_owned_from_source(
+                &self,
+                __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
+            ) -> #owned_path {
                 #[allow(unused_imports)]
                 use ::buffa::alloc::string::ToString as _;
+                let _ = __buffa_src;
                 #owned_path {
                     #(#owned_fields)*
                     ..::core::default::Default::default()
@@ -1380,7 +1383,9 @@ fn singular_to_owned(
             let owned_ty = crate::message::rust_path_to_tokens(&owned_path);
             quote! {
                 match self.#ident.as_option() {
-                    Some(v) => ::buffa::MessageField::<#owned_ty>::some(v.to_owned_message()),
+                    Some(v) => ::buffa::MessageField::<#owned_ty>::some(
+                        v.to_owned_from_source(__buffa_src),
+                    ),
                     None => ::buffa::MessageField::none(),
                 }
             }
@@ -1404,7 +1409,7 @@ fn repeated_to_owned(
             quote! { self.#ident.iter().map(|b| #conv).collect() }
         }
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
-            quote! { self.#ident.iter().map(|v| v.to_owned_message()).collect() }
+            quote! { self.#ident.iter().map(|v| v.to_owned_from_source(__buffa_src)).collect() }
         }
         _ => quote! { self.#ident.to_vec() },
     })
@@ -1432,7 +1437,7 @@ fn map_to_owned_expr(
         Type::TYPE_MESSAGE => {
             // Verify the owned path resolves (catches missing imports at codegen time).
             let _owned_path = resolve_owned_path(scope, val_fd)?;
-            quote! { v.to_owned_message() }
+            quote! { v.to_owned_from_source(__buffa_src) }
         }
         _ => quote! { *v },
     };
@@ -1449,7 +1454,7 @@ fn oneof_variant_to_owned(scope: MessageScope<'_>, ty: Type, field_name: &str) -
         // match-ergonomics on &ViewEnum → v: &&[u8]. bytes_to_owned handles it.
         Type::TYPE_BYTES => bytes_to_owned(ctx, proto_fqn, field_name, quote! { v }),
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
-            quote! { ::buffa::alloc::boxed::Box::new(v.to_owned_message()) }
+            quote! { ::buffa::alloc::boxed::Box::new(v.to_owned_from_source(__buffa_src)) }
         }
         _ => quote! { *v },
     }
