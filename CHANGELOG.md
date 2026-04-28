@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `write_to` now emits fields in ascending field-number order regardless of
+  cardinality (singular / repeated / map / oneof), matching prost,
+  protoc-C++, and the spec's serialize-in-field-order recommendation.
+  Previously fields were emitted grouped by kind, which broke
+  byte-equivalence with other implementations for messages mixing a
+  high-numbered singular field with a lower-numbered repeated/map/oneof.
+  Decoders accept any order, so this is not a wire-compat break, but
+  consumers content-addressing serialized bytes (e.g. `hash(encode(msg))`)
+  will see different hashes for affected message shapes.
+  ([#75](https://github.com/anthropics/buffa/issues/75))
+
 ## [0.4.0] - 2026-04-27
 
 ### Breaking changes

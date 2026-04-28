@@ -105,3 +105,34 @@ message Part {
 message Whole {
   Part part = 1;
 }
+
+// write_to must emit fields in ascending field-number order regardless of
+// kind (singular/repeated/map/oneof) — required for byte-equivalence with
+// prost / protoc-C++ and the spec's serialize-in-field-order SHOULD.
+// Regression for https://github.com/anthropics/buffa/issues/75.
+message FieldOrdering {
+  string head = 1;
+  repeated int32 tags = 2;
+  map<string, int32> attrs = 3;
+  Part nested = 4;
+  oneof choice {
+    int32 choice_a = 5;
+    string choice_b = 6;
+  }
+  repeated string names = 7;
+  optional int64 tail = 8;
+}
+
+// Same kinds, declared with field numbers descending — exercises the sort.
+message FieldOrderingShuffled {
+  optional int64 tail = 8;
+  repeated string names = 7;
+  oneof choice {
+    string choice_b = 6;
+    int32 choice_a = 5;
+  }
+  Part nested = 4;
+  map<string, int32> attrs = 3;
+  repeated int32 tags = 2;
+  string head = 1;
+}
