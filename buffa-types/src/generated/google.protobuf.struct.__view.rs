@@ -143,7 +143,7 @@ impl<'a> ::buffa::MessageView<'a> for StructView<'a> {
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
-        __buffa_src: ::core::option::Option<&::bytes::Bytes>,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
     ) -> super::super::Struct {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
@@ -434,7 +434,7 @@ impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
-        __buffa_src: ::core::option::Option<&::bytes::Bytes>,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
     ) -> super::super::Value {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
@@ -696,7 +696,7 @@ impl<'a> ::buffa::MessageView<'a> for ListValueView<'a> {
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
-        __buffa_src: ::core::option::Option<&::bytes::Bytes>,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
     ) -> super::super::ListValue {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;

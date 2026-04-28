@@ -222,7 +222,7 @@ impl<'a> ::buffa::MessageView<'a> for AnyView<'a> {
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
-        __buffa_src: ::core::option::Option<&::bytes::Bytes>,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
     ) -> super::super::Any {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;

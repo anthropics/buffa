@@ -303,7 +303,7 @@ pub(crate) fn generate_view_with_nesting(
             #[allow(clippy::useless_conversion, clippy::needless_update)]
             fn to_owned_from_source(
                 &self,
-                __buffa_src: ::core::option::Option<&::bytes::Bytes>,
+                __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
             ) -> #owned_path {
                 #[allow(unused_imports)]
                 use ::buffa::alloc::string::ToString as _;

@@ -87,7 +87,7 @@ impl<'a> ::buffa::MessageView<'a> for DoubleValueView<'a> {
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
-        __buffa_src: ::core::option::Option<&::bytes::Bytes>,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
     ) -> super::super::DoubleValue {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
@@ -229,7 +229,7 @@ impl<'a> ::buffa::MessageView<'a> for FloatValueView<'a> {
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
-        __buffa_src: ::core::option::Option<&::bytes::Bytes>,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
     ) -> super::super::FloatValue {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
@@ -371,7 +371,7 @@ impl<'a> ::buffa::MessageView<'a> for Int64ValueView<'a> {
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
-        __buffa_src: ::core::option::Option<&::bytes::Bytes>,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
     ) -> super::super::Int64Value {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
@@ -513,7 +513,7 @@ impl<'a> ::buffa::MessageView<'a> for UInt64ValueView<'a> {
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
-        __buffa_src: ::core::option::Option<&::bytes::Bytes>,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
     ) -> super::super::UInt64Value {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
@@ -655,7 +655,7 @@ impl<'a> ::buffa::MessageView<'a> for Int32ValueView<'a> {
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
-        __buffa_src: ::core::option::Option<&::bytes::Bytes>,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
     ) -> super::super::Int32Value {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
@@ -797,7 +797,7 @@ impl<'a> ::buffa::MessageView<'a> for UInt32ValueView<'a> {
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
-        __buffa_src: ::core::option::Option<&::bytes::Bytes>,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
     ) -> super::super::UInt32Value {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
@@ -939,7 +939,7 @@ impl<'a> ::buffa::MessageView<'a> for BoolValueView<'a> {
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
-        __buffa_src: ::core::option::Option<&::bytes::Bytes>,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
     ) -> super::super::BoolValue {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
@@ -1081,7 +1081,7 @@ impl<'a> ::buffa::MessageView<'a> for StringValueView<'a> {
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
-        __buffa_src: ::core::option::Option<&::bytes::Bytes>,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
     ) -> super::super::StringValue {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
@@ -1226,7 +1226,7 @@ impl<'a> ::buffa::MessageView<'a> for BytesValueView<'a> {
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
-        __buffa_src: ::core::option::Option<&::bytes::Bytes>,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
     ) -> super::super::BytesValue {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
