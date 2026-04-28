@@ -214,73 +214,83 @@ pub(crate) fn closed_enum_unknown_route(
     }
 }
 
-/// Partition a message's fields by encode-dispatch shape. Shared between
-/// [`generate_message_impl`] (owned) and [`build_view_encode_methods`] (view)
-/// so a new field category only needs adding here.
-struct ClassifiedFields<'a> {
-    scalar: Vec<&'a FieldDescriptorProto>,
-    repeated: Vec<&'a FieldDescriptorProto>,
-    map: Vec<&'a FieldDescriptorProto>,
-    oneof_groups: Vec<(String, proc_macro2::Ident, Vec<&'a FieldDescriptorProto>)>,
+/// A classified field (or oneof group) ready for per-kind codegen dispatch.
+///
+/// Produced by [`classify_fields_ordered`] in ascending field-number order so
+/// that `compute_size` and `write_to` emit fields in the spec-recommended
+/// sequence (matching the field order of prost / protoc-C++). A `Oneof` entry
+/// stands in for all its member fields and is positioned at the group's
+/// minimum member field number.
+enum FieldKind<'a> {
+    Scalar(&'a FieldDescriptorProto),
+    Repeated(&'a FieldDescriptorProto),
+    Map(&'a FieldDescriptorProto),
+    Oneof {
+        name: &'a str,
+        enum_ident: proc_macro2::Ident,
+        fields: Vec<&'a FieldDescriptorProto>,
+    },
 }
 
-fn classify_fields<'a>(
+/// Classify every field of `msg` and return the result sorted by ascending
+/// field number. Oneof members are folded into a single [`FieldKind::Oneof`]
+/// per group, positioned at the lowest member number.
+///
+/// Shared between [`generate_message_impl`] (owned) and
+/// [`build_view_encode_methods`] (view) so a new field category only needs
+/// adding here.
+fn classify_fields_ordered<'a>(
     msg: &'a DescriptorProto,
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
-) -> ClassifiedFields<'a> {
-    let scalar = msg
-        .field
-        .iter()
-        .filter(|f| {
-            !is_real_oneof_member(f)
-                && f.label.unwrap_or_default() != Label::LABEL_REPEATED
-                && is_supported_field_type(f.r#type.unwrap_or_default())
-        })
-        .collect();
-    let repeated = msg
-        .field
-        .iter()
-        .filter(|f| {
-            f.label.unwrap_or_default() == Label::LABEL_REPEATED
-                && !crate::message::is_map_field(msg, f)
-                && is_supported_field_type(f.r#type.unwrap_or_default())
-        })
-        .collect();
-    let map = msg
-        .field
-        .iter()
-        .filter(|f| {
-            f.label.unwrap_or_default() == Label::LABEL_REPEATED
-                && crate::message::is_map_field(msg, f)
-        })
-        .collect();
-    let oneof_groups = msg
-        .oneof_decl
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, oneof)| {
-            let enum_ident = oneof_idents.get(&idx)?;
-            let fields: Vec<_> = msg
+) -> Result<Vec<FieldKind<'a>>, CodeGenError> {
+    let mut entries: Vec<(u32, FieldKind<'a>)> = Vec::with_capacity(msg.field.len());
+    let mut seen_oneof: std::collections::HashSet<i32> = std::collections::HashSet::new();
+    for f in &msg.field {
+        let number = validated_field_number(f)?;
+        if is_real_oneof_member(f) {
+            let idx = f.oneof_index.expect("checked by is_real_oneof_member");
+            if !seen_oneof.insert(idx) {
+                continue;
+            }
+            let Some(enum_ident) = oneof_idents.get(&(idx as usize)) else {
+                continue;
+            };
+            let Some(name) = msg
+                .oneof_decl
+                .get(idx as usize)
+                .and_then(|o| o.name.as_deref())
+            else {
+                continue;
+            };
+            let members: Vec<_> = msg
                 .field
                 .iter()
-                .filter(|f| is_real_oneof_member(f) && f.oneof_index == Some(idx as i32))
+                .filter(|m| is_real_oneof_member(m) && m.oneof_index == Some(idx))
                 .collect();
-            if fields.is_empty() {
-                return None;
+            let min_number = members
+                .iter()
+                .map(|m| validated_field_number(m))
+                .try_fold(number, |acc, n| Ok::<_, CodeGenError>(acc.min(n?)))?;
+            entries.push((
+                min_number,
+                FieldKind::Oneof {
+                    name,
+                    enum_ident: enum_ident.clone(),
+                    fields: members,
+                },
+            ));
+        } else if f.label.unwrap_or_default() == Label::LABEL_REPEATED {
+            if crate::message::is_map_field(msg, f) {
+                entries.push((number, FieldKind::Map(f)));
+            } else if is_supported_field_type(f.r#type.unwrap_or_default()) {
+                entries.push((number, FieldKind::Repeated(f)));
             }
-            Some((
-                oneof.name.as_deref()?.to_string(),
-                enum_ident.clone(),
-                fields,
-            ))
-        })
-        .collect();
-    ClassifiedFields {
-        scalar,
-        repeated,
-        map,
-        oneof_groups,
+        } else if is_supported_field_type(f.r#type.unwrap_or_default()) {
+            entries.push((number, FieldKind::Scalar(f)));
+        }
     }
+    entries.sort_by_key(|(n, _)| *n);
+    Ok(entries.into_iter().map(|(_, k)| k).collect())
 }
 
 /// True if `compute_size` / `write_to` for this message reference the
@@ -290,7 +300,7 @@ fn classify_fields<'a>(
 fn message_uses_size_cache(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
-    classified: &ClassifiedFields<'_>,
+    fields: &[FieldKind<'_>],
     features: &ResolvedFeatures,
 ) -> bool {
     let is_nested = |f: &FieldDescriptorProto| {
@@ -299,19 +309,15 @@ fn message_uses_size_cache(
             Type::TYPE_MESSAGE | Type::TYPE_GROUP
         )
     };
-    classified.scalar.iter().copied().any(is_nested)
-        || classified.repeated.iter().copied().any(is_nested)
-        || classified
-            .oneof_groups
-            .iter()
-            .any(|(_, _, fields)| fields.iter().copied().any(is_nested))
-        || classified.map.iter().any(|f| {
-            find_map_entry_fields(msg, f)
-                .map(|(_, val_fd)| {
-                    effective_type_in_map_entry(ctx, val_fd, features) == Type::TYPE_MESSAGE
-                })
-                .unwrap_or(false)
-        })
+    fields.iter().any(|kind| match kind {
+        FieldKind::Scalar(f) | FieldKind::Repeated(f) => is_nested(f),
+        FieldKind::Oneof { fields, .. } => fields.iter().copied().any(is_nested),
+        FieldKind::Map(f) => find_map_entry_fields(msg, f)
+            .map(|(_, val_fd)| {
+                effective_type_in_map_entry(ctx, val_fd, features) == Type::TYPE_MESSAGE
+            })
+            .unwrap_or(false),
+    })
 }
 
 /// Generate `impl DefaultInstance` and `impl Message` for a message.
@@ -334,79 +340,81 @@ pub fn generate_message_impl(
 ) -> Result<TokenStream, CodeGenError> {
     let name_ident = format_ident!("{}", rust_name);
 
-    let classified = classify_fields(msg, oneof_idents);
-    let cache_ident = if message_uses_size_cache(ctx, msg, &classified, features) {
+    let fields = classify_fields_ordered(msg, oneof_idents)?;
+    let cache_ident = if message_uses_size_cache(ctx, msg, &fields, features) {
         format_ident!("__cache")
     } else {
         format_ident!("_cache")
     };
-    let ClassifiedFields {
-        scalar: scalar_fields,
-        repeated: repeated_fields,
-        map: map_fields,
-        oneof_groups,
-    } = classified;
 
-    let compute_stmts = scalar_fields
-        .iter()
-        .copied()
-        .map(|f| scalar_compute_size_stmt(ctx, f, features))
-        .collect::<Result<Vec<_>, _>>()?;
-    let repeated_compute_stmts = repeated_fields
-        .iter()
-        .copied()
-        .map(|f| repeated_compute_size_stmt(ctx, f, features))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let write_stmts = scalar_fields
-        .iter()
-        .copied()
-        .map(|f| scalar_write_to_stmt(ctx, f, features))
-        .collect::<Result<Vec<_>, _>>()?;
-    let repeated_write_stmts = repeated_fields
-        .iter()
-        .copied()
-        .map(|f| repeated_write_to_stmt(ctx, f, features))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let merge_arms = scalar_fields
-        .iter()
-        .copied()
-        .map(|f| scalar_merge_arm(ctx, f, proto_fqn, features, preserve_unknown_fields))
-        .collect::<Result<Vec<_>, _>>()?;
-    let repeated_merge_arms = repeated_fields
-        .iter()
-        .copied()
-        .map(|f| repeated_merge_arm(ctx, f, proto_fqn, features, preserve_unknown_fields))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    // Collect oneof compute/write/merge tokens.
-    let mut oneof_compute_stmts: Vec<TokenStream> = Vec::new();
-    let mut oneof_write_stmts: Vec<TokenStream> = Vec::new();
-    let mut oneof_merge_arms: Vec<TokenStream> = Vec::new();
-    for (oneof_name, enum_ident, fields) in &oneof_groups {
-        let (cs, ws, mas) = generate_oneof_impls(
-            ctx,
-            enum_ident,
-            oneof_name,
-            fields,
-            oneof_prefix,
-            proto_fqn,
-            features,
-            preserve_unknown_fields,
-        )?;
-        oneof_compute_stmts.push(cs);
-        oneof_write_stmts.push(ws);
-        oneof_merge_arms.extend(mas);
-    }
-
-    let mut map_compute_stmts: Vec<TokenStream> = Vec::new();
-    let mut map_write_stmts: Vec<TokenStream> = Vec::new();
-    let mut map_merge_arms: Vec<TokenStream> = Vec::new();
-    for f in &map_fields {
-        map_compute_stmts.push(map_compute_size_stmt(ctx, msg, f, features)?);
-        map_write_stmts.push(map_write_to_stmt(ctx, msg, f, features)?);
-        map_merge_arms.push(map_merge_arm(ctx, msg, f, features)?);
+    // Single pass in field-number order. `compute_stmts`/`write_stmts` MUST be
+    // built in lockstep: SizeCache::consume_next() in write_to reads slots in
+    // the same traversal order that compute_size's reserve()/set() filled them.
+    let mut compute_stmts: Vec<TokenStream> = Vec::with_capacity(fields.len());
+    let mut write_stmts: Vec<TokenStream> = Vec::with_capacity(fields.len());
+    let mut merge_arms: Vec<TokenStream> = Vec::with_capacity(fields.len());
+    let mut clear_stmts: Vec<TokenStream> = Vec::with_capacity(fields.len());
+    for kind in &fields {
+        match kind {
+            FieldKind::Scalar(f) => {
+                compute_stmts.push(scalar_compute_size_stmt(ctx, f, features)?);
+                write_stmts.push(scalar_write_to_stmt(ctx, f, features)?);
+                merge_arms.push(scalar_merge_arm(
+                    ctx,
+                    f,
+                    proto_fqn,
+                    features,
+                    preserve_unknown_fields,
+                )?);
+                clear_stmts.push(scalar_clear_stmt(
+                    f,
+                    ctx,
+                    current_package,
+                    proto_fqn,
+                    features,
+                    nesting,
+                )?);
+            }
+            FieldKind::Repeated(f) => {
+                compute_stmts.push(repeated_compute_size_stmt(ctx, f, features)?);
+                write_stmts.push(repeated_write_to_stmt(ctx, f, features)?);
+                merge_arms.push(repeated_merge_arm(
+                    ctx,
+                    f,
+                    proto_fqn,
+                    features,
+                    preserve_unknown_fields,
+                )?);
+                clear_stmts.push(vec_field_clear_stmt(f)?);
+            }
+            FieldKind::Map(f) => {
+                compute_stmts.push(map_compute_size_stmt(ctx, msg, f, features)?);
+                write_stmts.push(map_write_to_stmt(ctx, msg, f, features)?);
+                merge_arms.push(map_merge_arm(ctx, msg, f, features)?);
+                clear_stmts.push(vec_field_clear_stmt(f)?);
+            }
+            FieldKind::Oneof {
+                name,
+                enum_ident,
+                fields,
+            } => {
+                let (cs, ws, mas) = generate_oneof_impls(
+                    ctx,
+                    enum_ident,
+                    name,
+                    fields,
+                    oneof_prefix,
+                    proto_fqn,
+                    features,
+                    preserve_unknown_fields,
+                )?;
+                compute_stmts.push(cs);
+                write_stmts.push(ws);
+                merge_arms.extend(mas);
+                let ident = make_field_ident(name);
+                clear_stmts.push(quote! { self.#ident = ::core::option::Option::None; });
+            }
+        }
     }
 
     // MessageSet wire format: each LengthDelimited unknown field (i.e. each
@@ -499,41 +507,6 @@ pub fn generate_message_impl(
         }
     };
 
-    // Build per-field clear statements to retain heap allocations.
-    let scalar_clear_stmts = scalar_fields
-        .iter()
-        .copied()
-        .map(|f| scalar_clear_stmt(f, ctx, current_package, proto_fqn, features, nesting))
-        .collect::<Result<Vec<_>, _>>()?;
-    let repeated_clear_stmts: Vec<TokenStream> = repeated_fields
-        .iter()
-        .map(|f| {
-            let field_name = f
-                .name
-                .as_deref()
-                .ok_or(CodeGenError::MissingField("field.name"))?;
-            let ident = make_field_ident(field_name);
-            Ok(quote! { self.#ident.clear(); })
-        })
-        .collect::<Result<Vec<_>, CodeGenError>>()?;
-    let oneof_clear_stmts: Vec<TokenStream> = oneof_groups
-        .iter()
-        .map(|(name, _, _)| {
-            let ident = make_field_ident(name);
-            quote! { self.#ident = ::core::option::Option::None; }
-        })
-        .collect();
-    let map_clear_stmts: Vec<TokenStream> = map_fields
-        .iter()
-        .map(|f| {
-            let field_name = f
-                .name
-                .as_deref()
-                .ok_or(CodeGenError::MissingField("field.name"))?;
-            let ident = make_field_ident(field_name);
-            Ok(quote! { self.#ident.clear(); })
-        })
-        .collect::<Result<Vec<_>, CodeGenError>>()?;
     let unknown_fields_clear_stmt = if preserve_unknown_fields {
         quote! { self.__buffa_unknown_fields.clear(); }
     } else {
@@ -541,22 +514,13 @@ pub fn generate_message_impl(
     };
 
     // Suppress lint warnings that fire on generated code for empty messages.
-    let has_compute = !scalar_fields.is_empty()
-        || !repeated_fields.is_empty()
-        || !oneof_compute_stmts.is_empty()
-        || !map_compute_stmts.is_empty()
-        || preserve_unknown_fields;
-    let size_decl = if has_compute {
+    let has_body = !fields.is_empty() || preserve_unknown_fields;
+    let size_decl = if has_body {
         quote! { let mut size = 0u32; }
     } else {
         quote! { let size = 0u32; }
     };
-    let has_write = !write_stmts.is_empty()
-        || !repeated_write_stmts.is_empty()
-        || !oneof_write_stmts.is_empty()
-        || !map_write_stmts.is_empty()
-        || preserve_unknown_fields;
-    let buf_param = if has_write {
+    let buf_param = if has_body {
         quote! { buf: &mut impl ::buffa::bytes::BufMut }
     } else {
         quote! { _buf: &mut impl ::buffa::bytes::BufMut }
@@ -600,9 +564,6 @@ pub fn generate_message_impl(
                 use ::buffa::Enumeration as _;
                 #size_decl
                 #(#compute_stmts)*
-                #(#repeated_compute_stmts)*
-                #(#oneof_compute_stmts)*
-                #(#map_compute_stmts)*
                 #unknown_fields_size_stmt
                 size
             }
@@ -615,9 +576,6 @@ pub fn generate_message_impl(
                 #[allow(unused_imports)]
                 use ::buffa::Enumeration as _;
                 #(#write_stmts)*
-                #(#repeated_write_stmts)*
-                #(#oneof_write_stmts)*
-                #(#map_write_stmts)*
                 #unknown_fields_write_stmt
             }
 
@@ -633,19 +591,13 @@ pub fn generate_message_impl(
                 use ::buffa::Enumeration as _;
                 match tag.field_number() {
                     #(#merge_arms)*
-                    #(#repeated_merge_arms)*
-                    #(#oneof_merge_arms)*
-                    #(#map_merge_arms)*
                     #unknown_fields_merge_arm
                 }
                 ::core::result::Result::Ok(())
             }
 
             fn clear(&mut self) {
-                #(#scalar_clear_stmts)*
-                #(#repeated_clear_stmts)*
-                #(#oneof_clear_stmts)*
-                #(#map_clear_stmts)*
+                #(#clear_stmts)*
                 #unknown_fields_clear_stmt
             }
         }
@@ -667,96 +619,80 @@ pub(crate) fn build_view_encode_methods(
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
     view_oneof_prefix: &TokenStream,
 ) -> Result<TokenStream, CodeGenError> {
-    let classified = classify_fields(msg, oneof_idents);
-    let cache_ident = if message_uses_size_cache(ctx, msg, &classified, features) {
+    let fields = classify_fields_ordered(msg, oneof_idents)?;
+    let cache_ident = if message_uses_size_cache(ctx, msg, &fields, features) {
         format_ident!("__cache")
     } else {
         format_ident!("_cache")
     };
-    let ClassifiedFields {
-        scalar: scalar_fields,
-        repeated: repeated_fields,
-        map: map_fields,
-        oneof_groups,
-    } = classified;
 
-    let compute_stmts = scalar_fields
-        .iter()
-        .copied()
-        .map(|f| scalar_compute_size_stmt(ctx, f, features))
-        .collect::<Result<Vec<_>, _>>()?;
-    let repeated_compute_stmts = repeated_fields
-        .iter()
-        .copied()
-        .map(|f| repeated_compute_size_stmt(ctx, f, features))
-        .collect::<Result<Vec<_>, _>>()?;
-    let write_stmts = scalar_fields
-        .iter()
-        .copied()
-        .map(|f| scalar_write_to_stmt(ctx, f, features))
-        .collect::<Result<Vec<_>, _>>()?;
-    let repeated_write_stmts = repeated_fields
-        .iter()
-        .copied()
-        .map(|f| repeated_write_to_stmt(ctx, f, features))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    // The view-side oneof enum (in the parallel `__buffa::view::oneof::` tree)
-    // has the same variant *names* as the owned `__buffa::oneof::<owner>::Kind`
-    // but borrowed payload types (`&'a str` / `Box<FooView<'a>>` vs `String` /
-    // `Box<Foo>`). The arm builders only emit the enum path + variant name and
-    // call duck-typed primitives (`string_encoded_len(x)`, `x.compute_size()`),
-    // so they work unchanged once pointed at the view enum via
-    // `view_oneof_prefix` (no `View` suffix — the tree disambiguates).
-    let mut oneof_compute_stmts: Vec<TokenStream> = Vec::new();
-    let mut oneof_write_stmts: Vec<TokenStream> = Vec::new();
-    for (oneof_name, enum_ident, fields) in &oneof_groups {
-        let field_ident = make_field_ident(oneof_name);
-        let qualified: TokenStream = quote! { #view_oneof_prefix #enum_ident };
-        let mut size_arms: Vec<TokenStream> = Vec::new();
-        let mut write_arms: Vec<TokenStream> = Vec::new();
-        for field in fields {
-            let field_number = validated_field_number(field)?;
-            let ty = effective_type(ctx, field, features);
-            let variant = crate::oneof::oneof_variant_ident(
-                field
-                    .name
-                    .as_deref()
-                    .ok_or(CodeGenError::MissingField("field.name"))?,
-            );
-            let tag_len = tag_encoded_len(field_number, wire_type_byte(ty));
-            let wire_type = wire_type_token(ty);
-            size_arms.push(oneof_size_arm(&qualified, &variant, tag_len, ty));
-            write_arms.push(oneof_write_arm(
-                &qualified,
-                &variant,
-                field_number,
-                ty,
-                &wire_type,
-            ));
+    let mut compute_stmts: Vec<TokenStream> = Vec::with_capacity(fields.len());
+    let mut write_stmts: Vec<TokenStream> = Vec::with_capacity(fields.len());
+    for kind in &fields {
+        match kind {
+            FieldKind::Scalar(f) => {
+                compute_stmts.push(scalar_compute_size_stmt(ctx, f, features)?);
+                write_stmts.push(scalar_write_to_stmt(ctx, f, features)?);
+            }
+            FieldKind::Repeated(f) => {
+                compute_stmts.push(repeated_compute_size_stmt(ctx, f, features)?);
+                write_stmts.push(repeated_write_to_stmt(ctx, f, features)?);
+            }
+            // map_{compute_size,write_to}_stmt emit `for (k, v) in &self.field
+            // { ... }`. For owned `&HashMap<K,V>` that yields `(&K, &V)`
+            // directly. For `&MapView<'_,K,V>` it yields `&(K,V)`, but
+            // match-ergonomics binds the pattern `(k, v)` to `(&K, &V)` either
+            // way — so the same generated body works on both.
+            FieldKind::Map(f) => {
+                compute_stmts.push(map_compute_size_stmt(ctx, msg, f, features)?);
+                write_stmts.push(map_write_to_stmt(ctx, msg, f, features)?);
+            }
+            // The view-side oneof enum (in the parallel `__buffa::view::oneof::`
+            // tree) has the same variant *names* as the owned enum but borrowed
+            // payload types. The arm builders only emit the enum path + variant
+            // name and call duck-typed primitives, so they work unchanged once
+            // pointed at the view enum via `view_oneof_prefix`.
+            FieldKind::Oneof {
+                name,
+                enum_ident,
+                fields,
+            } => {
+                let field_ident = make_field_ident(name);
+                let qualified: TokenStream = quote! { #view_oneof_prefix #enum_ident };
+                let mut size_arms: Vec<TokenStream> = Vec::new();
+                let mut write_arms: Vec<TokenStream> = Vec::new();
+                for field in fields {
+                    let field_number = validated_field_number(field)?;
+                    let ty = effective_type(ctx, field, features);
+                    let variant = crate::oneof::oneof_variant_ident(
+                        field
+                            .name
+                            .as_deref()
+                            .ok_or(CodeGenError::MissingField("field.name"))?,
+                    );
+                    let tag_len = tag_encoded_len(field_number, wire_type_byte(ty));
+                    let wire_type = wire_type_token(ty);
+                    size_arms.push(oneof_size_arm(&qualified, &variant, tag_len, ty));
+                    write_arms.push(oneof_write_arm(
+                        &qualified,
+                        &variant,
+                        field_number,
+                        ty,
+                        &wire_type,
+                    ));
+                }
+                compute_stmts.push(quote! {
+                    if let ::core::option::Option::Some(ref v) = self.#field_ident {
+                        match v { #(#size_arms)* }
+                    }
+                });
+                write_stmts.push(quote! {
+                    if let ::core::option::Option::Some(ref v) = self.#field_ident {
+                        match v { #(#write_arms)* }
+                    }
+                });
+            }
         }
-        oneof_compute_stmts.push(quote! {
-            if let ::core::option::Option::Some(ref v) = self.#field_ident {
-                match v { #(#size_arms)* }
-            }
-        });
-        oneof_write_stmts.push(quote! {
-            if let ::core::option::Option::Some(ref v) = self.#field_ident {
-                match v { #(#write_arms)* }
-            }
-        });
-    }
-
-    // map_{compute_size,write_to}_stmt emit `for (k, v) in &self.field { ... }`.
-    // For owned `&HashMap<K,V>` that yields `(&K, &V)` directly. For
-    // `&MapView<'_,K,V>` it yields `&(K,V)`, but match-ergonomics binds the
-    // pattern `(k, v)` to `(&K, &V)` either way — so the same generated body
-    // works on both without modification.
-    let mut map_compute_stmts: Vec<TokenStream> = Vec::new();
-    let mut map_write_stmts: Vec<TokenStream> = Vec::new();
-    for f in &map_fields {
-        map_compute_stmts.push(map_compute_size_stmt(ctx, msg, f, features)?);
-        map_write_stmts.push(map_write_to_stmt(ctx, msg, f, features)?);
     }
 
     let unknown_fields_size_stmt = if preserve_unknown_fields {
@@ -775,22 +711,13 @@ pub(crate) fn build_view_encode_methods(
         quote! {}
     };
 
-    let has_compute = !scalar_fields.is_empty()
-        || !repeated_fields.is_empty()
-        || !oneof_compute_stmts.is_empty()
-        || !map_compute_stmts.is_empty()
-        || preserve_unknown_fields;
-    let size_decl = if has_compute {
+    let has_body = !fields.is_empty() || preserve_unknown_fields;
+    let size_decl = if has_body {
         quote! { let mut size = 0u32; }
     } else {
         quote! { let size = 0u32; }
     };
-    let has_write = !write_stmts.is_empty()
-        || !repeated_write_stmts.is_empty()
-        || !oneof_write_stmts.is_empty()
-        || !map_write_stmts.is_empty()
-        || preserve_unknown_fields;
-    let buf_param = if has_write {
+    let buf_param = if has_body {
         quote! { buf: &mut impl ::buffa::bytes::BufMut }
     } else {
         quote! { _buf: &mut impl ::buffa::bytes::BufMut }
@@ -806,9 +733,6 @@ pub(crate) fn build_view_encode_methods(
             use ::buffa::Enumeration as _;
             #size_decl
             #(#compute_stmts)*
-            #(#repeated_compute_stmts)*
-            #(#oneof_compute_stmts)*
-            #(#map_compute_stmts)*
             #unknown_fields_size_stmt
             size
         }
@@ -818,12 +742,21 @@ pub(crate) fn build_view_encode_methods(
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
             #(#write_stmts)*
-            #(#repeated_write_stmts)*
-            #(#oneof_write_stmts)*
-            #(#map_write_stmts)*
             #unknown_fields_write_stmt
         }
     })
+}
+
+/// `self.<field>.clear();` for repeated and map fields — both `Vec<T>` and
+/// `HashMap<K,V>` retain their backing allocation on `.clear()`.
+fn vec_field_clear_stmt(field: &FieldDescriptorProto) -> Result<TokenStream, CodeGenError> {
+    let ident = make_field_ident(
+        field
+            .name
+            .as_deref()
+            .ok_or(CodeGenError::MissingField("field.name"))?,
+    );
+    Ok(quote! { self.#ident.clear(); })
 }
 
 /// Generate a clear statement for a scalar (non-repeated, non-oneof) field.
@@ -2733,6 +2666,122 @@ mod tests {
             label: Some(label),
             ..Default::default()
         }
+    }
+
+    // ── classify_fields_ordered ──────────────────────────────────────────
+
+    fn nfield(name: &str, num: i32, ty: Type, label: Label) -> FieldDescriptorProto {
+        FieldDescriptorProto {
+            name: Some(name.into()),
+            number: Some(num),
+            r#type: Some(ty),
+            label: Some(label),
+            ..Default::default()
+        }
+    }
+
+    fn kind_tag(k: &FieldKind<'_>) -> (&'static str, i32) {
+        match k {
+            FieldKind::Scalar(f) => ("scalar", f.number.unwrap()),
+            FieldKind::Repeated(f) => ("repeated", f.number.unwrap()),
+            FieldKind::Map(f) => ("map", f.number.unwrap()),
+            FieldKind::Oneof { fields, .. } => (
+                "oneof",
+                fields.iter().map(|f| f.number.unwrap()).min().unwrap(),
+            ),
+        }
+    }
+
+    #[test]
+    fn classify_orders_by_field_number_across_kinds() {
+        use crate::generated::descriptor::OneofDescriptorProto;
+        // Declared deliberately out of number order; oneof members at 5 & 6.
+        let oneof_a = FieldDescriptorProto {
+            oneof_index: Some(0),
+            ..nfield("choice_a", 5, Type::TYPE_INT32, Label::LABEL_OPTIONAL)
+        };
+        let oneof_b = FieldDescriptorProto {
+            oneof_index: Some(0),
+            ..nfield("choice_b", 6, Type::TYPE_STRING, Label::LABEL_OPTIONAL)
+        };
+        let msg = DescriptorProto {
+            field: vec![
+                nfield("tail", 8, Type::TYPE_INT64, Label::LABEL_OPTIONAL),
+                nfield("tags", 2, Type::TYPE_INT32, Label::LABEL_REPEATED),
+                oneof_b,
+                nfield("head", 1, Type::TYPE_STRING, Label::LABEL_OPTIONAL),
+                oneof_a,
+                nfield("names", 7, Type::TYPE_STRING, Label::LABEL_REPEATED),
+            ],
+            oneof_decl: vec![OneofDescriptorProto {
+                name: Some("choice".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let oneof_idents = std::collections::HashMap::from([(0usize, format_ident!("Choice"))]);
+        let ordered = classify_fields_ordered(&msg, &oneof_idents).unwrap();
+        let got: Vec<_> = ordered.iter().map(kind_tag).collect();
+        assert_eq!(
+            got,
+            vec![
+                ("scalar", 1),
+                ("repeated", 2),
+                ("oneof", 5),
+                ("repeated", 7),
+                ("scalar", 8),
+            ]
+        );
+    }
+
+    #[test]
+    fn classify_positions_oneof_at_min_member_number() {
+        use crate::generated::descriptor::OneofDescriptorProto;
+        // Higher-numbered oneof member appears first in declaration order.
+        let hi = FieldDescriptorProto {
+            oneof_index: Some(0),
+            ..nfield("hi", 10, Type::TYPE_INT32, Label::LABEL_OPTIONAL)
+        };
+        let lo = FieldDescriptorProto {
+            oneof_index: Some(0),
+            ..nfield("lo", 3, Type::TYPE_INT32, Label::LABEL_OPTIONAL)
+        };
+        let msg = DescriptorProto {
+            field: vec![
+                hi,
+                nfield("mid", 5, Type::TYPE_INT32, Label::LABEL_OPTIONAL),
+                lo,
+            ],
+            oneof_decl: vec![OneofDescriptorProto {
+                name: Some("o".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let idents = std::collections::HashMap::from([(0usize, format_ident!("O"))]);
+        let got: Vec<_> = classify_fields_ordered(&msg, &idents)
+            .unwrap()
+            .iter()
+            .map(kind_tag)
+            .collect();
+        assert_eq!(got, vec![("oneof", 3), ("scalar", 5)]);
+    }
+
+    #[test]
+    fn classify_rejects_missing_field_number() {
+        let msg = DescriptorProto {
+            field: vec![FieldDescriptorProto {
+                name: Some("x".into()),
+                r#type: Some(Type::TYPE_INT32),
+                label: Some(Label::LABEL_OPTIONAL),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert!(matches!(
+            classify_fields_ordered(&msg, &Default::default()),
+            Err(CodeGenError::MissingField("field.number"))
+        ));
     }
 
     // ── is_explicit_presence_scalar ──────────────────────────────────────

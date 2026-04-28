@@ -266,6 +266,9 @@ impl ::buffa::Message for CodeGeneratorRequest {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
         let mut size = 0u32;
+        for v in &self.file_to_generate {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
         if let Some(ref v) = self.parameter {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
         }
@@ -276,9 +279,6 @@ impl ::buffa::Message for CodeGeneratorRequest {
             size
                 += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32
                     + inner_size;
-        }
-        for v in &self.file_to_generate {
-            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
         }
         for v in &self.proto_file {
             let __slot = __cache.reserve();
@@ -306,6 +306,14 @@ impl ::buffa::Message for CodeGeneratorRequest {
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        for v in &self.file_to_generate {
+            ::buffa::encoding::Tag::new(
+                    1u32,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
         if let Some(ref v) = self.parameter {
             ::buffa::encoding::Tag::new(
                     2u32,
@@ -322,14 +330,6 @@ impl ::buffa::Message for CodeGeneratorRequest {
                 .encode(buf);
             ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.compiler_version.write_to(__cache, buf);
-        }
-        for v in &self.file_to_generate {
-            ::buffa::encoding::Tag::new(
-                    1u32,
-                    ::buffa::encoding::WireType::LengthDelimited,
-                )
-                .encode(buf);
-            ::buffa::types::encode_string(v, buf);
         }
         for v in &self.proto_file {
             ::buffa::encoding::Tag::new(
@@ -362,6 +362,16 @@ impl ::buffa::Message for CodeGeneratorRequest {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
         match tag.field_number() {
+            1u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 1u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.file_to_generate.push(::buffa::types::decode_string(buf)?);
+            }
             2u32 => {
                 if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
                     return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
@@ -390,16 +400,6 @@ impl ::buffa::Message for CodeGeneratorRequest {
                     buf,
                     depth,
                 )?;
-            }
-            1u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 1u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
-                self.file_to_generate.push(::buffa::types::decode_string(buf)?);
             }
             15u32 => {
                 if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
@@ -433,9 +433,9 @@ impl ::buffa::Message for CodeGeneratorRequest {
         ::core::result::Result::Ok(())
     }
     fn clear(&mut self) {
+        self.file_to_generate.clear();
         self.parameter = ::core::option::Option::None;
         self.compiler_version = ::buffa::MessageField::none();
-        self.file_to_generate.clear();
         self.proto_file.clear();
         self.source_file_descriptors.clear();
         self.__buffa_unknown_fields.clear();
