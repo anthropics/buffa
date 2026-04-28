@@ -81,6 +81,12 @@ message BytesContexts {
   map<string, bytes> by_key = 6;
 }
 
+// Nested-message bytes_fields: locks in to_owned_from_source recursion
+// (the parent must thread __buffa_src into inner.to_owned_from_source).
+message BytesNested {
+  BytesContexts inner = 1;
+}
+
 // Message to test all numeric scalar types.
 message AllScalars {
   int32 f_int32 = 1;

@@ -103,8 +103,8 @@ fn test_bytes_type_repeated_view_to_owned() {
     assert_eq!(borrowed, vec![&b"a"[..], &b"bc"[..], &b""[..]]);
 
     // to_owned_message: Vec<&[u8]> → Vec<bytes::Bytes>.
-    // Generated: self.many.iter().map(|b| ::bytes::Bytes::copy_from_slice(*b)).collect()
-    // where b: &&[u8] so *b: &[u8].
+    // Generated: self.many.iter().map(|b| bytes_from_source(__buffa_src, b)).collect()
+    // where b: &&[u8]; the &[u8] arg auto-derefs.
     let owned: BytesContexts = view.to_owned_message();
     assert_eq!(owned.many.len(), 3);
     assert_eq!(&owned.many[0][..], b"a");
@@ -127,8 +127,8 @@ fn test_bytes_type_oneof_view_to_owned() {
 
     // to_owned_message: view oneof ChoiceView::Raw(&[u8]) → owned Choice::Raw(Bytes).
     // Generated: self.choice.as_ref().map(|v| match v {
-    //     ChoiceView::Raw(v) => Choice::Raw(::bytes::Bytes::copy_from_slice(*v)), ... })
-    // Match ergonomics: v in the arm is &&[u8], *v is &[u8].
+    //     ChoiceView::Raw(v) => Choice::Raw(bytes_from_source(__buffa_src, v)), ... })
+    // Match ergonomics: v in the arm is &&[u8]; the &[u8] arg auto-derefs.
     let owned: BytesContexts = view.to_owned_message();
     match &owned.choice {
         Some(ChoiceOneof::Raw(b)) => assert_eq!(&b[..], &[0x00, 0xFF, 0x7F]),
@@ -160,6 +160,72 @@ fn test_bytes_type_optional_view_to_owned() {
             "optional bytes {label} round-trip"
         );
     }
+}
+
+#[test]
+fn test_bytes_type_view_to_owned_from_source_zero_copy() {
+    // Issue #52: to_owned_from_source(Some(&buf)) must slice_ref into the
+    // source buffer for singular/optional/repeated/oneof bytes_fields.
+    use buffa::MessageView;
+    let msg = BytesContexts {
+        many: vec![bytes::Bytes::from_static(b"aaaa"), bytes::Bytes::new()],
+        maybe: Some(bytes::Bytes::from_static(b"bbbb")),
+        choice: Some(ChoiceOneof::Raw(bytes::Bytes::from_static(b"cccc"))),
+        ..Default::default()
+    };
+    let buf = bytes::Bytes::from(msg.encode_to_vec());
+    let in_buf = |p: *const u8| {
+        let r = buf.as_ptr() as usize..buf.as_ptr() as usize + buf.len();
+        r.contains(&(p as usize))
+    };
+
+    let view = BytesContextsView::decode_view(&buf).expect("decode_view");
+    let owned = view.to_owned_from_source(Some(&buf));
+
+    assert_eq!(&owned.many[0][..], b"aaaa");
+    assert!(
+        in_buf(owned.many[0].as_ptr()),
+        "repeated[0] should slice_ref"
+    );
+    assert!(owned.many[1].is_empty());
+    assert_eq!(owned.maybe.as_deref(), Some(&b"bbbb"[..]));
+    assert!(
+        in_buf(owned.maybe.as_ref().unwrap().as_ptr()),
+        "optional should slice_ref"
+    );
+    match &owned.choice {
+        Some(ChoiceOneof::Raw(b)) => {
+            assert_eq!(&b[..], b"cccc");
+            assert!(in_buf(b.as_ptr()), "oneof should slice_ref");
+        }
+        other => panic!("expected Choice::Raw, got {other:?}"),
+    }
+    assert_eq!(owned.encode_to_vec(), buf);
+}
+
+#[test]
+fn test_bytes_type_nested_to_owned_from_source_zero_copy() {
+    // Issue #52: __buffa_src must thread through nested-message recursion.
+    use crate::basic_bytes::__buffa::view::BytesNestedView;
+    use crate::basic_bytes::BytesNested;
+    use buffa::MessageView;
+    let msg = BytesNested {
+        inner: buffa::MessageField::some(BytesContexts {
+            singular: bytes::Bytes::from_static(b"nested-payload"),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let buf = bytes::Bytes::from(msg.encode_to_vec());
+    let view = BytesNestedView::decode_view(&buf).expect("decode_view");
+    let owned = view.to_owned_from_source(Some(&buf));
+    let inner_bytes = &owned.inner.singular;
+    assert_eq!(&inner_bytes[..], b"nested-payload");
+    let r = buf.as_ptr() as usize..buf.as_ptr() as usize + buf.len();
+    assert!(
+        r.contains(&(inner_bytes.as_ptr() as usize)),
+        "nested bytes field should slice_ref into parent buf"
+    );
 }
 
 // ── JSON: use_bytes_type() + generate_json(true) ─────────────────────────
