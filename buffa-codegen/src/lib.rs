@@ -81,6 +81,10 @@ pub fn allow_lints_attr() -> TokenStream {
 /// per-proto content kinds are reached transitively via `include!` from
 /// the stitcher. Write all files to disk; build a module tree from only
 /// the `PackageMod` ones.
+///
+/// With [`CodeGenConfig::file_per_package`] set, the per-proto content
+/// kinds are not emitted at all — the single `<dotted.pkg>.rs` (still
+/// kind `PackageMod`) inlines what the stitcher would `include!`.
 #[derive(Debug)]
 pub struct GeneratedFile {
     /// The output file path (e.g., `"my.pkg.foo.rs"` or `"my.pkg.mod.rs"`).
@@ -100,7 +104,8 @@ pub struct GeneratedFile {
 ///
 /// Build integrations only need to wire up [`PackageMod`](Self::PackageMod)
 /// entries — the per-proto content kinds are reached via `include!` from
-/// the stitcher and need only be written to disk alongside it.
+/// the stitcher and need only be written to disk alongside it. Under
+/// [`CodeGenConfig::file_per_package`] only `PackageMod` is emitted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GeneratedFileKind {
     /// Owned message structs and enums (`<stem>.rs`).
@@ -218,7 +223,9 @@ pub struct CodeGenConfig {
     /// Under `strategy: directory` this only sees one directory's files per
     /// invocation, so the input module must be `PACKAGE_DIRECTORY_MATCH`-clean
     /// (one package per directory) for the output to be complete. BSR-hosted
-    /// modules satisfy this by lint default.
+    /// modules satisfy this by lint default. If a package spans multiple
+    /// directories, separate invocations each emit their own `<pkg>.rs` and
+    /// the last write wins — silent partial output, not a codegen error.
     pub file_per_package: bool,
     /// Custom attributes to inject on generated types (messages and enums).
     ///
@@ -772,7 +779,7 @@ fn generate_package(
 
     out.push(GeneratedFile {
         name: if ctx.config.file_per_package {
-            package_filename(current_package)
+            package_to_filename(current_package)
         } else {
             package_to_mod_filename(current_package)
         },
@@ -898,7 +905,7 @@ pub fn package_to_mod_filename(package: &str) -> String {
 /// collision-avoidance as [`package_to_mod_filename`].
 ///
 /// [`file_per_package`]: CodeGenConfig::file_per_package
-pub fn package_filename(package: &str) -> String {
+pub fn package_to_filename(package: &str) -> String {
     if package.is_empty() {
         format!("{}.rs", context::SENTINEL_MOD)
     } else {
