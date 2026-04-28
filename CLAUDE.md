@@ -19,4 +19,11 @@ A quick check: `git status` after `task lint` — if `buffa-types/src/generated/
 
 ## Pre-Commit Code Review
 
-Before producing a commit, run the `rust-code-reviewer` agent (defined in `.claude/agents/rust-code-reviewer.md`) and address all **Critical**, **High**, and **Medium** findings. For **Low** / advisory findings, flag these to the user to decide if they are worth addressing or can be ignored.
+Before producing a commit, run **both** review agents in parallel (single message, two Agent tool calls):
+
+- `rust-code-reviewer` — correctness, safety, ownership/lifetimes, performance
+- `rust-api-ergonomics-reviewer` — downstream-consumer perspective: happy-path friction, lints that fire in user crates, runtime footguns, doc drift
+
+The two are complementary (different lenses on the same diff) and produce largely non-overlapping findings. Address all **Critical**, **High**, and **Medium** findings from both. For **Low** / advisory findings, flag these to the user to decide if they are worth addressing or can be ignored.
+
+For changes that touch only internal/test code with no public-API surface, the ergonomics reviewer may be skipped.
