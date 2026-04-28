@@ -107,8 +107,53 @@ pub trait MessageView<'a>: Sized {
 
     /// Convert this view to the owned message type.
     ///
-    /// This allocates and copies all borrowed fields.
+    /// This allocates and copies all borrowed fields. Equivalent to
+    /// [`to_owned_from_source(None)`](Self::to_owned_from_source).
     fn to_owned_message(&self) -> Self::Owned;
+
+    /// Convert this view to the owned message type, optionally slicing
+    /// `bytes::Bytes`-typed fields from `source` instead of copying.
+    ///
+    /// When `source` is the [`Bytes`] buffer this view was decoded from,
+    /// owned fields configured for `bytes::Bytes` (via the `bytes_fields`
+    /// codegen option) are produced via [`Bytes::slice_ref`] — a refcount
+    /// bump, no allocation or copy. Borrowed fields that fall outside
+    /// `source` (e.g. on a manually-constructed view) and the `None` case
+    /// fall back to [`Bytes::copy_from_slice`].
+    ///
+    /// Generated view types override this; the default delegates to
+    /// [`to_owned_message`](Self::to_owned_message) so hand-written impls
+    /// need only provide that method.
+    fn to_owned_from_source(&self, source: Option<&Bytes>) -> Self::Owned {
+        let _ = source;
+        self.to_owned_message()
+    }
+}
+
+/// Produce a [`Bytes`] for a borrowed slice, preferring a zero-copy
+/// [`Bytes::slice_ref`] into `source` when the slice lies within it.
+///
+/// Used by generated [`MessageView::to_owned_from_source`] for
+/// `bytes_fields`. Empty slices return [`Bytes::new`]; slices outside
+/// `source` (or `source = None`) fall back to [`Bytes::copy_from_slice`].
+#[doc(hidden)]
+#[inline]
+pub fn bytes_from_source(source: Option<&Bytes>, slice: &[u8]) -> Bytes {
+    if slice.is_empty() {
+        return Bytes::new();
+    }
+    if let Some(b) = source {
+        // Mirrors `slice_ref`'s own containment precondition so we fall back
+        // to copy (rather than panic) for slices outside `source`.
+        let b_start = b.as_ptr() as usize;
+        let b_end = b_start.wrapping_add(b.len());
+        let s_start = slice.as_ptr() as usize;
+        let s_end = s_start.wrapping_add(slice.len());
+        if s_start >= b_start && s_end <= b_end {
+            return b.slice_ref(slice);
+        }
+    }
+    Bytes::copy_from_slice(slice)
 }
 
 /// Serialize a [`MessageView`] directly from its borrowed fields.
@@ -872,9 +917,11 @@ where
 
     /// Convert the view to the corresponding owned message type.
     ///
-    /// This allocates and copies all borrowed fields.
+    /// `bytes::Bytes`-typed fields are produced via [`Bytes::slice_ref`]
+    /// into the retained buffer (zero-copy); other borrowed fields are
+    /// allocated and copied.
     pub fn to_owned_message(&self) -> V::Owned {
-        self.view.to_owned_message()
+        self.view.to_owned_from_source(Some(&self.bytes))
     }
 
     /// Get a reference to the underlying bytes buffer.
@@ -1240,6 +1287,50 @@ mod tests {
         assert_eq!(m.len(), 2);
         assert_eq!(m.get("a"), Some(&3)); // last value kept
         assert_eq!(m.get("b"), Some(&2));
+    }
+
+    // ── bytes_from_source ────────────────────────────────────────────────
+
+    #[test]
+    fn bytes_from_source_none_copies() {
+        let data: &[u8] = b"hello";
+        let out = bytes_from_source(None, data);
+        assert_eq!(&out[..], data);
+        assert_ne!(out.as_ptr(), data.as_ptr()); // distinct allocation
+    }
+
+    #[test]
+    fn bytes_from_source_some_within_is_slice_ref() {
+        let parent = Bytes::copy_from_slice(b"hello world");
+        let slice = &parent[6..11];
+        let out = bytes_from_source(Some(&parent), slice);
+        assert_eq!(&out[..], b"world");
+        // slice_ref shares the same backing storage — same pointer.
+        assert_eq!(out.as_ptr(), slice.as_ptr());
+    }
+
+    #[test]
+    fn bytes_from_source_some_outside_falls_back_to_copy() {
+        let parent = Bytes::copy_from_slice(b"hello");
+        let outside: &[u8] = b"world"; // static, not in `parent`
+        let out = bytes_from_source(Some(&parent), outside);
+        assert_eq!(&out[..], b"world");
+        assert_ne!(out.as_ptr(), outside.as_ptr());
+    }
+
+    #[test]
+    fn bytes_from_source_empty_returns_new() {
+        let parent = Bytes::copy_from_slice(b"hello");
+        assert!(bytes_from_source(Some(&parent), &[]).is_empty());
+        assert!(bytes_from_source(None, &[]).is_empty());
+    }
+
+    #[test]
+    fn bytes_from_source_full_range() {
+        let parent = Bytes::copy_from_slice(b"hello");
+        let out = bytes_from_source(Some(&parent), &parent[..]);
+        assert_eq!(out.as_ptr(), parent.as_ptr());
+        assert_eq!(out.len(), parent.len());
     }
 
     // ── UnknownFieldsView ────────────────────────────────────────────────

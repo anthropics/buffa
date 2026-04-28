@@ -137,17 +137,22 @@ impl<'a> ::buffa::MessageView<'a> for StructView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, depth)
     }
-    /// Convert this view to the owned message type.
-    #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    #[allow(clippy::needless_update)]
     fn to_owned_message(&self) -> super::super::Struct {
+        self.to_owned_from_source(None)
+    }
+    #[allow(clippy::useless_conversion, clippy::needless_update)]
+    fn to_owned_from_source(
+        &self,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
+    ) -> super::super::Struct {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
+        let _ = __buffa_src;
         super::super::Struct {
             fields: self
                 .fields
                 .iter()
-                .map(|(k, v)| (k.to_string(), v.to_owned_message()))
+                .map(|(k, v)| (k.to_string(), v.to_owned_from_source(__buffa_src)))
                 .collect(),
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields
@@ -423,12 +428,17 @@ impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, depth)
     }
-    /// Convert this view to the owned message type.
-    #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    #[allow(clippy::needless_update)]
     fn to_owned_message(&self) -> super::super::Value {
+        self.to_owned_from_source(None)
+    }
+    #[allow(clippy::useless_conversion, clippy::needless_update)]
+    fn to_owned_from_source(
+        &self,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
+    ) -> super::super::Value {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
+        let _ = __buffa_src;
         super::super::Value {
             kind: self
                 .kind
@@ -450,12 +460,16 @@ impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
                     }
                     super::super::__buffa::view::oneof::value::Kind::StructValue(v) => {
                         super::super::__buffa::oneof::value::Kind::StructValue(
-                            ::buffa::alloc::boxed::Box::new(v.to_owned_message()),
+                            ::buffa::alloc::boxed::Box::new(
+                                v.to_owned_from_source(__buffa_src),
+                            ),
                         )
                     }
                     super::super::__buffa::view::oneof::value::Kind::ListValue(v) => {
                         super::super::__buffa::oneof::value::Kind::ListValue(
-                            ::buffa::alloc::boxed::Box::new(v.to_owned_message()),
+                            ::buffa::alloc::boxed::Box::new(
+                                v.to_owned_from_source(__buffa_src),
+                            ),
                         )
                     }
                 }),
@@ -676,14 +690,23 @@ impl<'a> ::buffa::MessageView<'a> for ListValueView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_depth(buf, depth)
     }
-    /// Convert this view to the owned message type.
-    #[allow(clippy::redundant_closure, clippy::useless_conversion)]
-    #[allow(clippy::needless_update)]
     fn to_owned_message(&self) -> super::super::ListValue {
+        self.to_owned_from_source(None)
+    }
+    #[allow(clippy::useless_conversion, clippy::needless_update)]
+    fn to_owned_from_source(
+        &self,
+        __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
+    ) -> super::super::ListValue {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
+        let _ = __buffa_src;
         super::super::ListValue {
-            values: self.values.iter().map(|v| v.to_owned_message()).collect(),
+            values: self
+                .values
+                .iter()
+                .map(|v| v.to_owned_from_source(__buffa_src))
+                .collect(),
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields
                 .to_owned()
