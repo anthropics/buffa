@@ -242,13 +242,13 @@ enum FieldKind<'a> {
 fn classify_fields_ordered<'a>(
     msg: &'a DescriptorProto,
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
-) -> Vec<FieldKind<'a>> {
-    let mut entries: Vec<(i32, FieldKind<'a>)> = Vec::with_capacity(msg.field.len());
+) -> Result<Vec<FieldKind<'a>>, CodeGenError> {
+    let mut entries: Vec<(u32, FieldKind<'a>)> = Vec::with_capacity(msg.field.len());
     let mut seen_oneof: std::collections::HashSet<i32> = std::collections::HashSet::new();
     for f in &msg.field {
-        let number = f.number.unwrap_or(0);
+        let number = validated_field_number(f)?;
         if is_real_oneof_member(f) {
-            let idx = f.oneof_index.unwrap_or(0);
+            let idx = f.oneof_index.expect("checked by is_real_oneof_member");
             if !seen_oneof.insert(idx) {
                 continue;
             }
@@ -269,9 +269,8 @@ fn classify_fields_ordered<'a>(
                 .collect();
             let min_number = members
                 .iter()
-                .map(|m| m.number.unwrap_or(0))
-                .min()
-                .expect("members contains at least f");
+                .map(|m| validated_field_number(m))
+                .try_fold(number, |acc, n| Ok::<_, CodeGenError>(acc.min(n?)))?;
             entries.push((
                 min_number,
                 FieldKind::Oneof {
@@ -291,7 +290,7 @@ fn classify_fields_ordered<'a>(
         }
     }
     entries.sort_by_key(|(n, _)| *n);
-    entries.into_iter().map(|(_, k)| k).collect()
+    Ok(entries.into_iter().map(|(_, k)| k).collect())
 }
 
 /// True if `compute_size` / `write_to` for this message reference the
@@ -341,7 +340,7 @@ pub fn generate_message_impl(
 ) -> Result<TokenStream, CodeGenError> {
     let name_ident = format_ident!("{}", rust_name);
 
-    let fields = classify_fields_ordered(msg, oneof_idents);
+    let fields = classify_fields_ordered(msg, oneof_idents)?;
     let cache_ident = if message_uses_size_cache(ctx, msg, &fields, features) {
         format_ident!("__cache")
     } else {
@@ -620,7 +619,7 @@ pub(crate) fn build_view_encode_methods(
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
     view_oneof_prefix: &TokenStream,
 ) -> Result<TokenStream, CodeGenError> {
-    let fields = classify_fields_ordered(msg, oneof_idents);
+    let fields = classify_fields_ordered(msg, oneof_idents)?;
     let cache_ident = if message_uses_size_cache(ctx, msg, &fields, features) {
         format_ident!("__cache")
     } else {
@@ -2721,7 +2720,7 @@ mod tests {
             ..Default::default()
         };
         let oneof_idents = std::collections::HashMap::from([(0usize, format_ident!("Choice"))]);
-        let ordered = classify_fields_ordered(&msg, &oneof_idents);
+        let ordered = classify_fields_ordered(&msg, &oneof_idents).unwrap();
         let got: Vec<_> = ordered.iter().map(kind_tag).collect();
         assert_eq!(
             got,
@@ -2761,10 +2760,28 @@ mod tests {
         };
         let idents = std::collections::HashMap::from([(0usize, format_ident!("O"))]);
         let got: Vec<_> = classify_fields_ordered(&msg, &idents)
+            .unwrap()
             .iter()
             .map(kind_tag)
             .collect();
         assert_eq!(got, vec![("oneof", 3), ("scalar", 5)]);
+    }
+
+    #[test]
+    fn classify_rejects_missing_field_number() {
+        let msg = DescriptorProto {
+            field: vec![FieldDescriptorProto {
+                name: Some("x".into()),
+                r#type: Some(Type::TYPE_INT32),
+                label: Some(Label::LABEL_OPTIONAL),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert!(matches!(
+            classify_fields_ordered(&msg, &Default::default()),
+            Err(CodeGenError::MissingField("field.number"))
+        ));
     }
 
     // ── is_explicit_presence_scalar ──────────────────────────────────────
