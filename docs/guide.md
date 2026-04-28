@@ -362,6 +362,7 @@ Plugin options (passed via `opt:`):
 | `unknown_fields=false` | Disable unknown field preservation |
 | `arbitrary=true` | Emit `#[derive(arbitrary::Arbitrary)]` for fuzzing |
 | `extern_path=.pkg=::rust` | Map a proto package to an external Rust path |
+| `file_per_package=true` | Emit one `<dotted.package>.rs` per package instead of per-proto-file content + stitcher; intended for BSR generated SDKs. Under `strategy: directory`, requires the input module to be `PACKAGE_DIRECTORY_MATCH`-clean |
 
 **Remote plugin (planned):** Once published to the Buf Schema Registry, the plugin will be available as a remote plugin without requiring a local install:
 

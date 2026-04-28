@@ -136,6 +136,7 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                     codegen.strict_utf8_mapping = value.trim() == "true"
                 }
                 "register_types" => codegen.emit_register_fn = value.trim() != "false",
+                "file_per_package" => codegen.file_per_package = value.trim() == "true",
                 "extern_path" => {
                     // value is "<proto_path>=<rust_path>"
                     if let Some((proto, rust)) = value.split_once('=') {
@@ -214,6 +215,18 @@ mod tests {
     fn unknown_fields_true() {
         let config = parse_config("unknown_fields=true").unwrap();
         assert!(config.codegen.preserve_unknown_fields);
+    }
+
+    #[test]
+    fn file_per_package_true() {
+        let config = parse_config("file_per_package=true").unwrap();
+        assert!(config.codegen.file_per_package);
+    }
+
+    #[test]
+    fn file_per_package_default_is_false() {
+        let config = parse_config("").unwrap();
+        assert!(!config.codegen.file_per_package);
     }
 
     #[test]

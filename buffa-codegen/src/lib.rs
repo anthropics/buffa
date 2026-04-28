@@ -207,6 +207,19 @@ pub struct CodeGenConfig {
     /// not). The per-message `__*_JSON_ANY` / `__*_TEXT_ANY` consts are
     /// still emitted; only the aggregating fn is suppressed.
     pub emit_register_fn: bool,
+    /// Emit one `<dotted.package>.rs` per proto package instead of the
+    /// per-proto-file content set plus `<pkg>.mod.rs` stitcher.
+    ///
+    /// The single file inlines what the stitcher would otherwise `include!`,
+    /// producing the same `__buffa::{view,oneof,ext,...}` module structure.
+    /// Intended for Buf Schema Registry generated SDKs, whose `lib.rs`
+    /// synthesis builds the module tree from `<dotted.package>.rs` filenames.
+    ///
+    /// Under `strategy: directory` this only sees one directory's files per
+    /// invocation, so the input module must be `PACKAGE_DIRECTORY_MATCH`-clean
+    /// (one package per directory) for the output to be complete. BSR-hosted
+    /// modules satisfy this by lint default.
+    pub file_per_package: bool,
     /// Custom attributes to inject on generated types (messages and enums).
     ///
     /// Each entry is `(proto_path, attribute)`. The `proto_path` is matched
@@ -249,6 +262,7 @@ impl Default for CodeGenConfig {
             allow_message_set: false,
             generate_text: false,
             emit_register_fn: true,
+            file_per_package: false,
             type_attributes: Vec::new(),
             field_attributes: Vec::new(),
             message_attributes: Vec::new(),
@@ -650,8 +664,57 @@ fn generate_proto_content(
     })
 }
 
+/// Per-section token streams for one package, ready for the stitcher.
+///
+/// In per-file mode each section holds `include!("<stem>...rs")` calls; in
+/// `file_per_package` mode each holds the actual generated items.
+#[derive(Default)]
+struct PackageSections {
+    owned: Vec<TokenStream>,
+    view: Vec<TokenStream>,
+    oneof: Vec<TokenStream>,
+    view_oneof: Vec<TokenStream>,
+    ext: Vec<TokenStream>,
+}
+
+impl PackageSections {
+    /// Build sections of `include!` calls referencing per-file content.
+    ///
+    /// Paths are bare-sibling (no `OUT_DIR` prefix) so the same stitcher
+    /// works for both `OUT_DIR` builds (where the consumer's
+    /// `include_proto!` already prepended `OUT_DIR`) and checked-in code.
+    fn from_stems(stems: &[String]) -> Self {
+        let includes = |suffix: &str| -> Vec<TokenStream> {
+            stems
+                .iter()
+                .map(|stem| {
+                    let path = format!("{stem}{suffix}.rs");
+                    quote! { include!(#path); }
+                })
+                .collect()
+        };
+        Self {
+            owned: includes(""),
+            view: includes(".__view"),
+            oneof: includes(".__oneof"),
+            view_oneof: includes(".__view_oneof"),
+            ext: includes(".__ext"),
+        }
+    }
+
+    /// Append one proto file's generated items in-line.
+    fn push_inline(&mut self, pc: ProtoContent) {
+        self.owned.push(pc.owned);
+        self.view.push(pc.view);
+        self.oneof.push(pc.oneof);
+        self.view_oneof.push(pc.view_oneof);
+        self.ext.push(pc.ext);
+    }
+}
+
 /// Generate all output files for one proto package: five content files per
-/// `.proto` plus one `<pkg>.mod.rs` stitcher.
+/// `.proto` plus one `<pkg>.mod.rs` stitcher, or a single `<pkg>.rs` when
+/// [`CodeGenConfig::file_per_package`] is set.
 fn generate_package(
     ctx: &context::CodeGenContext,
     current_package: &str,
@@ -662,74 +725,79 @@ fn generate_package(
     // `__buffa::register_types` (one level deep), so each path gets a
     // single `super::` prefix when emitted into the fn body.
     let mut reg = message::RegistryPaths::default();
-    let mut stems: Vec<String> = Vec::new();
 
-    for file in files {
-        let pc = generate_proto_content(ctx, current_package, file, &mut reg)?;
-        let source = file.name.as_deref().unwrap_or("");
-        let push = |out: &mut Vec<GeneratedFile>,
-                    suffix: &str,
-                    kind: GeneratedFileKind,
-                    tokens: TokenStream|
-         -> Result<(), CodeGenError> {
-            out.push(GeneratedFile {
-                name: format!("{}{suffix}.rs", pc.stem),
-                package: current_package.to_string(),
-                kind,
-                content: format_tokens(tokens, source)?,
-            });
-            Ok(())
-        };
-        push(out, "", GeneratedFileKind::Owned, pc.owned)?;
-        push(out, ".__view", GeneratedFileKind::View, pc.view)?;
-        push(out, ".__oneof", GeneratedFileKind::Oneof, pc.oneof)?;
-        push(
-            out,
-            ".__view_oneof",
-            GeneratedFileKind::ViewOneof,
-            pc.view_oneof,
-        )?;
-        push(out, ".__ext", GeneratedFileKind::Ext, pc.ext)?;
-        stems.push(pc.stem);
-    }
+    let sections = if ctx.config.file_per_package {
+        let mut sections = PackageSections::default();
+        for file in files {
+            sections.push_inline(generate_proto_content(
+                ctx,
+                current_package,
+                file,
+                &mut reg,
+            )?);
+        }
+        sections
+    } else {
+        let mut stems: Vec<String> = Vec::new();
+        for file in files {
+            let pc = generate_proto_content(ctx, current_package, file, &mut reg)?;
+            let source = file.name.as_deref().unwrap_or("");
+            let push = |out: &mut Vec<GeneratedFile>,
+                        suffix: &str,
+                        kind: GeneratedFileKind,
+                        tokens: TokenStream|
+             -> Result<(), CodeGenError> {
+                out.push(GeneratedFile {
+                    name: format!("{}{suffix}.rs", pc.stem),
+                    package: current_package.to_string(),
+                    kind,
+                    content: format_tokens(tokens, source)?,
+                });
+                Ok(())
+            };
+            push(out, "", GeneratedFileKind::Owned, pc.owned)?;
+            push(out, ".__view", GeneratedFileKind::View, pc.view)?;
+            push(out, ".__oneof", GeneratedFileKind::Oneof, pc.oneof)?;
+            push(
+                out,
+                ".__view_oneof",
+                GeneratedFileKind::ViewOneof,
+                pc.view_oneof,
+            )?;
+            push(out, ".__ext", GeneratedFileKind::Ext, pc.ext)?;
+            stems.push(pc.stem);
+        }
+        PackageSections::from_stems(&stems)
+    };
 
     out.push(GeneratedFile {
-        name: package_to_mod_filename(current_package),
+        name: if ctx.config.file_per_package {
+            package_filename(current_package)
+        } else {
+            package_to_mod_filename(current_package)
+        },
         package: current_package.to_string(),
         kind: GeneratedFileKind::PackageMod,
-        content: generate_package_mod(ctx, &stems, &reg)?,
+        content: generate_package_mod(ctx, &sections, &reg)?,
     });
 
     Ok(())
 }
 
-/// Render the per-package `<pkg>.mod.rs` stitcher.
-///
-/// `include!` paths are bare-sibling (no `OUT_DIR` prefix) so the same
-/// stitcher works for both `OUT_DIR` builds (where the consumer's
-/// `include_proto!` already prepended `OUT_DIR`) and checked-in code.
+/// Render the per-package stitcher: owned items at root plus the
+/// `__buffa::{view,oneof,ext,...}` module wrappers.
 fn generate_package_mod(
     ctx: &context::CodeGenContext,
-    stems: &[String],
+    sections: &PackageSections,
     reg: &message::RegistryPaths,
 ) -> Result<String, CodeGenError> {
     use crate::idents::make_field_ident;
 
-    let includes = |suffix: &str| -> Vec<TokenStream> {
-        stems
-            .iter()
-            .map(|stem| {
-                let path = format!("{stem}{suffix}.rs");
-                quote! { include!(#path); }
-            })
-            .collect()
-    };
-
-    let owned = includes("");
-    let view = includes(".__view");
-    let view_oneof = includes(".__view_oneof");
-    let oneof = includes(".__oneof");
-    let ext = includes(".__ext");
+    let owned = &sections.owned;
+    let view = &sections.view;
+    let view_oneof = &sections.view_oneof;
+    let oneof = &sections.oneof;
+    let ext = &sections.ext;
 
     let view_mod = if ctx.config.generate_views {
         quote! {
@@ -820,6 +888,21 @@ pub fn package_to_mod_filename(package: &str) -> String {
         format!("{}.mod.rs", context::SENTINEL_MOD)
     } else {
         format!("{package}.mod.rs")
+    }
+}
+
+/// Convert a proto package name to its [`file_per_package`] output filename.
+///
+/// e.g., `"google.protobuf"` → `"google.protobuf.rs"`. The unnamed
+/// package uses [`SENTINEL_MOD`](context::SENTINEL_MOD) — same
+/// collision-avoidance as [`package_to_mod_filename`].
+///
+/// [`file_per_package`]: CodeGenConfig::file_per_package
+pub fn package_filename(package: &str) -> String {
+    if package.is_empty() {
+        format!("{}.rs", context::SENTINEL_MOD)
+    } else {
+        format!("{package}.rs")
     }
 }
 

@@ -121,6 +121,127 @@ fn test_multi_file_same_package_merged() {
 }
 
 #[test]
+fn test_package_filename() {
+    assert_eq!(package_filename("google.protobuf"), "google.protobuf.rs");
+    assert_eq!(package_filename("foo"), "foo.rs");
+    assert_eq!(package_filename(""), "__buffa.rs");
+}
+
+/// Two `.proto` files in `shared.pkg`, each with one message — used by both
+/// the per-file `test_multi_file_same_package_merged` above and the
+/// `file_per_package` tests below.
+fn shared_pkg_fixture() -> ([FileDescriptorProto; 2], [String; 2]) {
+    let mut a = proto3_file("a.proto");
+    a.package = Some("shared.pkg".to_string());
+    a.message_type.push(DescriptorProto {
+        name: Some("A".to_string()),
+        ..Default::default()
+    });
+    let mut b = proto3_file("b.proto");
+    b.package = Some("shared.pkg".to_string());
+    b.message_type.push(DescriptorProto {
+        name: Some("B".to_string()),
+        ..Default::default()
+    });
+    ([a, b], ["a.proto".to_string(), "b.proto".to_string()])
+}
+
+#[test]
+fn test_file_per_package_multi_file() {
+    let (descs, names) = shared_pkg_fixture();
+    let config = CodeGenConfig {
+        file_per_package: true,
+        ..Default::default()
+    };
+    let files = generate(&descs, &names, &config).expect("file_per_package should generate");
+    // Exactly one output file for the package — no per-proto content files.
+    assert_eq!(files.len(), 1, "expected single per-package file");
+    let pkg = &files[0];
+    assert_eq!(pkg.name, "shared.pkg.rs");
+    assert_eq!(pkg.kind, GeneratedFileKind::PackageMod);
+    // Both messages inlined; no `include!` calls.
+    assert!(pkg.content.contains("pub struct A"));
+    assert!(pkg.content.contains("pub struct B"));
+    assert!(
+        !pkg.content.contains("include!"),
+        "per-package file must inline content, not include! per-file outputs"
+    );
+    // Same `__buffa` module wrappers as the per-file stitcher.
+    assert_eq!(pkg.content.matches("pub mod __buffa {").count(), 1);
+    assert!(pkg.content.contains("pub mod view {"));
+    assert!(pkg.content.contains("pub mod oneof {"));
+    assert!(pkg.content.contains("pub mod ext {"));
+}
+
+#[test]
+fn test_file_per_package_module_structure_matches_stitcher() {
+    // The single-file output's module structure must be identical to what
+    // the per-file stitcher produces after `include!` resolution, so
+    // consumers see the same API regardless of mode.
+    let (descs, names) = shared_pkg_fixture();
+    let per_file = generate(&descs, &names, &CodeGenConfig::default()).unwrap();
+    let stitcher = per_file
+        .iter()
+        .find(|f| f.kind == GeneratedFileKind::PackageMod)
+        .unwrap();
+    let per_package = generate(
+        &descs,
+        &names,
+        &CodeGenConfig {
+            file_per_package: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let pkg = &per_package[0];
+    // The set of `pub mod ` declarations is identical between the stitcher
+    // and the inlined file. (View structs etc. differ only in being
+    // `include!`d vs inlined inside those modules.)
+    let mod_decls = |s: &str| -> Vec<String> {
+        s.lines()
+            .filter(|l| l.trim_start().starts_with("pub mod "))
+            .map(|l| l.trim().to_string())
+            .collect()
+    };
+    assert_eq!(mod_decls(&stitcher.content), mod_decls(&pkg.content));
+}
+
+#[test]
+fn test_file_per_package_unnamed_package() {
+    let file = proto3_file("noname.proto");
+    let config = CodeGenConfig {
+        file_per_package: true,
+        ..Default::default()
+    };
+    let files = generate(&[file], &["noname.proto".to_string()], &config)
+        .expect("unnamed package should generate");
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].name, "__buffa.rs");
+}
+
+#[test]
+fn test_file_per_package_multiple_packages() {
+    // Each package gets exactly one file.
+    let mut a = proto3_file("a.proto");
+    a.package = Some("alpha".to_string());
+    let mut b = proto3_file("b.proto");
+    b.package = Some("beta".to_string());
+    let config = CodeGenConfig {
+        file_per_package: true,
+        ..Default::default()
+    };
+    let files = generate(
+        &[a, b],
+        &["a.proto".to_string(), "b.proto".to_string()],
+        &config,
+    )
+    .expect("multi-package should generate");
+    assert_eq!(files.len(), 2);
+    let names: Vec<_> = files.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(names, &["alpha.rs", "beta.rs"]);
+}
+
+#[test]
 fn test_child_package_named_view_no_collision() {
     // Regression: under the pre-sentinel design, `package foo.view`
     // emitted `pub mod view { ... }` (child package) as a sibling of the
