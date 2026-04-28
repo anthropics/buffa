@@ -752,7 +752,7 @@ fn inline_bytes_field_mapping() {
         &config,
     );
     assert!(
-        content.contains("::bytes::Bytes"),
+        content.contains("::buffa::bytes::Bytes"),
         "bytes fields should use Bytes type: {content}"
     );
     assert!(
@@ -762,7 +762,8 @@ fn inline_bytes_field_mapping() {
     // Regression: decode path must convert Vec<u8> -> Bytes (not call
     // merge_bytes which expects &mut Vec<u8>).
     assert!(
-        content.contains("::bytes::Bytes::from(::buffa::types::decode_bytes"),
+        content.contains("::buffa::bytes::Bytes::from(")
+            && content.contains("::buffa::types::decode_bytes"),
         "decode must wrap decode_bytes in Bytes::from: {content}"
     );
     assert!(
@@ -788,7 +789,7 @@ fn inline_bytes_field_selective_mapping() {
     );
     // Only `data` should use Bytes; `other` should remain Vec<u8>.
     assert!(
-        content.contains("::bytes::Bytes"),
+        content.contains("::buffa::bytes::Bytes"),
         "selected field should use Bytes: {content}"
     );
     assert!(

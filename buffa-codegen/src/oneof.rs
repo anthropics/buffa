@@ -52,7 +52,7 @@ pub(crate) fn is_boxed_variant(ty: Type) -> bool {
 struct VariantInfo {
     variant_ident: proc_macro2::Ident,
     /// When `bytes_fields` config matches a bytes variant this is
-    /// `::bytes::Bytes`, not `Vec<u8>` — see `collect_variant_info`.
+    /// `::buffa::bytes::Bytes`, not `Vec<u8>` — see `collect_variant_info`.
     rust_type: TokenStream,
     json_name: String,
     field_type: Type,
@@ -113,7 +113,7 @@ fn collect_variant_info(
             // msg_nesting, so the enum body sits at `nesting + 3`.
             let rust_type =
                 if field_type == Type::TYPE_BYTES && field_uses_bytes(ctx, proto_fqn, proto_name) {
-                    quote! { ::bytes::Bytes }
+                    quote! { ::buffa::bytes::Bytes }
                 } else {
                     scalar_or_message_type_nested(
                         ctx,

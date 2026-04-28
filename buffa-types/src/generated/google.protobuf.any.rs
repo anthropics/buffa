@@ -135,7 +135,7 @@ pub struct Any {
     /// Must be a valid serialized protocol buffer of the above specified type.
     ///
     /// Field 2: `value`
-    pub value: ::bytes::Bytes,
+    pub value: ::buffa::bytes::Bytes,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
 }
@@ -234,7 +234,9 @@ impl ::buffa::Message for Any {
                         actual: tag.wire_type() as u8,
                     });
                 }
-                self.value = ::bytes::Bytes::from(::buffa::types::decode_bytes(buf)?);
+                self.value = ::buffa::bytes::Bytes::from(
+                    ::buffa::types::decode_bytes(buf)?,
+                );
             }
             _ => {
                 self.__buffa_unknown_fields
@@ -245,7 +247,7 @@ impl ::buffa::Message for Any {
     }
     fn clear(&mut self) {
         self.type_url.clear();
-        self.value = ::bytes::Bytes::new();
+        self.value = ::buffa::bytes::Bytes::new();
         self.__buffa_unknown_fields.clear();
     }
 }

@@ -602,7 +602,7 @@ fn scalar_merge_arm(
     // Bytes: `read_bytes()` returns `Vec<u8>`; `bytes::Bytes: From<Vec<u8>>`.
     let read = match ty {
         Type::TYPE_STRING => quote! { dec.read_string()?.into_owned() },
-        Type::TYPE_BYTES if use_bytes => quote! { ::bytes::Bytes::from(dec.read_bytes()?) },
+        Type::TYPE_BYTES if use_bytes => quote! { ::buffa::bytes::Bytes::from(dec.read_bytes()?) },
         _ => read_call(ty),
     };
     Ok(if explicit {
@@ -685,7 +685,7 @@ fn repeated_merge_arm(
             quote! { ::core::result::Result::Ok(__d.read_string()?.into_owned()) }
         }
         Type::TYPE_BYTES if use_bytes => {
-            quote! { ::core::result::Result::Ok(::bytes::Bytes::from(__d.read_bytes()?)) }
+            quote! { ::core::result::Result::Ok(::buffa::bytes::Bytes::from(__d.read_bytes()?)) }
         }
         Type::TYPE_BYTES => {
             quote! { __d.read_bytes() }
@@ -838,7 +838,7 @@ fn oneof_merge_arms(
             },
             Type::TYPE_BYTES => {
                 let read = if use_bytes {
-                    quote! { ::bytes::Bytes::from(dec.read_bytes()?) }
+                    quote! { ::buffa::bytes::Bytes::from(dec.read_bytes()?) }
                 } else {
                     quote! { dec.read_bytes()? }
                 };
