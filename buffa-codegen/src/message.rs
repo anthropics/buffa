@@ -981,7 +981,7 @@ fn custom_deser_oneof_group(
         let variant_type = if field_type == Type::TYPE_BYTES
             && crate::impl_message::field_uses_bytes(ctx, proto_fqn, proto_name)
         {
-            quote! { ::bytes::Bytes }
+            quote! { ::buffa::bytes::Bytes }
         } else {
             scalar_or_message_type_nested(ctx, field, current_package, nesting, features, resolver)?
         };
@@ -1089,7 +1089,7 @@ fn classify_field(
     let use_bytes = field_type == Type::TYPE_BYTES && ctx.use_bytes_type(&field_fqn);
 
     let bytes_type = if use_bytes {
-        quote! { ::bytes::Bytes }
+        quote! { ::buffa::bytes::Bytes }
     } else {
         let vec = resolver.vec();
         quote! { #vec<u8> }
