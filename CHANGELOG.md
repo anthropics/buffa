@@ -13,6 +13,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   Any other command-line argument prints a "this is a protoc plugin" hint
   to stderr and exits non-zero.
 
+- `buffa::types::decode_bytes_to_bytes` reads a length-delimited `bytes` field
+  into a `bytes::Bytes` via `Buf::copy_to_bytes`. When decoding from a
+  `Bytes`-backed buffer this is a zero-copy refcount bump. Generated
+  `merge_field` arms for `bytes_fields`-tagged fields (singular, optional,
+  repeated, and oneof) now use it instead of `Bytes::from(decode_bytes(..)?)`,
+  eliminating one allocation + memcpy per field on the owned decode path. Note
+  that in the zero-copy case the resulting field aliases the source
+  allocation, so the source buffer is freed only once every aliased field is
+  dropped. Consumers with checked-in generated code must regenerate to pick
+  this up. ([#53](https://github.com/anthropics/buffa/issues/53))
+
 ### Fixed
 
 - `write_to` now emits fields in ascending field-number order regardless of

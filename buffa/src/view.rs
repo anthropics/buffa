@@ -146,11 +146,14 @@ pub fn bytes_from_source(source: Option<&Bytes>, slice: &[u8]) -> Bytes {
         // Mirrors `slice_ref`'s own containment precondition so we fall back
         // to copy (rather than panic) for slices outside `source`.
         let b_start = b.as_ptr() as usize;
-        let b_end = b_start.wrapping_add(b.len());
         let s_start = slice.as_ptr() as usize;
-        let s_end = s_start.wrapping_add(slice.len());
-        if s_start >= b_start && s_end <= b_end {
-            return b.slice_ref(slice);
+        if let (Some(b_end), Some(s_end)) = (
+            b_start.checked_add(b.len()),
+            s_start.checked_add(slice.len()),
+        ) {
+            if s_start >= b_start && s_end <= b_end {
+                return b.slice_ref(slice);
+            }
         }
     }
     Bytes::copy_from_slice(slice)

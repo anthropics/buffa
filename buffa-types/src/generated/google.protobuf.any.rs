@@ -234,9 +234,7 @@ impl ::buffa::Message for Any {
                         actual: tag.wire_type() as u8,
                     });
                 }
-                self.value = ::buffa::bytes::Bytes::from(
-                    ::buffa::types::decode_bytes(buf)?,
-                );
+                self.value = ::buffa::types::decode_bytes_to_bytes(buf)?;
             }
             _ => {
                 self.__buffa_unknown_fields
