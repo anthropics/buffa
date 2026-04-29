@@ -76,7 +76,46 @@ impl Filter {
     }
 }
 
+const HELP: &str = "\
+protoc-gen-buffa-packaging — emits a mod.rs module tree for buffa output.
+
+This binary speaks the protoc plugin protocol: it reads a serialized
+CodeGeneratorRequest from stdin and writes a CodeGeneratorResponse to
+stdout. It is not intended to be invoked directly. Use it via buf or
+protoc alongside protoc-gen-buffa:
+
+  # buf.gen.yaml
+  plugins:
+    - local: protoc-gen-buffa
+      out: src/gen
+    - local: protoc-gen-buffa-packaging
+      out: src/gen
+      strategy: all
+
+Options (default: include every package in file_to_generate):
+  filter=services   only include packages declaring at least one service";
+
 fn main() {
+    if let Some(arg) = std::env::args().nth(1) {
+        match arg.as_str() {
+            "--version" | "-V" => {
+                println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+                return;
+            }
+            "--help" | "-h" => {
+                println!("{HELP}");
+                return;
+            }
+            other => {
+                eprintln!(
+                    "{}: unrecognized argument {other:?}. This is a protoc \
+                     plugin; run with --help for usage.",
+                    env!("CARGO_PKG_NAME")
+                );
+                std::process::exit(2);
+            }
+        }
+    }
     match run() {
         Ok(()) => {}
         Err(e) => {

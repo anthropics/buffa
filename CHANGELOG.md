@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `protoc-gen-buffa` and `protoc-gen-buffa-packaging` now respond to
+  `--version` / `-V` and `--help` / `-h` instead of blocking on stdin.
+  Any other command-line argument prints a "this is a protoc plugin" hint
+  to stderr and exits non-zero.
+
 ### Fixed
 
 - `write_to` now emits fields in ascending field-number order regardless of

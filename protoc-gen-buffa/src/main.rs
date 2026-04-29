@@ -6,7 +6,7 @@
 //! 3. Write a serialized `CodeGeneratorResponse` to stdout.
 //!
 //! Usage:
-//!   protoc --buffa_out=. --plugin=protoc-gen-buffa my_service.proto
+//!   protoc --buffa_out=. my_service.proto
 //!
 //! Or with buf:
 //!   # buf.gen.yaml
@@ -23,7 +23,54 @@ use buffa_codegen::generated::descriptor::Edition;
 
 use buffa_codegen::CodeGenConfig;
 
+const HELP: &str = "\
+protoc-gen-buffa — protoc plugin for generating Rust code with buffa.
+
+This binary speaks the protoc plugin protocol: it reads a serialized
+CodeGeneratorRequest from stdin and writes a CodeGeneratorResponse to
+stdout. It is not intended to be invoked directly. Use it via protoc
+or buf (with this binary on PATH):
+
+  protoc --buffa_out=. my_service.proto
+
+  # buf.gen.yaml
+  plugins:
+    - local: protoc-gen-buffa
+      out: src/gen
+
+To point protoc at a binary not on PATH, use
+  --plugin=protoc-gen-buffa=/abs/path/to/protoc-gen-buffa
+
+For a generated mod.rs module tree, also configure
+protoc-gen-buffa-packaging.
+
+Options are passed as a comma-separated parameter string, e.g.
+  --buffa_opt=views=true,json=true,extern_path=.my.pkg=::my_crate
+
+See <https://github.com/anthropics/buffa/blob/main/docs/guide.md> for
+the full option list.";
+
 fn main() {
+    if let Some(arg) = std::env::args().nth(1) {
+        match arg.as_str() {
+            "--version" | "-V" => {
+                println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+                return;
+            }
+            "--help" | "-h" => {
+                println!("{HELP}");
+                return;
+            }
+            other => {
+                eprintln!(
+                    "{}: unrecognized argument {other:?}. This is a protoc \
+                     plugin; run with --help for usage.",
+                    env!("CARGO_PKG_NAME")
+                );
+                std::process::exit(2);
+            }
+        }
+    }
     match run() {
         Ok(()) => {}
         Err(e) => {
