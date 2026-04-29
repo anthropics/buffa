@@ -283,6 +283,13 @@ From crates.io (recommended):
 cargo install --locked protoc-gen-buffa protoc-gen-buffa-packaging
 ```
 
+`cargo install` builds with its own default release profile, so the workspace's `lto = true` / `codegen-units = 1` settings (used for the prebuilt release binaries below) are not applied. For the smallest binary, set them via the environment:
+
+```sh
+CARGO_PROFILE_RELEASE_LTO=true CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 \
+    cargo install --locked protoc-gen-buffa protoc-gen-buffa-packaging
+```
+
 Or from a git ref, for unreleased changes:
 
 ```sh

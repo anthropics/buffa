@@ -13,6 +13,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   Any other command-line argument prints a "this is a protoc plugin" hint
   to stderr and exits non-zero.
 
+### Changed
+
+- The workspace `[profile.release]` now sets `lto = true` and
+  `codegen-units = 1`. This shrinks the prebuilt `protoc-gen-buffa` /
+  `protoc-gen-buffa-packaging` release binaries by roughly 20% at the cost of
+  ~2× clean release-build time. Cargo only honors profile sections from the
+  top-level workspace, so library consumers of `buffa` / `buffa-build` do not
+  inherit this — set `[profile.release]` in your own workspace (or
+  `CARGO_PROFILE_RELEASE_LTO=true` for `cargo install`) to get the same
+  benefit. ([#60](https://github.com/anthropics/buffa/issues/60))
+
 ### Fixed
 
 - `write_to` now emits fields in ascending field-number order regardless of
