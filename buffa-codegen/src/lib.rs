@@ -888,7 +888,7 @@ fn format_tokens(tokens: TokenStream, source: &str) -> Result<String, CodeGenErr
 /// e.g., `"google.protobuf"` → `"google.protobuf.mod.rs"`. The unnamed
 /// package uses the [`SENTINEL_MOD`](context::SENTINEL_MOD) name as its
 /// filename stem — `package __buffa;` is already rejected by
-/// [`validate_file`], so the unnamed-package stitcher cannot
+/// `validate_file`, so the unnamed-package stitcher cannot
 /// collide with any real package's.
 pub fn package_to_mod_filename(package: &str) -> String {
     if package.is_empty() {
