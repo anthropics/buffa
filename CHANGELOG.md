@@ -15,6 +15,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `buffa-types --features arbitrary` now compiles. `Any.value` is
+  `bytes::Bytes` (since 0.4.0 / #51), which has no `Arbitrary` impl.
+  A `::buffa::__private::arbitrary_bytes` helper is now emitted as
+  `#[arbitrary(with = ...)]` on singular `bytes_fields`-typed struct
+  fields and oneof variants when `generate_arbitrary = true`, so the
+  struct-level `derive(Arbitrary)` succeeds. The same fix covers any
+  user crate that uses `bytes_fields` + `generate_arbitrary` on singular
+  bytes fields. `cargo doc --workspace --all-features` and
+  `cargo clippy --workspace --all-features` are also unblocked.
+  ([#88](https://github.com/anthropics/buffa/issues/88))
+
 - `write_to` now emits fields in ascending field-number order regardless of
   cardinality (singular / repeated / map / oneof), matching prost,
   protoc-C++, and the spec's serialize-in-field-order recommendation.

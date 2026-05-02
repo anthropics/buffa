@@ -238,6 +238,53 @@ pub mod __private {
     pub use hashbrown::HashMap;
     #[cfg(feature = "std")]
     pub use std::collections::HashMap;
+
+    /// `arbitrary` helpers for `bytes::Bytes` fields generated with `bytes_fields`.
+    ///
+    /// `bytes::Bytes` has no `Arbitrary` impl. Generated code attaches
+    /// `#[arbitrary(with = ::buffa::__private::arbitrary_bytes*)]` to
+    /// `bytes_fields`-typed fields so the struct-level `#[derive(Arbitrary)]`
+    /// can still be used. The three variants cover singular, optional, and
+    /// repeated bytes fields respectively.
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_bytes(
+        u: &mut ::arbitrary::Unstructured<'_>,
+    ) -> ::arbitrary::Result<::bytes::Bytes> {
+        let v: ::alloc::vec::Vec<u8> = ::arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(::bytes::Bytes::from(v))
+    }
+
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_bytes_opt(
+        u: &mut ::arbitrary::Unstructured<'_>,
+    ) -> ::arbitrary::Result<::core::option::Option<::bytes::Bytes>> {
+        let opt: ::core::option::Option<::alloc::vec::Vec<u8>> =
+            ::arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(opt.map(::bytes::Bytes::from))
+    }
+
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_bytes_vec(
+        u: &mut ::arbitrary::Unstructured<'_>,
+    ) -> ::arbitrary::Result<::alloc::vec::Vec<::bytes::Bytes>> {
+        let vv: ::alloc::vec::Vec<::alloc::vec::Vec<u8>> = ::arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(vv.into_iter().map(::bytes::Bytes::from).collect())
+    }
+}
+
+#[cfg(all(test, feature = "arbitrary"))]
+mod arbitrary_tests {
+    #[test]
+    fn arbitrary_bytes_produces_bytes() {
+        use arbitrary::Unstructured;
+        let raw = [0u8; 32];
+        let mut u = Unstructured::new(&raw);
+        let b = super::__private::arbitrary_bytes(&mut u).unwrap();
+        // Output must be bounded by the input buffer size.
+        assert!(b.len() <= raw.len());
+        // Must be a real Bytes — slice(..) is a Bytes-specific operation.
+        let _ = b.slice(..);
+    }
 }
 
 /// Minimal fixture types for compile-checking doc examples.

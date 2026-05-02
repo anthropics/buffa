@@ -135,6 +135,10 @@ pub struct Any {
     /// Must be a valid serialized protocol buffer of the above specified type.
     ///
     /// Field 2: `value`
+    #[cfg_attr(
+        feature = "arbitrary",
+        arbitrary(with = ::buffa::__private::arbitrary_bytes)
+    )]
     pub value: ::buffa::bytes::Bytes,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
