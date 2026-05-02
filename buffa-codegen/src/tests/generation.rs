@@ -1780,3 +1780,147 @@ fn doubly_nested_message_paths_use_correct_nesting() {
          with 4 supers in Inner's module.\nGenerated code:\n{content}"
     );
 }
+
+#[test]
+fn apply_extensions_patches_stitcher() {
+    let mut file = proto3_file("svc/echo.proto");
+    file.package = Some("svc".to_string());
+    let mut files = generate(
+        &[file],
+        &["svc/echo.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("generate ok");
+
+    let stem = proto_path_to_stem("svc/echo.proto");
+    let ext = GeneratedFile {
+        name: format!("{stem}.__service.rs"),
+        package: "svc".to_string(),
+        kind: GeneratedFileKind::Extension,
+        content: "pub struct EchoService;".to_string(),
+    };
+    apply_extensions(&mut files, vec![ext]);
+
+    // Extension file was appended to the list.
+    assert!(
+        files
+            .iter()
+            .any(|f| f.kind == GeneratedFileKind::Extension && f.name == "svc.echo.__service.rs"),
+        "extension file missing from output"
+    );
+
+    // Stitcher now includes the extension file.
+    let stitcher = files
+        .iter()
+        .find(|f| f.kind == GeneratedFileKind::PackageMod)
+        .expect("stitcher present");
+    assert!(
+        stitcher
+            .content
+            .contains(r#"include!("svc.echo.__service.rs");"#),
+        "stitcher missing extension include: {}",
+        stitcher.content
+    );
+
+    // Stitcher is still valid Rust after the include! was appended.
+    syn::parse_file(&stitcher.content).expect("stitcher still parses after apply_extensions");
+}
+
+#[test]
+fn apply_extensions_multiple_same_package() {
+    let mut file = proto3_file("acme/v1/msg.proto");
+    file.package = Some("acme.v1".to_string());
+    let mut files = generate(
+        &[file],
+        &["acme/v1/msg.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("generate ok");
+
+    let stem = proto_path_to_stem("acme/v1/msg.proto");
+    let exts = vec![
+        GeneratedFile {
+            name: format!("{stem}.__service_a.rs"),
+            package: "acme.v1".to_string(),
+            kind: GeneratedFileKind::Extension,
+            content: "pub struct ServiceA;".to_string(),
+        },
+        GeneratedFile {
+            name: format!("{stem}.__service_b.rs"),
+            package: "acme.v1".to_string(),
+            kind: GeneratedFileKind::Extension,
+            content: "pub struct ServiceB;".to_string(),
+        },
+    ];
+    apply_extensions(&mut files, exts);
+
+    let stitcher = files
+        .iter()
+        .find(|f| f.kind == GeneratedFileKind::PackageMod)
+        .expect("stitcher present");
+    assert!(
+        stitcher
+            .content
+            .contains(r#"include!("acme.v1.msg.__service_a.rs");"#),
+        "missing service_a include"
+    );
+    assert!(
+        stitcher
+            .content
+            .contains(r#"include!("acme.v1.msg.__service_b.rs");"#),
+        "missing service_b include"
+    );
+    assert_eq!(
+        files
+            .iter()
+            .filter(|f| f.kind == GeneratedFileKind::Extension)
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn apply_extensions_no_matching_package_mod() {
+    // Extension file for a package with no PackageMod in `files` —
+    // still appended to the list, no panic, no include emitted.
+    let mut files: Vec<GeneratedFile> = vec![];
+    let ext = GeneratedFile {
+        name: "orphan.__service.rs".to_string(),
+        package: "orphan".to_string(),
+        kind: GeneratedFileKind::Extension,
+        content: "pub struct Orphan;".to_string(),
+    };
+    apply_extensions(&mut files, vec![ext]);
+
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].kind, GeneratedFileKind::Extension);
+}
+
+#[test]
+fn apply_extensions_file_per_package() {
+    let mut file = proto3_file("svc/msg.proto");
+    file.package = Some("svc".to_string());
+    let config = CodeGenConfig {
+        file_per_package: true,
+        ..Default::default()
+    };
+    let mut files =
+        generate(&[file], &["svc/msg.proto".to_string()], &config).expect("generate ok");
+
+    let ext = GeneratedFile {
+        name: "svc.msg.__service.rs".to_string(),
+        package: "svc".to_string(),
+        kind: GeneratedFileKind::Extension,
+        content: "pub struct MsgService;".to_string(),
+    };
+    apply_extensions(&mut files, vec![ext]);
+
+    let pkg_file = &files[0];
+    assert!(
+        pkg_file
+            .content
+            .contains(r#"include!("svc.msg.__service.rs");"#),
+        "file_per_package stitcher missing extension include"
+    );
+    syn::parse_file(&pkg_file.content).expect("file_per_package output still parses");
+}

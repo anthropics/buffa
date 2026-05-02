@@ -121,6 +121,13 @@ pub enum GeneratedFileKind {
     /// Per-package stitcher (`<dotted.pkg>.mod.rs`). The only file build
     /// systems need to wire up directly.
     PackageMod,
+    /// Extra per-proto content from a downstream generator (service stubs,
+    /// extra trait impls, etc.). The stitcher `include!`s it at file scope
+    /// after buffa's own output.
+    ///
+    /// Pass these alongside buffa's output to [`apply_extensions`], which
+    /// wires them into the per-package stitcher.
+    Extension,
 }
 
 /// Configuration for code generation.
@@ -921,6 +928,37 @@ pub fn package_to_filename(package: &str) -> String {
 pub fn proto_path_to_stem(proto_path: &str) -> String {
     let without_ext = proto_path.strip_suffix(".proto").unwrap_or(proto_path);
     without_ext.replace('/', ".")
+}
+
+/// Merge downstream [`Extension`](GeneratedFileKind::Extension) files into the
+/// per-package stitcher produced by [`generate`].
+///
+/// For each Extension file this function locates the
+/// [`PackageMod`](GeneratedFileKind::PackageMod) entry in `files` with a
+/// matching package and appends `include!("<name>");` at file scope (after
+/// buffa's own output, at package root alongside owned message types). The
+/// Extension files themselves are appended to `files` so that build
+/// integrations can write everything to disk in one pass.
+///
+/// `name` must be a bare-sibling filename — the same convention buffa uses
+/// for its own `include!` calls, so it resolves relative to the stitcher
+/// without any `OUT_DIR` prefix.
+///
+/// Extension files with no matching `PackageMod` are still appended to
+/// `files` but no `include!` is emitted; the caller is responsible for wiring
+/// them up.
+pub fn apply_extensions(files: &mut Vec<GeneratedFile>, extensions: Vec<GeneratedFile>) {
+    for ext in &extensions {
+        if let Some(pkg_mod) = files
+            .iter_mut()
+            .find(|f| f.kind == GeneratedFileKind::PackageMod && f.package == ext.package)
+        {
+            pkg_mod
+                .content
+                .push_str(&format!("include!(\"{}\");\n", ext.name));
+        }
+    }
+    files.extend(extensions);
 }
 
 /// Code generation error.
