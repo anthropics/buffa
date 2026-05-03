@@ -293,3 +293,6 @@ impl<'v> ::buffa::DefaultViewInstance for AnyView<'v> {
             ))
     }
 }
+unsafe impl ::buffa::ViewReborrow for AnyView<'static> {
+    type Reborrowed<'b> = AnyView<'b>;
+}

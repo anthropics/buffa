@@ -91,6 +91,7 @@
 //! | [`ExtensionSet`] | Get/set extensions via unknown-field storage |
 //! | [`view::MessageView`] | Zero-copy borrowed view trait |
 //! | [`view::OwnedView<V>`](view::OwnedView) | Self-contained `'static` view backed by `Bytes` |
+//! | [`view::ViewReborrow`] | Expose real borrow lifetime from `OwnedView` via [`reborrow`](view::OwnedView::reborrow) |
 //!
 //! # `no_std`
 //!
@@ -208,7 +209,7 @@ pub use unknown_fields::{UnknownField, UnknownFieldData, UnknownFields};
 pub use text::TextFormat;
 pub use view::{
     DefaultViewInstance, MapView, MessageFieldView, MessageView, OwnedView, RepeatedView,
-    UnknownFieldsView, ViewEncode,
+    UnknownFieldsView, ViewEncode, ViewReborrow,
 };
 
 /// Private re-exports used exclusively by generated code.
@@ -303,5 +304,11 @@ pub mod __doctest_fixtures {
                 id: self.id,
             }
         }
+    }
+
+    // SAFETY: `Reborrowed<'b>` is `PersonView<'b>` — the same struct with only
+    // its lifetime parameter shortened. Layout is identical.
+    unsafe impl view::ViewReborrow for PersonView<'static> {
+        type Reborrowed<'b> = PersonView<'b>;
     }
 }

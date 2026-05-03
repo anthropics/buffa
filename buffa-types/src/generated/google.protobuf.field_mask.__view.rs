@@ -366,3 +366,6 @@ impl<'v> ::buffa::DefaultViewInstance for FieldMaskView<'v> {
             ))
     }
 }
+unsafe impl ::buffa::ViewReborrow for FieldMaskView<'static> {
+    type Reborrowed<'b> = FieldMaskView<'b>;
+}

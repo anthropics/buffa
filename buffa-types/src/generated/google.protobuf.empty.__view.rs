@@ -126,3 +126,6 @@ impl<'v> ::buffa::DefaultViewInstance for EmptyView<'v> {
             ))
     }
 }
+unsafe impl ::buffa::ViewReborrow for EmptyView<'static> {
+    type Reborrowed<'b> = EmptyView<'b>;
+}

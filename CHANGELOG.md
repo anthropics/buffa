@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `OwnedView<V>` gains a `reborrow<'b>(&'b self) -> &'b V::Reborrowed<'b>` method
+  that makes the internal `'static` lifetime visible as `'b` (the lifetime of the
+  borrow), so view fields can be passed into functions or return types bounded by
+  the `OwnedView`'s lifetime. Requires `V: ViewReborrow`; codegen emits
+  `unsafe impl ViewReborrow` automatically for every generated view type.
+  Hand-written view types must provide `unsafe impl ViewReborrow for MyView<'static>
+  { type Reborrowed<'b> = MyView<'b>; }` to opt in.
+  ([#82](https://github.com/anthropics/buffa/issues/82))
+
 - `protoc-gen-buffa` and `protoc-gen-buffa-packaging` now respond to
   `--version` / `-V` and `--help` / `-h` instead of blocking on stdin.
   Any other command-line argument prints a "this is a protoc plugin" hint

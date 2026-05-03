@@ -269,3 +269,6 @@ impl<'v> ::buffa::DefaultViewInstance for TimestampView<'v> {
             ))
     }
 }
+unsafe impl ::buffa::ViewReborrow for TimestampView<'static> {
+    type Reborrowed<'b> = TimestampView<'b>;
+}

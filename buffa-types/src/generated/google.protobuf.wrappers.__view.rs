@@ -143,6 +143,9 @@ impl<'v> ::buffa::DefaultViewInstance for DoubleValueView<'v> {
             ))
     }
 }
+unsafe impl ::buffa::ViewReborrow for DoubleValueView<'static> {
+    type Reborrowed<'b> = DoubleValueView<'b>;
+}
 /// Wrapper message for `float`.
 ///
 /// The JSON representation for `FloatValue` is JSON number.
@@ -284,6 +287,9 @@ impl<'v> ::buffa::DefaultViewInstance for FloatValueView<'v> {
                 <FloatValueView<'static>>::default(),
             ))
     }
+}
+unsafe impl ::buffa::ViewReborrow for FloatValueView<'static> {
+    type Reborrowed<'b> = FloatValueView<'b>;
 }
 /// Wrapper message for `int64`.
 ///
@@ -427,6 +433,9 @@ impl<'v> ::buffa::DefaultViewInstance for Int64ValueView<'v> {
             ))
     }
 }
+unsafe impl ::buffa::ViewReborrow for Int64ValueView<'static> {
+    type Reborrowed<'b> = Int64ValueView<'b>;
+}
 /// Wrapper message for `uint64`.
 ///
 /// The JSON representation for `UInt64Value` is JSON string.
@@ -568,6 +577,9 @@ impl<'v> ::buffa::DefaultViewInstance for UInt64ValueView<'v> {
                 <UInt64ValueView<'static>>::default(),
             ))
     }
+}
+unsafe impl ::buffa::ViewReborrow for UInt64ValueView<'static> {
+    type Reborrowed<'b> = UInt64ValueView<'b>;
 }
 /// Wrapper message for `int32`.
 ///
@@ -711,6 +723,9 @@ impl<'v> ::buffa::DefaultViewInstance for Int32ValueView<'v> {
             ))
     }
 }
+unsafe impl ::buffa::ViewReborrow for Int32ValueView<'static> {
+    type Reborrowed<'b> = Int32ValueView<'b>;
+}
 /// Wrapper message for `uint32`.
 ///
 /// The JSON representation for `UInt32Value` is JSON number.
@@ -853,6 +868,9 @@ impl<'v> ::buffa::DefaultViewInstance for UInt32ValueView<'v> {
             ))
     }
 }
+unsafe impl ::buffa::ViewReborrow for UInt32ValueView<'static> {
+    type Reborrowed<'b> = UInt32ValueView<'b>;
+}
 /// Wrapper message for `bool`.
 ///
 /// The JSON representation for `BoolValue` is JSON `true` and `false`.
@@ -994,6 +1012,9 @@ impl<'v> ::buffa::DefaultViewInstance for BoolValueView<'v> {
                 <BoolValueView<'static>>::default(),
             ))
     }
+}
+unsafe impl ::buffa::ViewReborrow for BoolValueView<'static> {
+    type Reborrowed<'b> = BoolValueView<'b>;
 }
 /// Wrapper message for `string`.
 ///
@@ -1140,6 +1161,9 @@ impl<'v> ::buffa::DefaultViewInstance for StringValueView<'v> {
             ))
     }
 }
+unsafe impl ::buffa::ViewReborrow for StringValueView<'static> {
+    type Reborrowed<'b> = StringValueView<'b>;
+}
 /// Wrapper message for `bytes`.
 ///
 /// The JSON representation for `BytesValue` is JSON string.
@@ -1284,4 +1308,7 @@ impl<'v> ::buffa::DefaultViewInstance for BytesValueView<'v> {
                 <BytesValueView<'static>>::default(),
             ))
     }
+}
+unsafe impl ::buffa::ViewReborrow for BytesValueView<'static> {
+    type Reborrowed<'b> = BytesValueView<'b>;
 }

@@ -234,3 +234,6 @@ impl<'v> ::buffa::DefaultViewInstance for DurationView<'v> {
             ))
     }
 }
+unsafe impl ::buffa::ViewReborrow for DurationView<'static> {
+    type Reborrowed<'b> = DurationView<'b>;
+}

@@ -37,6 +37,30 @@
 //! let owned: MyRequest = request.to_owned_message();
 //! ```
 //!
+//! # Reborrowing from `OwnedView`
+//!
+//! [`OwnedView<V>`](OwnedView) wraps a decoded view with the lifetime erased
+//! to `'static`. Use [`Deref`](core::ops::Deref) (`&*owned` / `owned.name`)
+//! for inline field reads within the same scope. Use
+//! [`OwnedView::reborrow`] when you need to assign the view to a binding,
+//! pass it to a function with a non-`'static` lifetime parameter, or return
+//! a borrowed field:
+//!
+//! ```no_run
+//! # use buffa::view::OwnedView;
+//! # use buffa::__doctest_fixtures::PersonView;
+//! // reborrow ties the returned borrow to the OwnedView's lifetime.
+//! fn handler<'a>(req: &'a OwnedView<PersonView<'static>>) -> &'a str {
+//!     req.reborrow().name
+//! }
+//! ```
+//!
+//! `Deref` alone gives `&PersonView<'static>`, so field borrows *appear*
+//! `'static` to the compiler — this is unsound to rely on outside the scope
+//! that holds the `OwnedView`. Always use `reborrow` when the borrow needs
+//! to outlive the current expression. See [`OwnedView`] for a full
+//! side-by-side comparison.
+//!
 //! # Generated code shape
 //!
 //! For a message like:
@@ -128,6 +152,44 @@ pub trait MessageView<'a>: Sized {
         let _ = source;
         self.to_owned_message()
     }
+}
+
+/// Exposes the real lifetime of an [`OwnedView`]'s borrows.
+///
+/// `OwnedView<V>` stores `V` with a `'static` lifetime — the actual borrows
+/// point into its internal [`Bytes`] buffer. `ViewReborrow` lets
+/// [`OwnedView::reborrow`] return a reference typed as `&'b V::Reborrowed<'b>`,
+/// tying the borrow to `&'b self` so the compiler can reason about it correctly.
+///
+/// Codegen emits `unsafe impl ViewReborrow` automatically for every generated
+/// view type. Hand-written view types must provide it manually using
+/// `unsafe impl` if [`OwnedView::reborrow`] is needed.
+///
+/// # Safety
+///
+/// `Reborrowed<'b>` must be the same struct as `Self` with only the lifetime
+/// parameter shortened to `'b` — identical in memory layout (`size_of` and
+/// `align_of`). Any other mapping causes undefined behaviour in
+/// [`OwnedView::reborrow`], which casts `*const Self` to
+/// `*const Self::Reborrowed<'b>`. This is the actual safety contract; the
+/// size/align assertions inside `reborrow` are a compile-time sanity guard
+/// against accidentally mistyped impls, not a substitute for this invariant.
+///
+/// Additionally, `Self` must be **covariant** in its lifetime parameter —
+/// all fields must be `&'a T`, `MessageFieldView<SomeView<'a>>`, or similarly
+/// covariant. Invariant fields (e.g. `Cell<&'a T>`, `&'a mut T`) prevent
+/// the lifetime from being safely shortened and must not appear in a type
+/// that implements this trait.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` does not implement `ViewReborrow` — required by `OwnedView::reborrow`",
+    note = "for a generated view type, this impl is emitted automatically by codegen",
+    note = "for a hand-written view type `MyView<'a>`, add:\n    unsafe impl ViewReborrow for MyView<'static> {{ type Reborrowed<'b> = MyView<'b>; }}",
+    note = "your `MessageView` impl must be parametric over the lifetime — `impl<'a> MessageView<'a> for MyView<'a>` — so that both `Self: MessageView<'static>` and `Reborrowed<'b>: MessageView<'b>` hold",
+    note = "`MyView` must be covariant in its lifetime — fields like `&'a T` and `MessageFieldView<...>` are covariant; `Cell<&'a T>` and `&'a mut T` are not"
+)]
+pub unsafe trait ViewReborrow: MessageView<'static> {
+    /// The same view type with its lifetime shortened to `'b`.
+    type Reborrowed<'b>: MessageView<'b, Owned = <Self as MessageView<'static>>::Owned>;
 }
 
 /// Produce a [`Bytes`] for a borrowed slice, preferring a zero-copy
@@ -807,10 +869,36 @@ impl<'a> UnknownFieldsView<'a> {
 /// [`MessageView::decode_view`] directly — it has zero overhead beyond the
 /// decode itself.
 ///
+/// # `Deref` vs `reborrow`
+///
+/// `OwnedView` implements [`Deref<Target = V>`](core::ops::Deref), so fields
+/// are accessible as `view.name`, `view.id`, etc. This is fine for reads that
+/// stay within the same scope as the `OwnedView`. However, `Deref` exposes
+/// `V = FooView<'static>`, so borrowed fields *appear* `'static` to the
+/// compiler — relying on that outside the owning scope is unsound.
+///
+/// Use [`reborrow()`](OwnedView::reborrow) whenever the borrow needs to
+/// outlive the current expression — for example, storing the view in a local,
+/// passing it to a `'a`-bounded function, or returning a field from a handler:
+///
+/// ```no_run
+/// # use buffa::view::OwnedView;
+/// # use buffa::__doctest_fixtures::PersonView;
+/// // Deref: fine for inline reads.
+/// fn log(owned: &OwnedView<PersonView<'static>>) {
+///     println!("{}", owned.name);  // OK — borrow dropped before function returns
+/// }
+///
+/// // reborrow: required when returning a borrowed field.
+/// fn name<'a>(owned: &'a OwnedView<PersonView<'static>>) -> &'a str {
+///     owned.reborrow().name  // &'a str tied to the OwnedView's lifetime
+/// }
+/// ```
+///
 /// # Safety
 ///
 /// Internally, `OwnedView` extends the view's lifetime to `'static` via
-/// `transmute`. This is sound because:
+/// `transmute` in its constructors. This is sound because:
 ///
 /// 1. [`Bytes`] is reference-counted — its heap data pointer is stable across
 ///    moves. The view's borrows always point into valid memory.
@@ -820,6 +908,10 @@ impl<'a> UnknownFieldsView<'a> {
 ///    ensuring no dangling references during cleanup. The view field uses
 ///    [`ManuallyDrop`](core::mem::ManuallyDrop) to prevent the automatic
 ///    drop from running out of order.
+///
+/// [`reborrow`](OwnedView::reborrow) uses a separate mechanism: it casts
+/// `*const V` to `*const V::Reborrowed<'b>` to expose the real borrow
+/// lifetime without copying the view. See its `# Safety` section for details.
 pub struct OwnedView<V> {
     // INVARIANT: `view` borrows from `bytes`. The `Drop` impl ensures
     // `view` is dropped before `bytes`. `ManuallyDrop` prevents the compiler
@@ -961,6 +1053,73 @@ where
             bytes
         }
     }
+
+    /// Reborrow the view with a lifetime tied to `&'b self`.
+    ///
+    /// `OwnedView<V>` stores `V` with a `'static` lifetime — the actual borrows
+    /// point into `self`'s internal [`Bytes`] buffer and are only valid while
+    /// `self` is alive. `reborrow` makes that real lifetime visible to the borrow
+    /// checker: the returned `&'b V::Reborrowed<'b>` cannot outlive `&'b self`.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use buffa::view::OwnedView;
+    /// # use buffa::__doctest_fixtures::PersonView;
+    /// fn handler<'a>(req: &'a OwnedView<PersonView<'static>>) -> &'a str {
+    ///     // The explicit annotation is for emphasis; inference works without it.
+    ///     // If you need to name the lifetime, store the reborrow in a `let` first.
+    ///     let req_view: &PersonView<'a> = req.reborrow();
+    ///     req_view.name  // zero-copy from the OwnedView's buffer
+    /// }
+    /// ```
+    ///
+    /// The returned reference is tied to `&'b self` — the borrow checker
+    /// prevents the reborrowed view from outliving the `OwnedView`:
+    ///
+    /// ```compile_fail,E0597
+    /// # use buffa::view::OwnedView;
+    /// # use buffa::__doctest_fixtures::PersonView;
+    /// let name: &str;
+    /// {
+    ///     // SAFETY: empty Bytes, no borrows — safe to construct directly.
+    ///     let owned = unsafe {
+    ///         OwnedView::<PersonView<'static>>::from_parts(
+    ///             ::buffa::bytes::Bytes::new(),
+    ///             PersonView::default(),
+    ///         )
+    ///     };
+    ///     name = owned.reborrow().name; // error[E0597]: `owned` does not live long enough
+    /// }
+    /// println!("{name}"); // name is dangling — borrow checker rejects this
+    /// ```
+    ///
+    /// # Safety
+    ///
+    /// This method is safe to call, provided the [`unsafe ViewReborrow`](ViewReborrow)
+    /// impl upholds its contract (`Reborrowed<'b>` is the same struct as `Self`
+    /// with identical memory layout). The internal pointer cast is then sound:
+    /// `V` and `V::Reborrowed<'b>` occupy the same bytes, and `OwnedView`'s
+    /// invariant — established by `decode`/`decode_with_options` or upheld by
+    /// the caller of the unsafe `from_parts` — ensures every borrow in `view`
+    /// points into `self.bytes`, which lives at least as long as `'b`.
+    #[must_use = "reborrow returns a tied-lifetime view; discarding it is a no-op"]
+    pub fn reborrow<'b>(&'b self) -> &'b V::Reborrowed<'b>
+    where
+        V: ViewReborrow,
+    {
+        // SAFETY: The `unsafe ViewReborrow` contract requires `Reborrowed<'b>`
+        // to be the same struct as `V` with only its lifetime parameter shortened
+        // to `'b`. Lifetimes carry no runtime representation, so `V`
+        // (= `FooView<'static>`) and `V::Reborrowed<'b>` (= `FooView<'b>`) occupy
+        // identical bytes. We cast `*const V` to `*const V::Reborrowed<'b>` and
+        // return a shared reference tied to `'b`. No value is copied; `self.view`
+        // remains owned by `self` and is dropped by the `Drop` impl. The
+        // OwnedView invariant — established by `decode`/`decode_with_options` or
+        // upheld by the caller of the unsafe `from_parts` — ensures the
+        // pointed-to data is valid for `'b`.
+        unsafe { &*(&*self.view as *const V as *const V::Reborrowed<'b>) }
+    }
 }
 
 impl<V> core::ops::Deref for OwnedView<V> {
@@ -1050,6 +1209,18 @@ mod send_sync_assertions {
     fn owned_tiny_view_is_send_sync() {
         assert_send::<OwnedView<super::tests::TinyView<'static>>>();
         assert_sync::<OwnedView<super::tests::TinyView<'static>>>();
+    }
+
+    // `ViewReborrow::Reborrowed<'b>` must also be Send + Sync so that a
+    // reborrowed view can be passed across threads (e.g. into a Tokio task).
+    #[allow(dead_code)]
+    fn reborrowed_view_is_send_sync<V>()
+    where
+        V: ViewReborrow + Send + Sync,
+        for<'b> V::Reborrowed<'b>: Send + Sync,
+    {
+        assert_send::<OwnedView<V>>();
+        assert_sync::<OwnedView<V>>();
     }
 }
 
@@ -1474,6 +1645,12 @@ mod tests {
         pub name: &'a str,
     }
 
+    // SAFETY: `Reborrowed<'b>` is `SimpleMessageView<'b>` — the same struct with
+    // only its lifetime parameter shortened. Layout is identical.
+    unsafe impl ViewReborrow for SimpleMessageView<'static> {
+        type Reborrowed<'b> = SimpleMessageView<'b>;
+    }
+
     impl<'a> MessageView<'a> for SimpleMessageView<'a> {
         type Owned = SimpleMessage;
 
@@ -1773,5 +1950,29 @@ mod tests {
         };
         assert_eq!(view.id, 42);
         assert_eq!(view.name, "parts");
+    }
+
+    // ── ViewReborrow / OwnedView::reborrow ───────────────────────────────
+
+    #[test]
+    fn reborrow_fields_match_original() {
+        let bytes = encode_simple(7, "hello");
+        let owned = OwnedView::<SimpleMessageView<'static>>::decode(bytes).unwrap();
+        let reborrowed: &SimpleMessageView<'_> = owned.reborrow();
+        assert_eq!(reborrowed.id, 7);
+        assert_eq!(reborrowed.name, "hello");
+        // The reborrowed &str must point into the same Bytes buffer, not a copy.
+        assert!(core::ptr::eq(reborrowed.name.as_ptr(), owned.name.as_ptr()));
+    }
+
+    #[test]
+    fn reborrow_does_not_consume_owned_view() {
+        let bytes = encode_simple(1, "world");
+        let owned = OwnedView::<SimpleMessageView<'static>>::decode(bytes).unwrap();
+        let r1: &SimpleMessageView<'_> = owned.reborrow();
+        let r2: &SimpleMessageView<'_> = owned.reborrow();
+        assert_eq!(r1.name, r2.name);
+        // `owned` still usable here
+        assert_eq!(owned.name, "world");
     }
 }

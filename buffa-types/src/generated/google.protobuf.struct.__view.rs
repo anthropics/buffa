@@ -234,6 +234,9 @@ impl<'v> ::buffa::DefaultViewInstance for StructView<'v> {
             ))
     }
 }
+unsafe impl ::buffa::ViewReborrow for StructView<'static> {
+    type Reborrowed<'b> = StructView<'b>;
+}
 /// `Value` represents a dynamically typed value which can be either
 /// null, a number, a string, a boolean, a recursive struct value, or a
 /// list of values. A producer of value is expected to set one of these
@@ -600,6 +603,9 @@ impl<'v> ::buffa::DefaultViewInstance for ValueView<'v> {
             ))
     }
 }
+unsafe impl ::buffa::ViewReborrow for ValueView<'static> {
+    type Reborrowed<'b> = ValueView<'b>;
+}
 /// `ListValue` is a wrapper around a repeated field of values.
 ///
 /// The JSON representation for `ListValue` is JSON array.
@@ -764,4 +770,7 @@ impl<'v> ::buffa::DefaultViewInstance for ListValueView<'v> {
                 <ListValueView<'static>>::default(),
             ))
     }
+}
+unsafe impl ::buffa::ViewReborrow for ListValueView<'static> {
+    type Reborrowed<'b> = ListValueView<'b>;
 }
