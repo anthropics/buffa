@@ -8,6 +8,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Generated message structs now include `with_<field>(value) -> Self` builder
+  methods for every explicit-presence scalar, bytes, and enum field (proto3
+  `optional`, proto2 `optional`, and editions fields with
+  `field_presence = EXPLICIT`). This allows chained construction without
+  `Some(...)` wrapping:
+
+  ```rust
+  let req = GetSecretRequest::default()
+      .with_name("alice")
+      .with_timeout_ms(30_000)
+      .with_enabled(true);
+  ```
+
+  String fields accept `impl Into<String>` (`&str` works directly); bytes
+  fields accept `impl Into<Vec<u8>>` or `impl Into<bytes::Bytes>` (byte
+  array literals like `b"data"` work directly); enum fields accept
+  `impl Into<EnumValue<E>>` (bare variant works directly, no
+  `EnumValue::Known(...)` wrapper needed); plain scalars take the bare
+  type. Message fields (`MessageField<T>`), repeated fields, map fields,
+  oneof variants, proto2 `required` fields, and implicit-presence fields
+  are unaffected. To clear a field, assign `None` directly.
+  Controlled by `CodeGenConfig::generate_with_setters` (default `true`).
+  ([#30](https://github.com/anthropics/buffa/issues/30))
+
 - `protoc-gen-buffa` and `protoc-gen-buffa-packaging` now respond to
   `--version` / `-V` and `--help` / `-h` instead of blocking on stdin.
   Any other command-line argument prints a "this is a protoc plugin" hint

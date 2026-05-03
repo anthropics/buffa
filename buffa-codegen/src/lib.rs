@@ -254,6 +254,30 @@ pub struct CodeGenConfig {
     /// `#[derive(strum::EnumIter)]` when the user does not want to apply the
     /// same attribute to every message in the matched scope.
     pub enum_attributes: Vec<(String, String)>,
+    /// Generate `with_*` builder-style setter methods for explicit-presence fields.
+    ///
+    /// Each explicit-presence scalar, bytes, or enum field gets a
+    /// `pub fn with_<name>(mut self, value: T) -> Self` method that wraps the
+    /// value in `Some` and returns `self`, enabling chained construction:
+    ///
+    /// ```ignore
+    /// let req = MyRequest::default()
+    ///     .with_name("alice")
+    ///     .with_timeout_ms(30_000);
+    /// ```
+    ///
+    /// **Fields that receive a setter:** proto3 `optional`, proto2 `optional`,
+    /// and editions fields with `field_presence = EXPLICIT`.
+    ///
+    /// **Fields that do not receive a setter:** message fields
+    /// (`MessageField<T>`), repeated fields, map fields, oneof variant fields,
+    /// proto2 `required` fields, and any implicit-presence field.
+    ///
+    /// There is no `clear_<name>` companion — to clear a field, assign `None`
+    /// directly: `msg.name = None;`.
+    ///
+    /// Defaults to `true`.
+    pub generate_with_setters: bool,
 }
 
 impl Default for CodeGenConfig {
@@ -274,6 +298,7 @@ impl Default for CodeGenConfig {
             field_attributes: Vec::new(),
             message_attributes: Vec::new(),
             enum_attributes: Vec::new(),
+            generate_with_setters: true,
         }
     }
 }
