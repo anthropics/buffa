@@ -12,7 +12,7 @@ use crate::CodeGenConfig;
 ///
 /// See `DESIGN.md` → "Generated code layout" for the full layout. The name
 /// is checked against proto package segments and message-module names by
-/// [`crate::validate_file`]; a collision is a hard error.
+/// `validate_file`; a collision is a hard error.
 pub const SENTINEL_MOD: &str = "__buffa";
 
 /// A Rust type path split at the target-package boundary.
