@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Doc comments in generated Rust code now resolve AIP-192 proto cross-references
+  (`[Book][google.example.v1.Book]`, `[Genre.GENRE_SCI_FI]`, `[Book][]`) to rustdoc
+  intra-doc links. Unknown or cross-crate references fall back silently to escaped
+  literals. ([#26](https://github.com/anthropics/buffa/issues/26))
+
 - `protoc-gen-buffa` and `protoc-gen-buffa-packaging` now respond to
   `--version` / `-V` and `--help` / `-h` instead of blocking on stdin.
   Any other command-line argument prints a "this is a protoc plugin" hint
