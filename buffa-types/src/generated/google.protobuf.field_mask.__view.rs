@@ -366,10 +366,9 @@ impl<'v> ::buffa::DefaultViewInstance for FieldMaskView<'v> {
             ))
     }
 }
-/// SAFETY: `Reborrowed<'b>` is the same generated struct with only its
-/// lifetime parameter shortened. Layout is identical (additionally
-/// checked by an inline-const `size_of`/`align_of` guard inside
-/// `OwnedView::reborrow`).
-unsafe impl ::buffa::ViewReborrow for FieldMaskView<'static> {
+impl ::buffa::ViewReborrow for FieldMaskView<'static> {
     type Reborrowed<'b> = FieldMaskView<'b>;
+    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+        this
+    }
 }

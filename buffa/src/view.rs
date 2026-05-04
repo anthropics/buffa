@@ -161,42 +161,48 @@ pub trait MessageView<'a>: Sized {
 /// [`OwnedView::reborrow`] return a reference typed as `&'b V::Reborrowed<'b>`,
 /// tying the borrow to `&'b self` so the compiler can reason about it correctly.
 ///
-/// Codegen emits `unsafe impl ViewReborrow` automatically for every generated
-/// view type. Hand-written view types must provide it manually using
-/// `unsafe impl` if [`OwnedView::reborrow`] is needed.
+/// Codegen emits `impl ViewReborrow` automatically for every generated view
+/// type. Hand-written view types must provide it manually if
+/// [`OwnedView::reborrow`] is needed.
 ///
-/// # Safety
+/// # Soundness
 ///
-/// `Reborrowed<'b>` must be the same struct as `Self` with only the lifetime
-/// parameter shortened to `'b` — identical in memory layout (`size_of` and
-/// `align_of`). Any other mapping causes undefined behaviour in
-/// [`OwnedView::reborrow`], which casts `*const Self` to
-/// `*const Self::Reborrowed<'b>`.
+/// `ViewReborrow` is a **safe** trait. Soundness is established mechanically
+/// by the compiler at each impl site: the [`reborrow`](Self::reborrow) method
+/// body coerces a `&'b Self` (where `Self = FooView<'static>`) to
+/// `&'b Self::Reborrowed<'b>` (= `&'b FooView<'b>`). Rust accepts this only
+/// when `FooView` is **covariant** in its lifetime parameter — a covariant
+/// `FooView<'static>` is a subtype of `FooView<'b>` and the coercion is a
+/// standard subtyping move. Invariant fields (`Cell<&'a T>`, `&'a mut T`,
+/// `fn(&'a T)`) make the type invariant in `'a`; the trait body then fails
+/// to compile and the impl is rejected — which is exactly what should
+/// happen, because narrowing the lifetime of an invariant view *would* be
+/// unsound.
 ///
-/// The trait bound `Reborrowed<'b>: MessageView<'b, Owned = …>` rules out
-/// some mistakes (the reborrow must impl `MessageView<'b>` with the same
-/// `Owned` type), and `OwnedView::reborrow` includes an inline-const
-/// `size_of`/`align_of` guard that catches layout-mismatched impls at
-/// monomorphization. Neither check is sufficient on its own — the
-/// same-struct requirement is enforced *only* by this contract; an impl
-/// pointing at a different struct that happens to share layout and `Owned`
-/// type is still UB and the impl author is responsible for not writing one.
-///
-/// Additionally, `Self` must be **covariant** in its lifetime parameter —
-/// all fields must be `&'a T`, `MessageFieldView<SomeView<'a>>`, or similarly
-/// covariant. Invariant fields (e.g. `Cell<&'a T>`, `&'a mut T`) prevent
-/// the lifetime from being safely shortened and must not appear in a type
-/// that implements this trait.
+/// Hand-written impls cannot accidentally introduce undefined behaviour
+/// without writing `unsafe` themselves: the canonical body is just `this`,
+/// which the type checker accepts iff the variance permits the coercion.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` does not implement `ViewReborrow` — required by `OwnedView::reborrow`",
     note = "for a generated view type, this impl is emitted automatically by codegen",
-    note = "for a hand-written view type `MyView<'a>`, add:\n    unsafe impl ViewReborrow for MyView<'static> {{ type Reborrowed<'b> = MyView<'b>; }}",
+    note = "for a hand-written view type `MyView<'a>`, add:\n    impl ViewReborrow for MyView<'static> {{\n        type Reborrowed<'b> = MyView<'b>;\n        fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {{ this }}\n    }}",
     note = "your `MessageView` impl must be parametric over the lifetime — `impl<'a> MessageView<'a> for MyView<'a>` — so that both `Self: MessageView<'static>` and `Reborrowed<'b>: MessageView<'b>` hold",
-    note = "`MyView` must be covariant in its lifetime — fields like `&'a T` and `MessageFieldView<...>` are covariant; `Cell<&'a T>` and `&'a mut T` are not"
+    note = "`MyView` must be covariant in its lifetime — fields like `&'a T` and `MessageFieldView<...>` are covariant; `Cell<&'a T>` and `&'a mut T` are not, and the trait body `{{ this }}` will fail to compile for invariant types"
 )]
-pub unsafe trait ViewReborrow: MessageView<'static> {
+pub trait ViewReborrow: MessageView<'static> {
     /// The same view type with its lifetime shortened to `'b`.
-    type Reborrowed<'b>: MessageView<'b, Owned = <Self as MessageView<'static>>::Owned>;
+    type Reborrowed<'b>: MessageView<'b, Owned = <Self as MessageView<'static>>::Owned>
+    where
+        Self: 'b;
+
+    /// Coerce `&'b Self` (= `&'b FooView<'static>`) to
+    /// `&'b Self::Reborrowed<'b>` (= `&'b FooView<'b>`). The canonical body
+    /// is just `this`; the compiler accepts it via standard lifetime
+    /// variance for covariant view types.
+    ///
+    /// Called by [`OwnedView::reborrow`]; users shouldn't need to call this
+    /// method directly.
+    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b>;
 }
 
 /// Produce a [`Bytes`] for a borrowed slice, preferring a zero-copy
@@ -923,9 +929,11 @@ impl<'a> UnknownFieldsView<'a> {
 ///    [`ManuallyDrop`](core::mem::ManuallyDrop) to prevent the automatic
 ///    drop from running out of order.
 ///
-/// [`reborrow`](OwnedView::reborrow) uses a separate mechanism: it casts
-/// `*const V` to `*const V::Reborrowed<'b>` to expose the real borrow
-/// lifetime without copying the view. See its `# Safety` section for details.
+/// [`reborrow`](OwnedView::reborrow) is a plain Rust subtype coercion (no
+/// `unsafe`, no pointer cast): the [`ViewReborrow`] trait method coerces
+/// `&'b FooView<'static>` into `&'b FooView<'b>` via standard lifetime
+/// variance for covariant view types. See [`ViewReborrow`]'s docs for the
+/// soundness argument.
 pub struct OwnedView<V> {
     // INVARIANT: `view` borrows from `bytes`. The `Drop` impl ensures
     // `view` is dropped before `bytes`. `ManuallyDrop` prevents the compiler
@@ -1108,49 +1116,23 @@ where
     /// println!("{name}"); // name is dangling — borrow checker rejects this
     /// ```
     ///
-    /// # Safety
+    /// # How it works
     ///
-    /// This method is safe to call, provided the [`unsafe ViewReborrow`](ViewReborrow)
-    /// impl upholds its contract (`Reborrowed<'b>` is the same struct as `Self`
-    /// with identical memory layout). The internal pointer cast is then sound:
-    /// `V` and `V::Reborrowed<'b>` occupy the same bytes, and `OwnedView`'s
-    /// invariant — established by `decode`/`decode_with_options` or upheld by
-    /// the caller of the unsafe `from_parts` — ensures every borrow in `view`
-    /// points into `self.bytes`, which lives at least as long as `'b`.
+    /// The trait method [`ViewReborrow::reborrow`] is a plain Rust subtype
+    /// coercion: `&'b V` (where `V = FooView<'static>`) flows into the
+    /// return slot `&'b V::Reborrowed<'b>` (= `&'b FooView<'b>`). Variance
+    /// makes this safe — covariant view types narrow `'static` down to
+    /// `'b` automatically. No `unsafe`, no pointer cast, no layout
+    /// assertions. `OwnedView`'s own invariant (every borrow in `view`
+    /// points into `self.bytes`, established by `decode` or upheld by the
+    /// `unsafe from_parts` caller) guarantees the pointed-to data lives
+    /// at least as long as `'b`.
     #[must_use = "reborrow returns a tied-lifetime view; discarding it is a no-op"]
     pub fn reborrow<'b>(&'b self) -> &'b V::Reborrowed<'b>
     where
         V: ViewReborrow,
     {
-        // Catches mistyped `unsafe impl ViewReborrow` whose `Reborrowed`
-        // resolves to a layout-incompatible type at monomorphization rather
-        // than as latent UB at the cast site. `'static` is a valid witness
-        // for any `'b` since lifetimes are erased before layout. This does
-        // *not* enforce same-struct (a different struct with the same
-        // layout would pass); the trait's `# Safety` contract still does.
-        const {
-            assert!(
-                core::mem::size_of::<V>() == core::mem::size_of::<V::Reborrowed<'static>>(),
-                "ViewReborrow impl is unsound: size_of::<V>() != size_of::<V::Reborrowed>"
-            );
-            assert!(
-                core::mem::align_of::<V>() == core::mem::align_of::<V::Reborrowed<'static>>(),
-                "ViewReborrow impl is unsound: align_of::<V>() != align_of::<V::Reborrowed>"
-            );
-        }
-
-        // SAFETY: The `unsafe ViewReborrow` contract requires `Reborrowed<'b>`
-        // to be the same struct as `V` with only its lifetime parameter shortened
-        // to `'b`. Lifetimes carry no runtime representation, so `V`
-        // (= `FooView<'static>`) and `V::Reborrowed<'b>` (= `FooView<'b>`) occupy
-        // identical bytes (additionally checked by the inline-const guard
-        // above). We cast `*const V` to `*const V::Reborrowed<'b>` and return a
-        // shared reference tied to `'b`. No value is copied; `self.view` remains
-        // owned by `self` and is dropped by the `Drop` impl. The OwnedView
-        // invariant — established by `decode`/`decode_with_options` or upheld by
-        // the caller of the unsafe `from_parts` — ensures the pointed-to data
-        // is valid for `'b`.
-        unsafe { &*(&*self.view as *const V as *const V::Reborrowed<'b>) }
+        V::reborrow(&self.view)
     }
 }
 
@@ -1677,10 +1659,11 @@ mod tests {
         pub name: &'a str,
     }
 
-    // SAFETY: `Reborrowed<'b>` is `SimpleMessageView<'b>` — the same struct with
-    // only its lifetime parameter shortened. Layout is identical.
-    unsafe impl ViewReborrow for SimpleMessageView<'static> {
+    impl ViewReborrow for SimpleMessageView<'static> {
         type Reborrowed<'b> = SimpleMessageView<'b>;
+        fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+            this
+        }
     }
 
     impl<'a> MessageView<'a> for SimpleMessageView<'a> {

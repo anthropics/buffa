@@ -330,12 +330,11 @@ pub(crate) fn generate_view_with_nesting(
             }
         }
 
-        /// SAFETY: `Reborrowed<'b>` is the same generated struct with only its
-        /// lifetime parameter shortened. Layout is identical (additionally
-        /// checked by an inline-const `size_of`/`align_of` guard inside
-        /// `OwnedView::reborrow`).
-        unsafe impl ::buffa::ViewReborrow for #view_ident<'static> {
+        impl ::buffa::ViewReborrow for #view_ident<'static> {
             type Reborrowed<'b> = #view_ident<'b>;
+            fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+                this
+            }
         }
     };
 

@@ -234,10 +234,9 @@ impl<'v> ::buffa::DefaultViewInstance for DurationView<'v> {
             ))
     }
 }
-/// SAFETY: `Reborrowed<'b>` is the same generated struct with only its
-/// lifetime parameter shortened. Layout is identical (additionally
-/// checked by an inline-const `size_of`/`align_of` guard inside
-/// `OwnedView::reborrow`).
-unsafe impl ::buffa::ViewReborrow for DurationView<'static> {
+impl ::buffa::ViewReborrow for DurationView<'static> {
     type Reborrowed<'b> = DurationView<'b>;
+    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+        this
+    }
 }

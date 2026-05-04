@@ -306,9 +306,10 @@ pub mod __doctest_fixtures {
         }
     }
 
-    // SAFETY: `Reborrowed<'b>` is `PersonView<'b>` — the same struct with only
-    // its lifetime parameter shortened. Layout is identical.
-    unsafe impl view::ViewReborrow for PersonView<'static> {
+    impl view::ViewReborrow for PersonView<'static> {
         type Reborrowed<'b> = PersonView<'b>;
+        fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+            this
+        }
     }
 }
