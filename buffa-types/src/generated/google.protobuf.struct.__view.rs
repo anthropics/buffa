@@ -234,6 +234,10 @@ impl<'v> ::buffa::DefaultViewInstance for StructView<'v> {
             ))
     }
 }
+/// SAFETY: `Reborrowed<'b>` is the same generated struct with only its
+/// lifetime parameter shortened. Layout is identical (additionally
+/// checked by an inline-const `size_of`/`align_of` guard inside
+/// `OwnedView::reborrow`).
 unsafe impl ::buffa::ViewReborrow for StructView<'static> {
     type Reborrowed<'b> = StructView<'b>;
 }
@@ -603,6 +607,10 @@ impl<'v> ::buffa::DefaultViewInstance for ValueView<'v> {
             ))
     }
 }
+/// SAFETY: `Reborrowed<'b>` is the same generated struct with only its
+/// lifetime parameter shortened. Layout is identical (additionally
+/// checked by an inline-const `size_of`/`align_of` guard inside
+/// `OwnedView::reborrow`).
 unsafe impl ::buffa::ViewReborrow for ValueView<'static> {
     type Reborrowed<'b> = ValueView<'b>;
 }
@@ -771,6 +779,10 @@ impl<'v> ::buffa::DefaultViewInstance for ListValueView<'v> {
             ))
     }
 }
+/// SAFETY: `Reborrowed<'b>` is the same generated struct with only its
+/// lifetime parameter shortened. Layout is identical (additionally
+/// checked by an inline-const `size_of`/`align_of` guard inside
+/// `OwnedView::reborrow`).
 unsafe impl ::buffa::ViewReborrow for ListValueView<'static> {
     type Reborrowed<'b> = ListValueView<'b>;
 }

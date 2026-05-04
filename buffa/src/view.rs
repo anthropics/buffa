@@ -171,9 +171,16 @@ pub trait MessageView<'a>: Sized {
 /// parameter shortened to `'b` — identical in memory layout (`size_of` and
 /// `align_of`). Any other mapping causes undefined behaviour in
 /// [`OwnedView::reborrow`], which casts `*const Self` to
-/// `*const Self::Reborrowed<'b>`. This is the actual safety contract; the
-/// size/align assertions inside `reborrow` are a compile-time sanity guard
-/// against accidentally mistyped impls, not a substitute for this invariant.
+/// `*const Self::Reborrowed<'b>`.
+///
+/// The trait bound `Reborrowed<'b>: MessageView<'b, Owned = …>` rules out
+/// some mistakes (the reborrow must impl `MessageView<'b>` with the same
+/// `Owned` type), and `OwnedView::reborrow` includes an inline-const
+/// `size_of`/`align_of` guard that catches layout-mismatched impls at
+/// monomorphization. Neither check is sufficient on its own — the
+/// same-struct requirement is enforced *only* by this contract; an impl
+/// pointing at a different struct that happens to share layout and `Owned`
+/// type is still UB and the impl author is responsible for not writing one.
 ///
 /// Additionally, `Self` must be **covariant** in its lifetime parameter —
 /// all fields must be `&'a T`, `MessageFieldView<SomeView<'a>>`, or similarly
@@ -877,6 +884,13 @@ impl<'a> UnknownFieldsView<'a> {
 /// `V = FooView<'static>`, so borrowed fields *appear* `'static` to the
 /// compiler — relying on that outside the owning scope is unsound.
 ///
+/// **If you see `error[E0597]: borrowed value does not live long enough` or
+/// `lifetime may not live long enough` on a view field, reach for
+/// [`reborrow()`](OwnedView::reborrow).** It narrows the synthetic `'static`
+/// down to the OwnedView's real lifetime, letting you return view fields
+/// from a function or store them in a struct that outlives the immediate
+/// scope.
+///
 /// Use [`reborrow()`](OwnedView::reborrow) whenever the borrow needs to
 /// outlive the current expression — for example, storing the view in a local,
 /// passing it to a `'a`-bounded function, or returning a field from a handler:
@@ -1108,16 +1122,34 @@ where
     where
         V: ViewReborrow,
     {
+        // Catches mistyped `unsafe impl ViewReborrow` whose `Reborrowed`
+        // resolves to a layout-incompatible type at monomorphization rather
+        // than as latent UB at the cast site. `'static` is a valid witness
+        // for any `'b` since lifetimes are erased before layout. This does
+        // *not* enforce same-struct (a different struct with the same
+        // layout would pass); the trait's `# Safety` contract still does.
+        const {
+            assert!(
+                core::mem::size_of::<V>() == core::mem::size_of::<V::Reborrowed<'static>>(),
+                "ViewReborrow impl is unsound: size_of::<V>() != size_of::<V::Reborrowed>"
+            );
+            assert!(
+                core::mem::align_of::<V>() == core::mem::align_of::<V::Reborrowed<'static>>(),
+                "ViewReborrow impl is unsound: align_of::<V>() != align_of::<V::Reborrowed>"
+            );
+        }
+
         // SAFETY: The `unsafe ViewReborrow` contract requires `Reborrowed<'b>`
         // to be the same struct as `V` with only its lifetime parameter shortened
         // to `'b`. Lifetimes carry no runtime representation, so `V`
         // (= `FooView<'static>`) and `V::Reborrowed<'b>` (= `FooView<'b>`) occupy
-        // identical bytes. We cast `*const V` to `*const V::Reborrowed<'b>` and
-        // return a shared reference tied to `'b`. No value is copied; `self.view`
-        // remains owned by `self` and is dropped by the `Drop` impl. The
-        // OwnedView invariant — established by `decode`/`decode_with_options` or
-        // upheld by the caller of the unsafe `from_parts` — ensures the
-        // pointed-to data is valid for `'b`.
+        // identical bytes (additionally checked by the inline-const guard
+        // above). We cast `*const V` to `*const V::Reborrowed<'b>` and return a
+        // shared reference tied to `'b`. No value is copied; `self.view` remains
+        // owned by `self` and is dropped by the `Drop` impl. The OwnedView
+        // invariant — established by `decode`/`decode_with_options` or upheld by
+        // the caller of the unsafe `from_parts` — ensures the pointed-to data
+        // is valid for `'b`.
         unsafe { &*(&*self.view as *const V as *const V::Reborrowed<'b>) }
     }
 }

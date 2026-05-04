@@ -143,6 +143,10 @@ impl<'v> ::buffa::DefaultViewInstance for DoubleValueView<'v> {
             ))
     }
 }
+/// SAFETY: `Reborrowed<'b>` is the same generated struct with only its
+/// lifetime parameter shortened. Layout is identical (additionally
+/// checked by an inline-const `size_of`/`align_of` guard inside
+/// `OwnedView::reborrow`).
 unsafe impl ::buffa::ViewReborrow for DoubleValueView<'static> {
     type Reborrowed<'b> = DoubleValueView<'b>;
 }
@@ -288,6 +292,10 @@ impl<'v> ::buffa::DefaultViewInstance for FloatValueView<'v> {
             ))
     }
 }
+/// SAFETY: `Reborrowed<'b>` is the same generated struct with only its
+/// lifetime parameter shortened. Layout is identical (additionally
+/// checked by an inline-const `size_of`/`align_of` guard inside
+/// `OwnedView::reborrow`).
 unsafe impl ::buffa::ViewReborrow for FloatValueView<'static> {
     type Reborrowed<'b> = FloatValueView<'b>;
 }
@@ -433,6 +441,10 @@ impl<'v> ::buffa::DefaultViewInstance for Int64ValueView<'v> {
             ))
     }
 }
+/// SAFETY: `Reborrowed<'b>` is the same generated struct with only its
+/// lifetime parameter shortened. Layout is identical (additionally
+/// checked by an inline-const `size_of`/`align_of` guard inside
+/// `OwnedView::reborrow`).
 unsafe impl ::buffa::ViewReborrow for Int64ValueView<'static> {
     type Reborrowed<'b> = Int64ValueView<'b>;
 }
@@ -578,6 +590,10 @@ impl<'v> ::buffa::DefaultViewInstance for UInt64ValueView<'v> {
             ))
     }
 }
+/// SAFETY: `Reborrowed<'b>` is the same generated struct with only its
+/// lifetime parameter shortened. Layout is identical (additionally
+/// checked by an inline-const `size_of`/`align_of` guard inside
+/// `OwnedView::reborrow`).
 unsafe impl ::buffa::ViewReborrow for UInt64ValueView<'static> {
     type Reborrowed<'b> = UInt64ValueView<'b>;
 }
@@ -723,6 +739,10 @@ impl<'v> ::buffa::DefaultViewInstance for Int32ValueView<'v> {
             ))
     }
 }
+/// SAFETY: `Reborrowed<'b>` is the same generated struct with only its
+/// lifetime parameter shortened. Layout is identical (additionally
+/// checked by an inline-const `size_of`/`align_of` guard inside
+/// `OwnedView::reborrow`).
 unsafe impl ::buffa::ViewReborrow for Int32ValueView<'static> {
     type Reborrowed<'b> = Int32ValueView<'b>;
 }
@@ -868,6 +888,10 @@ impl<'v> ::buffa::DefaultViewInstance for UInt32ValueView<'v> {
             ))
     }
 }
+/// SAFETY: `Reborrowed<'b>` is the same generated struct with only its
+/// lifetime parameter shortened. Layout is identical (additionally
+/// checked by an inline-const `size_of`/`align_of` guard inside
+/// `OwnedView::reborrow`).
 unsafe impl ::buffa::ViewReborrow for UInt32ValueView<'static> {
     type Reborrowed<'b> = UInt32ValueView<'b>;
 }
@@ -1013,6 +1037,10 @@ impl<'v> ::buffa::DefaultViewInstance for BoolValueView<'v> {
             ))
     }
 }
+/// SAFETY: `Reborrowed<'b>` is the same generated struct with only its
+/// lifetime parameter shortened. Layout is identical (additionally
+/// checked by an inline-const `size_of`/`align_of` guard inside
+/// `OwnedView::reborrow`).
 unsafe impl ::buffa::ViewReborrow for BoolValueView<'static> {
     type Reborrowed<'b> = BoolValueView<'b>;
 }
@@ -1161,6 +1189,10 @@ impl<'v> ::buffa::DefaultViewInstance for StringValueView<'v> {
             ))
     }
 }
+/// SAFETY: `Reborrowed<'b>` is the same generated struct with only its
+/// lifetime parameter shortened. Layout is identical (additionally
+/// checked by an inline-const `size_of`/`align_of` guard inside
+/// `OwnedView::reborrow`).
 unsafe impl ::buffa::ViewReborrow for StringValueView<'static> {
     type Reborrowed<'b> = StringValueView<'b>;
 }
@@ -1309,6 +1341,10 @@ impl<'v> ::buffa::DefaultViewInstance for BytesValueView<'v> {
             ))
     }
 }
+/// SAFETY: `Reborrowed<'b>` is the same generated struct with only its
+/// lifetime parameter shortened. Layout is identical (additionally
+/// checked by an inline-const `size_of`/`align_of` guard inside
+/// `OwnedView::reborrow`).
 unsafe impl ::buffa::ViewReborrow for BytesValueView<'static> {
     type Reborrowed<'b> = BytesValueView<'b>;
 }

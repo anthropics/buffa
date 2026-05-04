@@ -879,6 +879,44 @@ async fn handle(
 }
 ```
 
+#### Returning a borrow into the request: `reborrow()`
+
+`OwnedView<V>` stores `V = FooView<'static>`, so `Deref` gives you back
+`&FooView<'static>` — borrows of view fields appear `'static` to the
+compiler. That works for the patterns above, but it falls over the moment
+you want to return a borrow tied to the request's lifetime:
+
+```rust,ignore
+// Fails to compile: rustc reports "borrowed value does not live long enough"
+// or "lifetime may not live long enough" — `&req.name` looks 'static.
+async fn lookup<'a>(
+    &'a self,
+    ctx: Context,
+    req: OwnedView<RecordRequestView<'static>>,
+) -> Result<(&'a str, Context), ConnectError> {
+    Ok((&req.name, ctx))
+}
+```
+
+Call [`OwnedView::reborrow()`](https://docs.rs/buffa/latest/buffa/view/struct.OwnedView.html#method.reborrow)
+to narrow `'static` down to the OwnedView's real lifetime:
+
+```rust,ignore
+async fn lookup<'a>(
+    &'a self,
+    ctx: Context,
+    req: OwnedView<RecordRequestView<'static>>,
+) -> Result<(&'a str, Context), ConnectError> {
+    let view = req.reborrow();    // &'a RecordRequestView<'a>
+    Ok((&view.name, ctx))         // &'a str — bound to req's lifetime
+}
+```
+
+The reborrow is a pointer cast, not a copy — `req` is unchanged, drops
+normally, and you can call `reborrow()` repeatedly. This pattern is what
+to reach for whenever you see a borrow-checker error on a view field that
+you'd otherwise resort to `.to_owned()` for.
+
 ### Encoding from views (`ViewEncode`)
 
 View types also implement `ViewEncode<'a>`, which provides the same
