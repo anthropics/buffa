@@ -45,6 +45,12 @@ jobs:
       - name: Tests
         run: cargo test --workspace
 
+      # Optional features must keep compiling — #88 was a feature-flag-only
+      # break that escaped the default-features test pass above. cargo check
+      # is sufficient to catch compile breaks without doubling the test time.
+      - name: Check all features
+        run: cargo check --workspace --all-features
+
   # ── Markdown lint ────────────────────────────────────────────────────────
   # Same pinned markdownlint-cli version as `task lint-md`. Node is
   # preinstalled on ubuntu-latest so no setup-node step is needed.

@@ -293,3 +293,9 @@ impl<'v> ::buffa::DefaultViewInstance for AnyView<'v> {
             ))
     }
 }
+impl ::buffa::ViewReborrow for AnyView<'static> {
+    type Reborrowed<'b> = AnyView<'b>;
+    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+        this
+    }
+}

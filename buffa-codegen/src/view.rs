@@ -330,6 +330,13 @@ pub(crate) fn generate_view_with_nesting(
                 ))
             }
         }
+
+        impl ::buffa::ViewReborrow for #view_ident<'static> {
+            type Reborrowed<'b> = #view_ident<'b>;
+            fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+                this
+            }
+        }
     };
 
     Ok((top_level, mod_items))

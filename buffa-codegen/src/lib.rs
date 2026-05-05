@@ -148,7 +148,18 @@ pub struct CodeGenConfig {
     /// on generated message structs and enum types.
     ///
     /// When this is `true`, the downstream crate must add `arbitrary` as an
-    /// optional dependency and enable the `buffa/arbitrary` feature.
+    /// optional dependency and enable the `buffa/arbitrary` feature. The
+    /// downstream crate's Cargo feature that gates `arbitrary` must be named
+    /// exactly `"arbitrary"` — the generated `cfg_attr` uses that literal
+    /// string and cannot be customized. This applies to both the struct-level
+    /// `derive(Arbitrary)` and the per-field `#[arbitrary(with = ...)]`
+    /// attributes emitted for `bytes_fields`-typed fields.
+    ///
+    /// For `bytes_fields`-typed fields, codegen emits `#[arbitrary(with = ...)]`
+    /// using helpers in `::buffa::__private` since `bytes::Bytes` has no
+    /// `Arbitrary` impl. Singular, optional, and repeated bytes fields are all
+    /// covered. Map values are always `Vec<u8>` regardless of `bytes_fields`
+    /// and require no special handling.
     pub generate_arbitrary: bool,
     /// External type path mappings.
     ///

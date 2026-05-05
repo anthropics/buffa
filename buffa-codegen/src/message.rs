@@ -1212,6 +1212,9 @@ struct FieldInfo {
     /// scalars. Not true for message fields (which use `MessageField<T>`),
     /// repeated fields, or proto2 `required` fields.
     is_optional: bool,
+    /// True when the field is proto type `bytes` AND matches the `bytes_fields`
+    /// config — i.e. the struct field type is `bytes::Bytes` not `Vec<u8>`.
+    use_bytes: bool,
     /// Proto2 `required` (or editions `LEGACY_REQUIRED`). Required fields
     /// must always appear in JSON output regardless of value, matching the
     /// binary encoder's always-encode semantics.
@@ -1353,6 +1356,7 @@ fn classify_field(
         is_map,
         is_optional,
         is_required,
+        use_bytes,
         map_key_type,
         map_value_type,
         map_value_enum_closed,
@@ -1411,10 +1415,24 @@ fn generate_field(
     };
     let custom_field_attrs =
         CodeGenContext::matching_attributes(&ctx.config.field_attributes, &field_fqn)?;
+    // bytes_fields map values are Vec<u8>, not Bytes — no shim needed there.
+    let arbitrary_field_attr = if ctx.config.generate_arbitrary && info.use_bytes && !info.is_map {
+        let helper = if info.is_optional {
+            quote! { ::buffa::__private::arbitrary_bytes_opt }
+        } else if info.is_repeated {
+            quote! { ::buffa::__private::arbitrary_bytes_vec }
+        } else {
+            quote! { ::buffa::__private::arbitrary_bytes }
+        };
+        quote! { #[cfg_attr(feature = "arbitrary", arbitrary(with = #helper))] }
+    } else {
+        quote! {}
+    };
     let rust_type = &info.struct_field_type;
     let tokens = quote! {
         #doc
         #serde_attr
+        #arbitrary_field_attr
         #custom_field_attrs
         pub #rust_name: #rust_type,
     };

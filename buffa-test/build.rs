@@ -166,6 +166,21 @@ fn main() {
         .compile()
         .expect("buffa_build failed for basic.proto with use_bytes_type");
 
+    // Regression #88: bytes_fields + generate_arbitrary(true).
+    // BytesContexts in basic.proto has singular, optional, repeated, and oneof
+    // bytes fields — this compilation exercises all four shim paths.
+    let arb_out =
+        std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("arbitrary_bytes");
+    std::fs::create_dir_all(&arb_out).expect("create arbitrary_bytes dir");
+    buffa_build::Config::new()
+        .files(&["protos/basic.proto"])
+        .includes(&["protos/"])
+        .use_bytes_type()
+        .generate_arbitrary(true)
+        .out_dir(arb_out)
+        .compile()
+        .expect("buffa_build failed for basic.proto with use_bytes_type + generate_arbitrary");
+
     // Views + preserve_unknown_fields=false: the else-branches in view
     // codegen that omit the unknown-fields view field and before_tag tracking.
     // Compiled into a sub-directory; no runtime tests needed — the coverage

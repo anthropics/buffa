@@ -63,6 +63,8 @@ struct VariantInfo {
     /// Custom attributes matched via `CodeGenConfig::field_attributes` on the
     /// variant's fully-qualified path (`{oneof_fqn}.{variant_proto_name}`).
     custom_attrs: TokenStream,
+    /// Used to emit `#[arbitrary(with = ...)]` alongside `derive(Arbitrary)`.
+    use_bytes: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -111,19 +113,20 @@ fn collect_variant_info(
             // (sentinel + `oneof` + one snake-case segment per message in
             // the FQN path). `nesting` here is the owning message's
             // msg_nesting, so the enum body sits at `nesting + 3`.
-            let rust_type =
-                if field_type == Type::TYPE_BYTES && field_uses_bytes(ctx, proto_fqn, proto_name) {
-                    quote! { ::buffa::bytes::Bytes }
-                } else {
-                    scalar_or_message_type_nested(
-                        ctx,
-                        field,
-                        current_package,
-                        nesting + 3,
-                        features,
-                        resolver,
-                    )?
-                };
+            let use_bytes =
+                field_type == Type::TYPE_BYTES && field_uses_bytes(ctx, proto_fqn, proto_name);
+            let rust_type = if use_bytes {
+                quote! { ::buffa::bytes::Bytes }
+            } else {
+                scalar_or_message_type_nested(
+                    ctx,
+                    field,
+                    current_package,
+                    nesting + 3,
+                    features,
+                    resolver,
+                )?
+            };
             let variant_fqn = format!("{proto_fqn}.{oneof_name}.{proto_name}");
             let custom_attrs =
                 CodeGenContext::matching_attributes(&ctx.config.field_attributes, &variant_fqn)?;
@@ -135,6 +138,7 @@ fn collect_variant_info(
                 is_boxed: is_boxed_variant(field_type),
                 is_null_value: is_null_value_field(field),
                 custom_attrs,
+                use_bytes,
             })
         })
         .collect()
@@ -187,10 +191,21 @@ pub fn generate_oneof_enum(
             let ident = &v.variant_ident;
             let ty = &v.rust_type;
             let attrs = &v.custom_attrs;
+            // The arbitrary crate does not support #[arbitrary(...)] on
+            // enum variants — the attribute must be on the inner field.
+            let arbitrary_field_attr = if ctx.config.generate_arbitrary && v.use_bytes {
+                quote! { #[cfg_attr(feature = "arbitrary", arbitrary(with = ::buffa::__private::arbitrary_bytes))] }
+            } else {
+                quote! {}
+            };
             if v.is_boxed {
+                // Boxed variants are message/group types (see is_boxed_variant),
+                // never bytes — so there's no shim to lose here. Lock the
+                // invariant in case is_boxed_variant ever broadens.
+                debug_assert!(!v.use_bytes, "boxed oneof variant cannot be bytes_fields-typed");
                 quote! { #attrs #ident(::buffa::alloc::boxed::Box<#ty>) }
             } else {
-                quote! { #attrs #ident(#ty) }
+                quote! { #attrs #ident(#arbitrary_field_attr #ty) }
             }
         })
         .collect();

@@ -130,6 +130,22 @@ impl Config {
     ///
     /// The derive is gated behind `#[cfg_attr(feature = "arbitrary", ...)]`
     /// so the downstream crate compiles with or without the feature enabled.
+    ///
+    /// Your crate's Cargo feature **must be named exactly `"arbitrary"`** —
+    /// the generated `cfg_attr` uses that literal string and cannot be
+    /// customised — and it must forward to `buffa/arbitrary`:
+    ///
+    /// ```toml
+    /// [features]
+    /// arbitrary = ["dep:arbitrary", "buffa/arbitrary"]
+    /// ```
+    ///
+    /// Forgetting `"buffa/arbitrary"` produces a confusing
+    /// `cannot find function 'arbitrary_bytes' in module '__private'` error
+    /// in generated code when [`use_bytes_type`](Self::use_bytes_type) or
+    /// [`use_bytes_type_in`](Self::use_bytes_type_in) is also enabled,
+    /// because the helper that backs `#[arbitrary(with = ...)]` for
+    /// `bytes::Bytes` fields lives in `buffa` under that feature gate.
     #[must_use]
     pub fn generate_arbitrary(mut self, enabled: bool) -> Self {
         self.codegen_config.generate_arbitrary = enabled;

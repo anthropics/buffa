@@ -200,6 +200,19 @@ pub mod basic_bytes {
     include!(concat!(env!("OUT_DIR"), "/bytes_variant/basic.mod.rs"));
 }
 
+// Regression #88: bytes_fields + generate_arbitrary(true). Compilation is the
+// primary assertion — all four bytes field shapes (singular, optional,
+// repeated, oneof variant) must compile with the arbitrary shims in place.
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod basic_arbitrary_bytes {
+    include!(concat!(env!("OUT_DIR"), "/arbitrary_bytes/basic.mod.rs"));
+}
+
 // Views + preserve_unknown_fields=false: covers the else-branches in view
 // codegen that omit the unknown-fields view field. Compilation IS the test.
 #[allow(

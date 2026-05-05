@@ -6,7 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+arbitrary = ["dep:arbitrary", "buffa/arbitrary"]
+
 [dependencies]
+arbitrary = { workspace = true, optional = true }
 buffa = { workspace = true, features = ["std", "json", "text"] }
 buffa-types = { workspace = true, features = ["json"] }
 bytes = { workspace = true }
