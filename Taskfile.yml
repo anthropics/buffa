@@ -488,8 +488,18 @@ tasks:
     desc: Build all example binaries.
     cmds:
       - cargo build --manifest-path examples/addressbook/Cargo.toml
+      - cargo build --manifest-path examples/conflicts/Cargo.toml
       - cargo build --manifest-path examples/envelope/Cargo.toml
       - cargo build --manifest-path examples/logging/Cargo.toml
+
+  example-conflicts:
+    desc: >-
+      Run the natural-path re-exports demo — shows the `__buffa::` import
+      fallback when a re-export is shadowed by a real proto type.
+      Self-contained, no args.
+    dir: examples/conflicts
+    cmds:
+      - cargo run
 
   example-envelope:
     desc: >-

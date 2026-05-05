@@ -38,7 +38,7 @@ pub(crate) mod view;
 
 use crate::generated::descriptor::FileDescriptorProto;
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 
 /// Lints suppressed on generated code at module boundaries.
 ///
@@ -555,6 +555,12 @@ struct ProtoContent {
     oneof: TokenStream,
     view_oneof: TokenStream,
     ext: TokenStream,
+    /// Candidate `pub use` re-exports targeting the package root (top-level
+    /// view structs, file-level extension consts). Filtered against the
+    /// package-wide root namespace in [`generate_package_mod`] — the package
+    /// can span multiple `.proto` files, so collisions are only knowable at
+    /// the stitcher level.
+    root_reexports: Vec<message::ReexportCandidate>,
 }
 
 /// Generate the five per-`.proto` content files for one input file.
@@ -577,6 +583,8 @@ fn generate_proto_content(
     let mut oneof = TokenStream::new();
     let mut view_oneof = TokenStream::new();
     let mut ext = TokenStream::new();
+    let mut root_reexports: Vec<message::ReexportCandidate> = Vec::new();
+    let sentinel = make_field_ident(context::SENTINEL_MOD);
 
     for enum_type in &file.enum_type {
         let enum_rust_name = enum_type.name.as_deref().unwrap_or("");
@@ -641,6 +649,28 @@ fn generate_proto_content(
         oneof.extend(msg_oneof);
         view.extend(msg_view);
         view_oneof.extend(msg_view_oneof);
+
+        // Top-level message view → re-export at package root. The leading
+        // `self::` is load-bearing: when consumers nest packages with
+        // `pub mod a { use super::*; pub mod a_b { use super::*; … } }`
+        // (`buffa-build`'s `_include.rs` does this), a parent package's
+        // `__buffa` is in scope via the glob, and Rust's import-resolution
+        // pass treats a glob-imported name as ambiguous against a
+        // **macro-expanded** local one (the `pub mod __buffa` block arrives
+        // via `include!()`), even though a non-macro local definition would
+        // shadow the glob — see rustc E0659. `self::` resolves it
+        // deterministically. `#[doc(inline)]` makes rustdoc render the type's
+        // full page at the natural path instead of a "Re-export of …" stub.
+        if ctx.config.generate_views {
+            let view_ident = format_ident!("{top_level_name}View");
+            root_reexports.push(message::ReexportCandidate {
+                name: view_ident.to_string(),
+                tokens: quote! {
+                    #[doc(inline)]
+                    pub use self :: #sentinel :: view :: #view_ident;
+                },
+            });
+        }
     }
 
     // File-level `extend` declarations → `__buffa::ext::` (depth 2).
@@ -653,12 +683,23 @@ fn generate_proto_content(
         current_package,
     )?;
     ext.extend(file_ext_tokens);
-    let sentinel = make_field_ident(context::SENTINEL_MOD);
     for id in file_ext_json {
         reg.json_ext.push(quote! { #sentinel :: ext :: #id });
     }
     for id in file_ext_text {
         reg.text_ext.push(quote! { #sentinel :: ext :: #id });
+    }
+    // File-level extension consts → re-export at package root. `self::` and
+    // `#[doc(inline)]` for the same reasons as the view re-exports above.
+    for ext_field in &file.extension {
+        let const_ident = extension::extension_const_ident(ext_field.name.as_deref().unwrap_or(""));
+        root_reexports.push(message::ReexportCandidate {
+            name: const_ident.to_string(),
+            tokens: quote! {
+                #[doc(inline)]
+                pub use self :: #sentinel :: ext :: #const_ident;
+            },
+        });
     }
 
     Ok(ProtoContent {
@@ -668,6 +709,7 @@ fn generate_proto_content(
         oneof,
         view_oneof,
         ext,
+        root_reexports,
     })
 }
 
@@ -732,22 +774,21 @@ fn generate_package(
     // `__buffa::register_types` (one level deep), so each path gets a
     // single `super::` prefix when emitted into the fn body.
     let mut reg = message::RegistryPaths::default();
+    let mut root_reexports: Vec<message::ReexportCandidate> = Vec::new();
 
     let sections = if ctx.config.file_per_package {
         let mut sections = PackageSections::default();
         for file in files {
-            sections.push_inline(generate_proto_content(
-                ctx,
-                current_package,
-                file,
-                &mut reg,
-            )?);
+            let mut pc = generate_proto_content(ctx, current_package, file, &mut reg)?;
+            root_reexports.append(&mut pc.root_reexports);
+            sections.push_inline(pc);
         }
         sections
     } else {
         let mut stems: Vec<String> = Vec::new();
         for file in files {
-            let pc = generate_proto_content(ctx, current_package, file, &mut reg)?;
+            let mut pc = generate_proto_content(ctx, current_package, file, &mut reg)?;
+            root_reexports.append(&mut pc.root_reexports);
             let source = file.name.as_deref().unwrap_or("");
             let push = |out: &mut Vec<GeneratedFile>,
                         suffix: &str,
@@ -777,6 +818,8 @@ fn generate_package(
         PackageSections::from_stems(&stems)
     };
 
+    let reexport_block = surviving_root_reexports(ctx, files, &reg, root_reexports);
+
     out.push(GeneratedFile {
         name: if ctx.config.file_per_package {
             package_to_filename(current_package)
@@ -785,18 +828,72 @@ fn generate_package(
         },
         package: current_package.to_string(),
         kind: GeneratedFileKind::PackageMod,
-        content: generate_package_mod(ctx, &sections, &reg)?,
+        content: generate_package_mod(ctx, &sections, &reg, &reexport_block)?,
     });
 
     Ok(())
 }
 
+/// Filter the candidate package-root re-exports against the package's
+/// existing root namespace and against each other, returning the surviving
+/// `pub use` lines.
+///
+/// The package root is shared across every `.proto` file in the package, so
+/// the occupied-name set must be built from *all* of them — a top-level
+/// message named `FooView` declared in `a.proto` would shadow `Foo`'s view
+/// re-export from `b.proto`.
+fn surviving_root_reexports(
+    ctx: &context::CodeGenContext,
+    files: &[&FileDescriptorProto],
+    reg: &message::RegistryPaths,
+    mut candidates: Vec<message::ReexportCandidate>,
+) -> TokenStream {
+    use crate::idents::make_field_ident;
+    use std::collections::BTreeSet;
+
+    // Names already occupied at package root by real items: top-level
+    // messages, enums, message snake_case modules, and the `__buffa`
+    // sentinel itself. File-level extension consts live in
+    // `__buffa::ext::`, not at the root, so they are *candidates* (added
+    // by `generate_proto_content`) rather than occupants.
+    let mut occupied: BTreeSet<String> = BTreeSet::new();
+    occupied.insert(context::SENTINEL_MOD.to_string());
+    for file in files {
+        for m in &file.message_type {
+            let name = m.name.as_deref().unwrap_or("");
+            occupied.insert(name.to_string());
+            occupied.insert(crate::oneof::to_snake_case(name));
+        }
+        for e in &file.enum_type {
+            occupied.insert(e.name.as_deref().unwrap_or("").to_string());
+        }
+    }
+
+    // `register_types`, when emitted, lives at `__buffa::register_types`.
+    // `self::` and `#[doc(inline)]` for the same reasons as the view
+    // re-exports above.
+    if ctx.config.emit_register_fn && !reg.is_empty() {
+        let sentinel = make_field_ident(context::SENTINEL_MOD);
+        candidates.push(message::ReexportCandidate {
+            name: "register_types".to_string(),
+            tokens: quote! {
+                #[doc(inline)]
+                pub use self :: #sentinel :: register_types;
+            },
+        });
+    }
+
+    message::emit_surviving_reexports(candidates, &occupied)
+}
+
 /// Render the per-package stitcher: owned items at root plus the
-/// `__buffa::{view,oneof,ext,...}` module wrappers.
+/// `__buffa::{view,oneof,ext,...}` module wrappers, followed by the
+/// surviving package-root `pub use` re-exports.
 fn generate_package_mod(
     ctx: &context::CodeGenContext,
     sections: &PackageSections,
     reg: &message::RegistryPaths,
+    root_reexports: &TokenStream,
 ) -> Result<String, CodeGenError> {
     use crate::idents::make_field_ident;
 
@@ -862,6 +959,7 @@ fn generate_package_mod(
             }
             #register_fn
         }
+        #root_reexports
     };
 
     format_tokens(tokens, "")

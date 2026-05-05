@@ -19,7 +19,11 @@ mod proto {
 }
 
 use buffa::{EnumValue, Message};
-use proto::buffa::examples::addressbook::v1::__buffa::oneof::person::Address as AddressOneof;
+// `person::Address` is the natural-path re-export of the oneof enum that
+// lives canonically at `__buffa::oneof::person::Address`. Both paths
+// resolve to the same type; the re-export reads like the proto. See
+// `examples/conflicts` for what to do when the natural name is shadowed.
+use proto::buffa::examples::addressbook::v1::person::Address as AddressOneof;
 use proto::buffa::examples::addressbook::v1::{
     person::{PhoneNumber, PhoneType},
     AddressBook, Person, StructuredAddress,

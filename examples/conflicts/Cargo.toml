@@ -1,0 +1,11 @@
+[package]
+name = "example-conflicts"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+buffa = { path = "../../buffa" }
+
+[build-dependencies]
+buffa-build = { path = "../../buffa-build" }
