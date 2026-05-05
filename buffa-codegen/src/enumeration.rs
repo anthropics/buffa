@@ -137,7 +137,7 @@ pub fn generate_enum(
         let variant_ident = crate::message::make_field_ident(value_name);
         let value_fqn = format!("{}.{}", proto_fqn, value_name);
         let variant_doc =
-            crate::comments::doc_attrs_resolved(ctx.comment(&value_fqn), &value_fqn, &ctx.type_map);
+            crate::comments::doc_attrs_resolved(ctx.comment(&value_fqn), proto_fqn, &ctx.type_map);
 
         if let Some(&primary_name) = seen.get(&number) {
             let primary_ident = crate::message::make_field_ident(primary_name);

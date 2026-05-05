@@ -366,7 +366,7 @@ fn view_struct_field(
         let doc = crate::comments::doc_attrs_with_tag_resolved(
             proto_comment,
             &tag_line,
-            &field_fqn,
+            proto_fqn,
             &ctx.type_map,
         );
         let map_ty = view_map_type(scope, msg, field)?;
@@ -382,7 +382,7 @@ fn view_struct_field(
     let doc = crate::comments::doc_attrs_with_tag_resolved(
         proto_comment,
         &tag_line,
-        &field_fqn,
+        proto_fqn,
         &ctx.type_map,
     );
 

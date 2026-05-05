@@ -173,10 +173,11 @@ fn fqn_join(package: &str, name: &str) -> String {
 /// Build `#[doc = "..."]` token stream attributes from an optional proto comment,
 /// resolving AIP-192 cross-references into rustdoc intra-doc links where possible.
 ///
-/// `scope_fqn` is the dotless FQN of the proto element being documented
-/// (e.g. `"google.example.v1.Book"` for a message,
-/// `"google.example.v1.Book.title"` for a field). Unresolvable refs and
-/// extern-crate types fall back to escaped-literal behaviour.
+/// `scope_fqn` is the dotless FQN of the **enclosing proto type** whose lexical
+/// scope governs ref resolution — always the message or enum FQN, never the
+/// field/value/oneof's own FQN (e.g. `"google.example.v1.Book"` for a message
+/// comment, a field comment, or a oneof comment inside `Book`). Unresolvable
+/// refs and extern-crate types fall back to escaped-literal behaviour.
 pub(crate) fn doc_attrs_resolved(
     comment: Option<&str>,
     scope_fqn: &str,
@@ -516,9 +517,6 @@ fn find_ref_link<'a>(
     Some((display, ref_target, k + 1))
 }
 
-/// Escape `<` and `>` in a display string so rustdoc doesn't treat them as
-/// HTML tags (which triggers `rustdoc::invalid_html_tags` under `-D warnings`).
-/// `[` and `]` are already excluded by `find_ref_link`.
 /// Escape `<` and `>` in a display or ref-target string so rustdoc doesn't
 /// treat them as HTML tags (`rustdoc::invalid_html_tags` under `-D warnings`).
 ///
@@ -577,11 +575,12 @@ fn escape_path_for_link(path: &str) -> String {
         .join("::")
 }
 
-/// Returns `true` for Rust paths that live outside the current crate.
+/// Returns `true` for Rust paths that cannot be linked by prepending `crate::`.
 ///
-/// Mirrors the same check in `context.rs` — extern paths begin with `::` (global
-/// path) or `crate::` (another crate re-exported under this crate's root), both
-/// of which cannot be linked from generated code with a plain `crate::` prefix.
+/// `::` paths are global (extern crate) paths. `crate::`-prefixed values are
+/// rejected because the link is constructed as `crate::{p}`, which would
+/// mangle to `crate::crate::...` for an already-prefixed value. Mirrors the
+/// corresponding check in `context.rs`.
 fn is_extern_path(rust_path: &str) -> bool {
     rust_path.starts_with("::") || rust_path.starts_with("crate::")
 }
@@ -621,11 +620,11 @@ fn resolve_type_fqn<'m>(
 /// Returns `Some("[display](crate::rust::path)")` on success, or `None` if the
 /// ref cannot be resolved (caller falls back to escaping).
 ///
-/// `scope_fqn` is the dotless FQN of the proto element whose comment contains
-/// this ref. `ref_target` may be empty for the implied form `[display][]`.
+/// `scope_fqn` is the dotless FQN of the **enclosing proto type** (message or
+/// enum) — never a field/value/oneof FQN. `ref_target` may be empty for the
+/// implied form `[display][]`.
 ///
-/// Extern-path types (Rust paths starting with `::`) are not linkable from
-/// within this crate and return `None`.
+/// Unlinkable paths (see [`is_extern_path`]) return `None`.
 fn resolve_proto_ref(
     display: &str,
     ref_target: &str,
@@ -648,22 +647,6 @@ fn resolve_proto_ref(
         let d = escape_angle_brackets(display);
         let p = escape_path_for_link(rust_path);
         return Some(format!("[{d}](crate::{p})"));
-    }
-
-    // Try splitting at the last dot: type_part.member (field or enum value).
-    if let Some(dot_pos) = effective_ref.rfind('.') {
-        let type_part = &effective_ref[..dot_pos];
-        let member = &effective_ref[dot_pos + 1..];
-        if !member.is_empty() {
-            if let Some(rust_path) = resolve_type_fqn(type_part, scope_fqn, type_map) {
-                if is_extern_path(rust_path) {
-                    return None;
-                }
-                let d = escape_angle_brackets(display);
-                let p = escape_path_for_link(rust_path);
-                return Some(format!("[{d}](crate::{p}::{member})"));
-            }
-        }
     }
 
     None
@@ -1310,35 +1293,16 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_proto_ref_enum_value() {
+    fn test_resolve_proto_ref_member_ref_returns_none() {
         let mut map = HashMap::new();
-        map.insert(
-            ".google.example.v1.Genre".into(),
-            "google::example::v1::Genre".into(),
-        );
-        let result = resolve_proto_ref(
-            "sci-fi",
-            "Genre.GENRE_SCI_FI",
-            "google.example.v1.Book",
-            &map,
+        map.insert(".pkg.Genre".into(), "pkg::Genre".into());
+        assert_eq!(
+            resolve_proto_ref("Genre.GENRE_SCI_FI", "", "pkg.Book", &map),
+            None,
         );
         assert_eq!(
-            result.as_deref(),
-            Some("[sci-fi](crate::google::example::v1::Genre::GENRE_SCI_FI)")
-        );
-    }
-
-    #[test]
-    fn test_resolve_proto_ref_field() {
-        let mut map = HashMap::new();
-        map.insert(
-            ".google.example.v1.Book".into(),
-            "google::example::v1::Book".into(),
-        );
-        let result = resolve_proto_ref("title", "Book.title", "google.example.v1.Library", &map);
-        assert_eq!(
-            result.as_deref(),
-            Some("[title](crate::google::example::v1::Book::title)")
+            resolve_proto_ref("X", "pkg.Genre.GENRE_SCI_FI", "pkg.Book", &map),
+            None,
         );
     }
 

@@ -1228,7 +1228,7 @@ fn generate_field(
     let doc = crate::comments::doc_attrs_with_tag_resolved(
         ctx.comment(&field_fqn),
         &tag_line,
-        &field_fqn,
+        proto_fqn,
         &ctx.type_map,
     );
     let serde_attr = if ctx.config.generate_json {
