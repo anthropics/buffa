@@ -8,12 +8,68 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `OwnedView<V>` gains a `reborrow<'b>(&'b self) -> &'b V::Reborrowed<'b>` method
+  that makes the internal `'static` lifetime visible as `'b` (the lifetime of the
+  borrow), so view fields can be passed into functions or return types bounded by
+  the `OwnedView`'s lifetime. Requires `V: ViewReborrow`, a safe trait whose
+  `reborrow` method body is a covariance-checked subtype coercion; codegen emits
+  the `impl` automatically for every generated view type. Hand-written view types
+  opt in with `impl ViewReborrow for MyView<'static> { type Reborrowed<'b> =
+  MyView<'b>; fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> { this } }`
+  — the body fails to compile for invariant view types, so no `unsafe` is needed.
+  ([#82](https://github.com/anthropics/buffa/issues/82))
+
+- Codegen now emits "natural-path" `pub use` re-exports for ancillary types
+  (views, oneof enums, view-of-oneof enums, file-level extension consts,
+  `register_types`) at the module path you'd write first — `pkg::FooView`,
+  `pkg::foo::Kind`, `pkg::foo::KindView`, etc. The canonical `__buffa::`
+  paths are unchanged and remain what generated code and downstream codegen
+  always reference; the re-exports are purely an ergonomic convenience and
+  are silently skipped when the natural name is already taken by a real
+  proto item or by another candidate re-export. Because of that skip rule,
+  adding a proto type whose name shadows a re-export (e.g. `message FooView`
+  next to `message Foo`) can silently rebind a natural path between releases
+  — the canonical `__buffa::` path is always stable; use it directly when a
+  natural import stops resolving (see `examples/conflicts` for one alias
+  convention). ([#80](https://github.com/anthropics/buffa/issues/80))
+
+- Doc comments in generated Rust code now resolve AIP-192 proto type cross-references
+  (`[Book][google.example.v1.Book]`, `[Book][]`) to rustdoc intra-doc links.
+  Only type-level refs are resolved; member refs such as `[Genre.GENRE_SCI_FI][]`
+  fall back to escaped literals. Unknown or cross-crate references also fall back
+  silently. ([#26](https://github.com/anthropics/buffa/issues/26))
+
 - `protoc-gen-buffa` and `protoc-gen-buffa-packaging` now respond to
   `--version` / `-V` and `--help` / `-h` instead of blocking on stdin.
   Any other command-line argument prints a "this is a protoc plugin" hint
   to stderr and exits non-zero.
 
+- `buffa::types::decode_bytes_to_bytes` reads a length-delimited `bytes` field
+  into a `bytes::Bytes` via `Buf::copy_to_bytes`. When decoding from a
+  `Bytes`-backed buffer this is a zero-copy refcount bump. Generated
+  `merge_field` arms for `bytes_fields`-tagged fields (singular, optional,
+  repeated, and oneof) now use it instead of `Bytes::from(decode_bytes(..)?)`,
+  eliminating one allocation + memcpy per field on the owned decode path. Note
+  that in the zero-copy case the resulting field aliases the source
+  allocation, so the source buffer is freed only once every aliased field is
+  dropped. Consumers with checked-in generated code must regenerate to pick
+  this up. ([#53](https://github.com/anthropics/buffa/issues/53))
+
 ### Fixed
+
+- `buffa-types --features arbitrary` now compiles. `Any.value` is
+  `bytes::Bytes` (since 0.4.0 / #51), which has no `Arbitrary` impl.
+  Codegen now emits `#[arbitrary(with = ::buffa::__private::arbitrary_bytes*)]`
+  on every `bytes_fields`-typed field — singular, optional, and repeated
+  struct fields plus oneof variant inner fields — when
+  `generate_arbitrary = true`, so the struct-level `derive(Arbitrary)`
+  succeeds. Map values are unaffected (they are always `Vec<u8>` regardless
+  of `bytes_fields`). The same fix covers any user crate that uses
+  `bytes_fields` + `generate_arbitrary`. `cargo doc --workspace
+  --all-features` and `cargo clippy --workspace --all-features` are also
+  unblocked, and CI now runs `cargo check --workspace --all-features` to
+  prevent recurrence.
+  ([#88](https://github.com/anthropics/buffa/issues/88))
 
 - `write_to` now emits fields in ascending field-number order regardless of
   cardinality (singular / repeated / map / oneof), matching prost,

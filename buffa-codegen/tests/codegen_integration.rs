@@ -759,12 +759,15 @@ fn inline_bytes_field_mapping() {
         !content.contains("Vec<u8>"),
         "bytes fields should not use Vec<u8> when bytes mapping is enabled"
     );
-    // Regression: decode path must convert Vec<u8> -> Bytes (not call
+    // Regression: decode path must use the Bytes-producing helper (not call
     // merge_bytes which expects &mut Vec<u8>).
     assert!(
-        content.contains("::buffa::bytes::Bytes::from(")
-            && content.contains("::buffa::types::decode_bytes"),
-        "decode must wrap decode_bytes in Bytes::from: {content}"
+        content.contains("::buffa::types::decode_bytes_to_bytes"),
+        "decode must use decode_bytes_to_bytes for Bytes field: {content}"
+    );
+    assert!(
+        !content.contains("Bytes::from("),
+        "must not wrap decode in Bytes::from (regression to alloc+copy): {content}"
     );
     assert!(
         !content.contains("merge_bytes(&mut self"),

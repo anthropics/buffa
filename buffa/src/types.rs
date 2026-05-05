@@ -38,7 +38,7 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
-use bytes::{Buf, BufMut};
+use bytes::{Buf, BufMut, Bytes};
 
 use crate::encoding::{decode_varint, encode_varint, varint_len};
 use crate::error::DecodeError;
@@ -457,6 +457,9 @@ pub fn encode_bytes(value: &[u8], buf: &mut impl BufMut) {
 
 /// Decode a `bytes` value: read a varint length prefix, then that many bytes.
 ///
+/// See also [`decode_bytes_to_bytes`] for a [`Bytes`]-returning variant that
+/// is zero-copy when `buf` is itself `Bytes`-backed.
+///
 /// # Errors
 ///
 /// - [`DecodeError::UnexpectedEof`] if the buffer has fewer bytes than the
@@ -480,6 +483,36 @@ pub fn decode_bytes(buf: &mut impl Buf) -> Result<Vec<u8>, DecodeError> {
     };
     buf.copy_to_slice(&mut bytes);
     Ok(bytes)
+}
+
+/// Decode a `bytes` value into a [`Bytes`]: read a varint length prefix,
+/// then take that many bytes via [`Buf::copy_to_bytes`].
+///
+/// When `buf` is itself backed by [`Bytes`], `copy_to_bytes` is a zero-copy
+/// refcount bump (via `split_to`); for `&[u8]` and other inputs it falls
+/// back to an allocation + copy, equivalent to wrapping [`decode_bytes`] in
+/// `Bytes::from`.
+///
+/// # Memory retention
+///
+/// In the zero-copy case the returned `Bytes` aliases the source allocation,
+/// so the entire source buffer is retained until every aliased `Bytes`
+/// drops. To detach a field from a large source buffer, deep-copy it with
+/// `Bytes::copy_from_slice(&field)`.
+///
+/// # Errors
+///
+/// - [`DecodeError::UnexpectedEof`] if the buffer has fewer bytes than the
+///   declared length.
+/// - [`DecodeError::MessageTooLarge`] if the declared length overflows `usize`.
+#[inline]
+pub fn decode_bytes_to_bytes(buf: &mut impl Buf) -> Result<Bytes, DecodeError> {
+    let len = decode_varint(buf)?;
+    let len = usize::try_from(len).map_err(|_| DecodeError::MessageTooLarge)?;
+    if buf.remaining() < len {
+        return Err(DecodeError::UnexpectedEof);
+    }
+    Ok(buf.copy_to_bytes(len))
 }
 
 /// Merge length-delimited bytes into an existing `Vec<u8>`, reusing its
@@ -1277,6 +1310,45 @@ mod tests {
         // Length prefix says 5 bytes but buffer only has 2.
         let buf: &[u8] = &[0x05, 0xAA, 0xBB];
         assert_eq!(decode_bytes(&mut &buf[..]), Err(DecodeError::UnexpectedEof));
+    }
+
+    #[test]
+    fn test_decode_bytes_to_bytes_zero_copy_from_bytes() {
+        let mut enc = Vec::new();
+        encode_bytes(b"\xDE\xAD\xBE\xEF", &mut enc);
+        let mut buf = Bytes::from(enc);
+        let payload_ptr = buf.as_ptr() as usize + 1;
+        let out = decode_bytes_to_bytes(&mut buf).unwrap();
+        assert_eq!(&out[..], b"\xDE\xAD\xBE\xEF");
+        // copy_to_bytes on a Bytes input is split_to: the result aliases the
+        // source buffer rather than allocating a copy.
+        assert_eq!(out.as_ptr() as usize, payload_ptr);
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn test_decode_bytes_to_bytes_from_slice() {
+        let mut enc = Vec::new();
+        encode_bytes(b"hello", &mut enc);
+        let out = decode_bytes_to_bytes(&mut enc.as_slice()).unwrap();
+        assert_eq!(&out[..], b"hello");
+    }
+
+    #[test]
+    fn test_decode_bytes_to_bytes_empty() {
+        let mut buf = Bytes::from_static(&[0x00]);
+        let out = decode_bytes_to_bytes(&mut buf).unwrap();
+        assert!(out.is_empty());
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn test_decode_bytes_to_bytes_truncated() {
+        let buf: &[u8] = &[0x05, 0xAA, 0xBB];
+        assert_eq!(
+            decode_bytes_to_bytes(&mut &buf[..]),
+            Err(DecodeError::UnexpectedEof)
+        );
     }
 
     // -----------------------------------------------------------------------

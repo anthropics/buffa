@@ -1,0 +1,66 @@
+// Demonstrates buffa's "natural-path" re-exports and what happens when a
+// proto definition deliberately collides with one.
+//
+// buffa places all ancillary generated types (views, oneof enums,
+// view-of-oneof enums) under a reserved `__buffa::` module so they can
+// never collide with user-declared messages or enums. As a convenience it
+// *also* `pub use`-re-exports each one at the path a Rust user would
+// reach for first — `pkg::msg::OneofName`, `pkg::MessageView`, etc. —
+// but only when that name isn't already taken. This file declares two
+// messages: `Event` is conflict-free and showcases the natural paths;
+// `Probe` deliberately shadows every kind of re-export so that
+// `src/main.rs` can demonstrate the `__buffa::` fallback strategy.
+
+syntax = "proto3";
+
+package buffa.examples.conflicts.v1;
+
+// `Event` has no conflicts. All of its ancillary types are re-exported
+// at their natural paths:
+//
+//   - `event::Payload`     ← `__buffa::oneof::event::Payload`
+//   - `event::PayloadView` ← `__buffa::view::oneof::event::Payload`
+//   - `event::DetailView`  ← `__buffa::view::event::DetailView`
+//   - `EventView`          ← `__buffa::view::EventView`
+message Event {
+  message Detail {
+    string note = 1;
+  }
+
+  oneof payload {
+    string text = 1;
+    Detail detail = 2;
+  }
+}
+
+// `Probe` collides with every re-export it would otherwise get, so all of
+// them are dropped and the `__buffa::` canonical path is the only way in:
+//
+//   - the nested message `Reading` shadows the oneof's `probe::Reading`;
+//   - the nested message `ReadingView` shadows both the oneof's view
+//     re-export `probe::ReadingView` *and* `Reading`'s nested-message
+//     view re-export (the two would also collide with each other);
+//   - the top-level message `ProbeView` (below) shadows `Probe`'s
+//     view re-export at the package root.
+message Probe {
+  // Shadows `__buffa::oneof::probe::Reading`'s natural re-export.
+  message Reading {
+    double value = 1;
+  }
+
+  // Shadows the natural re-exports of both `__buffa::view::oneof::probe::Reading`
+  // and `__buffa::view::probe::ReadingView`.
+  message ReadingView {
+    double value = 1;
+  }
+
+  oneof reading {
+    double scalar = 1;
+    Reading sample = 2;
+  }
+}
+
+// Shadows `__buffa::view::ProbeView`'s natural re-export at package root.
+message ProbeView {
+  string label = 1;
+}

@@ -1389,13 +1389,13 @@ fn explicit_presence_merge_arm(
         },
         Type::TYPE_BYTES => {
             if use_bytes {
-                // bytes::Bytes is immutable — can't merge in place.
-                // Replace with a fresh decode (Vec<u8> -> Bytes via Into).
+                // bytes::Bytes is immutable — can't merge in place. Replace
+                // via decode_bytes_to_bytes (zero-copy if buf is Bytes-backed).
                 quote! {
                     #field_number => {
                         #wire_check
                         self.#ident = ::core::option::Option::Some(
-                            ::buffa::bytes::Bytes::from(::buffa::types::decode_bytes(buf)?)
+                            ::buffa::types::decode_bytes_to_bytes(buf)?
                         );
                     }
                 }
@@ -1506,7 +1506,7 @@ fn scalar_merge_arm(
                 quote! {
                     #field_number => {
                         #wire_check
-                        self.#ident = ::buffa::bytes::Bytes::from(::buffa::types::decode_bytes(buf)?);
+                        self.#ident = ::buffa::types::decode_bytes_to_bytes(buf)?;
                     }
                 }
             } else {
@@ -1897,7 +1897,7 @@ fn repeated_merge_arm(
             Type::TYPE_STRING => quote! { ::buffa::types::decode_string(buf)? },
             Type::TYPE_BYTES => {
                 if use_bytes {
-                    quote! { ::buffa::bytes::Bytes::from(::buffa::types::decode_bytes(buf)?) }
+                    quote! { ::buffa::types::decode_bytes_to_bytes(buf)? }
                 } else {
                     quote! { ::buffa::types::decode_bytes(buf)? }
                 }
@@ -2173,10 +2173,8 @@ fn oneof_merge_arm(
             }
         },
         Type::TYPE_BYTES => {
-            // decode_bytes returns Vec<u8>. Bytes: From<Vec<u8>> (zero-copy,
-            // takes ownership of the Vec's buffer).
             let decoded = if use_bytes {
-                quote! { ::buffa::bytes::Bytes::from(::buffa::types::decode_bytes(buf)?) }
+                quote! { ::buffa::types::decode_bytes_to_bytes(buf)? }
             } else {
                 quote! { ::buffa::types::decode_bytes(buf)? }
             };

@@ -387,6 +387,19 @@ mod tests {
         assert!(!buf_range.contains(&(copied.value.as_ptr() as usize)));
     }
 
+    #[cfg(feature = "arbitrary")]
+    #[test]
+    fn any_arbitrary_with_bytes_value() {
+        use arbitrary::{Arbitrary, Unstructured};
+        // Regression pin for https://github.com/anthropics/buffa/issues/88:
+        // Any.value is bytes::Bytes (not Vec<u8>), so derive(Arbitrary) on Any
+        // requires the ::buffa::__private::arbitrary_bytes shim.
+        let raw = [0u8; 64];
+        let mut u = Unstructured::new(&raw);
+        let any = Any::arbitrary(&mut u).unwrap();
+        let _ = any.value.slice(..);
+    }
+
     #[test]
     fn pack_and_unpack() {
         let ts = Timestamp {

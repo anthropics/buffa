@@ -91,6 +91,7 @@
 //! | [`ExtensionSet`] | Get/set extensions via unknown-field storage |
 //! | [`view::MessageView`] | Zero-copy borrowed view trait |
 //! | [`view::OwnedView<V>`](view::OwnedView) | Self-contained `'static` view backed by `Bytes` |
+//! | [`view::ViewReborrow`] | Expose real borrow lifetime from `OwnedView` via [`reborrow`](view::OwnedView::reborrow) |
 //!
 //! # `no_std`
 //!
@@ -208,7 +209,7 @@ pub use unknown_fields::{UnknownField, UnknownFieldData, UnknownFields};
 pub use text::TextFormat;
 pub use view::{
     DefaultViewInstance, MapView, MessageFieldView, MessageView, OwnedView, RepeatedView,
-    UnknownFieldsView, ViewEncode,
+    UnknownFieldsView, ViewEncode, ViewReborrow,
 };
 
 /// Private re-exports used exclusively by generated code.
@@ -238,6 +239,94 @@ pub mod __private {
     pub use hashbrown::HashMap;
     #[cfg(feature = "std")]
     pub use std::collections::HashMap;
+
+    /// `arbitrary` helpers for `bytes::Bytes` fields generated with `bytes_fields`.
+    ///
+    /// `bytes::Bytes` has no `Arbitrary` impl. Generated code attaches
+    /// `#[arbitrary(with = ::buffa::__private::arbitrary_bytes*)]` to
+    /// `bytes_fields`-typed fields so the struct-level `#[derive(Arbitrary)]`
+    /// can still be used. The three variants cover singular, optional, and
+    /// repeated bytes fields respectively; oneof variant inner fields use
+    /// `arbitrary_bytes` (the singular form).
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_bytes(
+        u: &mut ::arbitrary::Unstructured<'_>,
+    ) -> ::arbitrary::Result<::bytes::Bytes> {
+        let v: ::alloc::vec::Vec<u8> = ::arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(::bytes::Bytes::from(v))
+    }
+
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_bytes_opt(
+        u: &mut ::arbitrary::Unstructured<'_>,
+    ) -> ::arbitrary::Result<::core::option::Option<::bytes::Bytes>> {
+        let opt: ::core::option::Option<::alloc::vec::Vec<u8>> =
+            ::arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(opt.map(::bytes::Bytes::from))
+    }
+
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_bytes_vec(
+        u: &mut ::arbitrary::Unstructured<'_>,
+    ) -> ::arbitrary::Result<::alloc::vec::Vec<::bytes::Bytes>> {
+        let vv: ::alloc::vec::Vec<::alloc::vec::Vec<u8>> = ::arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(vv.into_iter().map(::bytes::Bytes::from).collect())
+    }
+}
+
+#[cfg(all(test, feature = "arbitrary"))]
+mod arbitrary_tests {
+    use super::__private::{arbitrary_bytes, arbitrary_bytes_opt, arbitrary_bytes_vec};
+    use alloc::vec::Vec;
+    use arbitrary::{Arbitrary, Unstructured};
+
+    /// Non-zero seed so the helper has data to consume — an all-zero buffer
+    /// deterministically produces empty vectors regardless of whether the
+    /// helper's inner `Arbitrary` call is wired correctly. The exact lengths
+    /// that arise depend on the `arbitrary` crate's internal byte-consumption
+    /// strategy (and may change between versions), so the tests below assert
+    /// equivalence against the underlying `Vec<u8>` impl from an identical
+    /// `Unstructured` rather than a hard-coded non-empty length.
+    const SEED: [u8; 128] = {
+        let mut a = [0u8; 128];
+        let mut i = 0;
+        while i < 128 {
+            a[i] = (i as u8).wrapping_mul(31).wrapping_add(7);
+            i += 1;
+        }
+        a
+    };
+
+    #[test]
+    fn arbitrary_bytes_matches_vec_u8() {
+        let b = arbitrary_bytes(&mut Unstructured::new(&SEED)).unwrap();
+        let v: Vec<u8> = Arbitrary::arbitrary(&mut Unstructured::new(&SEED)).unwrap();
+        // Must be a real `Bytes` — `slice(..)` is `Bytes`-specific.
+        assert_eq!(b.slice(..).as_ref(), v.as_slice());
+        assert!(b.len() <= SEED.len());
+    }
+
+    #[test]
+    fn arbitrary_bytes_opt_matches_option_vec_u8() {
+        let b = arbitrary_bytes_opt(&mut Unstructured::new(&SEED)).unwrap();
+        let v: Option<Vec<u8>> = Arbitrary::arbitrary(&mut Unstructured::new(&SEED)).unwrap();
+        assert_eq!(b.is_some(), v.is_some());
+        assert_eq!(
+            b.as_ref().map(|x| x.slice(..).to_vec()),
+            v,
+            "Option<Bytes> shim must mirror Option<Vec<u8>>"
+        );
+    }
+
+    #[test]
+    fn arbitrary_bytes_vec_matches_vec_vec_u8() {
+        let bs = arbitrary_bytes_vec(&mut Unstructured::new(&SEED)).unwrap();
+        let vs: Vec<Vec<u8>> = Arbitrary::arbitrary(&mut Unstructured::new(&SEED)).unwrap();
+        assert_eq!(bs.len(), vs.len());
+        for (b, v) in bs.iter().zip(&vs) {
+            assert_eq!(b.slice(..).as_ref(), v.as_slice());
+        }
+    }
 }
 
 /// Minimal fixture types for compile-checking doc examples.
@@ -302,6 +391,13 @@ pub mod __doctest_fixtures {
                 name: self.name.into(),
                 id: self.id,
             }
+        }
+    }
+
+    impl view::ViewReborrow for PersonView<'static> {
+        type Reborrowed<'b> = PersonView<'b>;
+        fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+            this
         }
     }
 }

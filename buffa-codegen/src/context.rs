@@ -543,6 +543,8 @@ impl<'a> MessageScope<'a> {
 pub(crate) enum AncillaryKind {
     /// `__buffa::oneof::<msg_path>::` — owned oneof enums.
     Oneof,
+    /// `__buffa::view::<msg_path>::` — message view structs.
+    View,
     /// `__buffa::view::oneof::<msg_path>::` — view oneof enums.
     ViewOneof,
 }
@@ -551,6 +553,7 @@ impl AncillaryKind {
     fn path_segments(self) -> &'static [&'static str] {
         match self {
             Self::Oneof => &["oneof"],
+            Self::View => &["view"],
             Self::ViewOneof => &["view", "oneof"],
         }
     }

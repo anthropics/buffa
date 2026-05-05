@@ -234,3 +234,9 @@ impl<'v> ::buffa::DefaultViewInstance for DurationView<'v> {
             ))
     }
 }
+impl ::buffa::ViewReborrow for DurationView<'static> {
+    type Reborrowed<'b> = DurationView<'b>;
+    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+        this
+    }
+}
