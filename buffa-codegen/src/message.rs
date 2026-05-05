@@ -646,7 +646,8 @@ fn generate_message_with_nesting(
         }
     };
 
-    let message_doc = crate::comments::doc_attrs(ctx.comment(proto_fqn));
+    let message_doc =
+        crate::comments::doc_attrs_resolved(ctx.comment(proto_fqn), proto_fqn, &ctx.type_map);
 
     let top_level = quote! {
         #message_doc
@@ -1397,7 +1398,12 @@ fn generate_field(
 
     let field_fqn = format!("{}.{}", proto_fqn, field_name);
     let tag_line = format!("Field {field_number}: `{field_name}`");
-    let doc = crate::comments::doc_attrs_with_tag(ctx.comment(&field_fqn), &tag_line);
+    let doc = crate::comments::doc_attrs_with_tag_resolved(
+        ctx.comment(&field_fqn),
+        &tag_line,
+        proto_fqn,
+        &ctx.type_map,
+    );
     let serde_attr = if ctx.config.generate_json {
         serde_field_attr(ctx, field, field_name, &info, features)
     } else {

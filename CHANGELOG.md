@@ -21,6 +21,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   — the canonical `__buffa::` path is always stable; use it directly when a
   natural import stops resolving (see `examples/conflicts` for one alias
   convention). ([#80](https://github.com/anthropics/buffa/issues/80))
+
+- Doc comments in generated Rust code now resolve AIP-192 proto type cross-references
+  (`[Book][google.example.v1.Book]`, `[Book][]`) to rustdoc intra-doc links.
+  Only type-level refs are resolved; member refs such as `[Genre.GENRE_SCI_FI][]`
+  fall back to escaped literals. Unknown or cross-crate references also fall back
+  silently. ([#26](https://github.com/anthropics/buffa/issues/26))
+
 - `protoc-gen-buffa` and `protoc-gen-buffa-packaging` now respond to
   `--version` / `-V` and `--help` / `-h` instead of blocking on stdin.
   Any other command-line argument prints a "this is a protoc plugin" hint

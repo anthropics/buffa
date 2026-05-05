@@ -180,6 +180,103 @@ fn test_no_source_code_info_still_generates() {
 }
 
 #[test]
+fn test_aip192_fq_ref_resolved_in_generated_doc() {
+    let mut file = proto3_file("aip192_xrefs.proto");
+    file.package = Some("example.v1".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Book".to_string()),
+        ..Default::default()
+    });
+    file.message_type.push(DescriptorProto {
+        name: Some("Library".to_string()),
+        ..Default::default()
+    });
+    let mut sci = SourceCodeInfo::default();
+    sci.location.push(make_location(
+        vec![4, 1],
+        " Contains [Book][example.v1.Book] items.\n",
+    ));
+    file.source_code_info = sci.into();
+
+    let result = generate(
+        &[file],
+        &["aip192_xrefs.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("generation should succeed");
+
+    let content = &joined(&result);
+    assert!(
+        content.contains("[Book](crate::example::v1::Book)"),
+        "FQ ref must be resolved to intra-doc link:\n{content}"
+    );
+    assert!(
+        !content.contains("\\[Book\\]"),
+        "resolved ref must not be escaped:\n{content}"
+    );
+}
+
+#[test]
+fn test_aip192_implied_ref_resolved() {
+    let mut file = proto3_file("aip192_implied.proto");
+    file.package = Some("example.v1".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Book".to_string()),
+        ..Default::default()
+    });
+    file.message_type.push(DescriptorProto {
+        name: Some("Library".to_string()),
+        ..Default::default()
+    });
+    let mut sci = SourceCodeInfo::default();
+    sci.location
+        .push(make_location(vec![4, 1], " See [Book][].\n"));
+    file.source_code_info = sci.into();
+
+    let result = generate(
+        &[file],
+        &["aip192_implied.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("generation should succeed");
+
+    let content = &joined(&result);
+    assert!(
+        content.contains("[Book](crate::example::v1::Book)"),
+        "implied ref must resolve:\n{content}"
+    );
+}
+
+#[test]
+fn test_aip192_unknown_ref_falls_back_to_escape() {
+    let mut file = proto3_file("aip192_fallback.proto");
+    file.package = Some("my.pkg".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Msg".to_string()),
+        ..Default::default()
+    });
+    let mut sci = SourceCodeInfo::default();
+    sci.location.push(make_location(
+        vec![4, 0],
+        " See [Unknown][some.other.Unknown].\n",
+    ));
+    file.source_code_info = sci.into();
+
+    let result = generate(
+        &[file],
+        &["aip192_fallback.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("generation should succeed");
+
+    let content = &joined(&result);
+    assert!(
+        !content.contains("[Unknown]("),
+        "unresolvable ref must not emit link:\n{content}"
+    );
+}
+
+#[test]
 fn test_view_gets_same_comment_as_message() {
     let mut file = proto3_file("view_comment.proto");
     file.message_type.push(DescriptorProto {
