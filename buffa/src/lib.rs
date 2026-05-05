@@ -96,7 +96,7 @@
 //! # `no_std`
 //!
 //! ```toml
-//! buffa = { version = "0.4", default-features = false }
+//! buffa = { version = "0.5", default-features = false }
 //! ```
 //!
 //! Generated code uses `::buffa::alloc::string::String` etc. rather than

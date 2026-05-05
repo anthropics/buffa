@@ -16,7 +16,7 @@ checksum = "c4512299f36f043ab09a583e57bceb5a5aab7a73db1805848e8fef3c9e8c78b3"
 
 [[package]]
 name = "buffa"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "bytes",
  "hashbrown 0.15.5",
@@ -28,7 +28,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-build"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "buffa",
  "buffa-codegen",
@@ -37,7 +37,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-codegen"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "buffa",
  "buffa-descriptor",
@@ -50,7 +50,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-descriptor"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "buffa",
 ]

@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-05
+
+This release is a minor bump under the
+[Rust 0.x convention](https://doc.rust-lang.org/cargo/reference/semver.html):
+the only API break is `#[non_exhaustive]` on `buffa_codegen::GeneratedFileKind`
+(see *Changed* below), which affects downstream code generators only — it does
+not change the runtime API. Everything else is additive.
+
+**Consumers with checked-in generated code must regenerate** with the 0.5.0
+toolchain before depending on the 0.5.0 runtime crates: generated code from
+0.5.0's `buffa-codegen` references `ViewReborrow`, `decode_bytes_to_bytes`,
+and `__private::arbitrary_bytes`, none of which exist in `buffa` 0.4.0.
+
+### Breaking changes
+
+- **`buffa_codegen::GeneratedFileKind` is now `#[non_exhaustive]`.** Match it
+  with a wildcard arm — future kinds can then be added without a major
+  version bump. Build integrations that compare with `==` (the common case,
+  including connect-rust) are unaffected.
+
 ### Added
 
 - `buffa_codegen::GeneratedFileKind::Companion` and `apply_companions` let
@@ -61,12 +81,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   allocation, so the source buffer is freed only once every aliased field is
   dropped. Consumers with checked-in generated code must regenerate to pick
   this up. ([#53](https://github.com/anthropics/buffa/issues/53))
-
-### Changed
-
-- `buffa_codegen::GeneratedFileKind` is now `#[non_exhaustive]`. Match it
-  with a wildcard arm — future kinds can then be added without a major
-  version bump. (Build integrations that compare with `==` are unaffected.)
 
 ### Fixed
 
@@ -448,7 +462,9 @@ This release publishes:
 
 MSRV: Rust 1.85.
 
-[Unreleased]: https://github.com/anthropics/buffa/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/anthropics/buffa/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/anthropics/buffa/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/anthropics/buffa/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/anthropics/buffa/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/anthropics/buffa/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/anthropics/buffa/releases/tag/v0.1.0

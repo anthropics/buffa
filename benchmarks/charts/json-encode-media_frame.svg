@@ -30,10 +30,10 @@
   <text x="720.0" y="169" text-anchor="middle" class="axis-label">2,000</text>
   <text x="430.0" y="184" text-anchor="middle" class="axis-label">MiB/s</text>
   <text x="130" y="121.0" text-anchor="end" class="label">MediaFrame</text>
-  <rect x="140" y="80.0" width="412.6" height="22" rx="2" fill="#4C78A8"/>
-  <text x="556.6" y="95.0" class="value">1,422</text>
-  <rect x="140" y="106.0" width="420.3" height="22" rx="2" fill="#F58518"/>
-  <text x="564.3" y="121.0" class="value">1,449</text>
-  <rect x="140" y="132.0" width="59.8" height="22" rx="2" fill="#54A24B"/>
-  <text x="203.8" y="147.0" class="value">206</text>
+  <rect x="140" y="80.0" width="423.5" height="22" rx="2" fill="#4C78A8"/>
+  <text x="567.5" y="95.0" class="value">1,460</text>
+  <rect x="140" y="106.0" width="419.0" height="22" rx="2" fill="#F58518"/>
+  <text x="563.0" y="121.0" class="value">1,444</text>
+  <rect x="140" y="132.0" width="60.5" height="22" rx="2" fill="#54A24B"/>
+  <text x="204.5" y="147.0" class="value">208</text>
 </svg>
