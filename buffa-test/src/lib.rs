@@ -58,6 +58,26 @@ pub mod prelude_shadow {
     buffa::include_proto!("test.prelude_shadow");
 }
 
+// Nested-package pair, wrapped exactly the way `buffa-build`'s
+// `_include.rs` would. The chain of `use super::*;` glob imports makes the
+// outer package's `__buffa` reachable from `inner`'s scope, which is the
+// only consumer layout where a bare `pub use __buffa::…;` import path is
+// E0659-ambiguous against the locally-`include!`d `__buffa`. The natural
+// re-exports must use `self::__buffa::…` / `super::__buffa::…` to compile
+// here — see gh#80. Compilation is the assertion (`tests/nestpkg.rs` adds a
+// type-resolution sanity check).
+#[allow(clippy::derivable_impls, clippy::match_single_binding, dead_code)]
+pub mod nestpkg {
+    #[allow(unused_imports)]
+    use super::*;
+    buffa::include_proto!("test.nestpkg");
+    pub mod inner {
+        #[allow(unused_imports)]
+        use super::*;
+        buffa::include_proto!("test.nestpkg.inner");
+    }
+}
+
 #[allow(
     clippy::derivable_impls,
     clippy::match_single_binding,

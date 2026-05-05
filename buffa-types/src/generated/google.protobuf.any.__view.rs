@@ -90,7 +90,7 @@
 /// If the embedded message type is well-known and has a custom JSON
 /// representation, that representation will be embedded adding a field
 /// `value` which holds the custom JSON in addition to the `@type`
-/// field. Example (for message \[google.protobuf.Duration\]\[\]):
+/// field. Example (for message [google.protobuf.Duration](crate::google::protobuf::Duration)):
 ///
 /// ```text
 /// {
@@ -291,5 +291,11 @@ impl<'v> ::buffa::DefaultViewInstance for AnyView<'v> {
             .get_or_init(|| ::buffa::alloc::boxed::Box::new(
                 <AnyView<'static>>::default(),
             ))
+    }
+}
+impl ::buffa::ViewReborrow for AnyView<'static> {
+    type Reborrowed<'b> = AnyView<'b>;
+    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+        this
     }
 }

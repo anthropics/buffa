@@ -37,6 +37,30 @@
 //! let owned: MyRequest = request.to_owned_message();
 //! ```
 //!
+//! # Reborrowing from `OwnedView`
+//!
+//! [`OwnedView<V>`](OwnedView) wraps a decoded view with the lifetime erased
+//! to `'static`. Use [`Deref`](core::ops::Deref) (`&*owned` / `owned.name`)
+//! for inline field reads within the same scope. Use
+//! [`OwnedView::reborrow`] when you need to assign the view to a binding,
+//! pass it to a function with a non-`'static` lifetime parameter, or return
+//! a borrowed field:
+//!
+//! ```no_run
+//! # use buffa::view::OwnedView;
+//! # use buffa::__doctest_fixtures::PersonView;
+//! // reborrow ties the returned borrow to the OwnedView's lifetime.
+//! fn handler<'a>(req: &'a OwnedView<PersonView<'static>>) -> &'a str {
+//!     req.reborrow().name
+//! }
+//! ```
+//!
+//! `Deref` alone gives `&PersonView<'static>`, so field borrows *appear*
+//! `'static` to the compiler — this is unsound to rely on outside the scope
+//! that holds the `OwnedView`. Always use `reborrow` when the borrow needs
+//! to outlive the current expression. See [`OwnedView`] for a full
+//! side-by-side comparison.
+//!
 //! # Generated code shape
 //!
 //! For a message like:
@@ -128,6 +152,57 @@ pub trait MessageView<'a>: Sized {
         let _ = source;
         self.to_owned_message()
     }
+}
+
+/// Exposes the real lifetime of an [`OwnedView`]'s borrows.
+///
+/// `OwnedView<V>` stores `V` with a `'static` lifetime — the actual borrows
+/// point into its internal [`Bytes`] buffer. `ViewReborrow` lets
+/// [`OwnedView::reborrow`] return a reference typed as `&'b V::Reborrowed<'b>`,
+/// tying the borrow to `&'b self` so the compiler can reason about it correctly.
+///
+/// Codegen emits `impl ViewReborrow` automatically for every generated view
+/// type. Hand-written view types must provide it manually if
+/// [`OwnedView::reborrow`] is needed.
+///
+/// # Soundness
+///
+/// `ViewReborrow` is a **safe** trait. Soundness is established mechanically
+/// by the compiler at each impl site: the [`reborrow`](Self::reborrow) method
+/// body coerces a `&'b Self` (where `Self = FooView<'static>`) to
+/// `&'b Self::Reborrowed<'b>` (= `&'b FooView<'b>`). Rust accepts this only
+/// when `FooView` is **covariant** in its lifetime parameter — a covariant
+/// `FooView<'static>` is a subtype of `FooView<'b>` and the coercion is a
+/// standard subtyping move. Invariant fields (`Cell<&'a T>`, `&'a mut T`,
+/// `fn(&'a T)`) make the type invariant in `'a`; the trait body then fails
+/// to compile and the impl is rejected — which is exactly what should
+/// happen, because narrowing the lifetime of an invariant view *would* be
+/// unsound.
+///
+/// Hand-written impls cannot accidentally introduce undefined behaviour
+/// without writing `unsafe` themselves: the canonical body is just `this`,
+/// which the type checker accepts iff the variance permits the coercion.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` does not implement `ViewReborrow` — required by `OwnedView::reborrow`",
+    note = "for a generated view type, this impl is emitted automatically by codegen",
+    note = "for a hand-written view type `MyView<'a>`, add:\n    impl ViewReborrow for MyView<'static> {{\n        type Reborrowed<'b> = MyView<'b>;\n        fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {{ this }}\n    }}",
+    note = "your `MessageView` impl must be parametric over the lifetime — `impl<'a> MessageView<'a> for MyView<'a>` — so that both `Self: MessageView<'static>` and `Reborrowed<'b>: MessageView<'b>` hold",
+    note = "`MyView` must be covariant in its lifetime — fields like `&'a T` and `MessageFieldView<...>` are covariant; `Cell<&'a T>` and `&'a mut T` are not, and the trait body `{{ this }}` will fail to compile for invariant types"
+)]
+pub trait ViewReborrow: MessageView<'static> {
+    /// The same view type with its lifetime shortened to `'b`.
+    type Reborrowed<'b>: MessageView<'b, Owned = <Self as MessageView<'static>>::Owned>
+    where
+        Self: 'b;
+
+    /// Coerce `&'b Self` (= `&'b FooView<'static>`) to
+    /// `&'b Self::Reborrowed<'b>` (= `&'b FooView<'b>`). The canonical body
+    /// is just `this`; the compiler accepts it via standard lifetime
+    /// variance for covariant view types.
+    ///
+    /// Called by [`OwnedView::reborrow`]; users shouldn't need to call this
+    /// method directly.
+    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b>;
 }
 
 /// Produce a [`Bytes`] for a borrowed slice, preferring a zero-copy
@@ -807,10 +882,43 @@ impl<'a> UnknownFieldsView<'a> {
 /// [`MessageView::decode_view`] directly — it has zero overhead beyond the
 /// decode itself.
 ///
+/// # `Deref` vs `reborrow`
+///
+/// `OwnedView` implements [`Deref<Target = V>`](core::ops::Deref), so fields
+/// are accessible as `view.name`, `view.id`, etc. This is fine for reads that
+/// stay within the same scope as the `OwnedView`. However, `Deref` exposes
+/// `V = FooView<'static>`, so borrowed fields *appear* `'static` to the
+/// compiler — relying on that outside the owning scope is unsound.
+///
+/// **If you see `error[E0597]: borrowed value does not live long enough` or
+/// `lifetime may not live long enough` on a view field, reach for
+/// [`reborrow()`](OwnedView::reborrow).** It narrows the synthetic `'static`
+/// down to the OwnedView's real lifetime, letting you return view fields
+/// from a function or store them in a struct that outlives the immediate
+/// scope.
+///
+/// Use [`reborrow()`](OwnedView::reborrow) whenever the borrow needs to
+/// outlive the current expression — for example, storing the view in a local,
+/// passing it to a `'a`-bounded function, or returning a field from a handler:
+///
+/// ```no_run
+/// # use buffa::view::OwnedView;
+/// # use buffa::__doctest_fixtures::PersonView;
+/// // Deref: fine for inline reads.
+/// fn log(owned: &OwnedView<PersonView<'static>>) {
+///     println!("{}", owned.name);  // OK — borrow dropped before function returns
+/// }
+///
+/// // reborrow: required when returning a borrowed field.
+/// fn name<'a>(owned: &'a OwnedView<PersonView<'static>>) -> &'a str {
+///     owned.reborrow().name  // &'a str tied to the OwnedView's lifetime
+/// }
+/// ```
+///
 /// # Safety
 ///
 /// Internally, `OwnedView` extends the view's lifetime to `'static` via
-/// `transmute`. This is sound because:
+/// `transmute` in its constructors. This is sound because:
 ///
 /// 1. [`Bytes`] is reference-counted — its heap data pointer is stable across
 ///    moves. The view's borrows always point into valid memory.
@@ -820,6 +928,12 @@ impl<'a> UnknownFieldsView<'a> {
 ///    ensuring no dangling references during cleanup. The view field uses
 ///    [`ManuallyDrop`](core::mem::ManuallyDrop) to prevent the automatic
 ///    drop from running out of order.
+///
+/// [`reborrow`](OwnedView::reborrow) is a plain Rust subtype coercion (no
+/// `unsafe`, no pointer cast): the [`ViewReborrow`] trait method coerces
+/// `&'b FooView<'static>` into `&'b FooView<'b>` via standard lifetime
+/// variance for covariant view types. See [`ViewReborrow`]'s docs for the
+/// soundness argument.
 pub struct OwnedView<V> {
     // INVARIANT: `view` borrows from `bytes`. The `Drop` impl ensures
     // `view` is dropped before `bytes`. `ManuallyDrop` prevents the compiler
@@ -961,6 +1075,65 @@ where
             bytes
         }
     }
+
+    /// Reborrow the view with a lifetime tied to `&'b self`.
+    ///
+    /// `OwnedView<V>` stores `V` with a `'static` lifetime — the actual borrows
+    /// point into `self`'s internal [`Bytes`] buffer and are only valid while
+    /// `self` is alive. `reborrow` makes that real lifetime visible to the borrow
+    /// checker: the returned `&'b V::Reborrowed<'b>` cannot outlive `&'b self`.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use buffa::view::OwnedView;
+    /// # use buffa::__doctest_fixtures::PersonView;
+    /// fn handler<'a>(req: &'a OwnedView<PersonView<'static>>) -> &'a str {
+    ///     // The explicit annotation is for emphasis; inference works without it.
+    ///     // If you need to name the lifetime, store the reborrow in a `let` first.
+    ///     let req_view: &PersonView<'a> = req.reborrow();
+    ///     req_view.name  // zero-copy from the OwnedView's buffer
+    /// }
+    /// ```
+    ///
+    /// The returned reference is tied to `&'b self` — the borrow checker
+    /// prevents the reborrowed view from outliving the `OwnedView`:
+    ///
+    /// ```compile_fail,E0597
+    /// # use buffa::view::OwnedView;
+    /// # use buffa::__doctest_fixtures::PersonView;
+    /// let name: &str;
+    /// {
+    ///     // SAFETY: empty Bytes, no borrows — safe to construct directly.
+    ///     let owned = unsafe {
+    ///         OwnedView::<PersonView<'static>>::from_parts(
+    ///             ::buffa::bytes::Bytes::new(),
+    ///             PersonView::default(),
+    ///         )
+    ///     };
+    ///     name = owned.reborrow().name; // error[E0597]: `owned` does not live long enough
+    /// }
+    /// println!("{name}"); // name is dangling — borrow checker rejects this
+    /// ```
+    ///
+    /// # How it works
+    ///
+    /// The trait method [`ViewReborrow::reborrow`] is a plain Rust subtype
+    /// coercion: `&'b V` (where `V = FooView<'static>`) flows into the
+    /// return slot `&'b V::Reborrowed<'b>` (= `&'b FooView<'b>`). Variance
+    /// makes this safe — covariant view types narrow `'static` down to
+    /// `'b` automatically. No `unsafe`, no pointer cast, no layout
+    /// assertions. `OwnedView`'s own invariant (every borrow in `view`
+    /// points into `self.bytes`, established by `decode` or upheld by the
+    /// `unsafe from_parts` caller) guarantees the pointed-to data lives
+    /// at least as long as `'b`.
+    #[must_use = "reborrow returns a tied-lifetime view; discarding it is a no-op"]
+    pub fn reborrow<'b>(&'b self) -> &'b V::Reborrowed<'b>
+    where
+        V: ViewReborrow,
+    {
+        V::reborrow(&self.view)
+    }
 }
 
 impl<V> core::ops::Deref for OwnedView<V> {
@@ -1050,6 +1223,18 @@ mod send_sync_assertions {
     fn owned_tiny_view_is_send_sync() {
         assert_send::<OwnedView<super::tests::TinyView<'static>>>();
         assert_sync::<OwnedView<super::tests::TinyView<'static>>>();
+    }
+
+    // `ViewReborrow::Reborrowed<'b>` must also be Send + Sync so that a
+    // reborrowed view can be passed across threads (e.g. into a Tokio task).
+    #[allow(dead_code)]
+    fn reborrowed_view_is_send_sync<V>()
+    where
+        V: ViewReborrow + Send + Sync,
+        for<'b> V::Reborrowed<'b>: Send + Sync,
+    {
+        assert_send::<OwnedView<V>>();
+        assert_sync::<OwnedView<V>>();
     }
 }
 
@@ -1474,6 +1659,13 @@ mod tests {
         pub name: &'a str,
     }
 
+    impl ViewReborrow for SimpleMessageView<'static> {
+        type Reborrowed<'b> = SimpleMessageView<'b>;
+        fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+            this
+        }
+    }
+
     impl<'a> MessageView<'a> for SimpleMessageView<'a> {
         type Owned = SimpleMessage;
 
@@ -1773,5 +1965,29 @@ mod tests {
         };
         assert_eq!(view.id, 42);
         assert_eq!(view.name, "parts");
+    }
+
+    // ── ViewReborrow / OwnedView::reborrow ───────────────────────────────
+
+    #[test]
+    fn reborrow_fields_match_original() {
+        let bytes = encode_simple(7, "hello");
+        let owned = OwnedView::<SimpleMessageView<'static>>::decode(bytes).unwrap();
+        let reborrowed: &SimpleMessageView<'_> = owned.reborrow();
+        assert_eq!(reborrowed.id, 7);
+        assert_eq!(reborrowed.name, "hello");
+        // The reborrowed &str must point into the same Bytes buffer, not a copy.
+        assert!(core::ptr::eq(reborrowed.name.as_ptr(), owned.name.as_ptr()));
+    }
+
+    #[test]
+    fn reborrow_does_not_consume_owned_view() {
+        let bytes = encode_simple(1, "world");
+        let owned = OwnedView::<SimpleMessageView<'static>>::decode(bytes).unwrap();
+        let r1: &SimpleMessageView<'_> = owned.reborrow();
+        let r2: &SimpleMessageView<'_> = owned.reborrow();
+        assert_eq!(r1.name, r2.name);
+        // `owned` still usable here
+        assert_eq!(owned.name, "world");
     }
 }

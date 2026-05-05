@@ -5,6 +5,7 @@ use crate::basic::__buffa::oneof;
 use crate::basic::__buffa::view::oneof as view_oneof;
 use crate::basic::__buffa::view::*;
 use crate::basic::*;
+use buffa::view::OwnedView;
 use buffa::{Message, MessageView, ViewEncode};
 
 #[test]
@@ -582,4 +583,132 @@ fn test_view_encode_closed_enum_unknown_value_preserved() {
         owned_via_view, owned_direct,
         "view-encode must preserve unknown closed-enum semantics"
     );
+}
+
+// ── OwnedView::reborrow() ────────────────────────────────────────────────────
+
+#[test]
+fn test_reborrow_fields_match_original() {
+    let mut msg = Person::default();
+    msg.id = 42;
+    msg.name = "Alice".into();
+    msg.avatar = vec![0xDE, 0xAD];
+    msg.tags = vec!["x".into(), "y".into()];
+    msg.address.get_or_insert_default().street = "1 Main St".into();
+    let bytes = msg.encode_to_vec();
+
+    let owned = OwnedView::<PersonView<'static>>::decode(bytes::Bytes::from(bytes)).unwrap();
+    let view: &PersonView<'_> = owned.reborrow();
+
+    assert_eq!(view.id, 42);
+    assert_eq!(view.name, "Alice");
+    assert_eq!(view.avatar, &[0xDE, 0xAD]);
+    let tags: Vec<&str> = view.tags.iter().copied().collect();
+    assert_eq!(tags, vec!["x", "y"]);
+    assert_eq!(view.address.as_option().unwrap().street, "1 Main St");
+
+    // reborrow() must return a pointer to the same struct as Deref — no copy.
+    assert_eq!(
+        view as *const PersonView<'_> as *const u8,
+        &*owned as *const PersonView<'static> as *const u8,
+    );
+    // String and bytes slices must point into the same buffer, not a copy.
+    assert!(core::ptr::eq(view.name.as_ptr(), owned.name.as_ptr()));
+    assert!(core::ptr::eq(view.avatar.as_ptr(), owned.avatar.as_ptr()));
+}
+
+#[test]
+fn test_reborrow_str_points_into_owned_buffer() {
+    // The reborrowed &str must be a sub-slice of the OwnedView's Bytes buffer.
+    // Pull the range from owned.bytes() so the assertion is independent of
+    // how Bytes::from(Vec<u8>) is implemented internally.
+    let mut msg = Person::default();
+    msg.name = "zero-copy-check".into();
+    let bytes = msg.encode_to_vec();
+
+    let owned = OwnedView::<PersonView<'static>>::decode(bytes::Bytes::from(bytes)).unwrap();
+    let buf_ptr_range = owned.bytes().as_ptr_range();
+    let view: &PersonView<'_> = owned.reborrow();
+
+    assert!(
+        buf_ptr_range.contains(&view.name.as_ptr()),
+        "reborrowed name must point into the OwnedView's Bytes buffer"
+    );
+    // reborrow() returns a pointer to the same struct, not a copy.
+    assert_eq!(
+        view as *const PersonView<'_> as *const u8,
+        &*owned as *const PersonView<'static> as *const u8,
+    );
+}
+
+#[test]
+fn test_reborrow_does_not_consume_owned_view() {
+    let mut msg = Person::default();
+    msg.name = "Carol".into();
+    let bytes = msg.encode_to_vec();
+
+    let owned = OwnedView::<PersonView<'static>>::decode(bytes::Bytes::from(bytes)).unwrap();
+    // Two simultaneous reborrows plus a Deref access must all compile and agree.
+    let r1: &PersonView<'_> = owned.reborrow();
+    let r2: &PersonView<'_> = owned.reborrow();
+    assert_eq!(r1.name, "Carol");
+    assert_eq!(r2.name, "Carol");
+    assert_eq!(owned.name, "Carol");
+}
+
+#[test]
+fn test_reborrow_rpc_handler_pattern() {
+    fn extract_name<'a>(req: &'a OwnedView<PersonView<'static>>) -> &'a str {
+        req.reborrow().name
+    }
+
+    let mut msg = Person::default();
+    msg.name = "Dave".into();
+    let bytes = msg.encode_to_vec();
+
+    let owned = OwnedView::<PersonView<'static>>::decode(bytes::Bytes::from(bytes)).unwrap();
+    let name: &str = extract_name(&owned);
+    assert_eq!(name, "Dave");
+}
+
+#[test]
+fn test_reborrow_nested_and_repeated_fields() {
+    // Exercises the lifetime substitution through nested generic positions:
+    // MessageFieldView<AddressView<'b>>, RepeatedView<'b, AddressView<'b>>,
+    // and oneof Contact::Email(&'b str).
+    let mut msg = Person::default();
+    msg.address.get_or_insert_default().street = "nested-st".into();
+    msg.address.get_or_insert_default().city = "nested-city".into();
+    msg.addresses.push(Address {
+        street: "repeated-st".into(),
+        city: "repeated-city".into(),
+        zip_code: 99,
+        ..Default::default()
+    });
+    msg.contact = Some(crate::basic::__buffa::oneof::person::Contact::Email(
+        "rpc@example.com".into(),
+    ));
+    let bytes = msg.encode_to_vec();
+
+    let owned = OwnedView::<PersonView<'static>>::decode(bytes::Bytes::from(bytes)).unwrap();
+    let view: &PersonView<'_> = owned.reborrow();
+
+    // Nested message field — AddressView<'b> borrowed through MessageFieldView.
+    let addr: &AddressView<'_> = view.address.as_option().unwrap();
+    assert_eq!(addr.street, "nested-st");
+    assert_eq!(addr.city, "nested-city");
+
+    // Repeated message field — AddressView<'b> borrowed through RepeatedView.
+    assert_eq!(view.addresses.len(), 1);
+    let rep_addr: &AddressView<'_> = &view.addresses[0];
+    assert_eq!(rep_addr.street, "repeated-st");
+    assert_eq!(rep_addr.zip_code, 99);
+
+    // Oneof string variant — &'b str through the contact enum.
+    match &view.contact {
+        Some(crate::basic::__buffa::view::oneof::person::Contact::Email(s)) => {
+            assert_eq!(*s, "rpc@example.com");
+        }
+        other => panic!("expected Email variant, got {other:?}"),
+    }
 }

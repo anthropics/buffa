@@ -519,7 +519,7 @@ fn codec_for_type(
 /// Protobuf extension field names are already `lower_snake_case` by convention
 /// (enforced by most linters), so uppercasing is sufficient. Pass through
 /// `to_snake_case` first to handle oddball camelCase names.
-fn extension_const_ident(proto_name: &str) -> proc_macro2::Ident {
+pub(crate) fn extension_const_ident(proto_name: &str) -> proc_macro2::Ident {
     let upper = crate::oneof::to_snake_case(proto_name).to_uppercase();
     crate::idents::make_field_ident(&upper)
 }

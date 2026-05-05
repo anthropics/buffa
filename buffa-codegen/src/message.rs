@@ -582,12 +582,22 @@ fn generate_message_with_nesting(
         reg_paths.text_ext.push(quote! { #id });
     }
 
+    // "Natural-path" re-exports of this message's ancillary types — `pub use`
+    // lines pointing into the canonical `__buffa::` tree. Skipped when the
+    // natural name would collide with a real nested item (or another
+    // re-export); see `collect_natural_reexports`.
+    let natural_reexports = collect_natural_reexports(scope, msg, &oneof_idents, &non_map_nested);
+
     // Owned-module items: nested enums, nested message structs + sub-modules,
     // and message-nested extensions. Oneof enums move out to `oneof_tree`.
+    // Natural-path re-exports come last so that, if a message has only
+    // re-exports (no nested types), the surrounding `pub mod {msg}` block is
+    // still emitted.
     let owned_mod = quote! {
         #(#nested_enums)*
         #nested_items
         #nested_extensions
+        #natural_reexports
     };
 
     // This message's view (struct + view-oneof enums), emitted with
@@ -636,7 +646,8 @@ fn generate_message_with_nesting(
         }
     };
 
-    let message_doc = crate::comments::doc_attrs(ctx.comment(proto_fqn));
+    let message_doc =
+        crate::comments::doc_attrs_resolved(ctx.comment(proto_fqn), proto_fqn, &ctx.type_map);
 
     let top_level = quote! {
         #message_doc
@@ -685,6 +696,169 @@ fn generate_message_with_nesting(
         view_oneof_tree,
         reg: reg_paths,
     })
+}
+
+// ── Natural-path re-exports ──────────────────────────────────────────────────
+//
+// Ancillary types (views, oneof enums, view-oneof enums) live unconditionally
+// under the canonical `__buffa::` tree so their paths can never collide with
+// user proto types. As an ergonomic convenience we *also* `pub use` each one
+// at the "natural" location a user would look for first — the message's
+// snake_case module — but only when the natural name is unambiguous. The
+// canonical path is the source of truth: generated method signatures, field
+// types, and downstream codegen always use `__buffa::…`.
+//
+// Natural names within `pub mod {msg} { … }`:
+// - nested message `Bar`'s view  → `BarView` ← `__buffa::view::<msg>::BarView`
+// - oneof `kind`'s enum          → `Kind`    ← `__buffa::oneof::<msg>::Kind`
+// - oneof `kind`'s view enum     → `KindView`← `__buffa::view::oneof::<msg>::Kind`
+//
+// A re-export is silently skipped when its natural name is already occupied
+// by a real nested item (message, enum, extension const, or the snake_case
+// sub-module of a nested message), or by another candidate re-export. Both
+// participants in a candidate↔candidate collision are skipped — never
+// "first one wins" — so the result is order-independent.
+
+/// One candidate `pub use` re-export targeting a generated Rust module.
+pub(crate) struct ReexportCandidate {
+    /// Natural name at the target location (the leaf the user will write).
+    pub(crate) name: String,
+    /// `pub use` statement, ready to splice into the target module.
+    pub(crate) tokens: TokenStream,
+}
+
+/// Build the `pub use` re-export block for a message's `pub mod {msg} { … }`.
+///
+/// Returns an empty stream when there are no surviving candidates (so the
+/// caller's `owned_mod.is_empty()` check still works for messages with no
+/// nested items and no re-exports).
+fn collect_natural_reexports(
+    scope: MessageScope<'_>,
+    msg: &DescriptorProto,
+    oneof_idents: &std::collections::HashMap<usize, Ident>,
+    non_map_nested: &[&DescriptorProto],
+) -> TokenStream {
+    use std::collections::BTreeSet;
+
+    let MessageScope {
+        ctx,
+        current_package,
+        proto_fqn,
+        nesting,
+        ..
+    } = scope;
+
+    if !ctx.config.generate_views && oneof_idents.is_empty() {
+        // Nothing in the `__buffa::` tree relates to this message's module.
+        return TokenStream::new();
+    }
+
+    // Names already occupied inside `pub mod {msg} { … }` by real items.
+    let mut occupied: BTreeSet<String> = BTreeSet::new();
+    for nested in non_map_nested {
+        let name = nested.name.as_deref().unwrap_or("");
+        // Both the nested struct (`Bar`) and its sub-module (`bar`) reserve a
+        // type-namespace slot. The sub-module name only matters when it
+        // happens to be PascalCase (e.g. proto `message X` → `pub mod x`
+        // is benign, but proto `message FooView` → `pub mod foo_view` is
+        // also benign). We track both for safety with no real cost.
+        occupied.insert(name.to_string());
+        occupied.insert(crate::oneof::to_snake_case(name));
+    }
+    for e in &msg.enum_type {
+        occupied.insert(e.name.as_deref().unwrap_or("").to_string());
+    }
+    for ext in &msg.extension {
+        occupied.insert(
+            crate::extension::extension_const_ident(ext.name.as_deref().unwrap_or("")).to_string(),
+        );
+    }
+
+    // The `pub use` statements live one module level deeper than the struct.
+    let from_nesting = nesting + 1;
+    let view_prefix = ancillary_prefix(
+        AncillaryKind::View,
+        current_package,
+        proto_fqn,
+        from_nesting,
+    );
+    let oneof_prefix = ancillary_prefix(
+        AncillaryKind::Oneof,
+        current_package,
+        proto_fqn,
+        from_nesting,
+    );
+    let view_oneof_prefix = ancillary_prefix(
+        AncillaryKind::ViewOneof,
+        current_package,
+        proto_fqn,
+        from_nesting,
+    );
+
+    let mut candidates: Vec<ReexportCandidate> = Vec::new();
+
+    // `#[doc(inline)]` makes rustdoc render the full type page at the
+    // natural path instead of a "Re-export of …" stub pointing back at
+    // `__buffa::`. The re-exports are the documented entry point; the
+    // canonical path is the spelled-out fallback.
+    let inline = quote! { #[doc(inline)] };
+
+    // Owned oneof enums: `__buffa::oneof::<msg>::Kind` → `Kind`.
+    let mut oneof_pairs: Vec<(usize, &Ident)> = oneof_idents.iter().map(|(k, v)| (*k, v)).collect();
+    oneof_pairs.sort_by_key(|(idx, _)| *idx);
+    for (_, enum_ident) in &oneof_pairs {
+        candidates.push(ReexportCandidate {
+            name: enum_ident.to_string(),
+            tokens: quote! { #inline pub use #oneof_prefix #enum_ident; },
+        });
+    }
+
+    if ctx.config.generate_views {
+        // Nested-message views: `__buffa::view::<msg>::BarView` → `BarView`.
+        for nested in non_map_nested {
+            let view_ident = format_ident!("{}View", nested.name.as_deref().unwrap_or(""));
+            candidates.push(ReexportCandidate {
+                name: view_ident.to_string(),
+                tokens: quote! { #inline pub use #view_prefix #view_ident; },
+            });
+        }
+        // View oneof enums: `__buffa::view::oneof::<msg>::Kind` → `KindView`.
+        for (_, enum_ident) in &oneof_pairs {
+            let view_ident = format_ident!("{}View", enum_ident);
+            candidates.push(ReexportCandidate {
+                name: view_ident.to_string(),
+                tokens: quote! { #inline pub use #view_oneof_prefix #enum_ident as #view_ident; },
+            });
+        }
+    }
+
+    emit_surviving_reexports(candidates, &occupied)
+}
+
+/// Filter `candidates` against `occupied` and against each other, emitting
+/// only the unambiguous ones.
+///
+/// A candidate survives iff its name is absent from `occupied` and it is the
+/// only candidate targeting that name. When two or more candidates collide
+/// with each other, *all* of them are dropped — never "first one wins" — so
+/// the result is order-independent and stable across descriptor reordering.
+pub(crate) fn emit_surviving_reexports(
+    candidates: Vec<ReexportCandidate>,
+    occupied: &std::collections::BTreeSet<String>,
+) -> TokenStream {
+    use std::collections::BTreeMap;
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for c in &candidates {
+        *counts.entry(c.name.clone()).or_insert(0) += 1;
+    }
+    let mut out = TokenStream::new();
+    for c in candidates {
+        if occupied.contains(&c.name) || counts[&c.name] > 1 {
+            continue;
+        }
+        out.extend(c.tokens);
+    }
+    out
 }
 
 // ── Custom Deserialize for messages with oneofs ──────────────────────────────
@@ -1228,7 +1402,12 @@ fn generate_field(
 
     let field_fqn = format!("{}.{}", proto_fqn, field_name);
     let tag_line = format!("Field {field_number}: `{field_name}`");
-    let doc = crate::comments::doc_attrs_with_tag(ctx.comment(&field_fqn), &tag_line);
+    let doc = crate::comments::doc_attrs_with_tag_resolved(
+        ctx.comment(&field_fqn),
+        &tag_line,
+        proto_fqn,
+        &ctx.type_map,
+    );
     let serde_attr = if ctx.config.generate_json {
         serde_field_attr(ctx, field, field_name, &info, features)
     } else {

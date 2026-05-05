@@ -64,6 +64,18 @@ fn main() {
         .compile()
         .expect("buffa_build failed for prelude_shadow.proto");
 
+    // Nested-package pair (gh#80) — `test.nestpkg` + `test.nestpkg.inner`.
+    // `lib.rs` wraps these with the same `pub mod a { use super::*; pub mod
+    // a_b { use super::*; … } }` chain that `buffa-build`'s `_include.rs`
+    // emits, exercising the natural-path `pub use self::__buffa::…;`
+    // re-exports under the only consumer layout where a bare `__buffa`
+    // import path is E0659-ambiguous. Compilation is the assertion.
+    buffa_build::Config::new()
+        .files(&["protos/nestpkg_outer.proto", "protos/nestpkg_inner.proto"])
+        .includes(&["protos/"])
+        .compile()
+        .expect("buffa_build failed for nestpkg_*.proto");
+
     // Proto2 with custom defaults, required fields, closed enums.
     buffa_build::Config::new()
         .files(&["protos/proto2_defaults.proto"])
