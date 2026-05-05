@@ -39,6 +39,7 @@ mod json;
 mod keyword;
 mod message_set;
 mod nesting;
+mod nestpkg;
 mod proto2;
 mod proto3_semantics;
 mod textproto;
