@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `buffa_codegen::GeneratedFileKind::Companion` and `apply_companions` let
+  downstream code generators (e.g. connect-rust) supply extra per-proto
+  files that buffa wires into the per-package stitcher, instead of having
+  to mislabel them as `GeneratedFileKind::Owned` and rely on filename
+  matching. Companion files are `include!`d at package root alongside
+  owned message types. ([#81](https://github.com/anthropics/buffa/issues/81))
+
 - `OwnedView<V>` gains a `reborrow<'b>(&'b self) -> &'b V::Reborrowed<'b>` method
   that makes the internal `'static` lifetime visible as `'b` (the lifetime of the
   borrow), so view fields can be passed into functions or return types bounded by
@@ -54,6 +61,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   allocation, so the source buffer is freed only once every aliased field is
   dropped. Consumers with checked-in generated code must regenerate to pick
   this up. ([#53](https://github.com/anthropics/buffa/issues/53))
+
+### Changed
+
+- `buffa_codegen::GeneratedFileKind` is now `#[non_exhaustive]`. Match it
+  with a wildcard arm — future kinds can then be added without a major
+  version bump. (Build integrations that compare with `==` are unaffected.)
 
 ### Fixed
 

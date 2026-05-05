@@ -99,14 +99,26 @@ pub struct GeneratedFile {
     pub content: String,
 }
 
-/// Kind of [`GeneratedFile`]. The five content kinds are 1:1 with input
-/// `.proto` files; `PackageMod` is 1:1 with packages.
+/// Kind of [`GeneratedFile`].
 ///
-/// Build integrations only need to wire up [`PackageMod`](Self::PackageMod)
-/// entries — the per-proto content kinds are reached via `include!` from
-/// the stitcher and need only be written to disk alongside it. Under
+/// [`generate`] produces five per-proto content kinds — one each of
+/// [`Owned`](Self::Owned), [`View`](Self::View), [`Oneof`](Self::Oneof),
+/// [`ViewOneof`](Self::ViewOneof), and [`Ext`](Self::Ext) per input
+/// `.proto` file — plus one [`PackageMod`](Self::PackageMod) stitcher per
+/// package. Build integrations only need to wire up `PackageMod` entries;
+/// the per-proto content kinds are reached via `include!` from the stitcher
+/// and need only be written to disk alongside it. Under
 /// [`CodeGenConfig::file_per_package`] only `PackageMod` is emitted.
+///
+/// [`Companion`](Self::Companion) is the one kind *not* produced by
+/// [`generate`]: downstream code generators construct `Companion` files
+/// themselves and merge them into buffa's output via
+/// [`apply_companions`].
+///
+/// This enum is `#[non_exhaustive]` — match with a wildcard arm so new
+/// kinds can be added without a major version bump.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum GeneratedFileKind {
     /// Owned message structs and enums (`<stem>.rs`).
     Owned,
@@ -116,18 +128,28 @@ pub enum GeneratedFileKind {
     Oneof,
     /// View oneof enums (`<stem>.__view_oneof.rs`).
     ViewOneof,
-    /// File-level extension consts (`<stem>.__ext.rs`).
+    /// File-level proto-extension consts (`<stem>.__ext.rs`) — the
+    /// `pub const` `ExtensionDescriptor` items generated from `extend`
+    /// blocks. Not to be confused with [`Companion`](Self::Companion),
+    /// which is unrelated downstream-supplied content.
     Ext,
     /// Per-package stitcher (`<dotted.pkg>.mod.rs`). The only file build
     /// systems need to wire up directly.
     PackageMod,
-    /// Extra per-proto content from a downstream generator (service stubs,
-    /// extra trait impls, etc.). The stitcher `include!`s it at file scope
-    /// after buffa's own output.
+    /// Extra per-proto content from a downstream code generator (service
+    /// stubs, extra trait impls, etc.) that travels with buffa's output.
     ///
-    /// Pass these alongside buffa's output to [`apply_extensions`], which
-    /// wires them into the per-package stitcher.
-    Extension,
+    /// Not produced by [`generate`]. Construct these in your own generator
+    /// and pass them to [`apply_companions`], which appends an `include!`
+    /// for each one at file scope in the matching package's
+    /// [`PackageMod`](Self::PackageMod) — after buffa's own output, at
+    /// package root alongside the owned message types (**not** under the
+    /// `__buffa::` sentinel module). Items declared `pub` in a companion
+    /// file are visible at `crate::<pkg>::*`.
+    ///
+    /// Not to be confused with [`Ext`](Self::Ext), which is the buffa-
+    /// generated file holding protobuf `extend` consts.
+    Companion,
 }
 
 /// Configuration for code generation.
@@ -1039,35 +1061,52 @@ pub fn proto_path_to_stem(proto_path: &str) -> String {
     without_ext.replace('/', ".")
 }
 
-/// Merge downstream [`Extension`](GeneratedFileKind::Extension) files into the
-/// per-package stitcher produced by [`generate`].
+/// Merge downstream [`Companion`](GeneratedFileKind::Companion) files into
+/// the per-package stitcher produced by [`generate`].
 ///
-/// For each Extension file this function locates the
+/// For each companion file this function locates the
 /// [`PackageMod`](GeneratedFileKind::PackageMod) entry in `files` with a
-/// matching package and appends `include!("<name>");` at file scope (after
-/// buffa's own output, at package root alongside owned message types). The
-/// Extension files themselves are appended to `files` so that build
-/// integrations can write everything to disk in one pass.
+/// matching package and appends `include!("<name>");` at file scope after
+/// buffa's own output — at package root, alongside the owned message types,
+/// not under `__buffa::`. The companion files themselves are appended to
+/// `files` so that build integrations can write everything to disk in one
+/// pass.
+///
+/// **Call this once per build**; it does not deduplicate, so a second call
+/// with the same companions emits a second `include!` for each, which fails
+/// to compile downstream with a duplicate-definition error.
 ///
 /// `name` must be a bare-sibling filename — the same convention buffa uses
 /// for its own `include!` calls, so it resolves relative to the stitcher
-/// without any `OUT_DIR` prefix.
+/// without any `OUT_DIR` prefix. Names must not contain `"`, `\`, `/`, or
+/// newlines (the function `debug_assert!`s this in debug builds), and must
+/// not collide with any of buffa's own generated filenames for the same
+/// package (`<stem>.rs`, `<stem>.__view.rs`, etc.) — pick an unused suffix
+/// such as `<stem>.__myplugin.rs`.
 ///
-/// Extension files with no matching `PackageMod` are still appended to
-/// `files` but no `include!` is emitted; the caller is responsible for wiring
-/// them up.
-pub fn apply_extensions(files: &mut Vec<GeneratedFile>, extensions: Vec<GeneratedFile>) {
-    for ext in &extensions {
+/// Companion files with no matching `PackageMod` (e.g. for a package buffa
+/// did not generate any output for) are still appended to `files` but no
+/// `include!` is emitted; the caller is responsible for wiring them up. If
+/// you don't expect orphans, check that every companion's `package` appears
+/// in `files` as a `PackageMod` after calling.
+pub fn apply_companions(files: &mut Vec<GeneratedFile>, companions: Vec<GeneratedFile>) {
+    for comp in &companions {
+        debug_assert!(
+            !comp.name.contains(['"', '\\', '/', '\n']),
+            "companion file name {:?} contains a character that would break \
+             the generated include!() literal or its bare-sibling resolution",
+            comp.name
+        );
         if let Some(pkg_mod) = files
             .iter_mut()
-            .find(|f| f.kind == GeneratedFileKind::PackageMod && f.package == ext.package)
+            .find(|f| f.kind == GeneratedFileKind::PackageMod && f.package == comp.package)
         {
             pkg_mod
                 .content
-                .push_str(&format!("include!(\"{}\");\n", ext.name));
+                .push_str(&format!("include!(\"{}\");\n", comp.name));
         }
     }
-    files.extend(extensions);
+    files.extend(companions);
 }
 
 /// Code generation error.
