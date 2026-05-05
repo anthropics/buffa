@@ -8,6 +8,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Codegen now emits "natural-path" `pub use` re-exports for ancillary types
+  (views, oneof enums, view-of-oneof enums, file-level extension consts,
+  `register_types`) at the module path you'd write first — `pkg::FooView`,
+  `pkg::foo::Kind`, `pkg::foo::KindView`, etc. The canonical `__buffa::`
+  paths are unchanged and remain what generated code and downstream codegen
+  always reference; the re-exports are purely an ergonomic convenience and
+  are silently skipped when the natural name is already taken by a real
+  proto item or by another candidate re-export. Because of that skip rule,
+  adding a proto type whose name shadows a re-export (e.g. `message FooView`
+  next to `message Foo`) can silently rebind a natural path between releases
+  — the canonical `__buffa::` path is always stable; use it directly when a
+  natural import stops resolving (see `examples/conflicts` for one alias
+  convention). ([#80](https://github.com/anthropics/buffa/issues/80))
+
+- Doc comments in generated Rust code now resolve AIP-192 proto type cross-references
+  (`[Book][google.example.v1.Book]`, `[Book][]`) to rustdoc intra-doc links.
+  Only type-level refs are resolved; member refs such as `[Genre.GENRE_SCI_FI][]`
+  fall back to escaped literals. Unknown or cross-crate references also fall back
+  silently. ([#26](https://github.com/anthropics/buffa/issues/26))
+
 - `protoc-gen-buffa` and `protoc-gen-buffa-packaging` now respond to
   `--version` / `-V` and `--help` / `-h` instead of blocking on stdin.
   Any other command-line argument prints a "this is a protoc plugin" hint

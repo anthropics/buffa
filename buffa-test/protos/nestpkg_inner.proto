@@ -1,0 +1,19 @@
+// Inner package of a nested-package pair — see `nestpkg_outer.proto` for
+// the rationale. The oneof here forces a `pub use self::__buffa::…;` and a
+// `pub use super::__buffa::…;` re-export in the *inner* package's stitcher,
+// where the parent package's `__buffa` is also reachable via `use super::*;`.
+
+syntax = "proto3";
+
+package test.nestpkg.inner;
+
+message Probe {
+  message Sample {
+    double value = 1;
+  }
+
+  oneof reading {
+    double scalar = 1;
+    Sample sample = 2;
+  }
+}

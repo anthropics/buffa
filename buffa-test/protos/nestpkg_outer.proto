@@ -1,0 +1,29 @@
+// Outer package of a nested-package pair (`test.nestpkg` ↔
+// `test.nestpkg.inner`). The pair exists to exercise the consumer-side
+// module nesting that `buffa-build`'s `_include.rs` produces:
+//
+//   pub mod nestpkg {
+//       use super::*;
+//       include!(".../test.nestpkg.mod.rs");   // defines `__buffa`
+//       pub mod inner {
+//           use super::*;                       // glob-imports parent's __buffa
+//           include!(".../test.nestpkg.inner.mod.rs");  // defines its OWN __buffa
+//       }
+//   }
+//
+// Inside `inner`, a bare `__buffa` in a `use` path is then ambiguous between
+// the local `pub mod __buffa` (macro-expanded via `include!`) and the
+// glob-imported one. Codegen must emit `pub use self::__buffa::…;` /
+// `pub use super::__buffa::…;` to disambiguate. Compilation alone is the
+// regression guard.
+
+syntax = "proto3";
+
+package test.nestpkg;
+
+message Wrapper {
+  oneof body {
+    string text = 1;
+    int32 code = 2;
+  }
+}

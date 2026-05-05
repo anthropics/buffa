@@ -262,7 +262,8 @@ pub fn generate_oneof_enum(
     };
 
     let oneof_fqn = format!("{}.{}", proto_fqn, oneof_name);
-    let oneof_doc = crate::comments::doc_attrs(ctx.comment(&oneof_fqn));
+    let oneof_doc =
+        crate::comments::doc_attrs_resolved(ctx.comment(&oneof_fqn), proto_fqn, &ctx.type_map);
     let custom_type_attrs =
         CodeGenContext::matching_attributes(&ctx.config.type_attributes, &oneof_fqn)?;
 
