@@ -199,6 +199,10 @@ pub fn generate_oneof_enum(
                 quote! {}
             };
             if v.is_boxed {
+                // Boxed variants are message/group types (see is_boxed_variant),
+                // never bytes — so there's no shim to lose here. Lock the
+                // invariant in case is_boxed_variant ever broadens.
+                debug_assert!(!v.use_bytes, "boxed oneof variant cannot be bytes_fields-typed");
                 quote! { #attrs #ident(::buffa::alloc::boxed::Box<#ty>) }
             } else {
                 quote! { #attrs #ident(#arbitrary_field_attr #ty) }

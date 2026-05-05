@@ -11,12 +11,17 @@ mod tests {
     use crate::basic_arbitrary_bytes::BytesContexts;
     use arbitrary::{Arbitrary, Unstructured};
 
+    /// Type-compatibility smoke test: `derive(Arbitrary)` on `BytesContexts`
+    /// must succeed, and every bytes-shaped field must be a real
+    /// `bytes::Bytes` (`slice(..)` is `Bytes`-specific). The seed pattern is
+    /// deliberately varied — content non-emptiness is asserted at the helper
+    /// level in `buffa::arbitrary_tests` (helpers are unit-tested in
+    /// isolation; this test pins the codegen wiring).
     #[test]
     fn bytes_contexts_arbitrary_all_shapes() {
-        let raw = [0u8; 256];
+        let raw: [u8; 256] = core::array::from_fn(|i| i as u8);
         let mut u = Unstructured::new(&raw);
         let msg = BytesContexts::arbitrary(&mut u).unwrap();
-        // Exercise each bytes-shaped field to confirm the types are real Bytes.
         let _ = msg.singular.slice(..);
         if let Some(ref b) = msg.maybe {
             let _ = b.slice(..);
