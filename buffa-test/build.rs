@@ -64,6 +64,18 @@ fn main() {
         .compile()
         .expect("buffa_build failed for prelude_shadow.proto");
 
+    // Nested-package pair (gh#80) — `test.nestpkg` + `test.nestpkg.inner`.
+    // `lib.rs` wraps these with the same `pub mod a { use super::*; pub mod
+    // a_b { use super::*; … } }` chain that `buffa-build`'s `_include.rs`
+    // emits, exercising the natural-path `pub use self::__buffa::…;`
+    // re-exports under the only consumer layout where a bare `__buffa`
+    // import path is E0659-ambiguous. Compilation is the assertion.
+    buffa_build::Config::new()
+        .files(&["protos/nestpkg_outer.proto", "protos/nestpkg_inner.proto"])
+        .includes(&["protos/"])
+        .compile()
+        .expect("buffa_build failed for nestpkg_*.proto");
+
     // Proto2 with custom defaults, required fields, closed enums.
     buffa_build::Config::new()
         .files(&["protos/proto2_defaults.proto"])
@@ -153,6 +165,21 @@ fn main() {
         .out_dir(bytes_out)
         .compile()
         .expect("buffa_build failed for basic.proto with use_bytes_type");
+
+    // Regression #88: bytes_fields + generate_arbitrary(true).
+    // BytesContexts in basic.proto has singular, optional, repeated, and oneof
+    // bytes fields — this compilation exercises all four shim paths.
+    let arb_out =
+        std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("arbitrary_bytes");
+    std::fs::create_dir_all(&arb_out).expect("create arbitrary_bytes dir");
+    buffa_build::Config::new()
+        .files(&["protos/basic.proto"])
+        .includes(&["protos/"])
+        .use_bytes_type()
+        .generate_arbitrary(true)
+        .out_dir(arb_out)
+        .compile()
+        .expect("buffa_build failed for basic.proto with use_bytes_type + generate_arbitrary");
 
     // Views + preserve_unknown_fields=false: the else-branches in view
     // codegen that omit the unknown-fields view field and before_tag tracking.

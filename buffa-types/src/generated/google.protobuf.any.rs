@@ -90,7 +90,7 @@
 /// If the embedded message type is well-known and has a custom JSON
 /// representation, that representation will be embedded adding a field
 /// `value` which holds the custom JSON in addition to the `@type`
-/// field. Example (for message \[google.protobuf.Duration\]\[\]):
+/// field. Example (for message [google.protobuf.Duration](crate::google::protobuf::Duration)):
 ///
 /// ```text
 /// {
@@ -135,6 +135,10 @@ pub struct Any {
     /// Must be a valid serialized protocol buffer of the above specified type.
     ///
     /// Field 2: `value`
+    #[cfg_attr(
+        feature = "arbitrary",
+        arbitrary(with = ::buffa::__private::arbitrary_bytes)
+    )]
     pub value: ::buffa::bytes::Bytes,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -234,9 +238,7 @@ impl ::buffa::Message for Any {
                         actual: tag.wire_type() as u8,
                     });
                 }
-                self.value = ::buffa::bytes::Bytes::from(
-                    ::buffa::types::decode_bytes(buf)?,
-                );
+                self.value = ::buffa::types::decode_bytes_to_bytes(buf)?;
             }
             _ => {
                 self.__buffa_unknown_fields

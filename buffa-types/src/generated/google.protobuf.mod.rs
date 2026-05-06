@@ -65,3 +65,37 @@ pub mod __buffa {
         include!("google.protobuf.wrappers.__ext.rs");
     }
 }
+#[doc(inline)]
+pub use self::__buffa::view::AnyView;
+#[doc(inline)]
+pub use self::__buffa::view::DurationView;
+#[doc(inline)]
+pub use self::__buffa::view::EmptyView;
+#[doc(inline)]
+pub use self::__buffa::view::FieldMaskView;
+#[doc(inline)]
+pub use self::__buffa::view::StructView;
+#[doc(inline)]
+pub use self::__buffa::view::ValueView;
+#[doc(inline)]
+pub use self::__buffa::view::ListValueView;
+#[doc(inline)]
+pub use self::__buffa::view::TimestampView;
+#[doc(inline)]
+pub use self::__buffa::view::DoubleValueView;
+#[doc(inline)]
+pub use self::__buffa::view::FloatValueView;
+#[doc(inline)]
+pub use self::__buffa::view::Int64ValueView;
+#[doc(inline)]
+pub use self::__buffa::view::UInt64ValueView;
+#[doc(inline)]
+pub use self::__buffa::view::Int32ValueView;
+#[doc(inline)]
+pub use self::__buffa::view::UInt32ValueView;
+#[doc(inline)]
+pub use self::__buffa::view::BoolValueView;
+#[doc(inline)]
+pub use self::__buffa::view::StringValueView;
+#[doc(inline)]
+pub use self::__buffa::view::BytesValueView;

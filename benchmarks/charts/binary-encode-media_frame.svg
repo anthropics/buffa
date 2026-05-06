@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="800" height="215" viewBox="0 0 800 215">
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="241" viewBox="0 0 800 241">
   <style>
     text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
     .title { font-size: 16px; font-weight: 600; fill: #24292f; }
@@ -12,32 +12,36 @@
   <text x="400.0" y="25" text-anchor="middle" class="title">Binary Encode Throughput — MediaFrame</text>
   <rect x="140" y="35" width="14" height="14" rx="2" fill="#4C78A8"/>
   <text x="158" y="46" class="legend-text">buffa</text>
-  <rect x="209.5" y="35" width="14" height="14" rx="2" fill="#F58518"/>
-  <text x="227.5" y="46" class="legend-text">prost</text>
-  <rect x="279.0" y="35" width="14" height="14" rx="2" fill="#E45756"/>
-  <text x="297.0" y="46" class="legend-text">protobuf-v4</text>
-  <rect x="393.5" y="35" width="14" height="14" rx="2" fill="#54A24B"/>
-  <text x="411.5" y="46" class="legend-text">Go</text>
-  <line x1="140.0" y1="80" x2="140.0" y2="180" class="grid"/>
-  <text x="140.0" y="195" text-anchor="middle" class="axis-label">0.0</text>
-  <line x1="256.0" y1="80" x2="256.0" y2="180" class="grid"/>
-  <text x="256.0" y="195" text-anchor="middle" class="axis-label">10.0</text>
-  <line x1="372.0" y1="80" x2="372.0" y2="180" class="grid"/>
-  <text x="372.0" y="195" text-anchor="middle" class="axis-label">20.0</text>
-  <line x1="488.0" y1="80" x2="488.0" y2="180" class="grid"/>
-  <text x="488.0" y="195" text-anchor="middle" class="axis-label">30.0</text>
-  <line x1="604.0" y1="80" x2="604.0" y2="180" class="grid"/>
-  <text x="604.0" y="195" text-anchor="middle" class="axis-label">40.0</text>
-  <line x1="720.0" y1="80" x2="720.0" y2="180" class="grid"/>
-  <text x="720.0" y="195" text-anchor="middle" class="axis-label">50.0</text>
-  <text x="430.0" y="210" text-anchor="middle" class="axis-label">GiB/s</text>
-  <text x="130" y="134.0" text-anchor="end" class="label">MediaFrame</text>
-  <rect x="140" y="80.0" width="521.0" height="22" rx="2" fill="#4C78A8"/>
-  <text x="665.0" y="95.0" class="value">44.91</text>
-  <rect x="140" y="106.0" width="436.3" height="22" rx="2" fill="#F58518"/>
-  <text x="580.3" y="121.0" class="value">37.61</text>
-  <rect x="140" y="132.0" width="118.5" height="22" rx="2" fill="#E45756"/>
-  <text x="262.5" y="147.0" class="value">10.22</text>
-  <rect x="140" y="158.0" width="18.7" height="22" rx="2" fill="#54A24B"/>
-  <text x="162.7" y="173.0" class="value">1.61</text>
+  <rect x="209.5" y="35" width="14" height="14" rx="2" fill="#72B7B2"/>
+  <text x="227.5" y="46" class="legend-text">buffa (view)</text>
+  <rect x="331.5" y="35" width="14" height="14" rx="2" fill="#F58518"/>
+  <text x="349.5" y="46" class="legend-text">prost</text>
+  <rect x="401.0" y="35" width="14" height="14" rx="2" fill="#E45756"/>
+  <text x="419.0" y="46" class="legend-text">protobuf-v4</text>
+  <rect x="515.5" y="35" width="14" height="14" rx="2" fill="#54A24B"/>
+  <text x="533.5" y="46" class="legend-text">Go</text>
+  <line x1="140.0" y1="80" x2="140.0" y2="206" class="grid"/>
+  <text x="140.0" y="221" text-anchor="middle" class="axis-label">0.0</text>
+  <line x1="256.0" y1="80" x2="256.0" y2="206" class="grid"/>
+  <text x="256.0" y="221" text-anchor="middle" class="axis-label">10.0</text>
+  <line x1="372.0" y1="80" x2="372.0" y2="206" class="grid"/>
+  <text x="372.0" y="221" text-anchor="middle" class="axis-label">20.0</text>
+  <line x1="488.0" y1="80" x2="488.0" y2="206" class="grid"/>
+  <text x="488.0" y="221" text-anchor="middle" class="axis-label">30.0</text>
+  <line x1="604.0" y1="80" x2="604.0" y2="206" class="grid"/>
+  <text x="604.0" y="221" text-anchor="middle" class="axis-label">40.0</text>
+  <line x1="720.0" y1="80" x2="720.0" y2="206" class="grid"/>
+  <text x="720.0" y="221" text-anchor="middle" class="axis-label">50.0</text>
+  <text x="430.0" y="236" text-anchor="middle" class="axis-label">GiB/s</text>
+  <text x="130" y="147.0" text-anchor="end" class="label">MediaFrame</text>
+  <rect x="140" y="80.0" width="496.5" height="22" rx="2" fill="#4C78A8"/>
+  <text x="640.5" y="95.0" class="value">42.80</text>
+  <rect x="140" y="106.0" width="514.6" height="22" rx="2" fill="#72B7B2"/>
+  <text x="658.6" y="121.0" class="value">44.36</text>
+  <rect x="140" y="132.0" width="437.9" height="22" rx="2" fill="#F58518"/>
+  <text x="581.9" y="147.0" class="value">37.75</text>
+  <rect x="140" y="158.0" width="120.3" height="22" rx="2" fill="#E45756"/>
+  <text x="264.3" y="173.0" class="value">10.37</text>
+  <rect x="140" y="184.0" width="19.0" height="22" rx="2" fill="#54A24B"/>
+  <text x="163.0" y="199.0" class="value">1.63</text>
 </svg>

@@ -126,3 +126,9 @@ impl<'v> ::buffa::DefaultViewInstance for EmptyView<'v> {
             ))
     }
 }
+impl ::buffa::ViewReborrow for EmptyView<'static> {
+    type Reborrowed<'b> = EmptyView<'b>;
+    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+        this
+    }
+}

@@ -210,7 +210,8 @@ pub(crate) fn generate_view_with_nesting(
         rust_path_to_tokens(&p)
     };
 
-    let view_doc = crate::comments::doc_attrs(ctx.comment(proto_fqn));
+    let view_doc =
+        crate::comments::doc_attrs_resolved(ctx.comment(proto_fqn), proto_fqn, &ctx.type_map);
 
     let top_level = quote! {
         #view_doc
@@ -329,6 +330,13 @@ pub(crate) fn generate_view_with_nesting(
                 ))
             }
         }
+
+        impl ::buffa::ViewReborrow for #view_ident<'static> {
+            type Reborrowed<'b> = #view_ident<'b>;
+            fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+                this
+            }
+        }
     };
 
     Ok((top_level, mod_items))
@@ -362,7 +370,12 @@ fn view_struct_field(
         let ident = make_field_ident(field_name);
         let number = field.number.unwrap_or(0);
         let tag_line = format!("Field {number}: `{field_name}` (map)");
-        let doc = crate::comments::doc_attrs_with_tag(proto_comment, &tag_line);
+        let doc = crate::comments::doc_attrs_with_tag_resolved(
+            proto_comment,
+            &tag_line,
+            proto_fqn,
+            &ctx.type_map,
+        );
         let map_ty = view_map_type(scope, msg, field)?;
         return Ok(Some(quote! {
             #doc
@@ -373,7 +386,12 @@ fn view_struct_field(
     let ident = make_field_ident(field_name);
     let number = field.number.unwrap_or(0);
     let tag_line = format!("Field {number}: `{field_name}`");
-    let doc = crate::comments::doc_attrs_with_tag(proto_comment, &tag_line);
+    let doc = crate::comments::doc_attrs_with_tag_resolved(
+        proto_comment,
+        &tag_line,
+        proto_fqn,
+        &ctx.type_map,
+    );
 
     let rust_type = if is_repeated {
         view_repeated_type(scope, field)?

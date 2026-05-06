@@ -204,6 +204,53 @@ fn test_bytes_type_view_to_owned_from_source_zero_copy() {
 }
 
 #[test]
+fn test_bytes_type_owned_decode_zero_copy_from_bytes() {
+    // Issue #53: owned decode of bytes_fields from a Bytes-backed Buf should
+    // alias the source via Buf::copy_to_bytes (split_to), not allocate+copy.
+    let msg = BytesContexts {
+        singular: bytes::Bytes::from_static(b"ssss"),
+        maybe: Some(bytes::Bytes::from_static(b"mmmm")),
+        many: vec![bytes::Bytes::from_static(b"rrrr")],
+        choice: Some(ChoiceOneof::Raw(bytes::Bytes::from_static(b"oooo"))),
+        ..Default::default()
+    };
+    let src = bytes::Bytes::from(msg.encode_to_vec());
+    let in_src = |p: *const u8| {
+        let r = src.as_ptr() as usize..src.as_ptr() as usize + src.len();
+        r.contains(&(p as usize))
+    };
+
+    let decoded = BytesContexts::decode(&mut src.clone()).expect("decode");
+
+    assert_eq!(&decoded.singular[..], b"ssss");
+    assert!(
+        in_src(decoded.singular.as_ptr()),
+        "singular should alias src"
+    );
+    assert_eq!(decoded.maybe.as_deref(), Some(&b"mmmm"[..]));
+    assert!(
+        in_src(decoded.maybe.as_ref().unwrap().as_ptr()),
+        "optional should alias src"
+    );
+    assert_eq!(&decoded.many[0][..], b"rrrr");
+    assert!(
+        in_src(decoded.many[0].as_ptr()),
+        "repeated should alias src"
+    );
+    match &decoded.choice {
+        Some(ChoiceOneof::Raw(b)) => {
+            assert_eq!(&b[..], b"oooo");
+            assert!(in_src(b.as_ptr()), "oneof should alias src");
+        }
+        other => panic!("expected Choice::Raw, got {other:?}"),
+    }
+
+    // Decoding from &[u8] still works (falls back to alloc+copy).
+    let decoded_slice = BytesContexts::decode(&mut src.as_ref()).expect("decode");
+    assert_eq!(&decoded_slice.singular[..], b"ssss");
+}
+
+#[test]
 fn test_bytes_type_nested_to_owned_from_source_zero_copy() {
     // Issue #52: __buffa_src must thread through nested-message recursion.
     use crate::basic_bytes::__buffa::view::BytesNestedView;

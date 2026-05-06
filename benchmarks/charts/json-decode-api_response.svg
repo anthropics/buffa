@@ -19,21 +19,21 @@
   <line x1="140.0" y1="80" x2="140.0" y2="154" class="grid"/>
   <text x="140.0" y="169" text-anchor="middle" class="axis-label">0</text>
   <line x1="256.0" y1="80" x2="256.0" y2="154" class="grid"/>
-  <text x="256.0" y="169" text-anchor="middle" class="axis-label">160</text>
+  <text x="256.0" y="169" text-anchor="middle" class="axis-label">140</text>
   <line x1="372.0" y1="80" x2="372.0" y2="154" class="grid"/>
-  <text x="372.0" y="169" text-anchor="middle" class="axis-label">320</text>
+  <text x="372.0" y="169" text-anchor="middle" class="axis-label">280</text>
   <line x1="488.0" y1="80" x2="488.0" y2="154" class="grid"/>
-  <text x="488.0" y="169" text-anchor="middle" class="axis-label">480</text>
+  <text x="488.0" y="169" text-anchor="middle" class="axis-label">420</text>
   <line x1="604.0" y1="80" x2="604.0" y2="154" class="grid"/>
-  <text x="604.0" y="169" text-anchor="middle" class="axis-label">640</text>
+  <text x="604.0" y="169" text-anchor="middle" class="axis-label">560</text>
   <line x1="720.0" y1="80" x2="720.0" y2="154" class="grid"/>
-  <text x="720.0" y="169" text-anchor="middle" class="axis-label">800</text>
+  <text x="720.0" y="169" text-anchor="middle" class="axis-label">700</text>
   <text x="430.0" y="184" text-anchor="middle" class="axis-label">MiB/s</text>
   <text x="130" y="121.0" text-anchor="end" class="label">ApiResponse</text>
-  <rect x="140" y="80.0" width="511.7" height="22" rx="2" fill="#4C78A8"/>
-  <text x="655.7" y="95.0" class="value">705</text>
-  <rect x="140" y="106.0" width="219.4" height="22" rx="2" fill="#F58518"/>
-  <text x="363.4" y="121.0" class="value">302</text>
-  <rect x="140" y="132.0" width="48.7" height="22" rx="2" fill="#54A24B"/>
-  <text x="192.7" y="147.0" class="value">67</text>
+  <rect x="140" y="80.0" width="563.7" height="22" rx="2" fill="#4C78A8"/>
+  <text x="707.7" y="95.0" class="value">680</text>
+  <rect x="140" y="106.0" width="247.6" height="22" rx="2" fill="#F58518"/>
+  <text x="391.6" y="121.0" class="value">298</text>
+  <rect x="140" y="132.0" width="56.5" height="22" rx="2" fill="#54A24B"/>
+  <text x="200.5" y="147.0" class="value">68</text>
 </svg>

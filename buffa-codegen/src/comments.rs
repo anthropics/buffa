@@ -170,51 +170,74 @@ fn fqn_join(package: &str, name: &str) -> String {
     }
 }
 
-/// Convert a comment string into `#[doc = "..."]` token stream attributes.
+/// Build `#[doc = "..."]` token stream attributes from an optional proto comment,
+/// resolving AIP-192 cross-references into rustdoc intra-doc links where possible.
 ///
-/// Each line of the comment becomes a separate `#[doc = "..."]` attribute
-/// so that rustdoc renders them as a contiguous doc block. Returns empty
-/// tokens if the comment is `None`.
-pub fn doc_attrs(comment: Option<&str>) -> TokenStream {
+/// `scope_fqn` is the dotless FQN of the **enclosing proto type** whose lexical
+/// scope governs ref resolution — always the message or enum FQN, never the
+/// field/value/oneof's own FQN (e.g. `"google.example.v1.Book"` for a message
+/// comment, a field comment, or a oneof comment inside `Book`). Unresolvable
+/// refs and extern-crate types fall back to escaped-literal behaviour.
+pub(crate) fn doc_attrs_resolved(
+    comment: Option<&str>,
+    scope_fqn: &str,
+    type_map: &HashMap<String, String>,
+) -> TokenStream {
     match comment {
         None => quote! {},
-        Some(text) => doc_lines_to_tokens(text),
+        Some(text) => doc_lines_with_refs(text, scope_fqn, type_map),
     }
 }
 
-/// Combine an optional proto comment with a tag line into `#[doc = "..."]` attrs.
+/// Like [`doc_attrs_resolved`] but appends a `tag` line after a blank separator.
 ///
-/// If a proto comment is present, a blank `#[doc = ""]` separator is inserted
-/// between it and the tag line so that rustdoc renders them as separate
-/// paragraphs.
-pub fn doc_attrs_with_tag(comment: Option<&str>, tag: &str) -> TokenStream {
+/// Useful for adding a "Field N: `name`" annotation after the proto comment body.
+pub(crate) fn doc_attrs_with_tag_resolved(
+    comment: Option<&str>,
+    tag: &str,
+    scope_fqn: &str,
+    type_map: &HashMap<String, String>,
+) -> TokenStream {
     match comment {
-        None => doc_lines_to_tokens(tag),
+        None => doc_lines_with_refs(tag, scope_fqn, type_map),
         Some(text) => {
             let combined = format!("{text}\n\n{tag}");
-            doc_lines_to_tokens(&combined)
+            doc_lines_with_refs(&combined, scope_fqn, type_map)
         }
     }
 }
 
-/// Convert text into `#[doc = " ..."]` tokens, ensuring each non-empty line
-/// has a leading space so that `prettyplease` renders `/// text` instead of
-/// `///text`.
-///
-/// Indented code blocks (4+ spaces) from proto source comments contain
-/// C++/Java/Python examples, not Rust. We wrap them in ```` ```text ````
-/// fences so rustdoc renders them as plain text instead of trying to
-/// compile them as Rust doc tests.
+/// Convert text into `#[doc = " ..."]` tokens — test helper with no proto context.
+/// Passes an empty type_map so all proto refs fall back to escaping.
+#[cfg(test)]
 fn doc_lines_to_tokens(text: &str) -> TokenStream {
+    doc_lines_impl(text, |line| {
+        sanitize_line_with_refs(line, "", &HashMap::new())
+    })
+}
+
+fn doc_lines_with_refs(
+    text: &str,
+    scope_fqn: &str,
+    type_map: &HashMap<String, String>,
+) -> TokenStream {
+    doc_lines_impl(text, |line| {
+        sanitize_line_with_refs(line, scope_fqn, type_map)
+    })
+}
+
+/// Core line-by-line doc-comment formatter.
+///
+/// Handles indented-block fencing (4-space/tab blocks → ```` ```text ````),
+/// user-written markdown fences (pass-through), and blank-line preservation.
+/// Prose lines are processed via the `sanitize` closure.
+fn doc_lines_impl<F: Fn(&str) -> String>(text: &str, sanitize: F) -> TokenStream {
     let raw_lines: Vec<&str> = text.lines().collect();
     let mut lines: Vec<String> = Vec::with_capacity(raw_lines.len());
     let mut in_code_block = false;
     let mut in_user_fence = false;
 
     for (idx, line) in raw_lines.iter().enumerate() {
-        // Proto authors may write markdown fences directly. Pass them
-        // through and suppress the indented-block heuristic inside so we
-        // don't nest a synthetic ```text fence.
         if line.trim_start().starts_with("```") && !in_code_block {
             in_user_fence = !in_user_fence;
             lines.push(if line.starts_with(' ') {
@@ -238,15 +261,10 @@ fn doc_lines_to_tokens(text: &str) -> TokenStream {
         let is_indented = line.starts_with("    ") || line.starts_with('\t');
 
         if is_indented && !in_code_block {
-            // Open a text fence before the first indented line.
             lines.push(" ```text".to_string());
             in_code_block = true;
         } else if in_code_block && !is_indented {
-            // Non-indented line (including empty) closes the code block,
-            // but only if there isn't another indented line coming next.
             if line.is_empty() {
-                // Look ahead: if the next non-empty line is indented, keep
-                // the block open (it's a blank line within the example).
                 let next_is_indented = raw_lines[idx + 1..]
                     .iter()
                     .find(|l| !l.is_empty())
@@ -261,7 +279,6 @@ fn doc_lines_to_tokens(text: &str) -> TokenStream {
         }
 
         if in_code_block {
-            // Strip the 4-space / tab indent since we're inside a fence.
             let stripped = line
                 .strip_prefix("    ")
                 .or_else(|| line.strip_prefix('\t'))
@@ -276,7 +293,7 @@ fn doc_lines_to_tokens(text: &str) -> TokenStream {
         } else if line.is_empty() {
             lines.push(String::new());
         } else {
-            let sanitized = sanitize_line(line);
+            let sanitized = sanitize(line);
             if sanitized.starts_with(' ') {
                 lines.push(sanitized);
             } else {
@@ -289,34 +306,18 @@ fn doc_lines_to_tokens(text: &str) -> TokenStream {
         lines.push(" ```".to_string());
     }
 
-    quote! {
-        #( #[doc = #lines] )*
-    }
+    quote! { #( #[doc = #lines] )* }
 }
 
-/// Escape one prose line of proto comment text for rustdoc.
-///
-/// Proto comments are written for a cross-language audience and frequently
-/// contain constructs that rustdoc misparses:
-///
-/// - `[foo]` / `[foo][]` — treated as intra-doc links; an error under
-///   `deny(rustdoc::broken_intra_doc_links)` when `foo` resembles a Rust
-///   path. Escaped to `\[foo\]`.
-/// - Bare `http(s)://…` — triggers `rustdoc::bare_urls`. Wrapped in `<…>`.
-/// - `Option<T>` — treated as raw HTML; triggers
-///   `rustdoc::invalid_html_tags`. Escaped to `Option\<T\>`.
-///
-/// Left intact:
-/// - Single-line inline links `[text](url)`.
-/// - Existing autolinks `<http(s)://…>`.
-/// - Content inside `` `…` `` backtick code spans.
-/// - Already-escaped `\[`, `\]`, `\<`, `\>`.
-///
-/// This is a per-line pass invoked from [`doc_lines_to_tokens`] on prose
-/// lines only — code blocks are left untouched. Multi-line markdown links
-/// are conservatively escaped; the link degrades to literal text plus a
-/// clickable autolink, which is preferable to a docs.rs build failure.
-fn sanitize_line(line: &str) -> String {
+/// Sanitize one prose line of proto comment text for rustdoc, resolving
+/// AIP-192 cross-references into intra-doc links where possible and escaping
+/// everything else. `scope_fqn` and `type_map` may be empty for test-only callers
+/// that just need the base escaping behaviour.
+fn sanitize_line_with_refs(
+    line: &str,
+    scope_fqn: &str,
+    type_map: &HashMap<String, String>,
+) -> String {
     let bytes = line.as_bytes();
     let mut out = String::with_capacity(line.len());
     let mut i = 0;
@@ -325,9 +326,6 @@ fn sanitize_line(line: &str) -> String {
         let b = bytes[i];
 
         if b == b'`' {
-            // CommonMark code span: a run of N backticks opens, the next run
-            // of exactly N closes. Emit the whole span verbatim. If no
-            // closer exists on this line, the run is literal (not a span).
             let run_start = i;
             while i < bytes.len() && bytes[i] == b'`' {
                 i += 1;
@@ -354,6 +352,18 @@ fn sanitize_line(line: &str) -> String {
                 if let Some(end) = find_inline_link_end(bytes, i) {
                     out.push_str(&line[i..=end]);
                     i = end + 1;
+                } else if let Some((display, ref_target, end)) = find_ref_link(bytes, i, line) {
+                    match resolve_proto_ref(display, ref_target, scope_fqn, type_map) {
+                        Some(resolved) => out.push_str(&resolved),
+                        None => {
+                            out.push_str("\\[");
+                            out.push_str(&escape_angle_brackets(display));
+                            out.push_str("\\]\\[");
+                            out.push_str(&escape_angle_brackets(ref_target));
+                            out.push_str("\\]");
+                        }
+                    }
+                    i = end;
                 } else {
                     out.push_str("\\[");
                     i += 1;
@@ -456,6 +466,189 @@ fn find_inline_link_end(bytes: &[u8], start: usize) -> Option<usize> {
         }
         k += 1;
     }
+    None
+}
+
+/// If `bytes[start..]` is `[display][ref]` or `[display][]`, return
+/// `(display_text, ref_target, past_end_index)`.
+///
+/// Requires no space between the closing `]` of display and the opening `[`
+/// of the ref target. Returns `None` for anything else including `[text](url)`
+/// (already matched by `find_inline_link_end`) and nested brackets.
+fn find_ref_link<'a>(
+    bytes: &[u8],
+    start: usize,
+    line: &'a str,
+) -> Option<(&'a str, &'a str, usize)> {
+    debug_assert_eq!(bytes[start], b'[');
+    let mut j = start + 1;
+    while j < bytes.len() {
+        if bytes[j] == b'[' {
+            return None;
+        }
+        if bytes[j] == b']' {
+            break;
+        }
+        j += 1;
+    }
+    if j >= bytes.len() {
+        return None;
+    }
+    if j + 1 >= bytes.len() || bytes[j + 1] != b'[' {
+        return None;
+    }
+    let ref_open = j + 1;
+    let mut k = ref_open + 1;
+    while k < bytes.len() && bytes[k] != b']' {
+        if bytes[k] == b'[' {
+            return None;
+        }
+        k += 1;
+    }
+    if k >= bytes.len() {
+        return None;
+    }
+    // Reject [text]( — that is find_inline_link_end's territory.
+    if k + 1 < bytes.len() && bytes[k + 1] == b'(' {
+        return None;
+    }
+    let display = &line[start + 1..j];
+    let ref_target = &line[ref_open + 1..k];
+    Some((display, ref_target, k + 1))
+}
+
+/// Escape `<` and `>` in a display or ref-target string so rustdoc doesn't
+/// treat them as HTML tags (`rustdoc::invalid_html_tags` under `-D warnings`).
+///
+/// Content inside backtick code spans is left verbatim — escaping `\<` inside
+/// a code span would render the backslash literally, corrupting the output.
+/// `[` and `]` are already excluded by `find_ref_link`.
+fn escape_angle_brackets(s: &str) -> String {
+    if !s.contains(['<', '>']) {
+        return s.to_owned();
+    }
+    let bytes = s.as_bytes();
+    let mut out = String::with_capacity(s.len() + 4);
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'`' {
+            let run_start = i;
+            while i < bytes.len() && bytes[i] == b'`' {
+                i += 1;
+            }
+            let run_len = i - run_start;
+            if let Some(close_end) = find_backtick_closer(bytes, i, run_len) {
+                out.push_str(&s[run_start..close_end]);
+                i = close_end;
+            } else {
+                out.push_str(&s[run_start..i]);
+            }
+        } else {
+            match bytes[i] {
+                b'<' => {
+                    out.push_str("\\<");
+                    i += 1;
+                }
+                b'>' => {
+                    out.push_str("\\>");
+                    i += 1;
+                }
+                _ => i += push_char_at(&mut out, s, i),
+            }
+        }
+    }
+    out
+}
+
+/// Escape keyword segments in a `::` -separated Rust path for use in a
+/// rustdoc intra-doc link string (e.g. `google::type::LatLng` →
+/// `google::r#type::LatLng`). Type-map values are crate-relative and do not
+/// contain `super`/`self`/`crate`, so `escape_mod_ident` is safe to apply to
+/// every segment.
+fn escape_path_for_link(path: &str) -> String {
+    if !path.split("::").any(crate::idents::is_rust_keyword) {
+        return path.to_owned();
+    }
+    path.split("::")
+        .map(crate::idents::escape_mod_ident)
+        .collect::<Vec<_>>()
+        .join("::")
+}
+
+/// Returns `true` for Rust paths that cannot be linked by prepending `crate::`.
+///
+/// `::` paths are global (extern crate) paths. `crate::`-prefixed values are
+/// rejected because the link is constructed as `crate::{p}`, which would
+/// mangle to `crate::crate::...` for an already-prefixed value. Mirrors the
+/// corresponding check in `context.rs`.
+fn is_extern_path(rust_path: &str) -> bool {
+    rust_path.starts_with("::") || rust_path.starts_with("crate::")
+}
+
+/// Returns the Rust path from `type_map` for `type_ref` resolved from `scope_fqn`.
+///
+/// Tries fully-qualified first (`".{type_ref}"`), then walks up the scope
+/// components stripping one segment at a time (proto lexical scoping).
+fn resolve_type_fqn<'m>(
+    type_ref: &str,
+    scope_fqn: &str,
+    type_map: &'m HashMap<String, String>,
+) -> Option<&'m str> {
+    let fq_key = format!(".{type_ref}");
+    if let Some(path) = type_map.get(&fq_key) {
+        return Some(path.as_str());
+    }
+    if scope_fqn.is_empty() {
+        return None;
+    }
+    let mut scope = scope_fqn;
+    loop {
+        let candidate = format!(".{scope}.{type_ref}");
+        if let Some(path) = type_map.get(&candidate) {
+            return Some(path.as_str());
+        }
+        match scope.rfind('.') {
+            Some(pos) => scope = &scope[..pos],
+            None => break,
+        }
+    }
+    None
+}
+
+/// Try to resolve an AIP-192 cross-reference into a rustdoc inline link string.
+///
+/// Returns `Some("[display](crate::rust::path)")` on success, or `None` if the
+/// ref cannot be resolved (caller falls back to escaping).
+///
+/// `scope_fqn` is the dotless FQN of the **enclosing proto type** (message or
+/// enum) — never a field/value/oneof FQN. `ref_target` may be empty for the
+/// implied form `[display][]`.
+///
+/// Unlinkable paths (see [`is_extern_path`]) return `None`.
+fn resolve_proto_ref(
+    display: &str,
+    ref_target: &str,
+    scope_fqn: &str,
+    type_map: &HashMap<String, String>,
+) -> Option<String> {
+    let effective_ref = if ref_target.is_empty() {
+        display.trim()
+    } else {
+        ref_target.trim()
+    };
+    if effective_ref.is_empty() {
+        return None;
+    }
+
+    if let Some(rust_path) = resolve_type_fqn(effective_ref, scope_fqn, type_map) {
+        if is_extern_path(rust_path) {
+            return None;
+        }
+        let d = escape_angle_brackets(display);
+        let p = escape_path_for_link(rust_path);
+        return Some(format!("[{d}](crate::{p})"));
+    }
+
     None
 }
 
@@ -940,7 +1133,13 @@ mod tests {
         assert_eq!(format_comment(&loc).as_deref(), Some(" hello"));
     }
 
-    // --- sanitize_line ------------------------------------------------------
+    // --- sanitize_line_with_refs (base escaping, no proto context) -------------
+    // These cases use an empty type_map and empty scope so all proto refs fall
+    // back to escaping — identical to the old sanitize_line behaviour.
+
+    fn sl(line: &str) -> String {
+        sanitize_line_with_refs(line, "", &HashMap::new())
+    }
 
     #[test]
     fn test_sanitize_line() {
@@ -1002,19 +1201,249 @@ mod tests {
             ("`café` [x]", r"`café` \[x\]", "utf8_backtick"),
         ];
         for (input, want, name) in cases {
-            assert_eq!(sanitize_line(input), *want, "case: {name}");
+            assert_eq!(sl(input), *want, "case: {name}");
         }
     }
 
     #[test]
     fn test_sanitize_line_unbalanced() {
         // Unmatched delimiters are escaped, not crashed on.
-        assert_eq!(sanitize_line("[foo"), r"\[foo");
-        assert_eq!(sanitize_line("foo]"), r"foo\]");
-        assert_eq!(sanitize_line("[foo]("), r"\[foo\](");
-        assert_eq!(sanitize_line("<http://x"), r"\<<http://x>");
-        assert_eq!(sanitize_line("a > b"), r"a \> b");
-        assert_eq!(sanitize_line("trailing \\"), "trailing \\");
+        assert_eq!(sl("[foo"), r"\[foo");
+        assert_eq!(sl("foo]"), r"foo\]");
+        assert_eq!(sl("[foo]("), r"\[foo\](");
+        assert_eq!(sl("<http://x"), r"\<<http://x>");
+        assert_eq!(sl("a > b"), r"a \> b");
+        assert_eq!(sl("trailing \\"), "trailing \\");
+    }
+
+    // ── find_ref_link ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_find_ref_link_full_form() {
+        let line = "[Book][google.example.v1.Book]";
+        let bytes = line.as_bytes();
+        let result = find_ref_link(bytes, 0, line);
+        assert_eq!(result, Some(("Book", "google.example.v1.Book", line.len())));
+    }
+
+    #[test]
+    fn test_find_ref_link_implied_form() {
+        let line = "[Book][]";
+        let bytes = line.as_bytes();
+        let result = find_ref_link(bytes, 0, line);
+        assert_eq!(result, Some(("Book", "", line.len())));
+    }
+
+    #[test]
+    fn test_find_ref_link_not_matched_for_inline_link() {
+        let line = "[text](https://example.com)";
+        let bytes = line.as_bytes();
+        assert_eq!(find_ref_link(bytes, 0, line), None);
+    }
+
+    #[test]
+    fn test_find_ref_link_bare_bracket_not_matched() {
+        let line = "[foo]";
+        let bytes = line.as_bytes();
+        assert_eq!(find_ref_link(bytes, 0, line), None);
+    }
+
+    // ── resolve_proto_ref ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_resolve_proto_ref_fully_qualified() {
+        let mut map = HashMap::new();
+        map.insert(
+            ".google.example.v1.Book".into(),
+            "google::example::v1::Book".into(),
+        );
+        let result = resolve_proto_ref("Book", "google.example.v1.Book", "any.scope", &map);
+        assert_eq!(
+            result.as_deref(),
+            Some("[Book](crate::google::example::v1::Book)")
+        );
+    }
+
+    #[test]
+    fn test_resolve_proto_ref_scope_relative() {
+        let mut map = HashMap::new();
+        map.insert(
+            ".google.example.v1.Genre".into(),
+            "google::example::v1::Genre".into(),
+        );
+        let result = resolve_proto_ref("Genre", "Genre", "google.example.v1.Book", &map);
+        assert_eq!(
+            result.as_deref(),
+            Some("[Genre](crate::google::example::v1::Genre)")
+        );
+    }
+
+    #[test]
+    fn test_resolve_proto_ref_implied_form() {
+        let mut map = HashMap::new();
+        map.insert(
+            ".google.example.v1.Book".into(),
+            "google::example::v1::Book".into(),
+        );
+        let result = resolve_proto_ref("Book", "", "google.example.v1.Library", &map);
+        assert_eq!(
+            result.as_deref(),
+            Some("[Book](crate::google::example::v1::Book)")
+        );
+    }
+
+    #[test]
+    fn test_resolve_proto_ref_member_ref_returns_none() {
+        let mut map = HashMap::new();
+        map.insert(".pkg.Genre".into(), "pkg::Genre".into());
+        assert_eq!(
+            resolve_proto_ref("Genre.GENRE_SCI_FI", "", "pkg.Book", &map),
+            None,
+        );
+        assert_eq!(
+            resolve_proto_ref("X", "pkg.Genre.GENRE_SCI_FI", "pkg.Book", &map),
+            None,
+        );
+    }
+
+    #[test]
+    fn test_resolve_proto_ref_extern_returns_none() {
+        let mut map = HashMap::new();
+        map.insert(
+            ".google.protobuf.Timestamp".into(),
+            "::buffa_types::google::protobuf::Timestamp".into(),
+        );
+        let result =
+            resolve_proto_ref("Timestamp", "google.protobuf.Timestamp", "my.pkg.Msg", &map);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_resolve_proto_ref_crate_extern_returns_none() {
+        // extern_path mappings that start with `crate::` must also be rejected —
+        // they live in another crate re-exported under this crate's root and
+        // cannot be linked with `crate::crate::...`.
+        let mut map = HashMap::new();
+        map.insert(
+            ".google.api.Foo".into(),
+            "crate::vendored::google::api::Foo".into(),
+        );
+        let result = resolve_proto_ref("Foo", "google.api.Foo", "my.pkg.Msg", &map);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_resolve_proto_ref_keyword_segment_escaped() {
+        // Package `google.type` → path `google::type::LatLng`; `type` must be
+        // escaped to `r#type` so rustdoc can resolve the intra-doc link.
+        let mut map = HashMap::new();
+        map.insert(".google.type.LatLng".into(), "google::type::LatLng".into());
+        let result = resolve_proto_ref("LatLng", "google.type.LatLng", "my.pkg.Msg", &map);
+        assert_eq!(
+            result.as_deref(),
+            Some("[LatLng](crate::google::r#type::LatLng)")
+        );
+    }
+
+    #[test]
+    fn test_resolve_proto_ref_unknown_returns_none() {
+        let map = HashMap::new();
+        let result = resolve_proto_ref("Foo", "NoSuchType", "my.pkg.Msg", &map);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_resolve_proto_ref_empty_effective_ref_returns_none() {
+        let map = HashMap::new();
+        let result = resolve_proto_ref("", "", "my.pkg.Msg", &map);
+        assert_eq!(result, None);
+    }
+
+    // ── sanitize_line_with_refs ────────────────────────────────────────────────
+
+    #[test]
+    fn test_sanitize_with_refs_resolves_fq() {
+        let mut map = HashMap::new();
+        map.insert(
+            ".google.example.v1.Book".into(),
+            "google::example::v1::Book".into(),
+        );
+        let out = sanitize_line_with_refs(
+            "See [Book][google.example.v1.Book] for details.",
+            "google.example.v1.Library",
+            &map,
+        );
+        assert!(
+            out.contains("[Book](crate::google::example::v1::Book)"),
+            "got: {out}"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_with_refs_falls_back_for_unknown() {
+        let out = sanitize_line_with_refs("[Foo][unknown.Type]", "my.pkg.Msg", &HashMap::new());
+        assert_eq!(out, r"\[Foo\]\[unknown.Type\]");
+    }
+
+    #[test]
+    fn test_sanitize_with_refs_preserves_inline_links() {
+        let line = "[RFC 3339](https://ietf.org/rfc/rfc3339.txt)";
+        let out = sanitize_line_with_refs(line, "my.pkg.Msg", &HashMap::new());
+        assert_eq!(out, line);
+    }
+
+    #[test]
+    fn test_sanitize_with_refs_implied_form() {
+        let mut map = HashMap::new();
+        map.insert(".my.pkg.Foo".into(), "my::pkg::Foo".into());
+        let out = sanitize_line_with_refs("See [Foo][].", "my.pkg.Bar", &map);
+        assert!(out.contains("[Foo](crate::my::pkg::Foo)"), "got: {out}");
+    }
+
+    #[test]
+    fn test_sanitize_with_refs_display_angle_brackets_escaped() {
+        // Display text containing < or > must be escaped (invalid_html_tags lint).
+        let mut map = HashMap::new();
+        map.insert(".my.pkg.Foo".into(), "my::pkg::Foo".into());
+        // Resolved: display gets < > escaped.
+        let out = sanitize_line_with_refs("[Foo<T>][my.pkg.Foo]", "my.pkg.Bar", &map);
+        assert_eq!(out, r"[Foo\<T\>](crate::my::pkg::Foo)");
+        // Fallback: display also gets < > escaped.
+        let out2 = sanitize_line_with_refs("[Foo<T>][unknown.Type]", "my.pkg.Bar", &HashMap::new());
+        assert_eq!(out2, r"\[Foo\<T\>\]\[unknown.Type\]");
+    }
+
+    #[test]
+    fn test_sanitize_with_refs_display_backtick_span_preserved() {
+        // < > inside a backtick code span in the display must NOT be escaped —
+        // \< inside a code span renders the backslash literally.
+        let mut map = HashMap::new();
+        map.insert(".my.pkg.Foo".into(), "my::pkg::Foo".into());
+        let out = sanitize_line_with_refs("[`Option<T>`][my.pkg.Foo]", "my.pkg.Bar", &map);
+        assert_eq!(out, "[`Option<T>`](crate::my::pkg::Foo)");
+        // Fallback: backtick span inside display still preserved.
+        let out2 =
+            sanitize_line_with_refs("[`Option<T>`][unknown.Type]", "my.pkg.Bar", &HashMap::new());
+        assert_eq!(out2, r"\[`Option<T>`\]\[unknown.Type\]");
+    }
+
+    #[test]
+    fn test_sanitize_with_refs_ref_target_angle_brackets_escaped() {
+        // < > in a ref_target (malformed proto FQN) must also be escaped on
+        // the fallback path so they don't trigger invalid_html_tags.
+        let out = sanitize_line_with_refs("[Foo][a<b>c]", "my.pkg.Msg", &HashMap::new());
+        assert_eq!(out, r"\[Foo\]\[a\<b\>c\]");
+    }
+
+    #[test]
+    fn test_sanitize_with_refs_code_span_untouched() {
+        let mut map = HashMap::new();
+        map.insert(".my.pkg.Foo".into(), "my::pkg::Foo".into());
+        let out = sanitize_line_with_refs("`[Foo][my.pkg.Foo]`", "my.pkg.Bar", &map);
+        assert!(
+            out.contains("`[Foo][my.pkg.Foo]`"),
+            "code span unchanged: {out}"
+        );
     }
 
     #[test]

@@ -38,7 +38,7 @@ pub(crate) mod view;
 
 use crate::generated::descriptor::FileDescriptorProto;
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 
 /// Lints suppressed on generated code at module boundaries.
 ///
@@ -99,14 +99,26 @@ pub struct GeneratedFile {
     pub content: String,
 }
 
-/// Kind of [`GeneratedFile`]. The five content kinds are 1:1 with input
-/// `.proto` files; `PackageMod` is 1:1 with packages.
+/// Kind of [`GeneratedFile`].
 ///
-/// Build integrations only need to wire up [`PackageMod`](Self::PackageMod)
-/// entries — the per-proto content kinds are reached via `include!` from
-/// the stitcher and need only be written to disk alongside it. Under
+/// [`generate`] produces five per-proto content kinds — one each of
+/// [`Owned`](Self::Owned), [`View`](Self::View), [`Oneof`](Self::Oneof),
+/// [`ViewOneof`](Self::ViewOneof), and [`Ext`](Self::Ext) per input
+/// `.proto` file — plus one [`PackageMod`](Self::PackageMod) stitcher per
+/// package. Build integrations only need to wire up `PackageMod` entries;
+/// the per-proto content kinds are reached via `include!` from the stitcher
+/// and need only be written to disk alongside it. Under
 /// [`CodeGenConfig::file_per_package`] only `PackageMod` is emitted.
+///
+/// [`Companion`](Self::Companion) is the one kind *not* produced by
+/// [`generate`]: downstream code generators construct `Companion` files
+/// themselves and merge them into buffa's output via
+/// [`apply_companions`].
+///
+/// This enum is `#[non_exhaustive]` — match with a wildcard arm so new
+/// kinds can be added without a major version bump.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum GeneratedFileKind {
     /// Owned message structs and enums (`<stem>.rs`).
     Owned,
@@ -116,11 +128,28 @@ pub enum GeneratedFileKind {
     Oneof,
     /// View oneof enums (`<stem>.__view_oneof.rs`).
     ViewOneof,
-    /// File-level extension consts (`<stem>.__ext.rs`).
+    /// File-level proto-extension consts (`<stem>.__ext.rs`) — the
+    /// `pub const` `ExtensionDescriptor` items generated from `extend`
+    /// blocks. Not to be confused with [`Companion`](Self::Companion),
+    /// which is unrelated downstream-supplied content.
     Ext,
     /// Per-package stitcher (`<dotted.pkg>.mod.rs`). The only file build
     /// systems need to wire up directly.
     PackageMod,
+    /// Extra per-proto content from a downstream code generator (service
+    /// stubs, extra trait impls, etc.) that travels with buffa's output.
+    ///
+    /// Not produced by [`generate`]. Construct these in your own generator
+    /// and pass them to [`apply_companions`], which appends an `include!`
+    /// for each one at file scope in the matching package's
+    /// [`PackageMod`](Self::PackageMod) — after buffa's own output, at
+    /// package root alongside the owned message types (**not** under the
+    /// `__buffa::` sentinel module). Items declared `pub` in a companion
+    /// file are visible at `crate::<pkg>::*`.
+    ///
+    /// Not to be confused with [`Ext`](Self::Ext), which is the buffa-
+    /// generated file holding protobuf `extend` consts.
+    Companion,
 }
 
 /// Configuration for code generation.
@@ -148,7 +177,18 @@ pub struct CodeGenConfig {
     /// on generated message structs and enum types.
     ///
     /// When this is `true`, the downstream crate must add `arbitrary` as an
-    /// optional dependency and enable the `buffa/arbitrary` feature.
+    /// optional dependency and enable the `buffa/arbitrary` feature. The
+    /// downstream crate's Cargo feature that gates `arbitrary` must be named
+    /// exactly `"arbitrary"` — the generated `cfg_attr` uses that literal
+    /// string and cannot be customized. This applies to both the struct-level
+    /// `derive(Arbitrary)` and the per-field `#[arbitrary(with = ...)]`
+    /// attributes emitted for `bytes_fields`-typed fields.
+    ///
+    /// For `bytes_fields`-typed fields, codegen emits `#[arbitrary(with = ...)]`
+    /// using helpers in `::buffa::__private` since `bytes::Bytes` has no
+    /// `Arbitrary` impl. Singular, optional, and repeated bytes fields are all
+    /// covered. Map values are always `Vec<u8>` regardless of `bytes_fields`
+    /// and require no special handling.
     pub generate_arbitrary: bool,
     /// External type path mappings.
     ///
@@ -580,6 +620,12 @@ struct ProtoContent {
     oneof: TokenStream,
     view_oneof: TokenStream,
     ext: TokenStream,
+    /// Candidate `pub use` re-exports targeting the package root (top-level
+    /// view structs, file-level extension consts). Filtered against the
+    /// package-wide root namespace in [`generate_package_mod`] — the package
+    /// can span multiple `.proto` files, so collisions are only knowable at
+    /// the stitcher level.
+    root_reexports: Vec<message::ReexportCandidate>,
 }
 
 /// Generate the five per-`.proto` content files for one input file.
@@ -602,6 +648,8 @@ fn generate_proto_content(
     let mut oneof = TokenStream::new();
     let mut view_oneof = TokenStream::new();
     let mut ext = TokenStream::new();
+    let mut root_reexports: Vec<message::ReexportCandidate> = Vec::new();
+    let sentinel = make_field_ident(context::SENTINEL_MOD);
 
     for enum_type in &file.enum_type {
         let enum_rust_name = enum_type.name.as_deref().unwrap_or("");
@@ -666,6 +714,28 @@ fn generate_proto_content(
         oneof.extend(msg_oneof);
         view.extend(msg_view);
         view_oneof.extend(msg_view_oneof);
+
+        // Top-level message view → re-export at package root. The leading
+        // `self::` is load-bearing: when consumers nest packages with
+        // `pub mod a { use super::*; pub mod a_b { use super::*; … } }`
+        // (`buffa-build`'s `_include.rs` does this), a parent package's
+        // `__buffa` is in scope via the glob, and Rust's import-resolution
+        // pass treats a glob-imported name as ambiguous against a
+        // **macro-expanded** local one (the `pub mod __buffa` block arrives
+        // via `include!()`), even though a non-macro local definition would
+        // shadow the glob — see rustc E0659. `self::` resolves it
+        // deterministically. `#[doc(inline)]` makes rustdoc render the type's
+        // full page at the natural path instead of a "Re-export of …" stub.
+        if ctx.config.generate_views {
+            let view_ident = format_ident!("{top_level_name}View");
+            root_reexports.push(message::ReexportCandidate {
+                name: view_ident.to_string(),
+                tokens: quote! {
+                    #[doc(inline)]
+                    pub use self :: #sentinel :: view :: #view_ident;
+                },
+            });
+        }
     }
 
     // File-level `extend` declarations → `__buffa::ext::` (depth 2).
@@ -678,12 +748,23 @@ fn generate_proto_content(
         current_package,
     )?;
     ext.extend(file_ext_tokens);
-    let sentinel = make_field_ident(context::SENTINEL_MOD);
     for id in file_ext_json {
         reg.json_ext.push(quote! { #sentinel :: ext :: #id });
     }
     for id in file_ext_text {
         reg.text_ext.push(quote! { #sentinel :: ext :: #id });
+    }
+    // File-level extension consts → re-export at package root. `self::` and
+    // `#[doc(inline)]` for the same reasons as the view re-exports above.
+    for ext_field in &file.extension {
+        let const_ident = extension::extension_const_ident(ext_field.name.as_deref().unwrap_or(""));
+        root_reexports.push(message::ReexportCandidate {
+            name: const_ident.to_string(),
+            tokens: quote! {
+                #[doc(inline)]
+                pub use self :: #sentinel :: ext :: #const_ident;
+            },
+        });
     }
 
     Ok(ProtoContent {
@@ -693,6 +774,7 @@ fn generate_proto_content(
         oneof,
         view_oneof,
         ext,
+        root_reexports,
     })
 }
 
@@ -757,22 +839,21 @@ fn generate_package(
     // `__buffa::register_types` (one level deep), so each path gets a
     // single `super::` prefix when emitted into the fn body.
     let mut reg = message::RegistryPaths::default();
+    let mut root_reexports: Vec<message::ReexportCandidate> = Vec::new();
 
     let sections = if ctx.config.file_per_package {
         let mut sections = PackageSections::default();
         for file in files {
-            sections.push_inline(generate_proto_content(
-                ctx,
-                current_package,
-                file,
-                &mut reg,
-            )?);
+            let mut pc = generate_proto_content(ctx, current_package, file, &mut reg)?;
+            root_reexports.append(&mut pc.root_reexports);
+            sections.push_inline(pc);
         }
         sections
     } else {
         let mut stems: Vec<String> = Vec::new();
         for file in files {
-            let pc = generate_proto_content(ctx, current_package, file, &mut reg)?;
+            let mut pc = generate_proto_content(ctx, current_package, file, &mut reg)?;
+            root_reexports.append(&mut pc.root_reexports);
             let source = file.name.as_deref().unwrap_or("");
             let push = |out: &mut Vec<GeneratedFile>,
                         suffix: &str,
@@ -802,6 +883,8 @@ fn generate_package(
         PackageSections::from_stems(&stems)
     };
 
+    let reexport_block = surviving_root_reexports(ctx, files, &reg, root_reexports);
+
     out.push(GeneratedFile {
         name: if ctx.config.file_per_package {
             package_to_filename(current_package)
@@ -810,18 +893,72 @@ fn generate_package(
         },
         package: current_package.to_string(),
         kind: GeneratedFileKind::PackageMod,
-        content: generate_package_mod(ctx, &sections, &reg)?,
+        content: generate_package_mod(ctx, &sections, &reg, &reexport_block)?,
     });
 
     Ok(())
 }
 
+/// Filter the candidate package-root re-exports against the package's
+/// existing root namespace and against each other, returning the surviving
+/// `pub use` lines.
+///
+/// The package root is shared across every `.proto` file in the package, so
+/// the occupied-name set must be built from *all* of them — a top-level
+/// message named `FooView` declared in `a.proto` would shadow `Foo`'s view
+/// re-export from `b.proto`.
+fn surviving_root_reexports(
+    ctx: &context::CodeGenContext,
+    files: &[&FileDescriptorProto],
+    reg: &message::RegistryPaths,
+    mut candidates: Vec<message::ReexportCandidate>,
+) -> TokenStream {
+    use crate::idents::make_field_ident;
+    use std::collections::BTreeSet;
+
+    // Names already occupied at package root by real items: top-level
+    // messages, enums, message snake_case modules, and the `__buffa`
+    // sentinel itself. File-level extension consts live in
+    // `__buffa::ext::`, not at the root, so they are *candidates* (added
+    // by `generate_proto_content`) rather than occupants.
+    let mut occupied: BTreeSet<String> = BTreeSet::new();
+    occupied.insert(context::SENTINEL_MOD.to_string());
+    for file in files {
+        for m in &file.message_type {
+            let name = m.name.as_deref().unwrap_or("");
+            occupied.insert(name.to_string());
+            occupied.insert(crate::oneof::to_snake_case(name));
+        }
+        for e in &file.enum_type {
+            occupied.insert(e.name.as_deref().unwrap_or("").to_string());
+        }
+    }
+
+    // `register_types`, when emitted, lives at `__buffa::register_types`.
+    // `self::` and `#[doc(inline)]` for the same reasons as the view
+    // re-exports above.
+    if ctx.config.emit_register_fn && !reg.is_empty() {
+        let sentinel = make_field_ident(context::SENTINEL_MOD);
+        candidates.push(message::ReexportCandidate {
+            name: "register_types".to_string(),
+            tokens: quote! {
+                #[doc(inline)]
+                pub use self :: #sentinel :: register_types;
+            },
+        });
+    }
+
+    message::emit_surviving_reexports(candidates, &occupied)
+}
+
 /// Render the per-package stitcher: owned items at root plus the
-/// `__buffa::{view,oneof,ext,...}` module wrappers.
+/// `__buffa::{view,oneof,ext,...}` module wrappers, followed by the
+/// surviving package-root `pub use` re-exports.
 fn generate_package_mod(
     ctx: &context::CodeGenContext,
     sections: &PackageSections,
     reg: &message::RegistryPaths,
+    root_reexports: &TokenStream,
 ) -> Result<String, CodeGenError> {
     use crate::idents::make_field_ident;
 
@@ -887,6 +1024,7 @@ fn generate_package_mod(
             }
             #register_fn
         }
+        #root_reexports
     };
 
     format_tokens(tokens, "")
@@ -946,6 +1084,54 @@ pub fn package_to_filename(package: &str) -> String {
 pub fn proto_path_to_stem(proto_path: &str) -> String {
     let without_ext = proto_path.strip_suffix(".proto").unwrap_or(proto_path);
     without_ext.replace('/', ".")
+}
+
+/// Merge downstream [`Companion`](GeneratedFileKind::Companion) files into
+/// the per-package stitcher produced by [`generate`].
+///
+/// For each companion file this function locates the
+/// [`PackageMod`](GeneratedFileKind::PackageMod) entry in `files` with a
+/// matching package and appends `include!("<name>");` at file scope after
+/// buffa's own output — at package root, alongside the owned message types,
+/// not under `__buffa::`. The companion files themselves are appended to
+/// `files` so that build integrations can write everything to disk in one
+/// pass.
+///
+/// **Call this once per build**; it does not deduplicate, so a second call
+/// with the same companions emits a second `include!` for each, which fails
+/// to compile downstream with a duplicate-definition error.
+///
+/// `name` must be a bare-sibling filename — the same convention buffa uses
+/// for its own `include!` calls, so it resolves relative to the stitcher
+/// without any `OUT_DIR` prefix. Names must not contain `"`, `\`, `/`, or
+/// newlines (the function `debug_assert!`s this in debug builds), and must
+/// not collide with any of buffa's own generated filenames for the same
+/// package (`<stem>.rs`, `<stem>.__view.rs`, etc.) — pick an unused suffix
+/// such as `<stem>.__myplugin.rs`.
+///
+/// Companion files with no matching `PackageMod` (e.g. for a package buffa
+/// did not generate any output for) are still appended to `files` but no
+/// `include!` is emitted; the caller is responsible for wiring them up. If
+/// you don't expect orphans, check that every companion's `package` appears
+/// in `files` as a `PackageMod` after calling.
+pub fn apply_companions(files: &mut Vec<GeneratedFile>, companions: Vec<GeneratedFile>) {
+    for comp in &companions {
+        debug_assert!(
+            !comp.name.contains(['"', '\\', '/', '\n']),
+            "companion file name {:?} contains a character that would break \
+             the generated include!() literal or its bare-sibling resolution",
+            comp.name
+        );
+        if let Some(pkg_mod) = files
+            .iter_mut()
+            .find(|f| f.kind == GeneratedFileKind::PackageMod && f.package == comp.package)
+        {
+            pkg_mod
+                .content
+                .push_str(&format!("include!(\"{}\");\n", comp.name));
+        }
+    }
+    files.extend(companions);
 }
 
 /// Code generation error.

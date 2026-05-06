@@ -58,6 +58,26 @@ pub mod prelude_shadow {
     buffa::include_proto!("test.prelude_shadow");
 }
 
+// Nested-package pair, wrapped exactly the way `buffa-build`'s
+// `_include.rs` would. The chain of `use super::*;` glob imports makes the
+// outer package's `__buffa` reachable from `inner`'s scope, which is the
+// only consumer layout where a bare `pub use __buffa::…;` import path is
+// E0659-ambiguous against the locally-`include!`d `__buffa`. The natural
+// re-exports must use `self::__buffa::…` / `super::__buffa::…` to compile
+// here — see gh#80. Compilation is the assertion (`tests/nestpkg.rs` adds a
+// type-resolution sanity check).
+#[allow(clippy::derivable_impls, clippy::match_single_binding, dead_code)]
+pub mod nestpkg {
+    #[allow(unused_imports)]
+    use super::*;
+    buffa::include_proto!("test.nestpkg");
+    pub mod inner {
+        #[allow(unused_imports)]
+        use super::*;
+        buffa::include_proto!("test.nestpkg.inner");
+    }
+}
+
 #[allow(
     clippy::derivable_impls,
     clippy::match_single_binding,
@@ -187,6 +207,19 @@ pub mod ed2024 {
 )]
 pub mod basic_bytes {
     include!(concat!(env!("OUT_DIR"), "/bytes_variant/basic.mod.rs"));
+}
+
+// Regression #88: bytes_fields + generate_arbitrary(true). Compilation is the
+// primary assertion — all four bytes field shapes (singular, optional,
+// repeated, oneof variant) must compile with the arbitrary shims in place.
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod basic_arbitrary_bytes {
+    include!(concat!(env!("OUT_DIR"), "/arbitrary_bytes/basic.mod.rs"));
 }
 
 // Views + preserve_unknown_fields=false: covers the else-branches in view
