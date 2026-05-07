@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-05-07
+
+### Fixed
+
+- **`buffa-codegen`: `ALLOW_LINTS` now includes `unused_qualifications`.**
+  Cross-proto references within the same package are emitted through the
+  canonical `super::super::__buffa::view::…` (and `…::oneof::…`) path even
+  though the target lives in the same generated module. The bare name would
+  resolve, but the canonical path is stable when a sibling proto defines a
+  same-named natural-path re-export. Workspaces that opt
+  `unused_qualifications = "warn"` and build with `-D warnings` were getting
+  false positives from generated code; the lint is now in the package
+  stitcher's `#[allow(...)]` block alongside `dead_code`, `unused_imports`,
+  etc.
+
 ## [0.5.0] - 2026-05-05
 
 This release is a minor bump under the

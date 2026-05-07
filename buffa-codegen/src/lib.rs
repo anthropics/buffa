@@ -49,6 +49,12 @@ pub const ALLOW_LINTS: &[&str] = &[
     "non_camel_case_types",
     "dead_code",
     "unused_imports",
+    // Cross-proto refs within the same package are emitted through the
+    // canonical `super::super::__buffa::view::…` path even though the
+    // target lives in the same generated module — using the bare name
+    // would resolve, but the canonical path is stable when a sibling
+    // proto defines a same-named natural-path re-export.
+    "unused_qualifications",
     "clippy::derivable_impls",
     "clippy::match_single_binding",
     "clippy::uninlined_format_args",
