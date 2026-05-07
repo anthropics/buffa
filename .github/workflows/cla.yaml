@@ -24,7 +24,7 @@ jobs:
         # co-author of at least one commit), Co-authored-by trailer support,
         # email-based allowlist matching, automatic retry of transient
         # GitHub 5xx errors, and actionable unlinked-email guidance.
-        uses: iainmcgin/cla-github-action@5b54183037a58ba5ade5ea9b3e1872d969730f77
+        uses: iainmcgin/cla-github-action@5b54183037a58ba5ade5ea9b3e1872d969730f77 # master (sha-pinned)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:

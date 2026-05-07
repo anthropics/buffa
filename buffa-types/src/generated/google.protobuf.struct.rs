@@ -721,6 +721,14 @@ pub const __VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type
     text_encode: ::buffa::type_registry::any_encode_text::<Value>,
     text_merge: ::buffa::type_registry::any_merge_text::<Value>,
 };
+pub mod value {
+    #[allow(unused_imports)]
+    use super::*;
+    #[doc(inline)]
+    pub use super::__buffa::oneof::value::Kind;
+    #[doc(inline)]
+    pub use super::__buffa::view::oneof::value::Kind as KindView;
+}
 /// `ListValue` is a wrapper around a repeated field of values.
 ///
 /// The JSON representation for `ListValue` is JSON array.

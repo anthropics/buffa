@@ -54,4 +54,5 @@ mod generation;
 mod json_codegen;
 mod naming;
 mod proto2;
+mod reexports;
 mod view_codegen;

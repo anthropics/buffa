@@ -267,7 +267,22 @@ pub mod my_pkg {
 
 The per-proto content files mean editing one `.proto` regenerates only its five siblings (incremental friendly); the per-package stitcher means `register_types` is naturally one fn per package, so multi-file packages (e.g. seven WKT files in `google.protobuf`) no longer collide.
 
-**No convenience re-exports.** Short-path aliases like `pub use __buffa::view::*` at package level are deliberately not emitted. They would make `pkg::FooView` work in the common case but silently change meaning (or disappear) when a user-defined `message FooView` exists — a "clean 95% / surprising 5%" pattern that trades predictability for brevity. The canonical `__buffa::` path is the only path; it is unconditional.
+**Natural-path re-exports.** The canonical `__buffa::` path is unconditional — generated method signatures, field types, and downstream codegen always use it. As an ergonomic convenience codegen *also* emits a `pub use` for each ancillary item at the path a Rust user would reach for first, mirroring the pre-`__buffa` (and prost) layout:
+
+```text
+<pkg>::FooView<'a>           ← __buffa::view::FooView
+<pkg>::foo::BarView<'a>      ← __buffa::view::foo::BarView
+<pkg>::foo::Kind             ← __buffa::oneof::foo::Kind
+<pkg>::foo::KindView<'a>     ← __buffa::view::oneof::foo::Kind  (renamed via `as`)
+<pkg>::MY_EXT                ← __buffa::ext::MY_EXT
+<pkg>::register_types        ← __buffa::register_types
+```
+
+The `View` suffix on a oneof's view re-export (`KindView`) only exists at the natural path — at the canonical path, owned and view oneof enums share the unsuffixed name (`__buffa::oneof::foo::Kind`, `__buffa::view::oneof::foo::Kind`) and the parallel module tree disambiguates them. The natural form needs the suffix because both must co-inhabit `pkg::foo::*`. The same also means messages with only a oneof now produce a `pub mod {msg_snake} { … }` block in the owned tree (to host the re-export); pre-#80 they did not.
+
+A re-export is **silently skipped** when the natural name is already occupied by a real proto item (message, enum, extension const) or by another candidate re-export. When two candidates collide with each other, *both* are dropped — never "first one wins" — so the result is order-independent. Conflicts are rare in practice; when one fires, the canonical `__buffa::` path is still available and downstream codegen is unaffected. See `examples/conflicts` for a proto that deliberately shadows every kind of re-export and one alias convention for keeping `__buffa::` imports readable.
+
+Because re-exports are skipped on collision, **adding a proto type can rebind or remove an existing natural path** for a downstream consumer: declaring `message FooView` in a package that already has `message Foo` makes `pkg::FooView` resolve to the new message struct instead of `Foo`'s view re-export. The canonical `__buffa::` path never changes, so generated code and downstream codegen are stable; only hand-written imports of the natural path need adjusting. This is the agreed trade-off in [#80](https://github.com/anthropics/buffa/issues/80) — predictability of behavior over stability of every spelling.
 
 ### 3. MessageField\<T\> — Ergonomic Optional Messages
 

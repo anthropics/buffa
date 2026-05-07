@@ -143,6 +143,12 @@ impl<'v> ::buffa::DefaultViewInstance for DoubleValueView<'v> {
             ))
     }
 }
+impl ::buffa::ViewReborrow for DoubleValueView<'static> {
+    type Reborrowed<'b> = DoubleValueView<'b>;
+    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+        this
+    }
+}
 /// Wrapper message for `float`.
 ///
 /// The JSON representation for `FloatValue` is JSON number.
@@ -283,6 +289,12 @@ impl<'v> ::buffa::DefaultViewInstance for FloatValueView<'v> {
             .get_or_init(|| ::buffa::alloc::boxed::Box::new(
                 <FloatValueView<'static>>::default(),
             ))
+    }
+}
+impl ::buffa::ViewReborrow for FloatValueView<'static> {
+    type Reborrowed<'b> = FloatValueView<'b>;
+    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+        this
     }
 }
 /// Wrapper message for `int64`.
@@ -427,6 +439,12 @@ impl<'v> ::buffa::DefaultViewInstance for Int64ValueView<'v> {
             ))
     }
 }
+impl ::buffa::ViewReborrow for Int64ValueView<'static> {
+    type Reborrowed<'b> = Int64ValueView<'b>;
+    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+        this
+    }
+}
 /// Wrapper message for `uint64`.
 ///
 /// The JSON representation for `UInt64Value` is JSON string.
@@ -567,6 +585,12 @@ impl<'v> ::buffa::DefaultViewInstance for UInt64ValueView<'v> {
             .get_or_init(|| ::buffa::alloc::boxed::Box::new(
                 <UInt64ValueView<'static>>::default(),
             ))
+    }
+}
+impl ::buffa::ViewReborrow for UInt64ValueView<'static> {
+    type Reborrowed<'b> = UInt64ValueView<'b>;
+    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+        this
     }
 }
 /// Wrapper message for `int32`.
@@ -711,6 +735,12 @@ impl<'v> ::buffa::DefaultViewInstance for Int32ValueView<'v> {
             ))
     }
 }
+impl ::buffa::ViewReborrow for Int32ValueView<'static> {
+    type Reborrowed<'b> = Int32ValueView<'b>;
+    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+        this
+    }
+}
 /// Wrapper message for `uint32`.
 ///
 /// The JSON representation for `UInt32Value` is JSON number.
@@ -853,6 +883,12 @@ impl<'v> ::buffa::DefaultViewInstance for UInt32ValueView<'v> {
             ))
     }
 }
+impl ::buffa::ViewReborrow for UInt32ValueView<'static> {
+    type Reborrowed<'b> = UInt32ValueView<'b>;
+    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+        this
+    }
+}
 /// Wrapper message for `bool`.
 ///
 /// The JSON representation for `BoolValue` is JSON `true` and `false`.
@@ -993,6 +1029,12 @@ impl<'v> ::buffa::DefaultViewInstance for BoolValueView<'v> {
             .get_or_init(|| ::buffa::alloc::boxed::Box::new(
                 <BoolValueView<'static>>::default(),
             ))
+    }
+}
+impl ::buffa::ViewReborrow for BoolValueView<'static> {
+    type Reborrowed<'b> = BoolValueView<'b>;
+    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+        this
     }
 }
 /// Wrapper message for `string`.
@@ -1140,6 +1182,12 @@ impl<'v> ::buffa::DefaultViewInstance for StringValueView<'v> {
             ))
     }
 }
+impl ::buffa::ViewReborrow for StringValueView<'static> {
+    type Reborrowed<'b> = StringValueView<'b>;
+    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+        this
+    }
+}
 /// Wrapper message for `bytes`.
 ///
 /// The JSON representation for `BytesValue` is JSON string.
@@ -1283,5 +1331,11 @@ impl<'v> ::buffa::DefaultViewInstance for BytesValueView<'v> {
             .get_or_init(|| ::buffa::alloc::boxed::Box::new(
                 <BytesValueView<'static>>::default(),
             ))
+    }
+}
+impl ::buffa::ViewReborrow for BytesValueView<'static> {
+    type Reborrowed<'b> = BytesValueView<'b>;
+    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
+        this
     }
 }

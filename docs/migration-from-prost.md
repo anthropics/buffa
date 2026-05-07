@@ -9,12 +9,12 @@ A step-by-step guide for migrating an existing prost-based project to buffa.
  [dependencies]
 -prost = "0.13"
 -prost-types = "0.13"
-+buffa = "0.4"
-+buffa-types = "0.4"
++buffa = "0.5"
++buffa-types = "0.5"
 
  [build-dependencies]
 -prost-build = "0.13"
-+buffa-build = "0.4"
++buffa-build = "0.5"
 ```
 
 If you use JSON serialization via `pbjson`:
@@ -23,8 +23,8 @@ If you use JSON serialization via `pbjson`:
  [dependencies]
 -pbjson = "0.7"
 -pbjson-types = "0.7"
-+buffa = { version = "0.4", features = ["json"] }
-+buffa-types = { version = "0.4", features = ["json"] }
++buffa = { version = "0.5", features = ["json"] }
++buffa-types = { version = "0.5", features = ["json"] }
  serde_json = "1"
 -
 -[build-dependencies]

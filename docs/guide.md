@@ -9,11 +9,11 @@ Add buffa to your project:
 ```toml
 # Cargo.toml
 [dependencies]
-buffa = "0.4"
-buffa-types = "0.4"       # well-known types (Timestamp, Duration, Any, etc.)
+buffa = "0.5"
+buffa-types = "0.5"       # well-known types (Timestamp, Duration, Any, etc.)
 
 [build-dependencies]
-buffa-build = "0.4"
+buffa-build = "0.5"
 ```
 
 ### Feature flags
@@ -28,8 +28,8 @@ Both `buffa` and `buffa-types` share the same feature flag names:
 
 ```toml
 # Enable JSON support
-buffa = { version = "0.4", features = ["json"] }
-buffa-types = { version = "0.4", features = ["json"] }
+buffa = { version = "0.5", features = ["json"] }
+buffa-types = { version = "0.5", features = ["json"] }
 ```
 
 ## Prerequisites
@@ -165,7 +165,7 @@ This requires `buffa-types` as a dependency in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-buffa-types = "0.4"
+buffa-types = "0.5"
 ```
 
 `buffa-types` is a pure source crate — it does **not** run `protoc` or any code generation at build time. If your protos use WKTs but you generate your own Rust code ahead-of-time (via `buf generate` or a `protoc` script), then `buffa` + `buffa-types` is your entire runtime dependency surface.
@@ -302,25 +302,25 @@ Download the binaries for your platform from the [releases page](https://github.
 
 ```sh
 # Download binaries + cosign signatures + certificates (both plugins match)
-gh release download v0.4.0 --repo anthropics/buffa \
+gh release download v0.5.1 --repo anthropics/buffa \
     --pattern 'protoc-gen-buffa*-linux-x86_64*'
 
 # Verify with GitHub attestations (requires gh CLI ≥ 2.49)
-gh attestation verify protoc-gen-buffa-v0.4.0-linux-x86_64 --repo anthropics/buffa
-gh attestation verify protoc-gen-buffa-packaging-v0.4.0-linux-x86_64 --repo anthropics/buffa
+gh attestation verify protoc-gen-buffa-v0.5.1-linux-x86_64 --repo anthropics/buffa
+gh attestation verify protoc-gen-buffa-packaging-v0.5.1-linux-x86_64 --repo anthropics/buffa
 
 # Or with cosign (standalone, no gh required) — shown for one binary
 cosign verify-blob \
-    --signature protoc-gen-buffa-v0.4.0-linux-x86_64.sig \
-    --certificate protoc-gen-buffa-v0.4.0-linux-x86_64.pem \
+    --signature protoc-gen-buffa-v0.5.1-linux-x86_64.sig \
+    --certificate protoc-gen-buffa-v0.5.1-linux-x86_64.pem \
     --certificate-identity-regexp "github.com/anthropics/buffa" \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    protoc-gen-buffa-v0.4.0-linux-x86_64
+    protoc-gen-buffa-v0.5.1-linux-x86_64
 
 # Install both
-chmod +x protoc-gen-buffa-v0.4.0-linux-x86_64 protoc-gen-buffa-packaging-v0.4.0-linux-x86_64
-mv protoc-gen-buffa-v0.4.0-linux-x86_64 ~/.local/bin/protoc-gen-buffa
-mv protoc-gen-buffa-packaging-v0.4.0-linux-x86_64 ~/.local/bin/protoc-gen-buffa-packaging
+chmod +x protoc-gen-buffa-v0.5.1-linux-x86_64 protoc-gen-buffa-packaging-v0.5.1-linux-x86_64
+mv protoc-gen-buffa-v0.5.1-linux-x86_64 ~/.local/bin/protoc-gen-buffa
+mv protoc-gen-buffa-packaging-v0.5.1-linux-x86_64 ~/.local/bin/protoc-gen-buffa-packaging
 ```
 
 Available platforms: `linux-x86_64`, `linux-aarch64`, `darwin-x86_64`, `darwin-aarch64`, `windows-x86_64` (`.exe`). All releases include SHA-256 checksums, Sigstore cosign signatures, and signed SLSA build provenance for supply chain verification.
@@ -376,7 +376,7 @@ Plugin options (passed via `opt:`):
 ```yaml
 version: v2
 plugins:
-  - remote: buf.build/anthropic/buffa:v0.4.0
+  - remote: buf.build/anthropic/buffa:v0.5.1
     out: src/generated
     opt: [views=true]
 ```
@@ -886,6 +886,44 @@ async fn handle(
 }
 ```
 
+#### Returning a borrow into the request: `reborrow()`
+
+`OwnedView<V>` stores `V = FooView<'static>`, so `Deref` gives you back
+`&FooView<'static>` — borrows of view fields appear `'static` to the
+compiler. That works for the patterns above, but it falls over the moment
+you want to return a borrow tied to the request's lifetime:
+
+```rust,ignore
+// Fails to compile: rustc reports "borrowed value does not live long enough"
+// or "lifetime may not live long enough" — `&req.name` looks 'static.
+async fn lookup<'a>(
+    &'a self,
+    ctx: Context,
+    req: OwnedView<RecordRequestView<'static>>,
+) -> Result<(&'a str, Context), ConnectError> {
+    Ok((&req.name, ctx))
+}
+```
+
+Call [`OwnedView::reborrow()`](https://docs.rs/buffa/latest/buffa/view/struct.OwnedView.html#method.reborrow)
+to narrow `'static` down to the OwnedView's real lifetime:
+
+```rust,ignore
+async fn lookup<'a>(
+    &'a self,
+    ctx: Context,
+    req: OwnedView<RecordRequestView<'static>>,
+) -> Result<(&'a str, Context), ConnectError> {
+    let view = req.reborrow();    // &'a RecordRequestView<'a>
+    Ok((&view.name, ctx))         // &'a str — bound to req's lifetime
+}
+```
+
+The reborrow is a pointer cast, not a copy — `req` is unchanged, drops
+normally, and you can call `reborrow()` repeatedly. This pattern is what
+to reach for whenever you see a borrow-checker error on a view field that
+you'd otherwise resort to `.to_owned()` for.
+
 ### Encoding from views (`ViewEncode`)
 
 View types also implement `ViewEncode<'a>`, which provides the same
@@ -934,7 +972,7 @@ Enable the `json` feature and `generate_json(true)` in your build config:
 ```toml
 # Cargo.toml
 [dependencies]
-buffa = { version = "0.4", features = ["json"] }
+buffa = { version = "0.5", features = ["json"] }
 serde_json = "1"
 ```
 
@@ -990,7 +1028,7 @@ Enable the `text` feature and `generate_text(true)`:
 ```toml
 # Cargo.toml
 [dependencies]
-buffa = { version = "0.4", features = ["text"] }
+buffa = { version = "0.5", features = ["text"] }
 ```
 
 ```rust,ignore
@@ -1121,8 +1159,8 @@ let obj = Struct::from_fields([
 Buffa works without `std` (requires `alloc`):
 
 ```toml
-buffa = { version = "0.4", default-features = false }
-buffa-types = { version = "0.4", default-features = false }
+buffa = { version = "0.5", default-features = false }
+buffa-types = { version = "0.5", default-features = false }
 ```
 
 In `no_std` mode:

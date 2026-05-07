@@ -60,7 +60,7 @@ These are gaps we intend to address in future releases:
 
 ## Semver and API stability
 
-Buffa is pre-1.0. We follow the [Rust community convention](https://doc.rust-lang.org/cargo/reference/semver.html) for 0.x crates: breaking changes increment the **minor** version (0.1.x → 0.2.0), additive changes increment the **patch** version (0.1.0 → 0.1.1). Pin to a minor version (`buffa = "0.4"`) to avoid surprises.
+Buffa is pre-1.0. We follow the [Rust community convention](https://doc.rust-lang.org/cargo/reference/semver.html) for 0.x crates: breaking changes increment the **minor** version (0.1.x → 0.2.0), additive changes increment the **patch** version (0.1.0 → 0.1.1). Pin to a minor version (`buffa = "0.5"`) to avoid surprises.
 
 The generated code API (struct shapes, `Message` trait, `MessageView` trait, `EnumValue`, `MessageField`) is considered the primary stability surface. Internal helper modules marked `#[doc(hidden)]` (`__private`, `__buffa_*` fields) may change at any time.
 
@@ -146,7 +146,7 @@ let decoded: MyMessage = serde_json::from_str(&json).unwrap();
 
 ## Performance
 
-Throughput comparison across five representative message types, measured on an Intel Xeon Platinum 8488C (x86_64). Cross-implementation benchmarks run in Docker for toolchain consistency (`task bench-cross`). Higher is better.
+Throughput comparison across five representative message types, measured on an Intel Xeon Platinum 8488C (x86_64) at buffa v0.5.0. Cross-implementation benchmarks run in Docker for toolchain consistency (`task bench-cross`). Higher is better.
 
 ### Binary decode
 
@@ -160,11 +160,11 @@ Throughput comparison across five representative message types, measured on an I
 
 | Message | buffa | buffa (view) | prost | prost (bytes) | protobuf-v4 | Go |
 |---------|------:|------:|------:|------:|------:|------:|
-| ApiResponse | 862 | 1,475 (+71%) | 756 (−12%) | 676 (−22%) | 695 (−19%) | 269 (−69%) |
-| LogRecord | 722 | 1,984 (+175%) | 712 (−1%) | 676 (−6%) | 857 (+19%) | 247 (−66%) |
-| AnalyticsEvent | 199 | 320 (+61%) | 254 (+28%) | 194 (−3%) | 361 (+82%) | 88 (−56%) |
-| GoogleMessage1 | 1,014 | 1,341 (+32%) | 956 (−6%) | 931 (−8%) | 639 (−37%) | 338 (−67%) |
-| MediaFrame | 16,816 | 73,004 (+334%) | 9,648 (−43%) | 23,516 (+40%) | 17,633 (+5%) | 1,241 (−93%) |
+| ApiResponse | 825 | 1,399 (+70%) | 756 (−8%) | 677 (−18%) | 689 (−16%) | 272 (−67%) |
+| LogRecord | 741 | 1,869 (+152%) | 735 (−1%) | 682 (−8%) | 867 (+17%) | 251 (−66%) |
+| AnalyticsEvent | 192 | 317 (+65%) | 254 (+32%) | 197 (+3%) | 359 (+87%) | 91 (−53%) |
+| GoogleMessage1 | 905 | 1,201 (+33%) | 989 (+9%) | 930 (+3%) | 643 (−29%) | 348 (−62%) |
+| MediaFrame | 17,682 | 71,426 (+304%) | 9,612 (−46%) | 23,577 (+33%) | 17,894 (+1%) | 1,250 (−93%) |
 
 </details>
 
@@ -178,13 +178,39 @@ Throughput comparison across five representative message types, measured on an I
 
 <details><summary>Raw data (MiB/s)</summary>
 
-| Message | buffa | prost | protobuf-v4 | Go |
-|---------|------:|------:|------:|------:|
-| ApiResponse | 2,543 | 1,810 (−29%) | 1,013 (−60%) | 560 (−78%) |
-| LogRecord | 4,018 | 3,093 (−23%) | 1,642 (−59%) | 303 (−92%) |
-| AnalyticsEvent | 656 | 357 (−46%) | 511 (−22%) | 160 (−76%) |
-| GoogleMessage1 | 2,594 | 1,808 (−30%) | 869 (−67%) | 360 (−86%) |
-| MediaFrame | 45,990 | 38,514 (−16%) | 10,463 (−77%) | 1,647 (−96%) |
+| Message | buffa | buffa (view) | prost | prost (bytes) | protobuf-v4 | Go |
+|---------|------:|------:|------:|------:|------:|------:|
+| ApiResponse | 2,566 | 2,537 (−1%) | 1,801 (−30%) | — | 1,033 (−60%) | 561 (−78%) |
+| LogRecord | 4,029 | 4,703 (+17%) | 3,116 (−23%) | — | 1,651 (−59%) | 305 (−92%) |
+| AnalyticsEvent | 582 | 623 (+7%) | 359 (−38%) | — | 509 (−13%) | 161 (−72%) |
+| GoogleMessage1 | 2,441 | 2,725 (+12%) | 1,817 (−26%) | — | 865 (−65%) | 362 (−85%) |
+| MediaFrame | 43,830 | 45,425 (+4%) | 38,652 (−12%) | — | 10,616 (−76%) | 1,673 (−96%) |
+
+</details>
+
+### Build + binary encode
+
+The `build + encode` measure starts from raw field values rather than a pre-built
+message struct, so it counts struct construction. The `buffa (view)` path
+constructs a borrowed view directly over the input slices and never allocates an
+owned message at all, which is why it is consistently faster than building owned
+structs and then encoding them.
+
+![Build + binary encode — ApiResponse](benchmarks/charts/build-encode-api_response.svg)
+![Build + binary encode — LogRecord](benchmarks/charts/build-encode-log_record.svg)
+![Build + binary encode — AnalyticsEvent](benchmarks/charts/build-encode-analytics_event.svg)
+![Build + binary encode — GoogleMessage1](benchmarks/charts/build-encode-google_message1_proto3.svg)
+![Build + binary encode — MediaFrame](benchmarks/charts/build-encode-media_frame.svg)
+
+<details><summary>Raw data (MiB/s)</summary>
+
+| Message | buffa | buffa (view) |
+|---------|------:|------:|
+| ApiResponse | 732 | 1,649 (+125%) |
+| LogRecord | 498 | 2,843 (+471%) |
+| AnalyticsEvent | 520 | 1,166 (+124%) |
+| GoogleMessage1 | 818 | 1,169 (+43%) |
+| MediaFrame | 20,893 | 52,910 (+153%) |
 
 </details>
 
@@ -199,12 +225,12 @@ Throughput comparison across five representative message types, measured on an I
 <details><summary>Raw data (MiB/s)</summary>
 
 | Message | buffa | prost | Go |
-|---------|------:|------:|---:|
-| ApiResponse | 875 | 943 (+8%) | 114 (−87%) |
-| LogRecord | 1,294 | 1,407 (+9%) | 136 (−89%) |
-| AnalyticsEvent | 786 | 843 (+7%) | 51 (−93%) |
-| GoogleMessage1 | 961 | 1,007 (+5%) | 122 (−87%) |
-| MediaFrame | 1,423 | 1,449 (+2%) | 206 (−86%) |
+|---------|------:|------:|------:|
+| ApiResponse | 872 | 942 (+8%) | 115 (−87%) |
+| LogRecord | 1,332 | 1,401 (+5%) | 139 (−90%) |
+| AnalyticsEvent | 766 | 849 (+11%) | 52 (−93%) |
+| GoogleMessage1 | 968 | 1,033 (+7%) | 125 (−87%) |
+| MediaFrame | 1,460 | 1,445 (−1%) | 209 (−86%) |
 
 </details>
 
@@ -219,12 +245,12 @@ Throughput comparison across five representative message types, measured on an I
 <details><summary>Raw data (MiB/s)</summary>
 
 | Message | buffa | prost | Go |
-|---------|------:|------:|---:|
-| ApiResponse | 706 | 303 (−57%) | 67 (−90%) |
-| LogRecord | 757 | 696 (−8%) | 107 (−86%) |
-| AnalyticsEvent | 268 | 233 (−13%) | 45 (−83%) |
-| GoogleMessage1 | 640 | 258 (−60%) | 70 (−89%) |
-| MediaFrame | 1,942 | 1,954 (+1%) | 262 (−87%) |
+|---------|------:|------:|------:|
+| ApiResponse | 680 | 299 (−56%) | 68 (−90%) |
+| LogRecord | 795 | 701 (−12%) | 108 (−86%) |
+| AnalyticsEvent | 268 | 239 (−11%) | 45 (−83%) |
+| GoogleMessage1 | 649 | 253 (−61%) | 71 (−89%) |
+| MediaFrame | 1,910 | 1,958 (+3%) | 264 (−86%) |
 
 </details>
 
@@ -232,7 +258,7 @@ Throughput comparison across five representative message types, measured on an I
 
 **Libraries:** prost 0.13 + pbjson 0.7, protobuf‑v4 (Google Rust/upb, v4.33.1), Go `google.golang.org/protobuf` v1.36.6. protobuf-v4 JSON is not included as it does not provide a JSON codec.
 
-**`prost (bytes)`** uses `prost-build`'s `.bytes(["."])` config so every proto `bytes` field is generated as `bytes::Bytes` instead of `Vec<u8>`, and decodes from a `bytes::Bytes` input to exercise `Bytes`' zero-copy `copy_to_bytes` slicing. The substitution only affects the decode path, so only decode numbers are reported — `prost (bytes)` encode tracks default `prost` by construction. On the four non-bytes messages, `prost (bytes)` tracks default `prost` within noise (and is slightly slower on `ApiResponse` where the per-message `Bytes::clone` refcount overhead isn't offset by any actual zero-copy). On `MediaFrame` it runs ~2.4× faster than default `prost` at decode, confirming that prost's feature does land when it has bytes fields to work with. buffa views are in a different regime again: they borrow directly from the input buffer for strings, bytes, and nested message bodies, so `buffa (view)` on `MediaFrame` is ~3× the `prost (bytes)` number and ~4.3× `buffa`'s own owned decode. Views also benefit on the four non-bytes messages, where prost's `bytes` feature is inert.
+**`prost (bytes)`** uses `prost-build`'s `.bytes(["."])` config so every proto `bytes` field is generated as `bytes::Bytes` instead of `Vec<u8>`, and decodes from a `bytes::Bytes` input to exercise `Bytes`' zero-copy `copy_to_bytes` slicing. The substitution only affects the decode path, so only decode numbers are reported — `prost (bytes)` encode tracks default `prost` by construction. On the four non-bytes messages, `prost (bytes)` tracks default `prost` within noise (and is slightly slower on `ApiResponse` where the per-message `Bytes::clone` refcount overhead isn't offset by any actual zero-copy). On `MediaFrame` it runs ~2.4× faster than default `prost` at decode, confirming that prost's feature does land when it has bytes fields to work with. buffa views are in a different regime again: they borrow directly from the input buffer for strings, bytes, and nested message bodies, so `buffa (view)` on `MediaFrame` is ~3× the `prost (bytes)` number and ~4× `buffa`'s own owned decode. Views also benefit on the four non-bytes messages, where prost's `bytes` feature is inert.
 
 **Owned decode trade-offs:** buffa's owned decode is typically within ±10% of prost, trading a small throughput cost for features prost omits: unknown-field preservation by default, typed `EnumValue<E>` wrappers (not raw `i32`), and a type-stable decode loop that supports recursive message types without manual boxing. The zero-copy view path (`MyMessageView::decode_view`) sidesteps allocation entirely and is the recommended fast decode path. protobuf-v4's decode advantage on deeply-nested messages comes from upb's arena allocator — all sub-messages are bump-allocated in one arena rather than individually boxed.
 
