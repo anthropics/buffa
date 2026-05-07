@@ -330,11 +330,18 @@ fn generate_oneof_serialize(
             let ident = &v.variant_ident;
             let json_name = &v.json_name;
 
+            // These arms live inside `impl Serialize for #enum_ident { fn
+            // serialize(&self, ..) { match self { .. } } }`, so `Self`
+            // resolves to the oneof enum and is the idiomatic spelling
+            // (rustc's `clippy::use_self` flags the qualified form).
+            // Contrast `oneof_variant_deser_arm` below, whose constructor
+            // calls run inside the *message*'s Deserialize impl where
+            // `Self` would be wrong.
             if v.is_null_value {
                 // NullValue must serialize as JSON `null`, not "NULL_VALUE".
                 // `&()` serializes as JSON `null` via serde_json.
                 return quote! {
-                    #enum_ident::#ident(_) => {
+                    Self::#ident(_) => {
                         map.serialize_entry(#json_name, &())?;
                     }
                 };
@@ -345,7 +352,7 @@ fn generate_oneof_serialize(
                 // Type needs special proto JSON encoding — wrap in a newtype
                 // that delegates to the helper's serialize function.
                 quote! {
-                    #enum_ident::#ident(v) => {
+                    Self::#ident(v) => {
                         struct _W<'a>(&'a #rust_type);
                         impl serde::Serialize for _W<'_> {
                             fn serialize<S2: serde::Serializer>(&self, s: S2) -> ::core::result::Result<S2::Ok, S2::Error> {
@@ -357,7 +364,7 @@ fn generate_oneof_serialize(
                 }
             } else {
                 quote! {
-                    #enum_ident::#ident(v) => {
+                    Self::#ident(v) => {
                         map.serialize_entry(#json_name, v)?;
                     }
                 }
