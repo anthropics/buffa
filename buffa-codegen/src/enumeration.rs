@@ -43,12 +43,12 @@ fn generate_enum_serde(name_ident: &Ident) -> TokenStream {
                     fn visit_i64<E: ::serde::de::Error>(self, v: i64) -> ::core::result::Result<#name_ident, E> {
                         let v32 = i32::try_from(v).map_err(|_| {
                             ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("enum value {} out of i32 range", v)
+                                ::buffa::alloc::format!("enum value {v} out of i32 range")
                             )
                         })?;
                         <#name_ident as ::buffa::Enumeration>::from_i32(v32).ok_or_else(|| {
                             ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("unknown enum value {}", v32)
+                                ::buffa::alloc::format!("unknown enum value {v32}")
                             )
                         })
                     }
@@ -56,12 +56,12 @@ fn generate_enum_serde(name_ident: &Ident) -> TokenStream {
                     fn visit_u64<E: ::serde::de::Error>(self, v: u64) -> ::core::result::Result<#name_ident, E> {
                         let v32 = i32::try_from(v).map_err(|_| {
                             ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("enum value {} out of i32 range", v)
+                                ::buffa::alloc::format!("enum value {v} out of i32 range")
                             )
                         })?;
                         <#name_ident as ::buffa::Enumeration>::from_i32(v32).ok_or_else(|| {
                             ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("unknown enum value {}", v32)
+                                ::buffa::alloc::format!("unknown enum value {v32}")
                             )
                         })
                     }
