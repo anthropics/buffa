@@ -295,25 +295,25 @@ Download the binaries for your platform from the [releases page](https://github.
 
 ```sh
 # Download binaries + cosign signatures + certificates (both plugins match)
-gh release download v0.5.1 --repo anthropics/buffa \
+gh release download v0.5.2 --repo anthropics/buffa \
     --pattern 'protoc-gen-buffa*-linux-x86_64*'
 
 # Verify with GitHub attestations (requires gh CLI ≥ 2.49)
-gh attestation verify protoc-gen-buffa-v0.5.1-linux-x86_64 --repo anthropics/buffa
-gh attestation verify protoc-gen-buffa-packaging-v0.5.1-linux-x86_64 --repo anthropics/buffa
+gh attestation verify protoc-gen-buffa-v0.5.2-linux-x86_64 --repo anthropics/buffa
+gh attestation verify protoc-gen-buffa-packaging-v0.5.2-linux-x86_64 --repo anthropics/buffa
 
 # Or with cosign (standalone, no gh required) — shown for one binary
 cosign verify-blob \
-    --signature protoc-gen-buffa-v0.5.1-linux-x86_64.sig \
-    --certificate protoc-gen-buffa-v0.5.1-linux-x86_64.pem \
+    --signature protoc-gen-buffa-v0.5.2-linux-x86_64.sig \
+    --certificate protoc-gen-buffa-v0.5.2-linux-x86_64.pem \
     --certificate-identity-regexp "github.com/anthropics/buffa" \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    protoc-gen-buffa-v0.5.1-linux-x86_64
+    protoc-gen-buffa-v0.5.2-linux-x86_64
 
 # Install both
-chmod +x protoc-gen-buffa-v0.5.1-linux-x86_64 protoc-gen-buffa-packaging-v0.5.1-linux-x86_64
-mv protoc-gen-buffa-v0.5.1-linux-x86_64 ~/.local/bin/protoc-gen-buffa
-mv protoc-gen-buffa-packaging-v0.5.1-linux-x86_64 ~/.local/bin/protoc-gen-buffa-packaging
+chmod +x protoc-gen-buffa-v0.5.2-linux-x86_64 protoc-gen-buffa-packaging-v0.5.2-linux-x86_64
+mv protoc-gen-buffa-v0.5.2-linux-x86_64 ~/.local/bin/protoc-gen-buffa
+mv protoc-gen-buffa-packaging-v0.5.2-linux-x86_64 ~/.local/bin/protoc-gen-buffa-packaging
 ```
 
 Available platforms: `linux-x86_64`, `linux-aarch64`, `darwin-x86_64`, `darwin-aarch64`, `windows-x86_64` (`.exe`). All releases include SHA-256 checksums, Sigstore cosign signatures, and signed SLSA build provenance for supply chain verification.
@@ -369,7 +369,7 @@ Plugin options (passed via `opt:`):
 ```yaml
 version: v2
 plugins:
-  - remote: buf.build/anthropic/buffa:v0.5.1
+  - remote: buf.build/anthropic/buffa:v0.5.2
     out: src/generated
     opt: [views=true]
 ```

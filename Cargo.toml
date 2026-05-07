@@ -24,7 +24,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 rust-version = "1.85"
 license = "Apache-2.0"
@@ -33,12 +33,12 @@ keywords = ["protobuf", "protocol-buffers", "serialization", "no-std", "editions
 categories = ["encoding", "no-std"]
 
 [workspace.dependencies]
-buffa = { path = "buffa", version = "0.5.1", default-features = false }
-buffa-types = { path = "buffa-types", version = "0.5.1" }
-buffa-descriptor = { path = "buffa-descriptor", version = "0.5.1" }
-buffa-codegen = { path = "buffa-codegen", version = "0.5.1" }
-buffa-build = { path = "buffa-build", version = "0.5.1" }
-buffa-test = { path = "buffa-test", version = "0.5.1" }
+buffa = { path = "buffa", version = "0.5.2", default-features = false }
+buffa-types = { path = "buffa-types", version = "0.5.2" }
+buffa-descriptor = { path = "buffa-descriptor", version = "0.5.2" }
+buffa-codegen = { path = "buffa-codegen", version = "0.5.2" }
+buffa-build = { path = "buffa-build", version = "0.5.2" }
+buffa-test = { path = "buffa-test", version = "0.5.2" }
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
 bytes = { version = "1", default-features = false }
 hashbrown = { version = "0.15", default-features = false, features = ["default-hasher"] }

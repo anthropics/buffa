@@ -10,5 +10,5 @@ keywords = ["protobuf", "protocol-buffers", "protoc", "plugin", "codegen"]
 categories = ["development-tools::build-utils", "command-line-utilities"]
 
 [dependencies]
-buffa = { path = "../buffa", version = "0.5.1" }
+buffa = { path = "../buffa", version = "0.5.2" }
 buffa-codegen = { workspace = true }
