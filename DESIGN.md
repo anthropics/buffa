@@ -257,7 +257,7 @@ Each `.proto` emits up to five sibling content files into `OUT_DIR`:
 
 A content file is emitted only when its kind has real content for that input — a proto with no oneofs emits no `__oneof.rs` / `__view_oneof.rs`, a proto with no `extend` blocks emits no `__ext.rs`, and so on. The stitcher's `include!` set is filtered to match.
 
-Each proto **package** additionally emits one `<dotted.pkg>.mod.rs` stitcher that `include!`s the content files and authors the `pub mod __buffa { … }` wrapper. Consumers wire up only the stitcher:
+Each proto **package** additionally emits one `<dotted.pkg>.mod.rs` stitcher that `include!`s the content files and authors the `pub mod __buffa { … }` wrapper. The wrapper — and each `view` / `oneof` / `ext` submodule inside it — is omitted when it would have no items, so packages that contain only owned messages don't carry an empty `__buffa` block. Consumers wire up only the stitcher:
 
 ```rust,ignore
 pub mod my_pkg {

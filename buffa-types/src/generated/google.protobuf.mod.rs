@@ -42,10 +42,6 @@ pub mod __buffa {
         use super::*;
         include!("google.protobuf.struct.__oneof.rs");
     }
-    pub mod ext {
-        #[allow(unused_imports)]
-        use super::*;
-    }
 }
 #[doc(inline)]
 pub use self::__buffa::view::AnyView;

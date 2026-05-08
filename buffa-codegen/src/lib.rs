@@ -82,7 +82,10 @@ pub fn allow_lints_attr() -> TokenStream {
 /// and authors the `pub mod __buffa { … }` ancillary tree.
 /// Ancillary kinds with no content for that input file (e.g. a message
 /// with no oneofs and no extensions) are omitted, and the stitcher's
-/// `include!` set is filtered to match.
+/// `include!` set is filtered to match. The `__buffa` wrapper (and each
+/// `view` / `oneof` / `ext` submodule inside it) is itself omitted when
+/// it would be empty, so packages with only owned messages emit no
+/// `__buffa` block at all.
 /// See `DESIGN.md` → "Generated code layout".
 ///
 /// Consumers normally only need to wire up the
@@ -783,12 +786,21 @@ struct PackageSections {
 
 impl PackageSections {
     /// Append one proto file's generated items in-line.
+    ///
+    /// Empty streams are skipped so each section's emptiness reflects
+    /// "the package has no content of this kind" — symmetric with the
+    /// per-file branch that filters at file-emission time.
     fn push_inline(&mut self, pc: ProtoContent) {
-        self.owned.push(pc.owned);
-        self.view.push(pc.view);
-        self.oneof.push(pc.oneof);
-        self.view_oneof.push(pc.view_oneof);
-        self.ext.push(pc.ext);
+        let push_if_nonempty = |dst: &mut Vec<TokenStream>, ts: TokenStream| {
+            if !ts.is_empty() {
+                dst.push(ts);
+            }
+        };
+        push_if_nonempty(&mut self.owned, pc.owned);
+        push_if_nonempty(&mut self.view, pc.view);
+        push_if_nonempty(&mut self.oneof, pc.oneof);
+        push_if_nonempty(&mut self.view_oneof, pc.view_oneof);
+        push_if_nonempty(&mut self.ext, pc.ext);
     }
 }
 
@@ -969,17 +981,58 @@ fn generate_package_mod(
     let oneof = &sections.oneof;
     let ext = &sections.ext;
 
-    let view_mod = if ctx.config.generate_views {
+    // Each ancillary module is emitted only when its section has
+    // content. The natural-path re-exports outside `__buffa` target
+    // these modules — they are emitted only when their target items
+    // exist, so the conditions align and re-exports never reference
+    // a missing module.
+    let view_oneof_mod = if !view_oneof.is_empty() {
+        quote! {
+            pub mod oneof {
+                #[allow(unused_imports)]
+                use super::*;
+                #(#view_oneof)*
+            }
+        }
+    } else {
+        TokenStream::new()
+    };
+
+    // `view_oneof` is only populated for messages that have oneofs, and
+    // every message also contributes to `view`, so `!view.is_empty()` is
+    // sufficient — `view_oneof` non-empty implies `view` non-empty.
+    debug_assert!(view_oneof.is_empty() || !view.is_empty());
+    let view_mod = if ctx.config.generate_views && !view.is_empty() {
         quote! {
             pub mod view {
                 #[allow(unused_imports)]
                 use super::*;
                 #(#view)*
-                pub mod oneof {
-                    #[allow(unused_imports)]
-                    use super::*;
-                    #(#view_oneof)*
-                }
+                #view_oneof_mod
+            }
+        }
+    } else {
+        TokenStream::new()
+    };
+
+    let oneof_mod = if !oneof.is_empty() {
+        quote! {
+            pub mod oneof {
+                #[allow(unused_imports)]
+                use super::*;
+                #(#oneof)*
+            }
+        }
+    } else {
+        TokenStream::new()
+    };
+
+    let ext_mod = if !ext.is_empty() {
+        quote! {
+            pub mod ext {
+                #[allow(unused_imports)]
+                use super::*;
+                #(#ext)*
             }
         }
     } else {
@@ -1004,27 +1057,33 @@ fn generate_package_mod(
         TokenStream::new()
     };
 
-    let allow = allow_lints_attr();
     let sentinel = make_field_ident(context::SENTINEL_MOD);
+    // The whole `pub mod __buffa { ... }` wrapper is itself omitted
+    // when none of its inner modules or `register_types` exist.
+    let buffa_mod = if view_mod.is_empty()
+        && oneof_mod.is_empty()
+        && ext_mod.is_empty()
+        && register_fn.is_empty()
+    {
+        TokenStream::new()
+    } else {
+        let allow = allow_lints_attr();
+        quote! {
+            #allow
+            pub mod #sentinel {
+                #[allow(unused_imports)]
+                use super::*;
+                #view_mod
+                #oneof_mod
+                #ext_mod
+                #register_fn
+            }
+        }
+    };
+
     let tokens = quote! {
         #(#owned)*
-        #allow
-        pub mod #sentinel {
-            #[allow(unused_imports)]
-            use super::*;
-            #view_mod
-            pub mod oneof {
-                #[allow(unused_imports)]
-                use super::*;
-                #(#oneof)*
-            }
-            pub mod ext {
-                #[allow(unused_imports)]
-                use super::*;
-                #(#ext)*
-            }
-            #register_fn
-        }
+        #buffa_mod
         #root_reexports
     };
 
