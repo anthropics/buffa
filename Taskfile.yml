@@ -243,10 +243,11 @@ tasks:
   gen-datasets:
     desc: >-
       Regenerate benchmark datasets from the gen-datasets binary. Uses a fixed
-      RNG seed, so api_response.pb and analytics_event.pb are byte-reproducible.
-      log_record.pb is NOT — its map<string,string> field encodes in HashMap
-      iteration order (random per process). Don't commit log_record.pb churn
-      unless the schema or generator logic changed.
+      RNG seed, so api_response.pb, analytics_event.pb, and
+      google_message1_proto3.pb are byte-reproducible. log_record.pb and
+      media_frame.pb are NOT — their map fields encode in HashMap iteration
+      order (random per process). Don't commit log_record.pb or media_frame.pb
+      churn unless the schema or generator logic changed.
     dir: benchmarks/gen-datasets
     cmds:
       - cargo run

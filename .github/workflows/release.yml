@@ -131,7 +131,7 @@ jobs:
           subject-path: artifacts/${{ env.BINARY_PREFIX }}-*
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1 (sha-pinned)
 
       - name: Sign artifacts with cosign (keyless)
         working-directory: artifacts
@@ -146,7 +146,7 @@ jobs:
           done
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2 (sha-pinned)
         with:
           generate_release_notes: true
           files: |

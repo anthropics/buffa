@@ -34,7 +34,7 @@ jobs:
           sudo unzip -o /tmp/protoc.zip -d /usr/local
           protoc --version
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1 (sha-pinned)
 
       - name: Rustfmt
         run: cargo fmt --all --check
@@ -78,7 +78,7 @@ jobs:
           sudo unzip -o /tmp/protoc.zip -d /usr/local
           protoc --version
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1 (sha-pinned)
 
       - name: Check (MSRV 1.85)
         run: cargo check --workspace --all-targets
@@ -100,7 +100,7 @@ jobs:
           sudo unzip -o /tmp/protoc.zip -d /usr/local
           protoc --version
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1 (sha-pinned)
 
       - name: Check buffa no_std (host)
         run: cargo check -p buffa --no-default-features
@@ -132,7 +132,7 @@ jobs:
           sudo unzip -o /tmp/protoc.zip -d /usr/local
           protoc --version
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1 (sha-pinned)
 
       - name: Regenerate bootstrap descriptor types
         # Proto sources are vendored in buffa-descriptor/protos/ (pinned),
@@ -176,15 +176,15 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1 (sha-pinned)
         with:
           workspaces: conformance
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0 (sha-pinned)
 
       - name: Build tools image (cached)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2 (sha-pinned)
         with:
           context: .
           file: conformance/Dockerfile.tools
