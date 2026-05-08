@@ -103,11 +103,22 @@ impl Config {
         self
     }
 
-    /// Enable or disable serde Serialize/Deserialize derive generation
-    /// for generated message structs and enum types (default: false).
+    /// Enable or disable serde JSON generation (default: false).
     ///
-    /// When enabled, the downstream crate must depend on `serde` and enable
-    /// the `buffa/json` feature for the runtime helpers.
+    /// When enabled:
+    /// - Generated message structs get `Serialize`/`Deserialize` derives.
+    /// - Generated enum types get `Serialize`/`Deserialize` derives.
+    /// - Generated view types (when `generate_views` is also enabled) get a
+    ///   manual `impl Serialize` for zero-copy JSON serialization.
+    ///
+    /// The downstream crate must depend on `serde` and enable the `buffa/json`
+    /// feature for the runtime helpers.
+    ///
+    /// **Limitation:** view types for messages that contain WKT fields
+    /// (`Timestamp`, `Duration`, `Any`, etc.) will fail to compile because WKT
+    /// view types do not yet implement `Serialize`. Call
+    /// `view.to_owned_message()` and serialize the owned form as a workaround,
+    /// or set `generate_views(false)` for affected files.
     #[must_use]
     pub fn generate_json(mut self, enabled: bool) -> Self {
         self.codegen_config.generate_json = enabled;

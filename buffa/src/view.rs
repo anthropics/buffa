@@ -1185,6 +1185,20 @@ where
 
 impl<V> Eq for OwnedView<V> where V: Eq {}
 
+/// Serialize an `OwnedView<V>` as proto3 JSON by delegating to the inner
+/// view's `Serialize` impl.
+///
+/// Equivalent to serializing `&*owned_view` directly, so
+/// `serde_json::to_string(&owned_view)` works without an explicit deref.
+///
+/// Only available when the `json` feature is enabled.
+#[cfg(feature = "json")]
+impl<V: ::serde::Serialize> ::serde::Serialize for OwnedView<V> {
+    fn serialize<S: ::serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(&**self, s)
+    }
+}
+
 // `OwnedView<V>` is auto-`Send`/`Sync` when `V` is — `ManuallyDrop<V>` and
 // `Bytes` both forward auto-traits. No manual `unsafe impl` is needed, and
 // adding one with a `V: 'static` bound is actively harmful: it is precisely

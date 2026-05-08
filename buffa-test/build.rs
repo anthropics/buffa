@@ -93,6 +93,16 @@ fn main() {
         .compile()
         .expect("buffa_build failed for json_types.proto");
 
+    // View + JSON round-trip tests (issue #83): views and JSON both enabled,
+    // no WKT imports to avoid compile errors from missing WKT view Serialize.
+    buffa_build::Config::new()
+        .files(&["protos/view_json.proto"])
+        .includes(&["protos/"])
+        .generate_views(true)
+        .generate_json(true)
+        .compile()
+        .expect("buffa_build failed for view_json.proto");
+
     // Proto2 + JSON — closed-enum JSON helpers (map_closed_enum,
     // repeated_closed_enum, closed_enum). Proto2 enums are always closed.
     buffa_build::Config::new()
