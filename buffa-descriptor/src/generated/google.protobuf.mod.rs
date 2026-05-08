@@ -18,11 +18,9 @@ pub mod __buffa {
     pub mod oneof {
         #[allow(unused_imports)]
         use super::*;
-        include!("google.protobuf.descriptor.__oneof.rs");
     }
     pub mod ext {
         #[allow(unused_imports)]
         use super::*;
-        include!("google.protobuf.descriptor.__ext.rs");
     }
 }

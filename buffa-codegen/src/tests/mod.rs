@@ -38,8 +38,9 @@ pub(super) fn make_field(name: &str, number: i32, label: Label, ty: Type) -> Fie
 
 /// Concatenate all generated-file contents for snapshot-style assertions.
 ///
-/// Each proto now emits 5 content files + 1 `.mod.rs`; tests that assert
-/// "the output contains substring X" don't care which file it lands in.
+/// Each proto emits up to 5 content files + 1 `.mod.rs`; tests that
+/// assert "the output contains substring X" don't care which file it
+/// lands in.
 pub(super) fn joined(files: &[GeneratedFile]) -> String {
     files
         .iter()

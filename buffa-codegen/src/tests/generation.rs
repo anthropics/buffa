@@ -55,8 +55,8 @@ fn test_empty_file() {
         &CodeGenConfig::default(),
     );
     let files = result.expect("empty file should generate without error");
-    // 5 content files + 1 .mod.rs.
-    assert_eq!(files.len(), 6);
+    // No content files (all empty) + 1 .mod.rs.
+    assert_eq!(files.len(), 1);
     let stitcher = files
         .iter()
         .find(|f| f.kind == GeneratedFileKind::PackageMod)
@@ -65,6 +65,75 @@ fn test_empty_file() {
     assert!(
         stitcher.content.contains("@generated"),
         "missing header comment"
+    );
+}
+
+#[test]
+fn test_empty_message_omits_empty_ancillary_files() {
+    // Regression: a proto file with only an empty message should not emit
+    // empty `.__oneof.rs`, `.__view_oneof.rs`, or `.__ext.rs` companion files.
+    let mut file = proto3_file("example/v1/empty.proto");
+    file.package = Some("example.v1".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Empty".to_string()),
+        ..Default::default()
+    });
+
+    let files = generate(
+        &[file],
+        &["example/v1/empty.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("empty-message file should generate");
+
+    let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
+
+    assert!(
+        files
+            .iter()
+            .any(|f| f.name == "example.v1.empty.rs" && f.kind == GeneratedFileKind::Owned),
+        "owned file with the empty message should still be emitted; got {names:?}"
+    );
+    assert!(
+        files
+            .iter()
+            .any(|f| f.kind == GeneratedFileKind::PackageMod),
+        "package mod should be generated; got {names:?}"
+    );
+
+    assert!(
+        !files.iter().any(|f| f.name.ends_with(".__oneof.rs")),
+        "empty oneof companion file should not be emitted; got {names:?}"
+    );
+    assert!(
+        !files.iter().any(|f| f.name.ends_with(".__view_oneof.rs")),
+        "empty view-oneof companion file should not be emitted; got {names:?}"
+    );
+    assert!(
+        !files.iter().any(|f| f.name.ends_with(".__ext.rs")),
+        "empty extension companion file should not be emitted; got {names:?}"
+    );
+
+    let package_mod = files
+        .iter()
+        .find(|f| f.kind == GeneratedFileKind::PackageMod)
+        .expect("package mod should be generated");
+    assert!(
+        !package_mod.content.contains("example.v1.empty.__oneof.rs"),
+        "package mod should not include omitted oneof companion:\n{}",
+        package_mod.content
+    );
+    assert!(
+        !package_mod
+            .content
+            .contains("example.v1.empty.__view_oneof.rs"),
+        "package mod should not include omitted view-oneof companion:\n{}",
+        package_mod.content
+    );
+    assert!(
+        !package_mod.content.contains("example.v1.empty.__ext.rs"),
+        "package mod should not include omitted ext companion:\n{}",
+        package_mod.content
     );
 }
 
@@ -103,8 +172,10 @@ fn test_multi_file_same_package_merged() {
         &CodeGenConfig::default(),
     )
     .expect("multi-file package should merge");
-    // 2 protos × 5 content files + 1 stitcher = 11.
-    assert_eq!(files.len(), 11);
+    // 2 protos × 2 content kinds (owned + view; oneof / view_oneof /
+    // ext omitted because the messages have no oneofs and no extensions)
+    // + 1 stitcher = 5.
+    assert_eq!(files.len(), 5);
     let stitcher = files
         .iter()
         .find(|f| f.kind == GeneratedFileKind::PackageMod)
