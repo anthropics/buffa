@@ -252,6 +252,9 @@ impl ::buffa::DefaultInstance for FieldMask {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+impl ::buffa::MessageFullName for FieldMask {
+    const FULL_NAME: &'static str = "google.protobuf.FieldMask";
+}
 impl ::buffa::Message for FieldMask {
     /// Returns the total encoded size in bytes.
     ///

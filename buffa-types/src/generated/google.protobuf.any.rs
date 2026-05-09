@@ -164,6 +164,9 @@ impl ::buffa::DefaultInstance for Any {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+impl ::buffa::MessageFullName for Any {
+    const FULL_NAME: &'static str = "google.protobuf.Any";
+}
 impl ::buffa::Message for Any {
     /// Returns the total encoded size in bytes.
     ///

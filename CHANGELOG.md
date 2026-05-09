@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **`buffa::MessageFullName` trait exposes the protobuf full name of a
+  generated message as a compile-time `&'static str` constant.** Codegen
+  emits `impl MessageFullName for #Msg { const FULL_NAME: &'static str =
+  "pkg.Msg"; }` for every message (fully-qualified, no leading dot;
+  nested messages use their full dotted path). The trait is a separate
+  supertrait of [`Message`] rather than an item on `Message` itself, so
+  hand-written `Message` impls remain valid without it. For messages
+  that also implement `ExtensionSet`, `FULL_NAME` is guaranteed equal
+  to `ExtensionSet::PROTO_FQN` (both derive from the same codegen
+  source). Useful as a generic bound for type-erased registries,
+  logging, and reflection — `fn name<T: MessageFullName>() -> &'static
+  str { T::FULL_NAME }`. The trait is **not** object-safe (associated
+  `const` only), so use it as a bound, not `dyn MessageFullName`.
 - `serde::Serialize` is now implemented for generated view types when `generate_json` is
   enabled, allowing zero-copy JSON serialization without `.to_owned_message()`.
   `OwnedView<V>` also gains a blanket `Serialize` impl so `serde_json::to_string(&owned_view)`

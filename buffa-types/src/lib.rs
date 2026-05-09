@@ -89,3 +89,24 @@ pub use timestamp_ext::TimestampError;
 
 // Re-export the WKT registry function for `Any` JSON + text support.
 pub use any_ext::register_wkt_types;
+
+#[cfg(test)]
+mod full_name_tests {
+    use super::google::protobuf::*;
+    use buffa::MessageFullName;
+
+    // Regression test: the WKT FQNs are baked into Any type-URLs, JSON
+    // serialization, and the type registry. Codegen must keep emitting them
+    // verbatim — these strings are observable on the wire.
+    #[test]
+    fn well_known_types_full_names_match_proto() {
+        assert_eq!(Timestamp::FULL_NAME, "google.protobuf.Timestamp");
+        assert_eq!(Duration::FULL_NAME, "google.protobuf.Duration");
+        assert_eq!(Any::FULL_NAME, "google.protobuf.Any");
+        assert_eq!(Empty::FULL_NAME, "google.protobuf.Empty");
+        assert_eq!(FieldMask::FULL_NAME, "google.protobuf.FieldMask");
+        assert_eq!(Struct::FULL_NAME, "google.protobuf.Struct");
+        assert_eq!(Value::FULL_NAME, "google.protobuf.Value");
+        assert_eq!(ListValue::FULL_NAME, "google.protobuf.ListValue");
+    }
+}

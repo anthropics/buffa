@@ -417,6 +417,40 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     fn clear(&mut self);
 }
 
+/// Provides compile-time access to a generated message's protobuf full name.
+///
+/// This exists for generic code that needs to name message types without going
+/// through runtime reflection or descriptor APIs.
+///
+/// Bring `buffa::MessageFullName` into scope to use `MyMessage::FULL_NAME`.
+/// Without the trait in scope, use
+/// `<MyMessage as buffa::MessageFullName>::FULL_NAME`.
+///
+/// Codegen emits this for every generated message. Hand-written [`Message`]
+/// implementations can opt in by also implementing `MessageFullName`; it is
+/// a separate trait specifically so that omitting it stays non-breaking.
+///
+/// For messages that also implement [`ExtensionSet`](crate::ExtensionSet),
+/// this value is guaranteed equal to
+/// [`ExtensionSet::PROTO_FQN`](crate::ExtensionSet::PROTO_FQN) — both come
+/// from the same `proto_fqn` source in codegen.
+///
+/// Because the only item is an associated `const`, this trait is **not**
+/// object-safe (`dyn MessageFullName` does not compile). Use it as a
+/// generic bound (`fn foo<T: MessageFullName>()`), not a trait object.
+pub trait MessageFullName: Message {
+    /// The protobuf full name for the generated message type.
+    ///
+    /// Fully-qualified, with no leading dot. For a message `Foo` declared in
+    /// package `my.pkg` this is `"my.pkg.Foo"`. For a nested message
+    /// `my.pkg.Outer.Inner` it is `"my.pkg.Outer.Inner"`. For a message in
+    /// the unnamed root package it is the bare message name (e.g. `"Foo"`).
+    ///
+    /// Resolves at compile time — `T::FULL_NAME` is a `&'static str` literal
+    /// in the binary's read-only data, with no runtime cost.
+    const FULL_NAME: &'static str;
+}
+
 /// Options for configuring message decoding behavior.
 ///
 /// Use this to set custom recursion depth limits or maximum message sizes

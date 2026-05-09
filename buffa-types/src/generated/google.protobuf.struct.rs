@@ -78,6 +78,9 @@ impl ::buffa::DefaultInstance for Struct {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+impl ::buffa::MessageFullName for Struct {
+    const FULL_NAME: &'static str = "google.protobuf.Struct";
+}
 impl ::buffa::Message for Struct {
     /// Returns the total encoded size in bytes.
     ///
@@ -348,6 +351,9 @@ impl ::buffa::DefaultInstance for Value {
         static VALUE: ::buffa::__private::OnceBox<Value> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
+}
+impl ::buffa::MessageFullName for Value {
+    const FULL_NAME: &'static str = "google.protobuf.Value";
 }
 impl ::buffa::Message for Value {
     /// Returns the total encoded size in bytes.
@@ -759,6 +765,9 @@ impl ::buffa::DefaultInstance for ListValue {
         static VALUE: ::buffa::__private::OnceBox<ListValue> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
+}
+impl ::buffa::MessageFullName for ListValue {
+    const FULL_NAME: &'static str = "google.protobuf.ListValue";
 }
 impl ::buffa::Message for ListValue {
     /// Returns the total encoded size in bytes.

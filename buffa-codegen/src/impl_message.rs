@@ -552,6 +552,10 @@ pub fn generate_message_impl(
             }
         }
 
+        impl ::buffa::MessageFullName for #name_ident {
+            const FULL_NAME: &'static str = #proto_fqn;
+        }
+
         impl ::buffa::Message for #name_ident {
             /// Returns the total encoded size in bytes.
             ///

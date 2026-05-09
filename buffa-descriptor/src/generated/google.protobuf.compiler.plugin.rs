@@ -41,6 +41,9 @@ impl ::buffa::DefaultInstance for Version {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+impl ::buffa::MessageFullName for Version {
+    const FULL_NAME: &'static str = "google.protobuf.compiler.Version";
+}
 impl ::buffa::Message for Version {
     /// Returns the total encoded size in bytes.
     ///
@@ -254,6 +257,9 @@ impl ::buffa::DefaultInstance for CodeGeneratorRequest {
         static VALUE: ::buffa::__private::OnceBox<CodeGeneratorRequest> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
+}
+impl ::buffa::MessageFullName for CodeGeneratorRequest {
+    const FULL_NAME: &'static str = "google.protobuf.compiler.CodeGeneratorRequest";
 }
 impl ::buffa::Message for CodeGeneratorRequest {
     /// Returns the total encoded size in bytes.
@@ -511,6 +517,9 @@ impl ::buffa::DefaultInstance for CodeGeneratorResponse {
         static VALUE: ::buffa::__private::OnceBox<CodeGeneratorResponse> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
+}
+impl ::buffa::MessageFullName for CodeGeneratorResponse {
+    const FULL_NAME: &'static str = "google.protobuf.compiler.CodeGeneratorResponse";
 }
 impl ::buffa::Message for CodeGeneratorResponse {
     /// Returns the total encoded size in bytes.
@@ -831,6 +840,9 @@ pub mod code_generator_response {
             static VALUE: ::buffa::__private::OnceBox<File> = ::buffa::__private::OnceBox::new();
             VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
+    }
+    impl ::buffa::MessageFullName for File {
+        const FULL_NAME: &'static str = "google.protobuf.compiler.CodeGeneratorResponse.File";
     }
     impl ::buffa::Message for File {
         /// Returns the total encoded size in bytes.

@@ -83,6 +83,7 @@
 //! | Type | Purpose |
 //! |------|---------|
 //! | [`Message`] | Core trait for encode / decode / merge |
+//! | [`MessageFullName`] | Compile-time `FULL_NAME` const (`"pkg.Msg"`) for generic dispatch |
 //! | [`DecodeOptions`] | Configurable recursion and size limits |
 //! | [`MessageField<T>`](MessageField) | Optional sub-message with transparent `Deref` to default |
 //! | [`EnumValue<E>`](EnumValue) | Open enum wrapper (`Known(E)` / `Unknown(i32)`) |
@@ -213,7 +214,7 @@ pub mod view;
 pub use enumeration::{EnumValue, Enumeration};
 pub use error::{DecodeError, EncodeError};
 pub use extension::{Extension, ExtensionCodec, ExtensionSet};
-pub use message::{DecodeOptions, Message, RECURSION_LIMIT};
+pub use message::{DecodeOptions, Message, MessageFullName, RECURSION_LIMIT};
 pub use message_field::{DefaultInstance, MessageField};
 pub use oneof::Oneof;
 pub use size_cache::SizeCache;

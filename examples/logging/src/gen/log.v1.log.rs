@@ -124,6 +124,9 @@ impl ::buffa::DefaultInstance for LogEntry {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+impl ::buffa::MessageFullName for LogEntry {
+    const FULL_NAME: &'static str = "buffa.examples.log.v1.LogEntry";
+}
 impl ::buffa::Message for LogEntry {
     /// Returns the total encoded size in bytes.
     ///
@@ -432,6 +435,9 @@ impl ::buffa::DefaultInstance for LogBatch {
         static VALUE: ::buffa::__private::OnceBox<LogBatch> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
+}
+impl ::buffa::MessageFullName for LogBatch {
+    const FULL_NAME: &'static str = "buffa.examples.log.v1.LogBatch";
 }
 impl ::buffa::Message for LogBatch {
     /// Returns the total encoded size in bytes.

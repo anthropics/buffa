@@ -3,7 +3,14 @@
 use super::round_trip;
 use crate::basic::__buffa::oneof;
 use crate::basic::*;
-use buffa::Message;
+use buffa::{Message, MessageFullName};
+
+#[test]
+fn test_full_name_const_matches_proto_fqn() {
+    assert_eq!(Empty::FULL_NAME, "basic.Empty");
+    assert_eq!(Person::FULL_NAME, "basic.Person");
+    assert_eq!(AllScalars::FULL_NAME, "basic.AllScalars");
+}
 
 #[test]
 fn test_empty_message_encodes_to_zero_bytes() {

@@ -142,6 +142,9 @@ impl ::buffa::DefaultInstance for Timestamp {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+impl ::buffa::MessageFullName for Timestamp {
+    const FULL_NAME: &'static str = "google.protobuf.Timestamp";
+}
 impl ::buffa::Message for Timestamp {
     /// Returns the total encoded size in bytes.
     ///
