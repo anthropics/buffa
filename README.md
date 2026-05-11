@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="buffa-logo.png" alt="buffa logo" width="300" />
+</p>
+
 # buffa
 
 [![crates.io](https://img.shields.io/crates/v/buffa.svg)](https://crates.io/crates/buffa)
