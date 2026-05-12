@@ -8,7 +8,7 @@
 [![no_std](https://img.shields.io/badge/no__std-compatible-blue)](docs/guide.md#no_std-usage)
 [![License](https://img.shields.io/crates/l/buffa)](LICENSE)
 
-A pure-Rust Protocol Buffers implementation with first-class [protobuf editions](https://protobuf.dev/editions/overview/) support. Written by Claude ❣️
+A pure-Rust Protocol Buffers implementation with first-class [protobuf editions](https://protobuf.dev/editions/overview/) support. Written by Claude and friends ❣️
 
 ## Why buffa?
 
