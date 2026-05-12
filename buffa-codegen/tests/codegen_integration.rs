@@ -922,6 +922,32 @@ fn test_view_serialize_json_helpers_used() {
 }
 
 #[test]
+fn test_view_serialize_map_keys_stringified() {
+    // Protobuf JSON requires map keys to be JSON strings. The view Serialize
+    // impl must emit an explicit `_WK` newtype with `collect_str` for
+    // non-string scalar keys, mirroring the owned-side `DisplayKey` wrapper —
+    // not rely on the serializer's `MapKeySerializer` to stringify primitives
+    // (which only `serde_json` does).
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Maps {
+          map<int64, string> by_id = 1;
+          map<bool, string> by_flag = 2;
+          map<string, string> by_name = 3;
+        }
+        "#,
+        &json_with_views(),
+    );
+    syn::parse_file(&content).expect("generated content must parse");
+    assert!(
+        content.contains("collect_str"),
+        "non-string map keys must be stringified via collect_str: {content}"
+    );
+}
+
+#[test]
 fn test_view_serialize_proto2_required_multi_field_parses() {
     // Regression: proto2 required fields with helper-typed scalars previously
     // emitted `struct _W` at fn scope without a wrapping block, causing E0428

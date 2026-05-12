@@ -1549,13 +1549,17 @@ fn generate_view_serialize(
     }
 
     Ok(quote! {
-        /// Serializes this view as proto3 JSON: proto3 defaults are omitted,
-        /// bytes fields are base64-encoded, and enum values are their proto name strings.
+        /// Serializes this view as protobuf JSON.
         ///
-        /// **Limitation:** if any field of this message is a WKT view type
-        /// (`TimestampView`, `DurationView`, etc.), this impl will fail to
-        /// compile because WKT view types do not yet implement `Serialize`.
-        /// Workaround: call `view.to_owned_message()` and serialize the owned form.
+        /// Implicit-presence fields with default values are omitted, `required`
+        /// fields are always emitted, explicit-presence (`optional`) fields are
+        /// emitted only when set, bytes fields are base64-encoded, and enum
+        /// values are their proto name strings.
+        ///
+        /// This impl uses `serialize_map(None)` because the number of emitted
+        /// fields depends on default-omission rules; serializers that require
+        /// known map lengths (e.g. `bincode`) will return a runtime error.
+        /// Use the owned message type for those formats.
         impl<'__a> ::serde::Serialize for #view_ident<'__a> {
             fn serialize<__S: ::serde::Serializer>(
                 &self,
@@ -1624,22 +1628,43 @@ fn view_field_serialize_stmt(
             vt => scalar_ty(vt),
         };
 
-        // Key wrapper struct (only for bytes keys).
-        let key_wrapper = match key_raw {
-            Type::TYPE_BYTES => quote! {
-                struct _WK<'__x>(&'__x [u8]);
-                impl ::serde::Serialize for _WK<'_> {
-                    fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
-                        ::buffa::json_helpers::bytes::serialize(self.0, __s)
+        // Key wrapper struct. Protobuf JSON requires map keys to be encoded
+        // as JSON strings regardless of the key's proto type:
+        // - String keys are already strings — passed through unwrapped.
+        // - Bytes keys (which only arise when `utf8_validation = NONE` rewrites
+        //   a `string` key to `&[u8]` in the view) are base64-encoded, mirroring
+        //   the owned-side `bytes_key_*_map` helpers' `Base64Wrapper`.
+        // - All other scalar keys (int32/64, uint32/64, bool — the only other
+        //   key types proto allows) are stringified via `collect_str`, mirroring
+        //   the owned-side `proto_map::serialize` `DisplayKey` wrapper.
+        // The explicit wrappers make the view encoding byte-identical to the
+        // owned encoding for any serde backend, not just `serde_json` (whose
+        // `MapKeySerializer` happens to stringify primitives on its own).
+        let (key_wrapper, key_expr) = match key_raw {
+            Type::TYPE_STRING => (quote! {}, quote! { k }),
+            Type::TYPE_BYTES => (
+                quote! {
+                    struct _WK<'__x>(&'__x [u8]);
+                    impl ::serde::Serialize for _WK<'_> {
+                        fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                            ::buffa::json_helpers::bytes::serialize(self.0, __s)
+                        }
                     }
-                }
-            },
-            _ => quote! {},
-        };
-        let key_expr = match key_raw {
-            Type::TYPE_BYTES => quote! { &_WK(k) },
-            Type::TYPE_STRING => quote! { k },
-            _ => quote! { k },
+                },
+                quote! { &_WK(k) },
+            ),
+            _ => (
+                quote! {
+                    struct _WK(#key_ty);
+                    impl ::serde::Serialize for _WK {
+                        fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                            __s.collect_str(&self.0)
+                        }
+                    }
+                },
+                // k: &K (Copy scalar) — explicit deref into the wrapper field.
+                quote! { &_WK(*k) },
+            ),
         };
 
         // Value wrapper struct (for types needing special encoding).
@@ -1716,8 +1741,15 @@ fn view_field_serialize_stmt(
                         use ::serde::ser::SerializeMap as _;
                         #key_wrapper
                         #val_wrapper
+                        // `iter_unique` deduplicates wire-level duplicate keys
+                        // (last-write-wins), matching the owned `HashMap`
+                        // decode semantics and producing valid JSON.
+                        // `len()` (not `len_unique()`) is used for the size
+                        // hint: it is exact for well-formed wire data, an
+                        // upper bound for adversarial duplicates, and avoids
+                        // a second O(n²) dedup pass on every serialize.
                         let mut __m = __s.serialize_map(::core::option::Option::Some(self.0.len()))?;
-                        for (k, v) in self.0.iter() {
+                        for (k, v) in self.0.iter_unique() {
                             __m.serialize_entry(#key_expr, #val_expr)?;
                         }
                         __m.end()
@@ -1914,8 +1946,7 @@ fn view_field_serialize_stmt(
         ),
         scalar if serde_helper_path(scalar).is_some() => {
             let helper = serde_helper_path(scalar).unwrap();
-            let skip_path: syn::Path =
-                syn::parse_str(scalar_skip_predicate(scalar)).expect("valid path");
+            let skip_path = scalar_skip_predicate(scalar);
             let elem_ty = scalar_ty(scalar);
             (
                 quote! { !#skip_path(&self.#ident) },
@@ -1956,19 +1987,26 @@ fn view_field_serialize_stmt(
 }
 
 /// Return the `skip_if` predicate path string for a scalar type that has a helper.
-fn scalar_skip_predicate(ty: Type) -> &'static str {
+fn scalar_skip_predicate(ty: Type) -> TokenStream {
     match ty {
-        Type::TYPE_BOOL => "::buffa::json_helpers::skip_if::is_false",
+        Type::TYPE_BOOL => quote! { ::buffa::json_helpers::skip_if::is_false },
         Type::TYPE_INT32 | Type::TYPE_SINT32 | Type::TYPE_SFIXED32 => {
-            "::buffa::json_helpers::skip_if::is_zero_i32"
+            quote! { ::buffa::json_helpers::skip_if::is_zero_i32 }
         }
-        Type::TYPE_UINT32 | Type::TYPE_FIXED32 => "::buffa::json_helpers::skip_if::is_zero_u32",
+        Type::TYPE_UINT32 | Type::TYPE_FIXED32 => {
+            quote! { ::buffa::json_helpers::skip_if::is_zero_u32 }
+        }
         Type::TYPE_INT64 | Type::TYPE_SINT64 | Type::TYPE_SFIXED64 => {
-            "::buffa::json_helpers::skip_if::is_zero_i64"
+            quote! { ::buffa::json_helpers::skip_if::is_zero_i64 }
         }
-        Type::TYPE_UINT64 | Type::TYPE_FIXED64 => "::buffa::json_helpers::skip_if::is_zero_u64",
-        Type::TYPE_FLOAT => "::buffa::json_helpers::skip_if::is_zero_f32",
-        Type::TYPE_DOUBLE => "::buffa::json_helpers::skip_if::is_zero_f64",
+        Type::TYPE_UINT64 | Type::TYPE_FIXED64 => {
+            quote! { ::buffa::json_helpers::skip_if::is_zero_u64 }
+        }
+        Type::TYPE_FLOAT => quote! { ::buffa::json_helpers::skip_if::is_zero_f32 },
+        Type::TYPE_DOUBLE => quote! { ::buffa::json_helpers::skip_if::is_zero_f64 },
+        // The single call site is gated by `serde_helper_path(ty).is_some()`,
+        // which only matches the scalar types above. Bytes is handled in an
+        // earlier match arm.
         _ => unreachable!("scalar_skip_predicate called for non-scalar"),
     }
 }

@@ -66,8 +66,8 @@ fn test_json_oneof_all_scalar_types_round_trip() {
     // Exercises serde_helper_path dispatch for all proto3-JSON-special
     // scalar types in oneof position, and the corresponding runtime
     // json_helpers::{int64, uint32, uint64, float, double, bytes} paths.
-    use crate::json_types::__buffa::oneof::with_oneof_types::Kind as KindOneof;
     use crate::json_types::WithOneofTypes;
+    use crate::json_types::__buffa::oneof::with_oneof_types::Kind as KindOneof;
 
     #[rustfmt::skip]
     let cases: &[(KindOneof, &str)] = &[
@@ -106,8 +106,8 @@ fn test_json_oneof_all_scalar_types_round_trip() {
 #[test]
 fn test_json_oneof_float_special_values() {
     // NaN/Infinity/-Infinity serialize as string tokens per proto3-JSON spec.
-    use crate::json_types::__buffa::oneof::with_oneof_types::Kind as KindOneof;
     use crate::json_types::WithOneofTypes;
+    use crate::json_types::__buffa::oneof::with_oneof_types::Kind as KindOneof;
 
     #[rustfmt::skip]
     let cases: &[(KindOneof, &str)] = &[
@@ -151,8 +151,8 @@ fn test_json_oneof_float_special_values() {
 fn test_json_oneof_null_value() {
     // google.protobuf.NullValue in a oneof serializes as JSON null.
     // On deserialize, JSON null populates the NullValue variant (not unset).
-    use crate::json_types::__buffa::oneof::with_oneof_types::Kind as KindOneof;
     use crate::json_types::WithOneofTypes;
+    use crate::json_types::__buffa::oneof::with_oneof_types::Kind as KindOneof;
     use buffa_types::google::protobuf::NullValue;
 
     let msg = WithOneofTypes {
@@ -174,8 +174,8 @@ fn test_json_oneof_null_value() {
 fn test_json_oneof_float_deserialize_from_integer() {
     // proto3-JSON: float/double fields accept integer JSON values.
     // Exercises json_helpers::float::visit_i64/visit_u64.
-    use crate::json_types::__buffa::oneof::with_oneof_types::Kind as KindOneof;
     use crate::json_types::WithOneofTypes;
+    use crate::json_types::__buffa::oneof::with_oneof_types::Kind as KindOneof;
 
     let decoded: WithOneofTypes = serde_json::from_str(r#"{"f32": 42}"#).unwrap();
     assert_eq!(decoded.kind, Some(KindOneof::F32(42.0)));
@@ -490,8 +490,8 @@ fn test_json_mixed_value_field_null_forwarding() {
     // not "field absent". The custom Deserialize must forward null to
     // Value's own Deserialize rather than skipping the field.
     use crate::json_types::MixedOneofAndFields;
-    use buffa_types::google::protobuf::__buffa::oneof::value::Kind as KindOneof;
     use buffa_types::google::protobuf::NullValue;
+    use buffa_types::google::protobuf::__buffa::oneof::value::Kind as KindOneof;
 
     let decoded: MixedOneofAndFields = serde_json::from_str(r#"{"dynamic": null}"#).unwrap();
     assert!(decoded.dynamic.is_set(), "null should set the Value field");
@@ -505,299 +505,4 @@ fn test_json_mixed_value_field_null_forwarding() {
     let decoded: MixedOneofAndFields = serde_json::from_str("{}").unwrap();
     assert!(!decoded.dynamic.is_set());
     let _ = NullValue::NULL_VALUE; // silence unused import if not needed
-}
-
-// ── View JSON round-trip (issue #83) ────────────────────────────────────────
-// Each test encodes an owned message → decodes as a view → serializes both to
-// JSON → asserts they produce identical output.
-//
-// Uses `crate::view_json` (view_json.proto, built with generate_views=true +
-// generate_json=true) to avoid WKT-view Serialize gaps — WKT view Serialize
-// is a separate follow-up.
-
-#[test]
-fn test_view_json_scalar_matches_owned() {
-    use crate::view_json::__buffa::view::ScalarsView;
-    use crate::view_json::Scalars;
-    use buffa::MessageView;
-
-    let owned = Scalars {
-        i32: -42,
-        i64: 9007199254740993, // > 2^53 — must be quoted string
-        u32: u32::MAX,
-        u64: u64::MAX,
-        f32: 1.5,
-        f64: std::f64::consts::PI,
-        b: true,
-        s: "hello world".into(),
-        by: vec![0xDE, 0xAD, 0xBE, 0xEF],
-        ..Default::default()
-    };
-    let bytes = buffa::Message::encode_to_vec(&owned);
-    let view = ScalarsView::decode_view(&bytes).expect("decode_view");
-
-    let json_owned = serde_json::to_string(&owned).expect("serialize owned");
-    let json_view = serde_json::to_string(&view).expect("serialize view");
-    assert_eq!(json_view, json_owned, "view JSON must match owned JSON");
-
-    // int64 >2^53 must be a quoted string, not a raw number.
-    assert!(
-        json_view.contains(r#""i64":"9007199254740993""#),
-        "int64 >2^53 must be quoted: {json_view}"
-    );
-    // bytes must be base64-encoded.
-    assert!(
-        json_view.contains(r#""by":"3q2+7w==""#),
-        "bytes must be base64: {json_view}"
-    );
-}
-
-#[test]
-fn test_view_json_double_special_values() {
-    use crate::view_json::__buffa::view::ScalarsView;
-    use crate::view_json::Scalars;
-    use buffa::MessageView;
-
-    let cases: &[(f64, &str)] = &[
-        (f64::NAN, r#""f64":"NaN""#),
-        (f64::INFINITY, r#""f64":"Infinity""#),
-        (f64::NEG_INFINITY, r#""f64":"-Infinity""#),
-    ];
-    for (val, expected_fragment) in cases {
-        let owned = Scalars {
-            f64: *val,
-            ..Default::default()
-        };
-        let bytes = buffa::Message::encode_to_vec(&owned);
-        let view = ScalarsView::decode_view(&bytes).expect("decode_view");
-
-        let json_view = serde_json::to_string(&view).expect("serialize view");
-        assert!(
-            json_view.contains(expected_fragment),
-            "double {val:?} must serialize as {expected_fragment}: {json_view}"
-        );
-        let json_owned = serde_json::to_string(&owned).expect("serialize owned");
-        assert_eq!(json_view, json_owned, "view must match owned for {val:?}");
-    }
-}
-
-#[test]
-fn test_view_json_proto3_defaults_omitted() {
-    use crate::view_json::__buffa::view::ScalarsView;
-    use crate::view_json::Scalars;
-    use buffa::MessageView;
-
-    let owned = Scalars::default();
-    let bytes = buffa::Message::encode_to_vec(&owned);
-    let view = ScalarsView::decode_view(&bytes).expect("decode_view");
-
-    let json_owned = serde_json::to_string(&owned).expect("serialize owned");
-    let json_view = serde_json::to_string(&view).expect("serialize view");
-    assert_eq!(
-        json_view, "{}",
-        "default view must serialize as empty object"
-    );
-    assert_eq!(json_view, json_owned);
-}
-
-#[test]
-fn test_view_json_enum_matches_owned() {
-    use crate::view_json::__buffa::view::WithEnumView;
-    use crate::view_json::{Color, WithEnum};
-    use buffa::MessageView;
-
-    let owned = WithEnum {
-        color: buffa::EnumValue::Known(Color::RED),
-        colors: vec![
-            buffa::EnumValue::Known(Color::GREEN),
-            buffa::EnumValue::Known(Color::BLUE),
-        ],
-        ..Default::default()
-    };
-    let bytes = buffa::Message::encode_to_vec(&owned);
-    let view = WithEnumView::decode_view(&bytes).expect("decode_view");
-
-    let json_owned = serde_json::to_string(&owned).expect("serialize owned");
-    let json_view = serde_json::to_string(&view).expect("serialize view");
-    assert_eq!(json_view, json_owned, "view JSON must match owned JSON");
-    assert!(
-        json_view.contains(r#""color":"RED""#),
-        "enum as name: {json_view}"
-    );
-    assert!(
-        json_view.contains(r#""GREEN""#),
-        "repeated enum: {json_view}"
-    );
-}
-
-#[test]
-fn test_view_json_oneof_matches_owned() {
-    use crate::view_json::__buffa::oneof::with_oneof::Value as ValueOneof;
-    use crate::view_json::__buffa::view::WithOneofView;
-    use crate::view_json::{Color, WithOneof};
-    use buffa::MessageView;
-
-    let cases: &[ValueOneof] = &[
-        ValueOneof::Text("hello".into()),
-        ValueOneof::Number(i64::MAX),
-        ValueOneof::Data(vec![0xAB, 0xCD]),
-        ValueOneof::Color(buffa::EnumValue::Known(Color::GREEN)),
-    ];
-    for variant in cases {
-        let owned = WithOneof {
-            value: Some(variant.clone()),
-            ..Default::default()
-        };
-        let bytes = buffa::Message::encode_to_vec(&owned);
-        let view = WithOneofView::decode_view(&bytes).expect("decode_view");
-
-        let json_owned = serde_json::to_string(&owned).expect("serialize owned");
-        let json_view = serde_json::to_string(&view).expect("serialize view");
-        assert_eq!(
-            json_view, json_owned,
-            "view must match owned for {variant:?}"
-        );
-    }
-
-    // Unset oneof → empty object.
-    let owned = WithOneof::default();
-    let bytes = buffa::Message::encode_to_vec(&owned);
-    let view = WithOneofView::decode_view(&bytes).expect("decode_view");
-    let json_view = serde_json::to_string(&view).expect("serialize view");
-    assert_eq!(json_view, "{}");
-}
-
-#[test]
-fn test_view_json_map_matches_owned() {
-    use crate::view_json::__buffa::view::WithMapsView;
-    use crate::view_json::{Color, WithMaps};
-    use buffa::MessageView;
-
-    let owned = WithMaps {
-        labels: [
-            ("env".into(), "prod".into()),
-            ("region".into(), "us-east".into()),
-        ]
-        .into_iter()
-        .collect(),
-        by_id: [(1, "one".into()), (2, "two".into())].into_iter().collect(),
-        counts: [("hits".into(), 9007199254740993i64)].into_iter().collect(),
-        by_color: [("bg".into(), buffa::EnumValue::Known(Color::BLUE))]
-            .into_iter()
-            .collect(),
-        ..Default::default()
-    };
-    let bytes = buffa::Message::encode_to_vec(&owned);
-    let view = WithMapsView::decode_view(&bytes).expect("decode_view");
-
-    // Parse as serde_json::Value so key ordering doesn't matter.
-    let json_owned = serde_json::to_string(&owned).expect("serialize owned");
-    let json_view = serde_json::to_string(&view).expect("serialize view");
-    let v_owned: serde_json::Value = serde_json::from_str(&json_owned).unwrap();
-    let v_view: serde_json::Value = serde_json::from_str(&json_view).unwrap();
-    assert_eq!(v_view, v_owned, "view map JSON must match owned map JSON");
-
-    // int64 map value must be a quoted string.
-    assert!(
-        json_view.contains(r#""9007199254740993""#),
-        "int64 map value must be quoted: {json_view}"
-    );
-}
-
-#[test]
-fn test_view_json_nested_matches_owned() {
-    use crate::view_json::__buffa::view::OuterView;
-    use crate::view_json::{Inner, Outer};
-    use buffa::MessageView;
-
-    let owned = Outer {
-        inner: buffa::MessageField::some(Inner {
-            x: 7,
-            name: "root".into(),
-            ..Default::default()
-        }),
-        items: vec![
-            Inner {
-                x: 1,
-                name: "a".into(),
-                ..Default::default()
-            },
-            Inner {
-                x: 2,
-                name: "b".into(),
-                ..Default::default()
-            },
-        ],
-        id: i64::MAX,
-        ..Default::default()
-    };
-    let bytes = buffa::Message::encode_to_vec(&owned);
-    let view = OuterView::decode_view(&bytes).expect("decode_view");
-
-    let json_owned = serde_json::to_string(&owned).expect("serialize owned");
-    let json_view = serde_json::to_string(&view).expect("serialize view");
-    assert_eq!(
-        json_view, json_owned,
-        "nested view JSON must match owned JSON"
-    );
-}
-
-#[test]
-fn test_view_json_owned_view_blanket_impl() {
-    // OwnedView<V> must implement Serialize via the blanket impl so that
-    // `serde_json::to_string(&owned_view)` works without an explicit deref.
-    use crate::view_json::__buffa::view::ScalarsView;
-    use crate::view_json::Scalars;
-    use buffa::view::OwnedView;
-
-    let owned = Scalars {
-        i32: 99,
-        s: "owned_view".into(),
-        by: vec![0x01, 0x02],
-        ..Default::default()
-    };
-    let bytes = bytes::Bytes::from(buffa::Message::encode_to_vec(&owned));
-    let owned_view = OwnedView::<ScalarsView<'static>>::decode(bytes).expect("decode OwnedView");
-
-    let json_owned_view = serde_json::to_string(&owned_view).expect("serialize OwnedView");
-    let json_view = serde_json::to_string(&*owned_view).expect("serialize &view");
-    let json_owned = serde_json::to_string(&owned).expect("serialize owned");
-
-    assert_eq!(
-        json_owned_view, json_owned,
-        "OwnedView blanket impl must match owned"
-    );
-    assert_eq!(
-        json_owned_view, json_view,
-        "OwnedView blanket impl must match &*view"
-    );
-}
-
-#[test]
-fn test_view_json_null_value_oneof_serializes_as_null() {
-    // NullValue oneof variants must serialize as JSON `null`, not "NULL_VALUE".
-    // Regression guard for the view path — the owned path is covered by
-    // test_json_oneof_null_value.
-    use crate::view_json::__buffa::oneof::with_oneof::Value as ValueOneof;
-    use crate::view_json::__buffa::view::WithOneofView;
-    use crate::view_json::WithOneof;
-    use buffa::MessageView;
-    use buffa_types::google::protobuf::NullValue;
-
-    let owned = WithOneof {
-        value: Some(ValueOneof::NullVal(NullValue::NULL_VALUE.into())),
-        ..Default::default()
-    };
-    let bytes = buffa::Message::encode_to_vec(&owned);
-    let view = WithOneofView::decode_view(&bytes).expect("decode_view");
-
-    let json_view = serde_json::to_string(&view).expect("serialize view");
-    assert_eq!(
-        json_view, r#"{"nullVal":null}"#,
-        "NullValue oneof variant must serialize as JSON null: {json_view}"
-    );
-
-    // Also verify view matches owned.
-    let json_owned = serde_json::to_string(&owned).expect("serialize owned");
-    assert_eq!(json_view, json_owned, "view must match owned for NullValue");
 }

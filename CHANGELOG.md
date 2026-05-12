@@ -11,13 +11,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `serde::Serialize` is now implemented for generated view types when `generate_json` is
   enabled, allowing zero-copy JSON serialization without `.to_owned_message()`.
   `OwnedView<V>` also gains a blanket `Serialize` impl so `serde_json::to_string(&owned_view)`
-  works directly. **Known limitations:** (1) Messages whose view types nest a WKT view
-  (`TimestampView`, `DurationView`, `AnyView`, etc.) will fail to compile because WKT view
-  types do not yet implement `Serialize` — use `view.to_owned_message()` and serialize the
-  owned form as a workaround, or disable views (`generate_views(false)`) for those messages.
-  Hand-written WKT view `Serialize` impls are a planned follow-up. (2) Extension fields are
-  not included in view JSON output; serialize the owned form to include extensions.
-  ([#83](https://github.com/anthropics/buffa/issues/83))
+  works directly. Well-known type views (`TimestampView`, `DurationView`, `AnyView`, etc.)
+  also implement `Serialize` (delegating to the owned form) when the `buffa-types/json`
+  feature is enabled, so messages that nest WKT fields work out of the box. `MapView` gains
+  `iter_unique()` and `len_unique()` helpers (last-write-wins deduplication) so map fields
+  with duplicate wire keys serialize to a valid JSON object. The protobuf conformance suite
+  gains a `BUFFA_VIEW_JSON=1` run that exercises view-side JSON output against the
+  conformance reference assertions.
+  **Known limitations:** (1) Extension fields are not included in view JSON output —
+  serialize the owned form (`view.to_owned_message()`) to include extensions. (2) The view
+  impl uses `serialize_map(None)`, which is fine for `serde_json` but will be rejected at
+  runtime by length-prefixed formats like `bincode` or `postcard`; use the owned form for
+  those serializers. ([#83](https://github.com/anthropics/buffa/issues/83))
 
 ## [0.5.2] - 2026-05-07
 

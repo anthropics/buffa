@@ -110,6 +110,16 @@ pub mod view_json {
 #[allow(
     clippy::derivable_impls,
     clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod view_json_p2 {
+    buffa::include_proto!("test.viewjson.p2");
+}
+
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
     non_camel_case_types
 )]
 pub mod p2json {
