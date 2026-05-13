@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **`buffa-codegen`: empty ancillary content files and modules are no
+  longer emitted.** A `.proto` with no oneofs / no extension declarations
+  / `views=false` previously produced placeholder
+  `<stem>.__oneof.rs` / `<stem>.__ext.rs` / `<stem>.__view.rs` /
+  `<stem>.__view_oneof.rs` files containing only the `@generated` header,
+  and the package stitcher unconditionally authored a
+  `pub mod __buffa { pub mod oneof { ... } pub mod ext { ... } ... }`
+  tree that `include!`d them. Codegen now omits an ancillary content file
+  when it would be empty, the stitcher only `include!`s files that exist,
+  and the `__buffa` wrapper (and each `view` / `oneof` / `ext` submodule
+  inside it) is itself omitted when it would be empty — so a package with
+  only owned messages emits no `__buffa` block at all. Eliminates pure
+  noise in generated trees, editor file lists, search, and review diffs.
+  **Consumers with checked-in generated code** will see file deletions
+  and stitcher diffs on regeneration; remove orphaned empty files. The
+  `__buffa::*` paths are an internal sentinel namespace (consumers reach
+  for the natural-path re-exports added in 0.5.0), so no supported public
+  surface changes — but a hand-written
+  `use crate::pkg::__buffa::oneof::*;` for a package that has no oneofs
+  would now fail to resolve (it was previously a no-op import of an
+  empty module). ([#107](https://github.com/anthropics/buffa/pull/107))
+
 ## [0.5.2] - 2026-05-07
 
 ### Fixed
