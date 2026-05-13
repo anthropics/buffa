@@ -42,6 +42,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   generated output exists for this path in the checked-in WKTs (none declare
   extension ranges), so no regen.
 
+- **`buffa-codegen`: `descriptor.proto` types now resolve to
+  `buffa-descriptor`, not `buffa-types`.** The auto-injected WKT
+  extern_path `.google.protobuf` → `::buffa_types::google::protobuf`
+  covers everything in the `google.protobuf` package, including
+  `descriptor.proto` types — but `buffa-types` only ships the
+  JSON-mappable WKTs. Any proto referencing a `descriptor.proto` type as
+  a field — e.g. `buf/validate/validate.proto`, which has three `optional
+  google.protobuf.FieldDescriptorProto.Type` fields — produced a
+  generated path that doesn't exist:
+  `::buffa_types::google::protobuf::field_descriptor_proto::Type`. An
+  internal **file-level** extern resolution now routes
+  `google/protobuf/descriptor.proto` to
+  `::buffa_descriptor::generated::descriptor` and
+  `google/protobuf/compiler/plugin.proto` to
+  `::buffa_descriptor::generated::compiler`, taking priority over the
+  package-level WKT mapping. Suppression mirrors the WKT mapping: a user
+  `.google.protobuf` extern_path overrides it (preserving the long-standing
+  behaviour that the override covers descriptor types too), and a file in
+  `files_to_generate` resolves locally. **Consumers whose protos
+  `import "google/protobuf/descriptor.proto"` and reference its types as
+  fields must add `buffa-descriptor` to their `[dependencies]`** — the
+  same way protos that reference WKTs require `buffa-types`. The
+  user-facing `extern_path` API is unchanged (still package-prefix keyed).
+
 - **`buffa`: closed-enum JSON helpers no longer require the enum to
   `impl Deserialize`.** `opt_closed_enum`, `repeated_closed_enum`, and
   `map_closed_enum` deserialized via `serde_json::from_value::<E>()`,

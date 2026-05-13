@@ -182,6 +182,21 @@ buffa_build::Config::new()
 
 This disables the automatic mapping and routes all `google.protobuf.*` references to your crate. Your types must implement `buffa::Message` with the same wire format as the standard WKT definitions.
 
+### Descriptor types
+
+`google/protobuf/descriptor.proto` and `google/protobuf/compiler/plugin.proto` types (`FieldDescriptorProto`, `FileOptions`, `Edition`, `CodeGeneratorRequest`, etc.) live in `buffa-descriptor`, not `buffa-types` — the latter only ships the JSON-mappable WKTs. Protos that reference a `descriptor.proto` type as a field type — most commonly via [protovalidate](https://buf.build/bufbuild/protovalidate)'s `buf/validate/validate.proto`, which uses `google.protobuf.FieldDescriptorProto.Type` — are automatically routed to `buffa-descriptor`, the same way WKTs are routed to `buffa-types`. Add it to your `Cargo.toml`:
+
+```toml
+[dependencies]
+buffa-descriptor = "0.5"
+```
+
+If your protos import `descriptor.proto` only to declare custom options (`extend google.protobuf.MessageOptions { ... }`) and never reference a descriptor type as a *field type*, no `buffa-descriptor` dependency is required — extension declarations don't generate field-type references.
+
+`buffa-descriptor` is generated without views, JSON, or text impls (it exists primarily to bootstrap `buffa-codegen`). Its **enum** types — the only descriptor types referenced as field types in practice — work with all codegen modes. Descriptor **message** types referenced as fields with `views=true`, `json=true`, or `text=true` will not currently compile; if you hit this, please [file an issue](https://github.com/anthropics/buffa/issues).
+
+A user-provided `.google.protobuf` extern_path covers descriptor types too — the auto-routing yields to it, preserving the behaviour from before `buffa-descriptor` routing existed.
+
 ### External type paths
 
 When multiple crates compile protos that reference each other, use `extern_path` to tell buffa that types under a proto package already exist in another Rust crate:
