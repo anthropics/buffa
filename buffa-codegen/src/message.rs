@@ -944,7 +944,7 @@ fn generate_custom_deserialize(
         };
         let arm = quote! {
             __k if __k.starts_with('[') => {
-                let __v: ::serde_json::Value = map.next_value()?;
+                let __v: ::buffa::serde_json::Value = map.next_value()?;
                 match ::buffa::extension_registry::deserialize_extension_key(
                     #proto_fqn_lit, __k, __v,
                 ) {

@@ -966,6 +966,12 @@ Enable the `json` feature and `generate_json(true)` in your build config:
 # Cargo.toml
 [dependencies]
 buffa = { version = "0.5", features = ["json"] }
+# Required: generated `#[derive(::serde::Serialize, ::serde::Deserialize)]`
+# expands to `extern crate serde as _serde;`, so the consumer crate must
+# depend on `serde` directly. `serde_json` is *not* required by generated
+# code (buffa re-exports it where it needs `Value`); add it yourself only
+# if you call `serde_json::to_string` / `from_str` directly, as below.
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ```
 
