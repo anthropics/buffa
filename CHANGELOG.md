@@ -8,6 +8,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **`buffa-codegen`: `CodeGenConfig::gate_impls_on_crate_features`.**
+  When `true`, generated impls controlled by `generate_json`,
+  `generate_views`, and `generate_text` are wrapped in
+  `#[cfg(feature = "json" | "views" | "text")]` (or `#[cfg_attr(...)]` for
+  derives and field attributes) instead of being emitted unconditionally.
+  The consuming crate defines matching Cargo features and enables the
+  corresponding runtime support (`buffa/json`, `buffa/text`, `serde`, …)
+  behind them. The `generate_*` flags still control *whether* an impl kind
+  is emitted; the new flag only controls *how*. Default `false` — no
+  change to existing output. This is the codegen mechanism that will let
+  `buffa-descriptor` and `buffa-types` ship every impl while keeping the
+  codegen toolchain (`buffa-codegen` / `buffa-build` / `protoc-gen-buffa`)
+  lean — it depends on them with `default-features = false`. Tracked in
+  [#113](https://github.com/anthropics/buffa/issues/113); follow-ups add
+  the `buffa-build` builder method and `protoc-gen-buffa` plugin opt, then
+  regenerate `buffa-descriptor` and `buffa-types` with the gate.
+
 - `serde::Serialize` is now implemented for generated view types when `generate_json` is
   enabled, allowing zero-copy JSON serialization without `.to_owned_message()`.
   `OwnedView<V>` also gains a blanket `Serialize` impl so `serde_json::to_string(&owned_view)`

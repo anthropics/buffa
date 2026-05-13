@@ -203,7 +203,17 @@ pub fn generate_enum(
     };
 
     let serde_impls = if ctx.config.generate_json {
-        generate_enum_serde(&name_ident)
+        // `generate_enum_serde` returns multiple sibling items
+        // (`impl Serialize`, `impl Deserialize`, `impl ProtoElemJson`). A
+        // bare outer `#[cfg]` would attach only to the first; wrapping
+        // them in a `#[cfg(...)] const _: () = { ... };` block lets one
+        // outer cfg cover the lot — the anonymous const is itself a single
+        // item, and trait impls inside it register globally on the enum
+        // exactly as they would at module scope.
+        crate::feature_gates::cfg_const_block(
+            generate_enum_serde(&name_ident),
+            ctx.config.feature_gates().json,
+        )
     } else {
         quote! {}
     };

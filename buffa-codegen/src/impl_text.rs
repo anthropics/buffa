@@ -77,25 +77,31 @@ pub(crate) fn generate_text_impl(
         .unwrap_or(false);
     if is_message_set {
         let name_ident = format_ident!("{}", rust_name);
-        return Ok(quote! {
-            impl ::buffa::text::TextFormat for #name_ident {
-                fn encode_text(
-                    &self,
-                    _enc: &mut ::buffa::text::TextEncoder<'_>,
-                ) -> ::core::fmt::Result {
-                    ::core::result::Result::Ok(())
-                }
-                fn merge_text(
-                    &mut self,
-                    dec: &mut ::buffa::text::TextDecoder<'_>,
-                ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
-                    while dec.read_field_name()?.is_some() {
-                        dec.skip_value()?;
+        // Same gate as the main return below — a `proto2` `message_set_wire_format`
+        // type is the one early-out, and it must not leak an ungated
+        // `impl TextFormat` when `gate_impls_on_crate_features` is on.
+        return Ok(crate::feature_gates::cfg_block(
+            quote! {
+                impl ::buffa::text::TextFormat for #name_ident {
+                    fn encode_text(
+                        &self,
+                        _enc: &mut ::buffa::text::TextEncoder<'_>,
+                    ) -> ::core::fmt::Result {
+                        ::core::result::Result::Ok(())
                     }
-                    ::core::result::Result::Ok(())
+                    fn merge_text(
+                        &mut self,
+                        dec: &mut ::buffa::text::TextDecoder<'_>,
+                    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+                        while dec.read_field_name()?.is_some() {
+                            dec.skip_value()?;
+                        }
+                        ::core::result::Result::Ok(())
+                    }
                 }
-            }
-        });
+            },
+            ctx.config.feature_gates().text,
+        ));
     }
 
     let name_ident = format_ident!("{}", rust_name);
@@ -249,43 +255,46 @@ pub(crate) fn generate_text_impl(
         quote! { _enc }
     };
 
-    Ok(quote! {
-        impl ::buffa::text::TextFormat for #name_ident {
-            fn encode_text(
-                &self,
-                #enc_param: &mut ::buffa::text::TextEncoder<'_>,
-            ) -> ::core::fmt::Result {
-                #[allow(unused_imports)]
-                use ::buffa::Enumeration as _;
-                #(#scalar_encode)*
-                #(#repeated_encode)*
-                #(#oneof_encode)*
-                #(#map_encode)*
-                #ext_encode
-                #unknown_encode
-                ::core::result::Result::Ok(())
-            }
-
-            fn merge_text(
-                &mut self,
-                dec: &mut ::buffa::text::TextDecoder<'_>,
-            ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
-                #[allow(unused_imports)]
-                use ::buffa::Enumeration as _;
-                while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
-                    match __name {
-                        #(#scalar_merge)*
-                        #(#repeated_merge)*
-                        #(#oneof_merge)*
-                        #(#map_merge)*
-                        #ext_merge_arm
-                        _ => dec.skip_value()?,
-                    }
+    Ok(crate::feature_gates::cfg_block(
+        quote! {
+            impl ::buffa::text::TextFormat for #name_ident {
+                fn encode_text(
+                    &self,
+                    #enc_param: &mut ::buffa::text::TextEncoder<'_>,
+                ) -> ::core::fmt::Result {
+                    #[allow(unused_imports)]
+                    use ::buffa::Enumeration as _;
+                    #(#scalar_encode)*
+                    #(#repeated_encode)*
+                    #(#oneof_encode)*
+                    #(#map_encode)*
+                    #ext_encode
+                    #unknown_encode
+                    ::core::result::Result::Ok(())
                 }
-                ::core::result::Result::Ok(())
+
+                fn merge_text(
+                    &mut self,
+                    dec: &mut ::buffa::text::TextDecoder<'_>,
+                ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+                    #[allow(unused_imports)]
+                    use ::buffa::Enumeration as _;
+                    while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+                        match __name {
+                            #(#scalar_merge)*
+                            #(#repeated_merge)*
+                            #(#oneof_merge)*
+                            #(#map_merge)*
+                            #ext_merge_arm
+                            _ => dec.skip_value()?,
+                        }
+                    }
+                    ::core::result::Result::Ok(())
+                }
             }
-        }
-    })
+        },
+        ctx.config.feature_gates().text,
+    ))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

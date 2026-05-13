@@ -167,13 +167,16 @@ pub(crate) fn generate_view_with_nesting(
     };
 
     let serialize_impl = if ctx.config.generate_json {
-        generate_view_serialize(
-            view_scope,
-            msg,
-            &view_ident,
-            &view_oneof_prefix,
-            &oneof_idents,
-        )?
+        crate::feature_gates::cfg_block(
+            generate_view_serialize(
+                view_scope,
+                msg,
+                &view_ident,
+                &view_oneof_prefix,
+                &oneof_idents,
+            )?,
+            ctx.config.feature_gates().json,
+        )
     } else {
         quote! {}
     };

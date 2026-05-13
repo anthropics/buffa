@@ -197,9 +197,11 @@ fn generate_message_with_nesting(
     // levels below the package root.
     let oneof_prefix = ancillary_prefix(AncillaryKind::Oneof, current_package, proto_fqn, nesting);
 
+    let gates = ctx.config.feature_gates();
+
     // One `Option<OneofEnum>` field in the struct per non-synthetic oneof.
     let oneof_serde_attr = if ctx.config.generate_json {
-        quote! { #[serde(flatten)] }
+        crate::feature_gates::cfg_attr(quote! { serde(flatten) }, gates.json)
     } else {
         quote! {}
     };
@@ -248,6 +250,38 @@ fn generate_message_with_nesting(
             quote! {}
         };
         let proto_fqn_lit = proto_fqn;
+        // The wrapper struct and its Deref/DerefMut/From impls are
+        // unconditional: encode/decode reach `__buffa_unknown_fields.push(..)`
+        // through `DerefMut`, so the wrapper is part of the message's wire
+        // codec, not just its JSON codec. Only the `Serialize` / `Deserialize`
+        // impls (which reach into `extension_registry`, requiring
+        // `buffa/json`) are feature-gated. This keeps the field's *type*
+        // stable across feature combinations — a struct field can't change
+        // type behind a `cfg`.
+        let serde_impls = crate::feature_gates::cfg_block(
+            quote! {
+                impl ::serde::Serialize for #ext_json_wrapper_ident {
+                    fn serialize<S: ::serde::Serializer>(&self, s: S)
+                        -> ::core::result::Result<S::Ok, S::Error>
+                    {
+                        ::buffa::extension_registry::serialize_extensions(#proto_fqn_lit, &self.0, s)
+                    }
+                }
+            },
+            gates.json,
+        );
+        let serde_de_impl = crate::feature_gates::cfg_block(
+            quote! {
+                impl<'de> ::serde::Deserialize<'de> for #ext_json_wrapper_ident {
+                    fn deserialize<D: ::serde::Deserializer<'de>>(d: D)
+                        -> ::core::result::Result<Self, D::Error>
+                    {
+                        ::buffa::extension_registry::deserialize_extensions(#proto_fqn_lit, d).map(Self)
+                    }
+                }
+            },
+            gates.json,
+        );
         let wrapper = quote! {
             #[doc(hidden)]
             #[derive(Clone, Debug, Default, PartialEq)]
@@ -265,23 +299,12 @@ fn generate_message_with_nesting(
             impl ::core::convert::From<::buffa::UnknownFields> for #ext_json_wrapper_ident {
                 fn from(u: ::buffa::UnknownFields) -> Self { Self(u) }
             }
-            impl ::serde::Serialize for #ext_json_wrapper_ident {
-                fn serialize<S: ::serde::Serializer>(&self, s: S)
-                    -> ::core::result::Result<S::Ok, S::Error>
-                {
-                    ::buffa::extension_registry::serialize_extensions(#proto_fqn_lit, &self.0, s)
-                }
-            }
-            impl<'de> ::serde::Deserialize<'de> for #ext_json_wrapper_ident {
-                fn deserialize<D: ::serde::Deserializer<'de>>(d: D)
-                    -> ::core::result::Result<Self, D::Error>
-                {
-                    ::buffa::extension_registry::deserialize_extensions(#proto_fqn_lit, d).map(Self)
-                }
-            }
+            #serde_impls
+            #serde_de_impl
         };
+        let flatten_attr = crate::feature_gates::cfg_attr(quote! { serde(flatten) }, gates.json);
         let field = quote! {
-            #[serde(flatten)]
+            #flatten_attr
             #[doc(hidden)]
             pub __buffa_unknown_fields: #ext_json_wrapper_ident,
         };
@@ -292,7 +315,7 @@ fn generate_message_with_nesting(
         // and we must `#[serde(skip)]` to exclude the field from JSON; in
         // the former the attribute is harmless (no derive to read it).
         let skip_attr = if ctx.config.generate_json {
-            quote! { #[serde(skip)] }
+            crate::feature_gates::cfg_attr(quote! { serde(skip) }, gates.json)
         } else {
             quote! {}
         };
@@ -382,16 +405,19 @@ fn generate_message_with_nesting(
     // context (same pattern as enum_to_json<E> in extension_registry).
     let (json_any_const, json_any_ident) = if ctx.config.generate_json {
         let ident = format_ident!("__{}_JSON_ANY", upper);
-        let tokens = quote! {
-            #[doc(hidden)]
-            pub const #ident: ::buffa::type_registry::JsonAnyEntry
-                = ::buffa::type_registry::JsonAnyEntry {
-                    type_url: #type_url,
-                    to_json: ::buffa::type_registry::any_to_json::<#name_ident>,
-                    from_json: ::buffa::type_registry::any_from_json::<#name_ident>,
-                    is_wkt: false,
-                };
-        };
+        let tokens = crate::feature_gates::cfg_block(
+            quote! {
+                #[doc(hidden)]
+                pub const #ident: ::buffa::type_registry::JsonAnyEntry
+                    = ::buffa::type_registry::JsonAnyEntry {
+                        type_url: #type_url,
+                        to_json: ::buffa::type_registry::any_to_json::<#name_ident>,
+                        from_json: ::buffa::type_registry::any_from_json::<#name_ident>,
+                        is_wkt: false,
+                    };
+            },
+            gates.json,
+        );
         (tokens, Some(ident))
     } else {
         (quote! {}, None)
@@ -404,32 +430,35 @@ fn generate_message_with_nesting(
     // feature-split maps, so presence in the text map means text-capable.
     let (text_any_const, text_any_ident) = if ctx.config.generate_text {
         let ident = format_ident!("__{}_TEXT_ANY", upper);
-        let tokens = quote! {
-            #[doc(hidden)]
-            pub const #ident: ::buffa::type_registry::TextAnyEntry
-                = ::buffa::type_registry::TextAnyEntry {
-                    type_url: #type_url,
-                    text_encode: ::buffa::type_registry::any_encode_text::<#name_ident>,
-                    text_merge: ::buffa::type_registry::any_merge_text::<#name_ident>,
-                };
-        };
+        let tokens = crate::feature_gates::cfg_block(
+            quote! {
+                #[doc(hidden)]
+                pub const #ident: ::buffa::type_registry::TextAnyEntry
+                    = ::buffa::type_registry::TextAnyEntry {
+                        type_url: #type_url,
+                        text_encode: ::buffa::type_registry::any_encode_text::<#name_ident>,
+                        text_merge: ::buffa::type_registry::any_merge_text::<#name_ident>,
+                    };
+            },
+            gates.text,
+        );
         (tokens, Some(ident))
     } else {
         (quote! {}, None)
     };
 
     let serde_struct_derive = if ctx.config.generate_json {
-        if needs_custom_deserialize {
+        let derives = if needs_custom_deserialize {
             // Only derive Serialize; Deserialize is generated separately.
-            quote! {
-                #[derive(::serde::Serialize)]
-                #[serde(default)]
-            }
+            quote! { derive(::serde::Serialize) }
         } else {
-            quote! {
-                #[derive(::serde::Serialize, ::serde::Deserialize)]
-                #[serde(default)]
-            }
+            quote! { derive(::serde::Serialize, ::serde::Deserialize) }
+        };
+        let derive_attr = crate::feature_gates::cfg_attr(derives, gates.json);
+        let default_attr = crate::feature_gates::cfg_attr(quote! { serde(default) }, gates.json);
+        quote! {
+            #derive_attr
+            #default_attr
         }
     } else {
         quote! {}
@@ -444,15 +473,18 @@ fn generate_message_with_nesting(
     let custom_message_attrs =
         CodeGenContext::matching_attributes(&ctx.config.message_attributes, proto_fqn)?;
     let custom_deserialize = if needs_custom_deserialize {
-        generate_custom_deserialize(
-            scope,
-            msg,
-            &name_ident,
-            &oneof_prefix,
-            resolver,
-            has_extension_ranges,
-            &oneof_idents,
-        )?
+        crate::feature_gates::cfg_block(
+            generate_custom_deserialize(
+                scope,
+                msg,
+                &name_ident,
+                &oneof_prefix,
+                resolver,
+                has_extension_ranges,
+                &oneof_idents,
+            )?,
+            gates.json,
+        )
     } else {
         quote! {}
     };
@@ -460,21 +492,24 @@ fn generate_message_with_nesting(
     // ProtoElemJson impl for use in proto_seq / proto_map containers.
     // Delegates to the derived/generated Serialize + Deserialize.
     let proto_elem_json_impl = if ctx.config.generate_json {
-        quote! {
-            impl ::buffa::json_helpers::ProtoElemJson for #name_ident {
-                fn serialize_proto_json<S: ::serde::Serializer>(
-                    v: &Self,
-                    s: S,
-                ) -> ::core::result::Result<S::Ok, S::Error> {
-                    ::serde::Serialize::serialize(v, s)
+        crate::feature_gates::cfg_block(
+            quote! {
+                impl ::buffa::json_helpers::ProtoElemJson for #name_ident {
+                    fn serialize_proto_json<S: ::serde::Serializer>(
+                        v: &Self,
+                        s: S,
+                    ) -> ::core::result::Result<S::Ok, S::Error> {
+                        ::serde::Serialize::serialize(v, s)
+                    }
+                    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                        d: D,
+                    ) -> ::core::result::Result<Self, D::Error> {
+                        <Self as ::serde::Deserialize>::deserialize(d)
+                    }
                 }
-                fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                    d: D,
-                ) -> ::core::result::Result<Self, D::Error> {
-                    <Self as ::serde::Deserialize>::deserialize(d)
-                }
-            }
-        }
+            },
+            gates.json,
+        )
     } else {
         quote! {}
     };
@@ -814,12 +849,16 @@ fn collect_natural_reexports(
     }
 
     if ctx.config.generate_views {
+        let views_gate = ctx.config.feature_gates().views;
         // Nested-message views: `__buffa::view::<msg>::BarView` → `BarView`.
         for nested in non_map_nested {
             let view_ident = format_ident!("{}View", nested.name.as_deref().unwrap_or(""));
             candidates.push(ReexportCandidate {
                 name: view_ident.to_string(),
-                tokens: quote! { #inline pub use #view_prefix #view_ident; },
+                tokens: crate::feature_gates::cfg_block(
+                    quote! { #inline pub use #view_prefix #view_ident; },
+                    views_gate,
+                ),
             });
         }
         // View oneof enums: `__buffa::view::oneof::<msg>::Kind` → `KindView`.
@@ -827,7 +866,10 @@ fn collect_natural_reexports(
             let view_ident = format_ident!("{}View", enum_ident);
             candidates.push(ReexportCandidate {
                 name: view_ident.to_string(),
-                tokens: quote! { #inline pub use #view_oneof_prefix #enum_ident as #view_ident; },
+                tokens: crate::feature_gates::cfg_block(
+                    quote! { #inline pub use #view_oneof_prefix #enum_ident as #view_ident; },
+                    views_gate,
+                ),
             });
         }
     }
@@ -1959,9 +2001,10 @@ fn serde_field_attr(
         quote! {}
     };
 
-    quote! {
-        #[serde(rename = #json_name #alias_part #with_part #skip_part #deser_part)]
-    }
+    crate::feature_gates::cfg_attr(
+        quote! { serde(rename = #json_name #alias_part #with_part #skip_part #deser_part) },
+        ctx.config.feature_gates().json,
+    )
 }
 
 /// Generate a custom `impl Default` for a message when any non-optional field
