@@ -46,6 +46,291 @@ fn test_wkt_auto_mapping_suppressed_by_exact_match() {
         .any(|(p, r)| p == ".google.protobuf" && r == "::my_wkts"));
 }
 
+// ── File-level extern paths (descriptor.proto → buffa-descriptor) ────────
+
+#[test]
+fn test_file_extern_paths_default_injection() {
+    let config = CodeGenConfig::default();
+    let file_paths = effective_file_extern_paths(&[], &config);
+    assert_eq!(
+        file_paths,
+        vec![
+            (
+                "google/protobuf/descriptor.proto".to_string(),
+                "::buffa_descriptor::generated::descriptor".to_string(),
+            ),
+            (
+                "google/protobuf/compiler/plugin.proto".to_string(),
+                "::buffa_descriptor::generated::compiler".to_string(),
+            ),
+        ],
+    );
+}
+
+#[test]
+fn test_file_extern_paths_suppressed_by_user_wkt_override() {
+    // A user `.google.protobuf` override has covered descriptor types
+    // since the package-level mapping was introduced. Auto-injecting a
+    // higher-priority file-level mapping would silently redirect them
+    // away from the user's crate — preserve the old behaviour.
+    let config = CodeGenConfig {
+        extern_paths: vec![(".google.protobuf".into(), "::my_wkts".into())],
+        ..Default::default()
+    };
+    let file_paths = effective_file_extern_paths(&[], &config);
+    assert!(
+        file_paths.is_empty(),
+        "user .google.protobuf override must suppress descriptor file-level mapping"
+    );
+}
+
+#[test]
+fn test_file_extern_paths_sub_package_override_suppresses_only_covered_file() {
+    // A `.google.protobuf.compiler` sub-package override covers
+    // `plugin.proto` (package `google.protobuf.compiler`) but NOT
+    // `descriptor.proto` (package `google.protobuf`). The file-level
+    // mapping must yield to the user override only for the file it
+    // actually covers — the same per-package precedence the WKT
+    // package-level mapping uses.
+    let config = CodeGenConfig {
+        extern_paths: vec![(
+            ".google.protobuf.compiler".into(),
+            "::compiler_protos".into(),
+        )],
+        ..Default::default()
+    };
+    let file_paths = effective_file_extern_paths(&[], &config);
+    assert!(
+        file_paths
+            .iter()
+            .any(|(f, _)| f == "google/protobuf/descriptor.proto"),
+        "sub-package override for compiler must not suppress descriptor.proto file-level mapping"
+    );
+    assert!(
+        !file_paths
+            .iter()
+            .any(|(f, _)| f == "google/protobuf/compiler/plugin.proto"),
+        "sub-package override for compiler must suppress plugin.proto file-level mapping"
+    );
+}
+
+#[test]
+fn test_file_extern_paths_suppressed_when_generating_descriptor_proto() {
+    // When building buffa-descriptor itself (descriptor.proto is in
+    // files_to_generate), its types must resolve to the local module — the
+    // file-level mapping is suppressed for that file. plugin.proto is
+    // suppressed independently.
+    let config = CodeGenConfig::default();
+    let file_paths =
+        effective_file_extern_paths(&["google/protobuf/descriptor.proto".to_string()], &config);
+    assert!(
+        !file_paths
+            .iter()
+            .any(|(f, _)| f == "google/protobuf/descriptor.proto"),
+        "must not externalize descriptor.proto when generating it locally"
+    );
+    assert!(
+        file_paths
+            .iter()
+            .any(|(f, _)| f == "google/protobuf/compiler/plugin.proto"),
+        "plugin.proto suppression is independent of descriptor.proto"
+    );
+}
+
+#[test]
+fn test_descriptor_enum_field_resolves_to_buffa_descriptor() {
+    // Regression: a proto referencing `google.protobuf.FieldDescriptorProto.Type`
+    // (which `buf/validate/validate.proto` does) must resolve to
+    // `::buffa_descriptor::generated::descriptor::field_descriptor_proto::Type`,
+    // not `::buffa_types::google::protobuf::field_descriptor_proto::Type` —
+    // the latter doesn't exist (`buffa-types` only ships the JSON-mappable
+    // WKTs, not descriptor.proto types).
+    //
+    // The descriptor file is an *import* (in `files`, not `files_to_generate`)
+    // — exactly how protoc surfaces it for any proto that
+    // `import "google/protobuf/descriptor.proto"`.
+    let mut descriptor_file = proto3_file("google/protobuf/descriptor.proto");
+    descriptor_file.package = Some("google.protobuf".to_string());
+    descriptor_file.message_type.push(DescriptorProto {
+        name: Some("FieldDescriptorProto".to_string()),
+        enum_type: vec![EnumDescriptorProto {
+            name: Some("Type".to_string()),
+            value: vec![enum_value("TYPE_DOUBLE", 1)],
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+
+    let mut user_file = proto3_file("my/uses_descriptor.proto");
+    user_file.package = Some("my".to_string());
+    user_file.dependency = vec!["google/protobuf/descriptor.proto".to_string()];
+    user_file.message_type.push(DescriptorProto {
+        name: Some("Wraps".to_string()),
+        field: vec![FieldDescriptorProto {
+            name: Some("field_type".to_string()),
+            number: Some(1),
+            label: Some(Label::LABEL_OPTIONAL),
+            r#type: Some(Type::TYPE_ENUM),
+            type_name: Some(".google.protobuf.FieldDescriptorProto.Type".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+
+    let files = generate(
+        &[descriptor_file, user_file],
+        &["my/uses_descriptor.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let content = joined(&files);
+    assert!(
+        content.contains("::buffa_descriptor::generated::descriptor::field_descriptor_proto::Type"),
+        "descriptor enum field must resolve to buffa-descriptor: {content}"
+    );
+    assert!(
+        !content.contains("::buffa_types::google::protobuf::field_descriptor_proto::Type"),
+        "descriptor enum field must not resolve to buffa-types (does not exist): {content}"
+    );
+}
+
+#[test]
+fn test_user_wkt_override_still_covers_descriptor_types() {
+    // Backward-compat: an explicit user `.google.protobuf` extern_path
+    // covers `descriptor.proto` types too — the file-level descriptor
+    // mapping must yield to it.
+    let mut descriptor_file = proto3_file("google/protobuf/descriptor.proto");
+    descriptor_file.package = Some("google.protobuf".to_string());
+    descriptor_file.message_type.push(DescriptorProto {
+        name: Some("FieldDescriptorProto".to_string()),
+        enum_type: vec![EnumDescriptorProto {
+            name: Some("Type".to_string()),
+            value: vec![enum_value("TYPE_DOUBLE", 1)],
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+
+    let mut user_file = proto3_file("my/uses_descriptor.proto");
+    user_file.package = Some("my".to_string());
+    user_file.dependency = vec!["google/protobuf/descriptor.proto".to_string()];
+    user_file.message_type.push(DescriptorProto {
+        name: Some("Wraps".to_string()),
+        field: vec![FieldDescriptorProto {
+            name: Some("field_type".to_string()),
+            number: Some(1),
+            label: Some(Label::LABEL_OPTIONAL),
+            r#type: Some(Type::TYPE_ENUM),
+            type_name: Some(".google.protobuf.FieldDescriptorProto.Type".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+
+    let config = CodeGenConfig {
+        extern_paths: vec![(".google.protobuf".into(), "::my_wkts".into())],
+        ..Default::default()
+    };
+    let files = generate(
+        &[descriptor_file, user_file],
+        &["my/uses_descriptor.proto".to_string()],
+        &config,
+    )
+    .expect("should generate");
+    let content = joined(&files);
+    assert!(
+        content.contains("::my_wkts::field_descriptor_proto::Type"),
+        "user .google.protobuf override must cover descriptor types: {content}"
+    );
+    assert!(
+        !content.contains("::buffa_descriptor"),
+        "auto-injected descriptor mapping must yield to user override: {content}"
+    );
+}
+
+/// Build the synthetic `compiler/plugin.proto` import + a user proto that
+/// references `google.protobuf.compiler.CodeGeneratorRequest` as a field.
+/// Shared by the plugin.proto routing tests below.
+fn plugin_proto_fixture() -> (FileDescriptorProto, FileDescriptorProto) {
+    let mut plugin_file = proto3_file("google/protobuf/compiler/plugin.proto");
+    plugin_file.package = Some("google.protobuf.compiler".to_string());
+    plugin_file.message_type.push(DescriptorProto {
+        name: Some("CodeGeneratorRequest".to_string()),
+        ..Default::default()
+    });
+
+    let mut user_file = proto3_file("my/uses_plugin.proto");
+    user_file.package = Some("my".to_string());
+    user_file.dependency = vec!["google/protobuf/compiler/plugin.proto".to_string()];
+    user_file.message_type.push(DescriptorProto {
+        name: Some("Wraps".to_string()),
+        field: vec![FieldDescriptorProto {
+            name: Some("req".to_string()),
+            number: Some(1),
+            label: Some(Label::LABEL_OPTIONAL),
+            r#type: Some(Type::TYPE_MESSAGE),
+            type_name: Some(".google.protobuf.compiler.CodeGeneratorRequest".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+
+    (plugin_file, user_file)
+}
+
+#[test]
+fn test_plugin_proto_message_field_resolves_to_buffa_descriptor() {
+    // `google.protobuf.compiler.*` is in a sub-package of `google.protobuf`,
+    // so the package-level WKT mapping would route it to
+    // `::buffa_types::google::protobuf::compiler::*` (which doesn't exist).
+    // The file-level mapping must route it to
+    // `::buffa_descriptor::generated::compiler::*` instead.
+    let (plugin_file, user_file) = plugin_proto_fixture();
+    let files = generate(
+        &[plugin_file, user_file],
+        &["my/uses_plugin.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let content = joined(&files);
+    assert!(
+        content.contains("::buffa_descriptor::generated::compiler::CodeGeneratorRequest"),
+        "plugin.proto types must resolve to buffa-descriptor: {content}"
+    );
+    assert!(
+        !content.contains("::buffa_types::google::protobuf::compiler"),
+        "plugin.proto types must not resolve to buffa-types (does not exist): {content}"
+    );
+}
+
+#[test]
+fn test_user_compiler_sub_package_override_still_covers_plugin_types() {
+    // Backward-compat: a user `.google.protobuf.compiler` extern_path covers
+    // `plugin.proto` types — the file-level mapping must yield to it. This
+    // is the per-file analogue of the `.google.protobuf` override test
+    // above: a sub-package mapping suppresses only the file it covers.
+    let (plugin_file, user_file) = plugin_proto_fixture();
+    let config = CodeGenConfig {
+        extern_paths: vec![(".google.protobuf.compiler".into(), "::my_compiler".into())],
+        ..Default::default()
+    };
+    let files = generate(
+        &[plugin_file, user_file],
+        &["my/uses_plugin.proto".to_string()],
+        &config,
+    )
+    .expect("should generate");
+    let content = joined(&files);
+    assert!(
+        content.contains("::my_compiler::CodeGeneratorRequest"),
+        "user .google.protobuf.compiler override must cover plugin types: {content}"
+    );
+    assert!(
+        !content.contains("::buffa_descriptor"),
+        "auto-injected plugin mapping must yield to user override: {content}"
+    );
+}
+
 #[test]
 fn test_empty_file() {
     let file = proto3_file("empty.proto");

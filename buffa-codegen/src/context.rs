@@ -88,10 +88,42 @@ impl<'a> CodeGenContext<'a> {
     /// `effective_extern_paths` includes both user-provided mappings and any
     /// auto-injected defaults (e.g., the WKT mapping). These are computed by
     /// `crate::effective_extern_paths` before calling this constructor.
+    ///
+    /// File-level extern resolution (currently only `descriptor.proto` /
+    /// `compiler/plugin.proto` → `buffa-descriptor`) is **not** applied by
+    /// this constructor — use [`for_generate`](Self::for_generate), which
+    /// computes and passes the file-level mappings, when generating code
+    /// that may reference descriptor types.
     pub fn new(
         files: &'a [FileDescriptorProto],
         config: &'a CodeGenConfig,
         effective_extern_paths: &[(String, String)],
+    ) -> Self {
+        Self::with_extern_resolution(files, config, effective_extern_paths, &[])
+    }
+
+    /// Build a context with both package-level and file-level extern
+    /// mappings.
+    ///
+    /// `file_extern_paths` maps a `.proto` file's full path (as reported in
+    /// `FileDescriptorProto.name`, e.g. `"google/protobuf/descriptor.proto"`)
+    /// to a Rust module root. It takes priority over package-level
+    /// `effective_extern_paths`, which lets two files in the same proto
+    /// package (`google.protobuf`) resolve to different external crates —
+    /// `descriptor.proto` types to `buffa-descriptor`, every other
+    /// `google.protobuf` WKT to `buffa-types`. Without this split a single
+    /// package-keyed mapping would route everything to one crate or the
+    /// other.
+    ///
+    /// File-level mappings are an internal mechanism used for the
+    /// auto-injected descriptor-types routing. They are not part of the
+    /// public `CodeGenConfig` API; user-facing `extern_path` entries remain
+    /// package-prefix keyed.
+    pub(crate) fn with_extern_resolution(
+        files: &'a [FileDescriptorProto],
+        config: &'a CodeGenConfig,
+        effective_extern_paths: &[(String, String)],
+        file_extern_paths: &[(String, String)],
     ) -> Self {
         let mut type_map = HashMap::new();
         let mut package_of = HashMap::new();
@@ -108,14 +140,22 @@ impl<'a> CodeGenContext<'a> {
                 format!(".{}.", package)
             };
 
-            // Check if this file's package matches an extern_path.
-            // If so, types are registered with the extern Rust path prefix.
-            let rust_module =
-                if let Some(rust_root) = resolve_extern_prefix(package, effective_extern_paths) {
-                    rust_root
-                } else {
-                    package.replace('.', "::")
-                };
+            // Resolution priority: file-level extern → package-level extern →
+            // local module path. The file-level check must come first so two
+            // files in the same proto package can route to different crates
+            // (descriptor.proto → buffa-descriptor, timestamp.proto →
+            // buffa-types).
+            let rust_module = if let Some(rust_root) = file
+                .name
+                .as_deref()
+                .and_then(|n| resolve_file_extern(n, file_extern_paths))
+            {
+                rust_root.to_string()
+            } else if let Some(rust_root) = resolve_extern_prefix(package, effective_extern_paths) {
+                rust_root
+            } else {
+                package.replace('.', "::")
+            };
 
             // Register top-level messages
             for msg in &file.message_type {
@@ -183,7 +223,9 @@ impl<'a> CodeGenContext<'a> {
     /// internally.
     ///
     /// Computes effective extern paths (user-provided + auto-injected WKT
-    /// mapping to `buffa-types`) and builds the type map from them.
+    /// mapping to `buffa-types` + auto-injected `descriptor.proto` /
+    /// `compiler/plugin.proto` file-level mapping to `buffa-descriptor`) and
+    /// builds the type map from them.
     ///
     /// Convenience for downstream generators (e.g. `connectrpc-codegen`)
     /// that emit code alongside buffa's message types and need identical
@@ -196,7 +238,8 @@ impl<'a> CodeGenContext<'a> {
         config: &'a CodeGenConfig,
     ) -> Self {
         let paths = crate::effective_extern_paths(files, files_to_generate, config);
-        Self::new(files, config, &paths)
+        let file_paths = crate::effective_file_extern_paths(files_to_generate, config);
+        Self::with_extern_resolution(files, config, &paths, &file_paths)
     }
 
     /// Look up the Rust type path for a fully-qualified protobuf type name.
@@ -628,13 +671,38 @@ pub(crate) fn matches_proto_prefix(prefix: &str, fqn_dotted: &str) -> bool {
             && fqn_dotted.as_bytes().get(prefix.len()) == Some(&b'.'))
 }
 
+/// Look up a file-level extern mapping by exact proto file path.
+///
+/// Unlike [`resolve_extern_prefix`], this does no prefix or package
+/// arithmetic — file-level mappings are auto-injected for a known closed set
+/// of bootstrap protos (`descriptor.proto`, `compiler/plugin.proto`) whose
+/// types live in a different crate (`buffa-descriptor`) than the rest of the
+/// `google.protobuf` package (`buffa-types`). The mapped Rust module is the
+/// root of that file's generated module, with no further suffix.
+fn resolve_file_extern<'p>(
+    file_name: &str,
+    file_extern_paths: &'p [(String, String)],
+) -> Option<&'p str> {
+    file_extern_paths
+        .iter()
+        .find(|(name, _)| name == file_name)
+        .map(|(_, rust)| rust.as_str())
+}
+
 /// Check if a proto package matches any extern_path prefix.
 ///
 /// Returns the Rust module path root if matched, including any remaining
 /// package segments converted to `snake_case` modules. For example,
 /// extern_path `(".my", "::my_crate")` with package `"my.sub.pkg"` returns
 /// `"::my_crate::sub::pkg"`.
-fn resolve_extern_prefix(package: &str, extern_paths: &[(String, String)]) -> Option<String> {
+///
+/// `pub(crate)`: also called from `crate::effective_file_extern_paths` to
+/// suppress an auto-injected file-level mapping when a user package-level
+/// extern_path already covers that file's package.
+pub(crate) fn resolve_extern_prefix(
+    package: &str,
+    extern_paths: &[(String, String)],
+) -> Option<String> {
     let dotted = format!(".{}", package);
 
     // Try longest prefix first so that more specific mappings take priority
@@ -1193,6 +1261,30 @@ mod tests {
     }
 
     // ── Extern path tests ─────────────────────────────────────────────
+
+    #[test]
+    fn test_resolve_file_extern_exact_match_only() {
+        let mappings = [(
+            "google/protobuf/descriptor.proto".to_string(),
+            "::buffa_descriptor::generated::descriptor".to_string(),
+        )];
+        // Exact file path matches.
+        assert_eq!(
+            resolve_file_extern("google/protobuf/descriptor.proto", &mappings),
+            Some("::buffa_descriptor::generated::descriptor"),
+        );
+        // No prefix matching — a sibling file in the same directory does
+        // not match (its types live in a different generated module).
+        assert_eq!(
+            resolve_file_extern("google/protobuf/timestamp.proto", &mappings),
+            None,
+        );
+        // No suffix matching either.
+        assert_eq!(
+            resolve_file_extern("vendor/google/protobuf/descriptor.proto", &mappings),
+            None,
+        );
+    }
 
     #[test]
     fn test_resolve_extern_prefix_exact_match() {
