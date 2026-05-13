@@ -113,11 +113,25 @@
 // remain `ignore` — the fixture boilerplate would exceed the example.
 
 // Re-exported for use in generated code so that downstream crates only need
-// to depend on `buffa`, not on `alloc` or `bytes` directly.
+// to depend on `buffa`, not on `alloc`, `bytes`, or `serde_json` directly.
 #[doc(hidden)]
 pub extern crate alloc;
 #[doc(hidden)]
 pub use ::bytes;
+// Generated `Deserialize` impls for messages with extension ranges buffer
+// `"[pkg.ext]"` JSON keys into a `serde_json::Value` before dispatching to
+// `extension_registry::deserialize_extension_key`. Re-export so that path
+// resolves without the consumer adding `serde_json` to its own `Cargo.toml`.
+//
+// `serde` is *not* re-exported: the `#[derive(::serde::Serialize)]` macro
+// emits `extern crate serde as _serde;` by default, so the consumer crate
+// must depend on `serde` directly. Routing it through a re-export would
+// require stamping `#[serde(crate = "::buffa::serde")]` on every generated
+// derive (and rewriting every other emitted `::serde::` path) — feasible,
+// but not done. Keep `serde` in the documented consumer requirements.
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub use ::serde_json;
 
 /// Include the generated stitcher for a proto **package** from `OUT_DIR`.
 ///

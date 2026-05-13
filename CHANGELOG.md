@@ -6,7 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `serde::Serialize` is now implemented for generated view types when `generate_json` is
+  enabled, allowing zero-copy JSON serialization without `.to_owned_message()`.
+  `OwnedView<V>` also gains a blanket `Serialize` impl so `serde_json::to_string(&owned_view)`
+  works directly. Well-known type views (`TimestampView`, `DurationView`, `AnyView`, etc.)
+  also implement `Serialize` (delegating to the owned form) when the `buffa-types/json`
+  feature is enabled, so messages that nest WKT fields work out of the box. `MapView` gains
+  `iter_unique()` and `len_unique()` helpers (last-write-wins deduplication) so map fields
+  with duplicate wire keys serialize to a valid JSON object. The protobuf conformance suite
+  gains a `BUFFA_VIEW_JSON=1` run that exercises view-side JSON output against the
+  conformance reference assertions.
+  **Known limitations:** (1) Extension fields are not included in view JSON output —
+  serialize the owned form (`view.to_owned_message()`) to include extensions. (2) The view
+  impl uses `serialize_map(None)`, which is fine for `serde_json` but will be rejected at
+  runtime by length-prefixed formats like `bincode` or `postcard`; use the owned form for
+  those serializers. ([#83](https://github.com/anthropics/buffa/issues/83))
+
 ### Fixed
+
+- **`buffa` / `buffa-codegen`: `serde_json` re-exported from `buffa` for
+  generated extension JSON deserialize.** Messages with `extensions N to M;`
+  ranges and `json=true` codegen get a hand-written `Deserialize` impl that
+  buffers `"[pkg.ext]"` JSON keys into a `serde_json::Value` before
+  dispatching to `extension_registry::deserialize_extension_key`. The emitted
+  path was a bare `::serde_json::Value`, which silently required every
+  consumer of `json=true` codegen to declare `serde_json` directly in its own
+  `Cargo.toml` — a footgun reported by Buf for `bufbuild_registry_*` SDKs
+  generated against `buf/validate/validate.proto` (which has 21 extension
+  ranges). `buffa` now re-exports `serde_json` (gated on the `json` feature,
+  `#[doc(hidden)]`, matching the existing `bytes` re-export) and codegen
+  emits `::buffa::serde_json::Value`, so consumers only need `buffa`,
+  `buffa-types`, and `serde` (the latter for the `#[derive]` macro). No
+  generated output exists for this path in the checked-in WKTs (none declare
+  extension ranges), so no regen.
 
 - **`buffa-codegen`: `descriptor.proto` types now resolve to
   `buffa-descriptor`, not `buffa-types`.** The auto-injected WKT
@@ -31,6 +65,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   fields must add `buffa-descriptor` to their `[dependencies]`** — the
   same way protos that reference WKTs require `buffa-types`. The
   user-facing `extern_path` API is unchanged (still package-prefix keyed).
+
+### Changed
+
+- **`buffa-codegen`: empty ancillary content files and modules are no
+  longer emitted.** A `.proto` with no oneofs / no extension declarations
+  / `views=false` previously produced placeholder
+  `<stem>.__oneof.rs` / `<stem>.__ext.rs` / `<stem>.__view.rs` /
+  `<stem>.__view_oneof.rs` files containing only the `@generated` header,
+  and the package stitcher unconditionally authored a
+  `pub mod __buffa { pub mod oneof { ... } pub mod ext { ... } ... }`
+  tree that `include!`d them. Codegen now omits an ancillary content file
+  when it would be empty, the stitcher only `include!`s files that exist,
+  and the `__buffa` wrapper (and each `view` / `oneof` / `ext` submodule
+  inside it) is itself omitted when it would be empty — so a package with
+  only owned messages emits no `__buffa` block at all. Eliminates pure
+  noise in generated trees, editor file lists, search, and review diffs.
+  **Consumers with checked-in generated code** will see file deletions
+  and stitcher diffs on regeneration; remove orphaned empty files. The
+  `__buffa::*` paths are an internal sentinel namespace (consumers reach
+  for the natural-path re-exports added in 0.5.0), so no supported public
+  surface changes — but a hand-written
+  `use crate::pkg::__buffa::oneof::*;` for a package that has no oneofs
+  would now fail to resolve (it was previously a no-op import of an
+  empty module). ([#107](https://github.com/anthropics/buffa/pull/107))
 
 ## [0.5.2] - 2026-05-07
 

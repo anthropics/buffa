@@ -243,9 +243,9 @@ Oneof and view-oneof enums drop the `Oneof`/`View` suffix — the tree position 
 
 This makes name collisions **structurally impossible**: a oneof `kind` and a nested message `Kind` can coexist because they land in different trees. There is no suffix-escalation or rename escape hatch; codegen emits proto names verbatim.
 
-**File layout — five content files + one stitcher:**
+**File layout — up to five content files + one stitcher:**
 
-Each `.proto` emits five sibling content files into `OUT_DIR`:
+Each `.proto` emits up to five sibling content files into `OUT_DIR`:
 
 | File                      | Contents                                  |
 |---------------------------|-------------------------------------------|
@@ -255,7 +255,9 @@ Each `.proto` emits five sibling content files into `OUT_DIR`:
 | `<stem>.__view_oneof.rs`  | View oneof enums                          |
 | `<stem>.__ext.rs`         | File-level extension consts               |
 
-Each proto **package** additionally emits one `<dotted.pkg>.mod.rs` stitcher that `include!`s the content files and authors the `pub mod __buffa { … }` wrapper. Consumers wire up only the stitcher:
+A content file is emitted only when its kind has real content for that input — a proto with no oneofs emits no `__oneof.rs` / `__view_oneof.rs`, a proto with no `extend` blocks emits no `__ext.rs`, and so on. The stitcher's `include!` set is filtered to match.
+
+Each proto **package** additionally emits one `<dotted.pkg>.mod.rs` stitcher that `include!`s the content files and authors the `pub mod __buffa { … }` wrapper. The wrapper — and each `view` / `oneof` / `ext` submodule inside it — is omitted when it would have no items, so packages that contain only owned messages don't carry an empty `__buffa` block. Consumers wire up only the stitcher:
 
 ```rust,ignore
 pub mod my_pkg {
@@ -265,7 +267,7 @@ pub mod my_pkg {
 
 `buffa::include_proto_relative!("dir", "my.pkg")` does the same for checked-in generated code (no `OUT_DIR`). `buffa-build`'s `_include.rs` and `protoc-gen-buffa-packaging` both emit module trees that reference only the stitchers.
 
-The per-proto content files mean editing one `.proto` regenerates only its five siblings (incremental friendly); the per-package stitcher means `register_types` is naturally one fn per package, so multi-file packages (e.g. seven WKT files in `google.protobuf`) no longer collide.
+The per-proto content files mean editing one `.proto` regenerates only its siblings (incremental friendly); the per-package stitcher means `register_types` is naturally one fn per package, so multi-file packages (e.g. seven WKT files in `google.protobuf`) no longer collide.
 
 **Natural-path re-exports.** The canonical `__buffa::` path is unconditional — generated method signatures, field types, and downstream codegen always use it. As an ergonomic convenience codegen *also* emits a `pub use` for each ancillary item at the path a Rust user would reach for first, mirroring the pre-`__buffa` (and prost) layout:
 

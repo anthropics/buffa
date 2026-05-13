@@ -38,10 +38,21 @@ run_suite nostd \
     /usr/local/bin/buffa-conformance-nostd
 
 # Via-view mode: routes binary input through decode_view → to_owned_message.
-# JSON and text I/O are skipped (views have no serde or TextFormat).
+# JSON output and text I/O are skipped (covered by the std and view-json runs).
 # Verifies owned/view decoder parity.
 BUFFA_VIA_VIEW=1 run_suite view \
     conformance_test_runner \
     --failure_list /known_failures_view.txt \
+    --maximum_edition 2024 \
+    /usr/local/bin/buffa-conformance
+
+# View-JSON mode: serves binary input + JSON output requests via
+# decode_view → serde_json::to_string(&view). Exercises the generated view
+# Serialize impls (and WKT view Serialize impls in buffa-types) against the
+# conformance reference assertions, independently of the owned encoder.
+# JSON input, binary output, and text format are skipped.
+BUFFA_VIEW_JSON=1 run_suite view-json \
+    conformance_test_runner \
+    --failure_list /known_failures_view_json.txt \
     --maximum_edition 2024 \
     /usr/local/bin/buffa-conformance

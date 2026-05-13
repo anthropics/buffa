@@ -118,6 +118,12 @@ fn json_no_views() -> CodeGenConfig {
     c
 }
 
+fn json_with_views() -> CodeGenConfig {
+    let mut c = CodeGenConfig::default();
+    c.generate_json = true;
+    c
+}
+
 // ── Tests using shared proto files from buffa-test/protos/ ──────────────
 
 #[test]
@@ -852,4 +858,118 @@ fn inline_empty_message_no_unknown_fields() {
     );
     assert!(content.contains("pub struct Empty"));
     assert!(!content.contains("__buffa_unknown_fields"));
+}
+
+// ── View Serialize codegen tests ────────────────────────────────────────
+
+#[test]
+fn test_view_serialize_impl_emitted_when_json_enabled() {
+    let files = generate_for("json_types.proto", &json_with_views());
+    let combined = files
+        .iter()
+        .map(|f| f.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        combined.contains("impl<'__a> ::serde::Serialize for"),
+        "view Serialize impl must be emitted when generate_json=true: {combined}"
+    );
+    for file in &files {
+        syn::parse_file(&file.content).unwrap_or_else(|e| {
+            panic!(
+                "generated file must parse ({}): {e}\n---\n{}",
+                file.package, file.content
+            )
+        });
+    }
+}
+
+#[test]
+fn test_view_serialize_not_emitted_when_json_disabled() {
+    // CodeGenConfig::default() has generate_views=true, generate_json=false.
+    let files = generate_for("json_types.proto", &CodeGenConfig::default());
+    let combined = files
+        .iter()
+        .map(|f| f.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        !combined.contains("impl<'__a> ::serde::Serialize for"),
+        "view Serialize impl must NOT be emitted when generate_json=false"
+    );
+}
+
+#[test]
+fn test_view_serialize_json_helpers_used() {
+    // Verify that int64 and bytes fields in a view use json_helpers paths.
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Item {
+          int64 id = 1;
+          bytes data = 2;
+          double score = 3;
+        }
+        "#,
+        &json_with_views(),
+    );
+    assert!(
+        content.contains("json_helpers"),
+        "view Serialize must use json_helpers for int64/bytes/double: {content}"
+    );
+    syn::parse_file(&content).expect("generated content must parse");
+}
+
+#[test]
+fn test_view_serialize_map_keys_stringified() {
+    // Protobuf JSON requires map keys to be JSON strings. The view Serialize
+    // impl must emit an explicit `_WK` newtype with `collect_str` for
+    // non-string scalar keys, mirroring the owned-side `DisplayKey` wrapper —
+    // not rely on the serializer's `MapKeySerializer` to stringify primitives
+    // (which only `serde_json` does).
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Maps {
+          map<int64, string> by_id = 1;
+          map<bool, string> by_flag = 2;
+          map<string, string> by_name = 3;
+        }
+        "#,
+        &json_with_views(),
+    );
+    syn::parse_file(&content).expect("generated content must parse");
+    assert!(
+        content.contains("collect_str"),
+        "non-string map keys must be stringified via collect_str: {content}"
+    );
+}
+
+#[test]
+fn test_view_serialize_proto2_required_multi_field_parses() {
+    // Regression: proto2 required fields with helper-typed scalars previously
+    // emitted `struct _W` at fn scope without a wrapping block, causing E0428
+    // (duplicate definition) when two or more such fields appeared in one message.
+    // This test asserts the generated output parses (syntax-level regression guard).
+    let content = generate_proto(
+        r#"
+        syntax = "proto2";
+        package test;
+        message TwoRequired {
+          required int64 a = 1;
+          required bytes b = 2;
+          required int64 c = 3;
+        }
+        "#,
+        &json_with_views(),
+    );
+    syn::parse_file(&content)
+        .expect("proto2 required multi-field view Serialize must produce parseable output");
+    // Each required field must be serialized unconditionally (no skip_if).
+    assert!(
+        content.contains("impl<'__a> ::serde::Serialize for TwoRequiredView"),
+        "view Serialize impl must be emitted: {content}"
+    );
 }

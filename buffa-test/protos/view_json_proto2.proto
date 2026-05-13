@@ -1,0 +1,48 @@
+// Proto2 companion to `view_json.proto`: exercises proto2-specific branches
+// in `generate_view_serialize` — `required` fields (always emitted, and the
+// `_W` block-scoping fix for adjacent required helper-typed fields), proto2
+// `optional` (explicit presence), and closed enums.
+
+syntax = "proto2";
+
+package test.viewjson.p2;
+
+// Closed enum without a 0 value (allowed in proto2 for non-map fields).
+enum Tier {
+  BRONZE = 1;
+  SILVER = 2;
+  GOLD = 3;
+}
+
+// Closed enum with a 0 value, usable as a map value type.
+enum Status {
+  STATUS_UNKNOWN = 0;
+  ACTIVE = 1;
+  INACTIVE = 2;
+}
+
+// Three adjacent `required` fields with serde-helper-typed scalars regress
+// the `_W` newtype block-scoping fix in `generate_view_serialize`.
+message AllRequired {
+  required int64 a = 1;
+  required bytes b = 2;
+  required uint64 c = 3;
+  required double d = 4;
+  required string e = 5;
+  required Tier tier = 6;
+}
+
+message Optionals {
+  optional int64 i64 = 1;
+  optional bytes by = 2;
+  optional double f64 = 3;
+  optional string s = 4;
+  optional Tier tier = 5;
+}
+
+message WithCollections {
+  repeated Tier tiers = 1;
+  repeated int64 nums = 2;
+  map<string, Status> by_name = 3;
+  map<int32, bytes> blobs = 4;
+}
