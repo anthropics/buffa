@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **`buf.build/anthropics/buffa` is published to the public Buf Schema
+  Registry.** `buf generate` can now reference `protoc-gen-buffa` as a
+  `remote:` plugin with no local install: `remote: buf.build/anthropics/buffa`
+  with `opt: [file_per_package=true]` and a small hand-written `pub mod`
+  tree, or paired with a locally-installed `protoc-gen-buffa-packaging`
+  for a generated `mod.rs`. The README quick-start, `docs/guide.md`
+  ["Using buf"](docs/guide.md#using-buf) section, and a new
+  [`examples/bsr-quickstart/`](examples/bsr-quickstart/) project document
+  the workflow. The stale in-repo `protoc-gen-buffa/buf.plugin.yaml`
+  metadata file is removed — the canonical plugin definition lives in
+  [bufbuild/plugins](https://github.com/bufbuild/plugins).
+
 - `serde::Serialize` is now implemented for generated view types when `generate_json` is
   enabled, allowing zero-copy JSON serialization without `.to_owned_message()`.
   `OwnedView<V>` also gains a blanket `Serialize` impl so `serde_json::to_string(&owned_view)`
