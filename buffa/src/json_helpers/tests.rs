@@ -1298,6 +1298,139 @@ fn repeated_closed_enum_null_is_empty() {
     assert!(v.0.is_empty());
 }
 
+// ── closed-enum bound relaxation: works without `impl Deserialize` ────
+//
+// Closed-enum fields can reference enum types from externally-generated
+// crates that didn't enable JSON codegen — e.g.
+// `google.protobuf.FieldDescriptorProto.Type` from `buffa-descriptor`.
+// Those enums implement `Enumeration` but NOT `serde::Deserialize`. The
+// `*_closed_enum` helpers must therefore not require `DeserializeOwned`.
+// `BareEnum` is the simulacrum: same `Enumeration` impl shape as a real
+// codegen-emitted enum, but no serde derive.
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+enum BareEnum {
+    #[default]
+    Zero,
+    One,
+}
+
+impl crate::Enumeration for BareEnum {
+    fn from_i32(v: i32) -> Option<Self> {
+        match v {
+            0 => Some(Self::Zero),
+            1 => Some(Self::One),
+            _ => None,
+        }
+    }
+    fn to_i32(&self) -> i32 {
+        *self as i32
+    }
+    fn proto_name(&self) -> &'static str {
+        match self {
+            Self::Zero => "ZERO",
+            Self::One => "ONE",
+        }
+    }
+    fn from_proto_name(name: &str) -> Option<Self> {
+        match name {
+            "ZERO" => Some(Self::Zero),
+            "ONE" => Some(Self::One),
+            _ => None,
+        }
+    }
+}
+
+#[test]
+fn opt_closed_enum_works_without_deserialize_impl() {
+    // Strict mode: every shape the codegen-emitted `impl Deserialize for
+    // SomeEnum` rejects must also be rejected here — `from_proto_name` /
+    // `from_i32` for the happy paths, error for the rest.
+    #[rustfmt::skip]
+    let cases: &[(&str, Result<Option<BareEnum>, ()>)] = &[
+        (r#""ONE""#,          Ok(Some(BareEnum::One))),   // proto name
+        ("1",                 Ok(Some(BareEnum::One))),   // i64
+        ("null",              Ok(None)),                  // outer Option<Value> → None
+        (r#""UNKNOWN""#,      Err(())),                   // unknown string
+        (r#""""#,             Err(())),                   // empty string is not a variant
+        ("99",                Err(())),                   // unknown positive integer
+        ("-1",                Err(())),                   // unknown negative in-i32-range integer
+        ("9999999999999",     Err(())),                   // > i32::MAX (i64-stored)
+        ("-9999999999999",    Err(())),                   // < i32::MIN (i64-stored)
+        ("18446744073709551615", Err(())),                // u64::MAX (u64-stored)
+        ("1.0",               Err(())),                   // integer-valued float
+        ("1.5",               Err(())),                   // float
+        ("true",              Err(())),                   // bool
+        (r#"{"x":1}"#,        Err(())),                   // object
+        (r#"["ONE"]"#,        Err(())),                   // array
+    ];
+    for &(json, ref expected) in cases {
+        let mut d = serde_json::Deserializer::from_str(json);
+        let got = opt_closed_enum::deserialize::<BareEnum, _>(&mut d).map_err(|_| ());
+        assert_eq!(&got, expected, "input: {json}");
+    }
+}
+
+#[test]
+fn repeated_closed_enum_works_without_deserialize_impl() {
+    let json = r#"["ZERO","ONE",1,null]"#;
+    let mut d = serde_json::Deserializer::from_str(json);
+    let got = repeated_closed_enum::deserialize::<BareEnum, _>(&mut d).unwrap();
+    // null inside a sequence decodes to the default variant, matching the
+    // codegen-emitted Deserialize impl's `visit_unit`.
+    assert_eq!(
+        got,
+        vec![BareEnum::Zero, BareEnum::One, BareEnum::One, BareEnum::Zero]
+    );
+}
+
+#[test]
+fn map_closed_enum_works_without_deserialize_impl() {
+    let json = r#"{"a":"ZERO","b":1}"#;
+    let mut d = serde_json::Deserializer::from_str(json);
+    let got = map_closed_enum::deserialize::<String, BareEnum, _>(&mut d).unwrap();
+    assert_eq!(got.get("a"), Some(&BareEnum::Zero));
+    assert_eq!(got.get("b"), Some(&BareEnum::One));
+}
+
+#[test]
+fn closed_enum_lenient_drops_unknown_without_deserialize_impl() {
+    // Lenient mode: any value that fails to decode is dropped from
+    // containers / left unset for optionals. Works for `Enumeration`-only
+    // enums because the decode goes through `from_proto_name` / `from_i32`
+    // directly — no inner `Deserialize` impl involved.
+    //
+    // The lenient catch-all is *all* errors, not just unknown-variant.
+    // That matches the open-enum (`EnumValue<E>`) container helpers, which
+    // also swallow every inner deserialize error under lenient mode. If
+    // either path is later tightened to only swallow unknown-variant
+    // errors, change both — the inputs below pin the current parity.
+    let opts = crate::json::JsonParseOptions {
+        ignore_unknown_enum_values: true,
+        ..Default::default()
+    };
+    crate::json::with_json_parse_options(&opts, || {
+        // optional: unknown → None; type / range errors also → None
+        for json in [r#""UNKNOWN""#, "99", "1.5", "true", "9999999999999"] {
+            let mut d = serde_json::Deserializer::from_str(json);
+            let opt = opt_closed_enum::deserialize::<BareEnum, _>(&mut d).unwrap();
+            assert_eq!(opt, None, "lenient must swallow {json}");
+        }
+
+        // repeated: unknown / undecodable entries dropped
+        let mut d = serde_json::Deserializer::from_str(r#"["ZERO","UNKNOWN","ONE",99,1.5,true]"#);
+        let vec = repeated_closed_enum::deserialize::<BareEnum, _>(&mut d).unwrap();
+        assert_eq!(vec, vec![BareEnum::Zero, BareEnum::One]);
+
+        // map: unknown / undecodable entries dropped
+        let mut d =
+            serde_json::Deserializer::from_str(r#"{"a":"ZERO","b":"UNKNOWN","c":1.5,"d":true}"#);
+        let map = map_closed_enum::deserialize::<String, BareEnum, _>(&mut d).unwrap();
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get("a"), Some(&BareEnum::Zero));
+    });
+}
+
 // ── skip_if::is_default_closed_enum tests ─────────────────────────────
 
 #[test]
