@@ -1,6 +1,7 @@
 # Generates Rust message types from the published `buf.build/anthropics/buffa`
-# remote plugin. No local plugin install required — `buf generate` pulls the
-# plugin from the Buf Schema Registry.
+# remote plugin. No local plugin install required — `buf generate` sends the
+# compiled proto descriptors to the Buf Schema Registry, which runs the plugin
+# remotely and returns the generated source.
 #
 # `file_per_package=true` emits one self-contained `<dotted.package>.rs` per
 # proto package. The hand-written `src/gen/mod.rs` wires them into nested

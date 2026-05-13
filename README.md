@@ -296,7 +296,7 @@ buffa passes the protobuf binary and JSON conformance test suite (v33.5, edition
 
 ## Compiler compatibility
 
-**[buf](https://buf.build/docs/cli/)** is the recommended way to compile `.proto` files. The buf CLI has its own built-in compiler and pulls `protoc-gen-buffa` from the [Buf Schema Registry](https://buf.build/anthropics/buffa) on demand, so the only thing you need to install is buf itself.
+**[buf](https://buf.build/docs/cli/)** is the recommended way to compile `.proto` files. The buf CLI has its own built-in compiler and can run `protoc-gen-buffa` as a remote plugin on the [Buf Schema Registry](https://buf.build/anthropics/buffa) — `buf generate` sends your compiled proto descriptors to the BSR, which executes the plugin and returns the generated Rust source — so the only thing you need to install is buf itself.
 
 **protoc** is also fully supported. `protoc-gen-buffa` and `buffa-build` work with **protoc v21.12 and later**. The minimum version varies by feature:
 

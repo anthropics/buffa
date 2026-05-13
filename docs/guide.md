@@ -36,7 +36,7 @@ buffa-types = { version = "0.5", features = ["json"] }
 
 ### buf (recommended)
 
-[buf](https://buf.build/docs/cli/) is the easiest way to compile `.proto` files with buffa. It has a built-in protobuf compiler — no separate `protoc` required — and it can pull the `protoc-gen-buffa` plugin from the [Buf Schema Registry](https://buf.build/anthropics/buffa) on demand, so the only thing you need to install is buf itself.
+[buf](https://buf.build/docs/cli/) is the easiest way to compile `.proto` files with buffa. It has a built-in protobuf compiler — no separate `protoc` required — and it can run `protoc-gen-buffa` as a [remote plugin](https://buf.build/docs/bsr/remote-plugins/overview/) on the [Buf Schema Registry](https://buf.build/anthropics/buffa): `buf generate` sends your compiled proto descriptors to the BSR, which executes the plugin in a sandbox and returns the generated Rust source. So the only thing you need to install is buf itself.
 
 ```sh
 # Install buf — see https://buf.build/docs/installation for other methods
@@ -370,7 +370,7 @@ Available platforms: `linux-x86_64`, `linux-aarch64`, `darwin-x86_64`, `darwin-a
 
 There are two parts to a buffa code generation pass:
 
-1. **`protoc-gen-buffa`** emits the message types — one `.rs` per proto file (default), or one `<dotted.package>.rs` per package with `file_per_package=true`. It is published to the Buf Schema Registry as [`buf.build/anthropics/buffa`](https://buf.build/anthropics/buffa), so it can run as a `remote:` plugin with no local install.
+1. **`protoc-gen-buffa`** emits the message types — one `.rs` per proto file (default), or one `<dotted.package>.rs` per package with `file_per_package=true`. It is published to the Buf Schema Registry as [`buf.build/anthropics/buffa`](https://buf.build/anthropics/buffa), so it can run as a `remote:` plugin with no local install: `buf generate` sends your compiled proto descriptors to the BSR, which executes the plugin remotely and returns the generated source.
 2. **`protoc-gen-buffa-packaging`** is a small, optional second plugin that reads the full proto file set and emits a `mod.rs` with nested `pub mod` blocks that `include!` each generated file at the right package nesting. It is local-only ([install instructions](#installing-the-protoc-plugins)) — if you'd rather not install anything, use `file_per_package=true` and write the `pub mod` tree yourself.
 
 #### Remote plugin only (no local install)
@@ -494,7 +494,7 @@ See the [protoc (alternative)](#protoc-alternative) section in the Prerequisites
 
 ### Requirements summary
 
-**`buf generate` with the remote plugin** requires only `buf` on your PATH. No `protoc`, no local plugin install — buf pulls the codegen plugin from the BSR. Add `protoc-gen-buffa-packaging` locally if you want a generated `mod.rs`.
+**`buf generate` with the remote plugin** requires only `buf` on your PATH. No `protoc`, no local plugin install — buf sends your compiled proto descriptors to the BSR, which runs the plugin remotely and returns the generated source. Needs network access to `buf.build` at generation time. Add `protoc-gen-buffa-packaging` locally if you want a generated `mod.rs`.
 
 **`buf generate` with local plugins** requires `buf` and `protoc-gen-buffa` (and optionally `protoc-gen-buffa-packaging`) on your PATH. No `protoc` needed.
 
