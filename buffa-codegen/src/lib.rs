@@ -75,15 +75,21 @@ pub fn allow_lints_attr() -> TokenStream {
 
 /// One generated output file.
 ///
-/// Each `.proto` produces five **content files** (`<stem>.rs`,
+/// Each `.proto` produces up to five **content files** (`<stem>.rs`,
 /// `<stem>.__view.rs`, `<stem>.__oneof.rs`, `<stem>.__view_oneof.rs`,
 /// `<stem>.__ext.rs`) and each proto package produces one
 /// `<dotted.pkg>.mod.rs` **stitcher** that `include!`s the content files
 /// and authors the `pub mod __buffa { … }` ancillary tree.
+/// Ancillary kinds with no content for that input file (e.g. a message
+/// with no oneofs and no extensions) are omitted, and the stitcher's
+/// `include!` set is filtered to match. The `__buffa` wrapper (and each
+/// `view` / `oneof` / `ext` submodule inside it) is itself omitted when
+/// it would be empty, so packages with only owned messages emit no
+/// `__buffa` block at all.
 /// See `DESIGN.md` → "Generated code layout".
 ///
 /// Consumers normally only need to wire up the
-/// [`GeneratedFileKind::PackageMod`] entries (one per package); the five
+/// [`GeneratedFileKind::PackageMod`] entries (one per package); the
 /// per-proto content kinds are reached transitively via `include!` from
 /// the stitcher. Write all files to disk; build a module tree from only
 /// the `PackageMod` ones.
@@ -107,13 +113,16 @@ pub struct GeneratedFile {
 
 /// Kind of [`GeneratedFile`].
 ///
-/// [`generate`] produces five per-proto content kinds — one each of
-/// [`Owned`](Self::Owned), [`View`](Self::View), [`Oneof`](Self::Oneof),
+/// [`generate`] produces up to five per-proto content kinds — one each
+/// of [`Owned`](Self::Owned), [`View`](Self::View), [`Oneof`](Self::Oneof),
 /// [`ViewOneof`](Self::ViewOneof), and [`Ext`](Self::Ext) per input
 /// `.proto` file — plus one [`PackageMod`](Self::PackageMod) stitcher per
-/// package. Build integrations only need to wire up `PackageMod` entries;
-/// the per-proto content kinds are reached via `include!` from the stitcher
-/// and need only be written to disk alongside it. Under
+/// package. Kinds with no content for the input (a proto with no oneofs
+/// emits no [`Oneof`](Self::Oneof) / [`ViewOneof`](Self::ViewOneof);
+/// no extensions, no [`Ext`](Self::Ext); etc.) are omitted. Build
+/// integrations only need to wire up `PackageMod` entries; the per-proto
+/// content kinds are reached via `include!` from the stitcher and need
+/// only be written to disk alongside it. Under
 /// [`CodeGenConfig::file_per_package`] only `PackageMod` is emitted.
 ///
 /// [`Companion`](Self::Companion) is the one kind *not* produced by
@@ -375,9 +384,10 @@ pub(crate) fn effective_extern_paths(
 /// dependencies may be present in `file_descriptors` but won't produce output
 /// files unless they appear in `files_to_generate`.
 ///
-/// Each `.proto` emits five content files; each distinct package emits one
-/// `<pkg>.mod.rs` stitcher. Packages are processed in sorted order for
-/// deterministic output.
+/// Each `.proto` emits up to five content files (kinds with no content
+/// are omitted); each distinct package emits one `<pkg>.mod.rs`
+/// stitcher. Packages are processed in sorted order for deterministic
+/// output.
 pub fn generate(
     file_descriptors: &[FileDescriptorProto],
     files_to_generate: &[String],
@@ -609,7 +619,9 @@ struct ProtoContent {
     root_reexports: Vec<message::ReexportCandidate>,
 }
 
-/// Generate the five per-`.proto` content files for one input file.
+/// Generate the per-`.proto` content token streams for one input file.
+/// Each ancillary kind that has no content yields an empty stream and
+/// is dropped at the file-emission stage.
 fn generate_proto_content(
     ctx: &context::CodeGenContext,
     current_package: &str,
@@ -773,42 +785,28 @@ struct PackageSections {
 }
 
 impl PackageSections {
-    /// Build sections of `include!` calls referencing per-file content.
-    ///
-    /// Paths are bare-sibling (no `OUT_DIR` prefix) so the same stitcher
-    /// works for both `OUT_DIR` builds (where the consumer's
-    /// `include_proto!` already prepended `OUT_DIR`) and checked-in code.
-    fn from_stems(stems: &[String]) -> Self {
-        let includes = |suffix: &str| -> Vec<TokenStream> {
-            stems
-                .iter()
-                .map(|stem| {
-                    let path = format!("{stem}{suffix}.rs");
-                    quote! { include!(#path); }
-                })
-                .collect()
-        };
-        Self {
-            owned: includes(""),
-            view: includes(".__view"),
-            oneof: includes(".__oneof"),
-            view_oneof: includes(".__view_oneof"),
-            ext: includes(".__ext"),
-        }
-    }
-
     /// Append one proto file's generated items in-line.
+    ///
+    /// Empty streams are skipped so each section's emptiness reflects
+    /// "the package has no content of this kind" — symmetric with the
+    /// per-file branch that filters at file-emission time.
     fn push_inline(&mut self, pc: ProtoContent) {
-        self.owned.push(pc.owned);
-        self.view.push(pc.view);
-        self.oneof.push(pc.oneof);
-        self.view_oneof.push(pc.view_oneof);
-        self.ext.push(pc.ext);
+        let push_if_nonempty = |dst: &mut Vec<TokenStream>, ts: TokenStream| {
+            if !ts.is_empty() {
+                dst.push(ts);
+            }
+        };
+        push_if_nonempty(&mut self.owned, pc.owned);
+        push_if_nonempty(&mut self.view, pc.view);
+        push_if_nonempty(&mut self.oneof, pc.oneof);
+        push_if_nonempty(&mut self.view_oneof, pc.view_oneof);
+        push_if_nonempty(&mut self.ext, pc.ext);
     }
 }
 
-/// Generate all output files for one proto package: five content files per
-/// `.proto` plus one `<pkg>.mod.rs` stitcher, or a single `<pkg>.rs` when
+/// Generate all output files for one proto package: up to five content
+/// files per `.proto` (empty ancillary kinds are skipped) plus one
+/// `<pkg>.mod.rs` stitcher, or a single `<pkg>.rs` when
 /// [`CodeGenConfig::file_per_package`] is set.
 fn generate_package(
     ctx: &context::CodeGenContext,
@@ -831,37 +829,71 @@ fn generate_package(
         }
         sections
     } else {
-        let mut stems: Vec<String> = Vec::new();
+        let mut sections = PackageSections::default();
         for file in files {
             let mut pc = generate_proto_content(ctx, current_package, file, &mut reg)?;
             root_reexports.append(&mut pc.root_reexports);
             let source = file.name.as_deref().unwrap_or("");
-            let push = |out: &mut Vec<GeneratedFile>,
-                        suffix: &str,
+            let stem = pc.stem;
+
+            // Empty ancillary token streams are skipped — neither the
+            // content file nor the stitcher's `include!` is emitted.
+            let emit = |suffix: &str,
                         kind: GeneratedFileKind,
-                        tokens: TokenStream|
+                        tokens: TokenStream,
+                        section: &mut Vec<TokenStream>,
+                        out: &mut Vec<GeneratedFile>|
              -> Result<(), CodeGenError> {
+                if tokens.is_empty() {
+                    return Ok(());
+                }
+                let name = format!("{stem}{suffix}.rs");
+                section.push(quote! { include!(#name); });
                 out.push(GeneratedFile {
-                    name: format!("{}{suffix}.rs", pc.stem),
+                    name,
                     package: current_package.to_string(),
                     kind,
                     content: format_tokens(tokens, source)?,
                 });
                 Ok(())
             };
-            push(out, "", GeneratedFileKind::Owned, pc.owned)?;
-            push(out, ".__view", GeneratedFileKind::View, pc.view)?;
-            push(out, ".__oneof", GeneratedFileKind::Oneof, pc.oneof)?;
-            push(
+            emit(
+                "",
+                GeneratedFileKind::Owned,
+                pc.owned,
+                &mut sections.owned,
                 out,
+            )?;
+            emit(
+                ".__view",
+                GeneratedFileKind::View,
+                pc.view,
+                &mut sections.view,
+                out,
+            )?;
+            emit(
+                ".__oneof",
+                GeneratedFileKind::Oneof,
+                pc.oneof,
+                &mut sections.oneof,
+                out,
+            )?;
+            emit(
                 ".__view_oneof",
                 GeneratedFileKind::ViewOneof,
                 pc.view_oneof,
+                &mut sections.view_oneof,
+                out,
             )?;
-            push(out, ".__ext", GeneratedFileKind::Ext, pc.ext)?;
-            stems.push(pc.stem);
+            emit(
+                ".__ext",
+                GeneratedFileKind::Ext,
+                pc.ext,
+                &mut sections.ext,
+                out,
+            )?;
         }
-        PackageSections::from_stems(&stems)
+        sections
     };
 
     let reexport_block = surviving_root_reexports(ctx, files, &reg, root_reexports);
@@ -949,17 +981,58 @@ fn generate_package_mod(
     let oneof = &sections.oneof;
     let ext = &sections.ext;
 
-    let view_mod = if ctx.config.generate_views {
+    // Each ancillary module is emitted only when its section has
+    // content. The natural-path re-exports outside `__buffa` target
+    // these modules — they are emitted only when their target items
+    // exist, so the conditions align and re-exports never reference
+    // a missing module.
+    let view_oneof_mod = if !view_oneof.is_empty() {
+        quote! {
+            pub mod oneof {
+                #[allow(unused_imports)]
+                use super::*;
+                #(#view_oneof)*
+            }
+        }
+    } else {
+        TokenStream::new()
+    };
+
+    // `view_oneof` is only populated for messages that have oneofs, and
+    // every message also contributes to `view`, so `!view.is_empty()` is
+    // sufficient — `view_oneof` non-empty implies `view` non-empty.
+    debug_assert!(view_oneof.is_empty() || !view.is_empty());
+    let view_mod = if ctx.config.generate_views && !view.is_empty() {
         quote! {
             pub mod view {
                 #[allow(unused_imports)]
                 use super::*;
                 #(#view)*
-                pub mod oneof {
-                    #[allow(unused_imports)]
-                    use super::*;
-                    #(#view_oneof)*
-                }
+                #view_oneof_mod
+            }
+        }
+    } else {
+        TokenStream::new()
+    };
+
+    let oneof_mod = if !oneof.is_empty() {
+        quote! {
+            pub mod oneof {
+                #[allow(unused_imports)]
+                use super::*;
+                #(#oneof)*
+            }
+        }
+    } else {
+        TokenStream::new()
+    };
+
+    let ext_mod = if !ext.is_empty() {
+        quote! {
+            pub mod ext {
+                #[allow(unused_imports)]
+                use super::*;
+                #(#ext)*
             }
         }
     } else {
@@ -984,27 +1057,33 @@ fn generate_package_mod(
         TokenStream::new()
     };
 
-    let allow = allow_lints_attr();
     let sentinel = make_field_ident(context::SENTINEL_MOD);
+    // The whole `pub mod __buffa { ... }` wrapper is itself omitted
+    // when none of its inner modules or `register_types` exist.
+    let buffa_mod = if view_mod.is_empty()
+        && oneof_mod.is_empty()
+        && ext_mod.is_empty()
+        && register_fn.is_empty()
+    {
+        TokenStream::new()
+    } else {
+        let allow = allow_lints_attr();
+        quote! {
+            #allow
+            pub mod #sentinel {
+                #[allow(unused_imports)]
+                use super::*;
+                #view_mod
+                #oneof_mod
+                #ext_mod
+                #register_fn
+            }
+        }
+    };
+
     let tokens = quote! {
         #(#owned)*
-        #allow
-        pub mod #sentinel {
-            #[allow(unused_imports)]
-            use super::*;
-            #view_mod
-            pub mod oneof {
-                #[allow(unused_imports)]
-                use super::*;
-                #(#oneof)*
-            }
-            pub mod ext {
-                #[allow(unused_imports)]
-                use super::*;
-                #(#ext)*
-            }
-            #register_fn
-        }
+        #buffa_mod
         #root_reexports
     };
 
@@ -1060,8 +1139,9 @@ pub fn package_to_filename(package: &str) -> String {
 /// Convert a `.proto` file path to its content-file stem.
 ///
 /// e.g., `"google/protobuf/timestamp.proto"` → `"google.protobuf.timestamp"`.
-/// The five content files append `""`, `".__view"`, `".__oneof"`,
-/// `".__view_oneof"`, `".__ext"` plus `".rs"`.
+/// Content files append `""`, `".__view"`, `".__oneof"`,
+/// `".__view_oneof"`, or `".__ext"` plus `".rs"` — emitted only for
+/// kinds with non-empty content.
 pub fn proto_path_to_stem(proto_path: &str) -> String {
     let without_ext = proto_path.strip_suffix(".proto").unwrap_or(proto_path);
     without_ext.replace('/', ".")

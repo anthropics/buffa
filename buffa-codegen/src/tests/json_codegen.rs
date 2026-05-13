@@ -371,6 +371,53 @@ fn test_no_serde_attrs_without_generate_json_flag() {
     );
 }
 
+#[test]
+fn test_json_extension_range_uses_buffa_serde_json_reexport() {
+    // A message with `extensions N to M;` and json + preserve_unknown_fields
+    // enabled gets a hand-written Deserialize impl that buffers `"[pkg.ext]"`
+    // keys into a `serde_json::Value` before calling
+    // `extension_registry::deserialize_extension_key`. That path must go
+    // through the `::buffa::serde_json` re-export so consumers don't need
+    // `serde_json` in their own dep graph.
+    //
+    // The fixture uses proto3 syntax with an `extension_range` — protoc would
+    // reject that combination, but codegen branches purely on the descriptor's
+    // `extension_range` list, so the synthetic descriptor is sufficient to
+    // exercise the path.
+    let mut file = proto3_file("ext_json.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Target".to_string()),
+        extension_range: vec![
+            crate::generated::descriptor::descriptor_proto::ExtensionRange {
+                start: Some(100),
+                end: Some(200),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    });
+    let cfg = CodeGenConfig {
+        generate_json: true,
+        generate_views: false,
+        preserve_unknown_fields: true,
+        ..CodeGenConfig::default()
+    };
+    let files = generate(&[file], &["ext_json.proto".to_string()], &cfg).expect("should generate");
+    let content = &joined(&files);
+    assert!(
+        content.contains("::buffa::serde_json::Value"),
+        "extension JSON deserialize must route through ::buffa::serde_json re-export: {content}"
+    );
+    // Every `::serde_json::` occurrence must be preceded by `::buffa` — no
+    // bare paths that would force a direct `serde_json` dep on the consumer.
+    assert_eq!(
+        content.matches("::serde_json::").count(),
+        content.matches("::buffa::serde_json::").count(),
+        "bare ::serde_json:: path leaked into generated output: {content}"
+    );
+}
+
 // ── register_types / Any entry emission ──────────────────────────────────
 
 #[test]

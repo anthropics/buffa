@@ -34,36 +34,13 @@ pub mod __buffa {
         pub mod oneof {
             #[allow(unused_imports)]
             use super::*;
-            include!("google.protobuf.any.__view_oneof.rs");
-            include!("google.protobuf.duration.__view_oneof.rs");
-            include!("google.protobuf.empty.__view_oneof.rs");
-            include!("google.protobuf.field_mask.__view_oneof.rs");
             include!("google.protobuf.struct.__view_oneof.rs");
-            include!("google.protobuf.timestamp.__view_oneof.rs");
-            include!("google.protobuf.wrappers.__view_oneof.rs");
         }
     }
     pub mod oneof {
         #[allow(unused_imports)]
         use super::*;
-        include!("google.protobuf.any.__oneof.rs");
-        include!("google.protobuf.duration.__oneof.rs");
-        include!("google.protobuf.empty.__oneof.rs");
-        include!("google.protobuf.field_mask.__oneof.rs");
         include!("google.protobuf.struct.__oneof.rs");
-        include!("google.protobuf.timestamp.__oneof.rs");
-        include!("google.protobuf.wrappers.__oneof.rs");
-    }
-    pub mod ext {
-        #[allow(unused_imports)]
-        use super::*;
-        include!("google.protobuf.any.__ext.rs");
-        include!("google.protobuf.duration.__ext.rs");
-        include!("google.protobuf.empty.__ext.rs");
-        include!("google.protobuf.field_mask.__ext.rs");
-        include!("google.protobuf.struct.__ext.rs");
-        include!("google.protobuf.timestamp.__ext.rs");
-        include!("google.protobuf.wrappers.__ext.rs");
     }
 }
 #[doc(inline)]

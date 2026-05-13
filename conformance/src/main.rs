@@ -133,9 +133,9 @@ fn setup_type_registry() {
 //
 // When `BUFFA_VIA_VIEW=1`, binary input is routed through
 // `decode_view → to_owned_message` instead of the direct owned decode.
-// Verifies owned/view decoder parity at conformance scale. JSON input is
-// skipped (views have no serde) and JSON output is skipped (we'd be
-// re-testing the owned encode path which the non-view run already covers).
+// Verifies owned/view decoder parity at conformance scale. JSON output is
+// skipped (we'd be re-testing the owned encode path which the non-view run
+// already covers; view-side JSON output is verified by `BUFFA_VIEW_JSON`).
 
 #[cfg(not(no_protos))]
 fn via_view() -> bool {
@@ -154,6 +154,39 @@ where
 {
     let view = V::decode_view(bytes).map_err(|e| format!("{e}"))?;
     Ok(view.to_owned_message())
+}
+
+// ── View-JSON mode ───────────────────────────────────────────────────────
+//
+// When `BUFFA_VIEW_JSON=1`, binary input + JSON output requests are served by
+// `decode_view → serde_json::to_string(&view)` — exercising the manual
+// `impl Serialize` that `generate_json` emits for view types (and the
+// hand-written WKT view `Serialize` impls in `buffa-types`) against the
+// protobuf conformance reference assertions, independently of the owned-side
+// JSON encoder. JSON input is skipped (views borrow from a source buffer and
+// cannot be deserialized); binary output and text format are covered by the
+// std and via-view runs.
+
+#[cfg(not(no_protos))]
+fn view_json() -> bool {
+    static FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FLAG.get_or_init(|| std::env::var("BUFFA_VIEW_JSON").as_deref() == Ok("1"))
+}
+
+/// Decode `bytes` as a view and serialize that view directly to JSON.
+#[cfg(not(no_protos))]
+fn encode_view_json<'a, V>(bytes: &'a [u8]) -> envelope::Response
+where
+    V: buffa::MessageView<'a> + serde::Serialize,
+{
+    use envelope::Response;
+    match V::decode_view(bytes) {
+        Err(e) => Response::ParseError(format!("{e}")),
+        Ok(view) => match serde_json::to_string(&view) {
+            Ok(s) => Response::JsonPayload(s),
+            Err(e) => Response::SerializeError(format!("{e}")),
+        },
+    }
 }
 
 // ── Real binary ──────────────────────────────────────────────────────────
@@ -253,6 +286,19 @@ fn process(req: &envelope::Request) -> envelope::Response {
         };
     }
 
+    // View-JSON mode: only binary→JSON, skip everything else. JSON input is
+    // out of scope (views can't deserialize — they borrow from a source
+    // buffer); binary output and text format are covered by the std and
+    // via-view runs.
+    if view_json() {
+        return match &req.payload {
+            Some(Payload::Protobuf(_)) if req.requested_output_format == WireFormat::Json => {
+                process_view_json(req)
+            }
+            _ => Response::Skipped("view-json mode: only binary→JSON exercised".into()),
+        };
+    }
+
     let ignore_unknown = req.test_category == envelope::TestCategory::JsonIgnoreUnknownParsing;
     let pu = req.print_unknown_fields;
 
@@ -338,15 +384,52 @@ fn process_via_view(req: &envelope::Request) -> envelope::Response {
         ),
         #[cfg(has_editions_protos)]
         MSG_EDITIONS_PROTO3 => roundtrip(
-            || decode_binary_via_view::<editions_proto3::__buffa::view::TestAllTypesProto3View<'_>>(b),
+            || {
+                decode_binary_via_view::<editions_proto3::__buffa::view::TestAllTypesProto3View<'_>>(
+                    b,
+                )
+            },
             encode_binary,
         ),
         #[cfg(has_editions_protos)]
         MSG_EDITIONS_PROTO2 => roundtrip(
-            || decode_binary_via_view::<editions_proto2::__buffa::view::TestAllTypesProto2View<'_>>(b),
+            || {
+                decode_binary_via_view::<editions_proto2::__buffa::view::TestAllTypesProto2View<'_>>(
+                    b,
+                )
+            },
             encode_binary,
         ),
         other => Response::Skipped(format!("message type '{other}' not in view dispatch")),
+    }
+}
+
+/// Binary→JSON via `decode_view → serde_json::to_string(&view)`.
+///
+/// Exercises the generated view `Serialize` impls (and the hand-written WKT
+/// view `Serialize` impls in `buffa-types`) against the conformance JSON
+/// reference assertions, independently of the owned-side encoder. Dispatches
+/// on message type; `TestAllTypesEdition2023` is excluded because its build
+/// config sets `generate_views(false)`.
+#[cfg(not(no_protos))]
+fn process_view_json(req: &envelope::Request) -> envelope::Response {
+    use envelope::{Payload, Response};
+    let Some(Payload::Protobuf(b)) = &req.payload else {
+        return Response::RuntimeError("process_view_json called without protobuf payload".into());
+    };
+
+    match req.message_type.as_str() {
+        MSG_PROTO3 => encode_view_json::<proto3::__buffa::view::TestAllTypesProto3View<'_>>(b),
+        MSG_PROTO2 => encode_view_json::<proto2::__buffa::view::TestAllTypesProto2View<'_>>(b),
+        #[cfg(has_editions_protos)]
+        MSG_EDITIONS_PROTO3 => {
+            encode_view_json::<editions_proto3::__buffa::view::TestAllTypesProto3View<'_>>(b)
+        }
+        #[cfg(has_editions_protos)]
+        MSG_EDITIONS_PROTO2 => {
+            encode_view_json::<editions_proto2::__buffa::view::TestAllTypesProto2View<'_>>(b)
+        }
+        other => Response::Skipped(format!("message type '{other}' not in view-json dispatch")),
     }
 }
 

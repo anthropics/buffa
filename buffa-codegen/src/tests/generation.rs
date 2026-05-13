@@ -55,8 +55,8 @@ fn test_empty_file() {
         &CodeGenConfig::default(),
     );
     let files = result.expect("empty file should generate without error");
-    // 5 content files + 1 .mod.rs.
-    assert_eq!(files.len(), 6);
+    // No content files (all empty) + 1 .mod.rs.
+    assert_eq!(files.len(), 1);
     let stitcher = files
         .iter()
         .find(|f| f.kind == GeneratedFileKind::PackageMod)
@@ -65,6 +65,246 @@ fn test_empty_file() {
     assert!(
         stitcher.content.contains("@generated"),
         "missing header comment"
+    );
+    // No content of any kind → no `__buffa` wrapper at all.
+    assert!(
+        !stitcher.content.contains("pub mod __buffa"),
+        "empty file should not emit a `pub mod __buffa` wrapper:\n{}",
+        stitcher.content
+    );
+}
+
+#[test]
+fn test_empty_message_omits_empty_ancillary_files() {
+    // Regression: a proto file with only an empty message should not emit
+    // empty `.__oneof.rs`, `.__view_oneof.rs`, or `.__ext.rs` companion files.
+    let mut file = proto3_file("example/v1/empty.proto");
+    file.package = Some("example.v1".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Empty".to_string()),
+        ..Default::default()
+    });
+
+    let files = generate(
+        &[file],
+        &["example/v1/empty.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("empty-message file should generate");
+
+    let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
+
+    assert!(
+        files
+            .iter()
+            .any(|f| f.name == "example.v1.empty.rs" && f.kind == GeneratedFileKind::Owned),
+        "owned file with the empty message should still be emitted; got {names:?}"
+    );
+    assert!(
+        files
+            .iter()
+            .any(|f| f.kind == GeneratedFileKind::PackageMod),
+        "package mod should be generated; got {names:?}"
+    );
+
+    assert!(
+        !files.iter().any(|f| f.name.ends_with(".__oneof.rs")),
+        "empty oneof companion file should not be emitted; got {names:?}"
+    );
+    assert!(
+        !files.iter().any(|f| f.name.ends_with(".__view_oneof.rs")),
+        "empty view-oneof companion file should not be emitted; got {names:?}"
+    );
+    assert!(
+        !files.iter().any(|f| f.name.ends_with(".__ext.rs")),
+        "empty extension companion file should not be emitted; got {names:?}"
+    );
+
+    let package_mod = files
+        .iter()
+        .find(|f| f.kind == GeneratedFileKind::PackageMod)
+        .expect("package mod should be generated");
+    assert!(
+        !package_mod.content.contains("example.v1.empty.__oneof.rs"),
+        "package mod should not include omitted oneof companion:\n{}",
+        package_mod.content
+    );
+    assert!(
+        !package_mod
+            .content
+            .contains("example.v1.empty.__view_oneof.rs"),
+        "package mod should not include omitted view-oneof companion:\n{}",
+        package_mod.content
+    );
+    assert!(
+        !package_mod.content.contains("example.v1.empty.__ext.rs"),
+        "package mod should not include omitted ext companion:\n{}",
+        package_mod.content
+    );
+}
+
+#[test]
+fn stitcher_omits_empty_inner_modules_for_empty_message() {
+    // A proto containing only an empty message (default config: views on,
+    // no JSON, no register_fn-relevant content) should produce only
+    // `pub mod view { … }` inside `__buffa` — no inner `view::oneof`,
+    // no `oneof`, no `ext`.
+    let mut file = proto3_file("only_msg.proto");
+    file.package = Some("p".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Empty".to_string()),
+        ..Default::default()
+    });
+    let files = generate(
+        &[file],
+        &["only_msg.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let stitcher = files
+        .iter()
+        .find(|f| f.kind == GeneratedFileKind::PackageMod)
+        .expect("stitcher present");
+    assert!(
+        stitcher.content.contains("pub mod __buffa"),
+        "expected `__buffa` wrapper (view module is non-empty):\n{}",
+        stitcher.content
+    );
+    assert!(
+        stitcher.content.contains("pub mod view"),
+        "expected `pub mod view`:\n{}",
+        stitcher.content
+    );
+    assert!(
+        !stitcher.content.contains("pub mod oneof"),
+        "should not emit empty `pub mod oneof` (covers both top-level \
+         and nested view::oneof):\n{}",
+        stitcher.content
+    );
+    assert!(
+        !stitcher.content.contains("pub mod ext"),
+        "should not emit empty `pub mod ext`:\n{}",
+        stitcher.content
+    );
+}
+
+#[test]
+fn stitcher_omits_view_module_when_views_disabled_and_only_oneof_present() {
+    // Views off + a message with a oneof: only `pub mod oneof` survives;
+    // `view` and `ext` are omitted.
+    let mut file = proto3_file("only_oneof.proto");
+    file.package = Some("p".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("M".to_string()),
+        field: vec![
+            FieldDescriptorProto {
+                name: Some("x".to_string()),
+                number: Some(1),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_INT32),
+                oneof_index: Some(0),
+                ..Default::default()
+            },
+            FieldDescriptorProto {
+                name: Some("y".to_string()),
+                number: Some(2),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_STRING),
+                oneof_index: Some(0),
+                ..Default::default()
+            },
+        ],
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("kind".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let config = CodeGenConfig {
+        generate_views: false,
+        ..Default::default()
+    };
+    let files =
+        generate(&[file], &["only_oneof.proto".to_string()], &config).expect("should generate");
+    let stitcher = files
+        .iter()
+        .find(|f| f.kind == GeneratedFileKind::PackageMod)
+        .expect("stitcher present");
+    assert!(
+        stitcher.content.contains("pub mod __buffa"),
+        "expected `__buffa` wrapper (oneof module is non-empty):\n{}",
+        stitcher.content
+    );
+    assert!(
+        stitcher.content.contains("pub mod oneof"),
+        "expected `pub mod oneof`:\n{}",
+        stitcher.content
+    );
+    assert!(
+        !stitcher.content.contains("pub mod view"),
+        "should not emit `pub mod view` when views are disabled:\n{}",
+        stitcher.content
+    );
+    assert!(
+        !stitcher.content.contains("pub mod ext"),
+        "should not emit empty `pub mod ext`:\n{}",
+        stitcher.content
+    );
+}
+
+#[test]
+fn stitcher_emits_only_ext_module_for_extension_only_proto() {
+    // A proto carrying only a file-level `extend` block (no own
+    // messages) emits only `pub mod ext` inside `__buffa`.
+    let mut file = proto3_file("ext_only.proto");
+    file.package = Some("p".to_string());
+    file.message_type = vec![DescriptorProto {
+        name: Some("Target".to_string()),
+        extension_range: vec![
+            crate::generated::descriptor::descriptor_proto::ExtensionRange {
+                start: Some(100),
+                end: Some(200),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    }];
+    file.extension = vec![{
+        let mut f = make_field("my_opt", 100, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
+        f.extendee = Some(".p.Target".to_string());
+        f
+    }];
+    let files = generate(
+        &[file],
+        &["ext_only.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let stitcher = files
+        .iter()
+        .find(|f| f.kind == GeneratedFileKind::PackageMod)
+        .expect("stitcher present");
+    assert!(
+        stitcher.content.contains("pub mod __buffa"),
+        "expected `__buffa` wrapper (ext module is non-empty):\n{}",
+        stitcher.content
+    );
+    assert!(
+        stitcher.content.contains("pub mod ext"),
+        "expected `pub mod ext`:\n{}",
+        stitcher.content
+    );
+    // `Target` has an extension range but no oneofs and no fields, so
+    // no view oneof / oneof content. View module exists for `TargetView`.
+    assert!(
+        stitcher.content.contains("pub mod view"),
+        "expected `pub mod view` for `TargetView`:\n{}",
+        stitcher.content
+    );
+    assert!(
+        !stitcher.content.contains("pub mod oneof"),
+        "should not emit empty `pub mod oneof`:\n{}",
+        stitcher.content
     );
 }
 
@@ -103,8 +343,10 @@ fn test_multi_file_same_package_merged() {
         &CodeGenConfig::default(),
     )
     .expect("multi-file package should merge");
-    // 2 protos × 5 content files + 1 stitcher = 11.
-    assert_eq!(files.len(), 11);
+    // 2 protos × 2 content kinds (owned + view; oneof / view_oneof /
+    // ext omitted because the messages have no oneofs and no extensions)
+    // + 1 stitcher = 5.
+    assert_eq!(files.len(), 5);
     let stitcher = files
         .iter()
         .find(|f| f.kind == GeneratedFileKind::PackageMod)
@@ -194,10 +436,15 @@ fn test_file_per_package_multi_file() {
         "per-package file must inline content, not include! per-file outputs"
     );
     // Same `__buffa` module wrappers as the per-file stitcher.
+    // The fixture has views and a oneof but no extensions, so `view`
+    // and `oneof` are emitted but `ext` is omitted as empty.
     assert_eq!(pkg.content.matches("pub mod __buffa {").count(), 1);
     assert!(pkg.content.contains("pub mod view {"));
     assert!(pkg.content.contains("pub mod oneof {"));
-    assert!(pkg.content.contains("pub mod ext {"));
+    assert!(
+        !pkg.content.contains("pub mod ext {"),
+        "no extensions in fixture → empty `pub mod ext` should be omitted"
+    );
 }
 
 #[test]
@@ -313,6 +560,12 @@ fn test_file_per_package_unnamed_package() {
         .expect("unnamed package should generate");
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].name, "__buffa.rs");
+    // No messages → no view/oneof/ext content → no `__buffa` wrapper.
+    assert!(
+        !files[0].content.contains("pub mod __buffa"),
+        "empty package should not emit `__buffa` wrapper:\n{}",
+        files[0].content
+    );
 }
 
 #[test]

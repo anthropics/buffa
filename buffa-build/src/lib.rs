@@ -103,11 +103,36 @@ impl Config {
         self
     }
 
-    /// Enable or disable serde Serialize/Deserialize derive generation
-    /// for generated message structs and enum types (default: false).
+    /// Enable or disable serde JSON generation (default: false).
     ///
-    /// When enabled, the downstream crate must depend on `serde` and enable
-    /// the `buffa/json` feature for the runtime helpers.
+    /// When enabled:
+    /// - Generated message structs get `Serialize`/`Deserialize` derives.
+    /// - Generated enum types get `Serialize`/`Deserialize` derives.
+    /// - Generated view types (when `generate_views` is also enabled) get a
+    ///   manual `impl Serialize` for zero-copy JSON serialization, so
+    ///   `serde_json::to_string(&view)` works directly:
+    ///
+    ///   ```ignore
+    ///   let view = MyMsgView::decode_view(&bytes)?;
+    ///   let json = serde_json::to_string(&view)?;
+    ///   ```
+    ///
+    /// The downstream crate must depend on `serde` and enable the `buffa/json`
+    /// feature for the runtime helpers. When views are enabled, the crate must
+    /// also enable `buffa-types/json` so the well-known type views implement
+    /// `Serialize`; without it, references to e.g. `TimestampView<'_>` in the
+    /// generated `Serialize` impl will fail with
+    /// `the trait bound 'TimestampView<'_>: Serialize' is not satisfied`.
+    ///
+    /// **Limitations of the view `Serialize` impl:**
+    /// - Extension fields are not included in view JSON output; serialize the
+    ///   owned form (`view.to_owned_message()`) to include extensions.
+    /// - The impl uses `serialize_map(None)` (unknown length) because the
+    ///   number of emitted fields depends on default-omission rules. Most
+    ///   self-describing serializers (notably `serde_json`) accept this, but
+    ///   length-prefixed formats (e.g. `bincode`, `postcard`) will return a
+    ///   runtime error. The owned types' derived `Serialize` does not have this
+    ///   restriction.
     #[must_use]
     pub fn generate_json(mut self, enabled: bool) -> Self {
         self.codegen_config.generate_json = enabled;
