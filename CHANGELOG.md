@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **`buffa` / `buffa-codegen`: `serde_json` re-exported from `buffa` for
+  generated extension JSON deserialize.** Messages with `extensions N to M;`
+  ranges and `json=true` codegen get a hand-written `Deserialize` impl that
+  buffers `"[pkg.ext]"` JSON keys into a `serde_json::Value` before
+  dispatching to `extension_registry::deserialize_extension_key`. The emitted
+  path was a bare `::serde_json::Value`, which silently required every
+  consumer of `json=true` codegen to declare `serde_json` directly in its own
+  `Cargo.toml` — a footgun reported by Buf for `bufbuild_registry_*` SDKs
+  generated against `buf/validate/validate.proto` (which has 21 extension
+  ranges). `buffa` now re-exports `serde_json` (gated on the `json` feature,
+  `#[doc(hidden)]`, matching the existing `bytes` re-export) and codegen
+  emits `::buffa::serde_json::Value`, so consumers only need `buffa`,
+  `buffa-types`, and `serde` (the latter for the `#[derive]` macro). No
+  generated output exists for this path in the checked-in WKTs (none declare
+  extension ranges), so no regen.
+
 ## [0.5.2] - 2026-05-07
 
 ### Fixed
