@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **`buffa`: closed-enum JSON helpers no longer require the enum to
+  `impl Deserialize`.** `opt_closed_enum`, `repeated_closed_enum`, and
+  `map_closed_enum` deserialized via `serde_json::from_value::<E>()`,
+  which bound `E: DeserializeOwned`. That meant a closed-enum field whose
+  enum type lives in an externally-generated crate built *without*
+  `generate_json` — e.g. `google.protobuf.FieldDescriptorProto.Type` from
+  `buffa-descriptor`, referenced by `buf/validate/validate.proto` — could
+  not satisfy the bound and refused to compile under `json=true` codegen.
+  The helpers now decode the buffered `serde_json::Value` directly via the
+  `Enumeration` trait (`from_proto_name`, `from_i32`, default for `null`),
+  which is the same dispatch the codegen-emitted `Deserialize` impl
+  performs anyway. The `DeserializeOwned` bound is removed (a relaxation —
+  non-breaking). Lenient mode (`ignore_unknown_enum_values`) is unchanged:
+  any element that fails to decode — unknown variant, out-of-range
+  integer, or wrong JSON type — is dropped from the container / leaves the
+  optional unset, exactly as before. Additionally, that lenient filtering
+  for closed-enum containers now works under `no_std`: the previous
+  implementation needed the `std`-only scoped strict-mode override to
+  surface a distinguishable error from the inner deserialize, but the new
+  `Enumeration`-direct dispatch has no inner deserialize to override.
+
 ## [0.5.2] - 2026-05-07
 
 ### Fixed
