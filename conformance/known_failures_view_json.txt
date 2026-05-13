@@ -1,0 +1,10 @@
+# Known conformance test failures for buffa (view-JSON mode).
+#
+# Tests listed here are expected to fail and will not cause the test run to
+# report a failure.  Each line is a test name (matched by the runner with
+# --failure_list).  Remove entries as failures are fixed.
+#
+# View-JSON mode routes binary input + JSON output through
+# decode_view → serde_json::to_string(&view), exercising the generated view
+# Serialize impls and the hand-written WKT view Serialize impls. JSON input,
+# binary output, and text format are skipped.

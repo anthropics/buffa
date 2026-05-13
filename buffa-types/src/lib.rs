@@ -48,6 +48,8 @@ mod empty_ext;
 mod field_mask_ext;
 mod timestamp_ext;
 mod value_ext;
+#[cfg(feature = "json")]
+mod view_serde_ext;
 mod wrapper_ext;
 
 // Well-known type Rust structs — generated once by `gen_wkt_types`, checked

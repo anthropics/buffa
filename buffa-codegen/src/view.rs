@@ -19,10 +19,12 @@ use crate::features::ResolvedFeatures;
 use crate::impl_message::{
     closed_enum_decode, closed_enum_decode_with_unknown, decode_fn_token, effective_type,
     effective_type_in_map_entry, field_uses_bytes, find_map_entry_fields,
-    is_explicit_presence_scalar, is_packed_type, is_real_oneof_member, is_supported_field_type,
-    validated_field_number, wire_type_byte, wire_type_check, wire_type_token,
+    is_explicit_presence_scalar, is_packed_type, is_real_oneof_member, is_required_field,
+    is_supported_field_type, validated_field_number, wire_type_byte, wire_type_check,
+    wire_type_token,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident, rust_path_to_tokens};
+use crate::oneof::{is_null_value_field, serde_helper_path};
 use crate::CodeGenError;
 
 /// Token stream that pushes a closed-enum unknown value's raw wire span to
@@ -162,6 +164,18 @@ pub(crate) fn generate_view_with_nesting(
         impl<'a> ::buffa::ViewEncode<'a> for #view_ident<'a> {
             #view_encode_methods
         }
+    };
+
+    let serialize_impl = if ctx.config.generate_json {
+        generate_view_serialize(
+            view_scope,
+            msg,
+            &view_ident,
+            &view_oneof_prefix,
+            &oneof_idents,
+        )?
+    } else {
+        quote! {}
     };
 
     // When preserving unknowns we capture `before_tag` so we can compute the
@@ -317,6 +331,8 @@ pub(crate) fn generate_view_with_nesting(
         }
 
         #view_encode_impl
+
+        #serialize_impl
 
         impl<'v> ::buffa::DefaultViewInstance for #view_ident<'v> {
             fn default_view_instance<'a>() -> &'a Self
@@ -1476,6 +1492,617 @@ fn oneof_variant_to_owned(scope: MessageScope<'_>, ty: Type, field_name: &str) -
         }
         _ => quote! { *v },
     }
+}
+
+// ---------------------------------------------------------------------------
+// Serialize impl generation
+// ---------------------------------------------------------------------------
+
+/// Emit `impl serde::Serialize for FooView<'_>` when `generate_json` is true.
+fn generate_view_serialize(
+    scope: MessageScope<'_>,
+    msg: &DescriptorProto,
+    view_ident: &proc_macro2::Ident,
+    view_oneof_prefix: &TokenStream,
+    oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
+) -> Result<TokenStream, CodeGenError> {
+    let mut stmts: Vec<TokenStream> = Vec::new();
+
+    for field in &msg.field {
+        if is_real_oneof_member(field) {
+            continue;
+        }
+        if !is_supported_field_type(field.r#type.unwrap_or_default()) {
+            continue;
+        }
+        stmts.push(view_field_serialize_stmt(scope, msg, field)?);
+    }
+
+    for (idx, oneof) in msg.oneof_decl.iter().enumerate() {
+        let base_ident = match oneof_idents.get(&idx) {
+            Some(id) => id,
+            None => continue,
+        };
+        let oneof_name = oneof
+            .name
+            .as_deref()
+            .ok_or(CodeGenError::MissingField("oneof.name"))?;
+        let field_ident = make_field_ident(oneof_name);
+        let view_enum = quote! { #view_oneof_prefix #base_ident };
+        let fields: Vec<_> = msg
+            .field
+            .iter()
+            .filter(|f| is_real_oneof_member(f) && f.oneof_index == Some(idx as i32))
+            .collect();
+        if fields.is_empty() {
+            continue;
+        }
+        let arms = fields
+            .iter()
+            .map(|f| view_oneof_serialize_arm(scope, f, &view_enum))
+            .collect::<Result<Vec<_>, _>>()?;
+        stmts.push(quote! {
+            if let ::core::option::Option::Some(ref __ov) = self.#field_ident {
+                match __ov { #(#arms)* }
+            }
+        });
+    }
+
+    Ok(quote! {
+        /// Serializes this view as protobuf JSON.
+        ///
+        /// Implicit-presence fields with default values are omitted, `required`
+        /// fields are always emitted, explicit-presence (`optional`) fields are
+        /// emitted only when set, bytes fields are base64-encoded, and enum
+        /// values are their proto name strings.
+        ///
+        /// This impl uses `serialize_map(None)` because the number of emitted
+        /// fields depends on default-omission rules; serializers that require
+        /// known map lengths (e.g. `bincode`) will return a runtime error.
+        /// Use the owned message type for those formats.
+        impl<'__a> ::serde::Serialize for #view_ident<'__a> {
+            fn serialize<__S: ::serde::Serializer>(
+                &self,
+                __s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
+                use ::serde::ser::SerializeMap as _;
+                let mut __map = __s.serialize_map(::core::option::Option::None)?;
+                #(#stmts)*
+                __map.end()
+            }
+        }
+    })
+}
+
+/// Generate a single serialize statement for one direct (non-oneof) view field.
+fn view_field_serialize_stmt(
+    scope: MessageScope<'_>,
+    msg: &DescriptorProto,
+    field: &FieldDescriptorProto,
+) -> Result<TokenStream, CodeGenError> {
+    let MessageScope {
+        ctx,
+        features: parent_features,
+        ..
+    } = scope;
+    let f_features = crate::features::resolve_field(ctx, field, parent_features);
+
+    let field_name = field
+        .name
+        .as_deref()
+        .ok_or(CodeGenError::MissingField("field.name"))?;
+    let json_name = field.json_name.as_deref().unwrap_or(field_name);
+    let ident = make_field_ident(field_name);
+    let label = field.label.unwrap_or_default();
+    let is_repeated = label == Label::LABEL_REPEATED;
+    let is_required = is_required_field(field, parent_features);
+    let ty = effective_type(ctx, field, parent_features);
+
+    // ── Map field ─────────────────────────────────────────────────────────────
+    if is_repeated && is_map_field(msg, field) {
+        let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
+        let key_raw = effective_type_in_map_entry(ctx, key_fd, parent_features);
+        let val_raw = effective_type_in_map_entry(ctx, val_fd, parent_features);
+        let val_f = crate::features::resolve_field(ctx, val_fd, parent_features);
+
+        let key_ty = match key_raw {
+            Type::TYPE_STRING => quote! { &'__a str },
+            Type::TYPE_BYTES => quote! { &'__a [u8] },
+            kt => scalar_ty(kt),
+        };
+        let val_ty = match val_raw {
+            Type::TYPE_STRING => quote! { &'__a str },
+            Type::TYPE_BYTES => quote! { &'__a [u8] },
+            Type::TYPE_MESSAGE => {
+                let path = resolve_view_path(scope, val_fd)?;
+                quote! { #path <'__a> }
+            }
+            Type::TYPE_ENUM => {
+                let et = resolve_enum_ty(scope, val_fd)?;
+                if is_closed_enum(&val_f) {
+                    quote! { #et }
+                } else {
+                    quote! { ::buffa::EnumValue<#et> }
+                }
+            }
+            vt => scalar_ty(vt),
+        };
+
+        // Key wrapper struct. Protobuf JSON requires map keys to be encoded
+        // as JSON strings regardless of the key's proto type:
+        // - String keys are already strings — passed through unwrapped.
+        // - Bytes keys (which only arise when `utf8_validation = NONE` rewrites
+        //   a `string` key to `&[u8]` in the view) are base64-encoded, mirroring
+        //   the owned-side `bytes_key_*_map` helpers' `Base64Wrapper`.
+        // - All other scalar keys (int32/64, uint32/64, bool — the only other
+        //   key types proto allows) are stringified via `collect_str`, mirroring
+        //   the owned-side `proto_map::serialize` `DisplayKey` wrapper.
+        // The explicit wrappers make the view encoding byte-identical to the
+        // owned encoding for any serde backend, not just `serde_json` (whose
+        // `MapKeySerializer` happens to stringify primitives on its own).
+        let (key_wrapper, key_expr) = match key_raw {
+            Type::TYPE_STRING => (quote! {}, quote! { k }),
+            Type::TYPE_BYTES => (
+                quote! {
+                    struct _WK<'__x>(&'__x [u8]);
+                    impl ::serde::Serialize for _WK<'_> {
+                        fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                            ::buffa::json_helpers::bytes::serialize(self.0, __s)
+                        }
+                    }
+                },
+                quote! { &_WK(k) },
+            ),
+            _ => (
+                quote! {
+                    struct _WK(#key_ty);
+                    impl ::serde::Serialize for _WK {
+                        fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                            __s.collect_str(&self.0)
+                        }
+                    }
+                },
+                // k: &K (Copy scalar) — explicit deref into the wrapper field.
+                quote! { &_WK(*k) },
+            ),
+        };
+
+        // Value wrapper struct (for types needing special encoding).
+        let (val_wrapper, val_expr) = match val_raw {
+            Type::TYPE_BYTES => (
+                quote! {
+                    struct _WV<'__x>(&'__x [u8]);
+                    impl ::serde::Serialize for _WV<'_> {
+                        fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                            ::buffa::json_helpers::bytes::serialize(self.0, __s)
+                        }
+                    }
+                },
+                // v: &&[u8] — deref coercion from &&[u8] to &[u8] at _WV struct init.
+                quote! { &_WV(v) },
+            ),
+            Type::TYPE_ENUM if is_closed_enum(&val_f) => {
+                let et = resolve_enum_ty(scope, val_fd)?;
+                (
+                    quote! {
+                        struct _WV(#et);
+                        impl ::serde::Serialize for _WV {
+                            fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                                ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
+                            }
+                        }
+                    },
+                    // v: &E (Copy) — explicit deref needed for scalar struct field.
+                    quote! { &_WV(*v) },
+                )
+            }
+            vt if serde_helper_path(vt).is_some() => {
+                let helper = serde_helper_path(vt).unwrap();
+                (
+                    quote! {
+                        struct _WV(#val_ty);
+                        impl ::serde::Serialize for _WV {
+                            fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                                #helper::serialize(&self.0, __s)
+                            }
+                        }
+                    },
+                    // v: &scalar — explicit deref needed for scalar struct field.
+                    quote! { &_WV(*v) },
+                )
+            }
+            _ => (quote! {}, quote! { v }),
+        };
+
+        // Include '__a only when key/val types actually reference the view lifetime.
+        let key_uses_a = matches!(key_raw, Type::TYPE_STRING | Type::TYPE_BYTES);
+        let val_uses_a = matches!(
+            val_raw,
+            Type::TYPE_STRING | Type::TYPE_BYTES | Type::TYPE_MESSAGE
+        );
+        let (wm_struct_decl, wm_impl_hdr, wm_impl_ty) = if key_uses_a || val_uses_a {
+            (
+                quote! { struct _WM<'__a, '__x>(&'__x ::buffa::MapView<'__x, #key_ty, #val_ty>); },
+                quote! { impl<'__a> },
+                quote! { _WM<'__a, '_> },
+            )
+        } else {
+            (
+                quote! { struct _WM<'__x>(&'__x ::buffa::MapView<'__x, #key_ty, #val_ty>); },
+                quote! { impl },
+                quote! { _WM<'_> },
+            )
+        };
+        return Ok(quote! {
+            if !self.#ident.is_empty() {
+                #wm_struct_decl
+                #wm_impl_hdr ::serde::Serialize for #wm_impl_ty {
+                    fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                        use ::serde::ser::SerializeMap as _;
+                        #key_wrapper
+                        #val_wrapper
+                        // `iter_unique` deduplicates wire-level duplicate keys
+                        // (last-write-wins), matching the owned `HashMap`
+                        // decode semantics and producing valid JSON.
+                        // `len()` (not `len_unique()`) is used for the size
+                        // hint: it is exact for well-formed wire data, an
+                        // upper bound for adversarial duplicates, and avoids
+                        // a second O(n²) dedup pass on every serialize.
+                        let mut __m = __s.serialize_map(::core::option::Option::Some(self.0.len()))?;
+                        for (k, v) in self.0.iter_unique() {
+                            __m.serialize_entry(#key_expr, #val_expr)?;
+                        }
+                        __m.end()
+                    }
+                }
+                __map.serialize_entry(#json_name, &_WM(&self.#ident))?;
+            }
+        });
+    }
+
+    // ── Repeated field ────────────────────────────────────────────────────────
+    if is_repeated {
+        let seq_wrapper = match ty {
+            Type::TYPE_BYTES => quote! {
+                struct _WSeq<'__x>(&'__x [&'__x [u8]]);
+                impl ::serde::Serialize for _WSeq<'_> {
+                    fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                        use ::serde::ser::SerializeSeq as _;
+                        let mut __seq = __s.serialize_seq(::core::option::Option::Some(self.0.len()))?;
+                        for v in self.0 {
+                            struct _WE<'__x>(&'__x [u8]);
+                            impl ::serde::Serialize for _WE<'_> {
+                                fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                                    ::buffa::json_helpers::bytes::serialize(self.0, __s)
+                                }
+                            }
+                            __seq.serialize_element(&_WE(v))?;
+                        }
+                        __seq.end()
+                    }
+                }
+            },
+            Type::TYPE_ENUM if is_closed_enum(&f_features) => {
+                let et = resolve_enum_ty(scope, field)?;
+                quote! {
+                    struct _WSeq<'__x>(&'__x [#et]);
+                    impl ::serde::Serialize for _WSeq<'_> {
+                        fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                            ::buffa::json_helpers::repeated_closed_enum::serialize(self.0, __s)
+                        }
+                    }
+                }
+            }
+            Type::TYPE_ENUM => {
+                let et = resolve_enum_ty(scope, field)?;
+                quote! {
+                    struct _WSeq<'__x>(&'__x [::buffa::EnumValue<#et>]);
+                    impl ::serde::Serialize for _WSeq<'_> {
+                        fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                            ::buffa::json_helpers::repeated_enum::serialize(self.0, __s)
+                        }
+                    }
+                }
+            }
+            scalar_ty_val if serde_helper_path(scalar_ty_val).is_some() => {
+                let elem_ty = scalar_ty(scalar_ty_val);
+                quote! {
+                    struct _WSeq<'__x>(&'__x [#elem_ty]);
+                    impl ::serde::Serialize for _WSeq<'_> {
+                        fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                            ::buffa::json_helpers::proto_seq::serialize(self.0, __s)
+                        }
+                    }
+                }
+            }
+            _ => quote! {},
+        };
+
+        let seq_val = if seq_wrapper.is_empty() {
+            // Explicit deref: RepeatedView doesn't impl Serialize, but &[T] does.
+            quote! { &*self.#ident }
+        } else {
+            // Deref coercion from &RepeatedView<'a,T> to &[T] at struct-init site.
+            quote! { &_WSeq(&self.#ident) }
+        };
+
+        return Ok(quote! {
+            if !self.#ident.is_empty() {
+                #seq_wrapper
+                __map.serialize_entry(#json_name, #seq_val)?;
+            }
+        });
+    }
+
+    // ── Explicit-presence (proto3 optional) scalar ────────────────────────────
+    if is_explicit_presence_scalar(field, ty, &f_features) {
+        // opt_* helpers from json_helpers take &Option<owned_T>, not &Option<view_T>.
+        // Handle each case inline so the view's Option<&str>/Option<&[u8]> work.
+        let entry = match ty {
+            Type::TYPE_STRING => quote! {
+                if let ::core::option::Option::Some(__v) = self.#ident {
+                    __map.serialize_entry(#json_name, __v)?;
+                }
+            },
+            Type::TYPE_BYTES => quote! {
+                if let ::core::option::Option::Some(__v) = self.#ident {
+                    struct _W<'__x>(&'__x [u8]);
+                    impl ::serde::Serialize for _W<'_> {
+                        fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                            ::buffa::json_helpers::bytes::serialize(self.0, __s)
+                        }
+                    }
+                    __map.serialize_entry(#json_name, &_W(__v))?;
+                }
+            },
+            Type::TYPE_ENUM if is_closed_enum(&f_features) => {
+                let et = resolve_enum_ty(scope, field)?;
+                quote! {
+                    if let ::core::option::Option::Some(__v) = self.#ident {
+                        struct _W(#et);
+                        impl ::serde::Serialize for _W {
+                            fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                                ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
+                            }
+                        }
+                        __map.serialize_entry(#json_name, &_W(__v))?;
+                    }
+                }
+            }
+            Type::TYPE_ENUM => quote! {
+                if let ::core::option::Option::Some(ref __v) = self.#ident {
+                    __map.serialize_entry(#json_name, __v)?;
+                }
+            },
+            scalar if serde_helper_path(scalar).is_some() => {
+                let helper = serde_helper_path(scalar).unwrap();
+                let elem_ty = scalar_ty(scalar);
+                quote! {
+                    if let ::core::option::Option::Some(__v) = self.#ident {
+                        struct _W(#elem_ty);
+                        impl ::serde::Serialize for _W {
+                            fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                                #helper::serialize(&self.0, __s)
+                            }
+                        }
+                        __map.serialize_entry(#json_name, &_W(__v))?;
+                    }
+                }
+            }
+            _ => quote! {
+                if let ::core::option::Option::Some(__v) = self.#ident {
+                    __map.serialize_entry(#json_name, &__v)?;
+                }
+            },
+        };
+        return Ok(entry);
+    }
+
+    // ── Singular fields ───────────────────────────────────────────────────────
+    let (skip_cond, serialize_stmt) = match ty {
+        Type::TYPE_STRING => (
+            quote! { !::buffa::json_helpers::skip_if::is_empty_str(self.#ident) },
+            quote! { __map.serialize_entry(#json_name, self.#ident)?; },
+        ),
+        Type::TYPE_BYTES => (
+            quote! { !::buffa::json_helpers::skip_if::is_empty_bytes(self.#ident) },
+            quote! {
+                struct _W<'__x>(&'__x [u8]);
+                impl ::serde::Serialize for _W<'_> {
+                    fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                        ::buffa::json_helpers::bytes::serialize(self.0, __s)
+                    }
+                }
+                __map.serialize_entry(#json_name, &_W(self.#ident))?;
+            },
+        ),
+        Type::TYPE_MESSAGE | Type::TYPE_GROUP => (
+            quote! { self.#ident.is_set() },
+            quote! {
+                if let ::core::option::Option::Some(__v) = self.#ident.as_option() {
+                    __map.serialize_entry(#json_name, __v)?;
+                }
+            },
+        ),
+        Type::TYPE_ENUM if is_closed_enum(&f_features) => {
+            let et = resolve_enum_ty(scope, field)?;
+            let skip_fn = quote! { ::buffa::json_helpers::skip_if::is_default_closed_enum };
+            (
+                quote! { !#skip_fn(&self.#ident) },
+                quote! {
+                    struct _W(#et);
+                    impl ::serde::Serialize for _W {
+                        fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                            ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
+                        }
+                    }
+                    __map.serialize_entry(#json_name, &_W(self.#ident))?;
+                },
+            )
+        }
+        Type::TYPE_ENUM => (
+            quote! { !::buffa::json_helpers::skip_if::is_default_enum_value(&self.#ident) },
+            quote! { __map.serialize_entry(#json_name, &self.#ident)?; },
+        ),
+        scalar if serde_helper_path(scalar).is_some() => {
+            let helper = serde_helper_path(scalar).unwrap();
+            let skip_path = scalar_skip_predicate(scalar);
+            let elem_ty = scalar_ty(scalar);
+            (
+                quote! { !#skip_path(&self.#ident) },
+                quote! {
+                    struct _W(#elem_ty);
+                    impl ::serde::Serialize for _W {
+                        fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                            #helper::serialize(&self.0, __s)
+                        }
+                    }
+                    __map.serialize_entry(#json_name, &_W(self.#ident))?;
+                },
+            )
+        }
+        Type::TYPE_BOOL => (
+            quote! { self.#ident },
+            quote! { __map.serialize_entry(#json_name, &self.#ident)?; },
+        ),
+        _ => (
+            quote! { self.#ident != ::core::default::Default::default() },
+            quote! { __map.serialize_entry(#json_name, &self.#ident)?; },
+        ),
+    };
+
+    // Message fields handle skip internally via the if-let. Required fields
+    // are always serialized. Both are wrapped in a block so that any local
+    // `struct _W` declarations inside `serialize_stmt` do not collide when
+    // multiple such fields appear in the same message.
+    if matches!(ty, Type::TYPE_MESSAGE | Type::TYPE_GROUP) || is_required {
+        return Ok(quote! { { #serialize_stmt } });
+    }
+
+    Ok(quote! {
+        if #skip_cond {
+            #serialize_stmt
+        }
+    })
+}
+
+/// Return the `skip_if` predicate path string for a scalar type that has a helper.
+fn scalar_skip_predicate(ty: Type) -> TokenStream {
+    match ty {
+        Type::TYPE_BOOL => quote! { ::buffa::json_helpers::skip_if::is_false },
+        Type::TYPE_INT32 | Type::TYPE_SINT32 | Type::TYPE_SFIXED32 => {
+            quote! { ::buffa::json_helpers::skip_if::is_zero_i32 }
+        }
+        Type::TYPE_UINT32 | Type::TYPE_FIXED32 => {
+            quote! { ::buffa::json_helpers::skip_if::is_zero_u32 }
+        }
+        Type::TYPE_INT64 | Type::TYPE_SINT64 | Type::TYPE_SFIXED64 => {
+            quote! { ::buffa::json_helpers::skip_if::is_zero_i64 }
+        }
+        Type::TYPE_UINT64 | Type::TYPE_FIXED64 => {
+            quote! { ::buffa::json_helpers::skip_if::is_zero_u64 }
+        }
+        Type::TYPE_FLOAT => quote! { ::buffa::json_helpers::skip_if::is_zero_f32 },
+        Type::TYPE_DOUBLE => quote! { ::buffa::json_helpers::skip_if::is_zero_f64 },
+        // The single call site is gated by `serde_helper_path(ty).is_some()`,
+        // which only matches the scalar types above. Bytes is handled in an
+        // earlier match arm.
+        _ => unreachable!("scalar_skip_predicate called for non-scalar"),
+    }
+}
+
+/// Generate a single `match` arm for one oneof variant in the inlined oneof serialization.
+///
+/// The arm is used inside:
+/// ```text
+/// if let Some(ref __ov) = self.field { match __ov { <arm>, ... } }
+/// ```
+fn view_oneof_serialize_arm(
+    scope: MessageScope<'_>,
+    field: &FieldDescriptorProto,
+    view_enum: &TokenStream,
+) -> Result<TokenStream, CodeGenError> {
+    let MessageScope { ctx, features, .. } = scope;
+    let f_features = crate::features::resolve_field(ctx, field, features);
+
+    let name = field
+        .name
+        .as_deref()
+        .ok_or(CodeGenError::MissingField("field.name"))?;
+    let json_name = field.json_name.as_deref().unwrap_or(name);
+    let variant = crate::oneof::oneof_variant_ident(name);
+    let ty = effective_type(ctx, field, features);
+
+    // NullValue must serialize as JSON `null`, not "NULL_VALUE".
+    if is_null_value_field(field) {
+        return Ok(quote! {
+            #view_enum::#variant(_) => {
+                __map.serialize_entry(#json_name, &())?;
+            }
+        });
+    }
+
+    // Pattern match on &ViewEnum gives v: &inner_type (with match ergonomics).
+    let arm_body = match ty {
+        Type::TYPE_STRING => {
+            // v: &&str — deref coercion from &&str to &str at the serialize_entry call.
+            quote! { __map.serialize_entry(#json_name, v)?; }
+        }
+        Type::TYPE_BYTES => {
+            // v: &&[u8] — deref coercion from &&[u8] to &[u8] in _W constructor.
+            quote! {
+                struct _W<'__x>(&'__x [u8]);
+                impl ::serde::Serialize for _W<'_> {
+                    fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                        ::buffa::json_helpers::bytes::serialize(self.0, __s)
+                    }
+                }
+                __map.serialize_entry(#json_name, &_W(v))?;
+            }
+        }
+        Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
+            // v: &Box<FooView> → Box<FooView>: Serialize when FooView: Serialize.
+            quote! { __map.serialize_entry(#json_name, v)?; }
+        }
+        Type::TYPE_ENUM if is_closed_enum(&f_features) => {
+            let et = resolve_enum_ty(scope, field)?;
+            quote! {
+                struct _W(#et);
+                impl ::serde::Serialize for _W {
+                    fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                        ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
+                    }
+                }
+                __map.serialize_entry(#json_name, &_W(*v))?;
+            }
+        }
+        Type::TYPE_ENUM => {
+            // v: &EnumValue<E> — has its own Serialize impl.
+            quote! { __map.serialize_entry(#json_name, v)?; }
+        }
+        scalar if serde_helper_path(scalar).is_some() => {
+            let helper = serde_helper_path(scalar).unwrap();
+            let sty = scalar_ty(scalar);
+            // v: &scalar_type → copy and wrap.
+            quote! {
+                struct _W(#sty);
+                impl ::serde::Serialize for _W {
+                    fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                        #helper::serialize(&self.0, __s)
+                    }
+                }
+                __map.serialize_entry(#json_name, &_W(*v))?;
+            }
+        }
+        _ => {
+            // bool, i32, u32: direct serialize.
+            quote! { __map.serialize_entry(#json_name, v)?; }
+        }
+    };
+
+    Ok(quote! {
+        #view_enum::#variant(v) => { #arm_body }
+    })
 }
 
 // ---------------------------------------------------------------------------
