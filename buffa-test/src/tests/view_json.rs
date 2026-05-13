@@ -48,8 +48,8 @@ macro_rules! assert_view_json_value_parity {
 
 mod scalars {
     use super::*;
-    use crate::view_json::Scalars;
     use crate::view_json::__buffa::view::ScalarsView;
+    use crate::view_json::Scalars;
 
     #[test]
     fn matches_owned() {
@@ -111,9 +111,9 @@ mod scalars {
 
 mod optional_scalars {
     use super::*;
+    use crate::view_json::__buffa::view::OptionalScalarsView;
     use crate::view_json::Color;
     use crate::view_json::OptionalScalars;
-    use crate::view_json::__buffa::view::OptionalScalarsView;
 
     #[test]
     fn all_set_matches_owned() {
@@ -173,8 +173,8 @@ mod optional_scalars {
 
 mod repeats {
     use super::*;
-    use crate::view_json::Repeats;
     use crate::view_json::__buffa::view::RepeatsView;
+    use crate::view_json::Repeats;
 
     #[test]
     fn matches_owned() {
@@ -352,8 +352,8 @@ mod maps {
         // decode. Construct wire bytes with a duplicate `labels` entry by
         // concatenating two single-entry encodings, and verify the view
         // serializes valid JSON identical to what the owned decoder yields.
-        use crate::view_json::WithMaps;
         use crate::view_json::__buffa::view::WithMapsView;
+        use crate::view_json::WithMaps;
         use buffa::Message;
 
         let entry = |k: &str, v: &str| -> Vec<u8> {
@@ -448,8 +448,8 @@ mod nested {
 
 mod wkt {
     use super::*;
-    use crate::view_json::WithWkt;
     use crate::view_json::__buffa::view::WithWktView;
+    use crate::view_json::WithWkt;
     use buffa::MessageField;
     use buffa_types::google::protobuf::{BoolValue, Duration, Int64Value, StringValue, Timestamp};
 
@@ -529,8 +529,8 @@ mod wkt {
 
 mod owned_view {
     use super::*;
-    use crate::view_json::Scalars;
     use crate::view_json::__buffa::view::ScalarsView;
+    use crate::view_json::Scalars;
     use buffa::view::OwnedView;
 
     #[test]
