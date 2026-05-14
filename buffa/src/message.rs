@@ -450,6 +450,24 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
 /// object-safe (`dyn MessageName` does not compile). Use it as a generic
 /// bound (`fn foo<T: MessageName>()`), not a trait object.
 ///
+/// ```
+/// # use buffa::MessageName;
+/// /// A name-keyed registry can register any `MessageName` type — owned
+/// /// or view — without proving it can encode.
+/// fn registry_key<T: MessageName>() -> &'static str {
+///     T::FULL_NAME
+/// }
+/// # // No generated types in `buffa` itself; just check it monomorphises.
+/// # struct Demo;
+/// # impl MessageName for Demo {
+/// #     const PACKAGE: &'static str = "demo";
+/// #     const NAME: &'static str = "Demo";
+/// #     const FULL_NAME: &'static str = "demo.Demo";
+/// #     const TYPE_URL: &'static str = "type.googleapis.com/demo.Demo";
+/// # }
+/// assert_eq!(registry_key::<Demo>(), "demo.Demo");
+/// ```
+///
 /// [`PACKAGE`]: Self::PACKAGE
 /// [`NAME`]: Self::NAME
 /// [`FULL_NAME`]: Self::FULL_NAME
@@ -464,8 +482,10 @@ pub trait MessageName {
     /// The unqualified message name, with `.` between nesting levels.
     ///
     /// `"Foo"` for a top-level message; `"Outer.Inner"` for a message
-    /// nested inside `Outer`. This is what protobuf calls the
-    /// "relative name" — the part after the package.
+    /// nested inside `Outer`. This is the "type name relative to the
+    /// package" — what `prost::Name::NAME` calls the same thing — *not*
+    /// `DescriptorProto.name`, which is only the leaf segment (`"Inner"`)
+    /// for nested types.
     const NAME: &'static str;
 
     /// The fully-qualified protobuf type name with no leading dot.

@@ -342,16 +342,22 @@ pub(crate) fn message_name_impl(
     ty: &TokenStream,
 ) -> TokenStream {
     let name = if current_package.is_empty() {
-        proto_fqn
+        proto_fqn.to_string()
     } else {
+        // Strip `"<package>."` atomically — a two-step
+        // `strip_prefix(package)` then `strip_prefix(".")` would
+        // partial-match a prefix-overlapping package (`package = "foo"`
+        // against `proto_fqn = "food.Bar"`) and silently violate the
+        // documented `PACKAGE + "." + NAME == FULL_NAME` invariant.
+        //
         // `proto_fqn` is always `"<package>.<rest>"` for a non-empty
-        // package — it's built by joining segments onto the package — so
-        // the strip can't fail. Fall back defensively rather than panic
-        // on a malformed descriptor.
+        // package (it's built by joining message segments onto the
+        // package), so the strip should never fail. Fall back
+        // defensively rather than panic on a malformed descriptor.
         proto_fqn
-            .strip_prefix(current_package)
-            .and_then(|s| s.strip_prefix('.'))
+            .strip_prefix(&format!("{current_package}."))
             .unwrap_or(proto_fqn)
+            .to_string()
     };
     let type_url = format!("type.googleapis.com/{proto_fqn}");
     quote! {

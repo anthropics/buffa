@@ -198,6 +198,45 @@ fn gated_view_module_is_cfg_blocked() {
         squashed.contains(r#"#[cfg(feature = "views")] pub mod view"#),
         "the views cfg must precede `pub mod view`: {content}"
     );
+    // The view's `impl MessageName for FooView<'a>` lives in the
+    // `<stem>.__view.rs` content file, which the stitcher `include!`s
+    // *inside* the `#[cfg(feature = "views")] pub mod view` block, so
+    // it disappears with the feature. The owned-message impl is in the
+    // `<stem>.rs` content file (unconditional). Pin both: a refactor
+    // that emits the view impl into a non-View content file would ship
+    // a name-resolution error against a cfg'd-out type.
+    let cfg = CodeGenConfig {
+        generate_json: true,
+        generate_views: true,
+        generate_text: false,
+        preserve_unknown_fields: true,
+        gate_impls_on_crate_features: true,
+        ..CodeGenConfig::default()
+    };
+    let files =
+        generate(&[fixture()], &["gated.proto".to_string()], &cfg).expect("should generate");
+    for f in &files {
+        let has_view_impl = f.content.contains("MessageName for OuterView");
+        let has_owned_impl = squash(&f.content).contains("impl ::buffa::MessageName for Outer ");
+        match f.kind {
+            GeneratedFileKind::View => assert!(
+                has_view_impl,
+                "view MessageName impl must be in the view content file ({})",
+                f.name
+            ),
+            GeneratedFileKind::Owned => assert!(
+                has_owned_impl && !has_view_impl,
+                "owned content file must have the owned (not view) MessageName impl ({})",
+                f.name
+            ),
+            _ => assert!(
+                !has_view_impl && !has_owned_impl,
+                "MessageName impl leaked into a {:?} file ({})",
+                f.kind,
+                f.name
+            ),
+        }
+    }
 }
 
 #[test]

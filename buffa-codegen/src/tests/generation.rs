@@ -1242,6 +1242,77 @@ fn test_type_url_doubly_nested() {
 }
 
 #[test]
+fn test_message_name_consts() {
+    // The four `MessageName` consts must hold the documented invariant
+    // `PACKAGE + "." + NAME == FULL_NAME` (joining dot omitted when
+    // `PACKAGE` is empty), and `TYPE_URL == "type.googleapis.com/" +
+    // FULL_NAME`. The atomic-prefix-strip in `message_name_impl` makes
+    // a partial-match (`package = "foo"` against `proto_fqn =
+    // "food.Bar"`) impossible to slip through silently — pin the shape
+    // here so a refactor that re-introduces a two-step strip fails this
+    // test instead of shipping a broken `NAME`.
+    let mut file = proto3_file("named.proto");
+    file.package = Some("my.pkg".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Outer".to_string()),
+        nested_type: vec![DescriptorProto {
+            name: Some("Inner".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let files = generate(
+        &[file],
+        &["named.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let content = joined(&files);
+    // Top-level: PACKAGE + "." + NAME == FULL_NAME.
+    for snippet in [
+        r#"const PACKAGE: &'static str = "my.pkg""#,
+        r#"const NAME: &'static str = "Outer""#,
+        r#"const FULL_NAME: &'static str = "my.pkg.Outer""#,
+        r#"const TYPE_URL: &'static str = "type.googleapis.com/my.pkg.Outer""#,
+        // Nested: NAME carries the dotted nesting path; PACKAGE stays
+        // at the proto package — NOT `DescriptorProto.name` (which is
+        // just `"Inner"`).
+        r#"const NAME: &'static str = "Outer.Inner""#,
+        r#"const FULL_NAME: &'static str = "my.pkg.Outer.Inner""#,
+    ] {
+        assert!(content.contains(snippet), "missing `{snippet}`: {content}");
+    }
+
+    // Empty package: PACKAGE is "", NAME == FULL_NAME, no joining dot.
+    let mut root = proto3_file("root.proto");
+    root.message_type.push(DescriptorProto {
+        name: Some("Root".to_string()),
+        nested_type: vec![DescriptorProto {
+            name: Some("Leaf".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let files = generate(
+        &[root],
+        &["root.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let content = joined(&files);
+    for snippet in [
+        r#"const PACKAGE: &'static str = """#,
+        r#"const NAME: &'static str = "Root""#,
+        r#"const FULL_NAME: &'static str = "Root""#,
+        r#"const NAME: &'static str = "Root.Leaf""#,
+        r#"const FULL_NAME: &'static str = "Root.Leaf""#,
+        r#"const TYPE_URL: &'static str = "type.googleapis.com/Root.Leaf""#,
+    ] {
+        assert!(content.contains(snippet), "missing `{snippet}`: {content}");
+    }
+}
+
+#[test]
 fn test_message_scalar_fields() {
     let mut file = proto3_file("scalars.proto");
     file.message_type.push(DescriptorProto {
