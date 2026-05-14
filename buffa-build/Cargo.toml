@@ -13,6 +13,6 @@ categories = ["development-tools::build-utils"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-buffa = { path = "../buffa", version = "0.5.1" }
+buffa = { path = "../buffa", version = "0.5.2" }
 buffa-codegen = { workspace = true }
 tempfile = "3"

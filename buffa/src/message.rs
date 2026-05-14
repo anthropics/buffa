@@ -417,6 +417,99 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     fn clear(&mut self);
 }
 
+/// Compile-time access to a generated message's protobuf identifiers.
+///
+/// Generic code that needs to *name* a message type — type-erased event
+/// registries, structured logging, `Any` packing, schema lookups — can
+/// bound on `T: MessageName` and read [`PACKAGE`], [`NAME`],
+/// [`FULL_NAME`], or [`TYPE_URL`] without descriptor machinery or runtime
+/// reflection. All four are `&'static str` literals computed at codegen
+/// time, so there's no allocation or concatenation at runtime — unlike
+/// `prost::Name`, whose `full_name()` and `type_url()` are runtime
+/// `format!` calls.
+///
+/// Bring `buffa::MessageName` into scope to use `MyMessage::FULL_NAME`.
+/// Without the trait in scope, use
+/// `<MyMessage as buffa::MessageName>::FULL_NAME`.
+///
+/// Codegen implements `MessageName` for both the owned message type and
+/// its zero-copy view type (`MyMessageView<'a>`), so the same generic
+/// bound dispatches either. The trait has **no** [`Message`] supertrait —
+/// it doesn't reach into the wire codec and a name-keyed registry should
+/// be able to register a type without proving it can encode.
+///
+/// Hand-written [`Message`] implementations can opt in by also
+/// implementing `MessageName`; it is a separate trait specifically so
+/// that omitting it stays non-breaking. For messages that also implement
+/// [`ExtensionSet`](crate::ExtensionSet), [`FULL_NAME`] is guaranteed
+/// equal to [`ExtensionSet::PROTO_FQN`](crate::ExtensionSet::PROTO_FQN);
+/// the inherent `MyMessage::TYPE_URL` const is equal to [`TYPE_URL`].
+/// All derive from the same `proto_fqn` source in codegen.
+///
+/// Because the only items are associated `const`s, this trait is **not**
+/// object-safe (`dyn MessageName` does not compile). Use it as a generic
+/// bound (`fn foo<T: MessageName>()`), not a trait object.
+///
+/// ```
+/// # use buffa::MessageName;
+/// /// A name-keyed registry can register any `MessageName` type — owned
+/// /// or view — without proving it can encode.
+/// fn registry_key<T: MessageName>() -> &'static str {
+///     T::FULL_NAME
+/// }
+/// # // No generated types in `buffa` itself; just check it monomorphises.
+/// # struct Demo;
+/// # impl MessageName for Demo {
+/// #     const PACKAGE: &'static str = "demo";
+/// #     const NAME: &'static str = "Demo";
+/// #     const FULL_NAME: &'static str = "demo.Demo";
+/// #     const TYPE_URL: &'static str = "type.googleapis.com/demo.Demo";
+/// # }
+/// assert_eq!(registry_key::<Demo>(), "demo.Demo");
+/// ```
+///
+/// [`PACKAGE`]: Self::PACKAGE
+/// [`NAME`]: Self::NAME
+/// [`FULL_NAME`]: Self::FULL_NAME
+/// [`TYPE_URL`]: Self::TYPE_URL
+pub trait MessageName {
+    /// The protobuf package the message is declared in.
+    ///
+    /// `"my.pkg"` for `package my.pkg;`. Empty string for the unnamed
+    /// root package. Does not include a leading or trailing dot.
+    const PACKAGE: &'static str;
+
+    /// The unqualified message name, with `.` between nesting levels.
+    ///
+    /// `"Foo"` for a top-level message; `"Outer.Inner"` for a message
+    /// nested inside `Outer`. This is the "type name relative to the
+    /// package" — what `prost::Name::NAME` calls the same thing — *not*
+    /// `DescriptorProto.name`, which is only the leaf segment (`"Inner"`)
+    /// for nested types.
+    const NAME: &'static str;
+
+    /// The fully-qualified protobuf type name with no leading dot.
+    ///
+    /// `"my.pkg.Outer.Inner"` for a nested message in package `my.pkg`,
+    /// or just `"Foo"` for a top-level message in the unnamed root
+    /// package. Equal to `PACKAGE` + `"."` + `NAME` (with the joining
+    /// dot omitted when `PACKAGE` is empty); shipped as its own const
+    /// because consumers almost always want the joined form and the
+    /// dotted string can't be re-split unambiguously
+    /// (`foo.Bar.Baz` could be package `foo.Bar` + message `Baz`, or
+    /// package `foo` + nested `Bar.Baz`).
+    const FULL_NAME: &'static str;
+
+    /// The `google.protobuf.Any.type_url` form for this message.
+    ///
+    /// `"type.googleapis.com/" + FULL_NAME`. This is the value the
+    /// runtime stores in [`Any::type_url`] when packing a message, and
+    /// the one a generic `Any` registry should key on.
+    ///
+    /// [`Any::type_url`]: https://protobuf.dev/programming-guides/proto3/#any
+    const TYPE_URL: &'static str;
+}
+
 /// Options for configuring message decoding behavior.
 ///
 /// Use this to set custom recursion depth limits or maximum message sizes

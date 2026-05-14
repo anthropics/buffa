@@ -222,6 +222,12 @@ impl<'a> ::buffa::ViewEncode<'a> for DurationView<'a> {
         self.__buffa_unknown_fields.write_to(buf);
     }
 }
+impl<'a> ::buffa::MessageName for DurationView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "Duration";
+    const FULL_NAME: &'static str = "google.protobuf.Duration";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Duration";
+}
 impl<'v> ::buffa::DefaultViewInstance for DurationView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where

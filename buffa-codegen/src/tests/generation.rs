@@ -46,6 +46,291 @@ fn test_wkt_auto_mapping_suppressed_by_exact_match() {
         .any(|(p, r)| p == ".google.protobuf" && r == "::my_wkts"));
 }
 
+// ── File-level extern paths (descriptor.proto → buffa-descriptor) ────────
+
+#[test]
+fn test_file_extern_paths_default_injection() {
+    let config = CodeGenConfig::default();
+    let file_paths = effective_file_extern_paths(&[], &config);
+    assert_eq!(
+        file_paths,
+        vec![
+            (
+                "google/protobuf/descriptor.proto".to_string(),
+                "::buffa_descriptor::generated::descriptor".to_string(),
+            ),
+            (
+                "google/protobuf/compiler/plugin.proto".to_string(),
+                "::buffa_descriptor::generated::compiler".to_string(),
+            ),
+        ],
+    );
+}
+
+#[test]
+fn test_file_extern_paths_suppressed_by_user_wkt_override() {
+    // A user `.google.protobuf` override has covered descriptor types
+    // since the package-level mapping was introduced. Auto-injecting a
+    // higher-priority file-level mapping would silently redirect them
+    // away from the user's crate — preserve the old behaviour.
+    let config = CodeGenConfig {
+        extern_paths: vec![(".google.protobuf".into(), "::my_wkts".into())],
+        ..Default::default()
+    };
+    let file_paths = effective_file_extern_paths(&[], &config);
+    assert!(
+        file_paths.is_empty(),
+        "user .google.protobuf override must suppress descriptor file-level mapping"
+    );
+}
+
+#[test]
+fn test_file_extern_paths_sub_package_override_suppresses_only_covered_file() {
+    // A `.google.protobuf.compiler` sub-package override covers
+    // `plugin.proto` (package `google.protobuf.compiler`) but NOT
+    // `descriptor.proto` (package `google.protobuf`). The file-level
+    // mapping must yield to the user override only for the file it
+    // actually covers — the same per-package precedence the WKT
+    // package-level mapping uses.
+    let config = CodeGenConfig {
+        extern_paths: vec![(
+            ".google.protobuf.compiler".into(),
+            "::compiler_protos".into(),
+        )],
+        ..Default::default()
+    };
+    let file_paths = effective_file_extern_paths(&[], &config);
+    assert!(
+        file_paths
+            .iter()
+            .any(|(f, _)| f == "google/protobuf/descriptor.proto"),
+        "sub-package override for compiler must not suppress descriptor.proto file-level mapping"
+    );
+    assert!(
+        !file_paths
+            .iter()
+            .any(|(f, _)| f == "google/protobuf/compiler/plugin.proto"),
+        "sub-package override for compiler must suppress plugin.proto file-level mapping"
+    );
+}
+
+#[test]
+fn test_file_extern_paths_suppressed_when_generating_descriptor_proto() {
+    // When building buffa-descriptor itself (descriptor.proto is in
+    // files_to_generate), its types must resolve to the local module — the
+    // file-level mapping is suppressed for that file. plugin.proto is
+    // suppressed independently.
+    let config = CodeGenConfig::default();
+    let file_paths =
+        effective_file_extern_paths(&["google/protobuf/descriptor.proto".to_string()], &config);
+    assert!(
+        !file_paths
+            .iter()
+            .any(|(f, _)| f == "google/protobuf/descriptor.proto"),
+        "must not externalize descriptor.proto when generating it locally"
+    );
+    assert!(
+        file_paths
+            .iter()
+            .any(|(f, _)| f == "google/protobuf/compiler/plugin.proto"),
+        "plugin.proto suppression is independent of descriptor.proto"
+    );
+}
+
+#[test]
+fn test_descriptor_enum_field_resolves_to_buffa_descriptor() {
+    // Regression: a proto referencing `google.protobuf.FieldDescriptorProto.Type`
+    // (which `buf/validate/validate.proto` does) must resolve to
+    // `::buffa_descriptor::generated::descriptor::field_descriptor_proto::Type`,
+    // not `::buffa_types::google::protobuf::field_descriptor_proto::Type` —
+    // the latter doesn't exist (`buffa-types` only ships the JSON-mappable
+    // WKTs, not descriptor.proto types).
+    //
+    // The descriptor file is an *import* (in `files`, not `files_to_generate`)
+    // — exactly how protoc surfaces it for any proto that
+    // `import "google/protobuf/descriptor.proto"`.
+    let mut descriptor_file = proto3_file("google/protobuf/descriptor.proto");
+    descriptor_file.package = Some("google.protobuf".to_string());
+    descriptor_file.message_type.push(DescriptorProto {
+        name: Some("FieldDescriptorProto".to_string()),
+        enum_type: vec![EnumDescriptorProto {
+            name: Some("Type".to_string()),
+            value: vec![enum_value("TYPE_DOUBLE", 1)],
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+
+    let mut user_file = proto3_file("my/uses_descriptor.proto");
+    user_file.package = Some("my".to_string());
+    user_file.dependency = vec!["google/protobuf/descriptor.proto".to_string()];
+    user_file.message_type.push(DescriptorProto {
+        name: Some("Wraps".to_string()),
+        field: vec![FieldDescriptorProto {
+            name: Some("field_type".to_string()),
+            number: Some(1),
+            label: Some(Label::LABEL_OPTIONAL),
+            r#type: Some(Type::TYPE_ENUM),
+            type_name: Some(".google.protobuf.FieldDescriptorProto.Type".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+
+    let files = generate(
+        &[descriptor_file, user_file],
+        &["my/uses_descriptor.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let content = joined(&files);
+    assert!(
+        content.contains("::buffa_descriptor::generated::descriptor::field_descriptor_proto::Type"),
+        "descriptor enum field must resolve to buffa-descriptor: {content}"
+    );
+    assert!(
+        !content.contains("::buffa_types::google::protobuf::field_descriptor_proto::Type"),
+        "descriptor enum field must not resolve to buffa-types (does not exist): {content}"
+    );
+}
+
+#[test]
+fn test_user_wkt_override_still_covers_descriptor_types() {
+    // Backward-compat: an explicit user `.google.protobuf` extern_path
+    // covers `descriptor.proto` types too — the file-level descriptor
+    // mapping must yield to it.
+    let mut descriptor_file = proto3_file("google/protobuf/descriptor.proto");
+    descriptor_file.package = Some("google.protobuf".to_string());
+    descriptor_file.message_type.push(DescriptorProto {
+        name: Some("FieldDescriptorProto".to_string()),
+        enum_type: vec![EnumDescriptorProto {
+            name: Some("Type".to_string()),
+            value: vec![enum_value("TYPE_DOUBLE", 1)],
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+
+    let mut user_file = proto3_file("my/uses_descriptor.proto");
+    user_file.package = Some("my".to_string());
+    user_file.dependency = vec!["google/protobuf/descriptor.proto".to_string()];
+    user_file.message_type.push(DescriptorProto {
+        name: Some("Wraps".to_string()),
+        field: vec![FieldDescriptorProto {
+            name: Some("field_type".to_string()),
+            number: Some(1),
+            label: Some(Label::LABEL_OPTIONAL),
+            r#type: Some(Type::TYPE_ENUM),
+            type_name: Some(".google.protobuf.FieldDescriptorProto.Type".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+
+    let config = CodeGenConfig {
+        extern_paths: vec![(".google.protobuf".into(), "::my_wkts".into())],
+        ..Default::default()
+    };
+    let files = generate(
+        &[descriptor_file, user_file],
+        &["my/uses_descriptor.proto".to_string()],
+        &config,
+    )
+    .expect("should generate");
+    let content = joined(&files);
+    assert!(
+        content.contains("::my_wkts::field_descriptor_proto::Type"),
+        "user .google.protobuf override must cover descriptor types: {content}"
+    );
+    assert!(
+        !content.contains("::buffa_descriptor"),
+        "auto-injected descriptor mapping must yield to user override: {content}"
+    );
+}
+
+/// Build the synthetic `compiler/plugin.proto` import + a user proto that
+/// references `google.protobuf.compiler.CodeGeneratorRequest` as a field.
+/// Shared by the plugin.proto routing tests below.
+fn plugin_proto_fixture() -> (FileDescriptorProto, FileDescriptorProto) {
+    let mut plugin_file = proto3_file("google/protobuf/compiler/plugin.proto");
+    plugin_file.package = Some("google.protobuf.compiler".to_string());
+    plugin_file.message_type.push(DescriptorProto {
+        name: Some("CodeGeneratorRequest".to_string()),
+        ..Default::default()
+    });
+
+    let mut user_file = proto3_file("my/uses_plugin.proto");
+    user_file.package = Some("my".to_string());
+    user_file.dependency = vec!["google/protobuf/compiler/plugin.proto".to_string()];
+    user_file.message_type.push(DescriptorProto {
+        name: Some("Wraps".to_string()),
+        field: vec![FieldDescriptorProto {
+            name: Some("req".to_string()),
+            number: Some(1),
+            label: Some(Label::LABEL_OPTIONAL),
+            r#type: Some(Type::TYPE_MESSAGE),
+            type_name: Some(".google.protobuf.compiler.CodeGeneratorRequest".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+
+    (plugin_file, user_file)
+}
+
+#[test]
+fn test_plugin_proto_message_field_resolves_to_buffa_descriptor() {
+    // `google.protobuf.compiler.*` is in a sub-package of `google.protobuf`,
+    // so the package-level WKT mapping would route it to
+    // `::buffa_types::google::protobuf::compiler::*` (which doesn't exist).
+    // The file-level mapping must route it to
+    // `::buffa_descriptor::generated::compiler::*` instead.
+    let (plugin_file, user_file) = plugin_proto_fixture();
+    let files = generate(
+        &[plugin_file, user_file],
+        &["my/uses_plugin.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let content = joined(&files);
+    assert!(
+        content.contains("::buffa_descriptor::generated::compiler::CodeGeneratorRequest"),
+        "plugin.proto types must resolve to buffa-descriptor: {content}"
+    );
+    assert!(
+        !content.contains("::buffa_types::google::protobuf::compiler"),
+        "plugin.proto types must not resolve to buffa-types (does not exist): {content}"
+    );
+}
+
+#[test]
+fn test_user_compiler_sub_package_override_still_covers_plugin_types() {
+    // Backward-compat: a user `.google.protobuf.compiler` extern_path covers
+    // `plugin.proto` types — the file-level mapping must yield to it. This
+    // is the per-file analogue of the `.google.protobuf` override test
+    // above: a sub-package mapping suppresses only the file it covers.
+    let (plugin_file, user_file) = plugin_proto_fixture();
+    let config = CodeGenConfig {
+        extern_paths: vec![(".google.protobuf.compiler".into(), "::my_compiler".into())],
+        ..Default::default()
+    };
+    let files = generate(
+        &[plugin_file, user_file],
+        &["my/uses_plugin.proto".to_string()],
+        &config,
+    )
+    .expect("should generate");
+    let content = joined(&files);
+    assert!(
+        content.contains("::my_compiler::CodeGeneratorRequest"),
+        "user .google.protobuf.compiler override must cover plugin types: {content}"
+    );
+    assert!(
+        !content.contains("::buffa_descriptor"),
+        "auto-injected plugin mapping must yield to user override: {content}"
+    );
+}
+
 #[test]
 fn test_empty_file() {
     let file = proto3_file("empty.proto");
@@ -55,8 +340,8 @@ fn test_empty_file() {
         &CodeGenConfig::default(),
     );
     let files = result.expect("empty file should generate without error");
-    // 5 content files + 1 .mod.rs.
-    assert_eq!(files.len(), 6);
+    // No content files (all empty) + 1 .mod.rs.
+    assert_eq!(files.len(), 1);
     let stitcher = files
         .iter()
         .find(|f| f.kind == GeneratedFileKind::PackageMod)
@@ -65,6 +350,246 @@ fn test_empty_file() {
     assert!(
         stitcher.content.contains("@generated"),
         "missing header comment"
+    );
+    // No content of any kind → no `__buffa` wrapper at all.
+    assert!(
+        !stitcher.content.contains("pub mod __buffa"),
+        "empty file should not emit a `pub mod __buffa` wrapper:\n{}",
+        stitcher.content
+    );
+}
+
+#[test]
+fn test_empty_message_omits_empty_ancillary_files() {
+    // Regression: a proto file with only an empty message should not emit
+    // empty `.__oneof.rs`, `.__view_oneof.rs`, or `.__ext.rs` companion files.
+    let mut file = proto3_file("example/v1/empty.proto");
+    file.package = Some("example.v1".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Empty".to_string()),
+        ..Default::default()
+    });
+
+    let files = generate(
+        &[file],
+        &["example/v1/empty.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("empty-message file should generate");
+
+    let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
+
+    assert!(
+        files
+            .iter()
+            .any(|f| f.name == "example.v1.empty.rs" && f.kind == GeneratedFileKind::Owned),
+        "owned file with the empty message should still be emitted; got {names:?}"
+    );
+    assert!(
+        files
+            .iter()
+            .any(|f| f.kind == GeneratedFileKind::PackageMod),
+        "package mod should be generated; got {names:?}"
+    );
+
+    assert!(
+        !files.iter().any(|f| f.name.ends_with(".__oneof.rs")),
+        "empty oneof companion file should not be emitted; got {names:?}"
+    );
+    assert!(
+        !files.iter().any(|f| f.name.ends_with(".__view_oneof.rs")),
+        "empty view-oneof companion file should not be emitted; got {names:?}"
+    );
+    assert!(
+        !files.iter().any(|f| f.name.ends_with(".__ext.rs")),
+        "empty extension companion file should not be emitted; got {names:?}"
+    );
+
+    let package_mod = files
+        .iter()
+        .find(|f| f.kind == GeneratedFileKind::PackageMod)
+        .expect("package mod should be generated");
+    assert!(
+        !package_mod.content.contains("example.v1.empty.__oneof.rs"),
+        "package mod should not include omitted oneof companion:\n{}",
+        package_mod.content
+    );
+    assert!(
+        !package_mod
+            .content
+            .contains("example.v1.empty.__view_oneof.rs"),
+        "package mod should not include omitted view-oneof companion:\n{}",
+        package_mod.content
+    );
+    assert!(
+        !package_mod.content.contains("example.v1.empty.__ext.rs"),
+        "package mod should not include omitted ext companion:\n{}",
+        package_mod.content
+    );
+}
+
+#[test]
+fn stitcher_omits_empty_inner_modules_for_empty_message() {
+    // A proto containing only an empty message (default config: views on,
+    // no JSON, no register_fn-relevant content) should produce only
+    // `pub mod view { … }` inside `__buffa` — no inner `view::oneof`,
+    // no `oneof`, no `ext`.
+    let mut file = proto3_file("only_msg.proto");
+    file.package = Some("p".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Empty".to_string()),
+        ..Default::default()
+    });
+    let files = generate(
+        &[file],
+        &["only_msg.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let stitcher = files
+        .iter()
+        .find(|f| f.kind == GeneratedFileKind::PackageMod)
+        .expect("stitcher present");
+    assert!(
+        stitcher.content.contains("pub mod __buffa"),
+        "expected `__buffa` wrapper (view module is non-empty):\n{}",
+        stitcher.content
+    );
+    assert!(
+        stitcher.content.contains("pub mod view"),
+        "expected `pub mod view`:\n{}",
+        stitcher.content
+    );
+    assert!(
+        !stitcher.content.contains("pub mod oneof"),
+        "should not emit empty `pub mod oneof` (covers both top-level \
+         and nested view::oneof):\n{}",
+        stitcher.content
+    );
+    assert!(
+        !stitcher.content.contains("pub mod ext"),
+        "should not emit empty `pub mod ext`:\n{}",
+        stitcher.content
+    );
+}
+
+#[test]
+fn stitcher_omits_view_module_when_views_disabled_and_only_oneof_present() {
+    // Views off + a message with a oneof: only `pub mod oneof` survives;
+    // `view` and `ext` are omitted.
+    let mut file = proto3_file("only_oneof.proto");
+    file.package = Some("p".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("M".to_string()),
+        field: vec![
+            FieldDescriptorProto {
+                name: Some("x".to_string()),
+                number: Some(1),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_INT32),
+                oneof_index: Some(0),
+                ..Default::default()
+            },
+            FieldDescriptorProto {
+                name: Some("y".to_string()),
+                number: Some(2),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_STRING),
+                oneof_index: Some(0),
+                ..Default::default()
+            },
+        ],
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("kind".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let config = CodeGenConfig {
+        generate_views: false,
+        ..Default::default()
+    };
+    let files =
+        generate(&[file], &["only_oneof.proto".to_string()], &config).expect("should generate");
+    let stitcher = files
+        .iter()
+        .find(|f| f.kind == GeneratedFileKind::PackageMod)
+        .expect("stitcher present");
+    assert!(
+        stitcher.content.contains("pub mod __buffa"),
+        "expected `__buffa` wrapper (oneof module is non-empty):\n{}",
+        stitcher.content
+    );
+    assert!(
+        stitcher.content.contains("pub mod oneof"),
+        "expected `pub mod oneof`:\n{}",
+        stitcher.content
+    );
+    assert!(
+        !stitcher.content.contains("pub mod view"),
+        "should not emit `pub mod view` when views are disabled:\n{}",
+        stitcher.content
+    );
+    assert!(
+        !stitcher.content.contains("pub mod ext"),
+        "should not emit empty `pub mod ext`:\n{}",
+        stitcher.content
+    );
+}
+
+#[test]
+fn stitcher_emits_only_ext_module_for_extension_only_proto() {
+    // A proto carrying only a file-level `extend` block (no own
+    // messages) emits only `pub mod ext` inside `__buffa`.
+    let mut file = proto3_file("ext_only.proto");
+    file.package = Some("p".to_string());
+    file.message_type = vec![DescriptorProto {
+        name: Some("Target".to_string()),
+        extension_range: vec![
+            crate::generated::descriptor::descriptor_proto::ExtensionRange {
+                start: Some(100),
+                end: Some(200),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    }];
+    file.extension = vec![{
+        let mut f = make_field("my_opt", 100, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
+        f.extendee = Some(".p.Target".to_string());
+        f
+    }];
+    let files = generate(
+        &[file],
+        &["ext_only.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let stitcher = files
+        .iter()
+        .find(|f| f.kind == GeneratedFileKind::PackageMod)
+        .expect("stitcher present");
+    assert!(
+        stitcher.content.contains("pub mod __buffa"),
+        "expected `__buffa` wrapper (ext module is non-empty):\n{}",
+        stitcher.content
+    );
+    assert!(
+        stitcher.content.contains("pub mod ext"),
+        "expected `pub mod ext`:\n{}",
+        stitcher.content
+    );
+    // `Target` has an extension range but no oneofs and no fields, so
+    // no view oneof / oneof content. View module exists for `TargetView`.
+    assert!(
+        stitcher.content.contains("pub mod view"),
+        "expected `pub mod view` for `TargetView`:\n{}",
+        stitcher.content
+    );
+    assert!(
+        !stitcher.content.contains("pub mod oneof"),
+        "should not emit empty `pub mod oneof`:\n{}",
+        stitcher.content
     );
 }
 
@@ -103,8 +628,10 @@ fn test_multi_file_same_package_merged() {
         &CodeGenConfig::default(),
     )
     .expect("multi-file package should merge");
-    // 2 protos × 5 content files + 1 stitcher = 11.
-    assert_eq!(files.len(), 11);
+    // 2 protos × 2 content kinds (owned + view; oneof / view_oneof /
+    // ext omitted because the messages have no oneofs and no extensions)
+    // + 1 stitcher = 5.
+    assert_eq!(files.len(), 5);
     let stitcher = files
         .iter()
         .find(|f| f.kind == GeneratedFileKind::PackageMod)
@@ -194,10 +721,15 @@ fn test_file_per_package_multi_file() {
         "per-package file must inline content, not include! per-file outputs"
     );
     // Same `__buffa` module wrappers as the per-file stitcher.
+    // The fixture has views and a oneof but no extensions, so `view`
+    // and `oneof` are emitted but `ext` is omitted as empty.
     assert_eq!(pkg.content.matches("pub mod __buffa {").count(), 1);
     assert!(pkg.content.contains("pub mod view {"));
     assert!(pkg.content.contains("pub mod oneof {"));
-    assert!(pkg.content.contains("pub mod ext {"));
+    assert!(
+        !pkg.content.contains("pub mod ext {"),
+        "no extensions in fixture → empty `pub mod ext` should be omitted"
+    );
 }
 
 #[test]
@@ -313,6 +845,12 @@ fn test_file_per_package_unnamed_package() {
         .expect("unnamed package should generate");
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].name, "__buffa.rs");
+    // No messages → no view/oneof/ext content → no `__buffa` wrapper.
+    assert!(
+        !files[0].content.contains("pub mod __buffa"),
+        "empty package should not emit `__buffa` wrapper:\n{}",
+        files[0].content
+    );
 }
 
 #[test]
@@ -701,6 +1239,77 @@ fn test_type_url_doubly_nested() {
             .contains(r#"TYPE_URL: &'static str = "type.googleapis.com/pkg.Outer.Middle.Inner""#),
         "wrong Inner TYPE_URL: {content}"
     );
+}
+
+#[test]
+fn test_message_name_consts() {
+    // The four `MessageName` consts must hold the documented invariant
+    // `PACKAGE + "." + NAME == FULL_NAME` (joining dot omitted when
+    // `PACKAGE` is empty), and `TYPE_URL == "type.googleapis.com/" +
+    // FULL_NAME`. The atomic-prefix-strip in `message_name_impl` makes
+    // a partial-match (`package = "foo"` against `proto_fqn =
+    // "food.Bar"`) impossible to slip through silently — pin the shape
+    // here so a refactor that re-introduces a two-step strip fails this
+    // test instead of shipping a broken `NAME`.
+    let mut file = proto3_file("named.proto");
+    file.package = Some("my.pkg".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Outer".to_string()),
+        nested_type: vec![DescriptorProto {
+            name: Some("Inner".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let files = generate(
+        &[file],
+        &["named.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let content = joined(&files);
+    // Top-level: PACKAGE + "." + NAME == FULL_NAME.
+    for snippet in [
+        r#"const PACKAGE: &'static str = "my.pkg""#,
+        r#"const NAME: &'static str = "Outer""#,
+        r#"const FULL_NAME: &'static str = "my.pkg.Outer""#,
+        r#"const TYPE_URL: &'static str = "type.googleapis.com/my.pkg.Outer""#,
+        // Nested: NAME carries the dotted nesting path; PACKAGE stays
+        // at the proto package — NOT `DescriptorProto.name` (which is
+        // just `"Inner"`).
+        r#"const NAME: &'static str = "Outer.Inner""#,
+        r#"const FULL_NAME: &'static str = "my.pkg.Outer.Inner""#,
+    ] {
+        assert!(content.contains(snippet), "missing `{snippet}`: {content}");
+    }
+
+    // Empty package: PACKAGE is "", NAME == FULL_NAME, no joining dot.
+    let mut root = proto3_file("root.proto");
+    root.message_type.push(DescriptorProto {
+        name: Some("Root".to_string()),
+        nested_type: vec![DescriptorProto {
+            name: Some("Leaf".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let files = generate(
+        &[root],
+        &["root.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let content = joined(&files);
+    for snippet in [
+        r#"const PACKAGE: &'static str = """#,
+        r#"const NAME: &'static str = "Root""#,
+        r#"const FULL_NAME: &'static str = "Root""#,
+        r#"const NAME: &'static str = "Root.Leaf""#,
+        r#"const FULL_NAME: &'static str = "Root.Leaf""#,
+        r#"const TYPE_URL: &'static str = "type.googleapis.com/Root.Leaf""#,
+    ] {
+        assert!(content.contains(snippet), "missing `{snippet}`: {content}");
+    }
 }
 
 #[test]

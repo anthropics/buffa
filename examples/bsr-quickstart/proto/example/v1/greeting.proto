@@ -1,0 +1,37 @@
+// A small proto demonstrating common buffa-generated surfaces:
+// scalars, a well-known type, an enum, and a oneof.
+syntax = "proto3";
+
+package example.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// The mood a greeting was sent in.
+enum Mood {
+  MOOD_UNSPECIFIED = 0;
+  MOOD_FRIENDLY = 1;
+  MOOD_FORMAL = 2;
+}
+
+// A greeting that a sender directs at one or more recipients.
+message Greeting {
+  // The greeting text.
+  string text = 1;
+
+  // When the greeting was created.
+  google.protobuf.Timestamp at = 2;
+
+  // The mood of the greeting.
+  Mood mood = 3;
+
+  // Who the greeting is for.
+  oneof recipient {
+    // A single named recipient.
+    string name = 10;
+    // Send to everyone.
+    bool everyone = 11;
+  }
+
+  // Tags applied to the greeting.
+  repeated string tags = 20;
+}

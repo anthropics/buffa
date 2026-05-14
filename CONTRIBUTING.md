@@ -34,6 +34,7 @@ Key rules:
 - **Type paths** from the descriptor context (e.g. `"my_pkg::MyMessage"`) must be parsed with `syn::parse_str::<syn::Type>` before interpolation into `quote!`.
 - The pipeline in `lib.rs` is: accumulate `TokenStream` → `syn::parse2::<syn::File>` → `prettyplease::unparse` → prepend file-header string.
 - **`no_std`-safe type paths**: Generated code must compile in both `std` and `no_std` contexts. `String`, `Vec`, and `Box` are **not** in the `no_std` prelude (even with `extern crate alloc`) — they must always be emitted as `::buffa::alloc::string::String`, `::buffa::alloc::vec::Vec`, `::buffa::alloc::boxed::Box`. Use the `ImportResolver` methods (`resolver.string()`, `resolver.vec()`, `resolver.boxed()`) which handle this. Only `core` prelude types (`Option`, `Result`, `Default`, etc.) can be emitted as bare names. See `imports.rs` for details.
+- **Re-exports for codegen**: `buffa` re-exports `alloc`, `bytes`, and (under the `json` feature) `serde_json` as `#[doc(hidden)]` items so generated code can reference `::buffa::alloc::*`, `::buffa::bytes::*`, and `::buffa::serde_json::*` without the consumer crate declaring those deps. These re-exports are load-bearing for every downstream crate's build — do not remove them or change their visibility. `serde` is the deliberate exception: the `#[derive(::serde::Serialize)]` macro emits `extern crate serde as _serde;`, so consumers of `json=true` codegen must depend on `serde` directly regardless.
 
 ## Conformance Tests
 
@@ -46,23 +47,23 @@ task tools-image-local   # builds for local platform only, ~5 min
 task conformance         # now uses the locally-built image
 ```
 
-**Understanding the output**: The conformance runner executes three runs
-(std, no_std, via-view), each producing two suites:
+**Understanding the output**: The conformance runner executes four runs
+(std, no_std, via-view, view-json), each producing two suites:
 
-1. Binary + JSON suite — expects thousands of successes (~5500 std, ~5500 no_std, ~2800 via-view — view mode skips JSON)
-2. Text format suite — 883 successes for std and no_std (the full suite); via-view shows `0 successes, 883 skipped` (views have no `TextFormat` — textproto goes through the owned type via `to_owned_message()`)
+1. Binary + JSON suite — expects thousands of successes (~5500 std, ~5500 no_std). The via-view run only handles binary→binary (~2800); the view-json run only handles binary→JSON (~1250).
+2. Text format suite — 883 successes for std and no_std (the full suite); via-view and view-json show `0 successes, 883 skipped` (views have no `TextFormat` — textproto goes through the owned type via `to_owned_message()`)
 
-So a healthy run shows **6 `CONFORMANCE SUITE PASSED` lines**.
+So a healthy run shows **8 `CONFORMANCE SUITE PASSED` lines**.
 
-The Dockerfile builds **two binaries**: one with default features (std) and one with `--no-default-features` (no_std). The via-view run reuses the std binary with `BUFFA_VIA_VIEW=1` set, routing binary input through `decode_view → to_owned_message → encode` to verify owned/view decoder parity.
+The Dockerfile builds **two binaries**: one with default features (std) and one with `--no-default-features` (no_std). The via-view run reuses the std binary with `BUFFA_VIA_VIEW=1` set, routing binary input through `decode_view → to_owned_message → encode` to verify owned/view decoder parity. The view-json run reuses the std binary with `BUFFA_VIEW_JSON=1` set, routing binary input through `decode_view → serde_json::to_string(&view)` to verify the generated view `Serialize` impls (and the hand-written WKT view `Serialize` impls in `buffa-types`) against the conformance JSON reference assertions, independently of the owned encoder.
 
-**Expected failures** are listed in `conformance/known_failures.txt` (std binary+JSON), `conformance/known_failures_nostd.txt` (no_std binary+JSON), `conformance/known_failures_view.txt` (via-view), and `conformance/known_failures_text.txt` (text format — shared between std and no_std; currently empty). The text list is passed via `--text_format_failure_list` since the runner validates each suite's list independently. When a previously-failing test starts passing, remove it from the relevant file; when a new test is expected to fail, add it.
+**Expected failures** are listed in `conformance/known_failures.txt` (std binary+JSON), `conformance/known_failures_nostd.txt` (no_std binary+JSON), `conformance/known_failures_view.txt` (via-view), `conformance/known_failures_view_json.txt` (view-json), and `conformance/known_failures_text.txt` (text format — shared between std and no_std; currently empty). The text list is passed via `--text_format_failure_list` since the runner validates each suite's list independently. When a previously-failing test starts passing, remove it from the relevant file; when a new test is expected to fail, add it.
 
 **Capturing output**: To save per-run logs for analysis, mount a directory and set `CONFORMANCE_OUT`:
 
 ```bash
 docker run --rm -v /tmp/conf:/out -e CONFORMANCE_OUT=/out buffa-conformance
-# logs: /tmp/conf/conformance-{std,nostd,view}.log
+# logs: /tmp/conf/conformance-{std,nostd,view,view-json}.log
 ```
 
 **Upgrading the protobuf version**: bump `TOOLS_IMAGE` in `Taskfile.yml` and `PROTOC_VERSION` in `.github/workflows/ci.yml`, then:

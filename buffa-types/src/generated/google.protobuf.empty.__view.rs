@@ -114,6 +114,12 @@ impl<'a> ::buffa::ViewEncode<'a> for EmptyView<'a> {
         self.__buffa_unknown_fields.write_to(buf);
     }
 }
+impl<'a> ::buffa::MessageName for EmptyView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "Empty";
+    const FULL_NAME: &'static str = "google.protobuf.Empty";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Empty";
+}
 impl<'v> ::buffa::DefaultViewInstance for EmptyView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where

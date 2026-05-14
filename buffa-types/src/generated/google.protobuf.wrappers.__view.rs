@@ -131,6 +131,12 @@ impl<'a> ::buffa::ViewEncode<'a> for DoubleValueView<'a> {
         self.__buffa_unknown_fields.write_to(buf);
     }
 }
+impl<'a> ::buffa::MessageName for DoubleValueView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "DoubleValue";
+    const FULL_NAME: &'static str = "google.protobuf.DoubleValue";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.DoubleValue";
+}
 impl<'v> ::buffa::DefaultViewInstance for DoubleValueView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -278,6 +284,12 @@ impl<'a> ::buffa::ViewEncode<'a> for FloatValueView<'a> {
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
+}
+impl<'a> ::buffa::MessageName for FloatValueView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "FloatValue";
+    const FULL_NAME: &'static str = "google.protobuf.FloatValue";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FloatValue";
 }
 impl<'v> ::buffa::DefaultViewInstance for FloatValueView<'v> {
     fn default_view_instance<'a>() -> &'a Self
@@ -427,6 +439,12 @@ impl<'a> ::buffa::ViewEncode<'a> for Int64ValueView<'a> {
         self.__buffa_unknown_fields.write_to(buf);
     }
 }
+impl<'a> ::buffa::MessageName for Int64ValueView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "Int64Value";
+    const FULL_NAME: &'static str = "google.protobuf.Int64Value";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Int64Value";
+}
 impl<'v> ::buffa::DefaultViewInstance for Int64ValueView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -574,6 +592,12 @@ impl<'a> ::buffa::ViewEncode<'a> for UInt64ValueView<'a> {
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
+}
+impl<'a> ::buffa::MessageName for UInt64ValueView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "UInt64Value";
+    const FULL_NAME: &'static str = "google.protobuf.UInt64Value";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.UInt64Value";
 }
 impl<'v> ::buffa::DefaultViewInstance for UInt64ValueView<'v> {
     fn default_view_instance<'a>() -> &'a Self
@@ -723,6 +747,12 @@ impl<'a> ::buffa::ViewEncode<'a> for Int32ValueView<'a> {
         self.__buffa_unknown_fields.write_to(buf);
     }
 }
+impl<'a> ::buffa::MessageName for Int32ValueView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "Int32Value";
+    const FULL_NAME: &'static str = "google.protobuf.Int32Value";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Int32Value";
+}
 impl<'v> ::buffa::DefaultViewInstance for Int32ValueView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -871,6 +901,12 @@ impl<'a> ::buffa::ViewEncode<'a> for UInt32ValueView<'a> {
         self.__buffa_unknown_fields.write_to(buf);
     }
 }
+impl<'a> ::buffa::MessageName for UInt32ValueView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "UInt32Value";
+    const FULL_NAME: &'static str = "google.protobuf.UInt32Value";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.UInt32Value";
+}
 impl<'v> ::buffa::DefaultViewInstance for UInt32ValueView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -1018,6 +1054,12 @@ impl<'a> ::buffa::ViewEncode<'a> for BoolValueView<'a> {
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
+}
+impl<'a> ::buffa::MessageName for BoolValueView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "BoolValue";
+    const FULL_NAME: &'static str = "google.protobuf.BoolValue";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.BoolValue";
 }
 impl<'v> ::buffa::DefaultViewInstance for BoolValueView<'v> {
     fn default_view_instance<'a>() -> &'a Self
@@ -1170,6 +1212,12 @@ impl<'a> ::buffa::ViewEncode<'a> for StringValueView<'a> {
         self.__buffa_unknown_fields.write_to(buf);
     }
 }
+impl<'a> ::buffa::MessageName for StringValueView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "StringValue";
+    const FULL_NAME: &'static str = "google.protobuf.StringValue";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.StringValue";
+}
 impl<'v> ::buffa::DefaultViewInstance for StringValueView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -1320,6 +1368,12 @@ impl<'a> ::buffa::ViewEncode<'a> for BytesValueView<'a> {
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
+}
+impl<'a> ::buffa::MessageName for BytesValueView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "BytesValue";
+    const FULL_NAME: &'static str = "google.protobuf.BytesValue";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.BytesValue";
 }
 impl<'v> ::buffa::DefaultViewInstance for BytesValueView<'v> {
     fn default_view_instance<'a>() -> &'a Self

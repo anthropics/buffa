@@ -354,6 +354,12 @@ impl<'a> ::buffa::ViewEncode<'a> for FieldMaskView<'a> {
         self.__buffa_unknown_fields.write_to(buf);
     }
 }
+impl<'a> ::buffa::MessageName for FieldMaskView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "FieldMask";
+    const FULL_NAME: &'static str = "google.protobuf.FieldMask";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FieldMask";
+}
 impl<'v> ::buffa::DefaultViewInstance for FieldMaskView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where

@@ -43,12 +43,12 @@ fn generate_enum_serde(name_ident: &Ident) -> TokenStream {
                     fn visit_i64<E: ::serde::de::Error>(self, v: i64) -> ::core::result::Result<#name_ident, E> {
                         let v32 = i32::try_from(v).map_err(|_| {
                             ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("enum value {} out of i32 range", v)
+                                ::buffa::alloc::format!("enum value {v} out of i32 range")
                             )
                         })?;
                         <#name_ident as ::buffa::Enumeration>::from_i32(v32).ok_or_else(|| {
                             ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("unknown enum value {}", v32)
+                                ::buffa::alloc::format!("unknown enum value {v32}")
                             )
                         })
                     }
@@ -56,12 +56,12 @@ fn generate_enum_serde(name_ident: &Ident) -> TokenStream {
                     fn visit_u64<E: ::serde::de::Error>(self, v: u64) -> ::core::result::Result<#name_ident, E> {
                         let v32 = i32::try_from(v).map_err(|_| {
                             ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("enum value {} out of i32 range", v)
+                                ::buffa::alloc::format!("enum value {v} out of i32 range")
                             )
                         })?;
                         <#name_ident as ::buffa::Enumeration>::from_i32(v32).ok_or_else(|| {
                             ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("unknown enum value {}", v32)
+                                ::buffa::alloc::format!("unknown enum value {v32}")
                             )
                         })
                     }
@@ -203,7 +203,17 @@ pub fn generate_enum(
     };
 
     let serde_impls = if ctx.config.generate_json {
-        generate_enum_serde(&name_ident)
+        // `generate_enum_serde` returns multiple sibling items
+        // (`impl Serialize`, `impl Deserialize`, `impl ProtoElemJson`). A
+        // bare outer `#[cfg]` would attach only to the first; wrapping
+        // them in a `#[cfg(...)] const _: () = { ... };` block lets one
+        // outer cfg cover the lot — the anonymous const is itself a single
+        // item, and trait impls inside it register globally on the enum
+        // exactly as they would at module scope.
+        crate::feature_gates::cfg_const_block(
+            generate_enum_serde(&name_ident),
+            ctx.config.feature_gates().json,
+        )
     } else {
         quote! {}
     };

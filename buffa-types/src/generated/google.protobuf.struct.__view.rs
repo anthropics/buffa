@@ -222,6 +222,12 @@ impl<'a> ::buffa::ViewEncode<'a> for StructView<'a> {
         self.__buffa_unknown_fields.write_to(buf);
     }
 }
+impl<'a> ::buffa::MessageName for StructView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "Struct";
+    const FULL_NAME: &'static str = "google.protobuf.Struct";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Struct";
+}
 impl<'v> ::buffa::DefaultViewInstance for StructView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -594,6 +600,12 @@ impl<'a> ::buffa::ViewEncode<'a> for ValueView<'a> {
         self.__buffa_unknown_fields.write_to(buf);
     }
 }
+impl<'a> ::buffa::MessageName for ValueView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "Value";
+    const FULL_NAME: &'static str = "google.protobuf.Value";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Value";
+}
 impl<'v> ::buffa::DefaultViewInstance for ValueView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -764,6 +776,12 @@ impl<'a> ::buffa::ViewEncode<'a> for ListValueView<'a> {
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
+}
+impl<'a> ::buffa::MessageName for ListValueView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "ListValue";
+    const FULL_NAME: &'static str = "google.protobuf.ListValue";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.ListValue";
 }
 impl<'v> ::buffa::DefaultViewInstance for ListValueView<'v> {
     fn default_view_instance<'a>() -> &'a Self

@@ -257,6 +257,12 @@ impl<'a> ::buffa::ViewEncode<'a> for TimestampView<'a> {
         self.__buffa_unknown_fields.write_to(buf);
     }
 }
+impl<'a> ::buffa::MessageName for TimestampView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "Timestamp";
+    const FULL_NAME: &'static str = "google.protobuf.Timestamp";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Timestamp";
+}
 impl<'v> ::buffa::DefaultViewInstance for TimestampView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where

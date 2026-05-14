@@ -1,0 +1,109 @@
+// Proto for view JSON round-trip tests (issue #83).
+// Exercises every distinct codegen branch in `generate_view_serialize`:
+// singular scalars (with/without serde helpers), repeated, maps with each
+// supported key/value family, oneof variants, explicit-presence (`optional`)
+// fields, nested messages, enums, NullValue, and WKT view fields.
+
+syntax = "proto3";
+
+package test.viewjson;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+enum Color {
+  COLOR_UNSPECIFIED = 0;
+  RED = 1;
+  GREEN = 2;
+  BLUE = 3;
+}
+
+message Scalars {
+  int32 i32 = 1;
+  int64 i64 = 2;
+  uint32 u32 = 3;
+  uint64 u64 = 4;
+  float f32 = 5;
+  double f64 = 6;
+  bool b = 7;
+  string s = 8;
+  bytes by = 9;
+}
+
+// Proto3 explicit presence: the view field is `Option<T>`.
+message OptionalScalars {
+  optional int32 i32 = 1;
+  optional int64 i64 = 2;
+  optional double f64 = 3;
+  optional bool b = 4;
+  optional string s = 5;
+  optional bytes by = 6;
+  optional Color color = 7;
+}
+
+// Repeated fields exercise the `_WSeq` wrapper for each value family that
+// needs proto3 JSON encoding (int64 quoting, base64 bytes, NaN floats),
+// plus the unwrapped slice path for strings/messages.
+message Repeats {
+  repeated int64 i64s = 1;
+  repeated uint64 u64s = 2;
+  repeated double f64s = 3;
+  repeated bytes bys = 4;
+  repeated string strs = 5;
+  repeated bool bools = 6;
+}
+
+message WithEnum {
+  Color color = 1;
+  repeated Color colors = 2;
+}
+
+message WithOneof {
+  oneof value {
+    string text = 1;
+    int64 number = 2;
+    bytes data = 3;
+    Color color = 4;
+    google.protobuf.NullValue null_val = 5;
+    Inner msg = 6;
+  }
+}
+
+// Maps exercise the `_WM`/`_WK`/`_WV` wrapper combinations: integer/bool
+// keys (must serialize as JSON strings), bytes/message/enum/i64 values.
+message WithMaps {
+  map<string, string> labels = 1;
+  map<int32, string> by_id = 2;
+  map<string, int64> counts = 3;
+  map<string, Color> by_color = 4;
+  map<int64, string> by_i64 = 5;
+  map<uint64, string> by_u64 = 6;
+  map<bool, string> by_bool = 7;
+  map<string, bytes> blobs = 8;
+  map<string, Inner> nested = 9;
+  map<string, double> ratios = 10;
+}
+
+message Inner {
+  int32 x = 1;
+  string name = 2;
+}
+
+message Outer {
+  Inner inner = 1;
+  repeated Inner items = 2;
+  int64 id = 3;
+}
+
+// Messages with WKT fields verify the hand-written `Serialize` impls on
+// `TimestampView`/`DurationView`/wrapper views in `buffa-types`.
+message WithWkt {
+  google.protobuf.Timestamp ts = 1;
+  google.protobuf.Duration dur = 2;
+  google.protobuf.Int64Value count = 3;
+  google.protobuf.StringValue label = 4;
+  repeated google.protobuf.Timestamp history = 5;
+  google.protobuf.BoolValue flag = 6;
+}
