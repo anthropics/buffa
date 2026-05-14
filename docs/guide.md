@@ -36,7 +36,7 @@ buffa-types = { version = "0.5", features = ["json"] }
 
 ### buf (recommended)
 
-[buf](https://buf.build/docs/cli/) is the easiest way to compile `.proto` files with buffa. It has a built-in protobuf compiler, so you only need to install buf itself and the `protoc-gen-buffa` plugin — no separate `protoc` required.
+[buf](https://buf.build/docs/cli/) is the easiest way to compile `.proto` files with buffa. It has a built-in protobuf compiler — no separate `protoc` required — and it can run `protoc-gen-buffa` as a [remote plugin](https://buf.build/docs/bsr/remote-plugins/overview/) on the [Buf Schema Registry](https://buf.build/anthropics/buffa): `buf generate` sends your compiled proto descriptors to the BSR, which executes the plugin in a sandbox and returns the generated Rust source. So the only thing you need to install is buf itself.
 
 ```sh
 # Install buf — see https://buf.build/docs/installation for other methods
@@ -72,22 +72,22 @@ Note that the protoc version shipped by Debian and Ubuntu (`apt install protobuf
 
 There are two ways to generate Rust code from `.proto` files:
 
-1. **`buf generate`** (recommended) — uses the buf CLI with `protoc-gen-buffa` as a local plugin. No `protoc` required, no `build.rs` needed.
+1. **`buf generate`** (recommended) — uses the buf CLI with the published [`buf.build/anthropics/buffa`](https://buf.build/anthropics/buffa) remote plugin (or a locally-installed `protoc-gen-buffa`). No `protoc` required, no `build.rs` needed.
 2. **`buffa-build`** — a `build.rs` helper that invokes `protoc` (or `buf`) at compile time, similar to `prost-build` or `tonic-build`.
 
 ### Using `buf generate` (recommended)
 
-See the [Using buf](#using-buf) section below for full configuration details. Quick start:
+See the [Using buf](#using-buf) section below for the full set of configurations. Quick start with the published remote plugin — no local plugin install required:
 
 ```yaml
 # buf.gen.yaml
 version: v2
 plugins:
-  - local: protoc-gen-buffa
+  - remote: buf.build/anthropics/buffa
     out: src/gen
-  - local: protoc-gen-buffa-packaging
-    out: src/gen
-    strategy: all
+    opt:
+      - file_per_package=true
+      - json=true
 ```
 
 ```sh
@@ -95,9 +95,38 @@ buf generate
 ```
 
 ```rust,ignore
+// src/gen/mod.rs (hand-written — one nested `pub mod` per proto package)
+pub mod example {
+    pub mod v1 {
+        include!("example.v1.rs");
+    }
+}
+
+// src/main.rs or src/lib.rs
+mod gen;
+```
+
+To have the `mod.rs` generated for you, install [`protoc-gen-buffa-packaging`](#installing-the-protoc-plugins) locally and add it as a second plugin (and drop `file_per_package=true` — the packaging plugin reads the per-proto stitcher format):
+
+```yaml
+# buf.gen.yaml
+version: v2
+plugins:
+  - remote: buf.build/anthropics/buffa
+    out: src/gen
+    opt:
+      - json=true
+  - local: protoc-gen-buffa-packaging
+    out: src/gen
+    strategy: all
+```
+
+```rust,ignore
 // src/main.rs or src/lib.rs
 mod gen;  // generated mod.rs handles #[allow] and module hierarchy
 ```
+
+See [`examples/bsr-quickstart/`](../examples/bsr-quickstart/) for a complete, runnable project using the remote plugin.
 
 ### Using `buffa-build` in `build.rs`
 
@@ -290,6 +319,8 @@ This is the standard Rust mechanism for using keywords as identifiers. It applie
 
 There are two binaries: `protoc-gen-buffa` (the codegen plugin) and `protoc-gen-buffa-packaging` (the module-tree assembler). Both are released together.
 
+You only need a local install if you use `local:` plugin references. The codegen plugin is published to the Buf Schema Registry as [`buf.build/anthropics/buffa`](https://buf.build/anthropics/buffa) and can be referenced with `remote:` instead — see [Using buf](#using-buf). The packaging plugin is local-only; if you don't want to install it, use the [`file_per_package=true`](#remote-plugin-only-no-local-install) opt and write the `pub mod` tree yourself.
+
 **From source (requires Rust toolchain):**
 
 From crates.io (recommended):
@@ -337,9 +368,72 @@ Available platforms: `linux-x86_64`, `linux-aarch64`, `darwin-x86_64`, `darwin-a
 
 [buf](https://buf.build/docs/cli/) is the recommended way to invoke the plugins. It has a built-in protobuf compiler and handles dependency management, so no separate `protoc` install is needed.
 
-Create a `buf.gen.yaml`:
+There are two parts to a buffa code generation pass:
+
+1. **`protoc-gen-buffa`** emits the message types — one `.rs` per proto file (default), or one `<dotted.package>.rs` per package with `file_per_package=true`. It is published to the Buf Schema Registry as [`buf.build/anthropics/buffa`](https://buf.build/anthropics/buffa), so it can run as a `remote:` plugin with no local install: `buf generate` sends your compiled proto descriptors to the BSR, which executes the plugin remotely and returns the generated source.
+2. **`protoc-gen-buffa-packaging`** is a small, optional second plugin that reads the full proto file set and emits a `mod.rs` with nested `pub mod` blocks that `include!` each generated file at the right package nesting. It is local-only ([install instructions](#installing-the-protoc-plugins)) — if you'd rather not install anything, use `file_per_package=true` and write the `pub mod` tree yourself.
+
+#### Remote plugin only (no local install)
 
 ```yaml
+# buf.gen.yaml
+version: v2
+plugins:
+  - remote: buf.build/anthropics/buffa
+    out: src/gen
+    opt:
+      - file_per_package=true
+      - json=true
+```
+
+`buf generate` produces one `<dotted.package>.rs` per proto package — e.g. `src/gen/example.v1.rs`. Wire them in with a small hand-written `mod.rs` whose nesting mirrors the proto package path:
+
+```rust,ignore
+// src/gen/mod.rs
+pub mod example {
+    pub mod v1 {
+        include!("example.v1.rs");
+    }
+}
+
+// src/main.rs or src/lib.rs
+mod gen;
+```
+
+Pin the plugin version for reproducible builds: `remote: buf.build/anthropics/buffa:v0.5.3`. Match it to the `buffa` runtime crate version in your `Cargo.toml` — generated code from a newer plugin may reference items that don't exist in an older runtime.
+
+The complete, runnable [`examples/bsr-quickstart/`](../examples/bsr-quickstart/) project uses this layout.
+
+#### Remote plugin + local packaging plugin
+
+If you'd rather have the `mod.rs` generated for you, install [`protoc-gen-buffa-packaging`](#installing-the-protoc-plugins) and add it as a second plugin. Drop `file_per_package=true` — the packaging plugin reads the per-proto stitcher format (`<stem>.rs` + `<dotted.pkg>.mod.rs`):
+
+```yaml
+# buf.gen.yaml
+version: v2
+plugins:
+  - remote: buf.build/anthropics/buffa
+    out: src/gen
+    opt:
+      - json=true
+  - local: protoc-gen-buffa-packaging
+    out: src/gen
+    strategy: all
+```
+
+```rust,ignore
+// src/main.rs or src/lib.rs
+mod gen;  // no #[allow] needed — the generated mod.rs handles it
+```
+
+No hand-written bridge file is needed. The generated `mod.rs` includes `#![allow(...)]` for generated-code lints and sets up the full module hierarchy. Cross-package type references use `super::` relative paths within this tree, so sibling packages resolve automatically without `extern_path`.
+
+#### Local plugins (development)
+
+When iterating on `.proto` files alongside an in-tree `protoc-gen-buffa` build (e.g. contributing to buffa itself, or testing a pre-release), use `local:` for both plugins:
+
+```yaml
+# buf.gen.yaml
 version: v2
 plugins:
   - local: protoc-gen-buffa
@@ -349,26 +443,11 @@ plugins:
     strategy: all
 ```
 
-Then run:
+`protoc-gen-buffa` does not emit `mod.rs` and does not require `strategy: all` — buf can invoke it per-directory. `protoc-gen-buffa-packaging` requires `strategy: all` to see the full proto file set. Run it once per output directory; if you have multiple codegen plugins emitting to different directories, invoke it once per directory with the appropriate `out:`.
 
-```sh
-buf generate
-```
+#### Plugin options
 
-This generates per-file `.rs` output plus a `mod.rs` module tree in `src/gen/`. Include the module in your crate:
-
-```rust,ignore
-// src/main.rs or src/lib.rs
-mod gen;  // no #[allow] needed — the generated mod.rs handles it
-```
-
-No hand-written bridge file is needed. The generated `mod.rs` includes `#![allow(...)]` for generated code lints and sets up the full module hierarchy.
-
-**`protoc-gen-buffa`** emits one `.rs` file per proto file. It does not emit `mod.rs` and does not require `strategy: all` — buf can invoke it per-directory.
-
-**`protoc-gen-buffa-packaging`** reads the full proto file set (hence `strategy: all`) and emits a `mod.rs` with nested `pub mod` blocks that `include!` each generated file at the right package nesting. Cross-package type references use `super::` relative paths within this tree, so sibling packages resolve automatically without `extern_path`. Run it once per output directory; if you have multiple codegen plugins emitting to different directories, invoke it once per directory with the appropriate `out:`.
-
-Plugin options (passed via `opt:`):
+Passed via `opt:` (works for `remote:` and `local:`):
 
 | Option | Description |
 |--------|-------------|
@@ -377,19 +456,26 @@ Plugin options (passed via `opt:`):
 | `unknown_fields=false` | Disable unknown field preservation |
 | `arbitrary=true` | Emit `#[derive(arbitrary::Arbitrary)]` for fuzzing |
 | `extern_path=.pkg=::rust` | Map a proto package to an external Rust path |
-| `file_per_package=true` | Emit one `<dotted.package>.rs` per package instead of per-proto-file content + stitcher; intended for BSR generated SDKs. Under `strategy: directory`, requires the input module to be `PACKAGE_DIRECTORY_MATCH`-clean |
+| `file_per_package=true` | Emit one `<dotted.package>.rs` per package instead of per-proto-file content + a `<dotted.pkg>.mod.rs` stitcher. Use this with the remote plugin when you don't want to install `protoc-gen-buffa-packaging` — see [Remote plugin only](#remote-plugin-only-no-local-install). Under `strategy: directory`, requires the input module to be `PACKAGE_DIRECTORY_MATCH`-clean. |
 
-**Remote plugin (planned):** Once published to the Buf Schema Registry, the plugin will be available as a remote plugin without requiring a local install:
+#### BSR-generated SDKs
 
-```yaml
-version: v2
-plugins:
-  - remote: buf.build/anthropic/buffa:v0.5.2
-    out: src/generated
-    opt: [views=true]
+If your protos are published as a [BSR module](https://buf.build/docs/bsr/module/), you can skip code generation entirely and depend on the BSR's pre-built [Generated SDK](https://buf.build/docs/bsr/generated-sdks/cargo) for that module. Add the BSR Cargo registry to `.cargo/config.toml` and depend on the generated crate:
+
+```toml
+# .cargo/config.toml
+[registries.buf]
+index = "sparse+https://buf.build/gen/cargo/"
+credential-provider = "cargo:token"
 ```
 
-This is not yet published. Custom remote plugins require a Pro or Enterprise BSR plan, or can be installed in a self-hosted BSR instance. For now, use the `local:` plugin reference with `protoc-gen-buffa` on your PATH.
+```toml
+# Cargo.toml
+[dependencies]
+bufbuild_registry_<owner>_<module> = { version = "<buffa_version>-<commit>", registry = "buf" }
+```
+
+The SDK already declares `buffa`, `buffa-types`, and `serde` as dependencies. This is the lowest-friction path when you consume protos owned by another team or organisation — no local toolchain at all.
 
 ### Using protoc directly
 
@@ -408,9 +494,13 @@ See the [protoc (alternative)](#protoc-alternative) section in the Prerequisites
 
 ### Requirements summary
 
-**`buf generate`** requires `buf` on your PATH and `protoc-gen-buffa` locally (or a remote plugin reference in `buf.gen.yaml`). No `protoc` needed.
+**`buf generate` with the remote plugin** requires only `buf` on your PATH. No `protoc`, no local plugin install — buf sends your compiled proto descriptors to the BSR, which runs the plugin remotely and returns the generated source. Needs network access to `buf.build` at generation time. Add `protoc-gen-buffa-packaging` locally if you want a generated `mod.rs`.
+
+**`buf generate` with local plugins** requires `buf` and `protoc-gen-buffa` (and optionally `protoc-gen-buffa-packaging`) on your PATH. No `protoc` needed.
 
 **`buffa-build`** requires `protoc` on your PATH (or set via `PROTOC`), unless `.use_buf()` is configured (which uses `buf` instead).
+
+**BSR-generated SDKs** require nothing locally beyond Cargo; the BSR Cargo registry must be configured in `.cargo/config.toml` (see [BSR-generated SDKs](#bsr-generated-sdks)).
 
 ## Generated code shape
 

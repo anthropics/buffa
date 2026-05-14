@@ -481,6 +481,22 @@ tasks:
       - rm -f src/gen/context.v1.context.rs src/gen/log.v1.log.rs src/gen/mod.rs
       - PATH="{{.ROOT_DIR}}/target/release:$PATH" buf generate
 
+  gen-bsr-quickstart-example:
+    desc: >-
+      Regenerate the bsr-quickstart example's protobuf code from the
+      published `buf.build/anthropics/buffa` BSR remote plugin. Requires
+      buf on PATH and network access. The example demonstrates the
+      consumer-facing remote-plugin workflow, so it deliberately uses
+      the published plugin rather than the in-tree `protoc-gen-buffa`.
+      The plugin version is pinned in `buf.gen.yaml` for reproducible
+      output — bump the pin and re-run this task when a new BSR plugin
+      release ships, not after every codegen change. `src/gen/mod.rs` is
+      hand-written and not touched by buf.
+    dir: examples/bsr-quickstart
+    cmds:
+      - rm -f src/gen/example.v1.rs
+      - buf generate
+
   # The examples are independent cargo projects (own Cargo.toml, own target/),
   # not workspace members — they declare path deps on the workspace crates to
   # mirror a downstream consumer's setup.
@@ -489,6 +505,7 @@ tasks:
     desc: Build all example binaries.
     cmds:
       - cargo build --manifest-path examples/addressbook/Cargo.toml
+      - cargo build --manifest-path examples/bsr-quickstart/Cargo.toml
       - cargo build --manifest-path examples/conflicts/Cargo.toml
       - cargo build --manifest-path examples/envelope/Cargo.toml
       - cargo build --manifest-path examples/logging/Cargo.toml

@@ -68,21 +68,48 @@ The generated code API (struct shapes, `Message` trait, `MessageView` trait, `En
 
 ### Using `buf generate` (recommended)
 
-Install [buf](https://buf.build/docs/installation) and [the protoc plugins](docs/guide.md#installing-the-protoc-plugins), then create a `buf.gen.yaml`:
+Install [buf](https://buf.build/docs/installation), then create a `buf.gen.yaml` that uses the published [`buf.build/anthropics/buffa`](https://buf.build/anthropics/buffa) remote plugin — no local plugin install required:
 
 ```yaml
 version: v2
 plugins:
-  - local: protoc-gen-buffa
+  - remote: buf.build/anthropics/buffa
     out: src/gen
-  - local: protoc-gen-buffa-packaging
-    out: src/gen
-    strategy: all
+    opt:
+      - file_per_package=true
+      - json=true
 ```
 
 ```sh
 buf generate
 ```
+
+This emits one `<dotted.package>.rs` file per proto package. Wire them into your crate with a small `pub mod` tree:
+
+```rust,ignore
+// src/gen/mod.rs (hand-written)
+pub mod example {
+    pub mod v1 {
+        include!("example.v1.rs");
+    }
+}
+```
+
+If you'd rather have the module tree generated for you, install [`protoc-gen-buffa-packaging`](docs/guide.md#installing-the-protoc-plugins) locally and add it as a second plugin (drop the `file_per_package=true` opt):
+
+```yaml
+version: v2
+plugins:
+  - remote: buf.build/anthropics/buffa
+    out: src/gen
+    opt:
+      - json=true
+  - local: protoc-gen-buffa-packaging
+    out: src/gen
+    strategy: all
+```
+
+See [`examples/bsr-quickstart/`](examples/bsr-quickstart/) for a complete, runnable project, or the [user guide](docs/guide.md#using-buf) for the full set of build setups (local plugins, `buffa-build`/`build.rs`, BSR-generated SDKs).
 
 ### Using `buffa-build` in `build.rs`
 
@@ -142,7 +169,8 @@ let decoded: MyMessage = serde_json::from_str(&json).unwrap();
 | `buffa-descriptor` | Protobuf descriptor types (`FileDescriptorProto`, `DescriptorProto`, ...) |
 | `buffa-codegen` | Code generation from protobuf descriptors |
 | `buffa-build` | `build.rs` helper for invoking codegen via `protoc` |
-| `protoc-gen-buffa` | `protoc` plugin binary |
+| `protoc-gen-buffa` | `protoc` plugin binary; also published as [`buf.build/anthropics/buffa`](https://buf.build/anthropics/buffa) |
+| `protoc-gen-buffa-packaging` | `protoc` plugin that emits a `mod.rs` module tree (local-only) |
 
 ## Performance
 
@@ -268,7 +296,7 @@ buffa passes the protobuf binary and JSON conformance test suite (v33.5, edition
 
 ## Compiler compatibility
 
-**[buf](https://buf.build/docs/cli/)** is the recommended way to compile `.proto` files. The buf CLI has its own built-in compiler, so no separate `protoc` install is needed — just install buf and `protoc-gen-buffa`.
+**[buf](https://buf.build/docs/cli/)** is the recommended way to compile `.proto` files. The buf CLI has its own built-in compiler and can run `protoc-gen-buffa` as a remote plugin on the [Buf Schema Registry](https://buf.build/anthropics/buffa) — `buf generate` sends your compiled proto descriptors to the BSR, which executes the plugin and returns the generated Rust source — so the only thing you need to install is buf itself.
 
 **protoc** is also fully supported. `protoc-gen-buffa` and `buffa-build` work with **protoc v21.12 and later**. The minimum version varies by feature:
 

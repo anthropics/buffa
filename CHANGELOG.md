@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **`buf.build/anthropics/buffa` is published to the public Buf Schema
+  Registry.** `buf generate` can now reference `protoc-gen-buffa` as a
+  `remote:` plugin with no local install: `remote: buf.build/anthropics/buffa`
+  with `opt: [file_per_package=true]` and a small hand-written `pub mod`
+  tree, or paired with a locally-installed `protoc-gen-buffa-packaging`
+  for a generated `mod.rs`. The README quick-start, `docs/guide.md`
+  ["Using buf"](docs/guide.md#using-buf) section, and a new
+  [`examples/bsr-quickstart/`](examples/bsr-quickstart/) project document
+  the workflow. The stale in-repo `protoc-gen-buffa/buf.plugin.yaml`
+  metadata file is removed — the canonical plugin definition lives in
+  [bufbuild/plugins](https://github.com/bufbuild/plugins).
+
 - **`buffa-codegen`: `CodeGenConfig::gate_impls_on_crate_features`.**
   When `true`, generated impls controlled by `generate_json`,
   `generate_views`, and `generate_text` are wrapped in
@@ -22,8 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   codegen toolchain (`buffa-codegen` / `buffa-build` / `protoc-gen-buffa`)
   lean — it depends on them with `default-features = false`. Tracked in
   [#113](https://github.com/anthropics/buffa/issues/113); follow-ups add
-  the `buffa-build` builder method and `protoc-gen-buffa` plugin opt, then
-  regenerate `buffa-descriptor` and `buffa-types` with the gate.
+  the `buffa-build` builder method and `protoc-gen-buffa` plugin opt.
 
 - `serde::Serialize` is now implemented for generated view types when `generate_json` is
   enabled, allowing zero-copy JSON serialization without `.to_owned_message()`.
