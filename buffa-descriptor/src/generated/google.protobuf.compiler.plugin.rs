@@ -3,18 +3,50 @@
 
 /// The version number of protocol compiler.
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct Version {
     /// Field 1: `major`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "major",
+            with = "::buffa::json_helpers::opt_int32",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub major: ::core::option::Option<i32>,
     /// Field 2: `minor`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "minor",
+            with = "::buffa::json_helpers::opt_int32",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub minor: ::core::option::Option<i32>,
     /// Field 3: `patch`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "patch",
+            with = "::buffa::json_helpers::opt_int32",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub patch: ::core::option::Option<i32>,
     /// A suffix for alpha, beta or rc release, e.g., "alpha-1", "rc2". It should
     /// be empty for mainline stable releases.
     ///
     /// Field 4: `suffix`
+    #[cfg_attr(
+        feature = "json",
+        serde(rename = "suffix", skip_serializing_if = "::core::option::Option::is_none")
+    )]
     pub suffix: ::core::option::Option<::buffa::alloc::string::String>,
+    #[cfg_attr(feature = "json", serde(skip))]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
 }
@@ -183,18 +215,115 @@ impl ::buffa::ExtensionSet for Version {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for Version {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.major {
+            enc.write_field_name("major")?;
+            enc.write_i32(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.minor {
+            enc.write_field_name("minor")?;
+            enc.write_i32(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.patch {
+            enc.write_field_name("patch")?;
+            enc.write_i32(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.suffix {
+            enc.write_field_name("suffix")?;
+            enc.write_string(__v)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "major" => self.major = ::core::option::Option::Some(dec.read_i32()?),
+                "minor" => self.minor = ::core::option::Option::Some(dec.read_i32()?),
+                "patch" => self.patch = ::core::option::Option::Some(dec.read_i32()?),
+                "suffix" => {
+                    self.suffix = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for Version {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __VERSION_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.compiler.Version",
+    to_json: ::buffa::type_registry::any_to_json::<Version>,
+    from_json: ::buffa::type_registry::any_from_json::<Version>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __VERSION_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.compiler.Version",
+    text_encode: ::buffa::type_registry::any_encode_text::<Version>,
+    text_merge: ::buffa::type_registry::any_merge_text::<Version>,
+};
 /// An encoded CodeGeneratorRequest is written to the plugin's stdin.
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct CodeGeneratorRequest {
     /// The .proto files that were explicitly listed on the command-line.  The
     /// code generator should generate code only for these files.  Each file's
     /// descriptor will be included in proto_file, below.
     ///
     /// Field 1: `file_to_generate`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "fileToGenerate",
+            alias = "file_to_generate",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub file_to_generate: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
     /// The generator parameter passed on the command-line.
     ///
     /// Field 2: `parameter`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "parameter",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub parameter: ::core::option::Option<::buffa::alloc::string::String>,
     /// FileDescriptorProtos for all files in files_to_generate and everything
     /// they import.  The files will appear in topological order, so each file
@@ -217,17 +346,44 @@ pub struct CodeGeneratorRequest {
     /// fully qualified.
     ///
     /// Field 15: `proto_file`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "protoFile",
+            alias = "proto_file",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub proto_file: ::buffa::alloc::vec::Vec<super::FileDescriptorProto>,
     /// File descriptors with all options, including source-retention options.
     /// These descriptors are only provided for the files listed in
     /// files_to_generate.
     ///
     /// Field 17: `source_file_descriptors`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "sourceFileDescriptors",
+            alias = "source_file_descriptors",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub source_file_descriptors: ::buffa::alloc::vec::Vec<super::FileDescriptorProto>,
     /// The version number of protocol compiler.
     ///
     /// Field 3: `compiler_version`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "compilerVersion",
+            alias = "compiler_version",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub compiler_version: ::buffa::MessageField<Version>,
+    #[cfg_attr(feature = "json", serde(skip))]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
 }
@@ -450,8 +606,119 @@ impl ::buffa::ExtensionSet for CodeGeneratorRequest {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for CodeGeneratorRequest {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.parameter {
+            enc.write_field_name("parameter")?;
+            enc.write_string(__v)?;
+        }
+        if self.compiler_version.is_set() {
+            enc.write_field_name("compiler_version")?;
+            enc.write_message(&*self.compiler_version)?;
+        }
+        for __v in &self.file_to_generate {
+            enc.write_field_name("file_to_generate")?;
+            enc.write_string(__v)?;
+        }
+        for __v in &self.proto_file {
+            enc.write_field_name("proto_file")?;
+            enc.write_message(__v)?;
+        }
+        for __v in &self.source_file_descriptors {
+            enc.write_field_name("source_file_descriptors")?;
+            enc.write_message(__v)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "parameter" => {
+                    self.parameter = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "compiler_version" => {
+                    dec.merge_message(self.compiler_version.get_or_insert_default())?
+                }
+                "file_to_generate" => {
+                    dec.read_repeated_into(
+                        &mut self.file_to_generate,
+                        |__d| ::core::result::Result::Ok(__d.read_string()?.into_owned()),
+                    )?
+                }
+                "proto_file" => {
+                    dec.read_repeated_into(
+                        &mut self.proto_file,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                "source_file_descriptors" => {
+                    dec.read_repeated_into(
+                        &mut self.source_file_descriptors,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for CodeGeneratorRequest {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __CODE_GENERATOR_REQUEST_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.compiler.CodeGeneratorRequest",
+    to_json: ::buffa::type_registry::any_to_json::<CodeGeneratorRequest>,
+    from_json: ::buffa::type_registry::any_from_json::<CodeGeneratorRequest>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __CODE_GENERATOR_REQUEST_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.compiler.CodeGeneratorRequest",
+    text_encode: ::buffa::type_registry::any_encode_text::<CodeGeneratorRequest>,
+    text_merge: ::buffa::type_registry::any_merge_text::<CodeGeneratorRequest>,
+};
 /// The plugin writes an encoded CodeGeneratorResponse to stdout.
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct CodeGeneratorResponse {
     /// Error message.  If non-empty, code generation failed.  The plugin process
     /// should exit with status code zero even if it reports an error in this way.
@@ -463,11 +730,24 @@ pub struct CodeGeneratorResponse {
     /// exiting with a non-zero status code.
     ///
     /// Field 1: `error`
+    #[cfg_attr(
+        feature = "json",
+        serde(rename = "error", skip_serializing_if = "::core::option::Option::is_none")
+    )]
     pub error: ::core::option::Option<::buffa::alloc::string::String>,
     /// A bitmask of supported features that the code generator supports.
     /// This is a bitwise "or" of values from the Feature enum.
     ///
     /// Field 2: `supported_features`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "supportedFeatures",
+            alias = "supported_features",
+            with = "::buffa::json_helpers::opt_uint64",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub supported_features: ::core::option::Option<u64>,
     /// The minimum edition this plugin supports.  This will be treated as an
     /// Edition enum, but we want to allow unknown values.  It should be specified
@@ -475,6 +755,15 @@ pub struct CodeGeneratorResponse {
     /// effect for plugins that have FEATURE_SUPPORTS_EDITIONS set.
     ///
     /// Field 3: `minimum_edition`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "minimumEdition",
+            alias = "minimum_edition",
+            with = "::buffa::json_helpers::opt_int32",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub minimum_edition: ::core::option::Option<i32>,
     /// The maximum edition this plugin supports.  This will be treated as an
     /// Edition enum, but we want to allow unknown values.  It should be specified
@@ -482,9 +771,27 @@ pub struct CodeGeneratorResponse {
     /// effect for plugins that have FEATURE_SUPPORTS_EDITIONS set.
     ///
     /// Field 4: `maximum_edition`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "maximumEdition",
+            alias = "maximum_edition",
+            with = "::buffa::json_helpers::opt_int32",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub maximum_edition: ::core::option::Option<i32>,
     /// Field 15: `file`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "file",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub file: ::buffa::alloc::vec::Vec<code_generator_response::File>,
+    #[cfg_attr(feature = "json", serde(skip))]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
 }
@@ -684,11 +991,112 @@ impl ::buffa::ExtensionSet for CodeGeneratorResponse {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for CodeGeneratorResponse {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.error {
+            enc.write_field_name("error")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.supported_features {
+            enc.write_field_name("supported_features")?;
+            enc.write_u64(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.minimum_edition {
+            enc.write_field_name("minimum_edition")?;
+            enc.write_i32(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.maximum_edition {
+            enc.write_field_name("maximum_edition")?;
+            enc.write_i32(*__v)?;
+        }
+        for __v in &self.file {
+            enc.write_field_name("file")?;
+            enc.write_message(__v)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "error" => {
+                    self.error = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "supported_features" => {
+                    self.supported_features = ::core::option::Option::Some(
+                        dec.read_u64()?,
+                    );
+                }
+                "minimum_edition" => {
+                    self.minimum_edition = ::core::option::Option::Some(dec.read_i32()?);
+                }
+                "maximum_edition" => {
+                    self.maximum_edition = ::core::option::Option::Some(dec.read_i32()?);
+                }
+                "file" => {
+                    dec.read_repeated_into(
+                        &mut self.file,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for CodeGeneratorResponse {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __CODE_GENERATOR_RESPONSE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.compiler.CodeGeneratorResponse",
+    to_json: ::buffa::type_registry::any_to_json::<CodeGeneratorResponse>,
+    from_json: ::buffa::type_registry::any_from_json::<CodeGeneratorResponse>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __CODE_GENERATOR_RESPONSE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.compiler.CodeGeneratorResponse",
+    text_encode: ::buffa::type_registry::any_encode_text::<CodeGeneratorResponse>,
+    text_merge: ::buffa::type_registry::any_merge_text::<CodeGeneratorResponse>,
+};
 pub mod code_generator_response {
     #[allow(unused_imports)]
     use super::*;
     /// Sync with code_generator.h.
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
     pub enum Feature {
         FEATURE_NONE = 0i32,
@@ -700,6 +1108,99 @@ pub mod code_generator_response {
             Self::FEATURE_NONE
         }
     }
+    #[cfg(feature = "json")]
+    const _: () = {
+        impl ::serde::Serialize for Feature {
+            fn serialize<S: ::serde::Serializer>(
+                &self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s.serialize_str(::buffa::Enumeration::proto_name(self))
+            }
+        }
+        impl<'de> ::serde::Deserialize<'de> for Feature {
+            fn deserialize<D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                struct _V;
+                impl ::serde::de::Visitor<'_> for _V {
+                    type Value = Feature;
+                    fn expecting(
+                        &self,
+                        f: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        f.write_str(
+                            concat!(
+                                "a string, integer, or null for ", stringify!(Feature)
+                            ),
+                        )
+                    }
+                    fn visit_str<E: ::serde::de::Error>(
+                        self,
+                        v: &str,
+                    ) -> ::core::result::Result<Feature, E> {
+                        <Feature as ::buffa::Enumeration>::from_proto_name(v)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::unknown_variant(v, &[])
+                            })
+                    }
+                    fn visit_i64<E: ::serde::de::Error>(
+                        self,
+                        v: i64,
+                    ) -> ::core::result::Result<Feature, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <Feature as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_u64<E: ::serde::de::Error>(
+                        self,
+                        v: u64,
+                    ) -> ::core::result::Result<Feature, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <Feature as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_unit<E: ::serde::de::Error>(
+                        self,
+                    ) -> ::core::result::Result<Feature, E> {
+                        ::core::result::Result::Ok(::core::default::Default::default())
+                    }
+                }
+                d.deserialize_any(_V)
+            }
+        }
+        impl ::buffa::json_helpers::ProtoElemJson for Feature {
+            fn serialize_proto_json<S: ::serde::Serializer>(
+                v: &Self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                ::serde::Serialize::serialize(v, s)
+            }
+            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                <Self as ::serde::Deserialize>::deserialize(d)
+            }
+        }
+    };
     impl ::buffa::Enumeration for Feature {
         fn from_i32(value: i32) -> ::core::option::Option<Self> {
             match value {
@@ -741,6 +1242,9 @@ pub mod code_generator_response {
     }
     /// Represents a single generated file.
     #[derive(Clone, PartialEq, Default)]
+    #[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+    #[cfg_attr(feature = "json", serde(default))]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     pub struct File {
         /// The file name, relative to the output directory.  The name must not
         /// contain "." or ".." components and must be relative, not be absolute (so,
@@ -755,6 +1259,13 @@ pub mod code_generator_response {
         /// CodeGeneratorResponse before writing files to disk.
         ///
         /// Field 1: `name`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "name",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub name: ::core::option::Option<::buffa::alloc::string::String>,
         /// If non-empty, indicates that the named file should already exist, and the
         /// content here is to be inserted into that file at a defined insertion
@@ -795,17 +1306,41 @@ pub mod code_generator_response {
         /// If |insertion_point| is present, |name| must also be present.
         ///
         /// Field 2: `insertion_point`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "insertionPoint",
+                alias = "insertion_point",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub insertion_point: ::core::option::Option<::buffa::alloc::string::String>,
         /// The file contents.
         ///
         /// Field 15: `content`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "content",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub content: ::core::option::Option<::buffa::alloc::string::String>,
         /// Information describing the file content being inserted. If an insertion
         /// point is used, this information will be appropriately offset and inserted
         /// into the code generation metadata for the generated files.
         ///
         /// Field 16: `generated_code_info`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "generatedCodeInfo",
+                alias = "generated_code_info",
+                skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+            )
+        )]
         pub generated_code_info: ::buffa::MessageField<super::super::GeneratedCodeInfo>,
+        #[cfg_attr(feature = "json", serde(skip))]
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
     }
@@ -999,4 +1534,97 @@ pub mod code_generator_response {
             &mut self.__buffa_unknown_fields
         }
     }
+    #[cfg(feature = "text")]
+    impl ::buffa::text::TextFormat for File {
+        fn encode_text(
+            &self,
+            enc: &mut ::buffa::text::TextEncoder<'_>,
+        ) -> ::core::fmt::Result {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            if let ::core::option::Option::Some(ref __v) = self.name {
+                enc.write_field_name("name")?;
+                enc.write_string(__v)?;
+            }
+            if let ::core::option::Option::Some(ref __v) = self.insertion_point {
+                enc.write_field_name("insertion_point")?;
+                enc.write_string(__v)?;
+            }
+            if let ::core::option::Option::Some(ref __v) = self.content {
+                enc.write_field_name("content")?;
+                enc.write_string(__v)?;
+            }
+            if self.generated_code_info.is_set() {
+                enc.write_field_name("generated_code_info")?;
+                enc.write_message(&*self.generated_code_info)?;
+            }
+            enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+            ::core::result::Result::Ok(())
+        }
+        fn merge_text(
+            &mut self,
+            dec: &mut ::buffa::text::TextDecoder<'_>,
+        ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+                match __name {
+                    "name" => {
+                        self.name = ::core::option::Option::Some(
+                            dec.read_string()?.into_owned(),
+                        );
+                    }
+                    "insertion_point" => {
+                        self.insertion_point = ::core::option::Option::Some(
+                            dec.read_string()?.into_owned(),
+                        );
+                    }
+                    "content" => {
+                        self.content = ::core::option::Option::Some(
+                            dec.read_string()?.into_owned(),
+                        );
+                    }
+                    "generated_code_info" => {
+                        dec.merge_message(
+                            self.generated_code_info.get_or_insert_default(),
+                        )?
+                    }
+                    _ => dec.skip_value()?,
+                }
+            }
+            ::core::result::Result::Ok(())
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::buffa::json_helpers::ProtoElemJson for File {
+        fn serialize_proto_json<S: ::serde::Serializer>(
+            v: &Self,
+            s: S,
+        ) -> ::core::result::Result<S::Ok, S::Error> {
+            ::serde::Serialize::serialize(v, s)
+        }
+        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+            d: D,
+        ) -> ::core::result::Result<Self, D::Error> {
+            <Self as ::serde::Deserialize>::deserialize(d)
+        }
+    }
+    #[cfg(feature = "json")]
+    #[doc(hidden)]
+    pub const __FILE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.compiler.CodeGeneratorResponse.File",
+        to_json: ::buffa::type_registry::any_to_json::<File>,
+        from_json: ::buffa::type_registry::any_from_json::<File>,
+        is_wkt: false,
+    };
+    #[cfg(feature = "text")]
+    #[doc(hidden)]
+    pub const __FILE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.compiler.CodeGeneratorResponse.File",
+        text_encode: ::buffa::type_registry::any_encode_text::<File>,
+        text_merge: ::buffa::type_registry::any_merge_text::<File>,
+    };
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::code_generator_response::FileView;
 }

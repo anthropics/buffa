@@ -22,8 +22,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   codegen toolchain (`buffa-codegen` / `buffa-build` / `protoc-gen-buffa`)
   lean — it depends on them with `default-features = false`. Tracked in
   [#113](https://github.com/anthropics/buffa/issues/113); follow-ups add
-  the `buffa-build` builder method and `protoc-gen-buffa` plugin opt, then
-  regenerate `buffa-descriptor` and `buffa-types` with the gate.
+  the `buffa-build` builder method and `protoc-gen-buffa` plugin opt.
+
+- **`buffa-descriptor`: regenerated with views, JSON, text, and arbitrary
+  impls behind crate features.** `descriptor.proto` and
+  `compiler/plugin.proto` types now ship the full impl surface — gated on
+  `views`, `json`, `text`, and `arbitrary` Cargo features so the codegen
+  toolchain (`buffa-codegen` / `buffa-build` / `protoc-gen-buffa`) can
+  depend on `buffa-descriptor` with `default-features = false` and stay
+  free of `serde` / `serde_json` / `base64` / `arbitrary`. **Consumers
+  whose protos reference a `descriptor.proto` type as a field (most
+  commonly anything depending on `buf/validate/validate.proto`, or
+  `buf.registry.module.v1` / `buf.alpha.image.v1` which embed
+  `FileDescriptorSet` / `FileDescriptorProto`) must enable the
+  `buffa-descriptor` features matching their codegen modes** —
+  `views = ["buffa-descriptor/views"]`, `json = ["buffa-descriptor/json"]`,
+  etc., or just `buffa-descriptor = { ..., features = ["views", "json"] }`.
+  This closes [#113](https://github.com/anthropics/buffa/issues/113): the
+  full `bufbuild/registry` and `bufbuild/buf` modules now generate and
+  compile cleanly with `views=true` + `json=true`.
+
+  **Migration:** if your `Cargo.toml` already declares `buffa-descriptor`
+  as a dependency, add the features matching your codegen config:
+
+  ```toml
+  # build.rs uses .generate_views(true).generate_json(true)
+  buffa-descriptor = { version = "0.6", features = ["views", "json"] }
+  ```
+
+  If you don't declare `buffa-descriptor` directly, the failure mode is a
+  missing-impl error at the embedding type's serde / view call site (e.g.
+  `the trait bound FileDescriptorSet: serde::Deserialize is not
+  satisfied`); add `buffa-descriptor` with the right features.
+
+  The `buffa_descriptor::generated` module tree now nests
+  `google.protobuf.compiler` inside `google.protobuf` to mirror the proto
+  package hierarchy (so cross-package `super::*` references in the view
+  code resolve); the previous sibling-style
+  `buffa_descriptor::generated::compiler` and
+  `buffa_descriptor::generated::{FileDescriptorProto, GeneratedCodeInfo}`
+  paths are preserved with `pub use` re-exports.
 
 - `serde::Serialize` is now implemented for generated view types when `generate_json` is
   enabled, allowing zero-copy JSON serialization without `.to_owned_message()`.

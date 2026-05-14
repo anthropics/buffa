@@ -3,6 +3,7 @@
 
 /// The full set of known editions.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 #[repr(i32)]
 pub enum Edition {
     /// A placeholder for an unknown edition value.
@@ -40,6 +41,95 @@ impl ::core::default::Default for Edition {
         Self::EDITION_UNKNOWN
     }
 }
+#[cfg(feature = "json")]
+const _: () = {
+    impl ::serde::Serialize for Edition {
+        fn serialize<S: ::serde::Serializer>(
+            &self,
+            s: S,
+        ) -> ::core::result::Result<S::Ok, S::Error> {
+            s.serialize_str(::buffa::Enumeration::proto_name(self))
+        }
+    }
+    impl<'de> ::serde::Deserialize<'de> for Edition {
+        fn deserialize<D: ::serde::Deserializer<'de>>(
+            d: D,
+        ) -> ::core::result::Result<Self, D::Error> {
+            struct _V;
+            impl ::serde::de::Visitor<'_> for _V {
+                type Value = Edition;
+                fn expecting(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.write_str(
+                        concat!("a string, integer, or null for ", stringify!(Edition)),
+                    )
+                }
+                fn visit_str<E: ::serde::de::Error>(
+                    self,
+                    v: &str,
+                ) -> ::core::result::Result<Edition, E> {
+                    <Edition as ::buffa::Enumeration>::from_proto_name(v)
+                        .ok_or_else(|| { ::serde::de::Error::unknown_variant(v, &[]) })
+                }
+                fn visit_i64<E: ::serde::de::Error>(
+                    self,
+                    v: i64,
+                ) -> ::core::result::Result<Edition, E> {
+                    let v32 = i32::try_from(v)
+                        .map_err(|_| {
+                            ::serde::de::Error::custom(
+                                ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                            )
+                        })?;
+                    <Edition as ::buffa::Enumeration>::from_i32(v32)
+                        .ok_or_else(|| {
+                            ::serde::de::Error::custom(
+                                ::buffa::alloc::format!("unknown enum value {v32}"),
+                            )
+                        })
+                }
+                fn visit_u64<E: ::serde::de::Error>(
+                    self,
+                    v: u64,
+                ) -> ::core::result::Result<Edition, E> {
+                    let v32 = i32::try_from(v)
+                        .map_err(|_| {
+                            ::serde::de::Error::custom(
+                                ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                            )
+                        })?;
+                    <Edition as ::buffa::Enumeration>::from_i32(v32)
+                        .ok_or_else(|| {
+                            ::serde::de::Error::custom(
+                                ::buffa::alloc::format!("unknown enum value {v32}"),
+                            )
+                        })
+                }
+                fn visit_unit<E: ::serde::de::Error>(
+                    self,
+                ) -> ::core::result::Result<Edition, E> {
+                    ::core::result::Result::Ok(::core::default::Default::default())
+                }
+            }
+            d.deserialize_any(_V)
+        }
+    }
+    impl ::buffa::json_helpers::ProtoElemJson for Edition {
+        fn serialize_proto_json<S: ::serde::Serializer>(
+            v: &Self,
+            s: S,
+        ) -> ::core::result::Result<S::Ok, S::Error> {
+            ::serde::Serialize::serialize(v, s)
+        }
+        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+            d: D,
+        ) -> ::core::result::Result<Self, D::Error> {
+            <Self as ::serde::Deserialize>::deserialize(d)
+        }
+    }
+};
 impl ::buffa::Enumeration for Edition {
     fn from_i32(value: i32) -> ::core::option::Option<Self> {
         match value {
@@ -131,6 +221,7 @@ impl ::buffa::Enumeration for Edition {
 /// on `message` and `enum` as they are the only types available to be referenced
 /// from other files.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 #[repr(i32)]
 pub enum SymbolVisibility {
     VISIBILITY_UNSET = 0i32,
@@ -142,6 +233,98 @@ impl ::core::default::Default for SymbolVisibility {
         Self::VISIBILITY_UNSET
     }
 }
+#[cfg(feature = "json")]
+const _: () = {
+    impl ::serde::Serialize for SymbolVisibility {
+        fn serialize<S: ::serde::Serializer>(
+            &self,
+            s: S,
+        ) -> ::core::result::Result<S::Ok, S::Error> {
+            s.serialize_str(::buffa::Enumeration::proto_name(self))
+        }
+    }
+    impl<'de> ::serde::Deserialize<'de> for SymbolVisibility {
+        fn deserialize<D: ::serde::Deserializer<'de>>(
+            d: D,
+        ) -> ::core::result::Result<Self, D::Error> {
+            struct _V;
+            impl ::serde::de::Visitor<'_> for _V {
+                type Value = SymbolVisibility;
+                fn expecting(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.write_str(
+                        concat!(
+                            "a string, integer, or null for ",
+                            stringify!(SymbolVisibility)
+                        ),
+                    )
+                }
+                fn visit_str<E: ::serde::de::Error>(
+                    self,
+                    v: &str,
+                ) -> ::core::result::Result<SymbolVisibility, E> {
+                    <SymbolVisibility as ::buffa::Enumeration>::from_proto_name(v)
+                        .ok_or_else(|| { ::serde::de::Error::unknown_variant(v, &[]) })
+                }
+                fn visit_i64<E: ::serde::de::Error>(
+                    self,
+                    v: i64,
+                ) -> ::core::result::Result<SymbolVisibility, E> {
+                    let v32 = i32::try_from(v)
+                        .map_err(|_| {
+                            ::serde::de::Error::custom(
+                                ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                            )
+                        })?;
+                    <SymbolVisibility as ::buffa::Enumeration>::from_i32(v32)
+                        .ok_or_else(|| {
+                            ::serde::de::Error::custom(
+                                ::buffa::alloc::format!("unknown enum value {v32}"),
+                            )
+                        })
+                }
+                fn visit_u64<E: ::serde::de::Error>(
+                    self,
+                    v: u64,
+                ) -> ::core::result::Result<SymbolVisibility, E> {
+                    let v32 = i32::try_from(v)
+                        .map_err(|_| {
+                            ::serde::de::Error::custom(
+                                ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                            )
+                        })?;
+                    <SymbolVisibility as ::buffa::Enumeration>::from_i32(v32)
+                        .ok_or_else(|| {
+                            ::serde::de::Error::custom(
+                                ::buffa::alloc::format!("unknown enum value {v32}"),
+                            )
+                        })
+                }
+                fn visit_unit<E: ::serde::de::Error>(
+                    self,
+                ) -> ::core::result::Result<SymbolVisibility, E> {
+                    ::core::result::Result::Ok(::core::default::Default::default())
+                }
+            }
+            d.deserialize_any(_V)
+        }
+    }
+    impl ::buffa::json_helpers::ProtoElemJson for SymbolVisibility {
+        fn serialize_proto_json<S: ::serde::Serializer>(
+            v: &Self,
+            s: S,
+        ) -> ::core::result::Result<S::Ok, S::Error> {
+            ::serde::Serialize::serialize(v, s)
+        }
+        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+            d: D,
+        ) -> ::core::result::Result<Self, D::Error> {
+            <Self as ::serde::Deserialize>::deserialize(d)
+        }
+    }
+};
 impl ::buffa::Enumeration for SymbolVisibility {
     fn from_i32(value: i32) -> ::core::option::Option<Self> {
         match value {
@@ -176,11 +359,23 @@ impl ::buffa::Enumeration for SymbolVisibility {
 /// The protocol compiler can output a FileDescriptorSet containing the .proto
 /// files it parses.
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct FileDescriptorSet {
     /// Field 1: `file`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "file",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub file: ::buffa::alloc::vec::Vec<FileDescriptorProto>,
+    #[cfg_attr(feature = "json", serde(flatten))]
     #[doc(hidden)]
-    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+    pub __buffa_unknown_fields: __FileDescriptorSetExtJson,
 }
 impl ::core::fmt::Debug for FileDescriptorSet {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -284,46 +479,343 @@ impl ::buffa::ExtensionSet for FileDescriptorSet {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for FileDescriptorSet {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        for __v in &self.file {
+            enc.write_field_name("file")?;
+            enc.write_message(__v)?;
+        }
+        enc.write_extension_fields(
+            "google.protobuf.FileDescriptorSet",
+            &self.__buffa_unknown_fields,
+        )?;
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "file" => {
+                    dec.read_repeated_into(
+                        &mut self.file,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                __name if __name.starts_with('[') => {
+                    for __r in dec
+                        .read_extension(__name, "google.protobuf.FileDescriptorSet")?
+                    {
+                        self.__buffa_unknown_fields.push(__r);
+                    }
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> serde::Deserialize<'de> for FileDescriptorSet {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        struct _V;
+        impl<'de> serde::de::Visitor<'de> for _V {
+            type Value = FileDescriptorSet;
+            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.write_str("struct FileDescriptorSet")
+            }
+            #[allow(clippy::field_reassign_with_default)]
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> ::core::result::Result<FileDescriptorSet, A::Error> {
+                let mut __f_file: ::core::option::Option<
+                    ::buffa::alloc::vec::Vec<FileDescriptorProto>,
+                > = None;
+                let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
+                while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
+                    match key.as_str() {
+                        "file" => {
+                            __f_file = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::buffa::alloc::vec::Vec<FileDescriptorProto>;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::buffa::alloc::vec::Vec<FileDescriptorProto>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::null_as_default(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        __k if __k.starts_with('[') => {
+                            let __v: ::buffa::serde_json::Value = map.next_value()?;
+                            match ::buffa::extension_registry::deserialize_extension_key(
+                                "google.protobuf.FileDescriptorSet",
+                                __k,
+                                __v,
+                            ) {
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Ok(__recs),
+                                ) => {
+                                    for __rec in __recs {
+                                        __ext_records.push(__rec);
+                                    }
+                                }
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Err(__e),
+                                ) => {
+                                    return ::core::result::Result::Err(
+                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                    );
+                                }
+                                ::core::option::Option::None => {}
+                            }
+                        }
+                        _ => {
+                            map.next_value::<serde::de::IgnoredAny>()?;
+                        }
+                    }
+                }
+                let mut __r = <FileDescriptorSet as ::core::default::Default>::default();
+                if let ::core::option::Option::Some(v) = __f_file {
+                    __r.file = v;
+                }
+                for __rec in __ext_records {
+                    __r.__buffa_unknown_fields.push(__rec);
+                }
+                Ok(__r)
+            }
+        }
+        d.deserialize_map(_V)
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for FileDescriptorSet {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[doc(hidden)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[repr(transparent)]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+pub struct __FileDescriptorSetExtJson(pub ::buffa::UnknownFields);
+impl ::core::ops::Deref for __FileDescriptorSetExtJson {
+    type Target = ::buffa::UnknownFields;
+    fn deref(&self) -> &::buffa::UnknownFields {
+        &self.0
+    }
+}
+impl ::core::ops::DerefMut for __FileDescriptorSetExtJson {
+    fn deref_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.0
+    }
+}
+impl ::core::convert::From<::buffa::UnknownFields> for __FileDescriptorSetExtJson {
+    fn from(u: ::buffa::UnknownFields) -> Self {
+        Self(u)
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for __FileDescriptorSetExtJson {
+    fn serialize<S: ::serde::Serializer>(
+        &self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::buffa::extension_registry::serialize_extensions(
+            "google.protobuf.FileDescriptorSet",
+            &self.0,
+            s,
+        )
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> ::serde::Deserialize<'de> for __FileDescriptorSetExtJson {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        ::buffa::extension_registry::deserialize_extensions(
+                "google.protobuf.FileDescriptorSet",
+                d,
+            )
+            .map(Self)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __FILE_DESCRIPTOR_SET_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.FileDescriptorSet",
+    to_json: ::buffa::type_registry::any_to_json::<FileDescriptorSet>,
+    from_json: ::buffa::type_registry::any_from_json::<FileDescriptorSet>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __FILE_DESCRIPTOR_SET_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.FileDescriptorSet",
+    text_encode: ::buffa::type_registry::any_encode_text::<FileDescriptorSet>,
+    text_merge: ::buffa::type_registry::any_merge_text::<FileDescriptorSet>,
+};
 /// Describes a complete .proto file.
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct FileDescriptorProto {
     /// file name, relative to root of source tree
     ///
     /// Field 1: `name`
+    #[cfg_attr(
+        feature = "json",
+        serde(rename = "name", skip_serializing_if = "::core::option::Option::is_none")
+    )]
     pub name: ::core::option::Option<::buffa::alloc::string::String>,
     /// e.g. "foo", "foo.bar", etc.
     ///
     /// Field 2: `package`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "package",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub package: ::core::option::Option<::buffa::alloc::string::String>,
     /// Names of files imported by this file.
     ///
     /// Field 3: `dependency`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "dependency",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub dependency: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
     /// Indexes of the public imported files in the dependency list above.
     ///
     /// Field 10: `public_dependency`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "publicDependency",
+            alias = "public_dependency",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub public_dependency: ::buffa::alloc::vec::Vec<i32>,
     /// Indexes of the weak imported files in the dependency list.
     /// For Google-internal migration only. Do not use.
     ///
     /// Field 11: `weak_dependency`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "weakDependency",
+            alias = "weak_dependency",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub weak_dependency: ::buffa::alloc::vec::Vec<i32>,
     /// Names of files imported by this file purely for the purpose of providing
     /// option extensions. These are excluded from the dependency list above.
     ///
     /// Field 15: `option_dependency`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "optionDependency",
+            alias = "option_dependency",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub option_dependency: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
     /// All top-level definitions in this file.
     ///
     /// Field 4: `message_type`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "messageType",
+            alias = "message_type",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub message_type: ::buffa::alloc::vec::Vec<DescriptorProto>,
     /// Field 5: `enum_type`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "enumType",
+            alias = "enum_type",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub enum_type: ::buffa::alloc::vec::Vec<EnumDescriptorProto>,
     /// Field 6: `service`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "service",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub service: ::buffa::alloc::vec::Vec<ServiceDescriptorProto>,
     /// Field 7: `extension`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "extension",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub extension: ::buffa::alloc::vec::Vec<FieldDescriptorProto>,
     /// Field 8: `options`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "options",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub options: ::buffa::MessageField<FileOptions>,
     /// This field contains optional information about the original source code.
     /// You may safely remove this entire field without harming runtime
@@ -331,6 +823,14 @@ pub struct FileDescriptorProto {
     /// development tools.
     ///
     /// Field 9: `source_code_info`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "sourceCodeInfo",
+            alias = "source_code_info",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub source_code_info: ::buffa::MessageField<SourceCodeInfo>,
     /// The syntax of the proto file.
     /// The supported values are "proto2", "proto3", and "editions".
@@ -341,6 +841,10 @@ pub struct FileDescriptorProto {
     /// developers should rely on the protoreflect APIs for their client language.
     ///
     /// Field 12: `syntax`
+    #[cfg_attr(
+        feature = "json",
+        serde(rename = "syntax", skip_serializing_if = "::core::option::Option::is_none")
+    )]
     pub syntax: ::core::option::Option<::buffa::alloc::string::String>,
     /// The edition of the proto file.
     /// WARNING: This field should only be used by protobuf plugins or special
@@ -348,7 +852,16 @@ pub struct FileDescriptorProto {
     /// developers should rely on the protoreflect APIs for their client language.
     ///
     /// Field 14: `edition`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "edition",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub edition: ::core::option::Option<Edition>,
+    #[cfg_attr(feature = "json", serde(skip))]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
 }
@@ -850,36 +1363,327 @@ impl ::buffa::ExtensionSet for FileDescriptorProto {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for FileDescriptorProto {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.name {
+            enc.write_field_name("name")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.package {
+            enc.write_field_name("package")?;
+            enc.write_string(__v)?;
+        }
+        if self.options.is_set() {
+            enc.write_field_name("options")?;
+            enc.write_message(&*self.options)?;
+        }
+        if self.source_code_info.is_set() {
+            enc.write_field_name("source_code_info")?;
+            enc.write_message(&*self.source_code_info)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.syntax {
+            enc.write_field_name("syntax")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.edition {
+            enc.write_field_name("edition")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        for __v in &self.dependency {
+            enc.write_field_name("dependency")?;
+            enc.write_string(__v)?;
+        }
+        for __v in &self.public_dependency {
+            enc.write_field_name("public_dependency")?;
+            enc.write_i32(*__v)?;
+        }
+        for __v in &self.weak_dependency {
+            enc.write_field_name("weak_dependency")?;
+            enc.write_i32(*__v)?;
+        }
+        for __v in &self.option_dependency {
+            enc.write_field_name("option_dependency")?;
+            enc.write_string(__v)?;
+        }
+        for __v in &self.message_type {
+            enc.write_field_name("message_type")?;
+            enc.write_message(__v)?;
+        }
+        for __v in &self.enum_type {
+            enc.write_field_name("enum_type")?;
+            enc.write_message(__v)?;
+        }
+        for __v in &self.service {
+            enc.write_field_name("service")?;
+            enc.write_message(__v)?;
+        }
+        for __v in &self.extension {
+            enc.write_field_name("extension")?;
+            enc.write_message(__v)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "name" => {
+                    self.name = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "package" => {
+                    self.package = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "options" => dec.merge_message(self.options.get_or_insert_default())?,
+                "source_code_info" => {
+                    dec.merge_message(self.source_code_info.get_or_insert_default())?
+                }
+                "syntax" => {
+                    self.syntax = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "edition" => {
+                    self.edition = ::core::option::Option::Some(
+                        dec.read_closed_enum_by_name::<Edition>()?,
+                    );
+                }
+                "dependency" => {
+                    dec.read_repeated_into(
+                        &mut self.dependency,
+                        |__d| ::core::result::Result::Ok(__d.read_string()?.into_owned()),
+                    )?
+                }
+                "public_dependency" => {
+                    dec.read_repeated_into(
+                        &mut self.public_dependency,
+                        |__d| __d.read_i32(),
+                    )?
+                }
+                "weak_dependency" => {
+                    dec.read_repeated_into(
+                        &mut self.weak_dependency,
+                        |__d| __d.read_i32(),
+                    )?
+                }
+                "option_dependency" => {
+                    dec.read_repeated_into(
+                        &mut self.option_dependency,
+                        |__d| ::core::result::Result::Ok(__d.read_string()?.into_owned()),
+                    )?
+                }
+                "message_type" => {
+                    dec.read_repeated_into(
+                        &mut self.message_type,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                "enum_type" => {
+                    dec.read_repeated_into(
+                        &mut self.enum_type,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                "service" => {
+                    dec.read_repeated_into(
+                        &mut self.service,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                "extension" => {
+                    dec.read_repeated_into(
+                        &mut self.extension,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for FileDescriptorProto {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __FILE_DESCRIPTOR_PROTO_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.FileDescriptorProto",
+    to_json: ::buffa::type_registry::any_to_json::<FileDescriptorProto>,
+    from_json: ::buffa::type_registry::any_from_json::<FileDescriptorProto>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __FILE_DESCRIPTOR_PROTO_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.FileDescriptorProto",
+    text_encode: ::buffa::type_registry::any_encode_text::<FileDescriptorProto>,
+    text_merge: ::buffa::type_registry::any_merge_text::<FileDescriptorProto>,
+};
 /// Describes a message type.
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct DescriptorProto {
     /// Field 1: `name`
+    #[cfg_attr(
+        feature = "json",
+        serde(rename = "name", skip_serializing_if = "::core::option::Option::is_none")
+    )]
     pub name: ::core::option::Option<::buffa::alloc::string::String>,
     /// Field 2: `field`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "field",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub field: ::buffa::alloc::vec::Vec<FieldDescriptorProto>,
     /// Field 6: `extension`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "extension",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub extension: ::buffa::alloc::vec::Vec<FieldDescriptorProto>,
     /// Field 3: `nested_type`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "nestedType",
+            alias = "nested_type",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub nested_type: ::buffa::alloc::vec::Vec<Self>,
     /// Field 4: `enum_type`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "enumType",
+            alias = "enum_type",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub enum_type: ::buffa::alloc::vec::Vec<EnumDescriptorProto>,
     /// Field 5: `extension_range`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "extensionRange",
+            alias = "extension_range",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub extension_range: ::buffa::alloc::vec::Vec<descriptor_proto::ExtensionRange>,
     /// Field 8: `oneof_decl`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "oneofDecl",
+            alias = "oneof_decl",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub oneof_decl: ::buffa::alloc::vec::Vec<OneofDescriptorProto>,
     /// Field 7: `options`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "options",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub options: ::buffa::MessageField<MessageOptions>,
     /// Field 9: `reserved_range`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "reservedRange",
+            alias = "reserved_range",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub reserved_range: ::buffa::alloc::vec::Vec<descriptor_proto::ReservedRange>,
     /// Reserved field names, which may not be used by fields in the same message.
     /// A given name may only be reserved once.
     ///
     /// Field 10: `reserved_name`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "reservedName",
+            alias = "reserved_name",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub reserved_name: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
     /// Support for `export` and `local` keywords on enums.
     ///
     /// Field 11: `visibility`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "visibility",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub visibility: ::core::option::Option<SymbolVisibility>,
+    #[cfg_attr(feature = "json", serde(skip))]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
 }
@@ -1286,21 +2090,233 @@ impl ::buffa::ExtensionSet for DescriptorProto {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for DescriptorProto {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.name {
+            enc.write_field_name("name")?;
+            enc.write_string(__v)?;
+        }
+        if self.options.is_set() {
+            enc.write_field_name("options")?;
+            enc.write_message(&*self.options)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.visibility {
+            enc.write_field_name("visibility")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        for __v in &self.field {
+            enc.write_field_name("field")?;
+            enc.write_message(__v)?;
+        }
+        for __v in &self.extension {
+            enc.write_field_name("extension")?;
+            enc.write_message(__v)?;
+        }
+        for __v in &self.nested_type {
+            enc.write_field_name("nested_type")?;
+            enc.write_message(__v)?;
+        }
+        for __v in &self.enum_type {
+            enc.write_field_name("enum_type")?;
+            enc.write_message(__v)?;
+        }
+        for __v in &self.extension_range {
+            enc.write_field_name("extension_range")?;
+            enc.write_message(__v)?;
+        }
+        for __v in &self.oneof_decl {
+            enc.write_field_name("oneof_decl")?;
+            enc.write_message(__v)?;
+        }
+        for __v in &self.reserved_range {
+            enc.write_field_name("reserved_range")?;
+            enc.write_message(__v)?;
+        }
+        for __v in &self.reserved_name {
+            enc.write_field_name("reserved_name")?;
+            enc.write_string(__v)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "name" => {
+                    self.name = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "options" => dec.merge_message(self.options.get_or_insert_default())?,
+                "visibility" => {
+                    self.visibility = ::core::option::Option::Some(
+                        dec.read_closed_enum_by_name::<SymbolVisibility>()?,
+                    );
+                }
+                "field" => {
+                    dec.read_repeated_into(
+                        &mut self.field,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                "extension" => {
+                    dec.read_repeated_into(
+                        &mut self.extension,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                "nested_type" => {
+                    dec.read_repeated_into(
+                        &mut self.nested_type,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                "enum_type" => {
+                    dec.read_repeated_into(
+                        &mut self.enum_type,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                "extension_range" => {
+                    dec.read_repeated_into(
+                        &mut self.extension_range,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                "oneof_decl" => {
+                    dec.read_repeated_into(
+                        &mut self.oneof_decl,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                "reserved_range" => {
+                    dec.read_repeated_into(
+                        &mut self.reserved_range,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                "reserved_name" => {
+                    dec.read_repeated_into(
+                        &mut self.reserved_name,
+                        |__d| ::core::result::Result::Ok(__d.read_string()?.into_owned()),
+                    )?
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for DescriptorProto {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __DESCRIPTOR_PROTO_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.DescriptorProto",
+    to_json: ::buffa::type_registry::any_to_json::<DescriptorProto>,
+    from_json: ::buffa::type_registry::any_from_json::<DescriptorProto>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __DESCRIPTOR_PROTO_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.DescriptorProto",
+    text_encode: ::buffa::type_registry::any_encode_text::<DescriptorProto>,
+    text_merge: ::buffa::type_registry::any_merge_text::<DescriptorProto>,
+};
 pub mod descriptor_proto {
     #[allow(unused_imports)]
     use super::*;
     #[derive(Clone, PartialEq, Default)]
+    #[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+    #[cfg_attr(feature = "json", serde(default))]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     pub struct ExtensionRange {
         /// Inclusive.
         ///
         /// Field 1: `start`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "start",
+                with = "::buffa::json_helpers::opt_int32",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub start: ::core::option::Option<i32>,
         /// Exclusive.
         ///
         /// Field 2: `end`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "end",
+                with = "::buffa::json_helpers::opt_int32",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub end: ::core::option::Option<i32>,
         /// Field 3: `options`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "options",
+                skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+            )
+        )]
         pub options: ::buffa::MessageField<super::ExtensionRangeOptions>,
+        #[cfg_attr(feature = "json", serde(skip))]
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
     }
@@ -1454,19 +2470,108 @@ pub mod descriptor_proto {
             &mut self.__buffa_unknown_fields
         }
     }
+    #[cfg(feature = "text")]
+    impl ::buffa::text::TextFormat for ExtensionRange {
+        fn encode_text(
+            &self,
+            enc: &mut ::buffa::text::TextEncoder<'_>,
+        ) -> ::core::fmt::Result {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            if let ::core::option::Option::Some(ref __v) = self.start {
+                enc.write_field_name("start")?;
+                enc.write_i32(*__v)?;
+            }
+            if let ::core::option::Option::Some(ref __v) = self.end {
+                enc.write_field_name("end")?;
+                enc.write_i32(*__v)?;
+            }
+            if self.options.is_set() {
+                enc.write_field_name("options")?;
+                enc.write_message(&*self.options)?;
+            }
+            enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+            ::core::result::Result::Ok(())
+        }
+        fn merge_text(
+            &mut self,
+            dec: &mut ::buffa::text::TextDecoder<'_>,
+        ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+                match __name {
+                    "start" => self.start = ::core::option::Option::Some(dec.read_i32()?),
+                    "end" => self.end = ::core::option::Option::Some(dec.read_i32()?),
+                    "options" => dec.merge_message(self.options.get_or_insert_default())?,
+                    _ => dec.skip_value()?,
+                }
+            }
+            ::core::result::Result::Ok(())
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::buffa::json_helpers::ProtoElemJson for ExtensionRange {
+        fn serialize_proto_json<S: ::serde::Serializer>(
+            v: &Self,
+            s: S,
+        ) -> ::core::result::Result<S::Ok, S::Error> {
+            ::serde::Serialize::serialize(v, s)
+        }
+        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+            d: D,
+        ) -> ::core::result::Result<Self, D::Error> {
+            <Self as ::serde::Deserialize>::deserialize(d)
+        }
+    }
+    #[cfg(feature = "json")]
+    #[doc(hidden)]
+    pub const __EXTENSION_RANGE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.DescriptorProto.ExtensionRange",
+        to_json: ::buffa::type_registry::any_to_json::<ExtensionRange>,
+        from_json: ::buffa::type_registry::any_from_json::<ExtensionRange>,
+        is_wkt: false,
+    };
+    #[cfg(feature = "text")]
+    #[doc(hidden)]
+    pub const __EXTENSION_RANGE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.DescriptorProto.ExtensionRange",
+        text_encode: ::buffa::type_registry::any_encode_text::<ExtensionRange>,
+        text_merge: ::buffa::type_registry::any_merge_text::<ExtensionRange>,
+    };
     /// Range of reserved tag numbers. Reserved tag numbers may not be used by
     /// fields or extension ranges in the same message. Reserved ranges may
     /// not overlap.
     #[derive(Clone, PartialEq, Default)]
+    #[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+    #[cfg_attr(feature = "json", serde(default))]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     pub struct ReservedRange {
         /// Inclusive.
         ///
         /// Field 1: `start`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "start",
+                with = "::buffa::json_helpers::opt_int32",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub start: ::core::option::Option<i32>,
         /// Exclusive.
         ///
         /// Field 2: `end`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "end",
+                with = "::buffa::json_helpers::opt_int32",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub end: ::core::option::Option<i32>,
+        #[cfg_attr(feature = "json", serde(skip))]
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
     }
@@ -1587,31 +2692,137 @@ pub mod descriptor_proto {
             &mut self.__buffa_unknown_fields
         }
     }
+    #[cfg(feature = "text")]
+    impl ::buffa::text::TextFormat for ReservedRange {
+        fn encode_text(
+            &self,
+            enc: &mut ::buffa::text::TextEncoder<'_>,
+        ) -> ::core::fmt::Result {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            if let ::core::option::Option::Some(ref __v) = self.start {
+                enc.write_field_name("start")?;
+                enc.write_i32(*__v)?;
+            }
+            if let ::core::option::Option::Some(ref __v) = self.end {
+                enc.write_field_name("end")?;
+                enc.write_i32(*__v)?;
+            }
+            enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+            ::core::result::Result::Ok(())
+        }
+        fn merge_text(
+            &mut self,
+            dec: &mut ::buffa::text::TextDecoder<'_>,
+        ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+                match __name {
+                    "start" => self.start = ::core::option::Option::Some(dec.read_i32()?),
+                    "end" => self.end = ::core::option::Option::Some(dec.read_i32()?),
+                    _ => dec.skip_value()?,
+                }
+            }
+            ::core::result::Result::Ok(())
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::buffa::json_helpers::ProtoElemJson for ReservedRange {
+        fn serialize_proto_json<S: ::serde::Serializer>(
+            v: &Self,
+            s: S,
+        ) -> ::core::result::Result<S::Ok, S::Error> {
+            ::serde::Serialize::serialize(v, s)
+        }
+        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+            d: D,
+        ) -> ::core::result::Result<Self, D::Error> {
+            <Self as ::serde::Deserialize>::deserialize(d)
+        }
+    }
+    #[cfg(feature = "json")]
+    #[doc(hidden)]
+    pub const __RESERVED_RANGE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.DescriptorProto.ReservedRange",
+        to_json: ::buffa::type_registry::any_to_json::<ReservedRange>,
+        from_json: ::buffa::type_registry::any_from_json::<ReservedRange>,
+        is_wkt: false,
+    };
+    #[cfg(feature = "text")]
+    #[doc(hidden)]
+    pub const __RESERVED_RANGE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.DescriptorProto.ReservedRange",
+        text_encode: ::buffa::type_registry::any_encode_text::<ReservedRange>,
+        text_merge: ::buffa::type_registry::any_merge_text::<ReservedRange>,
+    };
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::descriptor_proto::ExtensionRangeView;
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::descriptor_proto::ReservedRangeView;
 }
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct ExtensionRangeOptions {
     /// The parser stores options it doesn't recognize here. See above.
     ///
     /// Field 999: `uninterpreted_option`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "uninterpretedOption",
+            alias = "uninterpreted_option",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub uninterpreted_option: ::buffa::alloc::vec::Vec<UninterpretedOption>,
     /// For external users: DO NOT USE. We are in the process of open sourcing
     /// extension declaration and executing internal cleanups before it can be
     /// used externally.
     ///
     /// Field 2: `declaration`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "declaration",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub declaration: ::buffa::alloc::vec::Vec<extension_range_options::Declaration>,
     /// Any features defined in the specific edition.
     ///
     /// Field 50: `features`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "features",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub features: ::buffa::MessageField<FeatureSet>,
     /// The verification state of the range.
     /// TODO: flip the default to DECLARATION once all empty ranges
     /// are marked as UNVERIFIED.
     ///
     /// Field 3: `verification`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "verification",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub verification: ::core::option::Option<extension_range_options::VerificationState>,
+    #[cfg_attr(feature = "json", serde(flatten))]
     #[doc(hidden)]
-    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+    pub __buffa_unknown_fields: __ExtensionRangeOptionsExtJson,
 }
 impl ::core::fmt::Debug for ExtensionRangeOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -1812,11 +3023,317 @@ impl ::buffa::ExtensionSet for ExtensionRangeOptions {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for ExtensionRangeOptions {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.features.is_set() {
+            enc.write_field_name("features")?;
+            enc.write_message(&*self.features)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.verification {
+            enc.write_field_name("verification")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        for __v in &self.uninterpreted_option {
+            enc.write_field_name("uninterpreted_option")?;
+            enc.write_message(__v)?;
+        }
+        for __v in &self.declaration {
+            enc.write_field_name("declaration")?;
+            enc.write_message(__v)?;
+        }
+        enc.write_extension_fields(
+            "google.protobuf.ExtensionRangeOptions",
+            &self.__buffa_unknown_fields,
+        )?;
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "features" => dec.merge_message(self.features.get_or_insert_default())?,
+                "verification" => {
+                    self.verification = ::core::option::Option::Some(
+                        dec
+                            .read_closed_enum_by_name::<
+                                extension_range_options::VerificationState,
+                            >()?,
+                    );
+                }
+                "uninterpreted_option" => {
+                    dec.read_repeated_into(
+                        &mut self.uninterpreted_option,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                "declaration" => {
+                    dec.read_repeated_into(
+                        &mut self.declaration,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                __name if __name.starts_with('[') => {
+                    for __r in dec
+                        .read_extension(__name, "google.protobuf.ExtensionRangeOptions")?
+                    {
+                        self.__buffa_unknown_fields.push(__r);
+                    }
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> serde::Deserialize<'de> for ExtensionRangeOptions {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        struct _V;
+        impl<'de> serde::de::Visitor<'de> for _V {
+            type Value = ExtensionRangeOptions;
+            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.write_str("struct ExtensionRangeOptions")
+            }
+            #[allow(clippy::field_reassign_with_default)]
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> ::core::result::Result<ExtensionRangeOptions, A::Error> {
+                let mut __f_uninterpreted_option: ::core::option::Option<
+                    ::buffa::alloc::vec::Vec<UninterpretedOption>,
+                > = None;
+                let mut __f_declaration: ::core::option::Option<
+                    ::buffa::alloc::vec::Vec<extension_range_options::Declaration>,
+                > = None;
+                let mut __f_features: ::core::option::Option<
+                    ::buffa::MessageField<FeatureSet>,
+                > = None;
+                let mut __f_verification: ::core::option::Option<
+                    ::core::option::Option<extension_range_options::VerificationState>,
+                > = None;
+                let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
+                while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
+                    match key.as_str() {
+                        "uninterpretedOption" | "uninterpreted_option" => {
+                            __f_uninterpreted_option = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::buffa::alloc::vec::Vec<UninterpretedOption>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::null_as_default(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        "declaration" => {
+                            __f_declaration = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::buffa::alloc::vec::Vec<
+                                        extension_range_options::Declaration,
+                                    >;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::buffa::alloc::vec::Vec<
+                                            extension_range_options::Declaration,
+                                        >,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::null_as_default(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        "features" => {
+                            __f_features = Some(
+                                map.next_value::<::buffa::MessageField<FeatureSet>>()?,
+                            );
+                        }
+                        "verification" => {
+                            __f_verification = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        extension_range_options::VerificationState,
+                                    >;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<
+                                            extension_range_options::VerificationState,
+                                        >,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_closed_enum::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        __k if __k.starts_with('[') => {
+                            let __v: ::buffa::serde_json::Value = map.next_value()?;
+                            match ::buffa::extension_registry::deserialize_extension_key(
+                                "google.protobuf.ExtensionRangeOptions",
+                                __k,
+                                __v,
+                            ) {
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Ok(__recs),
+                                ) => {
+                                    for __rec in __recs {
+                                        __ext_records.push(__rec);
+                                    }
+                                }
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Err(__e),
+                                ) => {
+                                    return ::core::result::Result::Err(
+                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                    );
+                                }
+                                ::core::option::Option::None => {}
+                            }
+                        }
+                        _ => {
+                            map.next_value::<serde::de::IgnoredAny>()?;
+                        }
+                    }
+                }
+                let mut __r = <ExtensionRangeOptions as ::core::default::Default>::default();
+                if let ::core::option::Option::Some(v) = __f_uninterpreted_option {
+                    __r.uninterpreted_option = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_declaration {
+                    __r.declaration = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_features {
+                    __r.features = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_verification {
+                    __r.verification = v;
+                }
+                for __rec in __ext_records {
+                    __r.__buffa_unknown_fields.push(__rec);
+                }
+                Ok(__r)
+            }
+        }
+        d.deserialize_map(_V)
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for ExtensionRangeOptions {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[doc(hidden)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[repr(transparent)]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+pub struct __ExtensionRangeOptionsExtJson(pub ::buffa::UnknownFields);
+impl ::core::ops::Deref for __ExtensionRangeOptionsExtJson {
+    type Target = ::buffa::UnknownFields;
+    fn deref(&self) -> &::buffa::UnknownFields {
+        &self.0
+    }
+}
+impl ::core::ops::DerefMut for __ExtensionRangeOptionsExtJson {
+    fn deref_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.0
+    }
+}
+impl ::core::convert::From<::buffa::UnknownFields> for __ExtensionRangeOptionsExtJson {
+    fn from(u: ::buffa::UnknownFields) -> Self {
+        Self(u)
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for __ExtensionRangeOptionsExtJson {
+    fn serialize<S: ::serde::Serializer>(
+        &self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::buffa::extension_registry::serialize_extensions(
+            "google.protobuf.ExtensionRangeOptions",
+            &self.0,
+            s,
+        )
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> ::serde::Deserialize<'de> for __ExtensionRangeOptionsExtJson {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        ::buffa::extension_registry::deserialize_extensions(
+                "google.protobuf.ExtensionRangeOptions",
+                d,
+            )
+            .map(Self)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __EXTENSION_RANGE_OPTIONS_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.ExtensionRangeOptions",
+    to_json: ::buffa::type_registry::any_to_json::<ExtensionRangeOptions>,
+    from_json: ::buffa::type_registry::any_from_json::<ExtensionRangeOptions>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __EXTENSION_RANGE_OPTIONS_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.ExtensionRangeOptions",
+    text_encode: ::buffa::type_registry::any_encode_text::<ExtensionRangeOptions>,
+    text_merge: ::buffa::type_registry::any_merge_text::<ExtensionRangeOptions>,
+};
 pub mod extension_range_options {
     #[allow(unused_imports)]
     use super::*;
     /// The verification state of the extension range.
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
     pub enum VerificationState {
         /// All the extensions of the range must be declared.
@@ -1828,6 +3345,100 @@ pub mod extension_range_options {
             Self::DECLARATION
         }
     }
+    #[cfg(feature = "json")]
+    const _: () = {
+        impl ::serde::Serialize for VerificationState {
+            fn serialize<S: ::serde::Serializer>(
+                &self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s.serialize_str(::buffa::Enumeration::proto_name(self))
+            }
+        }
+        impl<'de> ::serde::Deserialize<'de> for VerificationState {
+            fn deserialize<D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                struct _V;
+                impl ::serde::de::Visitor<'_> for _V {
+                    type Value = VerificationState;
+                    fn expecting(
+                        &self,
+                        f: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        f.write_str(
+                            concat!(
+                                "a string, integer, or null for ",
+                                stringify!(VerificationState)
+                            ),
+                        )
+                    }
+                    fn visit_str<E: ::serde::de::Error>(
+                        self,
+                        v: &str,
+                    ) -> ::core::result::Result<VerificationState, E> {
+                        <VerificationState as ::buffa::Enumeration>::from_proto_name(v)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::unknown_variant(v, &[])
+                            })
+                    }
+                    fn visit_i64<E: ::serde::de::Error>(
+                        self,
+                        v: i64,
+                    ) -> ::core::result::Result<VerificationState, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <VerificationState as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_u64<E: ::serde::de::Error>(
+                        self,
+                        v: u64,
+                    ) -> ::core::result::Result<VerificationState, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <VerificationState as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_unit<E: ::serde::de::Error>(
+                        self,
+                    ) -> ::core::result::Result<VerificationState, E> {
+                        ::core::result::Result::Ok(::core::default::Default::default())
+                    }
+                }
+                d.deserialize_any(_V)
+            }
+        }
+        impl ::buffa::json_helpers::ProtoElemJson for VerificationState {
+            fn serialize_proto_json<S: ::serde::Serializer>(
+                v: &Self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                ::serde::Serialize::serialize(v, s)
+            }
+            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                <Self as ::serde::Deserialize>::deserialize(d)
+            }
+        }
+    };
     impl ::buffa::Enumeration for VerificationState {
         fn from_i32(value: i32) -> ::core::option::Option<Self> {
             match value {
@@ -1857,33 +3468,74 @@ pub mod extension_range_options {
         }
     }
     #[derive(Clone, PartialEq, Default)]
+    #[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+    #[cfg_attr(feature = "json", serde(default))]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     pub struct Declaration {
         /// The extension number declared within the extension range.
         ///
         /// Field 1: `number`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "number",
+                with = "::buffa::json_helpers::opt_int32",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub number: ::core::option::Option<i32>,
         /// The fully-qualified name of the extension field. There must be a leading
         /// dot in front of the full name.
         ///
         /// Field 2: `full_name`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "fullName",
+                alias = "full_name",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub full_name: ::core::option::Option<::buffa::alloc::string::String>,
         /// The fully-qualified type name of the extension field. Unlike
         /// Metadata.type, Declaration.type must have a leading dot for messages
         /// and enums.
         ///
         /// Field 3: `type`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "type",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub r#type: ::core::option::Option<::buffa::alloc::string::String>,
         /// If true, indicates that the number is reserved in the extension range,
         /// and any extension field with the number will fail to compile. Set this
         /// when a declared extension field is deleted.
         ///
         /// Field 5: `reserved`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "reserved",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub reserved: ::core::option::Option<bool>,
         /// If true, indicates that the extension must be defined as repeated.
         /// Otherwise the extension must be defined as optional.
         ///
         /// Field 6: `repeated`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "repeated",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub repeated: ::core::option::Option<bool>,
+        #[cfg_attr(feature = "json", serde(skip))]
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
     }
@@ -2082,20 +3734,147 @@ pub mod extension_range_options {
             &mut self.__buffa_unknown_fields
         }
     }
+    #[cfg(feature = "text")]
+    impl ::buffa::text::TextFormat for Declaration {
+        fn encode_text(
+            &self,
+            enc: &mut ::buffa::text::TextEncoder<'_>,
+        ) -> ::core::fmt::Result {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            if let ::core::option::Option::Some(ref __v) = self.number {
+                enc.write_field_name("number")?;
+                enc.write_i32(*__v)?;
+            }
+            if let ::core::option::Option::Some(ref __v) = self.full_name {
+                enc.write_field_name("full_name")?;
+                enc.write_string(__v)?;
+            }
+            if let ::core::option::Option::Some(ref __v) = self.r#type {
+                enc.write_field_name("type")?;
+                enc.write_string(__v)?;
+            }
+            if let ::core::option::Option::Some(ref __v) = self.reserved {
+                enc.write_field_name("reserved")?;
+                enc.write_bool(*__v)?;
+            }
+            if let ::core::option::Option::Some(ref __v) = self.repeated {
+                enc.write_field_name("repeated")?;
+                enc.write_bool(*__v)?;
+            }
+            enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+            ::core::result::Result::Ok(())
+        }
+        fn merge_text(
+            &mut self,
+            dec: &mut ::buffa::text::TextDecoder<'_>,
+        ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+                match __name {
+                    "number" => {
+                        self.number = ::core::option::Option::Some(dec.read_i32()?);
+                    }
+                    "full_name" => {
+                        self.full_name = ::core::option::Option::Some(
+                            dec.read_string()?.into_owned(),
+                        );
+                    }
+                    "type" => {
+                        self.r#type = ::core::option::Option::Some(
+                            dec.read_string()?.into_owned(),
+                        );
+                    }
+                    "reserved" => {
+                        self.reserved = ::core::option::Option::Some(dec.read_bool()?);
+                    }
+                    "repeated" => {
+                        self.repeated = ::core::option::Option::Some(dec.read_bool()?);
+                    }
+                    _ => dec.skip_value()?,
+                }
+            }
+            ::core::result::Result::Ok(())
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::buffa::json_helpers::ProtoElemJson for Declaration {
+        fn serialize_proto_json<S: ::serde::Serializer>(
+            v: &Self,
+            s: S,
+        ) -> ::core::result::Result<S::Ok, S::Error> {
+            ::serde::Serialize::serialize(v, s)
+        }
+        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+            d: D,
+        ) -> ::core::result::Result<Self, D::Error> {
+            <Self as ::serde::Deserialize>::deserialize(d)
+        }
+    }
+    #[cfg(feature = "json")]
+    #[doc(hidden)]
+    pub const __DECLARATION_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.ExtensionRangeOptions.Declaration",
+        to_json: ::buffa::type_registry::any_to_json::<Declaration>,
+        from_json: ::buffa::type_registry::any_from_json::<Declaration>,
+        is_wkt: false,
+    };
+    #[cfg(feature = "text")]
+    #[doc(hidden)]
+    pub const __DECLARATION_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.ExtensionRangeOptions.Declaration",
+        text_encode: ::buffa::type_registry::any_encode_text::<Declaration>,
+        text_merge: ::buffa::type_registry::any_merge_text::<Declaration>,
+    };
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::extension_range_options::DeclarationView;
 }
 /// Describes a field within a message.
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct FieldDescriptorProto {
     /// Field 1: `name`
+    #[cfg_attr(
+        feature = "json",
+        serde(rename = "name", skip_serializing_if = "::core::option::Option::is_none")
+    )]
     pub name: ::core::option::Option<::buffa::alloc::string::String>,
     /// Field 3: `number`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "number",
+            with = "::buffa::json_helpers::opt_int32",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub number: ::core::option::Option<i32>,
     /// Field 4: `label`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "label",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub label: ::core::option::Option<field_descriptor_proto::Label>,
     /// If type_name is set, this need not be set.  If both this and type_name
     /// are set, this must be one of TYPE_ENUM, TYPE_MESSAGE or TYPE_GROUP.
     ///
     /// Field 5: `type`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "type",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub r#type: ::core::option::Option<field_descriptor_proto::Type>,
     /// For message and enum types, this is the name of the type.  If the name
     /// starts with a '.', it is fully-qualified.  Otherwise, C++-like scoping
@@ -2104,11 +3883,26 @@ pub struct FieldDescriptorProto {
     /// namespace).
     ///
     /// Field 6: `type_name`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "typeName",
+            alias = "type_name",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub type_name: ::core::option::Option<::buffa::alloc::string::String>,
     /// For extensions, this is the name of the type being extended.  It is
     /// resolved in the same manner as type_name.
     ///
     /// Field 2: `extendee`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "extendee",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub extendee: ::core::option::Option<::buffa::alloc::string::String>,
     /// For numeric types, contains the original text representation of the value.
     /// For booleans, "true" or "false".
@@ -2116,11 +3910,28 @@ pub struct FieldDescriptorProto {
     /// For bytes, contains the C escaped value.  All bytes \>= 128 are escaped.
     ///
     /// Field 7: `default_value`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "defaultValue",
+            alias = "default_value",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub default_value: ::core::option::Option<::buffa::alloc::string::String>,
     /// If set, gives the index of a oneof in the containing type's oneof_decl
     /// list.  This field is a member of that oneof.
     ///
     /// Field 9: `oneof_index`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "oneofIndex",
+            alias = "oneof_index",
+            with = "::buffa::json_helpers::opt_int32",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub oneof_index: ::core::option::Option<i32>,
     /// JSON name of this field. The value is set by protocol compiler. If the
     /// user has set a "json_name" option on this field, that option's value
@@ -2128,8 +3939,23 @@ pub struct FieldDescriptorProto {
     /// it to camelCase.
     ///
     /// Field 10: `json_name`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "jsonName",
+            alias = "json_name",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub json_name: ::core::option::Option<::buffa::alloc::string::String>,
     /// Field 8: `options`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "options",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub options: ::buffa::MessageField<FieldOptions>,
     /// If true, this is a proto3 "optional". When a proto3 field is optional, it
     /// tracks presence regardless of field type.
@@ -2154,7 +3980,16 @@ pub struct FieldDescriptorProto {
     /// optional with `LABEL_OPTIONAL`.
     ///
     /// Field 17: `proto3_optional`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "proto3Optional",
+            alias = "proto3_optional",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub proto3_optional: ::core::option::Option<bool>,
+    #[cfg_attr(feature = "json", serde(skip))]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
 }
@@ -2530,10 +4365,152 @@ impl ::buffa::ExtensionSet for FieldDescriptorProto {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for FieldDescriptorProto {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.name {
+            enc.write_field_name("name")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.number {
+            enc.write_field_name("number")?;
+            enc.write_i32(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.label {
+            enc.write_field_name("label")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.r#type {
+            enc.write_field_name("type")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.type_name {
+            enc.write_field_name("type_name")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.extendee {
+            enc.write_field_name("extendee")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.default_value {
+            enc.write_field_name("default_value")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.oneof_index {
+            enc.write_field_name("oneof_index")?;
+            enc.write_i32(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.json_name {
+            enc.write_field_name("json_name")?;
+            enc.write_string(__v)?;
+        }
+        if self.options.is_set() {
+            enc.write_field_name("options")?;
+            enc.write_message(&*self.options)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.proto3_optional {
+            enc.write_field_name("proto3_optional")?;
+            enc.write_bool(*__v)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "name" => {
+                    self.name = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "number" => self.number = ::core::option::Option::Some(dec.read_i32()?),
+                "label" => {
+                    self.label = ::core::option::Option::Some(
+                        dec.read_closed_enum_by_name::<field_descriptor_proto::Label>()?,
+                    );
+                }
+                "type" => {
+                    self.r#type = ::core::option::Option::Some(
+                        dec.read_closed_enum_by_name::<field_descriptor_proto::Type>()?,
+                    );
+                }
+                "type_name" => {
+                    self.type_name = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "extendee" => {
+                    self.extendee = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "default_value" => {
+                    self.default_value = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "oneof_index" => {
+                    self.oneof_index = ::core::option::Option::Some(dec.read_i32()?);
+                }
+                "json_name" => {
+                    self.json_name = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "options" => dec.merge_message(self.options.get_or_insert_default())?,
+                "proto3_optional" => {
+                    self.proto3_optional = ::core::option::Option::Some(dec.read_bool()?);
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for FieldDescriptorProto {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __FIELD_DESCRIPTOR_PROTO_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.FieldDescriptorProto",
+    to_json: ::buffa::type_registry::any_to_json::<FieldDescriptorProto>,
+    from_json: ::buffa::type_registry::any_from_json::<FieldDescriptorProto>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __FIELD_DESCRIPTOR_PROTO_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.FieldDescriptorProto",
+    text_encode: ::buffa::type_registry::any_encode_text::<FieldDescriptorProto>,
+    text_merge: ::buffa::type_registry::any_merge_text::<FieldDescriptorProto>,
+};
 pub mod field_descriptor_proto {
     #[allow(unused_imports)]
     use super::*;
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
     pub enum Type {
         /// 0 is reserved for errors.
@@ -2575,6 +4552,97 @@ pub mod field_descriptor_proto {
             Self::TYPE_DOUBLE
         }
     }
+    #[cfg(feature = "json")]
+    const _: () = {
+        impl ::serde::Serialize for Type {
+            fn serialize<S: ::serde::Serializer>(
+                &self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s.serialize_str(::buffa::Enumeration::proto_name(self))
+            }
+        }
+        impl<'de> ::serde::Deserialize<'de> for Type {
+            fn deserialize<D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                struct _V;
+                impl ::serde::de::Visitor<'_> for _V {
+                    type Value = Type;
+                    fn expecting(
+                        &self,
+                        f: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        f.write_str(
+                            concat!("a string, integer, or null for ", stringify!(Type)),
+                        )
+                    }
+                    fn visit_str<E: ::serde::de::Error>(
+                        self,
+                        v: &str,
+                    ) -> ::core::result::Result<Type, E> {
+                        <Type as ::buffa::Enumeration>::from_proto_name(v)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::unknown_variant(v, &[])
+                            })
+                    }
+                    fn visit_i64<E: ::serde::de::Error>(
+                        self,
+                        v: i64,
+                    ) -> ::core::result::Result<Type, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <Type as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_u64<E: ::serde::de::Error>(
+                        self,
+                        v: u64,
+                    ) -> ::core::result::Result<Type, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <Type as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_unit<E: ::serde::de::Error>(
+                        self,
+                    ) -> ::core::result::Result<Type, E> {
+                        ::core::result::Result::Ok(::core::default::Default::default())
+                    }
+                }
+                d.deserialize_any(_V)
+            }
+        }
+        impl ::buffa::json_helpers::ProtoElemJson for Type {
+            fn serialize_proto_json<S: ::serde::Serializer>(
+                v: &Self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                ::serde::Serialize::serialize(v, s)
+            }
+            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                <Self as ::serde::Deserialize>::deserialize(d)
+            }
+        }
+    };
     impl ::buffa::Enumeration for Type {
         fn from_i32(value: i32) -> ::core::option::Option<Self> {
             match value {
@@ -2671,6 +4739,7 @@ pub mod field_descriptor_proto {
         }
     }
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
     pub enum Label {
         /// 0 is reserved for errors
@@ -2686,6 +4755,97 @@ pub mod field_descriptor_proto {
             Self::LABEL_OPTIONAL
         }
     }
+    #[cfg(feature = "json")]
+    const _: () = {
+        impl ::serde::Serialize for Label {
+            fn serialize<S: ::serde::Serializer>(
+                &self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s.serialize_str(::buffa::Enumeration::proto_name(self))
+            }
+        }
+        impl<'de> ::serde::Deserialize<'de> for Label {
+            fn deserialize<D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                struct _V;
+                impl ::serde::de::Visitor<'_> for _V {
+                    type Value = Label;
+                    fn expecting(
+                        &self,
+                        f: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        f.write_str(
+                            concat!("a string, integer, or null for ", stringify!(Label)),
+                        )
+                    }
+                    fn visit_str<E: ::serde::de::Error>(
+                        self,
+                        v: &str,
+                    ) -> ::core::result::Result<Label, E> {
+                        <Label as ::buffa::Enumeration>::from_proto_name(v)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::unknown_variant(v, &[])
+                            })
+                    }
+                    fn visit_i64<E: ::serde::de::Error>(
+                        self,
+                        v: i64,
+                    ) -> ::core::result::Result<Label, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <Label as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_u64<E: ::serde::de::Error>(
+                        self,
+                        v: u64,
+                    ) -> ::core::result::Result<Label, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <Label as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_unit<E: ::serde::de::Error>(
+                        self,
+                    ) -> ::core::result::Result<Label, E> {
+                        ::core::result::Result::Ok(::core::default::Default::default())
+                    }
+                }
+                d.deserialize_any(_V)
+            }
+        }
+        impl ::buffa::json_helpers::ProtoElemJson for Label {
+            fn serialize_proto_json<S: ::serde::Serializer>(
+                v: &Self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                ::serde::Serialize::serialize(v, s)
+            }
+            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                <Self as ::serde::Deserialize>::deserialize(d)
+            }
+        }
+    };
     impl ::buffa::Enumeration for Label {
         fn from_i32(value: i32) -> ::core::option::Option<Self> {
             match value {
@@ -2720,11 +4880,26 @@ pub mod field_descriptor_proto {
 }
 /// Describes a oneof.
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct OneofDescriptorProto {
     /// Field 1: `name`
+    #[cfg_attr(
+        feature = "json",
+        serde(rename = "name", skip_serializing_if = "::core::option::Option::is_none")
+    )]
     pub name: ::core::option::Option<::buffa::alloc::string::String>,
     /// Field 2: `options`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "options",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub options: ::buffa::MessageField<OneofOptions>,
+    #[cfg_attr(feature = "json", serde(skip))]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
 }
@@ -2860,20 +5035,119 @@ impl ::buffa::ExtensionSet for OneofDescriptorProto {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for OneofDescriptorProto {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.name {
+            enc.write_field_name("name")?;
+            enc.write_string(__v)?;
+        }
+        if self.options.is_set() {
+            enc.write_field_name("options")?;
+            enc.write_message(&*self.options)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "name" => {
+                    self.name = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "options" => dec.merge_message(self.options.get_or_insert_default())?,
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for OneofDescriptorProto {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __ONEOF_DESCRIPTOR_PROTO_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.OneofDescriptorProto",
+    to_json: ::buffa::type_registry::any_to_json::<OneofDescriptorProto>,
+    from_json: ::buffa::type_registry::any_from_json::<OneofDescriptorProto>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __ONEOF_DESCRIPTOR_PROTO_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.OneofDescriptorProto",
+    text_encode: ::buffa::type_registry::any_encode_text::<OneofDescriptorProto>,
+    text_merge: ::buffa::type_registry::any_merge_text::<OneofDescriptorProto>,
+};
 /// Describes an enum type.
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct EnumDescriptorProto {
     /// Field 1: `name`
+    #[cfg_attr(
+        feature = "json",
+        serde(rename = "name", skip_serializing_if = "::core::option::Option::is_none")
+    )]
     pub name: ::core::option::Option<::buffa::alloc::string::String>,
     /// Field 2: `value`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "value",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub value: ::buffa::alloc::vec::Vec<EnumValueDescriptorProto>,
     /// Field 3: `options`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "options",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub options: ::buffa::MessageField<EnumOptions>,
     /// Range of reserved numeric values. Reserved numeric values may not be used
     /// by enum values in the same enum declaration. Reserved ranges may not
     /// overlap.
     ///
     /// Field 4: `reserved_range`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "reservedRange",
+            alias = "reserved_range",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub reserved_range: ::buffa::alloc::vec::Vec<
         enum_descriptor_proto::EnumReservedRange,
     >,
@@ -2881,11 +5155,29 @@ pub struct EnumDescriptorProto {
     /// be reserved once.
     ///
     /// Field 5: `reserved_name`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "reservedName",
+            alias = "reserved_name",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub reserved_name: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
     /// Support for `export` and `local` keywords on enums.
     ///
     /// Field 6: `visibility`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "visibility",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub visibility: ::core::option::Option<SymbolVisibility>,
+    #[cfg_attr(feature = "json", serde(skip))]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
 }
@@ -3137,6 +5429,121 @@ impl ::buffa::ExtensionSet for EnumDescriptorProto {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for EnumDescriptorProto {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.name {
+            enc.write_field_name("name")?;
+            enc.write_string(__v)?;
+        }
+        if self.options.is_set() {
+            enc.write_field_name("options")?;
+            enc.write_message(&*self.options)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.visibility {
+            enc.write_field_name("visibility")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        for __v in &self.value {
+            enc.write_field_name("value")?;
+            enc.write_message(__v)?;
+        }
+        for __v in &self.reserved_range {
+            enc.write_field_name("reserved_range")?;
+            enc.write_message(__v)?;
+        }
+        for __v in &self.reserved_name {
+            enc.write_field_name("reserved_name")?;
+            enc.write_string(__v)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "name" => {
+                    self.name = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "options" => dec.merge_message(self.options.get_or_insert_default())?,
+                "visibility" => {
+                    self.visibility = ::core::option::Option::Some(
+                        dec.read_closed_enum_by_name::<SymbolVisibility>()?,
+                    );
+                }
+                "value" => {
+                    dec.read_repeated_into(
+                        &mut self.value,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                "reserved_range" => {
+                    dec.read_repeated_into(
+                        &mut self.reserved_range,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                "reserved_name" => {
+                    dec.read_repeated_into(
+                        &mut self.reserved_name,
+                        |__d| ::core::result::Result::Ok(__d.read_string()?.into_owned()),
+                    )?
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for EnumDescriptorProto {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __ENUM_DESCRIPTOR_PROTO_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.EnumDescriptorProto",
+    to_json: ::buffa::type_registry::any_to_json::<EnumDescriptorProto>,
+    from_json: ::buffa::type_registry::any_from_json::<EnumDescriptorProto>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __ENUM_DESCRIPTOR_PROTO_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.EnumDescriptorProto",
+    text_encode: ::buffa::type_registry::any_encode_text::<EnumDescriptorProto>,
+    text_merge: ::buffa::type_registry::any_merge_text::<EnumDescriptorProto>,
+};
 pub mod enum_descriptor_proto {
     #[allow(unused_imports)]
     use super::*;
@@ -3147,15 +5554,35 @@ pub mod enum_descriptor_proto {
     /// is inclusive such that it can appropriately represent the entire int32
     /// domain.
     #[derive(Clone, PartialEq, Default)]
+    #[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+    #[cfg_attr(feature = "json", serde(default))]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     pub struct EnumReservedRange {
         /// Inclusive.
         ///
         /// Field 1: `start`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "start",
+                with = "::buffa::json_helpers::opt_int32",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub start: ::core::option::Option<i32>,
         /// Inclusive.
         ///
         /// Field 2: `end`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "end",
+                with = "::buffa::json_helpers::opt_int32",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub end: ::core::option::Option<i32>,
+        #[cfg_attr(feature = "json", serde(skip))]
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
     }
@@ -3276,16 +5703,106 @@ pub mod enum_descriptor_proto {
             &mut self.__buffa_unknown_fields
         }
     }
+    #[cfg(feature = "text")]
+    impl ::buffa::text::TextFormat for EnumReservedRange {
+        fn encode_text(
+            &self,
+            enc: &mut ::buffa::text::TextEncoder<'_>,
+        ) -> ::core::fmt::Result {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            if let ::core::option::Option::Some(ref __v) = self.start {
+                enc.write_field_name("start")?;
+                enc.write_i32(*__v)?;
+            }
+            if let ::core::option::Option::Some(ref __v) = self.end {
+                enc.write_field_name("end")?;
+                enc.write_i32(*__v)?;
+            }
+            enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+            ::core::result::Result::Ok(())
+        }
+        fn merge_text(
+            &mut self,
+            dec: &mut ::buffa::text::TextDecoder<'_>,
+        ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+                match __name {
+                    "start" => self.start = ::core::option::Option::Some(dec.read_i32()?),
+                    "end" => self.end = ::core::option::Option::Some(dec.read_i32()?),
+                    _ => dec.skip_value()?,
+                }
+            }
+            ::core::result::Result::Ok(())
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::buffa::json_helpers::ProtoElemJson for EnumReservedRange {
+        fn serialize_proto_json<S: ::serde::Serializer>(
+            v: &Self,
+            s: S,
+        ) -> ::core::result::Result<S::Ok, S::Error> {
+            ::serde::Serialize::serialize(v, s)
+        }
+        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+            d: D,
+        ) -> ::core::result::Result<Self, D::Error> {
+            <Self as ::serde::Deserialize>::deserialize(d)
+        }
+    }
+    #[cfg(feature = "json")]
+    #[doc(hidden)]
+    pub const __ENUM_RESERVED_RANGE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.EnumDescriptorProto.EnumReservedRange",
+        to_json: ::buffa::type_registry::any_to_json::<EnumReservedRange>,
+        from_json: ::buffa::type_registry::any_from_json::<EnumReservedRange>,
+        is_wkt: false,
+    };
+    #[cfg(feature = "text")]
+    #[doc(hidden)]
+    pub const __ENUM_RESERVED_RANGE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.EnumDescriptorProto.EnumReservedRange",
+        text_encode: ::buffa::type_registry::any_encode_text::<EnumReservedRange>,
+        text_merge: ::buffa::type_registry::any_merge_text::<EnumReservedRange>,
+    };
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::enum_descriptor_proto::EnumReservedRangeView;
 }
 /// Describes a value within an enum.
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct EnumValueDescriptorProto {
     /// Field 1: `name`
+    #[cfg_attr(
+        feature = "json",
+        serde(rename = "name", skip_serializing_if = "::core::option::Option::is_none")
+    )]
     pub name: ::core::option::Option<::buffa::alloc::string::String>,
     /// Field 2: `number`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "number",
+            with = "::buffa::json_helpers::opt_int32",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub number: ::core::option::Option<i32>,
     /// Field 3: `options`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "options",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub options: ::buffa::MessageField<EnumValueOptions>,
+    #[cfg_attr(feature = "json", serde(skip))]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
 }
@@ -3443,15 +5960,111 @@ impl ::buffa::ExtensionSet for EnumValueDescriptorProto {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for EnumValueDescriptorProto {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.name {
+            enc.write_field_name("name")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.number {
+            enc.write_field_name("number")?;
+            enc.write_i32(*__v)?;
+        }
+        if self.options.is_set() {
+            enc.write_field_name("options")?;
+            enc.write_message(&*self.options)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "name" => {
+                    self.name = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "number" => self.number = ::core::option::Option::Some(dec.read_i32()?),
+                "options" => dec.merge_message(self.options.get_or_insert_default())?,
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for EnumValueDescriptorProto {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __ENUM_VALUE_DESCRIPTOR_PROTO_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.EnumValueDescriptorProto",
+    to_json: ::buffa::type_registry::any_to_json::<EnumValueDescriptorProto>,
+    from_json: ::buffa::type_registry::any_from_json::<EnumValueDescriptorProto>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __ENUM_VALUE_DESCRIPTOR_PROTO_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.EnumValueDescriptorProto",
+    text_encode: ::buffa::type_registry::any_encode_text::<EnumValueDescriptorProto>,
+    text_merge: ::buffa::type_registry::any_merge_text::<EnumValueDescriptorProto>,
+};
 /// Describes a service.
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct ServiceDescriptorProto {
     /// Field 1: `name`
+    #[cfg_attr(
+        feature = "json",
+        serde(rename = "name", skip_serializing_if = "::core::option::Option::is_none")
+    )]
     pub name: ::core::option::Option<::buffa::alloc::string::String>,
     /// Field 2: `method`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "method",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub method: ::buffa::alloc::vec::Vec<MethodDescriptorProto>,
     /// Field 3: `options`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "options",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub options: ::buffa::MessageField<ServiceOptions>,
+    #[cfg_attr(feature = "json", serde(skip))]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
 }
@@ -3618,28 +6231,157 @@ impl ::buffa::ExtensionSet for ServiceDescriptorProto {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for ServiceDescriptorProto {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.name {
+            enc.write_field_name("name")?;
+            enc.write_string(__v)?;
+        }
+        if self.options.is_set() {
+            enc.write_field_name("options")?;
+            enc.write_message(&*self.options)?;
+        }
+        for __v in &self.method {
+            enc.write_field_name("method")?;
+            enc.write_message(__v)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "name" => {
+                    self.name = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "options" => dec.merge_message(self.options.get_or_insert_default())?,
+                "method" => {
+                    dec.read_repeated_into(
+                        &mut self.method,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for ServiceDescriptorProto {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __SERVICE_DESCRIPTOR_PROTO_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.ServiceDescriptorProto",
+    to_json: ::buffa::type_registry::any_to_json::<ServiceDescriptorProto>,
+    from_json: ::buffa::type_registry::any_from_json::<ServiceDescriptorProto>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __SERVICE_DESCRIPTOR_PROTO_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.ServiceDescriptorProto",
+    text_encode: ::buffa::type_registry::any_encode_text::<ServiceDescriptorProto>,
+    text_merge: ::buffa::type_registry::any_merge_text::<ServiceDescriptorProto>,
+};
 /// Describes a method of a service.
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct MethodDescriptorProto {
     /// Field 1: `name`
+    #[cfg_attr(
+        feature = "json",
+        serde(rename = "name", skip_serializing_if = "::core::option::Option::is_none")
+    )]
     pub name: ::core::option::Option<::buffa::alloc::string::String>,
     /// Input and output type names.  These are resolved in the same way as
     /// FieldDescriptorProto.type_name, but must refer to a message type.
     ///
     /// Field 2: `input_type`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "inputType",
+            alias = "input_type",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub input_type: ::core::option::Option<::buffa::alloc::string::String>,
     /// Field 3: `output_type`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "outputType",
+            alias = "output_type",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub output_type: ::core::option::Option<::buffa::alloc::string::String>,
     /// Field 4: `options`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "options",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub options: ::buffa::MessageField<MethodOptions>,
     /// Identifies if client streams multiple client messages
     ///
     /// Field 5: `client_streaming`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "clientStreaming",
+            alias = "client_streaming",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub client_streaming: ::core::option::Option<bool>,
     /// Identifies if server streams multiple server messages
     ///
     /// Field 6: `server_streaming`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "serverStreaming",
+            alias = "server_streaming",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub server_streaming: ::core::option::Option<bool>,
+    #[cfg_attr(feature = "json", serde(skip))]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
 }
@@ -3875,6 +6617,110 @@ impl ::buffa::ExtensionSet for MethodDescriptorProto {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for MethodDescriptorProto {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.name {
+            enc.write_field_name("name")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.input_type {
+            enc.write_field_name("input_type")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.output_type {
+            enc.write_field_name("output_type")?;
+            enc.write_string(__v)?;
+        }
+        if self.options.is_set() {
+            enc.write_field_name("options")?;
+            enc.write_message(&*self.options)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.client_streaming {
+            enc.write_field_name("client_streaming")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.server_streaming {
+            enc.write_field_name("server_streaming")?;
+            enc.write_bool(*__v)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "name" => {
+                    self.name = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "input_type" => {
+                    self.input_type = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "output_type" => {
+                    self.output_type = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "options" => dec.merge_message(self.options.get_or_insert_default())?,
+                "client_streaming" => {
+                    self.client_streaming = ::core::option::Option::Some(
+                        dec.read_bool()?,
+                    );
+                }
+                "server_streaming" => {
+                    self.server_streaming = ::core::option::Option::Some(
+                        dec.read_bool()?,
+                    );
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for MethodDescriptorProto {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __METHOD_DESCRIPTOR_PROTO_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.MethodDescriptorProto",
+    to_json: ::buffa::type_registry::any_to_json::<MethodDescriptorProto>,
+    from_json: ::buffa::type_registry::any_from_json::<MethodDescriptorProto>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __METHOD_DESCRIPTOR_PROTO_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.MethodDescriptorProto",
+    text_encode: ::buffa::type_registry::any_encode_text::<MethodDescriptorProto>,
+    text_merge: ::buffa::type_registry::any_merge_text::<MethodDescriptorProto>,
+};
 /// ===================================================================
 /// Options
 ///
@@ -3907,6 +6753,9 @@ impl ::buffa::ExtensionSet for MethodDescriptorProto {
 ///   If this turns out to be popular, a web service will be set up
 ///   to automatically assign option numbers.
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct FileOptions {
     /// Sets the Java package where classes generated from this .proto will be
     /// placed.  By default, the proto package is used, but this is often
@@ -3914,6 +6763,14 @@ pub struct FileOptions {
     /// domain names.
     ///
     /// Field 1: `java_package`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "javaPackage",
+            alias = "java_package",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub java_package: ::core::option::Option<::buffa::alloc::string::String>,
     /// Controls the name of the wrapper Java class generated for the .proto file.
     /// That class will always contain the .proto file's getDescriptor() method as
@@ -3922,6 +6779,14 @@ pub struct FileOptions {
     /// .proto file will be nested inside the single wrapper outer class.
     ///
     /// Field 8: `java_outer_classname`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "javaOuterClassname",
+            alias = "java_outer_classname",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub java_outer_classname: ::core::option::Option<::buffa::alloc::string::String>,
     /// If enabled, then the Java code generator will generate a separate .java
     /// file for each top-level message, enum, and service defined in the .proto
@@ -3931,10 +6796,26 @@ pub struct FileOptions {
     /// top-level extensions defined in the file.
     ///
     /// Field 10: `java_multiple_files`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "javaMultipleFiles",
+            alias = "java_multiple_files",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub java_multiple_files: ::core::option::Option<bool>,
     /// This option does nothing.
     ///
     /// Field 20: `java_generate_equals_and_hash`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "javaGenerateEqualsAndHash",
+            alias = "java_generate_equals_and_hash",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub java_generate_equals_and_hash: ::core::option::Option<bool>,
     /// A proto2 file can set this to true to opt in to UTF-8 checking for Java,
     /// which will throw an exception if invalid UTF-8 is parsed from the wire or
@@ -3948,8 +6829,25 @@ pub struct FileOptions {
     /// checks.
     ///
     /// Field 27: `java_string_check_utf8`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "javaStringCheckUtf8",
+            alias = "java_string_check_utf8",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub java_string_check_utf8: ::core::option::Option<bool>,
     /// Field 9: `optimize_for`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "optimizeFor",
+            alias = "optimize_for",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub optimize_for: ::core::option::Option<file_options::OptimizeMode>,
     /// Sets the Go package where structs generated from this .proto will be
     /// placed. If omitted, the Go package will be derived from the following:
@@ -3958,6 +6856,14 @@ pub struct FileOptions {
     ///   - Otherwise, the basename of the .proto file, without extension.
     ///
     /// Field 11: `go_package`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "goPackage",
+            alias = "go_package",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub go_package: ::core::option::Option<::buffa::alloc::string::String>,
     /// Should generic services be generated in each language?  "Generic" services
     /// are not specific to any particular RPC system.  They are generated by the
@@ -3971,10 +6877,34 @@ pub struct FileOptions {
     /// explicitly set them to true.
     ///
     /// Field 16: `cc_generic_services`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "ccGenericServices",
+            alias = "cc_generic_services",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub cc_generic_services: ::core::option::Option<bool>,
     /// Field 17: `java_generic_services`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "javaGenericServices",
+            alias = "java_generic_services",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub java_generic_services: ::core::option::Option<bool>,
     /// Field 18: `py_generic_services`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "pyGenericServices",
+            alias = "py_generic_services",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub py_generic_services: ::core::option::Option<bool>,
     /// Is this file deprecated?
     /// Depending on the target platform, this can emit Deprecated annotations
@@ -3982,20 +6912,51 @@ pub struct FileOptions {
     /// least, this is a formalization for deprecating files.
     ///
     /// Field 23: `deprecated`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "deprecated",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub deprecated: ::core::option::Option<bool>,
     /// Enables the use of arenas for the proto messages in this file. This applies
     /// only to generated classes for C++.
     ///
     /// Field 31: `cc_enable_arenas`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "ccEnableArenas",
+            alias = "cc_enable_arenas",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub cc_enable_arenas: ::core::option::Option<bool>,
     /// Sets the objective c class prefix which is prepended to all objective c
     /// generated classes from this .proto. There is no default.
     ///
     /// Field 36: `objc_class_prefix`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "objcClassPrefix",
+            alias = "objc_class_prefix",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub objc_class_prefix: ::core::option::Option<::buffa::alloc::string::String>,
     /// Namespace for generated classes; defaults to the package.
     ///
     /// Field 37: `csharp_namespace`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "csharpNamespace",
+            alias = "csharp_namespace",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub csharp_namespace: ::core::option::Option<::buffa::alloc::string::String>,
     /// By default Swift generators will take the proto package and CamelCase it
     /// replacing '.' with underscore and use that to prefix the types/symbols
@@ -4003,29 +6964,69 @@ pub struct FileOptions {
     /// to prefix the types/symbols defined.
     ///
     /// Field 39: `swift_prefix`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "swiftPrefix",
+            alias = "swift_prefix",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub swift_prefix: ::core::option::Option<::buffa::alloc::string::String>,
     /// Sets the php class prefix which is prepended to all php generated classes
     /// from this .proto. Default is empty.
     ///
     /// Field 40: `php_class_prefix`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "phpClassPrefix",
+            alias = "php_class_prefix",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub php_class_prefix: ::core::option::Option<::buffa::alloc::string::String>,
     /// Use this option to change the namespace of php generated classes. Default
     /// is empty. When this option is empty, the package name will be used for
     /// determining the namespace.
     ///
     /// Field 41: `php_namespace`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "phpNamespace",
+            alias = "php_namespace",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub php_namespace: ::core::option::Option<::buffa::alloc::string::String>,
     /// Use this option to change the namespace of php generated metadata classes.
     /// Default is empty. When this option is empty, the proto file name will be
     /// used for determining the namespace.
     ///
     /// Field 44: `php_metadata_namespace`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "phpMetadataNamespace",
+            alias = "php_metadata_namespace",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub php_metadata_namespace: ::core::option::Option<::buffa::alloc::string::String>,
     /// Use this option to change the package of ruby generated classes. Default
     /// is empty. When this option is not set, the package name will be used for
     /// determining the ruby package.
     ///
     /// Field 45: `ruby_package`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "rubyPackage",
+            alias = "ruby_package",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub ruby_package: ::core::option::Option<::buffa::alloc::string::String>,
     /// Any features defined in the specific edition.
     /// WARNING: This field should only be used by protobuf plugins or special
@@ -4033,14 +7034,31 @@ pub struct FileOptions {
     /// developers should rely on the protoreflect APIs for their client language.
     ///
     /// Field 50: `features`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "features",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub features: ::buffa::MessageField<FeatureSet>,
     /// The parser stores options it doesn't recognize here.
     /// See the documentation for the "Options" section above.
     ///
     /// Field 999: `uninterpreted_option`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "uninterpretedOption",
+            alias = "uninterpreted_option",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub uninterpreted_option: ::buffa::alloc::vec::Vec<UninterpretedOption>,
+    #[cfg_attr(feature = "json", serde(flatten))]
     #[doc(hidden)]
-    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+    pub __buffa_unknown_fields: __FileOptionsExtJson,
 }
 impl ::core::fmt::Debug for FileOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -4666,11 +7684,659 @@ impl ::buffa::ExtensionSet for FileOptions {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for FileOptions {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.java_package {
+            enc.write_field_name("java_package")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.java_outer_classname {
+            enc.write_field_name("java_outer_classname")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.java_multiple_files {
+            enc.write_field_name("java_multiple_files")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.java_generate_equals_and_hash
+        {
+            enc.write_field_name("java_generate_equals_and_hash")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.java_string_check_utf8 {
+            enc.write_field_name("java_string_check_utf8")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.optimize_for {
+            enc.write_field_name("optimize_for")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.go_package {
+            enc.write_field_name("go_package")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.cc_generic_services {
+            enc.write_field_name("cc_generic_services")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.java_generic_services {
+            enc.write_field_name("java_generic_services")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.py_generic_services {
+            enc.write_field_name("py_generic_services")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.deprecated {
+            enc.write_field_name("deprecated")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.cc_enable_arenas {
+            enc.write_field_name("cc_enable_arenas")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.objc_class_prefix {
+            enc.write_field_name("objc_class_prefix")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.csharp_namespace {
+            enc.write_field_name("csharp_namespace")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.swift_prefix {
+            enc.write_field_name("swift_prefix")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.php_class_prefix {
+            enc.write_field_name("php_class_prefix")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.php_namespace {
+            enc.write_field_name("php_namespace")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.php_metadata_namespace {
+            enc.write_field_name("php_metadata_namespace")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.ruby_package {
+            enc.write_field_name("ruby_package")?;
+            enc.write_string(__v)?;
+        }
+        if self.features.is_set() {
+            enc.write_field_name("features")?;
+            enc.write_message(&*self.features)?;
+        }
+        for __v in &self.uninterpreted_option {
+            enc.write_field_name("uninterpreted_option")?;
+            enc.write_message(__v)?;
+        }
+        enc.write_extension_fields(
+            "google.protobuf.FileOptions",
+            &self.__buffa_unknown_fields,
+        )?;
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "java_package" => {
+                    self.java_package = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "java_outer_classname" => {
+                    self.java_outer_classname = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "java_multiple_files" => {
+                    self.java_multiple_files = ::core::option::Option::Some(
+                        dec.read_bool()?,
+                    );
+                }
+                "java_generate_equals_and_hash" => {
+                    self.java_generate_equals_and_hash = ::core::option::Option::Some(
+                        dec.read_bool()?,
+                    );
+                }
+                "java_string_check_utf8" => {
+                    self.java_string_check_utf8 = ::core::option::Option::Some(
+                        dec.read_bool()?,
+                    );
+                }
+                "optimize_for" => {
+                    self.optimize_for = ::core::option::Option::Some(
+                        dec.read_closed_enum_by_name::<file_options::OptimizeMode>()?,
+                    );
+                }
+                "go_package" => {
+                    self.go_package = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "cc_generic_services" => {
+                    self.cc_generic_services = ::core::option::Option::Some(
+                        dec.read_bool()?,
+                    );
+                }
+                "java_generic_services" => {
+                    self.java_generic_services = ::core::option::Option::Some(
+                        dec.read_bool()?,
+                    );
+                }
+                "py_generic_services" => {
+                    self.py_generic_services = ::core::option::Option::Some(
+                        dec.read_bool()?,
+                    );
+                }
+                "deprecated" => {
+                    self.deprecated = ::core::option::Option::Some(dec.read_bool()?);
+                }
+                "cc_enable_arenas" => {
+                    self.cc_enable_arenas = ::core::option::Option::Some(
+                        dec.read_bool()?,
+                    );
+                }
+                "objc_class_prefix" => {
+                    self.objc_class_prefix = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "csharp_namespace" => {
+                    self.csharp_namespace = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "swift_prefix" => {
+                    self.swift_prefix = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "php_class_prefix" => {
+                    self.php_class_prefix = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "php_namespace" => {
+                    self.php_namespace = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "php_metadata_namespace" => {
+                    self.php_metadata_namespace = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "ruby_package" => {
+                    self.ruby_package = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "features" => dec.merge_message(self.features.get_or_insert_default())?,
+                "uninterpreted_option" => {
+                    dec.read_repeated_into(
+                        &mut self.uninterpreted_option,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                __name if __name.starts_with('[') => {
+                    for __r in dec.read_extension(__name, "google.protobuf.FileOptions")?
+                    {
+                        self.__buffa_unknown_fields.push(__r);
+                    }
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> serde::Deserialize<'de> for FileOptions {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        struct _V;
+        impl<'de> serde::de::Visitor<'de> for _V {
+            type Value = FileOptions;
+            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.write_str("struct FileOptions")
+            }
+            #[allow(clippy::field_reassign_with_default)]
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> ::core::result::Result<FileOptions, A::Error> {
+                let mut __f_java_package: ::core::option::Option<
+                    ::core::option::Option<::buffa::alloc::string::String>,
+                > = None;
+                let mut __f_java_outer_classname: ::core::option::Option<
+                    ::core::option::Option<::buffa::alloc::string::String>,
+                > = None;
+                let mut __f_java_multiple_files: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_java_generate_equals_and_hash: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_java_string_check_utf8: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_optimize_for: ::core::option::Option<
+                    ::core::option::Option<file_options::OptimizeMode>,
+                > = None;
+                let mut __f_go_package: ::core::option::Option<
+                    ::core::option::Option<::buffa::alloc::string::String>,
+                > = None;
+                let mut __f_cc_generic_services: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_java_generic_services: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_py_generic_services: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_deprecated: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_cc_enable_arenas: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_objc_class_prefix: ::core::option::Option<
+                    ::core::option::Option<::buffa::alloc::string::String>,
+                > = None;
+                let mut __f_csharp_namespace: ::core::option::Option<
+                    ::core::option::Option<::buffa::alloc::string::String>,
+                > = None;
+                let mut __f_swift_prefix: ::core::option::Option<
+                    ::core::option::Option<::buffa::alloc::string::String>,
+                > = None;
+                let mut __f_php_class_prefix: ::core::option::Option<
+                    ::core::option::Option<::buffa::alloc::string::String>,
+                > = None;
+                let mut __f_php_namespace: ::core::option::Option<
+                    ::core::option::Option<::buffa::alloc::string::String>,
+                > = None;
+                let mut __f_php_metadata_namespace: ::core::option::Option<
+                    ::core::option::Option<::buffa::alloc::string::String>,
+                > = None;
+                let mut __f_ruby_package: ::core::option::Option<
+                    ::core::option::Option<::buffa::alloc::string::String>,
+                > = None;
+                let mut __f_features: ::core::option::Option<
+                    ::buffa::MessageField<FeatureSet>,
+                > = None;
+                let mut __f_uninterpreted_option: ::core::option::Option<
+                    ::buffa::alloc::vec::Vec<UninterpretedOption>,
+                > = None;
+                let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
+                while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
+                    match key.as_str() {
+                        "javaPackage" | "java_package" => {
+                            __f_java_package = Some(
+                                map
+                                    .next_value::<
+                                        ::core::option::Option<::buffa::alloc::string::String>,
+                                    >()?,
+                            );
+                        }
+                        "javaOuterClassname" | "java_outer_classname" => {
+                            __f_java_outer_classname = Some(
+                                map
+                                    .next_value::<
+                                        ::core::option::Option<::buffa::alloc::string::String>,
+                                    >()?,
+                            );
+                        }
+                        "javaMultipleFiles" | "java_multiple_files" => {
+                            __f_java_multiple_files = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "javaGenerateEqualsAndHash"
+                        | "java_generate_equals_and_hash" => {
+                            __f_java_generate_equals_and_hash = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "javaStringCheckUtf8" | "java_string_check_utf8" => {
+                            __f_java_string_check_utf8 = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "optimizeFor" | "optimize_for" => {
+                            __f_optimize_for = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        file_options::OptimizeMode,
+                                    >;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<file_options::OptimizeMode>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_closed_enum::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        "goPackage" | "go_package" => {
+                            __f_go_package = Some(
+                                map
+                                    .next_value::<
+                                        ::core::option::Option<::buffa::alloc::string::String>,
+                                    >()?,
+                            );
+                        }
+                        "ccGenericServices" | "cc_generic_services" => {
+                            __f_cc_generic_services = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "javaGenericServices" | "java_generic_services" => {
+                            __f_java_generic_services = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "pyGenericServices" | "py_generic_services" => {
+                            __f_py_generic_services = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "deprecated" => {
+                            __f_deprecated = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "ccEnableArenas" | "cc_enable_arenas" => {
+                            __f_cc_enable_arenas = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "objcClassPrefix" | "objc_class_prefix" => {
+                            __f_objc_class_prefix = Some(
+                                map
+                                    .next_value::<
+                                        ::core::option::Option<::buffa::alloc::string::String>,
+                                    >()?,
+                            );
+                        }
+                        "csharpNamespace" | "csharp_namespace" => {
+                            __f_csharp_namespace = Some(
+                                map
+                                    .next_value::<
+                                        ::core::option::Option<::buffa::alloc::string::String>,
+                                    >()?,
+                            );
+                        }
+                        "swiftPrefix" | "swift_prefix" => {
+                            __f_swift_prefix = Some(
+                                map
+                                    .next_value::<
+                                        ::core::option::Option<::buffa::alloc::string::String>,
+                                    >()?,
+                            );
+                        }
+                        "phpClassPrefix" | "php_class_prefix" => {
+                            __f_php_class_prefix = Some(
+                                map
+                                    .next_value::<
+                                        ::core::option::Option<::buffa::alloc::string::String>,
+                                    >()?,
+                            );
+                        }
+                        "phpNamespace" | "php_namespace" => {
+                            __f_php_namespace = Some(
+                                map
+                                    .next_value::<
+                                        ::core::option::Option<::buffa::alloc::string::String>,
+                                    >()?,
+                            );
+                        }
+                        "phpMetadataNamespace" | "php_metadata_namespace" => {
+                            __f_php_metadata_namespace = Some(
+                                map
+                                    .next_value::<
+                                        ::core::option::Option<::buffa::alloc::string::String>,
+                                    >()?,
+                            );
+                        }
+                        "rubyPackage" | "ruby_package" => {
+                            __f_ruby_package = Some(
+                                map
+                                    .next_value::<
+                                        ::core::option::Option<::buffa::alloc::string::String>,
+                                    >()?,
+                            );
+                        }
+                        "features" => {
+                            __f_features = Some(
+                                map.next_value::<::buffa::MessageField<FeatureSet>>()?,
+                            );
+                        }
+                        "uninterpretedOption" | "uninterpreted_option" => {
+                            __f_uninterpreted_option = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::buffa::alloc::vec::Vec<UninterpretedOption>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::null_as_default(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        __k if __k.starts_with('[') => {
+                            let __v: ::buffa::serde_json::Value = map.next_value()?;
+                            match ::buffa::extension_registry::deserialize_extension_key(
+                                "google.protobuf.FileOptions",
+                                __k,
+                                __v,
+                            ) {
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Ok(__recs),
+                                ) => {
+                                    for __rec in __recs {
+                                        __ext_records.push(__rec);
+                                    }
+                                }
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Err(__e),
+                                ) => {
+                                    return ::core::result::Result::Err(
+                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                    );
+                                }
+                                ::core::option::Option::None => {}
+                            }
+                        }
+                        _ => {
+                            map.next_value::<serde::de::IgnoredAny>()?;
+                        }
+                    }
+                }
+                let mut __r = <FileOptions as ::core::default::Default>::default();
+                if let ::core::option::Option::Some(v) = __f_java_package {
+                    __r.java_package = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_java_outer_classname {
+                    __r.java_outer_classname = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_java_multiple_files {
+                    __r.java_multiple_files = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_java_generate_equals_and_hash {
+                    __r.java_generate_equals_and_hash = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_java_string_check_utf8 {
+                    __r.java_string_check_utf8 = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_optimize_for {
+                    __r.optimize_for = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_go_package {
+                    __r.go_package = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_cc_generic_services {
+                    __r.cc_generic_services = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_java_generic_services {
+                    __r.java_generic_services = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_py_generic_services {
+                    __r.py_generic_services = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_deprecated {
+                    __r.deprecated = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_cc_enable_arenas {
+                    __r.cc_enable_arenas = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_objc_class_prefix {
+                    __r.objc_class_prefix = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_csharp_namespace {
+                    __r.csharp_namespace = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_swift_prefix {
+                    __r.swift_prefix = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_php_class_prefix {
+                    __r.php_class_prefix = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_php_namespace {
+                    __r.php_namespace = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_php_metadata_namespace {
+                    __r.php_metadata_namespace = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_ruby_package {
+                    __r.ruby_package = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_features {
+                    __r.features = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_uninterpreted_option {
+                    __r.uninterpreted_option = v;
+                }
+                for __rec in __ext_records {
+                    __r.__buffa_unknown_fields.push(__rec);
+                }
+                Ok(__r)
+            }
+        }
+        d.deserialize_map(_V)
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for FileOptions {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[doc(hidden)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[repr(transparent)]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+pub struct __FileOptionsExtJson(pub ::buffa::UnknownFields);
+impl ::core::ops::Deref for __FileOptionsExtJson {
+    type Target = ::buffa::UnknownFields;
+    fn deref(&self) -> &::buffa::UnknownFields {
+        &self.0
+    }
+}
+impl ::core::ops::DerefMut for __FileOptionsExtJson {
+    fn deref_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.0
+    }
+}
+impl ::core::convert::From<::buffa::UnknownFields> for __FileOptionsExtJson {
+    fn from(u: ::buffa::UnknownFields) -> Self {
+        Self(u)
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for __FileOptionsExtJson {
+    fn serialize<S: ::serde::Serializer>(
+        &self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::buffa::extension_registry::serialize_extensions(
+            "google.protobuf.FileOptions",
+            &self.0,
+            s,
+        )
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> ::serde::Deserialize<'de> for __FileOptionsExtJson {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        ::buffa::extension_registry::deserialize_extensions(
+                "google.protobuf.FileOptions",
+                d,
+            )
+            .map(Self)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __FILE_OPTIONS_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.FileOptions",
+    to_json: ::buffa::type_registry::any_to_json::<FileOptions>,
+    from_json: ::buffa::type_registry::any_from_json::<FileOptions>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __FILE_OPTIONS_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.FileOptions",
+    text_encode: ::buffa::type_registry::any_encode_text::<FileOptions>,
+    text_merge: ::buffa::type_registry::any_merge_text::<FileOptions>,
+};
 pub mod file_options {
     #[allow(unused_imports)]
     use super::*;
     /// Generated classes can be optimized for speed or code size.
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
     pub enum OptimizeMode {
         /// Generate complete code for parsing, serialization,
@@ -4687,6 +8353,99 @@ pub mod file_options {
             Self::SPEED
         }
     }
+    #[cfg(feature = "json")]
+    const _: () = {
+        impl ::serde::Serialize for OptimizeMode {
+            fn serialize<S: ::serde::Serializer>(
+                &self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s.serialize_str(::buffa::Enumeration::proto_name(self))
+            }
+        }
+        impl<'de> ::serde::Deserialize<'de> for OptimizeMode {
+            fn deserialize<D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                struct _V;
+                impl ::serde::de::Visitor<'_> for _V {
+                    type Value = OptimizeMode;
+                    fn expecting(
+                        &self,
+                        f: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        f.write_str(
+                            concat!(
+                                "a string, integer, or null for ", stringify!(OptimizeMode)
+                            ),
+                        )
+                    }
+                    fn visit_str<E: ::serde::de::Error>(
+                        self,
+                        v: &str,
+                    ) -> ::core::result::Result<OptimizeMode, E> {
+                        <OptimizeMode as ::buffa::Enumeration>::from_proto_name(v)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::unknown_variant(v, &[])
+                            })
+                    }
+                    fn visit_i64<E: ::serde::de::Error>(
+                        self,
+                        v: i64,
+                    ) -> ::core::result::Result<OptimizeMode, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <OptimizeMode as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_u64<E: ::serde::de::Error>(
+                        self,
+                        v: u64,
+                    ) -> ::core::result::Result<OptimizeMode, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <OptimizeMode as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_unit<E: ::serde::de::Error>(
+                        self,
+                    ) -> ::core::result::Result<OptimizeMode, E> {
+                        ::core::result::Result::Ok(::core::default::Default::default())
+                    }
+                }
+                d.deserialize_any(_V)
+            }
+        }
+        impl ::buffa::json_helpers::ProtoElemJson for OptimizeMode {
+            fn serialize_proto_json<S: ::serde::Serializer>(
+                v: &Self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                ::serde::Serialize::serialize(v, s)
+            }
+            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                <Self as ::serde::Deserialize>::deserialize(d)
+            }
+        }
+    };
     impl ::buffa::Enumeration for OptimizeMode {
         fn from_i32(value: i32) -> ::core::option::Option<Self> {
             match value {
@@ -4720,6 +8479,9 @@ pub mod file_options {
     }
 }
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct MessageOptions {
     /// Set true to use the old proto1 MessageSet wire format for extensions.
     /// This is provided for backwards-compatibility with the MessageSet wire
@@ -4743,12 +8505,28 @@ pub struct MessageOptions {
     /// the protocol compiler.
     ///
     /// Field 1: `message_set_wire_format`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "messageSetWireFormat",
+            alias = "message_set_wire_format",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub message_set_wire_format: ::core::option::Option<bool>,
     /// Disables the generation of the standard "descriptor()" accessor, which can
     /// conflict with a field of the same name.  This is meant to make migration
     /// from proto1 easier; new code should avoid fields named "descriptor".
     ///
     /// Field 2: `no_standard_descriptor_accessor`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "noStandardDescriptorAccessor",
+            alias = "no_standard_descriptor_accessor",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub no_standard_descriptor_accessor: ::core::option::Option<bool>,
     /// Is this message deprecated?
     /// Depending on the target platform, this can emit Deprecated annotations
@@ -4756,6 +8534,13 @@ pub struct MessageOptions {
     /// this is a formalization for deprecating messages.
     ///
     /// Field 3: `deprecated`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "deprecated",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub deprecated: ::core::option::Option<bool>,
     /// Whether the message is an automatically generated map entry type for the
     /// maps field.
@@ -4784,6 +8569,14 @@ pub struct MessageOptions {
     /// parser.
     ///
     /// Field 7: `map_entry`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "mapEntry",
+            alias = "map_entry",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub map_entry: ::core::option::Option<bool>,
     /// Enable the legacy handling of JSON field name conflicts.  This lowercases
     /// and strips underscored from the fields before comparison in proto3 only.
@@ -4797,6 +8590,14 @@ pub struct MessageOptions {
     /// teams have had time to migrate.
     ///
     /// Field 11: `deprecated_legacy_json_field_conflicts`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "deprecatedLegacyJsonFieldConflicts",
+            alias = "deprecated_legacy_json_field_conflicts",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub deprecated_legacy_json_field_conflicts: ::core::option::Option<bool>,
     /// Any features defined in the specific edition.
     /// WARNING: This field should only be used by protobuf plugins or special
@@ -4804,13 +8605,30 @@ pub struct MessageOptions {
     /// developers should rely on the protoreflect APIs for their client language.
     ///
     /// Field 12: `features`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "features",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub features: ::buffa::MessageField<FeatureSet>,
     /// The parser stores options it doesn't recognize here. See above.
     ///
     /// Field 999: `uninterpreted_option`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "uninterpretedOption",
+            alias = "uninterpreted_option",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub uninterpreted_option: ::buffa::alloc::vec::Vec<UninterpretedOption>,
+    #[cfg_attr(feature = "json", serde(flatten))]
     #[doc(hidden)]
-    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+    pub __buffa_unknown_fields: __MessageOptionsExtJson,
 }
 impl ::core::fmt::Debug for MessageOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -5065,7 +8883,335 @@ impl ::buffa::ExtensionSet for MessageOptions {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for MessageOptions {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.message_set_wire_format {
+            enc.write_field_name("message_set_wire_format")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self
+            .no_standard_descriptor_accessor
+        {
+            enc.write_field_name("no_standard_descriptor_accessor")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.deprecated {
+            enc.write_field_name("deprecated")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.map_entry {
+            enc.write_field_name("map_entry")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self
+            .deprecated_legacy_json_field_conflicts
+        {
+            enc.write_field_name("deprecated_legacy_json_field_conflicts")?;
+            enc.write_bool(*__v)?;
+        }
+        if self.features.is_set() {
+            enc.write_field_name("features")?;
+            enc.write_message(&*self.features)?;
+        }
+        for __v in &self.uninterpreted_option {
+            enc.write_field_name("uninterpreted_option")?;
+            enc.write_message(__v)?;
+        }
+        enc.write_extension_fields(
+            "google.protobuf.MessageOptions",
+            &self.__buffa_unknown_fields,
+        )?;
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "message_set_wire_format" => {
+                    self.message_set_wire_format = ::core::option::Option::Some(
+                        dec.read_bool()?,
+                    );
+                }
+                "no_standard_descriptor_accessor" => {
+                    self.no_standard_descriptor_accessor = ::core::option::Option::Some(
+                        dec.read_bool()?,
+                    );
+                }
+                "deprecated" => {
+                    self.deprecated = ::core::option::Option::Some(dec.read_bool()?);
+                }
+                "map_entry" => {
+                    self.map_entry = ::core::option::Option::Some(dec.read_bool()?);
+                }
+                "deprecated_legacy_json_field_conflicts" => {
+                    self.deprecated_legacy_json_field_conflicts = ::core::option::Option::Some(
+                        dec.read_bool()?,
+                    );
+                }
+                "features" => dec.merge_message(self.features.get_or_insert_default())?,
+                "uninterpreted_option" => {
+                    dec.read_repeated_into(
+                        &mut self.uninterpreted_option,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                __name if __name.starts_with('[') => {
+                    for __r in dec
+                        .read_extension(__name, "google.protobuf.MessageOptions")?
+                    {
+                        self.__buffa_unknown_fields.push(__r);
+                    }
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> serde::Deserialize<'de> for MessageOptions {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        struct _V;
+        impl<'de> serde::de::Visitor<'de> for _V {
+            type Value = MessageOptions;
+            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.write_str("struct MessageOptions")
+            }
+            #[allow(clippy::field_reassign_with_default)]
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> ::core::result::Result<MessageOptions, A::Error> {
+                let mut __f_message_set_wire_format: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_no_standard_descriptor_accessor: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_deprecated: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_map_entry: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_deprecated_legacy_json_field_conflicts: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_features: ::core::option::Option<
+                    ::buffa::MessageField<FeatureSet>,
+                > = None;
+                let mut __f_uninterpreted_option: ::core::option::Option<
+                    ::buffa::alloc::vec::Vec<UninterpretedOption>,
+                > = None;
+                let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
+                while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
+                    match key.as_str() {
+                        "messageSetWireFormat" | "message_set_wire_format" => {
+                            __f_message_set_wire_format = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "noStandardDescriptorAccessor"
+                        | "no_standard_descriptor_accessor" => {
+                            __f_no_standard_descriptor_accessor = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "deprecated" => {
+                            __f_deprecated = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "mapEntry" | "map_entry" => {
+                            __f_map_entry = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "deprecatedLegacyJsonFieldConflicts"
+                        | "deprecated_legacy_json_field_conflicts" => {
+                            __f_deprecated_legacy_json_field_conflicts = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "features" => {
+                            __f_features = Some(
+                                map.next_value::<::buffa::MessageField<FeatureSet>>()?,
+                            );
+                        }
+                        "uninterpretedOption" | "uninterpreted_option" => {
+                            __f_uninterpreted_option = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::buffa::alloc::vec::Vec<UninterpretedOption>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::null_as_default(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        __k if __k.starts_with('[') => {
+                            let __v: ::buffa::serde_json::Value = map.next_value()?;
+                            match ::buffa::extension_registry::deserialize_extension_key(
+                                "google.protobuf.MessageOptions",
+                                __k,
+                                __v,
+                            ) {
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Ok(__recs),
+                                ) => {
+                                    for __rec in __recs {
+                                        __ext_records.push(__rec);
+                                    }
+                                }
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Err(__e),
+                                ) => {
+                                    return ::core::result::Result::Err(
+                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                    );
+                                }
+                                ::core::option::Option::None => {}
+                            }
+                        }
+                        _ => {
+                            map.next_value::<serde::de::IgnoredAny>()?;
+                        }
+                    }
+                }
+                let mut __r = <MessageOptions as ::core::default::Default>::default();
+                if let ::core::option::Option::Some(v) = __f_message_set_wire_format {
+                    __r.message_set_wire_format = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_no_standard_descriptor_accessor {
+                    __r.no_standard_descriptor_accessor = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_deprecated {
+                    __r.deprecated = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_map_entry {
+                    __r.map_entry = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_deprecated_legacy_json_field_conflicts {
+                    __r.deprecated_legacy_json_field_conflicts = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_features {
+                    __r.features = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_uninterpreted_option {
+                    __r.uninterpreted_option = v;
+                }
+                for __rec in __ext_records {
+                    __r.__buffa_unknown_fields.push(__rec);
+                }
+                Ok(__r)
+            }
+        }
+        d.deserialize_map(_V)
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for MessageOptions {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[doc(hidden)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[repr(transparent)]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+pub struct __MessageOptionsExtJson(pub ::buffa::UnknownFields);
+impl ::core::ops::Deref for __MessageOptionsExtJson {
+    type Target = ::buffa::UnknownFields;
+    fn deref(&self) -> &::buffa::UnknownFields {
+        &self.0
+    }
+}
+impl ::core::ops::DerefMut for __MessageOptionsExtJson {
+    fn deref_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.0
+    }
+}
+impl ::core::convert::From<::buffa::UnknownFields> for __MessageOptionsExtJson {
+    fn from(u: ::buffa::UnknownFields) -> Self {
+        Self(u)
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for __MessageOptionsExtJson {
+    fn serialize<S: ::serde::Serializer>(
+        &self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::buffa::extension_registry::serialize_extensions(
+            "google.protobuf.MessageOptions",
+            &self.0,
+            s,
+        )
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> ::serde::Deserialize<'de> for __MessageOptionsExtJson {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        ::buffa::extension_registry::deserialize_extensions(
+                "google.protobuf.MessageOptions",
+                d,
+            )
+            .map(Self)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __MESSAGE_OPTIONS_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.MessageOptions",
+    to_json: ::buffa::type_registry::any_to_json::<MessageOptions>,
+    from_json: ::buffa::type_registry::any_from_json::<MessageOptions>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __MESSAGE_OPTIONS_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.MessageOptions",
+    text_encode: ::buffa::type_registry::any_encode_text::<MessageOptions>,
+    text_merge: ::buffa::type_registry::any_merge_text::<MessageOptions>,
+};
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct FieldOptions {
     /// NOTE: ctype is deprecated. Use `features.(pb.cpp).string_type` instead.
     /// The ctype option instructs the C++ code generator to use a different
@@ -5076,6 +9222,14 @@ pub struct FieldOptions {
     /// TODO: make ctype actually deprecated.
     ///
     /// Field 1: `ctype`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "ctype",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub ctype: ::core::option::Option<field_options::CType>,
     /// The packed option can be enabled for repeated primitive fields to enable
     /// a more efficient representation on the wire. Rather than repeatedly
@@ -5086,6 +9240,10 @@ pub struct FieldOptions {
     /// the behavior.
     ///
     /// Field 2: `packed`
+    #[cfg_attr(
+        feature = "json",
+        serde(rename = "packed", skip_serializing_if = "::core::option::Option::is_none")
+    )]
     pub packed: ::core::option::Option<bool>,
     /// The jstype option determines the JavaScript type used for values of the
     /// field.  The option is permitted only for 64 bit integral and fixed types
@@ -5100,6 +9258,14 @@ pub struct FieldOptions {
     /// goog.math.Integer.
     ///
     /// Field 6: `jstype`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "jstype",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub jstype: ::core::option::Option<field_options::JSType>,
     /// Should this field be parsed lazily?  Lazy applies only to message-type
     /// fields.  It means that when the outer message is initially parsed, the
@@ -5125,12 +9291,24 @@ pub struct FieldOptions {
     /// uninitialized messages are acceptable).
     ///
     /// Field 5: `lazy`
+    #[cfg_attr(
+        feature = "json",
+        serde(rename = "lazy", skip_serializing_if = "::core::option::Option::is_none")
+    )]
     pub lazy: ::core::option::Option<bool>,
     /// unverified_lazy does no correctness checks on the byte stream. This should
     /// only be used where lazy with verification is prohibitive for performance
     /// reasons.
     ///
     /// Field 15: `unverified_lazy`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "unverifiedLazy",
+            alias = "unverified_lazy",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub unverified_lazy: ::core::option::Option<bool>,
     /// Is this field deprecated?
     /// Depending on the target platform, this can emit Deprecated annotations
@@ -5138,22 +9316,66 @@ pub struct FieldOptions {
     /// is a formalization for deprecating fields.
     ///
     /// Field 3: `deprecated`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "deprecated",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub deprecated: ::core::option::Option<bool>,
     /// DEPRECATED. DO NOT USE!
     /// For Google-internal migration only. Do not use.
     ///
     /// Field 10: `weak`
+    #[cfg_attr(
+        feature = "json",
+        serde(rename = "weak", skip_serializing_if = "::core::option::Option::is_none")
+    )]
     pub weak: ::core::option::Option<bool>,
     /// Indicate that the field value should not be printed out when using debug
     /// formats, e.g. when the field contains sensitive credentials.
     ///
     /// Field 16: `debug_redact`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "debugRedact",
+            alias = "debug_redact",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub debug_redact: ::core::option::Option<bool>,
     /// Field 17: `retention`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "retention",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub retention: ::core::option::Option<field_options::OptionRetention>,
     /// Field 19: `targets`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "targets",
+            with = "::buffa::json_helpers::repeated_closed_enum",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec"
+        )
+    )]
     pub targets: ::buffa::alloc::vec::Vec<field_options::OptionTargetType>,
     /// Field 20: `edition_defaults`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "editionDefaults",
+            alias = "edition_defaults",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub edition_defaults: ::buffa::alloc::vec::Vec<field_options::EditionDefault>,
     /// Any features defined in the specific edition.
     /// WARNING: This field should only be used by protobuf plugins or special
@@ -5161,15 +9383,40 @@ pub struct FieldOptions {
     /// developers should rely on the protoreflect APIs for their client language.
     ///
     /// Field 21: `features`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "features",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub features: ::buffa::MessageField<FeatureSet>,
     /// Field 22: `feature_support`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "featureSupport",
+            alias = "feature_support",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub feature_support: ::buffa::MessageField<field_options::FeatureSupport>,
     /// The parser stores options it doesn't recognize here. See above.
     ///
     /// Field 999: `uninterpreted_option`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "uninterpretedOption",
+            alias = "uninterpreted_option",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub uninterpreted_option: ::buffa::alloc::vec::Vec<UninterpretedOption>,
+    #[cfg_attr(feature = "json", serde(flatten))]
     #[doc(hidden)]
-    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+    pub __buffa_unknown_fields: __FieldOptionsExtJson,
 }
 impl ::core::fmt::Debug for FieldOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -5658,10 +9905,535 @@ impl ::buffa::ExtensionSet for FieldOptions {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for FieldOptions {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.ctype {
+            enc.write_field_name("ctype")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.packed {
+            enc.write_field_name("packed")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.jstype {
+            enc.write_field_name("jstype")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.lazy {
+            enc.write_field_name("lazy")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.unverified_lazy {
+            enc.write_field_name("unverified_lazy")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.deprecated {
+            enc.write_field_name("deprecated")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.weak {
+            enc.write_field_name("weak")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.debug_redact {
+            enc.write_field_name("debug_redact")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.retention {
+            enc.write_field_name("retention")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        if self.features.is_set() {
+            enc.write_field_name("features")?;
+            enc.write_message(&*self.features)?;
+        }
+        if self.feature_support.is_set() {
+            enc.write_field_name("feature_support")?;
+            enc.write_message(&*self.feature_support)?;
+        }
+        for __v in &self.targets {
+            enc.write_field_name("targets")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        for __v in &self.edition_defaults {
+            enc.write_field_name("edition_defaults")?;
+            enc.write_message(__v)?;
+        }
+        for __v in &self.uninterpreted_option {
+            enc.write_field_name("uninterpreted_option")?;
+            enc.write_message(__v)?;
+        }
+        enc.write_extension_fields(
+            "google.protobuf.FieldOptions",
+            &self.__buffa_unknown_fields,
+        )?;
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "ctype" => {
+                    self.ctype = ::core::option::Option::Some(
+                        dec.read_closed_enum_by_name::<field_options::CType>()?,
+                    );
+                }
+                "packed" => self.packed = ::core::option::Option::Some(dec.read_bool()?),
+                "jstype" => {
+                    self.jstype = ::core::option::Option::Some(
+                        dec.read_closed_enum_by_name::<field_options::JSType>()?,
+                    );
+                }
+                "lazy" => self.lazy = ::core::option::Option::Some(dec.read_bool()?),
+                "unverified_lazy" => {
+                    self.unverified_lazy = ::core::option::Option::Some(dec.read_bool()?);
+                }
+                "deprecated" => {
+                    self.deprecated = ::core::option::Option::Some(dec.read_bool()?);
+                }
+                "weak" => self.weak = ::core::option::Option::Some(dec.read_bool()?),
+                "debug_redact" => {
+                    self.debug_redact = ::core::option::Option::Some(dec.read_bool()?);
+                }
+                "retention" => {
+                    self.retention = ::core::option::Option::Some(
+                        dec.read_closed_enum_by_name::<field_options::OptionRetention>()?,
+                    );
+                }
+                "features" => dec.merge_message(self.features.get_or_insert_default())?,
+                "feature_support" => {
+                    dec.merge_message(self.feature_support.get_or_insert_default())?
+                }
+                "targets" => {
+                    dec.read_repeated_into(
+                        &mut self.targets,
+                        |__d| {
+                            __d
+                                .read_closed_enum_by_name::<
+                                    field_options::OptionTargetType,
+                                >()
+                        },
+                    )?
+                }
+                "edition_defaults" => {
+                    dec.read_repeated_into(
+                        &mut self.edition_defaults,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                "uninterpreted_option" => {
+                    dec.read_repeated_into(
+                        &mut self.uninterpreted_option,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                __name if __name.starts_with('[') => {
+                    for __r in dec
+                        .read_extension(__name, "google.protobuf.FieldOptions")?
+                    {
+                        self.__buffa_unknown_fields.push(__r);
+                    }
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> serde::Deserialize<'de> for FieldOptions {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        struct _V;
+        impl<'de> serde::de::Visitor<'de> for _V {
+            type Value = FieldOptions;
+            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.write_str("struct FieldOptions")
+            }
+            #[allow(clippy::field_reassign_with_default)]
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> ::core::result::Result<FieldOptions, A::Error> {
+                let mut __f_ctype: ::core::option::Option<
+                    ::core::option::Option<field_options::CType>,
+                > = None;
+                let mut __f_packed: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_jstype: ::core::option::Option<
+                    ::core::option::Option<field_options::JSType>,
+                > = None;
+                let mut __f_lazy: ::core::option::Option<::core::option::Option<bool>> = None;
+                let mut __f_unverified_lazy: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_deprecated: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_weak: ::core::option::Option<::core::option::Option<bool>> = None;
+                let mut __f_debug_redact: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_retention: ::core::option::Option<
+                    ::core::option::Option<field_options::OptionRetention>,
+                > = None;
+                let mut __f_targets: ::core::option::Option<
+                    ::buffa::alloc::vec::Vec<field_options::OptionTargetType>,
+                > = None;
+                let mut __f_edition_defaults: ::core::option::Option<
+                    ::buffa::alloc::vec::Vec<field_options::EditionDefault>,
+                > = None;
+                let mut __f_features: ::core::option::Option<
+                    ::buffa::MessageField<FeatureSet>,
+                > = None;
+                let mut __f_feature_support: ::core::option::Option<
+                    ::buffa::MessageField<field_options::FeatureSupport>,
+                > = None;
+                let mut __f_uninterpreted_option: ::core::option::Option<
+                    ::buffa::alloc::vec::Vec<UninterpretedOption>,
+                > = None;
+                let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
+                while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
+                    match key.as_str() {
+                        "ctype" => {
+                            __f_ctype = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<field_options::CType>;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<field_options::CType>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_closed_enum::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        "packed" => {
+                            __f_packed = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "jstype" => {
+                            __f_jstype = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<field_options::JSType>;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<field_options::JSType>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_closed_enum::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        "lazy" => {
+                            __f_lazy = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "unverifiedLazy" | "unverified_lazy" => {
+                            __f_unverified_lazy = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "deprecated" => {
+                            __f_deprecated = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "weak" => {
+                            __f_weak = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "debugRedact" | "debug_redact" => {
+                            __f_debug_redact = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "retention" => {
+                            __f_retention = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        field_options::OptionRetention,
+                                    >;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<field_options::OptionRetention>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_closed_enum::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        "targets" => {
+                            __f_targets = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::buffa::alloc::vec::Vec<
+                                        field_options::OptionTargetType,
+                                    >;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::buffa::alloc::vec::Vec<field_options::OptionTargetType>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::repeated_closed_enum::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        "editionDefaults" | "edition_defaults" => {
+                            __f_edition_defaults = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::buffa::alloc::vec::Vec<
+                                        field_options::EditionDefault,
+                                    >;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::buffa::alloc::vec::Vec<field_options::EditionDefault>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::null_as_default(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        "features" => {
+                            __f_features = Some(
+                                map.next_value::<::buffa::MessageField<FeatureSet>>()?,
+                            );
+                        }
+                        "featureSupport" | "feature_support" => {
+                            __f_feature_support = Some(
+                                map
+                                    .next_value::<
+                                        ::buffa::MessageField<field_options::FeatureSupport>,
+                                    >()?,
+                            );
+                        }
+                        "uninterpretedOption" | "uninterpreted_option" => {
+                            __f_uninterpreted_option = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::buffa::alloc::vec::Vec<UninterpretedOption>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::null_as_default(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        __k if __k.starts_with('[') => {
+                            let __v: ::buffa::serde_json::Value = map.next_value()?;
+                            match ::buffa::extension_registry::deserialize_extension_key(
+                                "google.protobuf.FieldOptions",
+                                __k,
+                                __v,
+                            ) {
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Ok(__recs),
+                                ) => {
+                                    for __rec in __recs {
+                                        __ext_records.push(__rec);
+                                    }
+                                }
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Err(__e),
+                                ) => {
+                                    return ::core::result::Result::Err(
+                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                    );
+                                }
+                                ::core::option::Option::None => {}
+                            }
+                        }
+                        _ => {
+                            map.next_value::<serde::de::IgnoredAny>()?;
+                        }
+                    }
+                }
+                let mut __r = <FieldOptions as ::core::default::Default>::default();
+                if let ::core::option::Option::Some(v) = __f_ctype {
+                    __r.ctype = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_packed {
+                    __r.packed = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_jstype {
+                    __r.jstype = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_lazy {
+                    __r.lazy = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_unverified_lazy {
+                    __r.unverified_lazy = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_deprecated {
+                    __r.deprecated = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_weak {
+                    __r.weak = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_debug_redact {
+                    __r.debug_redact = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_retention {
+                    __r.retention = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_targets {
+                    __r.targets = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_edition_defaults {
+                    __r.edition_defaults = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_features {
+                    __r.features = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_feature_support {
+                    __r.feature_support = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_uninterpreted_option {
+                    __r.uninterpreted_option = v;
+                }
+                for __rec in __ext_records {
+                    __r.__buffa_unknown_fields.push(__rec);
+                }
+                Ok(__r)
+            }
+        }
+        d.deserialize_map(_V)
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for FieldOptions {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[doc(hidden)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[repr(transparent)]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+pub struct __FieldOptionsExtJson(pub ::buffa::UnknownFields);
+impl ::core::ops::Deref for __FieldOptionsExtJson {
+    type Target = ::buffa::UnknownFields;
+    fn deref(&self) -> &::buffa::UnknownFields {
+        &self.0
+    }
+}
+impl ::core::ops::DerefMut for __FieldOptionsExtJson {
+    fn deref_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.0
+    }
+}
+impl ::core::convert::From<::buffa::UnknownFields> for __FieldOptionsExtJson {
+    fn from(u: ::buffa::UnknownFields) -> Self {
+        Self(u)
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for __FieldOptionsExtJson {
+    fn serialize<S: ::serde::Serializer>(
+        &self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::buffa::extension_registry::serialize_extensions(
+            "google.protobuf.FieldOptions",
+            &self.0,
+            s,
+        )
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> ::serde::Deserialize<'de> for __FieldOptionsExtJson {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        ::buffa::extension_registry::deserialize_extensions(
+                "google.protobuf.FieldOptions",
+                d,
+            )
+            .map(Self)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __FIELD_OPTIONS_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.FieldOptions",
+    to_json: ::buffa::type_registry::any_to_json::<FieldOptions>,
+    from_json: ::buffa::type_registry::any_from_json::<FieldOptions>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __FIELD_OPTIONS_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.FieldOptions",
+    text_encode: ::buffa::type_registry::any_encode_text::<FieldOptions>,
+    text_merge: ::buffa::type_registry::any_merge_text::<FieldOptions>,
+};
 pub mod field_options {
     #[allow(unused_imports)]
     use super::*;
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
     pub enum CType {
         /// Default mode.
@@ -5680,6 +10452,97 @@ pub mod field_options {
             Self::STRING
         }
     }
+    #[cfg(feature = "json")]
+    const _: () = {
+        impl ::serde::Serialize for CType {
+            fn serialize<S: ::serde::Serializer>(
+                &self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s.serialize_str(::buffa::Enumeration::proto_name(self))
+            }
+        }
+        impl<'de> ::serde::Deserialize<'de> for CType {
+            fn deserialize<D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                struct _V;
+                impl ::serde::de::Visitor<'_> for _V {
+                    type Value = CType;
+                    fn expecting(
+                        &self,
+                        f: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        f.write_str(
+                            concat!("a string, integer, or null for ", stringify!(CType)),
+                        )
+                    }
+                    fn visit_str<E: ::serde::de::Error>(
+                        self,
+                        v: &str,
+                    ) -> ::core::result::Result<CType, E> {
+                        <CType as ::buffa::Enumeration>::from_proto_name(v)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::unknown_variant(v, &[])
+                            })
+                    }
+                    fn visit_i64<E: ::serde::de::Error>(
+                        self,
+                        v: i64,
+                    ) -> ::core::result::Result<CType, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <CType as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_u64<E: ::serde::de::Error>(
+                        self,
+                        v: u64,
+                    ) -> ::core::result::Result<CType, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <CType as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_unit<E: ::serde::de::Error>(
+                        self,
+                    ) -> ::core::result::Result<CType, E> {
+                        ::core::result::Result::Ok(::core::default::Default::default())
+                    }
+                }
+                d.deserialize_any(_V)
+            }
+        }
+        impl ::buffa::json_helpers::ProtoElemJson for CType {
+            fn serialize_proto_json<S: ::serde::Serializer>(
+                v: &Self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                ::serde::Serialize::serialize(v, s)
+            }
+            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                <Self as ::serde::Deserialize>::deserialize(d)
+            }
+        }
+    };
     impl ::buffa::Enumeration for CType {
         fn from_i32(value: i32) -> ::core::option::Option<Self> {
             match value {
@@ -5712,6 +10575,7 @@ pub mod field_options {
         }
     }
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
     pub enum JSType {
         /// Use the default type.
@@ -5726,6 +10590,99 @@ pub mod field_options {
             Self::JS_NORMAL
         }
     }
+    #[cfg(feature = "json")]
+    const _: () = {
+        impl ::serde::Serialize for JSType {
+            fn serialize<S: ::serde::Serializer>(
+                &self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s.serialize_str(::buffa::Enumeration::proto_name(self))
+            }
+        }
+        impl<'de> ::serde::Deserialize<'de> for JSType {
+            fn deserialize<D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                struct _V;
+                impl ::serde::de::Visitor<'_> for _V {
+                    type Value = JSType;
+                    fn expecting(
+                        &self,
+                        f: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        f.write_str(
+                            concat!(
+                                "a string, integer, or null for ", stringify!(JSType)
+                            ),
+                        )
+                    }
+                    fn visit_str<E: ::serde::de::Error>(
+                        self,
+                        v: &str,
+                    ) -> ::core::result::Result<JSType, E> {
+                        <JSType as ::buffa::Enumeration>::from_proto_name(v)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::unknown_variant(v, &[])
+                            })
+                    }
+                    fn visit_i64<E: ::serde::de::Error>(
+                        self,
+                        v: i64,
+                    ) -> ::core::result::Result<JSType, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <JSType as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_u64<E: ::serde::de::Error>(
+                        self,
+                        v: u64,
+                    ) -> ::core::result::Result<JSType, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <JSType as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_unit<E: ::serde::de::Error>(
+                        self,
+                    ) -> ::core::result::Result<JSType, E> {
+                        ::core::result::Result::Ok(::core::default::Default::default())
+                    }
+                }
+                d.deserialize_any(_V)
+            }
+        }
+        impl ::buffa::json_helpers::ProtoElemJson for JSType {
+            fn serialize_proto_json<S: ::serde::Serializer>(
+                v: &Self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                ::serde::Serialize::serialize(v, s)
+            }
+            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                <Self as ::serde::Deserialize>::deserialize(d)
+            }
+        }
+    };
     impl ::buffa::Enumeration for JSType {
         fn from_i32(value: i32) -> ::core::option::Option<Self> {
             match value {
@@ -5759,6 +10716,7 @@ pub mod field_options {
     }
     /// If set to RETENTION_SOURCE, the option will be omitted from the binary.
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
     pub enum OptionRetention {
         RETENTION_UNKNOWN = 0i32,
@@ -5770,6 +10728,100 @@ pub mod field_options {
             Self::RETENTION_UNKNOWN
         }
     }
+    #[cfg(feature = "json")]
+    const _: () = {
+        impl ::serde::Serialize for OptionRetention {
+            fn serialize<S: ::serde::Serializer>(
+                &self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s.serialize_str(::buffa::Enumeration::proto_name(self))
+            }
+        }
+        impl<'de> ::serde::Deserialize<'de> for OptionRetention {
+            fn deserialize<D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                struct _V;
+                impl ::serde::de::Visitor<'_> for _V {
+                    type Value = OptionRetention;
+                    fn expecting(
+                        &self,
+                        f: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        f.write_str(
+                            concat!(
+                                "a string, integer, or null for ",
+                                stringify!(OptionRetention)
+                            ),
+                        )
+                    }
+                    fn visit_str<E: ::serde::de::Error>(
+                        self,
+                        v: &str,
+                    ) -> ::core::result::Result<OptionRetention, E> {
+                        <OptionRetention as ::buffa::Enumeration>::from_proto_name(v)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::unknown_variant(v, &[])
+                            })
+                    }
+                    fn visit_i64<E: ::serde::de::Error>(
+                        self,
+                        v: i64,
+                    ) -> ::core::result::Result<OptionRetention, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <OptionRetention as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_u64<E: ::serde::de::Error>(
+                        self,
+                        v: u64,
+                    ) -> ::core::result::Result<OptionRetention, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <OptionRetention as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_unit<E: ::serde::de::Error>(
+                        self,
+                    ) -> ::core::result::Result<OptionRetention, E> {
+                        ::core::result::Result::Ok(::core::default::Default::default())
+                    }
+                }
+                d.deserialize_any(_V)
+            }
+        }
+        impl ::buffa::json_helpers::ProtoElemJson for OptionRetention {
+            fn serialize_proto_json<S: ::serde::Serializer>(
+                v: &Self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                ::serde::Serialize::serialize(v, s)
+            }
+            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                <Self as ::serde::Deserialize>::deserialize(d)
+            }
+        }
+    };
     impl ::buffa::Enumeration for OptionRetention {
         fn from_i32(value: i32) -> ::core::option::Option<Self> {
             match value {
@@ -5811,6 +10863,7 @@ pub mod field_options {
     /// as an option. If it is unset, then the field may be freely used as an
     /// option on any kind of entity.
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
     pub enum OptionTargetType {
         TARGET_TYPE_UNKNOWN = 0i32,
@@ -5829,6 +10882,100 @@ pub mod field_options {
             Self::TARGET_TYPE_UNKNOWN
         }
     }
+    #[cfg(feature = "json")]
+    const _: () = {
+        impl ::serde::Serialize for OptionTargetType {
+            fn serialize<S: ::serde::Serializer>(
+                &self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s.serialize_str(::buffa::Enumeration::proto_name(self))
+            }
+        }
+        impl<'de> ::serde::Deserialize<'de> for OptionTargetType {
+            fn deserialize<D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                struct _V;
+                impl ::serde::de::Visitor<'_> for _V {
+                    type Value = OptionTargetType;
+                    fn expecting(
+                        &self,
+                        f: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        f.write_str(
+                            concat!(
+                                "a string, integer, or null for ",
+                                stringify!(OptionTargetType)
+                            ),
+                        )
+                    }
+                    fn visit_str<E: ::serde::de::Error>(
+                        self,
+                        v: &str,
+                    ) -> ::core::result::Result<OptionTargetType, E> {
+                        <OptionTargetType as ::buffa::Enumeration>::from_proto_name(v)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::unknown_variant(v, &[])
+                            })
+                    }
+                    fn visit_i64<E: ::serde::de::Error>(
+                        self,
+                        v: i64,
+                    ) -> ::core::result::Result<OptionTargetType, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <OptionTargetType as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_u64<E: ::serde::de::Error>(
+                        self,
+                        v: u64,
+                    ) -> ::core::result::Result<OptionTargetType, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <OptionTargetType as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_unit<E: ::serde::de::Error>(
+                        self,
+                    ) -> ::core::result::Result<OptionTargetType, E> {
+                        ::core::result::Result::Ok(::core::default::Default::default())
+                    }
+                }
+                d.deserialize_any(_V)
+            }
+        }
+        impl ::buffa::json_helpers::ProtoElemJson for OptionTargetType {
+            fn serialize_proto_json<S: ::serde::Serializer>(
+                v: &Self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                ::serde::Serialize::serialize(v, s)
+            }
+            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                <Self as ::serde::Deserialize>::deserialize(d)
+            }
+        }
+    };
     impl ::buffa::Enumeration for OptionTargetType {
         fn from_i32(value: i32) -> ::core::option::Option<Self> {
             match value {
@@ -5913,13 +11060,32 @@ pub mod field_options {
         }
     }
     #[derive(Clone, PartialEq, Default)]
+    #[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+    #[cfg_attr(feature = "json", serde(default))]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     pub struct EditionDefault {
         /// Field 3: `edition`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "edition",
+                with = "::buffa::json_helpers::opt_closed_enum",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub edition: ::core::option::Option<super::Edition>,
         /// Textproto value.
         ///
         /// Field 2: `value`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "value",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub value: ::core::option::Option<::buffa::alloc::string::String>,
+        #[cfg_attr(feature = "json", serde(skip))]
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
     }
@@ -6055,31 +11221,142 @@ pub mod field_options {
             &mut self.__buffa_unknown_fields
         }
     }
+    #[cfg(feature = "text")]
+    impl ::buffa::text::TextFormat for EditionDefault {
+        fn encode_text(
+            &self,
+            enc: &mut ::buffa::text::TextEncoder<'_>,
+        ) -> ::core::fmt::Result {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            if let ::core::option::Option::Some(ref __v) = self.edition {
+                enc.write_field_name("edition")?;
+                enc.write_enum_name(__v.proto_name())?;
+            }
+            if let ::core::option::Option::Some(ref __v) = self.value {
+                enc.write_field_name("value")?;
+                enc.write_string(__v)?;
+            }
+            enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+            ::core::result::Result::Ok(())
+        }
+        fn merge_text(
+            &mut self,
+            dec: &mut ::buffa::text::TextDecoder<'_>,
+        ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+                match __name {
+                    "edition" => {
+                        self.edition = ::core::option::Option::Some(
+                            dec.read_closed_enum_by_name::<super::Edition>()?,
+                        );
+                    }
+                    "value" => {
+                        self.value = ::core::option::Option::Some(
+                            dec.read_string()?.into_owned(),
+                        );
+                    }
+                    _ => dec.skip_value()?,
+                }
+            }
+            ::core::result::Result::Ok(())
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::buffa::json_helpers::ProtoElemJson for EditionDefault {
+        fn serialize_proto_json<S: ::serde::Serializer>(
+            v: &Self,
+            s: S,
+        ) -> ::core::result::Result<S::Ok, S::Error> {
+            ::serde::Serialize::serialize(v, s)
+        }
+        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+            d: D,
+        ) -> ::core::result::Result<Self, D::Error> {
+            <Self as ::serde::Deserialize>::deserialize(d)
+        }
+    }
+    #[cfg(feature = "json")]
+    #[doc(hidden)]
+    pub const __EDITION_DEFAULT_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.FieldOptions.EditionDefault",
+        to_json: ::buffa::type_registry::any_to_json::<EditionDefault>,
+        from_json: ::buffa::type_registry::any_from_json::<EditionDefault>,
+        is_wkt: false,
+    };
+    #[cfg(feature = "text")]
+    #[doc(hidden)]
+    pub const __EDITION_DEFAULT_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.FieldOptions.EditionDefault",
+        text_encode: ::buffa::type_registry::any_encode_text::<EditionDefault>,
+        text_merge: ::buffa::type_registry::any_merge_text::<EditionDefault>,
+    };
     /// Information about the support window of a feature.
     #[derive(Clone, PartialEq, Default)]
+    #[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+    #[cfg_attr(feature = "json", serde(default))]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     pub struct FeatureSupport {
         /// The edition that this feature was first available in.  In editions
         /// earlier than this one, the default assigned to EDITION_LEGACY will be
         /// used, and proto files will not be able to override it.
         ///
         /// Field 1: `edition_introduced`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "editionIntroduced",
+                alias = "edition_introduced",
+                with = "::buffa::json_helpers::opt_closed_enum",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub edition_introduced: ::core::option::Option<super::Edition>,
         /// The edition this feature becomes deprecated in.  Using this after this
         /// edition may trigger warnings.
         ///
         /// Field 2: `edition_deprecated`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "editionDeprecated",
+                alias = "edition_deprecated",
+                with = "::buffa::json_helpers::opt_closed_enum",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub edition_deprecated: ::core::option::Option<super::Edition>,
         /// The deprecation warning text if this feature is used after the edition it
         /// was marked deprecated in.
         ///
         /// Field 3: `deprecation_warning`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "deprecationWarning",
+                alias = "deprecation_warning",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub deprecation_warning: ::core::option::Option<::buffa::alloc::string::String>,
         /// The edition this feature is no longer available in.  In editions after
         /// this one, the last default assigned will be used, and proto files will
         /// not be able to override it.
         ///
         /// Field 4: `edition_removed`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "editionRemoved",
+                alias = "edition_removed",
+                with = "::buffa::json_helpers::opt_closed_enum",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub edition_removed: ::core::option::Option<super::Edition>,
+        #[cfg_attr(feature = "json", serde(skip))]
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
     }
@@ -6277,8 +11554,107 @@ pub mod field_options {
             &mut self.__buffa_unknown_fields
         }
     }
+    #[cfg(feature = "text")]
+    impl ::buffa::text::TextFormat for FeatureSupport {
+        fn encode_text(
+            &self,
+            enc: &mut ::buffa::text::TextEncoder<'_>,
+        ) -> ::core::fmt::Result {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            if let ::core::option::Option::Some(ref __v) = self.edition_introduced {
+                enc.write_field_name("edition_introduced")?;
+                enc.write_enum_name(__v.proto_name())?;
+            }
+            if let ::core::option::Option::Some(ref __v) = self.edition_deprecated {
+                enc.write_field_name("edition_deprecated")?;
+                enc.write_enum_name(__v.proto_name())?;
+            }
+            if let ::core::option::Option::Some(ref __v) = self.deprecation_warning {
+                enc.write_field_name("deprecation_warning")?;
+                enc.write_string(__v)?;
+            }
+            if let ::core::option::Option::Some(ref __v) = self.edition_removed {
+                enc.write_field_name("edition_removed")?;
+                enc.write_enum_name(__v.proto_name())?;
+            }
+            enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+            ::core::result::Result::Ok(())
+        }
+        fn merge_text(
+            &mut self,
+            dec: &mut ::buffa::text::TextDecoder<'_>,
+        ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+                match __name {
+                    "edition_introduced" => {
+                        self.edition_introduced = ::core::option::Option::Some(
+                            dec.read_closed_enum_by_name::<super::Edition>()?,
+                        );
+                    }
+                    "edition_deprecated" => {
+                        self.edition_deprecated = ::core::option::Option::Some(
+                            dec.read_closed_enum_by_name::<super::Edition>()?,
+                        );
+                    }
+                    "deprecation_warning" => {
+                        self.deprecation_warning = ::core::option::Option::Some(
+                            dec.read_string()?.into_owned(),
+                        );
+                    }
+                    "edition_removed" => {
+                        self.edition_removed = ::core::option::Option::Some(
+                            dec.read_closed_enum_by_name::<super::Edition>()?,
+                        );
+                    }
+                    _ => dec.skip_value()?,
+                }
+            }
+            ::core::result::Result::Ok(())
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::buffa::json_helpers::ProtoElemJson for FeatureSupport {
+        fn serialize_proto_json<S: ::serde::Serializer>(
+            v: &Self,
+            s: S,
+        ) -> ::core::result::Result<S::Ok, S::Error> {
+            ::serde::Serialize::serialize(v, s)
+        }
+        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+            d: D,
+        ) -> ::core::result::Result<Self, D::Error> {
+            <Self as ::serde::Deserialize>::deserialize(d)
+        }
+    }
+    #[cfg(feature = "json")]
+    #[doc(hidden)]
+    pub const __FEATURE_SUPPORT_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.FieldOptions.FeatureSupport",
+        to_json: ::buffa::type_registry::any_to_json::<FeatureSupport>,
+        from_json: ::buffa::type_registry::any_from_json::<FeatureSupport>,
+        is_wkt: false,
+    };
+    #[cfg(feature = "text")]
+    #[doc(hidden)]
+    pub const __FEATURE_SUPPORT_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.FieldOptions.FeatureSupport",
+        text_encode: ::buffa::type_registry::any_encode_text::<FeatureSupport>,
+        text_merge: ::buffa::type_registry::any_merge_text::<FeatureSupport>,
+    };
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::field_options::EditionDefaultView;
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::field_options::FeatureSupportView;
 }
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct OneofOptions {
     /// Any features defined in the specific edition.
     /// WARNING: This field should only be used by protobuf plugins or special
@@ -6286,13 +11662,30 @@ pub struct OneofOptions {
     /// developers should rely on the protoreflect APIs for their client language.
     ///
     /// Field 1: `features`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "features",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub features: ::buffa::MessageField<FeatureSet>,
     /// The parser stores options it doesn't recognize here. See above.
     ///
     /// Field 999: `uninterpreted_option`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "uninterpretedOption",
+            alias = "uninterpreted_option",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub uninterpreted_option: ::buffa::alloc::vec::Vec<UninterpretedOption>,
+    #[cfg_attr(feature = "json", serde(flatten))]
     #[doc(hidden)]
-    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+    pub __buffa_unknown_fields: __OneofOptionsExtJson,
 }
 impl ::core::fmt::Debug for OneofOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -6431,12 +11824,246 @@ impl ::buffa::ExtensionSet for OneofOptions {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for OneofOptions {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.features.is_set() {
+            enc.write_field_name("features")?;
+            enc.write_message(&*self.features)?;
+        }
+        for __v in &self.uninterpreted_option {
+            enc.write_field_name("uninterpreted_option")?;
+            enc.write_message(__v)?;
+        }
+        enc.write_extension_fields(
+            "google.protobuf.OneofOptions",
+            &self.__buffa_unknown_fields,
+        )?;
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "features" => dec.merge_message(self.features.get_or_insert_default())?,
+                "uninterpreted_option" => {
+                    dec.read_repeated_into(
+                        &mut self.uninterpreted_option,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                __name if __name.starts_with('[') => {
+                    for __r in dec
+                        .read_extension(__name, "google.protobuf.OneofOptions")?
+                    {
+                        self.__buffa_unknown_fields.push(__r);
+                    }
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> serde::Deserialize<'de> for OneofOptions {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        struct _V;
+        impl<'de> serde::de::Visitor<'de> for _V {
+            type Value = OneofOptions;
+            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.write_str("struct OneofOptions")
+            }
+            #[allow(clippy::field_reassign_with_default)]
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> ::core::result::Result<OneofOptions, A::Error> {
+                let mut __f_features: ::core::option::Option<
+                    ::buffa::MessageField<FeatureSet>,
+                > = None;
+                let mut __f_uninterpreted_option: ::core::option::Option<
+                    ::buffa::alloc::vec::Vec<UninterpretedOption>,
+                > = None;
+                let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
+                while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
+                    match key.as_str() {
+                        "features" => {
+                            __f_features = Some(
+                                map.next_value::<::buffa::MessageField<FeatureSet>>()?,
+                            );
+                        }
+                        "uninterpretedOption" | "uninterpreted_option" => {
+                            __f_uninterpreted_option = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::buffa::alloc::vec::Vec<UninterpretedOption>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::null_as_default(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        __k if __k.starts_with('[') => {
+                            let __v: ::buffa::serde_json::Value = map.next_value()?;
+                            match ::buffa::extension_registry::deserialize_extension_key(
+                                "google.protobuf.OneofOptions",
+                                __k,
+                                __v,
+                            ) {
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Ok(__recs),
+                                ) => {
+                                    for __rec in __recs {
+                                        __ext_records.push(__rec);
+                                    }
+                                }
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Err(__e),
+                                ) => {
+                                    return ::core::result::Result::Err(
+                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                    );
+                                }
+                                ::core::option::Option::None => {}
+                            }
+                        }
+                        _ => {
+                            map.next_value::<serde::de::IgnoredAny>()?;
+                        }
+                    }
+                }
+                let mut __r = <OneofOptions as ::core::default::Default>::default();
+                if let ::core::option::Option::Some(v) = __f_features {
+                    __r.features = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_uninterpreted_option {
+                    __r.uninterpreted_option = v;
+                }
+                for __rec in __ext_records {
+                    __r.__buffa_unknown_fields.push(__rec);
+                }
+                Ok(__r)
+            }
+        }
+        d.deserialize_map(_V)
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for OneofOptions {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[doc(hidden)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[repr(transparent)]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+pub struct __OneofOptionsExtJson(pub ::buffa::UnknownFields);
+impl ::core::ops::Deref for __OneofOptionsExtJson {
+    type Target = ::buffa::UnknownFields;
+    fn deref(&self) -> &::buffa::UnknownFields {
+        &self.0
+    }
+}
+impl ::core::ops::DerefMut for __OneofOptionsExtJson {
+    fn deref_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.0
+    }
+}
+impl ::core::convert::From<::buffa::UnknownFields> for __OneofOptionsExtJson {
+    fn from(u: ::buffa::UnknownFields) -> Self {
+        Self(u)
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for __OneofOptionsExtJson {
+    fn serialize<S: ::serde::Serializer>(
+        &self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::buffa::extension_registry::serialize_extensions(
+            "google.protobuf.OneofOptions",
+            &self.0,
+            s,
+        )
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> ::serde::Deserialize<'de> for __OneofOptionsExtJson {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        ::buffa::extension_registry::deserialize_extensions(
+                "google.protobuf.OneofOptions",
+                d,
+            )
+            .map(Self)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __ONEOF_OPTIONS_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.OneofOptions",
+    to_json: ::buffa::type_registry::any_to_json::<OneofOptions>,
+    from_json: ::buffa::type_registry::any_from_json::<OneofOptions>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __ONEOF_OPTIONS_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.OneofOptions",
+    text_encode: ::buffa::type_registry::any_encode_text::<OneofOptions>,
+    text_merge: ::buffa::type_registry::any_merge_text::<OneofOptions>,
+};
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct EnumOptions {
     /// Set this option to true to allow mapping different tag names to the same
     /// value.
     ///
     /// Field 2: `allow_alias`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "allowAlias",
+            alias = "allow_alias",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub allow_alias: ::core::option::Option<bool>,
     /// Is this enum deprecated?
     /// Depending on the target platform, this can emit Deprecated annotations
@@ -6444,6 +12071,13 @@ pub struct EnumOptions {
     /// is a formalization for deprecating enums.
     ///
     /// Field 3: `deprecated`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "deprecated",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub deprecated: ::core::option::Option<bool>,
     /// Enable the legacy handling of JSON field name conflicts.  This lowercases
     /// and strips underscored from the fields before comparison in proto3 only.
@@ -6453,6 +12087,14 @@ pub struct EnumOptions {
     /// had time to migrate.
     ///
     /// Field 6: `deprecated_legacy_json_field_conflicts`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "deprecatedLegacyJsonFieldConflicts",
+            alias = "deprecated_legacy_json_field_conflicts",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub deprecated_legacy_json_field_conflicts: ::core::option::Option<bool>,
     /// Any features defined in the specific edition.
     /// WARNING: This field should only be used by protobuf plugins or special
@@ -6460,13 +12102,30 @@ pub struct EnumOptions {
     /// developers should rely on the protoreflect APIs for their client language.
     ///
     /// Field 7: `features`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "features",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub features: ::buffa::MessageField<FeatureSet>,
     /// The parser stores options it doesn't recognize here. See above.
     ///
     /// Field 999: `uninterpreted_option`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "uninterpretedOption",
+            alias = "uninterpreted_option",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub uninterpreted_option: ::buffa::alloc::vec::Vec<UninterpretedOption>,
+    #[cfg_attr(feature = "json", serde(flatten))]
     #[doc(hidden)]
-    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+    pub __buffa_unknown_fields: __EnumOptionsExtJson,
 }
 impl ::core::fmt::Debug for EnumOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -6674,7 +12333,291 @@ impl ::buffa::ExtensionSet for EnumOptions {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for EnumOptions {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.allow_alias {
+            enc.write_field_name("allow_alias")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.deprecated {
+            enc.write_field_name("deprecated")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self
+            .deprecated_legacy_json_field_conflicts
+        {
+            enc.write_field_name("deprecated_legacy_json_field_conflicts")?;
+            enc.write_bool(*__v)?;
+        }
+        if self.features.is_set() {
+            enc.write_field_name("features")?;
+            enc.write_message(&*self.features)?;
+        }
+        for __v in &self.uninterpreted_option {
+            enc.write_field_name("uninterpreted_option")?;
+            enc.write_message(__v)?;
+        }
+        enc.write_extension_fields(
+            "google.protobuf.EnumOptions",
+            &self.__buffa_unknown_fields,
+        )?;
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "allow_alias" => {
+                    self.allow_alias = ::core::option::Option::Some(dec.read_bool()?);
+                }
+                "deprecated" => {
+                    self.deprecated = ::core::option::Option::Some(dec.read_bool()?);
+                }
+                "deprecated_legacy_json_field_conflicts" => {
+                    self.deprecated_legacy_json_field_conflicts = ::core::option::Option::Some(
+                        dec.read_bool()?,
+                    );
+                }
+                "features" => dec.merge_message(self.features.get_or_insert_default())?,
+                "uninterpreted_option" => {
+                    dec.read_repeated_into(
+                        &mut self.uninterpreted_option,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                __name if __name.starts_with('[') => {
+                    for __r in dec.read_extension(__name, "google.protobuf.EnumOptions")?
+                    {
+                        self.__buffa_unknown_fields.push(__r);
+                    }
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> serde::Deserialize<'de> for EnumOptions {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        struct _V;
+        impl<'de> serde::de::Visitor<'de> for _V {
+            type Value = EnumOptions;
+            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.write_str("struct EnumOptions")
+            }
+            #[allow(clippy::field_reassign_with_default)]
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> ::core::result::Result<EnumOptions, A::Error> {
+                let mut __f_allow_alias: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_deprecated: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_deprecated_legacy_json_field_conflicts: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_features: ::core::option::Option<
+                    ::buffa::MessageField<FeatureSet>,
+                > = None;
+                let mut __f_uninterpreted_option: ::core::option::Option<
+                    ::buffa::alloc::vec::Vec<UninterpretedOption>,
+                > = None;
+                let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
+                while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
+                    match key.as_str() {
+                        "allowAlias" | "allow_alias" => {
+                            __f_allow_alias = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "deprecated" => {
+                            __f_deprecated = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "deprecatedLegacyJsonFieldConflicts"
+                        | "deprecated_legacy_json_field_conflicts" => {
+                            __f_deprecated_legacy_json_field_conflicts = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "features" => {
+                            __f_features = Some(
+                                map.next_value::<::buffa::MessageField<FeatureSet>>()?,
+                            );
+                        }
+                        "uninterpretedOption" | "uninterpreted_option" => {
+                            __f_uninterpreted_option = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::buffa::alloc::vec::Vec<UninterpretedOption>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::null_as_default(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        __k if __k.starts_with('[') => {
+                            let __v: ::buffa::serde_json::Value = map.next_value()?;
+                            match ::buffa::extension_registry::deserialize_extension_key(
+                                "google.protobuf.EnumOptions",
+                                __k,
+                                __v,
+                            ) {
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Ok(__recs),
+                                ) => {
+                                    for __rec in __recs {
+                                        __ext_records.push(__rec);
+                                    }
+                                }
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Err(__e),
+                                ) => {
+                                    return ::core::result::Result::Err(
+                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                    );
+                                }
+                                ::core::option::Option::None => {}
+                            }
+                        }
+                        _ => {
+                            map.next_value::<serde::de::IgnoredAny>()?;
+                        }
+                    }
+                }
+                let mut __r = <EnumOptions as ::core::default::Default>::default();
+                if let ::core::option::Option::Some(v) = __f_allow_alias {
+                    __r.allow_alias = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_deprecated {
+                    __r.deprecated = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_deprecated_legacy_json_field_conflicts {
+                    __r.deprecated_legacy_json_field_conflicts = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_features {
+                    __r.features = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_uninterpreted_option {
+                    __r.uninterpreted_option = v;
+                }
+                for __rec in __ext_records {
+                    __r.__buffa_unknown_fields.push(__rec);
+                }
+                Ok(__r)
+            }
+        }
+        d.deserialize_map(_V)
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for EnumOptions {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[doc(hidden)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[repr(transparent)]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+pub struct __EnumOptionsExtJson(pub ::buffa::UnknownFields);
+impl ::core::ops::Deref for __EnumOptionsExtJson {
+    type Target = ::buffa::UnknownFields;
+    fn deref(&self) -> &::buffa::UnknownFields {
+        &self.0
+    }
+}
+impl ::core::ops::DerefMut for __EnumOptionsExtJson {
+    fn deref_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.0
+    }
+}
+impl ::core::convert::From<::buffa::UnknownFields> for __EnumOptionsExtJson {
+    fn from(u: ::buffa::UnknownFields) -> Self {
+        Self(u)
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for __EnumOptionsExtJson {
+    fn serialize<S: ::serde::Serializer>(
+        &self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::buffa::extension_registry::serialize_extensions(
+            "google.protobuf.EnumOptions",
+            &self.0,
+            s,
+        )
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> ::serde::Deserialize<'de> for __EnumOptionsExtJson {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        ::buffa::extension_registry::deserialize_extensions(
+                "google.protobuf.EnumOptions",
+                d,
+            )
+            .map(Self)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __ENUM_OPTIONS_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.EnumOptions",
+    to_json: ::buffa::type_registry::any_to_json::<EnumOptions>,
+    from_json: ::buffa::type_registry::any_from_json::<EnumOptions>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __ENUM_OPTIONS_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.EnumOptions",
+    text_encode: ::buffa::type_registry::any_encode_text::<EnumOptions>,
+    text_merge: ::buffa::type_registry::any_merge_text::<EnumOptions>,
+};
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct EnumValueOptions {
     /// Is this enum value deprecated?
     /// Depending on the target platform, this can emit Deprecated annotations
@@ -6682,6 +12625,13 @@ pub struct EnumValueOptions {
     /// this is a formalization for deprecating enum values.
     ///
     /// Field 1: `deprecated`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "deprecated",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub deprecated: ::core::option::Option<bool>,
     /// Any features defined in the specific edition.
     /// WARNING: This field should only be used by protobuf plugins or special
@@ -6689,23 +12639,56 @@ pub struct EnumValueOptions {
     /// developers should rely on the protoreflect APIs for their client language.
     ///
     /// Field 2: `features`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "features",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub features: ::buffa::MessageField<FeatureSet>,
     /// Indicate that fields annotated with this enum value should not be printed
     /// out when using debug formats, e.g. when the field contains sensitive
     /// credentials.
     ///
     /// Field 3: `debug_redact`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "debugRedact",
+            alias = "debug_redact",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub debug_redact: ::core::option::Option<bool>,
     /// Information about the support window of a feature value.
     ///
     /// Field 4: `feature_support`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "featureSupport",
+            alias = "feature_support",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub feature_support: ::buffa::MessageField<field_options::FeatureSupport>,
     /// The parser stores options it doesn't recognize here. See above.
     ///
     /// Field 999: `uninterpreted_option`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "uninterpretedOption",
+            alias = "uninterpreted_option",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub uninterpreted_option: ::buffa::alloc::vec::Vec<UninterpretedOption>,
+    #[cfg_attr(feature = "json", serde(flatten))]
     #[doc(hidden)]
-    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+    pub __buffa_unknown_fields: __EnumValueOptionsExtJson,
 }
 impl ::core::fmt::Debug for EnumValueOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -6921,7 +12904,290 @@ impl ::buffa::ExtensionSet for EnumValueOptions {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for EnumValueOptions {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.deprecated {
+            enc.write_field_name("deprecated")?;
+            enc.write_bool(*__v)?;
+        }
+        if self.features.is_set() {
+            enc.write_field_name("features")?;
+            enc.write_message(&*self.features)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.debug_redact {
+            enc.write_field_name("debug_redact")?;
+            enc.write_bool(*__v)?;
+        }
+        if self.feature_support.is_set() {
+            enc.write_field_name("feature_support")?;
+            enc.write_message(&*self.feature_support)?;
+        }
+        for __v in &self.uninterpreted_option {
+            enc.write_field_name("uninterpreted_option")?;
+            enc.write_message(__v)?;
+        }
+        enc.write_extension_fields(
+            "google.protobuf.EnumValueOptions",
+            &self.__buffa_unknown_fields,
+        )?;
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "deprecated" => {
+                    self.deprecated = ::core::option::Option::Some(dec.read_bool()?);
+                }
+                "features" => dec.merge_message(self.features.get_or_insert_default())?,
+                "debug_redact" => {
+                    self.debug_redact = ::core::option::Option::Some(dec.read_bool()?);
+                }
+                "feature_support" => {
+                    dec.merge_message(self.feature_support.get_or_insert_default())?
+                }
+                "uninterpreted_option" => {
+                    dec.read_repeated_into(
+                        &mut self.uninterpreted_option,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                __name if __name.starts_with('[') => {
+                    for __r in dec
+                        .read_extension(__name, "google.protobuf.EnumValueOptions")?
+                    {
+                        self.__buffa_unknown_fields.push(__r);
+                    }
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> serde::Deserialize<'de> for EnumValueOptions {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        struct _V;
+        impl<'de> serde::de::Visitor<'de> for _V {
+            type Value = EnumValueOptions;
+            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.write_str("struct EnumValueOptions")
+            }
+            #[allow(clippy::field_reassign_with_default)]
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> ::core::result::Result<EnumValueOptions, A::Error> {
+                let mut __f_deprecated: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_features: ::core::option::Option<
+                    ::buffa::MessageField<FeatureSet>,
+                > = None;
+                let mut __f_debug_redact: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_feature_support: ::core::option::Option<
+                    ::buffa::MessageField<field_options::FeatureSupport>,
+                > = None;
+                let mut __f_uninterpreted_option: ::core::option::Option<
+                    ::buffa::alloc::vec::Vec<UninterpretedOption>,
+                > = None;
+                let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
+                while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
+                    match key.as_str() {
+                        "deprecated" => {
+                            __f_deprecated = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "features" => {
+                            __f_features = Some(
+                                map.next_value::<::buffa::MessageField<FeatureSet>>()?,
+                            );
+                        }
+                        "debugRedact" | "debug_redact" => {
+                            __f_debug_redact = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "featureSupport" | "feature_support" => {
+                            __f_feature_support = Some(
+                                map
+                                    .next_value::<
+                                        ::buffa::MessageField<field_options::FeatureSupport>,
+                                    >()?,
+                            );
+                        }
+                        "uninterpretedOption" | "uninterpreted_option" => {
+                            __f_uninterpreted_option = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::buffa::alloc::vec::Vec<UninterpretedOption>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::null_as_default(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        __k if __k.starts_with('[') => {
+                            let __v: ::buffa::serde_json::Value = map.next_value()?;
+                            match ::buffa::extension_registry::deserialize_extension_key(
+                                "google.protobuf.EnumValueOptions",
+                                __k,
+                                __v,
+                            ) {
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Ok(__recs),
+                                ) => {
+                                    for __rec in __recs {
+                                        __ext_records.push(__rec);
+                                    }
+                                }
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Err(__e),
+                                ) => {
+                                    return ::core::result::Result::Err(
+                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                    );
+                                }
+                                ::core::option::Option::None => {}
+                            }
+                        }
+                        _ => {
+                            map.next_value::<serde::de::IgnoredAny>()?;
+                        }
+                    }
+                }
+                let mut __r = <EnumValueOptions as ::core::default::Default>::default();
+                if let ::core::option::Option::Some(v) = __f_deprecated {
+                    __r.deprecated = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_features {
+                    __r.features = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_debug_redact {
+                    __r.debug_redact = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_feature_support {
+                    __r.feature_support = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_uninterpreted_option {
+                    __r.uninterpreted_option = v;
+                }
+                for __rec in __ext_records {
+                    __r.__buffa_unknown_fields.push(__rec);
+                }
+                Ok(__r)
+            }
+        }
+        d.deserialize_map(_V)
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for EnumValueOptions {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[doc(hidden)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[repr(transparent)]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+pub struct __EnumValueOptionsExtJson(pub ::buffa::UnknownFields);
+impl ::core::ops::Deref for __EnumValueOptionsExtJson {
+    type Target = ::buffa::UnknownFields;
+    fn deref(&self) -> &::buffa::UnknownFields {
+        &self.0
+    }
+}
+impl ::core::ops::DerefMut for __EnumValueOptionsExtJson {
+    fn deref_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.0
+    }
+}
+impl ::core::convert::From<::buffa::UnknownFields> for __EnumValueOptionsExtJson {
+    fn from(u: ::buffa::UnknownFields) -> Self {
+        Self(u)
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for __EnumValueOptionsExtJson {
+    fn serialize<S: ::serde::Serializer>(
+        &self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::buffa::extension_registry::serialize_extensions(
+            "google.protobuf.EnumValueOptions",
+            &self.0,
+            s,
+        )
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> ::serde::Deserialize<'de> for __EnumValueOptionsExtJson {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        ::buffa::extension_registry::deserialize_extensions(
+                "google.protobuf.EnumValueOptions",
+                d,
+            )
+            .map(Self)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __ENUM_VALUE_OPTIONS_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.EnumValueOptions",
+    to_json: ::buffa::type_registry::any_to_json::<EnumValueOptions>,
+    from_json: ::buffa::type_registry::any_from_json::<EnumValueOptions>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __ENUM_VALUE_OPTIONS_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.EnumValueOptions",
+    text_encode: ::buffa::type_registry::any_encode_text::<EnumValueOptions>,
+    text_merge: ::buffa::type_registry::any_merge_text::<EnumValueOptions>,
+};
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct ServiceOptions {
     /// Any features defined in the specific edition.
     /// WARNING: This field should only be used by protobuf plugins or special
@@ -6929,6 +13195,13 @@ pub struct ServiceOptions {
     /// developers should rely on the protoreflect APIs for their client language.
     ///
     /// Field 34: `features`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "features",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub features: ::buffa::MessageField<FeatureSet>,
     /// Note:  Field numbers 1 through 32 are reserved for Google's internal RPC
     ///   framework.  We apologize for hoarding these numbers to ourselves, but
@@ -6941,13 +13214,30 @@ pub struct ServiceOptions {
     /// this is a formalization for deprecating services.
     ///
     /// Field 33: `deprecated`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "deprecated",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub deprecated: ::core::option::Option<bool>,
     /// The parser stores options it doesn't recognize here. See above.
     ///
     /// Field 999: `uninterpreted_option`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "uninterpretedOption",
+            alias = "uninterpreted_option",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub uninterpreted_option: ::buffa::alloc::vec::Vec<UninterpretedOption>,
+    #[cfg_attr(feature = "json", serde(flatten))]
     #[doc(hidden)]
-    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+    pub __buffa_unknown_fields: __ServiceOptionsExtJson,
 }
 impl ::core::fmt::Debug for ServiceOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -7108,7 +13398,251 @@ impl ::buffa::ExtensionSet for ServiceOptions {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for ServiceOptions {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.features.is_set() {
+            enc.write_field_name("features")?;
+            enc.write_message(&*self.features)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.deprecated {
+            enc.write_field_name("deprecated")?;
+            enc.write_bool(*__v)?;
+        }
+        for __v in &self.uninterpreted_option {
+            enc.write_field_name("uninterpreted_option")?;
+            enc.write_message(__v)?;
+        }
+        enc.write_extension_fields(
+            "google.protobuf.ServiceOptions",
+            &self.__buffa_unknown_fields,
+        )?;
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "features" => dec.merge_message(self.features.get_or_insert_default())?,
+                "deprecated" => {
+                    self.deprecated = ::core::option::Option::Some(dec.read_bool()?);
+                }
+                "uninterpreted_option" => {
+                    dec.read_repeated_into(
+                        &mut self.uninterpreted_option,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                __name if __name.starts_with('[') => {
+                    for __r in dec
+                        .read_extension(__name, "google.protobuf.ServiceOptions")?
+                    {
+                        self.__buffa_unknown_fields.push(__r);
+                    }
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> serde::Deserialize<'de> for ServiceOptions {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        struct _V;
+        impl<'de> serde::de::Visitor<'de> for _V {
+            type Value = ServiceOptions;
+            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.write_str("struct ServiceOptions")
+            }
+            #[allow(clippy::field_reassign_with_default)]
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> ::core::result::Result<ServiceOptions, A::Error> {
+                let mut __f_features: ::core::option::Option<
+                    ::buffa::MessageField<FeatureSet>,
+                > = None;
+                let mut __f_deprecated: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_uninterpreted_option: ::core::option::Option<
+                    ::buffa::alloc::vec::Vec<UninterpretedOption>,
+                > = None;
+                let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
+                while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
+                    match key.as_str() {
+                        "features" => {
+                            __f_features = Some(
+                                map.next_value::<::buffa::MessageField<FeatureSet>>()?,
+                            );
+                        }
+                        "deprecated" => {
+                            __f_deprecated = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "uninterpretedOption" | "uninterpreted_option" => {
+                            __f_uninterpreted_option = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::buffa::alloc::vec::Vec<UninterpretedOption>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::null_as_default(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        __k if __k.starts_with('[') => {
+                            let __v: ::buffa::serde_json::Value = map.next_value()?;
+                            match ::buffa::extension_registry::deserialize_extension_key(
+                                "google.protobuf.ServiceOptions",
+                                __k,
+                                __v,
+                            ) {
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Ok(__recs),
+                                ) => {
+                                    for __rec in __recs {
+                                        __ext_records.push(__rec);
+                                    }
+                                }
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Err(__e),
+                                ) => {
+                                    return ::core::result::Result::Err(
+                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                    );
+                                }
+                                ::core::option::Option::None => {}
+                            }
+                        }
+                        _ => {
+                            map.next_value::<serde::de::IgnoredAny>()?;
+                        }
+                    }
+                }
+                let mut __r = <ServiceOptions as ::core::default::Default>::default();
+                if let ::core::option::Option::Some(v) = __f_features {
+                    __r.features = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_deprecated {
+                    __r.deprecated = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_uninterpreted_option {
+                    __r.uninterpreted_option = v;
+                }
+                for __rec in __ext_records {
+                    __r.__buffa_unknown_fields.push(__rec);
+                }
+                Ok(__r)
+            }
+        }
+        d.deserialize_map(_V)
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for ServiceOptions {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[doc(hidden)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[repr(transparent)]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+pub struct __ServiceOptionsExtJson(pub ::buffa::UnknownFields);
+impl ::core::ops::Deref for __ServiceOptionsExtJson {
+    type Target = ::buffa::UnknownFields;
+    fn deref(&self) -> &::buffa::UnknownFields {
+        &self.0
+    }
+}
+impl ::core::ops::DerefMut for __ServiceOptionsExtJson {
+    fn deref_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.0
+    }
+}
+impl ::core::convert::From<::buffa::UnknownFields> for __ServiceOptionsExtJson {
+    fn from(u: ::buffa::UnknownFields) -> Self {
+        Self(u)
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for __ServiceOptionsExtJson {
+    fn serialize<S: ::serde::Serializer>(
+        &self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::buffa::extension_registry::serialize_extensions(
+            "google.protobuf.ServiceOptions",
+            &self.0,
+            s,
+        )
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> ::serde::Deserialize<'de> for __ServiceOptionsExtJson {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        ::buffa::extension_registry::deserialize_extensions(
+                "google.protobuf.ServiceOptions",
+                d,
+            )
+            .map(Self)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __SERVICE_OPTIONS_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.ServiceOptions",
+    to_json: ::buffa::type_registry::any_to_json::<ServiceOptions>,
+    from_json: ::buffa::type_registry::any_from_json::<ServiceOptions>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __SERVICE_OPTIONS_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.ServiceOptions",
+    text_encode: ::buffa::type_registry::any_encode_text::<ServiceOptions>,
+    text_merge: ::buffa::type_registry::any_merge_text::<ServiceOptions>,
+};
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct MethodOptions {
     /// Note:  Field numbers 1 through 32 are reserved for Google's internal RPC
     ///   framework.  We apologize for hoarding these numbers to ourselves, but
@@ -7121,8 +13655,24 @@ pub struct MethodOptions {
     /// this is a formalization for deprecating methods.
     ///
     /// Field 33: `deprecated`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "deprecated",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub deprecated: ::core::option::Option<bool>,
     /// Field 34: `idempotency_level`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "idempotencyLevel",
+            alias = "idempotency_level",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub idempotency_level: ::core::option::Option<method_options::IdempotencyLevel>,
     /// Any features defined in the specific edition.
     /// WARNING: This field should only be used by protobuf plugins or special
@@ -7130,13 +13680,30 @@ pub struct MethodOptions {
     /// developers should rely on the protoreflect APIs for their client language.
     ///
     /// Field 35: `features`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "features",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+        )
+    )]
     pub features: ::buffa::MessageField<FeatureSet>,
     /// The parser stores options it doesn't recognize here. See above.
     ///
     /// Field 999: `uninterpreted_option`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "uninterpretedOption",
+            alias = "uninterpreted_option",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub uninterpreted_option: ::buffa::alloc::vec::Vec<UninterpretedOption>,
+    #[cfg_attr(feature = "json", serde(flatten))]
     #[doc(hidden)]
-    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+    pub __buffa_unknown_fields: __MethodOptionsExtJson,
 }
 impl ::core::fmt::Debug for MethodOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -7328,6 +13895,285 @@ impl ::buffa::ExtensionSet for MethodOptions {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for MethodOptions {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.deprecated {
+            enc.write_field_name("deprecated")?;
+            enc.write_bool(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.idempotency_level {
+            enc.write_field_name("idempotency_level")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        if self.features.is_set() {
+            enc.write_field_name("features")?;
+            enc.write_message(&*self.features)?;
+        }
+        for __v in &self.uninterpreted_option {
+            enc.write_field_name("uninterpreted_option")?;
+            enc.write_message(__v)?;
+        }
+        enc.write_extension_fields(
+            "google.protobuf.MethodOptions",
+            &self.__buffa_unknown_fields,
+        )?;
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "deprecated" => {
+                    self.deprecated = ::core::option::Option::Some(dec.read_bool()?);
+                }
+                "idempotency_level" => {
+                    self.idempotency_level = ::core::option::Option::Some(
+                        dec
+                            .read_closed_enum_by_name::<
+                                method_options::IdempotencyLevel,
+                            >()?,
+                    );
+                }
+                "features" => dec.merge_message(self.features.get_or_insert_default())?,
+                "uninterpreted_option" => {
+                    dec.read_repeated_into(
+                        &mut self.uninterpreted_option,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                __name if __name.starts_with('[') => {
+                    for __r in dec
+                        .read_extension(__name, "google.protobuf.MethodOptions")?
+                    {
+                        self.__buffa_unknown_fields.push(__r);
+                    }
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> serde::Deserialize<'de> for MethodOptions {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        struct _V;
+        impl<'de> serde::de::Visitor<'de> for _V {
+            type Value = MethodOptions;
+            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.write_str("struct MethodOptions")
+            }
+            #[allow(clippy::field_reassign_with_default)]
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> ::core::result::Result<MethodOptions, A::Error> {
+                let mut __f_deprecated: ::core::option::Option<
+                    ::core::option::Option<bool>,
+                > = None;
+                let mut __f_idempotency_level: ::core::option::Option<
+                    ::core::option::Option<method_options::IdempotencyLevel>,
+                > = None;
+                let mut __f_features: ::core::option::Option<
+                    ::buffa::MessageField<FeatureSet>,
+                > = None;
+                let mut __f_uninterpreted_option: ::core::option::Option<
+                    ::buffa::alloc::vec::Vec<UninterpretedOption>,
+                > = None;
+                let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
+                while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
+                    match key.as_str() {
+                        "deprecated" => {
+                            __f_deprecated = Some(
+                                map.next_value::<::core::option::Option<bool>>()?,
+                            );
+                        }
+                        "idempotencyLevel" | "idempotency_level" => {
+                            __f_idempotency_level = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        method_options::IdempotencyLevel,
+                                    >;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<method_options::IdempotencyLevel>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_closed_enum::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        "features" => {
+                            __f_features = Some(
+                                map.next_value::<::buffa::MessageField<FeatureSet>>()?,
+                            );
+                        }
+                        "uninterpretedOption" | "uninterpreted_option" => {
+                            __f_uninterpreted_option = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::buffa::alloc::vec::Vec<UninterpretedOption>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::null_as_default(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        __k if __k.starts_with('[') => {
+                            let __v: ::buffa::serde_json::Value = map.next_value()?;
+                            match ::buffa::extension_registry::deserialize_extension_key(
+                                "google.protobuf.MethodOptions",
+                                __k,
+                                __v,
+                            ) {
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Ok(__recs),
+                                ) => {
+                                    for __rec in __recs {
+                                        __ext_records.push(__rec);
+                                    }
+                                }
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Err(__e),
+                                ) => {
+                                    return ::core::result::Result::Err(
+                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                    );
+                                }
+                                ::core::option::Option::None => {}
+                            }
+                        }
+                        _ => {
+                            map.next_value::<serde::de::IgnoredAny>()?;
+                        }
+                    }
+                }
+                let mut __r = <MethodOptions as ::core::default::Default>::default();
+                if let ::core::option::Option::Some(v) = __f_deprecated {
+                    __r.deprecated = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_idempotency_level {
+                    __r.idempotency_level = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_features {
+                    __r.features = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_uninterpreted_option {
+                    __r.uninterpreted_option = v;
+                }
+                for __rec in __ext_records {
+                    __r.__buffa_unknown_fields.push(__rec);
+                }
+                Ok(__r)
+            }
+        }
+        d.deserialize_map(_V)
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for MethodOptions {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[doc(hidden)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[repr(transparent)]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+pub struct __MethodOptionsExtJson(pub ::buffa::UnknownFields);
+impl ::core::ops::Deref for __MethodOptionsExtJson {
+    type Target = ::buffa::UnknownFields;
+    fn deref(&self) -> &::buffa::UnknownFields {
+        &self.0
+    }
+}
+impl ::core::ops::DerefMut for __MethodOptionsExtJson {
+    fn deref_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.0
+    }
+}
+impl ::core::convert::From<::buffa::UnknownFields> for __MethodOptionsExtJson {
+    fn from(u: ::buffa::UnknownFields) -> Self {
+        Self(u)
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for __MethodOptionsExtJson {
+    fn serialize<S: ::serde::Serializer>(
+        &self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::buffa::extension_registry::serialize_extensions(
+            "google.protobuf.MethodOptions",
+            &self.0,
+            s,
+        )
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> ::serde::Deserialize<'de> for __MethodOptionsExtJson {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        ::buffa::extension_registry::deserialize_extensions(
+                "google.protobuf.MethodOptions",
+                d,
+            )
+            .map(Self)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __METHOD_OPTIONS_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.MethodOptions",
+    to_json: ::buffa::type_registry::any_to_json::<MethodOptions>,
+    from_json: ::buffa::type_registry::any_from_json::<MethodOptions>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __METHOD_OPTIONS_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.MethodOptions",
+    text_encode: ::buffa::type_registry::any_encode_text::<MethodOptions>,
+    text_merge: ::buffa::type_registry::any_merge_text::<MethodOptions>,
+};
 pub mod method_options {
     #[allow(unused_imports)]
     use super::*;
@@ -7335,6 +14181,7 @@ pub mod method_options {
     /// or neither? HTTP based RPC implementation may choose GET verb for safe
     /// methods, and PUT verb for idempotent methods instead of the default POST.
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
     pub enum IdempotencyLevel {
         IDEMPOTENCY_UNKNOWN = 0i32,
@@ -7348,6 +14195,100 @@ pub mod method_options {
             Self::IDEMPOTENCY_UNKNOWN
         }
     }
+    #[cfg(feature = "json")]
+    const _: () = {
+        impl ::serde::Serialize for IdempotencyLevel {
+            fn serialize<S: ::serde::Serializer>(
+                &self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s.serialize_str(::buffa::Enumeration::proto_name(self))
+            }
+        }
+        impl<'de> ::serde::Deserialize<'de> for IdempotencyLevel {
+            fn deserialize<D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                struct _V;
+                impl ::serde::de::Visitor<'_> for _V {
+                    type Value = IdempotencyLevel;
+                    fn expecting(
+                        &self,
+                        f: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        f.write_str(
+                            concat!(
+                                "a string, integer, or null for ",
+                                stringify!(IdempotencyLevel)
+                            ),
+                        )
+                    }
+                    fn visit_str<E: ::serde::de::Error>(
+                        self,
+                        v: &str,
+                    ) -> ::core::result::Result<IdempotencyLevel, E> {
+                        <IdempotencyLevel as ::buffa::Enumeration>::from_proto_name(v)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::unknown_variant(v, &[])
+                            })
+                    }
+                    fn visit_i64<E: ::serde::de::Error>(
+                        self,
+                        v: i64,
+                    ) -> ::core::result::Result<IdempotencyLevel, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <IdempotencyLevel as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_u64<E: ::serde::de::Error>(
+                        self,
+                        v: u64,
+                    ) -> ::core::result::Result<IdempotencyLevel, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <IdempotencyLevel as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_unit<E: ::serde::de::Error>(
+                        self,
+                    ) -> ::core::result::Result<IdempotencyLevel, E> {
+                        ::core::result::Result::Ok(::core::default::Default::default())
+                    }
+                }
+                d.deserialize_any(_V)
+            }
+        }
+        impl ::buffa::json_helpers::ProtoElemJson for IdempotencyLevel {
+            fn serialize_proto_json<S: ::serde::Serializer>(
+                v: &Self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                ::serde::Serialize::serialize(v, s)
+            }
+            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                <Self as ::serde::Deserialize>::deserialize(d)
+            }
+        }
+    };
     impl ::buffa::Enumeration for IdempotencyLevel {
         fn from_i32(value: i32) -> ::core::option::Option<Self> {
             match value {
@@ -7389,24 +14330,88 @@ pub mod method_options {
 /// or produced by Descriptor::CopyTo()) will never have UninterpretedOptions
 /// in them.
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct UninterpretedOption {
     /// Field 2: `name`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "name",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub name: ::buffa::alloc::vec::Vec<uninterpreted_option::NamePart>,
     /// The value of the uninterpreted option, in whatever type the tokenizer
     /// identified it as during parsing. Exactly one of these should be set.
     ///
     /// Field 3: `identifier_value`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "identifierValue",
+            alias = "identifier_value",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub identifier_value: ::core::option::Option<::buffa::alloc::string::String>,
     /// Field 4: `positive_int_value`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "positiveIntValue",
+            alias = "positive_int_value",
+            with = "::buffa::json_helpers::opt_uint64",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub positive_int_value: ::core::option::Option<u64>,
     /// Field 5: `negative_int_value`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "negativeIntValue",
+            alias = "negative_int_value",
+            with = "::buffa::json_helpers::opt_int64",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub negative_int_value: ::core::option::Option<i64>,
     /// Field 6: `double_value`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "doubleValue",
+            alias = "double_value",
+            with = "::buffa::json_helpers::opt_double",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub double_value: ::core::option::Option<f64>,
     /// Field 7: `string_value`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "stringValue",
+            alias = "string_value",
+            with = "::buffa::json_helpers::opt_bytes",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub string_value: ::core::option::Option<::buffa::alloc::vec::Vec<u8>>,
     /// Field 8: `aggregate_value`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "aggregateValue",
+            alias = "aggregate_value",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub aggregate_value: ::core::option::Option<::buffa::alloc::string::String>,
+    #[cfg_attr(feature = "json", serde(skip))]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
 }
@@ -7662,6 +14667,124 @@ impl ::buffa::ExtensionSet for UninterpretedOption {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for UninterpretedOption {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.identifier_value {
+            enc.write_field_name("identifier_value")?;
+            enc.write_string(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.positive_int_value {
+            enc.write_field_name("positive_int_value")?;
+            enc.write_u64(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.negative_int_value {
+            enc.write_field_name("negative_int_value")?;
+            enc.write_i64(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.double_value {
+            enc.write_field_name("double_value")?;
+            enc.write_f64(*__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.string_value {
+            enc.write_field_name("string_value")?;
+            enc.write_bytes(__v)?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.aggregate_value {
+            enc.write_field_name("aggregate_value")?;
+            enc.write_string(__v)?;
+        }
+        for __v in &self.name {
+            enc.write_field_name("name")?;
+            enc.write_message(__v)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "identifier_value" => {
+                    self.identifier_value = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "positive_int_value" => {
+                    self.positive_int_value = ::core::option::Option::Some(
+                        dec.read_u64()?,
+                    );
+                }
+                "negative_int_value" => {
+                    self.negative_int_value = ::core::option::Option::Some(
+                        dec.read_i64()?,
+                    );
+                }
+                "double_value" => {
+                    self.double_value = ::core::option::Option::Some(dec.read_f64()?);
+                }
+                "string_value" => {
+                    self.string_value = ::core::option::Option::Some(dec.read_bytes()?);
+                }
+                "aggregate_value" => {
+                    self.aggregate_value = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                "name" => {
+                    dec.read_repeated_into(
+                        &mut self.name,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for UninterpretedOption {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __UNINTERPRETED_OPTION_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.UninterpretedOption",
+    to_json: ::buffa::type_registry::any_to_json::<UninterpretedOption>,
+    from_json: ::buffa::type_registry::any_from_json::<UninterpretedOption>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __UNINTERPRETED_OPTION_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.UninterpretedOption",
+    text_encode: ::buffa::type_registry::any_encode_text::<UninterpretedOption>,
+    text_merge: ::buffa::type_registry::any_merge_text::<UninterpretedOption>,
+};
 pub mod uninterpreted_option {
     #[allow(unused_imports)]
     use super::*;
@@ -7671,11 +14794,31 @@ pub mod uninterpreted_option {
     /// E.g.,{ \["foo", false\], \["bar.baz", true\], \["moo", false\] } represents
     /// "foo.(bar.baz).moo".
     #[derive(Clone, PartialEq, Default)]
+    #[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+    #[cfg_attr(feature = "json", serde(default))]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     pub struct NamePart {
         /// Field 1: `name_part`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "namePart",
+                alias = "name_part",
+                with = "::buffa::json_helpers::proto_string"
+            )
+        )]
         pub name_part: ::buffa::alloc::string::String,
         /// Field 2: `is_extension`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "isExtension",
+                alias = "is_extension",
+                with = "::buffa::json_helpers::proto_bool"
+            )
+        )]
         pub is_extension: bool,
+        #[cfg_attr(feature = "json", serde(skip))]
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
     }
@@ -7787,6 +14930,69 @@ pub mod uninterpreted_option {
             &mut self.__buffa_unknown_fields
         }
     }
+    #[cfg(feature = "text")]
+    impl ::buffa::text::TextFormat for NamePart {
+        fn encode_text(
+            &self,
+            enc: &mut ::buffa::text::TextEncoder<'_>,
+        ) -> ::core::fmt::Result {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            enc.write_field_name("name_part")?;
+            enc.write_string(&self.name_part)?;
+            enc.write_field_name("is_extension")?;
+            enc.write_bool(self.is_extension)?;
+            enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+            ::core::result::Result::Ok(())
+        }
+        fn merge_text(
+            &mut self,
+            dec: &mut ::buffa::text::TextDecoder<'_>,
+        ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+                match __name {
+                    "name_part" => self.name_part = dec.read_string()?.into_owned(),
+                    "is_extension" => self.is_extension = dec.read_bool()?,
+                    _ => dec.skip_value()?,
+                }
+            }
+            ::core::result::Result::Ok(())
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::buffa::json_helpers::ProtoElemJson for NamePart {
+        fn serialize_proto_json<S: ::serde::Serializer>(
+            v: &Self,
+            s: S,
+        ) -> ::core::result::Result<S::Ok, S::Error> {
+            ::serde::Serialize::serialize(v, s)
+        }
+        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+            d: D,
+        ) -> ::core::result::Result<Self, D::Error> {
+            <Self as ::serde::Deserialize>::deserialize(d)
+        }
+    }
+    #[cfg(feature = "json")]
+    #[doc(hidden)]
+    pub const __NAME_PART_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.UninterpretedOption.NamePart",
+        to_json: ::buffa::type_registry::any_to_json::<NamePart>,
+        from_json: ::buffa::type_registry::any_from_json::<NamePart>,
+        is_wkt: false,
+    };
+    #[cfg(feature = "text")]
+    #[doc(hidden)]
+    pub const __NAME_PART_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.UninterpretedOption.NamePart",
+        text_encode: ::buffa::type_registry::any_encode_text::<NamePart>,
+        text_merge: ::buffa::type_registry::any_merge_text::<NamePart>,
+    };
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::uninterpreted_option::NamePartView;
 }
 /// ===================================================================
 /// Features
@@ -7798,29 +15004,105 @@ pub mod uninterpreted_option {
 /// be designed and implemented to handle this, hopefully before we ever hit a
 /// conflict here.
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct FeatureSet {
     /// Field 1: `field_presence`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "fieldPresence",
+            alias = "field_presence",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub field_presence: ::core::option::Option<feature_set::FieldPresence>,
     /// Field 2: `enum_type`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "enumType",
+            alias = "enum_type",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub enum_type: ::core::option::Option<feature_set::EnumType>,
     /// Field 3: `repeated_field_encoding`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "repeatedFieldEncoding",
+            alias = "repeated_field_encoding",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub repeated_field_encoding: ::core::option::Option<
         feature_set::RepeatedFieldEncoding,
     >,
     /// Field 4: `utf8_validation`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "utf8Validation",
+            alias = "utf8_validation",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub utf8_validation: ::core::option::Option<feature_set::Utf8Validation>,
     /// Field 5: `message_encoding`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "messageEncoding",
+            alias = "message_encoding",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub message_encoding: ::core::option::Option<feature_set::MessageEncoding>,
     /// Field 6: `json_format`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "jsonFormat",
+            alias = "json_format",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub json_format: ::core::option::Option<feature_set::JsonFormat>,
     /// Field 7: `enforce_naming_style`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "enforceNamingStyle",
+            alias = "enforce_naming_style",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub enforce_naming_style: ::core::option::Option<feature_set::EnforceNamingStyle>,
     /// Field 8: `default_symbol_visibility`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "defaultSymbolVisibility",
+            alias = "default_symbol_visibility",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub default_symbol_visibility: ::core::option::Option<
         feature_set::visibility_feature::DefaultSymbolVisibility,
     >,
+    #[cfg_attr(feature = "json", serde(flatten))]
     #[doc(hidden)]
-    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+    pub __buffa_unknown_fields: __FeatureSetExtJson,
 }
 impl ::core::fmt::Debug for FeatureSet {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -8143,10 +15425,470 @@ impl ::buffa::ExtensionSet for FeatureSet {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for FeatureSet {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.field_presence {
+            enc.write_field_name("field_presence")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.enum_type {
+            enc.write_field_name("enum_type")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.repeated_field_encoding {
+            enc.write_field_name("repeated_field_encoding")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.utf8_validation {
+            enc.write_field_name("utf8_validation")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.message_encoding {
+            enc.write_field_name("message_encoding")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.json_format {
+            enc.write_field_name("json_format")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.enforce_naming_style {
+            enc.write_field_name("enforce_naming_style")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.default_symbol_visibility {
+            enc.write_field_name("default_symbol_visibility")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        enc.write_extension_fields(
+            "google.protobuf.FeatureSet",
+            &self.__buffa_unknown_fields,
+        )?;
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "field_presence" => {
+                    self.field_presence = ::core::option::Option::Some(
+                        dec.read_closed_enum_by_name::<feature_set::FieldPresence>()?,
+                    );
+                }
+                "enum_type" => {
+                    self.enum_type = ::core::option::Option::Some(
+                        dec.read_closed_enum_by_name::<feature_set::EnumType>()?,
+                    );
+                }
+                "repeated_field_encoding" => {
+                    self.repeated_field_encoding = ::core::option::Option::Some(
+                        dec
+                            .read_closed_enum_by_name::<
+                                feature_set::RepeatedFieldEncoding,
+                            >()?,
+                    );
+                }
+                "utf8_validation" => {
+                    self.utf8_validation = ::core::option::Option::Some(
+                        dec.read_closed_enum_by_name::<feature_set::Utf8Validation>()?,
+                    );
+                }
+                "message_encoding" => {
+                    self.message_encoding = ::core::option::Option::Some(
+                        dec.read_closed_enum_by_name::<feature_set::MessageEncoding>()?,
+                    );
+                }
+                "json_format" => {
+                    self.json_format = ::core::option::Option::Some(
+                        dec.read_closed_enum_by_name::<feature_set::JsonFormat>()?,
+                    );
+                }
+                "enforce_naming_style" => {
+                    self.enforce_naming_style = ::core::option::Option::Some(
+                        dec
+                            .read_closed_enum_by_name::<
+                                feature_set::EnforceNamingStyle,
+                            >()?,
+                    );
+                }
+                "default_symbol_visibility" => {
+                    self.default_symbol_visibility = ::core::option::Option::Some(
+                        dec
+                            .read_closed_enum_by_name::<
+                                feature_set::visibility_feature::DefaultSymbolVisibility,
+                            >()?,
+                    );
+                }
+                __name if __name.starts_with('[') => {
+                    for __r in dec.read_extension(__name, "google.protobuf.FeatureSet")?
+                    {
+                        self.__buffa_unknown_fields.push(__r);
+                    }
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> serde::Deserialize<'de> for FeatureSet {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        struct _V;
+        impl<'de> serde::de::Visitor<'de> for _V {
+            type Value = FeatureSet;
+            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.write_str("struct FeatureSet")
+            }
+            #[allow(clippy::field_reassign_with_default)]
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> ::core::result::Result<FeatureSet, A::Error> {
+                let mut __f_field_presence: ::core::option::Option<
+                    ::core::option::Option<feature_set::FieldPresence>,
+                > = None;
+                let mut __f_enum_type: ::core::option::Option<
+                    ::core::option::Option<feature_set::EnumType>,
+                > = None;
+                let mut __f_repeated_field_encoding: ::core::option::Option<
+                    ::core::option::Option<feature_set::RepeatedFieldEncoding>,
+                > = None;
+                let mut __f_utf8_validation: ::core::option::Option<
+                    ::core::option::Option<feature_set::Utf8Validation>,
+                > = None;
+                let mut __f_message_encoding: ::core::option::Option<
+                    ::core::option::Option<feature_set::MessageEncoding>,
+                > = None;
+                let mut __f_json_format: ::core::option::Option<
+                    ::core::option::Option<feature_set::JsonFormat>,
+                > = None;
+                let mut __f_enforce_naming_style: ::core::option::Option<
+                    ::core::option::Option<feature_set::EnforceNamingStyle>,
+                > = None;
+                let mut __f_default_symbol_visibility: ::core::option::Option<
+                    ::core::option::Option<
+                        feature_set::visibility_feature::DefaultSymbolVisibility,
+                    >,
+                > = None;
+                let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
+                while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
+                    match key.as_str() {
+                        "fieldPresence" | "field_presence" => {
+                            __f_field_presence = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        feature_set::FieldPresence,
+                                    >;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<feature_set::FieldPresence>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_closed_enum::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        "enumType" | "enum_type" => {
+                            __f_enum_type = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<feature_set::EnumType>;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<feature_set::EnumType>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_closed_enum::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        "repeatedFieldEncoding" | "repeated_field_encoding" => {
+                            __f_repeated_field_encoding = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        feature_set::RepeatedFieldEncoding,
+                                    >;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<feature_set::RepeatedFieldEncoding>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_closed_enum::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        "utf8Validation" | "utf8_validation" => {
+                            __f_utf8_validation = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        feature_set::Utf8Validation,
+                                    >;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<feature_set::Utf8Validation>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_closed_enum::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        "messageEncoding" | "message_encoding" => {
+                            __f_message_encoding = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        feature_set::MessageEncoding,
+                                    >;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<feature_set::MessageEncoding>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_closed_enum::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        "jsonFormat" | "json_format" => {
+                            __f_json_format = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        feature_set::JsonFormat,
+                                    >;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<feature_set::JsonFormat>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_closed_enum::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        "enforceNamingStyle" | "enforce_naming_style" => {
+                            __f_enforce_naming_style = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        feature_set::EnforceNamingStyle,
+                                    >;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<feature_set::EnforceNamingStyle>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_closed_enum::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        "defaultSymbolVisibility" | "default_symbol_visibility" => {
+                            __f_default_symbol_visibility = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        feature_set::visibility_feature::DefaultSymbolVisibility,
+                                    >;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<
+                                            feature_set::visibility_feature::DefaultSymbolVisibility,
+                                        >,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_closed_enum::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        __k if __k.starts_with('[') => {
+                            let __v: ::buffa::serde_json::Value = map.next_value()?;
+                            match ::buffa::extension_registry::deserialize_extension_key(
+                                "google.protobuf.FeatureSet",
+                                __k,
+                                __v,
+                            ) {
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Ok(__recs),
+                                ) => {
+                                    for __rec in __recs {
+                                        __ext_records.push(__rec);
+                                    }
+                                }
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Err(__e),
+                                ) => {
+                                    return ::core::result::Result::Err(
+                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                    );
+                                }
+                                ::core::option::Option::None => {}
+                            }
+                        }
+                        _ => {
+                            map.next_value::<serde::de::IgnoredAny>()?;
+                        }
+                    }
+                }
+                let mut __r = <FeatureSet as ::core::default::Default>::default();
+                if let ::core::option::Option::Some(v) = __f_field_presence {
+                    __r.field_presence = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_enum_type {
+                    __r.enum_type = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_repeated_field_encoding {
+                    __r.repeated_field_encoding = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_utf8_validation {
+                    __r.utf8_validation = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_message_encoding {
+                    __r.message_encoding = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_json_format {
+                    __r.json_format = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_enforce_naming_style {
+                    __r.enforce_naming_style = v;
+                }
+                if let ::core::option::Option::Some(v) = __f_default_symbol_visibility {
+                    __r.default_symbol_visibility = v;
+                }
+                for __rec in __ext_records {
+                    __r.__buffa_unknown_fields.push(__rec);
+                }
+                Ok(__r)
+            }
+        }
+        d.deserialize_map(_V)
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for FeatureSet {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[doc(hidden)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[repr(transparent)]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+pub struct __FeatureSetExtJson(pub ::buffa::UnknownFields);
+impl ::core::ops::Deref for __FeatureSetExtJson {
+    type Target = ::buffa::UnknownFields;
+    fn deref(&self) -> &::buffa::UnknownFields {
+        &self.0
+    }
+}
+impl ::core::ops::DerefMut for __FeatureSetExtJson {
+    fn deref_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.0
+    }
+}
+impl ::core::convert::From<::buffa::UnknownFields> for __FeatureSetExtJson {
+    fn from(u: ::buffa::UnknownFields) -> Self {
+        Self(u)
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for __FeatureSetExtJson {
+    fn serialize<S: ::serde::Serializer>(
+        &self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::buffa::extension_registry::serialize_extensions(
+            "google.protobuf.FeatureSet",
+            &self.0,
+            s,
+        )
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> ::serde::Deserialize<'de> for __FeatureSetExtJson {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        ::buffa::extension_registry::deserialize_extensions(
+                "google.protobuf.FeatureSet",
+                d,
+            )
+            .map(Self)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __FEATURE_SET_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.FeatureSet",
+    to_json: ::buffa::type_registry::any_to_json::<FeatureSet>,
+    from_json: ::buffa::type_registry::any_from_json::<FeatureSet>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __FEATURE_SET_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.FeatureSet",
+    text_encode: ::buffa::type_registry::any_encode_text::<FeatureSet>,
+    text_merge: ::buffa::type_registry::any_merge_text::<FeatureSet>,
+};
 pub mod feature_set {
     #[allow(unused_imports)]
     use super::*;
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
     pub enum FieldPresence {
         FIELD_PRESENCE_UNKNOWN = 0i32,
@@ -8159,6 +15901,99 @@ pub mod feature_set {
             Self::FIELD_PRESENCE_UNKNOWN
         }
     }
+    #[cfg(feature = "json")]
+    const _: () = {
+        impl ::serde::Serialize for FieldPresence {
+            fn serialize<S: ::serde::Serializer>(
+                &self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s.serialize_str(::buffa::Enumeration::proto_name(self))
+            }
+        }
+        impl<'de> ::serde::Deserialize<'de> for FieldPresence {
+            fn deserialize<D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                struct _V;
+                impl ::serde::de::Visitor<'_> for _V {
+                    type Value = FieldPresence;
+                    fn expecting(
+                        &self,
+                        f: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        f.write_str(
+                            concat!(
+                                "a string, integer, or null for ", stringify!(FieldPresence)
+                            ),
+                        )
+                    }
+                    fn visit_str<E: ::serde::de::Error>(
+                        self,
+                        v: &str,
+                    ) -> ::core::result::Result<FieldPresence, E> {
+                        <FieldPresence as ::buffa::Enumeration>::from_proto_name(v)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::unknown_variant(v, &[])
+                            })
+                    }
+                    fn visit_i64<E: ::serde::de::Error>(
+                        self,
+                        v: i64,
+                    ) -> ::core::result::Result<FieldPresence, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <FieldPresence as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_u64<E: ::serde::de::Error>(
+                        self,
+                        v: u64,
+                    ) -> ::core::result::Result<FieldPresence, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <FieldPresence as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_unit<E: ::serde::de::Error>(
+                        self,
+                    ) -> ::core::result::Result<FieldPresence, E> {
+                        ::core::result::Result::Ok(::core::default::Default::default())
+                    }
+                }
+                d.deserialize_any(_V)
+            }
+        }
+        impl ::buffa::json_helpers::ProtoElemJson for FieldPresence {
+            fn serialize_proto_json<S: ::serde::Serializer>(
+                v: &Self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                ::serde::Serialize::serialize(v, s)
+            }
+            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                <Self as ::serde::Deserialize>::deserialize(d)
+            }
+        }
+    };
     impl ::buffa::Enumeration for FieldPresence {
         fn from_i32(value: i32) -> ::core::option::Option<Self> {
             match value {
@@ -8201,6 +16036,7 @@ pub mod feature_set {
         }
     }
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
     pub enum EnumType {
         ENUM_TYPE_UNKNOWN = 0i32,
@@ -8212,6 +16048,99 @@ pub mod feature_set {
             Self::ENUM_TYPE_UNKNOWN
         }
     }
+    #[cfg(feature = "json")]
+    const _: () = {
+        impl ::serde::Serialize for EnumType {
+            fn serialize<S: ::serde::Serializer>(
+                &self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s.serialize_str(::buffa::Enumeration::proto_name(self))
+            }
+        }
+        impl<'de> ::serde::Deserialize<'de> for EnumType {
+            fn deserialize<D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                struct _V;
+                impl ::serde::de::Visitor<'_> for _V {
+                    type Value = EnumType;
+                    fn expecting(
+                        &self,
+                        f: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        f.write_str(
+                            concat!(
+                                "a string, integer, or null for ", stringify!(EnumType)
+                            ),
+                        )
+                    }
+                    fn visit_str<E: ::serde::de::Error>(
+                        self,
+                        v: &str,
+                    ) -> ::core::result::Result<EnumType, E> {
+                        <EnumType as ::buffa::Enumeration>::from_proto_name(v)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::unknown_variant(v, &[])
+                            })
+                    }
+                    fn visit_i64<E: ::serde::de::Error>(
+                        self,
+                        v: i64,
+                    ) -> ::core::result::Result<EnumType, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <EnumType as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_u64<E: ::serde::de::Error>(
+                        self,
+                        v: u64,
+                    ) -> ::core::result::Result<EnumType, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <EnumType as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_unit<E: ::serde::de::Error>(
+                        self,
+                    ) -> ::core::result::Result<EnumType, E> {
+                        ::core::result::Result::Ok(::core::default::Default::default())
+                    }
+                }
+                d.deserialize_any(_V)
+            }
+        }
+        impl ::buffa::json_helpers::ProtoElemJson for EnumType {
+            fn serialize_proto_json<S: ::serde::Serializer>(
+                v: &Self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                ::serde::Serialize::serialize(v, s)
+            }
+            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                <Self as ::serde::Deserialize>::deserialize(d)
+            }
+        }
+    };
     impl ::buffa::Enumeration for EnumType {
         fn from_i32(value: i32) -> ::core::option::Option<Self> {
             match value {
@@ -8246,6 +16175,7 @@ pub mod feature_set {
         }
     }
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
     pub enum RepeatedFieldEncoding {
         REPEATED_FIELD_ENCODING_UNKNOWN = 0i32,
@@ -8257,6 +16187,102 @@ pub mod feature_set {
             Self::REPEATED_FIELD_ENCODING_UNKNOWN
         }
     }
+    #[cfg(feature = "json")]
+    const _: () = {
+        impl ::serde::Serialize for RepeatedFieldEncoding {
+            fn serialize<S: ::serde::Serializer>(
+                &self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s.serialize_str(::buffa::Enumeration::proto_name(self))
+            }
+        }
+        impl<'de> ::serde::Deserialize<'de> for RepeatedFieldEncoding {
+            fn deserialize<D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                struct _V;
+                impl ::serde::de::Visitor<'_> for _V {
+                    type Value = RepeatedFieldEncoding;
+                    fn expecting(
+                        &self,
+                        f: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        f.write_str(
+                            concat!(
+                                "a string, integer, or null for ",
+                                stringify!(RepeatedFieldEncoding)
+                            ),
+                        )
+                    }
+                    fn visit_str<E: ::serde::de::Error>(
+                        self,
+                        v: &str,
+                    ) -> ::core::result::Result<RepeatedFieldEncoding, E> {
+                        <RepeatedFieldEncoding as ::buffa::Enumeration>::from_proto_name(
+                                v,
+                            )
+                            .ok_or_else(|| {
+                                ::serde::de::Error::unknown_variant(v, &[])
+                            })
+                    }
+                    fn visit_i64<E: ::serde::de::Error>(
+                        self,
+                        v: i64,
+                    ) -> ::core::result::Result<RepeatedFieldEncoding, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <RepeatedFieldEncoding as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_u64<E: ::serde::de::Error>(
+                        self,
+                        v: u64,
+                    ) -> ::core::result::Result<RepeatedFieldEncoding, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <RepeatedFieldEncoding as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_unit<E: ::serde::de::Error>(
+                        self,
+                    ) -> ::core::result::Result<RepeatedFieldEncoding, E> {
+                        ::core::result::Result::Ok(::core::default::Default::default())
+                    }
+                }
+                d.deserialize_any(_V)
+            }
+        }
+        impl ::buffa::json_helpers::ProtoElemJson for RepeatedFieldEncoding {
+            fn serialize_proto_json<S: ::serde::Serializer>(
+                v: &Self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                ::serde::Serialize::serialize(v, s)
+            }
+            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                <Self as ::serde::Deserialize>::deserialize(d)
+            }
+        }
+    };
     impl ::buffa::Enumeration for RepeatedFieldEncoding {
         fn from_i32(value: i32) -> ::core::option::Option<Self> {
             match value {
@@ -8295,6 +16321,7 @@ pub mod feature_set {
         }
     }
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
     pub enum Utf8Validation {
         UTF8_VALIDATION_UNKNOWN = 0i32,
@@ -8306,6 +16333,100 @@ pub mod feature_set {
             Self::UTF8_VALIDATION_UNKNOWN
         }
     }
+    #[cfg(feature = "json")]
+    const _: () = {
+        impl ::serde::Serialize for Utf8Validation {
+            fn serialize<S: ::serde::Serializer>(
+                &self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s.serialize_str(::buffa::Enumeration::proto_name(self))
+            }
+        }
+        impl<'de> ::serde::Deserialize<'de> for Utf8Validation {
+            fn deserialize<D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                struct _V;
+                impl ::serde::de::Visitor<'_> for _V {
+                    type Value = Utf8Validation;
+                    fn expecting(
+                        &self,
+                        f: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        f.write_str(
+                            concat!(
+                                "a string, integer, or null for ",
+                                stringify!(Utf8Validation)
+                            ),
+                        )
+                    }
+                    fn visit_str<E: ::serde::de::Error>(
+                        self,
+                        v: &str,
+                    ) -> ::core::result::Result<Utf8Validation, E> {
+                        <Utf8Validation as ::buffa::Enumeration>::from_proto_name(v)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::unknown_variant(v, &[])
+                            })
+                    }
+                    fn visit_i64<E: ::serde::de::Error>(
+                        self,
+                        v: i64,
+                    ) -> ::core::result::Result<Utf8Validation, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <Utf8Validation as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_u64<E: ::serde::de::Error>(
+                        self,
+                        v: u64,
+                    ) -> ::core::result::Result<Utf8Validation, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <Utf8Validation as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_unit<E: ::serde::de::Error>(
+                        self,
+                    ) -> ::core::result::Result<Utf8Validation, E> {
+                        ::core::result::Result::Ok(::core::default::Default::default())
+                    }
+                }
+                d.deserialize_any(_V)
+            }
+        }
+        impl ::buffa::json_helpers::ProtoElemJson for Utf8Validation {
+            fn serialize_proto_json<S: ::serde::Serializer>(
+                v: &Self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                ::serde::Serialize::serialize(v, s)
+            }
+            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                <Self as ::serde::Deserialize>::deserialize(d)
+            }
+        }
+    };
     impl ::buffa::Enumeration for Utf8Validation {
         fn from_i32(value: i32) -> ::core::option::Option<Self> {
             match value {
@@ -8340,6 +16461,7 @@ pub mod feature_set {
         }
     }
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
     pub enum MessageEncoding {
         MESSAGE_ENCODING_UNKNOWN = 0i32,
@@ -8351,6 +16473,100 @@ pub mod feature_set {
             Self::MESSAGE_ENCODING_UNKNOWN
         }
     }
+    #[cfg(feature = "json")]
+    const _: () = {
+        impl ::serde::Serialize for MessageEncoding {
+            fn serialize<S: ::serde::Serializer>(
+                &self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s.serialize_str(::buffa::Enumeration::proto_name(self))
+            }
+        }
+        impl<'de> ::serde::Deserialize<'de> for MessageEncoding {
+            fn deserialize<D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                struct _V;
+                impl ::serde::de::Visitor<'_> for _V {
+                    type Value = MessageEncoding;
+                    fn expecting(
+                        &self,
+                        f: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        f.write_str(
+                            concat!(
+                                "a string, integer, or null for ",
+                                stringify!(MessageEncoding)
+                            ),
+                        )
+                    }
+                    fn visit_str<E: ::serde::de::Error>(
+                        self,
+                        v: &str,
+                    ) -> ::core::result::Result<MessageEncoding, E> {
+                        <MessageEncoding as ::buffa::Enumeration>::from_proto_name(v)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::unknown_variant(v, &[])
+                            })
+                    }
+                    fn visit_i64<E: ::serde::de::Error>(
+                        self,
+                        v: i64,
+                    ) -> ::core::result::Result<MessageEncoding, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <MessageEncoding as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_u64<E: ::serde::de::Error>(
+                        self,
+                        v: u64,
+                    ) -> ::core::result::Result<MessageEncoding, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <MessageEncoding as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_unit<E: ::serde::de::Error>(
+                        self,
+                    ) -> ::core::result::Result<MessageEncoding, E> {
+                        ::core::result::Result::Ok(::core::default::Default::default())
+                    }
+                }
+                d.deserialize_any(_V)
+            }
+        }
+        impl ::buffa::json_helpers::ProtoElemJson for MessageEncoding {
+            fn serialize_proto_json<S: ::serde::Serializer>(
+                v: &Self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                ::serde::Serialize::serialize(v, s)
+            }
+            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                <Self as ::serde::Deserialize>::deserialize(d)
+            }
+        }
+    };
     impl ::buffa::Enumeration for MessageEncoding {
         fn from_i32(value: i32) -> ::core::option::Option<Self> {
             match value {
@@ -8385,6 +16601,7 @@ pub mod feature_set {
         }
     }
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
     pub enum JsonFormat {
         JSON_FORMAT_UNKNOWN = 0i32,
@@ -8396,6 +16613,99 @@ pub mod feature_set {
             Self::JSON_FORMAT_UNKNOWN
         }
     }
+    #[cfg(feature = "json")]
+    const _: () = {
+        impl ::serde::Serialize for JsonFormat {
+            fn serialize<S: ::serde::Serializer>(
+                &self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s.serialize_str(::buffa::Enumeration::proto_name(self))
+            }
+        }
+        impl<'de> ::serde::Deserialize<'de> for JsonFormat {
+            fn deserialize<D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                struct _V;
+                impl ::serde::de::Visitor<'_> for _V {
+                    type Value = JsonFormat;
+                    fn expecting(
+                        &self,
+                        f: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        f.write_str(
+                            concat!(
+                                "a string, integer, or null for ", stringify!(JsonFormat)
+                            ),
+                        )
+                    }
+                    fn visit_str<E: ::serde::de::Error>(
+                        self,
+                        v: &str,
+                    ) -> ::core::result::Result<JsonFormat, E> {
+                        <JsonFormat as ::buffa::Enumeration>::from_proto_name(v)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::unknown_variant(v, &[])
+                            })
+                    }
+                    fn visit_i64<E: ::serde::de::Error>(
+                        self,
+                        v: i64,
+                    ) -> ::core::result::Result<JsonFormat, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <JsonFormat as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_u64<E: ::serde::de::Error>(
+                        self,
+                        v: u64,
+                    ) -> ::core::result::Result<JsonFormat, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <JsonFormat as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_unit<E: ::serde::de::Error>(
+                        self,
+                    ) -> ::core::result::Result<JsonFormat, E> {
+                        ::core::result::Result::Ok(::core::default::Default::default())
+                    }
+                }
+                d.deserialize_any(_V)
+            }
+        }
+        impl ::buffa::json_helpers::ProtoElemJson for JsonFormat {
+            fn serialize_proto_json<S: ::serde::Serializer>(
+                v: &Self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                ::serde::Serialize::serialize(v, s)
+            }
+            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                <Self as ::serde::Deserialize>::deserialize(d)
+            }
+        }
+    };
     impl ::buffa::Enumeration for JsonFormat {
         fn from_i32(value: i32) -> ::core::option::Option<Self> {
             match value {
@@ -8432,6 +16742,7 @@ pub mod feature_set {
         }
     }
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
     pub enum EnforceNamingStyle {
         ENFORCE_NAMING_STYLE_UNKNOWN = 0i32,
@@ -8443,6 +16754,100 @@ pub mod feature_set {
             Self::ENFORCE_NAMING_STYLE_UNKNOWN
         }
     }
+    #[cfg(feature = "json")]
+    const _: () = {
+        impl ::serde::Serialize for EnforceNamingStyle {
+            fn serialize<S: ::serde::Serializer>(
+                &self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s.serialize_str(::buffa::Enumeration::proto_name(self))
+            }
+        }
+        impl<'de> ::serde::Deserialize<'de> for EnforceNamingStyle {
+            fn deserialize<D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                struct _V;
+                impl ::serde::de::Visitor<'_> for _V {
+                    type Value = EnforceNamingStyle;
+                    fn expecting(
+                        &self,
+                        f: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        f.write_str(
+                            concat!(
+                                "a string, integer, or null for ",
+                                stringify!(EnforceNamingStyle)
+                            ),
+                        )
+                    }
+                    fn visit_str<E: ::serde::de::Error>(
+                        self,
+                        v: &str,
+                    ) -> ::core::result::Result<EnforceNamingStyle, E> {
+                        <EnforceNamingStyle as ::buffa::Enumeration>::from_proto_name(v)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::unknown_variant(v, &[])
+                            })
+                    }
+                    fn visit_i64<E: ::serde::de::Error>(
+                        self,
+                        v: i64,
+                    ) -> ::core::result::Result<EnforceNamingStyle, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <EnforceNamingStyle as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_u64<E: ::serde::de::Error>(
+                        self,
+                        v: u64,
+                    ) -> ::core::result::Result<EnforceNamingStyle, E> {
+                        let v32 = i32::try_from(v)
+                            .map_err(|_| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                )
+                            })?;
+                        <EnforceNamingStyle as ::buffa::Enumeration>::from_i32(v32)
+                            .ok_or_else(|| {
+                                ::serde::de::Error::custom(
+                                    ::buffa::alloc::format!("unknown enum value {v32}"),
+                                )
+                            })
+                    }
+                    fn visit_unit<E: ::serde::de::Error>(
+                        self,
+                    ) -> ::core::result::Result<EnforceNamingStyle, E> {
+                        ::core::result::Result::Ok(::core::default::Default::default())
+                    }
+                }
+                d.deserialize_any(_V)
+            }
+        }
+        impl ::buffa::json_helpers::ProtoElemJson for EnforceNamingStyle {
+            fn serialize_proto_json<S: ::serde::Serializer>(
+                v: &Self,
+                s: S,
+            ) -> ::core::result::Result<S::Ok, S::Error> {
+                ::serde::Serialize::serialize(v, s)
+            }
+            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                d: D,
+            ) -> ::core::result::Result<Self, D::Error> {
+                <Self as ::serde::Deserialize>::deserialize(d)
+            }
+        }
+    };
     impl ::buffa::Enumeration for EnforceNamingStyle {
         fn from_i32(value: i32) -> ::core::option::Option<Self> {
             match value {
@@ -8477,7 +16882,11 @@ pub mod feature_set {
         }
     }
     #[derive(Clone, PartialEq, Default)]
+    #[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+    #[cfg_attr(feature = "json", serde(default))]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     pub struct VisibilityFeature {
+        #[cfg_attr(feature = "json", serde(skip))]
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
     }
@@ -8553,10 +16962,65 @@ pub mod feature_set {
             &mut self.__buffa_unknown_fields
         }
     }
+    #[cfg(feature = "text")]
+    impl ::buffa::text::TextFormat for VisibilityFeature {
+        fn encode_text(
+            &self,
+            enc: &mut ::buffa::text::TextEncoder<'_>,
+        ) -> ::core::fmt::Result {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+            ::core::result::Result::Ok(())
+        }
+        fn merge_text(
+            &mut self,
+            dec: &mut ::buffa::text::TextDecoder<'_>,
+        ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+                match __name {
+                    _ => dec.skip_value()?,
+                }
+            }
+            ::core::result::Result::Ok(())
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::buffa::json_helpers::ProtoElemJson for VisibilityFeature {
+        fn serialize_proto_json<S: ::serde::Serializer>(
+            v: &Self,
+            s: S,
+        ) -> ::core::result::Result<S::Ok, S::Error> {
+            ::serde::Serialize::serialize(v, s)
+        }
+        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+            d: D,
+        ) -> ::core::result::Result<Self, D::Error> {
+            <Self as ::serde::Deserialize>::deserialize(d)
+        }
+    }
+    #[cfg(feature = "json")]
+    #[doc(hidden)]
+    pub const __VISIBILITY_FEATURE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.FeatureSet.VisibilityFeature",
+        to_json: ::buffa::type_registry::any_to_json::<VisibilityFeature>,
+        from_json: ::buffa::type_registry::any_from_json::<VisibilityFeature>,
+        is_wkt: false,
+    };
+    #[cfg(feature = "text")]
+    #[doc(hidden)]
+    pub const __VISIBILITY_FEATURE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.FeatureSet.VisibilityFeature",
+        text_encode: ::buffa::type_registry::any_encode_text::<VisibilityFeature>,
+        text_merge: ::buffa::type_registry::any_merge_text::<VisibilityFeature>,
+    };
     pub mod visibility_feature {
         #[allow(unused_imports)]
         use super::*;
         #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+        #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
         #[repr(i32)]
         pub enum DefaultSymbolVisibility {
             DEFAULT_SYMBOL_VISIBILITY_UNKNOWN = 0i32,
@@ -8576,6 +17040,108 @@ pub mod feature_set {
                 Self::DEFAULT_SYMBOL_VISIBILITY_UNKNOWN
             }
         }
+        #[cfg(feature = "json")]
+        const _: () = {
+            impl ::serde::Serialize for DefaultSymbolVisibility {
+                fn serialize<S: ::serde::Serializer>(
+                    &self,
+                    s: S,
+                ) -> ::core::result::Result<S::Ok, S::Error> {
+                    s.serialize_str(::buffa::Enumeration::proto_name(self))
+                }
+            }
+            impl<'de> ::serde::Deserialize<'de> for DefaultSymbolVisibility {
+                fn deserialize<D: ::serde::Deserializer<'de>>(
+                    d: D,
+                ) -> ::core::result::Result<Self, D::Error> {
+                    struct _V;
+                    impl ::serde::de::Visitor<'_> for _V {
+                        type Value = DefaultSymbolVisibility;
+                        fn expecting(
+                            &self,
+                            f: &mut ::core::fmt::Formatter<'_>,
+                        ) -> ::core::fmt::Result {
+                            f.write_str(
+                                concat!(
+                                    "a string, integer, or null for ",
+                                    stringify!(DefaultSymbolVisibility)
+                                ),
+                            )
+                        }
+                        fn visit_str<E: ::serde::de::Error>(
+                            self,
+                            v: &str,
+                        ) -> ::core::result::Result<DefaultSymbolVisibility, E> {
+                            <DefaultSymbolVisibility as ::buffa::Enumeration>::from_proto_name(
+                                    v,
+                                )
+                                .ok_or_else(|| {
+                                    ::serde::de::Error::unknown_variant(v, &[])
+                                })
+                        }
+                        fn visit_i64<E: ::serde::de::Error>(
+                            self,
+                            v: i64,
+                        ) -> ::core::result::Result<DefaultSymbolVisibility, E> {
+                            let v32 = i32::try_from(v)
+                                .map_err(|_| {
+                                    ::serde::de::Error::custom(
+                                        ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                    )
+                                })?;
+                            <DefaultSymbolVisibility as ::buffa::Enumeration>::from_i32(
+                                    v32,
+                                )
+                                .ok_or_else(|| {
+                                    ::serde::de::Error::custom(
+                                        ::buffa::alloc::format!("unknown enum value {v32}"),
+                                    )
+                                })
+                        }
+                        fn visit_u64<E: ::serde::de::Error>(
+                            self,
+                            v: u64,
+                        ) -> ::core::result::Result<DefaultSymbolVisibility, E> {
+                            let v32 = i32::try_from(v)
+                                .map_err(|_| {
+                                    ::serde::de::Error::custom(
+                                        ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                    )
+                                })?;
+                            <DefaultSymbolVisibility as ::buffa::Enumeration>::from_i32(
+                                    v32,
+                                )
+                                .ok_or_else(|| {
+                                    ::serde::de::Error::custom(
+                                        ::buffa::alloc::format!("unknown enum value {v32}"),
+                                    )
+                                })
+                        }
+                        fn visit_unit<E: ::serde::de::Error>(
+                            self,
+                        ) -> ::core::result::Result<DefaultSymbolVisibility, E> {
+                            ::core::result::Result::Ok(
+                                ::core::default::Default::default(),
+                            )
+                        }
+                    }
+                    d.deserialize_any(_V)
+                }
+            }
+            impl ::buffa::json_helpers::ProtoElemJson for DefaultSymbolVisibility {
+                fn serialize_proto_json<S: ::serde::Serializer>(
+                    v: &Self,
+                    s: S,
+                ) -> ::core::result::Result<S::Ok, S::Error> {
+                    ::serde::Serialize::serialize(v, s)
+                }
+                fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                    d: D,
+                ) -> ::core::result::Result<Self, D::Error> {
+                    <Self as ::serde::Deserialize>::deserialize(d)
+                }
+            }
+        };
         impl ::buffa::Enumeration for DefaultSymbolVisibility {
             fn from_i32(value: i32) -> ::core::option::Option<Self> {
                 match value {
@@ -8632,14 +17198,28 @@ pub mod feature_set {
             }
         }
     }
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::feature_set::VisibilityFeatureView;
 }
 /// A compiled specification for the defaults of a set of features.  These
 /// messages are generated from FeatureSet extensions and can be used to seed
 /// feature resolution. The resolution with this object becomes a simple search
 /// for the closest matching edition, followed by proto merges.
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct FeatureSetDefaults {
     /// Field 1: `defaults`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "defaults",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub defaults: ::buffa::alloc::vec::Vec<
         feature_set_defaults::FeatureSetEditionDefault,
     >,
@@ -8647,12 +17227,31 @@ pub struct FeatureSetDefaults {
     /// Editions before this will not have defaults.
     ///
     /// Field 4: `minimum_edition`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "minimumEdition",
+            alias = "minimum_edition",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub minimum_edition: ::core::option::Option<Edition>,
     /// The maximum known edition (inclusive) when this was constructed. Editions
     /// after this will not have reliable defaults.
     ///
     /// Field 5: `maximum_edition`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "maximumEdition",
+            alias = "maximum_edition",
+            with = "::buffa::json_helpers::opt_closed_enum",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
+    )]
     pub maximum_edition: ::core::option::Option<Edition>,
+    #[cfg_attr(feature = "json", serde(skip))]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
 }
@@ -8822,6 +17421,92 @@ impl ::buffa::ExtensionSet for FeatureSetDefaults {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for FeatureSetDefaults {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.minimum_edition {
+            enc.write_field_name("minimum_edition")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        if let ::core::option::Option::Some(ref __v) = self.maximum_edition {
+            enc.write_field_name("maximum_edition")?;
+            enc.write_enum_name(__v.proto_name())?;
+        }
+        for __v in &self.defaults {
+            enc.write_field_name("defaults")?;
+            enc.write_message(__v)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "minimum_edition" => {
+                    self.minimum_edition = ::core::option::Option::Some(
+                        dec.read_closed_enum_by_name::<Edition>()?,
+                    );
+                }
+                "maximum_edition" => {
+                    self.maximum_edition = ::core::option::Option::Some(
+                        dec.read_closed_enum_by_name::<Edition>()?,
+                    );
+                }
+                "defaults" => {
+                    dec.read_repeated_into(
+                        &mut self.defaults,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for FeatureSetDefaults {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __FEATURE_SET_DEFAULTS_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.FeatureSetDefaults",
+    to_json: ::buffa::type_registry::any_to_json::<FeatureSetDefaults>,
+    from_json: ::buffa::type_registry::any_from_json::<FeatureSetDefaults>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __FEATURE_SET_DEFAULTS_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.FeatureSetDefaults",
+    text_encode: ::buffa::type_registry::any_encode_text::<FeatureSetDefaults>,
+    text_merge: ::buffa::type_registry::any_merge_text::<FeatureSetDefaults>,
+};
 pub mod feature_set_defaults {
     #[allow(unused_imports)]
     use super::*;
@@ -8830,17 +17515,45 @@ pub mod feature_set_defaults {
     /// the defaults at the closest matching edition ordered at or before it should
     /// be used.  This field must be in strict ascending order by edition.
     #[derive(Clone, PartialEq, Default)]
+    #[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+    #[cfg_attr(feature = "json", serde(default))]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     pub struct FeatureSetEditionDefault {
         /// Field 3: `edition`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "edition",
+                with = "::buffa::json_helpers::opt_closed_enum",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub edition: ::core::option::Option<super::Edition>,
         /// Defaults of features that can be overridden in this edition.
         ///
         /// Field 4: `overridable_features`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "overridableFeatures",
+                alias = "overridable_features",
+                skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+            )
+        )]
         pub overridable_features: ::buffa::MessageField<super::FeatureSet>,
         /// Defaults of features that can't be overridden in this edition.
         ///
         /// Field 5: `fixed_features`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "fixedFeatures",
+                alias = "fixed_features",
+                skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+            )
+        )]
         pub fixed_features: ::buffa::MessageField<super::FeatureSet>,
+        #[cfg_attr(feature = "json", serde(skip))]
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
     }
@@ -9014,6 +17727,88 @@ pub mod feature_set_defaults {
             &mut self.__buffa_unknown_fields
         }
     }
+    #[cfg(feature = "text")]
+    impl ::buffa::text::TextFormat for FeatureSetEditionDefault {
+        fn encode_text(
+            &self,
+            enc: &mut ::buffa::text::TextEncoder<'_>,
+        ) -> ::core::fmt::Result {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            if let ::core::option::Option::Some(ref __v) = self.edition {
+                enc.write_field_name("edition")?;
+                enc.write_enum_name(__v.proto_name())?;
+            }
+            if self.overridable_features.is_set() {
+                enc.write_field_name("overridable_features")?;
+                enc.write_message(&*self.overridable_features)?;
+            }
+            if self.fixed_features.is_set() {
+                enc.write_field_name("fixed_features")?;
+                enc.write_message(&*self.fixed_features)?;
+            }
+            enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+            ::core::result::Result::Ok(())
+        }
+        fn merge_text(
+            &mut self,
+            dec: &mut ::buffa::text::TextDecoder<'_>,
+        ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+                match __name {
+                    "edition" => {
+                        self.edition = ::core::option::Option::Some(
+                            dec.read_closed_enum_by_name::<super::Edition>()?,
+                        );
+                    }
+                    "overridable_features" => {
+                        dec.merge_message(
+                            self.overridable_features.get_or_insert_default(),
+                        )?
+                    }
+                    "fixed_features" => {
+                        dec.merge_message(self.fixed_features.get_or_insert_default())?
+                    }
+                    _ => dec.skip_value()?,
+                }
+            }
+            ::core::result::Result::Ok(())
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::buffa::json_helpers::ProtoElemJson for FeatureSetEditionDefault {
+        fn serialize_proto_json<S: ::serde::Serializer>(
+            v: &Self,
+            s: S,
+        ) -> ::core::result::Result<S::Ok, S::Error> {
+            ::serde::Serialize::serialize(v, s)
+        }
+        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+            d: D,
+        ) -> ::core::result::Result<Self, D::Error> {
+            <Self as ::serde::Deserialize>::deserialize(d)
+        }
+    }
+    #[cfg(feature = "json")]
+    #[doc(hidden)]
+    pub const __FEATURE_SET_EDITION_DEFAULT_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.FeatureSetDefaults.FeatureSetEditionDefault",
+        to_json: ::buffa::type_registry::any_to_json::<FeatureSetEditionDefault>,
+        from_json: ::buffa::type_registry::any_from_json::<FeatureSetEditionDefault>,
+        is_wkt: false,
+    };
+    #[cfg(feature = "text")]
+    #[doc(hidden)]
+    pub const __FEATURE_SET_EDITION_DEFAULT_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.FeatureSetDefaults.FeatureSetEditionDefault",
+        text_encode: ::buffa::type_registry::any_encode_text::<FeatureSetEditionDefault>,
+        text_merge: ::buffa::type_registry::any_merge_text::<FeatureSetEditionDefault>,
+    };
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::feature_set_defaults::FeatureSetEditionDefaultView;
 }
 /// ===================================================================
 /// Optional source code info
@@ -9021,6 +17816,9 @@ pub mod feature_set_defaults {
 /// Encapsulates information about the original source file from which a
 /// FileDescriptorProto was generated.
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct SourceCodeInfo {
     /// A Location identifies a piece of source code in a .proto file which
     /// corresponds to a particular definition.  This information is intended
@@ -9069,9 +17867,18 @@ pub struct SourceCodeInfo {
     ///   be recorded in the future.
     ///
     /// Field 1: `location`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "location",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub location: ::buffa::alloc::vec::Vec<source_code_info::Location>,
+    #[cfg_attr(feature = "json", serde(flatten))]
     #[doc(hidden)]
-    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+    pub __buffa_unknown_fields: __SourceCodeInfoExtJson,
 }
 impl ::core::fmt::Debug for SourceCodeInfo {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -9175,10 +17982,222 @@ impl ::buffa::ExtensionSet for SourceCodeInfo {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for SourceCodeInfo {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        for __v in &self.location {
+            enc.write_field_name("location")?;
+            enc.write_message(__v)?;
+        }
+        enc.write_extension_fields(
+            "google.protobuf.SourceCodeInfo",
+            &self.__buffa_unknown_fields,
+        )?;
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "location" => {
+                    dec.read_repeated_into(
+                        &mut self.location,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                __name if __name.starts_with('[') => {
+                    for __r in dec
+                        .read_extension(__name, "google.protobuf.SourceCodeInfo")?
+                    {
+                        self.__buffa_unknown_fields.push(__r);
+                    }
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> serde::Deserialize<'de> for SourceCodeInfo {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        struct _V;
+        impl<'de> serde::de::Visitor<'de> for _V {
+            type Value = SourceCodeInfo;
+            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.write_str("struct SourceCodeInfo")
+            }
+            #[allow(clippy::field_reassign_with_default)]
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> ::core::result::Result<SourceCodeInfo, A::Error> {
+                let mut __f_location: ::core::option::Option<
+                    ::buffa::alloc::vec::Vec<source_code_info::Location>,
+                > = None;
+                let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
+                while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
+                    match key.as_str() {
+                        "location" => {
+                            __f_location = Some({
+                                struct _S;
+                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::buffa::alloc::vec::Vec<
+                                        source_code_info::Location,
+                                    >;
+                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                        self,
+                                        d: D,
+                                    ) -> ::core::result::Result<
+                                        ::buffa::alloc::vec::Vec<source_code_info::Location>,
+                                        D::Error,
+                                    > {
+                                        ::buffa::json_helpers::null_as_default(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
+                        __k if __k.starts_with('[') => {
+                            let __v: ::buffa::serde_json::Value = map.next_value()?;
+                            match ::buffa::extension_registry::deserialize_extension_key(
+                                "google.protobuf.SourceCodeInfo",
+                                __k,
+                                __v,
+                            ) {
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Ok(__recs),
+                                ) => {
+                                    for __rec in __recs {
+                                        __ext_records.push(__rec);
+                                    }
+                                }
+                                ::core::option::Option::Some(
+                                    ::core::result::Result::Err(__e),
+                                ) => {
+                                    return ::core::result::Result::Err(
+                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                    );
+                                }
+                                ::core::option::Option::None => {}
+                            }
+                        }
+                        _ => {
+                            map.next_value::<serde::de::IgnoredAny>()?;
+                        }
+                    }
+                }
+                let mut __r = <SourceCodeInfo as ::core::default::Default>::default();
+                if let ::core::option::Option::Some(v) = __f_location {
+                    __r.location = v;
+                }
+                for __rec in __ext_records {
+                    __r.__buffa_unknown_fields.push(__rec);
+                }
+                Ok(__r)
+            }
+        }
+        d.deserialize_map(_V)
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for SourceCodeInfo {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[doc(hidden)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[repr(transparent)]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+pub struct __SourceCodeInfoExtJson(pub ::buffa::UnknownFields);
+impl ::core::ops::Deref for __SourceCodeInfoExtJson {
+    type Target = ::buffa::UnknownFields;
+    fn deref(&self) -> &::buffa::UnknownFields {
+        &self.0
+    }
+}
+impl ::core::ops::DerefMut for __SourceCodeInfoExtJson {
+    fn deref_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.0
+    }
+}
+impl ::core::convert::From<::buffa::UnknownFields> for __SourceCodeInfoExtJson {
+    fn from(u: ::buffa::UnknownFields) -> Self {
+        Self(u)
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for __SourceCodeInfoExtJson {
+    fn serialize<S: ::serde::Serializer>(
+        &self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::buffa::extension_registry::serialize_extensions(
+            "google.protobuf.SourceCodeInfo",
+            &self.0,
+            s,
+        )
+    }
+}
+#[cfg(feature = "json")]
+impl<'de> ::serde::Deserialize<'de> for __SourceCodeInfoExtJson {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        ::buffa::extension_registry::deserialize_extensions(
+                "google.protobuf.SourceCodeInfo",
+                d,
+            )
+            .map(Self)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __SOURCE_CODE_INFO_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.SourceCodeInfo",
+    to_json: ::buffa::type_registry::any_to_json::<SourceCodeInfo>,
+    from_json: ::buffa::type_registry::any_from_json::<SourceCodeInfo>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __SOURCE_CODE_INFO_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.SourceCodeInfo",
+    text_encode: ::buffa::type_registry::any_encode_text::<SourceCodeInfo>,
+    text_merge: ::buffa::type_registry::any_merge_text::<SourceCodeInfo>,
+};
 pub mod source_code_info {
     #[allow(unused_imports)]
     use super::*;
     #[derive(Clone, PartialEq, Default)]
+    #[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+    #[cfg_attr(feature = "json", serde(default))]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     pub struct Location {
         /// Identifies which part of the FileDescriptorProto was defined at this
         /// location.
@@ -9207,6 +18226,14 @@ pub mod source_code_info {
         /// of the label to the terminating semicolon).
         ///
         /// Field 1: `path`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "path",
+                skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+                deserialize_with = "::buffa::json_helpers::null_as_default"
+            )
+        )]
         pub path: ::buffa::alloc::vec::Vec<i32>,
         /// Always has exactly three or four elements: start line, start column,
         /// end line (optional, otherwise assumed same as start line), end column.
@@ -9215,6 +18242,14 @@ pub mod source_code_info {
         /// 1 to each before displaying to a user.
         ///
         /// Field 2: `span`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "span",
+                skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+                deserialize_with = "::buffa::json_helpers::null_as_default"
+            )
+        )]
         pub span: ::buffa::alloc::vec::Vec<i32>,
         /// If this SourceCodeInfo represents a complete declaration, these are any
         /// comments appearing before and after the declaration which appear to be
@@ -9269,13 +18304,39 @@ pub mod source_code_info {
         ///   // ignored detached comments.
         ///
         /// Field 3: `leading_comments`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "leadingComments",
+                alias = "leading_comments",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub leading_comments: ::core::option::Option<::buffa::alloc::string::String>,
         /// Field 4: `trailing_comments`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "trailingComments",
+                alias = "trailing_comments",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub trailing_comments: ::core::option::Option<::buffa::alloc::string::String>,
         /// Field 6: `leading_detached_comments`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "leadingDetachedComments",
+                alias = "leading_detached_comments",
+                skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+                deserialize_with = "::buffa::json_helpers::null_as_default"
+            )
+        )]
         pub leading_detached_comments: ::buffa::alloc::vec::Vec<
             ::buffa::alloc::string::String,
         >,
+        #[cfg_attr(feature = "json", serde(skip))]
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
     }
@@ -9546,17 +18607,130 @@ pub mod source_code_info {
             &mut self.__buffa_unknown_fields
         }
     }
+    #[cfg(feature = "text")]
+    impl ::buffa::text::TextFormat for Location {
+        fn encode_text(
+            &self,
+            enc: &mut ::buffa::text::TextEncoder<'_>,
+        ) -> ::core::fmt::Result {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            if let ::core::option::Option::Some(ref __v) = self.leading_comments {
+                enc.write_field_name("leading_comments")?;
+                enc.write_string(__v)?;
+            }
+            if let ::core::option::Option::Some(ref __v) = self.trailing_comments {
+                enc.write_field_name("trailing_comments")?;
+                enc.write_string(__v)?;
+            }
+            for __v in &self.path {
+                enc.write_field_name("path")?;
+                enc.write_i32(*__v)?;
+            }
+            for __v in &self.span {
+                enc.write_field_name("span")?;
+                enc.write_i32(*__v)?;
+            }
+            for __v in &self.leading_detached_comments {
+                enc.write_field_name("leading_detached_comments")?;
+                enc.write_string(__v)?;
+            }
+            enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+            ::core::result::Result::Ok(())
+        }
+        fn merge_text(
+            &mut self,
+            dec: &mut ::buffa::text::TextDecoder<'_>,
+        ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+                match __name {
+                    "leading_comments" => {
+                        self.leading_comments = ::core::option::Option::Some(
+                            dec.read_string()?.into_owned(),
+                        );
+                    }
+                    "trailing_comments" => {
+                        self.trailing_comments = ::core::option::Option::Some(
+                            dec.read_string()?.into_owned(),
+                        );
+                    }
+                    "path" => {
+                        dec.read_repeated_into(&mut self.path, |__d| __d.read_i32())?
+                    }
+                    "span" => {
+                        dec.read_repeated_into(&mut self.span, |__d| __d.read_i32())?
+                    }
+                    "leading_detached_comments" => {
+                        dec.read_repeated_into(
+                            &mut self.leading_detached_comments,
+                            |__d| ::core::result::Result::Ok(
+                                __d.read_string()?.into_owned(),
+                            ),
+                        )?
+                    }
+                    _ => dec.skip_value()?,
+                }
+            }
+            ::core::result::Result::Ok(())
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::buffa::json_helpers::ProtoElemJson for Location {
+        fn serialize_proto_json<S: ::serde::Serializer>(
+            v: &Self,
+            s: S,
+        ) -> ::core::result::Result<S::Ok, S::Error> {
+            ::serde::Serialize::serialize(v, s)
+        }
+        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+            d: D,
+        ) -> ::core::result::Result<Self, D::Error> {
+            <Self as ::serde::Deserialize>::deserialize(d)
+        }
+    }
+    #[cfg(feature = "json")]
+    #[doc(hidden)]
+    pub const __LOCATION_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.SourceCodeInfo.Location",
+        to_json: ::buffa::type_registry::any_to_json::<Location>,
+        from_json: ::buffa::type_registry::any_from_json::<Location>,
+        is_wkt: false,
+    };
+    #[cfg(feature = "text")]
+    #[doc(hidden)]
+    pub const __LOCATION_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.SourceCodeInfo.Location",
+        text_encode: ::buffa::type_registry::any_encode_text::<Location>,
+        text_merge: ::buffa::type_registry::any_merge_text::<Location>,
+    };
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::source_code_info::LocationView;
 }
 /// Describes the relationship between generated code and its original source
 /// file. A GeneratedCodeInfo message is associated with only one generated
 /// source file, but may contain references to different source .proto files.
 #[derive(Clone, PartialEq, Default)]
+#[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+#[cfg_attr(feature = "json", serde(default))]
+#[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct GeneratedCodeInfo {
     /// An Annotation connects some span of text in generated code to an element
     /// of its generating .proto file.
     ///
     /// Field 1: `annotation`
+    #[cfg_attr(
+        feature = "json",
+        serde(
+            rename = "annotation",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+            deserialize_with = "::buffa::json_helpers::null_as_default"
+        )
+    )]
     pub annotation: ::buffa::alloc::vec::Vec<generated_code_info::Annotation>,
+    #[cfg_attr(feature = "json", serde(skip))]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
 }
@@ -9664,35 +18838,147 @@ impl ::buffa::ExtensionSet for GeneratedCodeInfo {
         &mut self.__buffa_unknown_fields
     }
 }
+#[cfg(feature = "text")]
+impl ::buffa::text::TextFormat for GeneratedCodeInfo {
+    fn encode_text(
+        &self,
+        enc: &mut ::buffa::text::TextEncoder<'_>,
+    ) -> ::core::fmt::Result {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        for __v in &self.annotation {
+            enc.write_field_name("annotation")?;
+            enc.write_message(__v)?;
+        }
+        enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+        ::core::result::Result::Ok(())
+    }
+    fn merge_text(
+        &mut self,
+        dec: &mut ::buffa::text::TextDecoder<'_>,
+    ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "annotation" => {
+                    dec.read_repeated_into(
+                        &mut self.annotation,
+                        |__d| {
+                            let mut __m = ::core::default::Default::default();
+                            __d.merge_message(&mut __m)?;
+                            ::core::result::Result::Ok(__m)
+                        },
+                    )?
+                }
+                _ => dec.skip_value()?,
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+}
+#[cfg(feature = "json")]
+impl ::buffa::json_helpers::ProtoElemJson for GeneratedCodeInfo {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+#[cfg(feature = "json")]
+#[doc(hidden)]
+pub const __GENERATED_CODE_INFO_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.GeneratedCodeInfo",
+    to_json: ::buffa::type_registry::any_to_json::<GeneratedCodeInfo>,
+    from_json: ::buffa::type_registry::any_from_json::<GeneratedCodeInfo>,
+    is_wkt: false,
+};
+#[cfg(feature = "text")]
+#[doc(hidden)]
+pub const __GENERATED_CODE_INFO_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+    type_url: "type.googleapis.com/google.protobuf.GeneratedCodeInfo",
+    text_encode: ::buffa::type_registry::any_encode_text::<GeneratedCodeInfo>,
+    text_merge: ::buffa::type_registry::any_merge_text::<GeneratedCodeInfo>,
+};
 pub mod generated_code_info {
     #[allow(unused_imports)]
     use super::*;
     #[derive(Clone, PartialEq, Default)]
+    #[cfg_attr(feature = "json", derive(::serde::Serialize, ::serde::Deserialize))]
+    #[cfg_attr(feature = "json", serde(default))]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     pub struct Annotation {
         /// Identifies the element in the original source .proto file. This field
         /// is formatted the same as SourceCodeInfo.Location.path.
         ///
         /// Field 1: `path`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "path",
+                skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+                deserialize_with = "::buffa::json_helpers::null_as_default"
+            )
+        )]
         pub path: ::buffa::alloc::vec::Vec<i32>,
         /// Identifies the filesystem path to the original source .proto.
         ///
         /// Field 2: `source_file`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "sourceFile",
+                alias = "source_file",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub source_file: ::core::option::Option<::buffa::alloc::string::String>,
         /// Identifies the starting offset in bytes in the generated code
         /// that relates to the identified object.
         ///
         /// Field 3: `begin`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "begin",
+                with = "::buffa::json_helpers::opt_int32",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub begin: ::core::option::Option<i32>,
         /// Identifies the ending offset in bytes in the generated code that
         /// relates to the identified object. The end offset should be one past
         /// the last relevant byte (so the length of the text = end - begin).
         ///
         /// Field 4: `end`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "end",
+                with = "::buffa::json_helpers::opt_int32",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub end: ::core::option::Option<i32>,
         /// Field 5: `semantic`
+        #[cfg_attr(
+            feature = "json",
+            serde(
+                rename = "semantic",
+                with = "::buffa::json_helpers::opt_closed_enum",
+                skip_serializing_if = "::core::option::Option::is_none"
+            )
+        )]
         pub semantic: ::core::option::Option<
             super::generated_code_info::annotation::Semantic,
         >,
+        #[cfg_attr(feature = "json", serde(skip))]
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
     }
@@ -9929,12 +19215,105 @@ pub mod generated_code_info {
             &mut self.__buffa_unknown_fields
         }
     }
+    #[cfg(feature = "text")]
+    impl ::buffa::text::TextFormat for Annotation {
+        fn encode_text(
+            &self,
+            enc: &mut ::buffa::text::TextEncoder<'_>,
+        ) -> ::core::fmt::Result {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            if let ::core::option::Option::Some(ref __v) = self.source_file {
+                enc.write_field_name("source_file")?;
+                enc.write_string(__v)?;
+            }
+            if let ::core::option::Option::Some(ref __v) = self.begin {
+                enc.write_field_name("begin")?;
+                enc.write_i32(*__v)?;
+            }
+            if let ::core::option::Option::Some(ref __v) = self.end {
+                enc.write_field_name("end")?;
+                enc.write_i32(*__v)?;
+            }
+            if let ::core::option::Option::Some(ref __v) = self.semantic {
+                enc.write_field_name("semantic")?;
+                enc.write_enum_name(__v.proto_name())?;
+            }
+            for __v in &self.path {
+                enc.write_field_name("path")?;
+                enc.write_i32(*__v)?;
+            }
+            enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
+            ::core::result::Result::Ok(())
+        }
+        fn merge_text(
+            &mut self,
+            dec: &mut ::buffa::text::TextDecoder<'_>,
+        ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+                match __name {
+                    "source_file" => {
+                        self.source_file = ::core::option::Option::Some(
+                            dec.read_string()?.into_owned(),
+                        );
+                    }
+                    "begin" => self.begin = ::core::option::Option::Some(dec.read_i32()?),
+                    "end" => self.end = ::core::option::Option::Some(dec.read_i32()?),
+                    "semantic" => {
+                        self.semantic = ::core::option::Option::Some(
+                            dec
+                                .read_closed_enum_by_name::<
+                                    super::generated_code_info::annotation::Semantic,
+                                >()?,
+                        );
+                    }
+                    "path" => {
+                        dec.read_repeated_into(&mut self.path, |__d| __d.read_i32())?
+                    }
+                    _ => dec.skip_value()?,
+                }
+            }
+            ::core::result::Result::Ok(())
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::buffa::json_helpers::ProtoElemJson for Annotation {
+        fn serialize_proto_json<S: ::serde::Serializer>(
+            v: &Self,
+            s: S,
+        ) -> ::core::result::Result<S::Ok, S::Error> {
+            ::serde::Serialize::serialize(v, s)
+        }
+        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+            d: D,
+        ) -> ::core::result::Result<Self, D::Error> {
+            <Self as ::serde::Deserialize>::deserialize(d)
+        }
+    }
+    #[cfg(feature = "json")]
+    #[doc(hidden)]
+    pub const __ANNOTATION_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.GeneratedCodeInfo.Annotation",
+        to_json: ::buffa::type_registry::any_to_json::<Annotation>,
+        from_json: ::buffa::type_registry::any_from_json::<Annotation>,
+        is_wkt: false,
+    };
+    #[cfg(feature = "text")]
+    #[doc(hidden)]
+    pub const __ANNOTATION_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_registry::TextAnyEntry {
+        type_url: "type.googleapis.com/google.protobuf.GeneratedCodeInfo.Annotation",
+        text_encode: ::buffa::type_registry::any_encode_text::<Annotation>,
+        text_merge: ::buffa::type_registry::any_merge_text::<Annotation>,
+    };
     pub mod annotation {
         #[allow(unused_imports)]
         use super::*;
         /// Represents the identified object's effect on the element in the original
         /// .proto file.
         #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+        #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
         #[repr(i32)]
         pub enum Semantic {
             /// There is no effect or the effect is indescribable.
@@ -9949,6 +19328,101 @@ pub mod generated_code_info {
                 Self::NONE
             }
         }
+        #[cfg(feature = "json")]
+        const _: () = {
+            impl ::serde::Serialize for Semantic {
+                fn serialize<S: ::serde::Serializer>(
+                    &self,
+                    s: S,
+                ) -> ::core::result::Result<S::Ok, S::Error> {
+                    s.serialize_str(::buffa::Enumeration::proto_name(self))
+                }
+            }
+            impl<'de> ::serde::Deserialize<'de> for Semantic {
+                fn deserialize<D: ::serde::Deserializer<'de>>(
+                    d: D,
+                ) -> ::core::result::Result<Self, D::Error> {
+                    struct _V;
+                    impl ::serde::de::Visitor<'_> for _V {
+                        type Value = Semantic;
+                        fn expecting(
+                            &self,
+                            f: &mut ::core::fmt::Formatter<'_>,
+                        ) -> ::core::fmt::Result {
+                            f.write_str(
+                                concat!(
+                                    "a string, integer, or null for ", stringify!(Semantic)
+                                ),
+                            )
+                        }
+                        fn visit_str<E: ::serde::de::Error>(
+                            self,
+                            v: &str,
+                        ) -> ::core::result::Result<Semantic, E> {
+                            <Semantic as ::buffa::Enumeration>::from_proto_name(v)
+                                .ok_or_else(|| {
+                                    ::serde::de::Error::unknown_variant(v, &[])
+                                })
+                        }
+                        fn visit_i64<E: ::serde::de::Error>(
+                            self,
+                            v: i64,
+                        ) -> ::core::result::Result<Semantic, E> {
+                            let v32 = i32::try_from(v)
+                                .map_err(|_| {
+                                    ::serde::de::Error::custom(
+                                        ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                    )
+                                })?;
+                            <Semantic as ::buffa::Enumeration>::from_i32(v32)
+                                .ok_or_else(|| {
+                                    ::serde::de::Error::custom(
+                                        ::buffa::alloc::format!("unknown enum value {v32}"),
+                                    )
+                                })
+                        }
+                        fn visit_u64<E: ::serde::de::Error>(
+                            self,
+                            v: u64,
+                        ) -> ::core::result::Result<Semantic, E> {
+                            let v32 = i32::try_from(v)
+                                .map_err(|_| {
+                                    ::serde::de::Error::custom(
+                                        ::buffa::alloc::format!("enum value {v} out of i32 range"),
+                                    )
+                                })?;
+                            <Semantic as ::buffa::Enumeration>::from_i32(v32)
+                                .ok_or_else(|| {
+                                    ::serde::de::Error::custom(
+                                        ::buffa::alloc::format!("unknown enum value {v32}"),
+                                    )
+                                })
+                        }
+                        fn visit_unit<E: ::serde::de::Error>(
+                            self,
+                        ) -> ::core::result::Result<Semantic, E> {
+                            ::core::result::Result::Ok(
+                                ::core::default::Default::default(),
+                            )
+                        }
+                    }
+                    d.deserialize_any(_V)
+                }
+            }
+            impl ::buffa::json_helpers::ProtoElemJson for Semantic {
+                fn serialize_proto_json<S: ::serde::Serializer>(
+                    v: &Self,
+                    s: S,
+                ) -> ::core::result::Result<S::Ok, S::Error> {
+                    ::serde::Serialize::serialize(v, s)
+                }
+                fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                    d: D,
+                ) -> ::core::result::Result<Self, D::Error> {
+                    <Self as ::serde::Deserialize>::deserialize(d)
+                }
+            }
+        };
         impl ::buffa::Enumeration for Semantic {
             fn from_i32(value: i32) -> ::core::option::Option<Self> {
                 match value {
@@ -9981,4 +19455,7 @@ pub mod generated_code_info {
             }
         }
     }
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::generated_code_info::AnnotationView;
 }
