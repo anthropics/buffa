@@ -33,6 +33,14 @@ repository = "https://github.com/anthropics/buffa"
 keywords = ["protobuf", "protocol-buffers", "serialization", "no-std", "editions"]
 categories = ["encoding", "no-std"]
 
+# Applies to release builds within this workspace (CI-built release binaries,
+# benchmarks, conformance). Library consumers do not inherit this — Cargo only
+# honors [profile.*] from the top-level workspace, so a project depending on
+# buffa/buffa-build must set its own [profile.release] to get LTO.
+[profile.release]
+lto = true
+codegen-units = 1
+
 [workspace.dependencies]
 buffa = { path = "buffa", version = "0.5.2", default-features = false }
 buffa-types = { path = "buffa-types", version = "0.5.2" }
