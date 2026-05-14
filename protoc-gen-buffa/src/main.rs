@@ -183,6 +183,10 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                     codegen.strict_utf8_mapping = value.trim() == "true"
                 }
                 "register_types" => codegen.emit_register_fn = value.trim() != "false",
+                // `with_setters=false` opts out of builder-style setter
+                // methods. Like `register_types`, the default is on, so the
+                // accepted spelling is the negation.
+                "with_setters" => codegen.generate_with_setters = value.trim() != "false",
                 "file_per_package" => codegen.file_per_package = value.trim() == "true",
                 "extern_path" => {
                     // value is "<proto_path>=<rust_path>"
@@ -344,6 +348,18 @@ mod tests {
     fn register_types_default_is_true() {
         let config = parse_config("").unwrap();
         assert!(config.codegen.emit_register_fn);
+    }
+
+    #[test]
+    fn with_setters_false() {
+        let config = parse_config("with_setters=false").unwrap();
+        assert!(!config.codegen.generate_with_setters);
+    }
+
+    #[test]
+    fn with_setters_default_is_true() {
+        let config = parse_config("").unwrap();
+        assert!(config.codegen.generate_with_setters);
     }
 
     #[test]

@@ -1,0 +1,12 @@
+# Module config — one module rooted at `proto/`. The well-known types
+# (`google/protobuf/*.proto`) are bundled with buf, so no `deps` entry is
+# needed for `import "google/protobuf/timestamp.proto"`.
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - FILE

@@ -3,7 +3,43 @@
 use super::round_trip;
 use crate::basic::__buffa::oneof;
 use crate::basic::*;
-use buffa::Message;
+use buffa::{Message, MessageName};
+
+#[test]
+fn test_message_name_consts() {
+    // Top-level messages: PACKAGE + "." + NAME == FULL_NAME, and TYPE_URL
+    // is the `Any.type_url` form. The FQNs are observable on the wire (in
+    // `Any.type_url`, JSON field keys for extensions, registry keys), so
+    // codegen must keep emitting them verbatim.
+    assert_eq!(Empty::PACKAGE, "basic");
+    assert_eq!(Empty::NAME, "Empty");
+    assert_eq!(Empty::FULL_NAME, "basic.Empty");
+    assert_eq!(Empty::TYPE_URL, "type.googleapis.com/basic.Empty");
+    // The trait const equals the inherent const codegen has emitted since
+    // 0.4.0 — both come from the same `proto_fqn` source.
+    assert_eq!(<Empty as MessageName>::TYPE_URL, Empty::TYPE_URL);
+
+    assert_eq!(Person::FULL_NAME, "basic.Person");
+    assert_eq!(AllScalars::FULL_NAME, "basic.AllScalars");
+
+    // Nested messages: NAME carries the dotted nesting path while PACKAGE
+    // stays at the proto package. This is why both consts exist —
+    // `FULL_NAME` alone can't be split unambiguously.
+    use crate::nested::outer::middle::Inner;
+    assert_eq!(Inner::PACKAGE, "test.nested");
+    assert_eq!(Inner::NAME, "Outer.Middle.Inner");
+    assert_eq!(Inner::FULL_NAME, "test.nested.Outer.Middle.Inner");
+
+    // The view type implements `MessageName` too — same consts, different
+    // `Self`, so a generic name-keyed registry can dispatch zero-copy
+    // views and owned messages identically.
+    assert_eq!(PersonView::FULL_NAME, Person::FULL_NAME);
+    assert_eq!(PersonView::TYPE_URL, Person::TYPE_URL);
+    fn name_of<T: MessageName>() -> &'static str {
+        T::FULL_NAME
+    }
+    assert_eq!(name_of::<Person>(), name_of::<PersonView<'_>>());
+}
 
 #[test]
 fn test_empty_message_encodes_to_zero_bytes() {

@@ -46,5 +46,6 @@ mod proto3_semantics;
 mod textproto;
 mod utf8_validation;
 mod view;
+mod view_json;
 mod with_setters;
 mod wkt;

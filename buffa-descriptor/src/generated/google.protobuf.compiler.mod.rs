@@ -15,14 +15,41 @@ include!("google.protobuf.compiler.plugin.rs");
 pub mod __buffa {
     #[allow(unused_imports)]
     use super::*;
-    pub mod oneof {
+    #[cfg(feature = "views")]
+    pub mod view {
         #[allow(unused_imports)]
         use super::*;
-        include!("google.protobuf.compiler.plugin.__oneof.rs");
+        include!("google.protobuf.compiler.plugin.__view.rs");
     }
-    pub mod ext {
-        #[allow(unused_imports)]
-        use super::*;
-        include!("google.protobuf.compiler.plugin.__ext.rs");
+    #[cfg(any(feature = "json", feature = "text"))]
+    /// Register this package's `Any` type entries and extension entries.
+    #[allow(unused_variables)]
+    pub fn register_types(reg: &mut ::buffa::type_registry::TypeRegistry) {
+        #[cfg(feature = "json")] reg.register_json_any(super::__VERSION_JSON_ANY);
+        #[cfg(feature = "json")]
+        reg.register_json_any(super::__CODE_GENERATOR_REQUEST_JSON_ANY);
+        #[cfg(feature = "json")]
+        reg.register_json_any(super::__CODE_GENERATOR_RESPONSE_JSON_ANY);
+        #[cfg(feature = "json")]
+        reg.register_json_any(super::code_generator_response::__FILE_JSON_ANY);
+        #[cfg(feature = "text")] reg.register_text_any(super::__VERSION_TEXT_ANY);
+        #[cfg(feature = "text")]
+        reg.register_text_any(super::__CODE_GENERATOR_REQUEST_TEXT_ANY);
+        #[cfg(feature = "text")]
+        reg.register_text_any(super::__CODE_GENERATOR_RESPONSE_TEXT_ANY);
+        #[cfg(feature = "text")]
+        reg.register_text_any(super::code_generator_response::__FILE_TEXT_ANY);
     }
 }
+#[cfg(feature = "views")]
+#[doc(inline)]
+pub use self::__buffa::view::VersionView;
+#[cfg(feature = "views")]
+#[doc(inline)]
+pub use self::__buffa::view::CodeGeneratorRequestView;
+#[cfg(feature = "views")]
+#[doc(inline)]
+pub use self::__buffa::view::CodeGeneratorResponseView;
+#[cfg(any(feature = "json", feature = "text"))]
+#[doc(inline)]
+pub use self::__buffa::register_types;

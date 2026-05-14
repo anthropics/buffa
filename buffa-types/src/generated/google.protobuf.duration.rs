@@ -107,6 +107,12 @@ impl ::buffa::DefaultInstance for Duration {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+impl ::buffa::MessageName for Duration {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "Duration";
+    const FULL_NAME: &'static str = "google.protobuf.Duration";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Duration";
+}
 impl ::buffa::Message for Duration {
     /// Returns the total encoded size in bytes.
     ///

@@ -215,6 +215,18 @@ pub trait ExtensionSet {
     /// Checked against [`Extension::extendee`] on every `extension()`,
     /// `set_extension()`, and `clear_extension()` call. A mismatch panics:
     /// passing an extension for the wrong message is a bug in the caller.
+    ///
+    /// Equal to [`MessageName::FULL_NAME`](crate::MessageName::FULL_NAME)
+    /// for generated messages — both come from the same `proto_fqn` in
+    /// codegen. Hand-written impls that implement both traits must keep the
+    /// two strings in sync; a mismatch surfaces as a runtime panic on
+    /// extension access rather than at compile time.
+    ///
+    /// If you only need the message's full name (no extension access), prefer
+    /// [`MessageName::FULL_NAME`](crate::MessageName::FULL_NAME): it
+    /// is a standalone trait that doesn't require the extension machinery or
+    /// the `unknown_fields=true` codegen option (which adds an
+    /// `__buffa_unknown_fields` storage field to the generated struct).
     const PROTO_FQN: &'static str;
 
     /// Immutable access to the extendee's unknown-field storage.

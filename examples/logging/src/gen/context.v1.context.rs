@@ -54,6 +54,12 @@ impl ::buffa::DefaultInstance for RequestContext {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+impl ::buffa::MessageName for RequestContext {
+    const PACKAGE: &'static str = "buffa.examples.context.v1";
+    const NAME: &'static str = "RequestContext";
+    const FULL_NAME: &'static str = "buffa.examples.context.v1.RequestContext";
+    const TYPE_URL: &'static str = "type.googleapis.com/buffa.examples.context.v1.RequestContext";
+}
 impl ::buffa::Message for RequestContext {
     /// Returns the total encoded size in bytes.
     ///

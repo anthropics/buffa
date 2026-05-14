@@ -51,6 +51,15 @@ jobs:
       - name: Check all features
         run: cargo check --workspace --all-features
 
+      # `gate_impls_on_crate_features` codegen output: generate the buffa-test
+      # fixture protos with the gate on, then `cargo check` the result with
+      # each `{json, views, text}` subset. Catches name-resolution bugs the
+      # string-match tests cannot — a `cfg`-gated item referenced from an
+      # ungated context survives `syn::parse_file` but fails this. Marked
+      # `--ignored` so the default workspace test stays fast. (#113)
+      - name: Feature-gating compile matrix
+        run: cargo test -p buffa-codegen --test feature_gating_compile -- --ignored
+
   # ── Markdown lint ────────────────────────────────────────────────────────
   # Same pinned markdownlint-cli version as `task lint-md`. Node is
   # preinstalled on ubuntu-latest so no setup-node step is needed.

@@ -743,6 +743,47 @@ impl<'a, K, V> MapView<'a, K, V> {
     {
         self.entries.iter().any(|(k, _)| k.borrow() == key)
     }
+
+    /// Iterate over key-value pairs with duplicate keys removed.
+    ///
+    /// Each distinct key is yielded **exactly once, at the position of its
+    /// last wire occurrence, carrying that occurrence's value** — i.e.
+    /// last-write-wins, mirroring the merge semantics that an owned
+    /// `HashMap` decode applies. Callers that need first-occurrence position
+    /// should use [`iter`](Self::iter) and filter themselves.
+    ///
+    /// Used by the generated view `Serialize` impl: a JSON object cannot
+    /// hold duplicate keys, but `MapView` preserves all wire entries
+    /// (including malformed duplicates), so the JSON encode path must
+    /// deduplicate. The implementation is allocation-free and O(n²) — for
+    /// each entry, scan the remaining entries for a later occurrence of the
+    /// same key. Duplicate map keys are invalid per the protobuf encoding
+    /// spec and only arise in adversarial or conformance-test wire data, so
+    /// `n` is effectively always small.
+    pub fn iter_unique(&self) -> impl Iterator<Item = &(K, V)>
+    where
+        K: PartialEq,
+    {
+        let entries = &self.entries;
+        entries.iter().enumerate().filter_map(move |(i, entry)| {
+            if entries[i + 1..]
+                .iter()
+                .any(|(later_k, _)| *later_k == entry.0)
+            {
+                None
+            } else {
+                Some(entry)
+            }
+        })
+    }
+
+    /// Count of distinct keys (`iter_unique().count()`).
+    pub fn len_unique(&self) -> usize
+    where
+        K: PartialEq,
+    {
+        self.iter_unique().count()
+    }
 }
 
 impl<'a, K, V> From<alloc::vec::Vec<(K, V)>> for MapView<'a, K, V> {
@@ -1185,6 +1226,23 @@ where
 
 impl<V> Eq for OwnedView<V> where V: Eq {}
 
+/// Serialize an `OwnedView<V>` by delegating to the inner view's `Serialize`
+/// impl.
+///
+/// Equivalent to serializing `&*owned_view` directly, so
+/// `serde_json::to_string(&owned_view)` works without an explicit deref. When
+/// `V` is a buffa-generated view with `generate_json` enabled, this produces
+/// protobuf JSON; the impl itself just forwards to whatever `V::serialize`
+/// does.
+///
+/// Only available when the `json` feature is enabled.
+#[cfg(feature = "json")]
+impl<V: ::serde::Serialize> ::serde::Serialize for OwnedView<V> {
+    fn serialize<S: ::serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(&**self, s)
+    }
+}
+
 // `OwnedView<V>` is auto-`Send`/`Sync` when `V` is — `ManuallyDrop<V>` and
 // `Bytes` both forward auto-traits. No manual `unsafe impl` is needed, and
 // adding one with a `V: 'static` bound is actively harmful: it is precisely
@@ -1442,6 +1500,54 @@ mod tests {
         mv.push("x", 1);
         mv.push("x", 2);
         assert_eq!(mv.get("x"), Some(&2));
+    }
+
+    #[test]
+    fn map_view_iter_unique_dedups_last_write_wins() {
+        let mut mv = MapView::<&str, i32>::default();
+        mv.push("a", 1);
+        mv.push("b", 2);
+        mv.push("a", 3); // duplicate key — only this entry survives for "a"
+        mv.push("c", 4);
+        mv.push("b", 5); // duplicate key — only this entry survives for "b"
+
+        assert_eq!(mv.len(), 5, "iter() preserves all wire entries");
+        assert_eq!(mv.len_unique(), 3, "len_unique() counts distinct keys");
+
+        let unique: alloc::vec::Vec<_> = mv.iter_unique().collect();
+        assert_eq!(unique, [&("a", 3), &("c", 4), &("b", 5)]);
+    }
+
+    #[test]
+    fn map_view_iter_unique_all_duplicates() {
+        let mut mv = MapView::<&str, i32>::default();
+        mv.push("a", 1);
+        mv.push("a", 2);
+        mv.push("a", 3);
+        assert_eq!(mv.len_unique(), 1);
+        assert_eq!(
+            mv.iter_unique().collect::<alloc::vec::Vec<_>>(),
+            [&("a", 3)]
+        );
+    }
+
+    #[test]
+    fn map_view_iter_unique_no_duplicates() {
+        let mut mv = MapView::<i32, &str>::default();
+        mv.push(1, "x");
+        mv.push(2, "y");
+        assert_eq!(mv.len_unique(), 2);
+        assert_eq!(
+            mv.iter_unique().collect::<alloc::vec::Vec<_>>(),
+            [&(1, "x"), &(2, "y")]
+        );
+    }
+
+    #[test]
+    fn map_view_iter_unique_empty() {
+        let mv = MapView::<&str, i32>::default();
+        assert_eq!(mv.len_unique(), 0);
+        assert_eq!(mv.iter_unique().count(), 0);
     }
 
     #[test]

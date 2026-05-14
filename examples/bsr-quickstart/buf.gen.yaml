@@ -1,0 +1,25 @@
+# Generates Rust message types from the published `buf.build/anthropics/buffa`
+# remote plugin. No local plugin install required — `buf generate` sends the
+# compiled proto descriptors to the Buf Schema Registry, which runs the plugin
+# remotely and returns the generated source.
+#
+# `file_per_package=true` emits one self-contained `<dotted.package>.rs` per
+# proto package. The hand-written `src/gen/mod.rs` wires them into nested
+# `pub mod` blocks. To have the `mod.rs` generated for you, install
+# `protoc-gen-buffa-packaging` locally and add it as a second plugin (and
+# drop `file_per_package=true`).
+#
+# The plugin reference is pinned to a specific version so the generated
+# output is reproducible and a plugin update can't silently change it. Match
+# the pin to the `buffa` runtime crate version in `Cargo.toml`. Bump it (and
+# `task gen-bsr-quickstart-example`) when a new BSR plugin release ships.
+version: v2
+plugins:
+  - remote: buf.build/anthropics/buffa:v0.5.2
+    out: src/gen
+    opt:
+      - file_per_package=true
+      # `json=true` and `views=true` are the published plugin's defaults;
+      # listed for clarity.
+      - json=true
+      - views=true

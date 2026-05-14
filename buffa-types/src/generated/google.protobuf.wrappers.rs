@@ -32,6 +32,12 @@ impl ::buffa::DefaultInstance for DoubleValue {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+impl ::buffa::MessageName for DoubleValue {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "DoubleValue";
+    const FULL_NAME: &'static str = "google.protobuf.DoubleValue";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.DoubleValue";
+}
 impl ::buffa::Message for DoubleValue {
     /// Returns the total encoded size in bytes.
     ///
@@ -170,6 +176,12 @@ impl ::buffa::DefaultInstance for FloatValue {
         static VALUE: ::buffa::__private::OnceBox<FloatValue> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
+}
+impl ::buffa::MessageName for FloatValue {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "FloatValue";
+    const FULL_NAME: &'static str = "google.protobuf.FloatValue";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FloatValue";
 }
 impl ::buffa::Message for FloatValue {
     /// Returns the total encoded size in bytes.
@@ -310,6 +322,12 @@ impl ::buffa::DefaultInstance for Int64Value {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+impl ::buffa::MessageName for Int64Value {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "Int64Value";
+    const FULL_NAME: &'static str = "google.protobuf.Int64Value";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Int64Value";
+}
 impl ::buffa::Message for Int64Value {
     /// Returns the total encoded size in bytes.
     ///
@@ -448,6 +466,12 @@ impl ::buffa::DefaultInstance for UInt64Value {
         static VALUE: ::buffa::__private::OnceBox<UInt64Value> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
+}
+impl ::buffa::MessageName for UInt64Value {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "UInt64Value";
+    const FULL_NAME: &'static str = "google.protobuf.UInt64Value";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.UInt64Value";
 }
 impl ::buffa::Message for UInt64Value {
     /// Returns the total encoded size in bytes.
@@ -588,6 +612,12 @@ impl ::buffa::DefaultInstance for Int32Value {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+impl ::buffa::MessageName for Int32Value {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "Int32Value";
+    const FULL_NAME: &'static str = "google.protobuf.Int32Value";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Int32Value";
+}
 impl ::buffa::Message for Int32Value {
     /// Returns the total encoded size in bytes.
     ///
@@ -726,6 +756,12 @@ impl ::buffa::DefaultInstance for UInt32Value {
         static VALUE: ::buffa::__private::OnceBox<UInt32Value> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
+}
+impl ::buffa::MessageName for UInt32Value {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "UInt32Value";
+    const FULL_NAME: &'static str = "google.protobuf.UInt32Value";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.UInt32Value";
 }
 impl ::buffa::Message for UInt32Value {
     /// Returns the total encoded size in bytes.
@@ -866,6 +902,12 @@ impl ::buffa::DefaultInstance for BoolValue {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+impl ::buffa::MessageName for BoolValue {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "BoolValue";
+    const FULL_NAME: &'static str = "google.protobuf.BoolValue";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.BoolValue";
+}
 impl ::buffa::Message for BoolValue {
     /// Returns the total encoded size in bytes.
     ///
@@ -1004,6 +1046,12 @@ impl ::buffa::DefaultInstance for StringValue {
         static VALUE: ::buffa::__private::OnceBox<StringValue> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
+}
+impl ::buffa::MessageName for StringValue {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "StringValue";
+    const FULL_NAME: &'static str = "google.protobuf.StringValue";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.StringValue";
 }
 impl ::buffa::Message for StringValue {
     /// Returns the total encoded size in bytes.
@@ -1146,6 +1194,12 @@ impl ::buffa::DefaultInstance for BytesValue {
         static VALUE: ::buffa::__private::OnceBox<BytesValue> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
+}
+impl ::buffa::MessageName for BytesValue {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "BytesValue";
+    const FULL_NAME: &'static str = "google.protobuf.BytesValue";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.BytesValue";
 }
 impl ::buffa::Message for BytesValue {
     /// Returns the total encoded size in bytes.

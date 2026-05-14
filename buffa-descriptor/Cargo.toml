@@ -11,7 +11,33 @@ categories = ["encoding", "no-std"]
 
 [dependencies]
 buffa = { workspace = true }
+serde = { workspace = true, optional = true, features = ["derive"] }
+serde_json = { workspace = true, optional = true }
+arbitrary = { workspace = true, optional = true }
 
 [features]
+# Generated impls are wrapped in `#[cfg(feature = "json"|"views"|"text")]`
+# (see `buffa_codegen::CodeGenConfig::gate_impls_on_crate_features`). The
+# binary codec (`Message`, `Default`, `Debug`, `Clone`, `PartialEq`) is
+# always available.
+#
+# The codegen toolchain (`buffa-codegen` / `buffa-build` /
+# `protoc-gen-buffa`) depends on this crate with `default-features = false`
+# and only `std` — it parses descriptors, it doesn't serialise them to
+# JSON / text or borrow them as views. Downstream consumers whose protos
+# reference `descriptor.proto` types as fields (most commonly anything
+# depending on `buf/validate/validate.proto`) enable the features they need.
 default = ["std"]
-std = ["buffa/std"]
+# `arbitrary?/std` is omitted: the `arbitrary` crate has no `std` feature
+# (it's `no_std` by default with `alloc` baked in). The other optional deps
+# do have one and need it propagated for `--no-default-features --features
+# std` builds.
+std = ["buffa/std", "serde?/std", "serde_json?/std"]
+## Zero-copy view types (`FileDescriptorProtoView<'a>`, …).
+views = []
+## `serde::Serialize` / `serde::Deserialize` impls for proto3 JSON.
+json = ["buffa/json", "dep:serde", "dep:serde_json"]
+## `buffa::text::TextFormat` impls for textproto encode/decode.
+text = ["buffa/text"]
+## `arbitrary::Arbitrary` derive for fuzzing.
+arbitrary = ["buffa/arbitrary", "dep:arbitrary"]

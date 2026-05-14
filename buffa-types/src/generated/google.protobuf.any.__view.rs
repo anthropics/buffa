@@ -281,6 +281,12 @@ impl<'a> ::buffa::ViewEncode<'a> for AnyView<'a> {
         self.__buffa_unknown_fields.write_to(buf);
     }
 }
+impl<'a> ::buffa::MessageName for AnyView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "Any";
+    const FULL_NAME: &'static str = "google.protobuf.Any";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Any";
+}
 impl<'v> ::buffa::DefaultViewInstance for AnyView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
