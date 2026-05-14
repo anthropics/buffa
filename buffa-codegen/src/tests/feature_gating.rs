@@ -201,6 +201,44 @@ fn gated_view_module_is_cfg_blocked() {
 }
 
 #[test]
+fn gated_view_reexports_are_cfg_blocked() {
+    // Every natural-path `pub use ...::view::FooView;` re-export must carry
+    // the `views` gate — top-level message views (emitted in `lib.rs`),
+    // nested-message views, and view-oneof enums (both in `message.rs`). A
+    // missed gate is a silent name-resolution bug: the re-export survives
+    // when the `view` module it points at has been cfg'd out, and the
+    // compiler reports `could not find view in __buffa`.
+    let content = generate_gated(false);
+    let squashed = squash(&content);
+    // `pub use ...::__buffa::view::...` re-exports live *outside* the gated
+    // `view` module, so they need their own gate. References *inside* the
+    // gated `view` module (cross-message view-oneof types, etc.) are
+    // covered by the module gate and don't count here.
+    let re_exports: Vec<&str> = squashed
+        .match_indices("pub use ")
+        .map(|(i, _)| &squashed[i..(i + 80).min(squashed.len())])
+        .filter(|s| s.contains("__buffa::view::"))
+        .collect();
+    assert!(
+        !re_exports.is_empty(),
+        "fixture must produce at least one view re-export: {content}"
+    );
+    // Each must be immediately preceded by `#[cfg(feature = "views")]`
+    // (with an optional `#[doc(inline)]` between the cfg and the `pub use`).
+    for re in &re_exports {
+        let prefix = format!(
+            r#"#[cfg(feature = "views")] #[doc(inline)] {}"#,
+            &re[..re.find('`').unwrap_or(re.len()).min(40)]
+        );
+        let alt = format!(r#"#[cfg(feature = "views")] {}"#, &re[..40.min(re.len())]);
+        assert!(
+            squashed.contains(&prefix) || squashed.contains(&alt),
+            "view re-export `{re}` must be gated on `feature = \"views\"`: {content}"
+        );
+    }
+}
+
+#[test]
 fn gated_text_impl_is_cfg_blocked() {
     let content = generate_gated(true);
     assert!(

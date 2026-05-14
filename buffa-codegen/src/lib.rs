@@ -849,10 +849,13 @@ fn generate_proto_content(
             let view_ident = format_ident!("{top_level_name}View");
             root_reexports.push(message::ReexportCandidate {
                 name: view_ident.to_string(),
-                tokens: quote! {
-                    #[doc(inline)]
-                    pub use self :: #sentinel :: view :: #view_ident;
-                },
+                tokens: feature_gates::cfg_block(
+                    quote! {
+                        #[doc(inline)]
+                        pub use self :: #sentinel :: view :: #view_ident;
+                    },
+                    ctx.config.feature_gates().views,
+                ),
             });
         }
     }
