@@ -63,8 +63,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `buffa-descriptor` and `buffa-types` ship every impl while keeping the
   codegen toolchain (`buffa-codegen` / `buffa-build` / `protoc-gen-buffa`)
   lean — it depends on them with `default-features = false`. Tracked in
-  [#113](https://github.com/anthropics/buffa/issues/113); follow-ups add
-  the `buffa-build` builder method and `protoc-gen-buffa` plugin opt.
+  [#113](https://github.com/anthropics/buffa/issues/113). Exposed as
+  `buffa_build::Config::gate_impls_on_crate_features(bool)` and the
+  `gate_impls=true` plugin opt, both default-off.
 
 - **`buffa-descriptor`: regenerated with views, JSON, text, and arbitrary
   impls behind crate features.** `descriptor.proto` and
