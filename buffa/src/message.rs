@@ -417,38 +417,77 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     fn clear(&mut self);
 }
 
-/// Provides compile-time access to a generated message's protobuf full name.
+/// Compile-time access to a generated message's protobuf identifiers.
 ///
-/// This exists for generic code that needs to name message types without going
-/// through runtime reflection or descriptor APIs.
+/// Generic code that needs to *name* a message type — type-erased event
+/// registries, structured logging, `Any` packing, schema lookups — can
+/// bound on `T: MessageName` and read [`PACKAGE`], [`NAME`],
+/// [`FULL_NAME`], or [`TYPE_URL`] without descriptor machinery or runtime
+/// reflection. All four are `&'static str` literals computed at codegen
+/// time, so there's no allocation or concatenation at runtime — unlike
+/// `prost::Name`, whose `full_name()` and `type_url()` are runtime
+/// `format!` calls.
 ///
-/// Bring `buffa::MessageFullName` into scope to use `MyMessage::FULL_NAME`.
+/// Bring `buffa::MessageName` into scope to use `MyMessage::FULL_NAME`.
 /// Without the trait in scope, use
-/// `<MyMessage as buffa::MessageFullName>::FULL_NAME`.
+/// `<MyMessage as buffa::MessageName>::FULL_NAME`.
 ///
-/// Codegen emits this for every generated message. Hand-written [`Message`]
-/// implementations can opt in by also implementing `MessageFullName`; it is
-/// a separate trait specifically so that omitting it stays non-breaking.
+/// Codegen implements `MessageName` for both the owned message type and
+/// its zero-copy view type (`MyMessageView<'a>`), so the same generic
+/// bound dispatches either. The trait has **no** [`Message`] supertrait —
+/// it doesn't reach into the wire codec and a name-keyed registry should
+/// be able to register a type without proving it can encode.
 ///
-/// For messages that also implement [`ExtensionSet`](crate::ExtensionSet),
-/// this value is guaranteed equal to
-/// [`ExtensionSet::PROTO_FQN`](crate::ExtensionSet::PROTO_FQN) — both come
-/// from the same `proto_fqn` source in codegen.
+/// Hand-written [`Message`] implementations can opt in by also
+/// implementing `MessageName`; it is a separate trait specifically so
+/// that omitting it stays non-breaking. For messages that also implement
+/// [`ExtensionSet`](crate::ExtensionSet), [`FULL_NAME`] is guaranteed
+/// equal to [`ExtensionSet::PROTO_FQN`](crate::ExtensionSet::PROTO_FQN);
+/// the inherent `MyMessage::TYPE_URL` const is equal to [`TYPE_URL`].
+/// All derive from the same `proto_fqn` source in codegen.
 ///
-/// Because the only item is an associated `const`, this trait is **not**
-/// object-safe (`dyn MessageFullName` does not compile). Use it as a
-/// generic bound (`fn foo<T: MessageFullName>()`), not a trait object.
-pub trait MessageFullName: Message {
-    /// The protobuf full name for the generated message type.
+/// Because the only items are associated `const`s, this trait is **not**
+/// object-safe (`dyn MessageName` does not compile). Use it as a generic
+/// bound (`fn foo<T: MessageName>()`), not a trait object.
+///
+/// [`PACKAGE`]: Self::PACKAGE
+/// [`NAME`]: Self::NAME
+/// [`FULL_NAME`]: Self::FULL_NAME
+/// [`TYPE_URL`]: Self::TYPE_URL
+pub trait MessageName {
+    /// The protobuf package the message is declared in.
     ///
-    /// Fully-qualified, with no leading dot. For a message `Foo` declared in
-    /// package `my.pkg` this is `"my.pkg.Foo"`. For a nested message
-    /// `my.pkg.Outer.Inner` it is `"my.pkg.Outer.Inner"`. For a message in
-    /// the unnamed root package it is the bare message name (e.g. `"Foo"`).
+    /// `"my.pkg"` for `package my.pkg;`. Empty string for the unnamed
+    /// root package. Does not include a leading or trailing dot.
+    const PACKAGE: &'static str;
+
+    /// The unqualified message name, with `.` between nesting levels.
     ///
-    /// Resolves at compile time — `T::FULL_NAME` is a `&'static str` literal
-    /// in the binary's read-only data, with no runtime cost.
+    /// `"Foo"` for a top-level message; `"Outer.Inner"` for a message
+    /// nested inside `Outer`. This is what protobuf calls the
+    /// "relative name" — the part after the package.
+    const NAME: &'static str;
+
+    /// The fully-qualified protobuf type name with no leading dot.
+    ///
+    /// `"my.pkg.Outer.Inner"` for a nested message in package `my.pkg`,
+    /// or just `"Foo"` for a top-level message in the unnamed root
+    /// package. Equal to `PACKAGE` + `"."` + `NAME` (with the joining
+    /// dot omitted when `PACKAGE` is empty); shipped as its own const
+    /// because consumers almost always want the joined form and the
+    /// dotted string can't be re-split unambiguously
+    /// (`foo.Bar.Baz` could be package `foo.Bar` + message `Baz`, or
+    /// package `foo` + nested `Bar.Baz`).
     const FULL_NAME: &'static str;
+
+    /// The `google.protobuf.Any.type_url` form for this message.
+    ///
+    /// `"type.googleapis.com/" + FULL_NAME`. This is the value the
+    /// runtime stores in [`Any::type_url`] when packing a message, and
+    /// the one a generic `Any` registry should key on.
+    ///
+    /// [`Any::type_url`]: https://protobuf.dev/programming-guides/proto3/#any
+    const TYPE_URL: &'static str;
 }
 
 /// Options for configuring message decoding behavior.

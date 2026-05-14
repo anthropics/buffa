@@ -284,7 +284,7 @@ Features that prost supports but buffa does not (yet):
 | `field_attribute(path, attr)` | Not supported. |
 | `service_generator(...)` | Not supported. Services codegen is planned. |
 | `#[derive(prost::Message)]` | Not provided. Implement `Message` by hand and use `extern_path` (see [Custom types](guide.md#custom-type-implementations)). |
-| `prost::Name` trait | Not supported. The generated `TYPE_URL` associated constant covers the common case (`Any` packing/unpacking). |
+| `prost::Name` trait | `buffa::MessageName` — same shape (`PACKAGE`, `NAME`, plus `FULL_NAME` and `TYPE_URL`), but all four are `&'static str` consts computed at codegen time rather than runtime `format!` calls. Replace `M::full_name()` with `M::FULL_NAME` and `M::type_url()` with `M::TYPE_URL`. Implemented for both owned messages and view types. |
 
 Features that buffa has but prost does not:
 

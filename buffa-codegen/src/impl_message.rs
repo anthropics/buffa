@@ -322,6 +322,48 @@ fn message_uses_size_cache(
 
 /// Generate `impl DefaultInstance` and `impl Message` for a message.
 ///
+/// Emit `impl #generics ::buffa::MessageName for #ty { … }`.
+///
+/// `generics` is the impl-side generic parameter list (`<'a>` for the
+/// view type, empty for the owned message). `ty` is the implementing
+/// type *with* any generics applied (`Foo` or `FooView<'a>`).
+///
+/// All four consts are computed at codegen time as string literals so
+/// `T::FULL_NAME` etc. are zero-cost at runtime — no `format!`,
+/// `concat!`, or lazy static. `PACKAGE` and `NAME` are split here rather
+/// than left to the consumer because the dotted `FULL_NAME` cannot be
+/// re-split unambiguously: `foo.Bar.Baz` could be package `foo.Bar` +
+/// message `Baz`, or package `foo` + nested `Bar.Baz`. Codegen knows
+/// which.
+pub(crate) fn message_name_impl(
+    current_package: &str,
+    proto_fqn: &str,
+    generics: &TokenStream,
+    ty: &TokenStream,
+) -> TokenStream {
+    let name = if current_package.is_empty() {
+        proto_fqn
+    } else {
+        // `proto_fqn` is always `"<package>.<rest>"` for a non-empty
+        // package — it's built by joining segments onto the package — so
+        // the strip can't fail. Fall back defensively rather than panic
+        // on a malformed descriptor.
+        proto_fqn
+            .strip_prefix(current_package)
+            .and_then(|s| s.strip_prefix('.'))
+            .unwrap_or(proto_fqn)
+    };
+    let type_url = format!("type.googleapis.com/{proto_fqn}");
+    quote! {
+        impl #generics ::buffa::MessageName for #ty {
+            const PACKAGE: &'static str = #current_package;
+            const NAME: &'static str = #name;
+            const FULL_NAME: &'static str = #proto_fqn;
+            const TYPE_URL: &'static str = #type_url;
+        }
+    }
+}
+
 /// `preserve_unknown_fields`: when `true`, the generated merge collects
 /// unknown fields into `self.__buffa_unknown_fields` and both `compute_size` and
 /// `write_to` include them.
@@ -543,6 +585,13 @@ pub fn generate_message_impl(
         quote! {}
     };
 
+    let message_name_impl = message_name_impl(
+        current_package,
+        proto_fqn,
+        &quote! {},
+        &quote! { #name_ident },
+    );
+
     Ok(quote! {
         impl ::buffa::DefaultInstance for #name_ident {
             fn default_instance() -> &'static Self {
@@ -552,9 +601,7 @@ pub fn generate_message_impl(
             }
         }
 
-        impl ::buffa::MessageFullName for #name_ident {
-            const FULL_NAME: &'static str = #proto_fqn;
-        }
+        #message_name_impl
 
         impl ::buffa::Message for #name_ident {
             /// Returns the total encoded size in bytes.

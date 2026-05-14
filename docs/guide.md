@@ -1666,11 +1666,14 @@ Note what's *not* needed:
 
 - **`UnknownFields`** — omitted since this is a simple leaf type where round-trip preservation of unknown fields isn't important. Unknown tags are silently skipped via `skip_field`.
 - **Any size-caching field** — sizes live in the external `SizeCache` threaded through `compute_size` / `write_to`. A leaf type like this doesn't touch the cache; types with nested message fields reserve a slot before recursing (see the `compute_size` comment above).
-- **`MessageFullName`** — opt-in. Implement it on your extern-mapped type if you have generic code that dispatches on `T::FULL_NAME` (event stores, type registries, `Any` type-URL construction); otherwise leave it off:
+- **`MessageName`** — opt-in. Implement it on your extern-mapped type if you have generic code that dispatches on `T::FULL_NAME`, `T::TYPE_URL`, etc. (event stores, type-erased registries, `Any` packing); otherwise leave it off. The trait has no `Message` supertrait, so it's also implementable on types that don't (or can't) participate in the wire codec:
 
   ```rust,ignore
-  impl buffa::MessageFullName for Int64Range {
+  impl buffa::MessageName for Int64Range {
+      const PACKAGE: &'static str = "my.common";
+      const NAME: &'static str = "Int64Range";
       const FULL_NAME: &'static str = "my.common.Int64Range";
+      const TYPE_URL: &'static str = "type.googleapis.com/my.common.Int64Range";
   }
   ```
 

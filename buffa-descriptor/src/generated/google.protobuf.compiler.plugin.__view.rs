@@ -257,6 +257,12 @@ impl<'__a> ::serde::Serialize for VersionView<'__a> {
         __map.end()
     }
 }
+impl<'a> ::buffa::MessageName for VersionView<'a> {
+    const PACKAGE: &'static str = "google.protobuf.compiler";
+    const NAME: &'static str = "Version";
+    const FULL_NAME: &'static str = "google.protobuf.compiler.Version";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.compiler.Version";
+}
 impl<'v> ::buffa::DefaultViewInstance for VersionView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -655,6 +661,12 @@ impl<'__a> ::serde::Serialize for CodeGeneratorRequestView<'__a> {
         __map.end()
     }
 }
+impl<'a> ::buffa::MessageName for CodeGeneratorRequestView<'a> {
+    const PACKAGE: &'static str = "google.protobuf.compiler";
+    const NAME: &'static str = "CodeGeneratorRequest";
+    const FULL_NAME: &'static str = "google.protobuf.compiler.CodeGeneratorRequest";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.compiler.CodeGeneratorRequest";
+}
 impl<'v> ::buffa::DefaultViewInstance for CodeGeneratorRequestView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -999,6 +1011,12 @@ impl<'__a> ::serde::Serialize for CodeGeneratorResponseView<'__a> {
         }
         __map.end()
     }
+}
+impl<'a> ::buffa::MessageName for CodeGeneratorResponseView<'a> {
+    const PACKAGE: &'static str = "google.protobuf.compiler";
+    const NAME: &'static str = "CodeGeneratorResponse";
+    const FULL_NAME: &'static str = "google.protobuf.compiler.CodeGeneratorResponse";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.compiler.CodeGeneratorResponse";
 }
 impl<'v> ::buffa::DefaultViewInstance for CodeGeneratorResponseView<'v> {
     fn default_view_instance<'a>() -> &'a Self
@@ -1359,6 +1377,12 @@ pub mod code_generator_response {
             }
             __map.end()
         }
+    }
+    impl<'a> ::buffa::MessageName for FileView<'a> {
+        const PACKAGE: &'static str = "google.protobuf.compiler";
+        const NAME: &'static str = "CodeGeneratorResponse.File";
+        const FULL_NAME: &'static str = "google.protobuf.compiler.CodeGeneratorResponse.File";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.compiler.CodeGeneratorResponse.File";
     }
     impl<'v> ::buffa::DefaultViewInstance for FileView<'v> {
         fn default_view_instance<'a>() -> &'a Self

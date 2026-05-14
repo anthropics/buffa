@@ -179,6 +179,12 @@ impl<'__a> ::serde::Serialize for FileDescriptorSetView<'__a> {
         __map.end()
     }
 }
+impl<'a> ::buffa::MessageName for FileDescriptorSetView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "FileDescriptorSet";
+    const FULL_NAME: &'static str = "google.protobuf.FileDescriptorSet";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FileDescriptorSet";
+}
 impl<'v> ::buffa::DefaultViewInstance for FileDescriptorSetView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -939,6 +945,12 @@ impl<'__a> ::serde::Serialize for FileDescriptorProtoView<'__a> {
         __map.end()
     }
 }
+impl<'a> ::buffa::MessageName for FileDescriptorProtoView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "FileDescriptorProto";
+    const FULL_NAME: &'static str = "google.protobuf.FileDescriptorProto";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FileDescriptorProto";
+}
 impl<'v> ::buffa::DefaultViewInstance for FileDescriptorProtoView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -1589,6 +1601,12 @@ impl<'__a> ::serde::Serialize for DescriptorProtoView<'__a> {
         __map.end()
     }
 }
+impl<'a> ::buffa::MessageName for DescriptorProtoView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "DescriptorProto";
+    const FULL_NAME: &'static str = "google.protobuf.DescriptorProto";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.DescriptorProto";
+}
 impl<'v> ::buffa::DefaultViewInstance for DescriptorProtoView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -1870,6 +1888,12 @@ pub mod descriptor_proto {
             __map.end()
         }
     }
+    impl<'a> ::buffa::MessageName for ExtensionRangeView<'a> {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "DescriptorProto.ExtensionRange";
+        const FULL_NAME: &'static str = "google.protobuf.DescriptorProto.ExtensionRange";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.DescriptorProto.ExtensionRange";
+    }
     impl<'v> ::buffa::DefaultViewInstance for ExtensionRangeView<'v> {
         fn default_view_instance<'a>() -> &'a Self
         where
@@ -2090,6 +2114,12 @@ pub mod descriptor_proto {
             }
             __map.end()
         }
+    }
+    impl<'a> ::buffa::MessageName for ReservedRangeView<'a> {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "DescriptorProto.ReservedRange";
+        const FULL_NAME: &'static str = "google.protobuf.DescriptorProto.ReservedRange";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.DescriptorProto.ReservedRange";
     }
     impl<'v> ::buffa::DefaultViewInstance for ReservedRangeView<'v> {
         fn default_view_instance<'a>() -> &'a Self
@@ -2449,6 +2479,12 @@ impl<'__a> ::serde::Serialize for ExtensionRangeOptionsView<'__a> {
         __map.end()
     }
 }
+impl<'a> ::buffa::MessageName for ExtensionRangeOptionsView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "ExtensionRangeOptions";
+    const FULL_NAME: &'static str = "google.protobuf.ExtensionRangeOptions";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.ExtensionRangeOptions";
+}
 impl<'v> ::buffa::DefaultViewInstance for ExtensionRangeOptionsView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -2754,6 +2790,12 @@ pub mod extension_range_options {
             }
             __map.end()
         }
+    }
+    impl<'a> ::buffa::MessageName for DeclarationView<'a> {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "ExtensionRangeOptions.Declaration";
+        const FULL_NAME: &'static str = "google.protobuf.ExtensionRangeOptions.Declaration";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.ExtensionRangeOptions.Declaration";
     }
     impl<'v> ::buffa::DefaultViewInstance for DeclarationView<'v> {
         fn default_view_instance<'a>() -> &'a Self
@@ -3313,6 +3355,12 @@ impl<'__a> ::serde::Serialize for FieldDescriptorProtoView<'__a> {
         __map.end()
     }
 }
+impl<'a> ::buffa::MessageName for FieldDescriptorProtoView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "FieldDescriptorProto";
+    const FULL_NAME: &'static str = "google.protobuf.FieldDescriptorProto";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FieldDescriptorProto";
+}
 impl<'v> ::buffa::DefaultViewInstance for FieldDescriptorProtoView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -3542,6 +3590,12 @@ impl<'__a> ::serde::Serialize for OneofDescriptorProtoView<'__a> {
         }
         __map.end()
     }
+}
+impl<'a> ::buffa::MessageName for OneofDescriptorProtoView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "OneofDescriptorProto";
+    const FULL_NAME: &'static str = "google.protobuf.OneofDescriptorProto";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.OneofDescriptorProto";
 }
 impl<'v> ::buffa::DefaultViewInstance for OneofDescriptorProtoView<'v> {
     fn default_view_instance<'a>() -> &'a Self
@@ -3950,6 +4004,12 @@ impl<'__a> ::serde::Serialize for EnumDescriptorProtoView<'__a> {
         __map.end()
     }
 }
+impl<'a> ::buffa::MessageName for EnumDescriptorProtoView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "EnumDescriptorProto";
+    const FULL_NAME: &'static str = "google.protobuf.EnumDescriptorProto";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumDescriptorProto";
+}
 impl<'v> ::buffa::DefaultViewInstance for EnumDescriptorProtoView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -4176,6 +4236,12 @@ pub mod enum_descriptor_proto {
             }
             __map.end()
         }
+    }
+    impl<'a> ::buffa::MessageName for EnumReservedRangeView<'a> {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "EnumDescriptorProto.EnumReservedRange";
+        const FULL_NAME: &'static str = "google.protobuf.EnumDescriptorProto.EnumReservedRange";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumDescriptorProto.EnumReservedRange";
     }
     impl<'v> ::buffa::DefaultViewInstance for EnumReservedRangeView<'v> {
         fn default_view_instance<'a>() -> &'a Self
@@ -4440,6 +4506,12 @@ impl<'__a> ::serde::Serialize for EnumValueDescriptorProtoView<'__a> {
         }
         __map.end()
     }
+}
+impl<'a> ::buffa::MessageName for EnumValueDescriptorProtoView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "EnumValueDescriptorProto";
+    const FULL_NAME: &'static str = "google.protobuf.EnumValueDescriptorProto";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumValueDescriptorProto";
 }
 impl<'v> ::buffa::DefaultViewInstance for EnumValueDescriptorProtoView<'v> {
     fn default_view_instance<'a>() -> &'a Self
@@ -4722,6 +4794,12 @@ impl<'__a> ::serde::Serialize for ServiceDescriptorProtoView<'__a> {
         }
         __map.end()
     }
+}
+impl<'a> ::buffa::MessageName for ServiceDescriptorProtoView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "ServiceDescriptorProto";
+    const FULL_NAME: &'static str = "google.protobuf.ServiceDescriptorProto";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.ServiceDescriptorProto";
 }
 impl<'v> ::buffa::DefaultViewInstance for ServiceDescriptorProtoView<'v> {
     fn default_view_instance<'a>() -> &'a Self
@@ -5061,6 +5139,12 @@ impl<'__a> ::serde::Serialize for MethodDescriptorProtoView<'__a> {
         }
         __map.end()
     }
+}
+impl<'a> ::buffa::MessageName for MethodDescriptorProtoView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "MethodDescriptorProto";
+    const FULL_NAME: &'static str = "google.protobuf.MethodDescriptorProto";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.MethodDescriptorProto";
 }
 impl<'v> ::buffa::DefaultViewInstance for MethodDescriptorProtoView<'v> {
     fn default_view_instance<'a>() -> &'a Self
@@ -5953,6 +6037,12 @@ impl<'__a> ::serde::Serialize for FileOptionsView<'__a> {
         __map.end()
     }
 }
+impl<'a> ::buffa::MessageName for FileOptionsView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "FileOptions";
+    const FULL_NAME: &'static str = "google.protobuf.FileOptions";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FileOptions";
+}
 impl<'v> ::buffa::DefaultViewInstance for FileOptionsView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -6407,6 +6497,12 @@ impl<'__a> ::serde::Serialize for MessageOptionsView<'__a> {
         }
         __map.end()
     }
+}
+impl<'a> ::buffa::MessageName for MessageOptionsView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "MessageOptions";
+    const FULL_NAME: &'static str = "google.protobuf.MessageOptions";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.MessageOptions";
 }
 impl<'v> ::buffa::DefaultViewInstance for MessageOptionsView<'v> {
     fn default_view_instance<'a>() -> &'a Self
@@ -7165,6 +7261,12 @@ impl<'__a> ::serde::Serialize for FieldOptionsView<'__a> {
         __map.end()
     }
 }
+impl<'a> ::buffa::MessageName for FieldOptionsView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "FieldOptions";
+    const FULL_NAME: &'static str = "google.protobuf.FieldOptions";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FieldOptions";
+}
 impl<'v> ::buffa::DefaultViewInstance for FieldOptionsView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -7388,6 +7490,12 @@ pub mod field_options {
             }
             __map.end()
         }
+    }
+    impl<'a> ::buffa::MessageName for EditionDefaultView<'a> {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "FieldOptions.EditionDefault";
+        const FULL_NAME: &'static str = "google.protobuf.FieldOptions.EditionDefault";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FieldOptions.EditionDefault";
     }
     impl<'v> ::buffa::DefaultViewInstance for EditionDefaultView<'v> {
         fn default_view_instance<'a>() -> &'a Self
@@ -7709,6 +7817,12 @@ pub mod field_options {
             __map.end()
         }
     }
+    impl<'a> ::buffa::MessageName for FeatureSupportView<'a> {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "FieldOptions.FeatureSupport";
+        const FULL_NAME: &'static str = "google.protobuf.FieldOptions.FeatureSupport";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FieldOptions.FeatureSupport";
+    }
     impl<'v> ::buffa::DefaultViewInstance for FeatureSupportView<'v> {
         fn default_view_instance<'a>() -> &'a Self
         where
@@ -7968,6 +8082,12 @@ impl<'__a> ::serde::Serialize for OneofOptionsView<'__a> {
         }
         __map.end()
     }
+}
+impl<'a> ::buffa::MessageName for OneofOptionsView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "OneofOptions";
+    const FULL_NAME: &'static str = "google.protobuf.OneofOptions";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.OneofOptions";
 }
 impl<'v> ::buffa::DefaultViewInstance for OneofOptionsView<'v> {
     fn default_view_instance<'a>() -> &'a Self
@@ -8319,6 +8439,12 @@ impl<'__a> ::serde::Serialize for EnumOptionsView<'__a> {
         }
         __map.end()
     }
+}
+impl<'a> ::buffa::MessageName for EnumOptionsView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "EnumOptions";
+    const FULL_NAME: &'static str = "google.protobuf.EnumOptions";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumOptions";
 }
 impl<'v> ::buffa::DefaultViewInstance for EnumOptionsView<'v> {
     fn default_view_instance<'a>() -> &'a Self
@@ -8696,6 +8822,12 @@ impl<'__a> ::serde::Serialize for EnumValueOptionsView<'__a> {
         __map.end()
     }
 }
+impl<'a> ::buffa::MessageName for EnumValueOptionsView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "EnumValueOptions";
+    const FULL_NAME: &'static str = "google.protobuf.EnumValueOptions";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumValueOptions";
+}
 impl<'v> ::buffa::DefaultViewInstance for EnumValueOptionsView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -8988,6 +9120,12 @@ impl<'__a> ::serde::Serialize for ServiceOptionsView<'__a> {
         }
         __map.end()
     }
+}
+impl<'a> ::buffa::MessageName for ServiceOptionsView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "ServiceOptions";
+    const FULL_NAME: &'static str = "google.protobuf.ServiceOptions";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.ServiceOptions";
 }
 impl<'v> ::buffa::DefaultViewInstance for ServiceOptionsView<'v> {
     fn default_view_instance<'a>() -> &'a Self
@@ -9324,6 +9462,12 @@ impl<'__a> ::serde::Serialize for MethodOptionsView<'__a> {
         }
         __map.end()
     }
+}
+impl<'a> ::buffa::MessageName for MethodOptionsView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "MethodOptions";
+    const FULL_NAME: &'static str = "google.protobuf.MethodOptions";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.MethodOptions";
 }
 impl<'v> ::buffa::DefaultViewInstance for MethodOptionsView<'v> {
     fn default_view_instance<'a>() -> &'a Self
@@ -9721,6 +9865,12 @@ impl<'__a> ::serde::Serialize for UninterpretedOptionView<'__a> {
         __map.end()
     }
 }
+impl<'a> ::buffa::MessageName for UninterpretedOptionView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "UninterpretedOption";
+    const FULL_NAME: &'static str = "google.protobuf.UninterpretedOption";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.UninterpretedOption";
+}
 impl<'v> ::buffa::DefaultViewInstance for UninterpretedOptionView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -9921,6 +10071,12 @@ pub mod uninterpreted_option {
             }
             __map.end()
         }
+    }
+    impl<'a> ::buffa::MessageName for NamePartView<'a> {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "UninterpretedOption.NamePart";
+        const FULL_NAME: &'static str = "google.protobuf.UninterpretedOption.NamePart";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.UninterpretedOption.NamePart";
     }
     impl<'v> ::buffa::DefaultViewInstance for NamePartView<'v> {
         fn default_view_instance<'a>() -> &'a Self
@@ -10416,6 +10572,12 @@ impl<'__a> ::serde::Serialize for FeatureSetView<'__a> {
         __map.end()
     }
 }
+impl<'a> ::buffa::MessageName for FeatureSetView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "FeatureSet";
+    const FULL_NAME: &'static str = "google.protobuf.FeatureSet";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FeatureSet";
+}
 impl<'v> ::buffa::DefaultViewInstance for FeatureSetView<'v> {
     fn default_view_instance<'a>() -> &'a Self
     where
@@ -10566,6 +10728,12 @@ pub mod feature_set {
             let mut __map = __s.serialize_map(::core::option::Option::None)?;
             __map.end()
         }
+    }
+    impl<'a> ::buffa::MessageName for VisibilityFeatureView<'a> {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "FeatureSet.VisibilityFeature";
+        const FULL_NAME: &'static str = "google.protobuf.FeatureSet.VisibilityFeature";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FeatureSet.VisibilityFeature";
     }
     impl<'v> ::buffa::DefaultViewInstance for VisibilityFeatureView<'v> {
         fn default_view_instance<'a>() -> &'a Self
@@ -10855,6 +11023,12 @@ impl<'__a> ::serde::Serialize for FeatureSetDefaultsView<'__a> {
         }
         __map.end()
     }
+}
+impl<'a> ::buffa::MessageName for FeatureSetDefaultsView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "FeatureSetDefaults";
+    const FULL_NAME: &'static str = "google.protobuf.FeatureSetDefaults";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FeatureSetDefaults";
 }
 impl<'v> ::buffa::DefaultViewInstance for FeatureSetDefaultsView<'v> {
     fn default_view_instance<'a>() -> &'a Self
@@ -11183,6 +11357,12 @@ pub mod feature_set_defaults {
             __map.end()
         }
     }
+    impl<'a> ::buffa::MessageName for FeatureSetEditionDefaultView<'a> {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "FeatureSetDefaults.FeatureSetEditionDefault";
+        const FULL_NAME: &'static str = "google.protobuf.FeatureSetDefaults.FeatureSetEditionDefault";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FeatureSetDefaults.FeatureSetEditionDefault";
+    }
     impl<'v> ::buffa::DefaultViewInstance for FeatureSetEditionDefaultView<'v> {
         fn default_view_instance<'a>() -> &'a Self
         where
@@ -11430,6 +11610,12 @@ impl<'__a> ::serde::Serialize for SourceCodeInfoView<'__a> {
         }
         __map.end()
     }
+}
+impl<'a> ::buffa::MessageName for SourceCodeInfoView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "SourceCodeInfo";
+    const FULL_NAME: &'static str = "google.protobuf.SourceCodeInfo";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.SourceCodeInfo";
 }
 impl<'v> ::buffa::DefaultViewInstance for SourceCodeInfoView<'v> {
     fn default_view_instance<'a>() -> &'a Self
@@ -11886,6 +12072,12 @@ pub mod source_code_info {
             __map.end()
         }
     }
+    impl<'a> ::buffa::MessageName for LocationView<'a> {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "SourceCodeInfo.Location";
+        const FULL_NAME: &'static str = "google.protobuf.SourceCodeInfo.Location";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.SourceCodeInfo.Location";
+    }
     impl<'v> ::buffa::DefaultViewInstance for LocationView<'v> {
         fn default_view_instance<'a>() -> &'a Self
         where
@@ -12086,6 +12278,12 @@ impl<'__a> ::serde::Serialize for GeneratedCodeInfoView<'__a> {
         }
         __map.end()
     }
+}
+impl<'a> ::buffa::MessageName for GeneratedCodeInfoView<'a> {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "GeneratedCodeInfo";
+    const FULL_NAME: &'static str = "google.protobuf.GeneratedCodeInfo";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.GeneratedCodeInfo";
 }
 impl<'v> ::buffa::DefaultViewInstance for GeneratedCodeInfoView<'v> {
     fn default_view_instance<'a>() -> &'a Self
@@ -12451,6 +12649,12 @@ pub mod generated_code_info {
             }
             __map.end()
         }
+    }
+    impl<'a> ::buffa::MessageName for AnnotationView<'a> {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "GeneratedCodeInfo.Annotation";
+        const FULL_NAME: &'static str = "google.protobuf.GeneratedCodeInfo.Annotation";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.GeneratedCodeInfo.Annotation";
     }
     impl<'v> ::buffa::DefaultViewInstance for AnnotationView<'v> {
         fn default_view_instance<'a>() -> &'a Self

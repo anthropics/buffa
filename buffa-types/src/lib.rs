@@ -93,7 +93,7 @@ pub use any_ext::register_wkt_types;
 #[cfg(test)]
 mod full_name_tests {
     use super::google::protobuf::*;
-    use buffa::MessageFullName;
+    use buffa::MessageName;
 
     // Regression test: the WKT FQNs are baked into Any type-URLs, JSON
     // serialization, and the type registry. Codegen must keep emitting them

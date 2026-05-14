@@ -395,8 +395,11 @@ impl ::buffa::DefaultInstance for FileDescriptorSet {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for FileDescriptorSet {
+impl ::buffa::MessageName for FileDescriptorSet {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "FileDescriptorSet";
     const FULL_NAME: &'static str = "google.protobuf.FileDescriptorSet";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FileDescriptorSet";
 }
 impl ::buffa::Message for FileDescriptorSet {
     /// Returns the total encoded size in bytes.
@@ -901,8 +904,11 @@ impl ::buffa::DefaultInstance for FileDescriptorProto {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for FileDescriptorProto {
+impl ::buffa::MessageName for FileDescriptorProto {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "FileDescriptorProto";
     const FULL_NAME: &'static str = "google.protobuf.FileDescriptorProto";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FileDescriptorProto";
 }
 impl ::buffa::Message for FileDescriptorProto {
     /// Returns the total encoded size in bytes.
@@ -1723,8 +1729,11 @@ impl ::buffa::DefaultInstance for DescriptorProto {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for DescriptorProto {
+impl ::buffa::MessageName for DescriptorProto {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "DescriptorProto";
     const FULL_NAME: &'static str = "google.protobuf.DescriptorProto";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.DescriptorProto";
 }
 impl ::buffa::Message for DescriptorProto {
     /// Returns the total encoded size in bytes.
@@ -2351,8 +2360,11 @@ pub mod descriptor_proto {
             VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
     }
-    impl ::buffa::MessageFullName for ExtensionRange {
+    impl ::buffa::MessageName for ExtensionRange {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "DescriptorProto.ExtensionRange";
         const FULL_NAME: &'static str = "google.protobuf.DescriptorProto.ExtensionRange";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.DescriptorProto.ExtensionRange";
     }
     impl ::buffa::Message for ExtensionRange {
         /// Returns the total encoded size in bytes.
@@ -2608,8 +2620,11 @@ pub mod descriptor_proto {
             VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
     }
-    impl ::buffa::MessageFullName for ReservedRange {
+    impl ::buffa::MessageName for ReservedRange {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "DescriptorProto.ReservedRange";
         const FULL_NAME: &'static str = "google.protobuf.DescriptorProto.ReservedRange";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.DescriptorProto.ReservedRange";
     }
     impl ::buffa::Message for ReservedRange {
         /// Returns the total encoded size in bytes.
@@ -2862,8 +2877,11 @@ impl ::buffa::DefaultInstance for ExtensionRangeOptions {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for ExtensionRangeOptions {
+impl ::buffa::MessageName for ExtensionRangeOptions {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "ExtensionRangeOptions";
     const FULL_NAME: &'static str = "google.protobuf.ExtensionRangeOptions";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.ExtensionRangeOptions";
 }
 impl ::buffa::Message for ExtensionRangeOptions {
     /// Returns the total encoded size in bytes.
@@ -3581,8 +3599,11 @@ pub mod extension_range_options {
             VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
     }
-    impl ::buffa::MessageFullName for Declaration {
+    impl ::buffa::MessageName for Declaration {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "ExtensionRangeOptions.Declaration";
         const FULL_NAME: &'static str = "google.protobuf.ExtensionRangeOptions.Declaration";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.ExtensionRangeOptions.Declaration";
     }
     impl ::buffa::Message for Declaration {
         /// Returns the total encoded size in bytes.
@@ -4044,8 +4065,11 @@ impl ::buffa::DefaultInstance for FieldDescriptorProto {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for FieldDescriptorProto {
+impl ::buffa::MessageName for FieldDescriptorProto {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "FieldDescriptorProto";
     const FULL_NAME: &'static str = "google.protobuf.FieldDescriptorProto";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FieldDescriptorProto";
 }
 impl ::buffa::Message for FieldDescriptorProto {
     /// Returns the total encoded size in bytes.
@@ -4948,8 +4972,11 @@ impl ::buffa::DefaultInstance for OneofDescriptorProto {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for OneofDescriptorProto {
+impl ::buffa::MessageName for OneofDescriptorProto {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "OneofDescriptorProto";
     const FULL_NAME: &'static str = "google.protobuf.OneofDescriptorProto";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.OneofDescriptorProto";
 }
 impl ::buffa::Message for OneofDescriptorProto {
     /// Returns the total encoded size in bytes.
@@ -5233,8 +5260,11 @@ impl ::buffa::DefaultInstance for EnumDescriptorProto {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for EnumDescriptorProto {
+impl ::buffa::MessageName for EnumDescriptorProto {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "EnumDescriptorProto";
     const FULL_NAME: &'static str = "google.protobuf.EnumDescriptorProto";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumDescriptorProto";
 }
 impl ::buffa::Message for EnumDescriptorProto {
     /// Returns the total encoded size in bytes.
@@ -5637,8 +5667,11 @@ pub mod enum_descriptor_proto {
             VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
     }
-    impl ::buffa::MessageFullName for EnumReservedRange {
+    impl ::buffa::MessageName for EnumReservedRange {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "EnumDescriptorProto.EnumReservedRange";
         const FULL_NAME: &'static str = "google.protobuf.EnumDescriptorProto.EnumReservedRange";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumDescriptorProto.EnumReservedRange";
     }
     impl ::buffa::Message for EnumReservedRange {
         /// Returns the total encoded size in bytes.
@@ -5861,8 +5894,11 @@ impl ::buffa::DefaultInstance for EnumValueDescriptorProto {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for EnumValueDescriptorProto {
+impl ::buffa::MessageName for EnumValueDescriptorProto {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "EnumValueDescriptorProto";
     const FULL_NAME: &'static str = "google.protobuf.EnumValueDescriptorProto";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumValueDescriptorProto";
 }
 impl ::buffa::Message for EnumValueDescriptorProto {
     /// Returns the total encoded size in bytes.
@@ -6126,8 +6162,11 @@ impl ::buffa::DefaultInstance for ServiceDescriptorProto {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for ServiceDescriptorProto {
+impl ::buffa::MessageName for ServiceDescriptorProto {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "ServiceDescriptorProto";
     const FULL_NAME: &'static str = "google.protobuf.ServiceDescriptorProto";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.ServiceDescriptorProto";
 }
 impl ::buffa::Message for ServiceDescriptorProto {
     /// Returns the total encoded size in bytes.
@@ -6449,8 +6488,11 @@ impl ::buffa::DefaultInstance for MethodDescriptorProto {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for MethodDescriptorProto {
+impl ::buffa::MessageName for MethodDescriptorProto {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "MethodDescriptorProto";
     const FULL_NAME: &'static str = "google.protobuf.MethodDescriptorProto";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.MethodDescriptorProto";
 }
 impl ::buffa::Message for MethodDescriptorProto {
     /// Returns the total encoded size in bytes.
@@ -7142,8 +7184,11 @@ impl ::buffa::DefaultInstance for FileOptions {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for FileOptions {
+impl ::buffa::MessageName for FileOptions {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "FileOptions";
     const FULL_NAME: &'static str = "google.protobuf.FileOptions";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FileOptions";
 }
 impl ::buffa::Message for FileOptions {
     /// Returns the total encoded size in bytes.
@@ -8707,8 +8752,11 @@ impl ::buffa::DefaultInstance for MessageOptions {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for MessageOptions {
+impl ::buffa::MessageName for MessageOptions {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "MessageOptions";
     const FULL_NAME: &'static str = "google.protobuf.MessageOptions";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.MessageOptions";
 }
 impl ::buffa::Message for MessageOptions {
     /// Returns the total encoded size in bytes.
@@ -9499,8 +9547,11 @@ impl ::buffa::DefaultInstance for FieldOptions {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for FieldOptions {
+impl ::buffa::MessageName for FieldOptions {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "FieldOptions";
     const FULL_NAME: &'static str = "google.protobuf.FieldOptions";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FieldOptions";
 }
 impl ::buffa::Message for FieldOptions {
     /// Returns the total encoded size in bytes.
@@ -11161,8 +11212,11 @@ pub mod field_options {
             VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
     }
-    impl ::buffa::MessageFullName for EditionDefault {
+    impl ::buffa::MessageName for EditionDefault {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "FieldOptions.EditionDefault";
         const FULL_NAME: &'static str = "google.protobuf.FieldOptions.EditionDefault";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FieldOptions.EditionDefault";
     }
     impl ::buffa::Message for EditionDefault {
         /// Returns the total encoded size in bytes.
@@ -11437,8 +11491,11 @@ pub mod field_options {
             VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
     }
-    impl ::buffa::MessageFullName for FeatureSupport {
+    impl ::buffa::MessageName for FeatureSupport {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "FieldOptions.FeatureSupport";
         const FULL_NAME: &'static str = "google.protobuf.FieldOptions.FeatureSupport";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FieldOptions.FeatureSupport";
     }
     impl ::buffa::Message for FeatureSupport {
         /// Returns the total encoded size in bytes.
@@ -11765,8 +11822,11 @@ impl ::buffa::DefaultInstance for OneofOptions {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for OneofOptions {
+impl ::buffa::MessageName for OneofOptions {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "OneofOptions";
     const FULL_NAME: &'static str = "google.protobuf.OneofOptions";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.OneofOptions";
 }
 impl ::buffa::Message for OneofOptions {
     /// Returns the total encoded size in bytes.
@@ -12214,8 +12274,11 @@ impl ::buffa::DefaultInstance for EnumOptions {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for EnumOptions {
+impl ::buffa::MessageName for EnumOptions {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "EnumOptions";
     const FULL_NAME: &'static str = "google.protobuf.EnumOptions";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumOptions";
 }
 impl ::buffa::Message for EnumOptions {
     /// Returns the total encoded size in bytes.
@@ -12777,8 +12840,11 @@ impl ::buffa::DefaultInstance for EnumValueOptions {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for EnumValueOptions {
+impl ::buffa::MessageName for EnumValueOptions {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "EnumValueOptions";
     const FULL_NAME: &'static str = "google.protobuf.EnumValueOptions";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumValueOptions";
 }
 impl ::buffa::Message for EnumValueOptions {
     /// Returns the total encoded size in bytes.
@@ -13327,8 +13393,11 @@ impl ::buffa::DefaultInstance for ServiceOptions {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for ServiceOptions {
+impl ::buffa::MessageName for ServiceOptions {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "ServiceOptions";
     const FULL_NAME: &'static str = "google.protobuf.ServiceOptions";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.ServiceOptions";
 }
 impl ::buffa::Message for ServiceOptions {
     /// Returns the total encoded size in bytes.
@@ -13797,8 +13866,11 @@ impl ::buffa::DefaultInstance for MethodOptions {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for MethodOptions {
+impl ::buffa::MessageName for MethodOptions {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "MethodOptions";
     const FULL_NAME: &'static str = "google.protobuf.MethodOptions";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.MethodOptions";
 }
 impl ::buffa::Message for MethodOptions {
     /// Returns the total encoded size in bytes.
@@ -14513,8 +14585,11 @@ impl ::buffa::DefaultInstance for UninterpretedOption {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for UninterpretedOption {
+impl ::buffa::MessageName for UninterpretedOption {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "UninterpretedOption";
     const FULL_NAME: &'static str = "google.protobuf.UninterpretedOption";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.UninterpretedOption";
 }
 impl ::buffa::Message for UninterpretedOption {
     /// Returns the total encoded size in bytes.
@@ -14918,8 +14993,11 @@ pub mod uninterpreted_option {
             VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
     }
-    impl ::buffa::MessageFullName for NamePart {
+    impl ::buffa::MessageName for NamePart {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "UninterpretedOption.NamePart";
         const FULL_NAME: &'static str = "google.protobuf.UninterpretedOption.NamePart";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.UninterpretedOption.NamePart";
     }
     impl ::buffa::Message for NamePart {
         /// Returns the total encoded size in bytes.
@@ -15209,8 +15287,11 @@ impl ::buffa::DefaultInstance for FeatureSet {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for FeatureSet {
+impl ::buffa::MessageName for FeatureSet {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "FeatureSet";
     const FULL_NAME: &'static str = "google.protobuf.FeatureSet";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FeatureSet";
 }
 impl ::buffa::Message for FeatureSet {
     /// Returns the total encoded size in bytes.
@@ -16989,8 +17070,11 @@ pub mod feature_set {
             VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
     }
-    impl ::buffa::MessageFullName for VisibilityFeature {
+    impl ::buffa::MessageName for VisibilityFeature {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "FeatureSet.VisibilityFeature";
         const FULL_NAME: &'static str = "google.protobuf.FeatureSet.VisibilityFeature";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FeatureSet.VisibilityFeature";
     }
     impl ::buffa::Message for VisibilityFeature {
         /// Returns the total encoded size in bytes.
@@ -17361,8 +17445,11 @@ impl ::buffa::DefaultInstance for FeatureSetDefaults {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for FeatureSetDefaults {
+impl ::buffa::MessageName for FeatureSetDefaults {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "FeatureSetDefaults";
     const FULL_NAME: &'static str = "google.protobuf.FeatureSetDefaults";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FeatureSetDefaults";
 }
 impl ::buffa::Message for FeatureSetDefaults {
     /// Returns the total encoded size in bytes.
@@ -17666,8 +17753,11 @@ pub mod feature_set_defaults {
             VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
     }
-    impl ::buffa::MessageFullName for FeatureSetEditionDefault {
+    impl ::buffa::MessageName for FeatureSetEditionDefault {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "FeatureSetDefaults.FeatureSetEditionDefault";
         const FULL_NAME: &'static str = "google.protobuf.FeatureSetDefaults.FeatureSetEditionDefault";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FeatureSetDefaults.FeatureSetEditionDefault";
     }
     impl ::buffa::Message for FeatureSetEditionDefault {
         /// Returns the total encoded size in bytes.
@@ -17988,8 +18078,11 @@ impl ::buffa::DefaultInstance for SourceCodeInfo {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for SourceCodeInfo {
+impl ::buffa::MessageName for SourceCodeInfo {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "SourceCodeInfo";
     const FULL_NAME: &'static str = "google.protobuf.SourceCodeInfo";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.SourceCodeInfo";
 }
 impl ::buffa::Message for SourceCodeInfo {
     /// Returns the total encoded size in bytes.
@@ -18457,8 +18550,11 @@ pub mod source_code_info {
             VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
     }
-    impl ::buffa::MessageFullName for Location {
+    impl ::buffa::MessageName for Location {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "SourceCodeInfo.Location";
         const FULL_NAME: &'static str = "google.protobuf.SourceCodeInfo.Location";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.SourceCodeInfo.Location";
     }
     impl ::buffa::Message for Location {
         /// Returns the total encoded size in bytes.
@@ -18850,8 +18946,11 @@ impl ::buffa::DefaultInstance for GeneratedCodeInfo {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
-impl ::buffa::MessageFullName for GeneratedCodeInfo {
+impl ::buffa::MessageName for GeneratedCodeInfo {
+    const PACKAGE: &'static str = "google.protobuf";
+    const NAME: &'static str = "GeneratedCodeInfo";
     const FULL_NAME: &'static str = "google.protobuf.GeneratedCodeInfo";
+    const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.GeneratedCodeInfo";
 }
 impl ::buffa::Message for GeneratedCodeInfo {
     /// Returns the total encoded size in bytes.
@@ -19105,8 +19204,11 @@ pub mod generated_code_info {
             VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
         }
     }
-    impl ::buffa::MessageFullName for Annotation {
+    impl ::buffa::MessageName for Annotation {
+        const PACKAGE: &'static str = "google.protobuf";
+        const NAME: &'static str = "GeneratedCodeInfo.Annotation";
         const FULL_NAME: &'static str = "google.protobuf.GeneratedCodeInfo.Annotation";
+        const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.GeneratedCodeInfo.Annotation";
     }
     impl ::buffa::Message for Annotation {
         /// Returns the total encoded size in bytes.

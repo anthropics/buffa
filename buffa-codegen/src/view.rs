@@ -166,6 +166,17 @@ pub(crate) fn generate_view_with_nesting(
         }
     };
 
+    // The view participates in the same name-keyed registries as the
+    // owned message — a generic event-sourcing dispatch should not have
+    // to round-trip a zero-copy view through `to_owned_message()` just
+    // to read its FQN. Same consts, different `Self`.
+    let message_name_impl = crate::impl_message::message_name_impl(
+        current_package,
+        proto_fqn,
+        &quote! { <'a> },
+        &quote! { #view_ident<'a> },
+    );
+
     let serialize_impl = if ctx.config.generate_json {
         crate::feature_gates::cfg_block(
             generate_view_serialize(
@@ -336,6 +347,8 @@ pub(crate) fn generate_view_with_nesting(
         #view_encode_impl
 
         #serialize_impl
+
+        #message_name_impl
 
         impl<'v> ::buffa::DefaultViewInstance for #view_ident<'v> {
             fn default_view_instance<'a>() -> &'a Self
