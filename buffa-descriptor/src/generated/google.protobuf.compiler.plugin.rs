@@ -67,6 +67,39 @@ impl Version {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.compiler.Version";
 }
+impl Version {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::major`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_major(mut self, value: i32) -> Self {
+        self.major = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::minor`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_minor(mut self, value: i32) -> Self {
+        self.minor = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::patch`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_patch(mut self, value: i32) -> Self {
+        self.patch = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::suffix`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_suffix(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.suffix = Some(value.into());
+        self
+    }
+}
 impl ::buffa::DefaultInstance for Version {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<Version> = ::buffa::__private::OnceBox::new();
@@ -410,6 +443,18 @@ impl CodeGeneratorRequest {
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.compiler.CodeGeneratorRequest";
+}
+impl CodeGeneratorRequest {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::parameter`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_parameter(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.parameter = Some(value.into());
+        self
+    }
 }
 impl ::buffa::DefaultInstance for CodeGeneratorRequest {
     fn default_instance() -> &'static Self {
@@ -824,6 +869,39 @@ impl CodeGeneratorResponse {
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.compiler.CodeGeneratorResponse";
+}
+impl CodeGeneratorResponse {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::error`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_error(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.error = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::supported_features`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_supported_features(mut self, value: u64) -> Self {
+        self.supported_features = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::minimum_edition`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_minimum_edition(mut self, value: i32) -> Self {
+        self.minimum_edition = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::maximum_edition`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_maximum_edition(mut self, value: i32) -> Self {
+        self.maximum_edition = Some(value);
+        self
+    }
 }
 impl ::buffa::DefaultInstance for CodeGeneratorResponse {
     fn default_instance() -> &'static Self {
@@ -1378,6 +1456,38 @@ pub mod code_generator_response {
         ///
         /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
         pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.compiler.CodeGeneratorResponse.File";
+    }
+    impl File {
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::name`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_name(
+            mut self,
+            value: impl Into<::buffa::alloc::string::String>,
+        ) -> Self {
+            self.name = Some(value.into());
+            self
+        }
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::insertion_point`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_insertion_point(
+            mut self,
+            value: impl Into<::buffa::alloc::string::String>,
+        ) -> Self {
+            self.insertion_point = Some(value.into());
+            self
+        }
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::content`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_content(
+            mut self,
+            value: impl Into<::buffa::alloc::string::String>,
+        ) -> Self {
+            self.content = Some(value.into());
+            self
+        }
     }
     impl ::buffa::DefaultInstance for File {
         fn default_instance() -> &'static Self {

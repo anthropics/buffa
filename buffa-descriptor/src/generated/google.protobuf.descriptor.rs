@@ -898,6 +898,45 @@ impl FileDescriptorProto {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FileDescriptorProto";
 }
+impl FileDescriptorProto {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::name`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_name(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.name = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::package`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_package(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.package = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::syntax`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_syntax(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.syntax = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::edition`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_edition(mut self, value: impl Into<Edition>) -> Self {
+        self.edition = Some(value.into());
+        self
+    }
+}
 impl ::buffa::DefaultInstance for FileDescriptorProto {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<FileDescriptorProto> = ::buffa::__private::OnceBox::new();
@@ -1723,6 +1762,25 @@ impl DescriptorProto {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.DescriptorProto";
 }
+impl DescriptorProto {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::name`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_name(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.name = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::visibility`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_visibility(mut self, value: impl Into<SymbolVisibility>) -> Self {
+        self.visibility = Some(value.into());
+        self
+    }
+}
 impl ::buffa::DefaultInstance for DescriptorProto {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<DescriptorProto> = ::buffa::__private::OnceBox::new();
@@ -2354,6 +2412,22 @@ pub mod descriptor_proto {
         /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
         pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.DescriptorProto.ExtensionRange";
     }
+    impl ExtensionRange {
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::start`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_start(mut self, value: i32) -> Self {
+            self.start = Some(value);
+            self
+        }
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::end`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_end(mut self, value: i32) -> Self {
+            self.end = Some(value);
+            self
+        }
+    }
     impl ::buffa::DefaultInstance for ExtensionRange {
         fn default_instance() -> &'static Self {
             static VALUE: ::buffa::__private::OnceBox<ExtensionRange> = ::buffa::__private::OnceBox::new();
@@ -2614,6 +2688,22 @@ pub mod descriptor_proto {
         /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
         pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.DescriptorProto.ReservedRange";
     }
+    impl ReservedRange {
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::start`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_start(mut self, value: i32) -> Self {
+            self.start = Some(value);
+            self
+        }
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::end`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_end(mut self, value: i32) -> Self {
+            self.end = Some(value);
+            self
+        }
+    }
     impl ::buffa::DefaultInstance for ReservedRange {
         fn default_instance() -> &'static Self {
             static VALUE: ::buffa::__private::OnceBox<ReservedRange> = ::buffa::__private::OnceBox::new();
@@ -2870,6 +2960,18 @@ impl ExtensionRangeOptions {
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.ExtensionRangeOptions";
+}
+impl ExtensionRangeOptions {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::verification`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_verification(
+        mut self,
+        value: impl Into<extension_range_options::VerificationState>,
+    ) -> Self {
+        self.verification = Some(value.into());
+        self
+    }
 }
 impl ::buffa::DefaultInstance for ExtensionRangeOptions {
     fn default_instance() -> &'static Self {
@@ -3593,6 +3695,49 @@ pub mod extension_range_options {
         /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
         pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.ExtensionRangeOptions.Declaration";
     }
+    impl Declaration {
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::number`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_number(mut self, value: i32) -> Self {
+            self.number = Some(value);
+            self
+        }
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::full_name`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_full_name(
+            mut self,
+            value: impl Into<::buffa::alloc::string::String>,
+        ) -> Self {
+            self.full_name = Some(value.into());
+            self
+        }
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::r#type`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_type(
+            mut self,
+            value: impl Into<::buffa::alloc::string::String>,
+        ) -> Self {
+            self.r#type = Some(value.into());
+            self
+        }
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::reserved`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_reserved(mut self, value: bool) -> Self {
+            self.reserved = Some(value);
+            self
+        }
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::repeated`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_repeated(mut self, value: bool) -> Self {
+            self.repeated = Some(value);
+            self
+        }
+    }
     impl ::buffa::DefaultInstance for Declaration {
         fn default_instance() -> &'static Self {
             static VALUE: ::buffa::__private::OnceBox<Declaration> = ::buffa::__private::OnceBox::new();
@@ -4058,6 +4203,96 @@ impl FieldDescriptorProto {
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FieldDescriptorProto";
+}
+impl FieldDescriptorProto {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::name`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_name(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.name = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::number`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_number(mut self, value: i32) -> Self {
+        self.number = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::label`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_label(
+        mut self,
+        value: impl Into<field_descriptor_proto::Label>,
+    ) -> Self {
+        self.label = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::r#type`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_type(mut self, value: impl Into<field_descriptor_proto::Type>) -> Self {
+        self.r#type = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::type_name`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_type_name(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.type_name = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::extendee`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_extendee(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.extendee = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::default_value`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_default_value(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.default_value = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::oneof_index`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_oneof_index(mut self, value: i32) -> Self {
+        self.oneof_index = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::json_name`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_json_name(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.json_name = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::proto3_optional`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_proto3_optional(mut self, value: bool) -> Self {
+        self.proto3_optional = Some(value);
+        self
+    }
 }
 impl ::buffa::DefaultInstance for FieldDescriptorProto {
     fn default_instance() -> &'static Self {
@@ -4966,6 +5201,18 @@ impl OneofDescriptorProto {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.OneofDescriptorProto";
 }
+impl OneofDescriptorProto {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::name`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_name(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.name = Some(value.into());
+        self
+    }
+}
 impl ::buffa::DefaultInstance for OneofDescriptorProto {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<OneofDescriptorProto> = ::buffa::__private::OnceBox::new();
@@ -5253,6 +5500,25 @@ impl EnumDescriptorProto {
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumDescriptorProto";
+}
+impl EnumDescriptorProto {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::name`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_name(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.name = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::visibility`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_visibility(mut self, value: impl Into<SymbolVisibility>) -> Self {
+        self.visibility = Some(value.into());
+        self
+    }
 }
 impl ::buffa::DefaultInstance for EnumDescriptorProto {
     fn default_instance() -> &'static Self {
@@ -5661,6 +5927,22 @@ pub mod enum_descriptor_proto {
         /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
         pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumDescriptorProto.EnumReservedRange";
     }
+    impl EnumReservedRange {
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::start`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_start(mut self, value: i32) -> Self {
+            self.start = Some(value);
+            self
+        }
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::end`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_end(mut self, value: i32) -> Self {
+            self.end = Some(value);
+            self
+        }
+    }
     impl ::buffa::DefaultInstance for EnumReservedRange {
         fn default_instance() -> &'static Self {
             static VALUE: ::buffa::__private::OnceBox<EnumReservedRange> = ::buffa::__private::OnceBox::new();
@@ -5887,6 +6169,25 @@ impl EnumValueDescriptorProto {
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumValueDescriptorProto";
+}
+impl EnumValueDescriptorProto {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::name`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_name(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.name = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::number`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_number(mut self, value: i32) -> Self {
+        self.number = Some(value);
+        self
+    }
 }
 impl ::buffa::DefaultInstance for EnumValueDescriptorProto {
     fn default_instance() -> &'static Self {
@@ -6155,6 +6456,18 @@ impl ServiceDescriptorProto {
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.ServiceDescriptorProto";
+}
+impl ServiceDescriptorProto {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::name`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_name(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.name = Some(value.into());
+        self
+    }
 }
 impl ::buffa::DefaultInstance for ServiceDescriptorProto {
     fn default_instance() -> &'static Self {
@@ -6481,6 +6794,52 @@ impl MethodDescriptorProto {
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.MethodDescriptorProto";
+}
+impl MethodDescriptorProto {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::name`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_name(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.name = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::input_type`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_input_type(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.input_type = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::output_type`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_output_type(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.output_type = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::client_streaming`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_client_streaming(mut self, value: bool) -> Self {
+        self.client_streaming = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::server_streaming`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_server_streaming(mut self, value: bool) -> Self {
+        self.server_streaming = Some(value);
+        self
+    }
 }
 impl ::buffa::DefaultInstance for MethodDescriptorProto {
     fn default_instance() -> &'static Self {
@@ -7177,6 +7536,174 @@ impl FileOptions {
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FileOptions";
+}
+impl FileOptions {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::java_package`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_java_package(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.java_package = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::java_outer_classname`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_java_outer_classname(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.java_outer_classname = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::java_multiple_files`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_java_multiple_files(mut self, value: bool) -> Self {
+        self.java_multiple_files = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::java_generate_equals_and_hash`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_java_generate_equals_and_hash(mut self, value: bool) -> Self {
+        self.java_generate_equals_and_hash = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::java_string_check_utf8`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_java_string_check_utf8(mut self, value: bool) -> Self {
+        self.java_string_check_utf8 = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::optimize_for`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_optimize_for(
+        mut self,
+        value: impl Into<file_options::OptimizeMode>,
+    ) -> Self {
+        self.optimize_for = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::go_package`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_go_package(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.go_package = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::cc_generic_services`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_cc_generic_services(mut self, value: bool) -> Self {
+        self.cc_generic_services = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::java_generic_services`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_java_generic_services(mut self, value: bool) -> Self {
+        self.java_generic_services = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::py_generic_services`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_py_generic_services(mut self, value: bool) -> Self {
+        self.py_generic_services = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::deprecated`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_deprecated(mut self, value: bool) -> Self {
+        self.deprecated = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::cc_enable_arenas`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_cc_enable_arenas(mut self, value: bool) -> Self {
+        self.cc_enable_arenas = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::objc_class_prefix`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_objc_class_prefix(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.objc_class_prefix = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::csharp_namespace`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_csharp_namespace(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.csharp_namespace = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::swift_prefix`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_swift_prefix(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.swift_prefix = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::php_class_prefix`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_php_class_prefix(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.php_class_prefix = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::php_namespace`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_php_namespace(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.php_namespace = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::php_metadata_namespace`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_php_metadata_namespace(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.php_metadata_namespace = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::ruby_package`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_ruby_package(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.ruby_package = Some(value.into());
+        self
+    }
 }
 impl ::buffa::DefaultInstance for FileOptions {
     fn default_instance() -> &'static Self {
@@ -8746,6 +9273,43 @@ impl MessageOptions {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.MessageOptions";
 }
+impl MessageOptions {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::message_set_wire_format`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_message_set_wire_format(mut self, value: bool) -> Self {
+        self.message_set_wire_format = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::no_standard_descriptor_accessor`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_no_standard_descriptor_accessor(mut self, value: bool) -> Self {
+        self.no_standard_descriptor_accessor = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::deprecated`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_deprecated(mut self, value: bool) -> Self {
+        self.deprecated = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::map_entry`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_map_entry(mut self, value: bool) -> Self {
+        self.map_entry = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::deprecated_legacy_json_field_conflicts`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_deprecated_legacy_json_field_conflicts(mut self, value: bool) -> Self {
+        self.deprecated_legacy_json_field_conflicts = Some(value);
+        self
+    }
+}
 impl ::buffa::DefaultInstance for MessageOptions {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<MessageOptions> = ::buffa::__private::OnceBox::new();
@@ -9540,6 +10104,74 @@ impl FieldOptions {
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FieldOptions";
+}
+impl FieldOptions {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::ctype`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_ctype(mut self, value: impl Into<field_options::CType>) -> Self {
+        self.ctype = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::packed`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_packed(mut self, value: bool) -> Self {
+        self.packed = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::jstype`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_jstype(mut self, value: impl Into<field_options::JSType>) -> Self {
+        self.jstype = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::lazy`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_lazy(mut self, value: bool) -> Self {
+        self.lazy = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::unverified_lazy`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_unverified_lazy(mut self, value: bool) -> Self {
+        self.unverified_lazy = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::deprecated`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_deprecated(mut self, value: bool) -> Self {
+        self.deprecated = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::weak`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_weak(mut self, value: bool) -> Self {
+        self.weak = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::debug_redact`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_debug_redact(mut self, value: bool) -> Self {
+        self.debug_redact = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::retention`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_retention(
+        mut self,
+        value: impl Into<field_options::OptionRetention>,
+    ) -> Self {
+        self.retention = Some(value.into());
+        self
+    }
 }
 impl ::buffa::DefaultInstance for FieldOptions {
     fn default_instance() -> &'static Self {
@@ -11206,6 +11838,25 @@ pub mod field_options {
         /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
         pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FieldOptions.EditionDefault";
     }
+    impl EditionDefault {
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::edition`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_edition(mut self, value: impl Into<super::Edition>) -> Self {
+            self.edition = Some(value.into());
+            self
+        }
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::value`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_value(
+            mut self,
+            value: impl Into<::buffa::alloc::string::String>,
+        ) -> Self {
+            self.value = Some(value.into());
+            self
+        }
+    }
     impl ::buffa::DefaultInstance for EditionDefault {
         fn default_instance() -> &'static Self {
             static VALUE: ::buffa::__private::OnceBox<EditionDefault> = ::buffa::__private::OnceBox::new();
@@ -11484,6 +12135,45 @@ pub mod field_options {
         ///
         /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
         pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FieldOptions.FeatureSupport";
+    }
+    impl FeatureSupport {
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::edition_introduced`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_edition_introduced(
+            mut self,
+            value: impl Into<super::Edition>,
+        ) -> Self {
+            self.edition_introduced = Some(value.into());
+            self
+        }
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::edition_deprecated`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_edition_deprecated(
+            mut self,
+            value: impl Into<super::Edition>,
+        ) -> Self {
+            self.edition_deprecated = Some(value.into());
+            self
+        }
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::deprecation_warning`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_deprecation_warning(
+            mut self,
+            value: impl Into<::buffa::alloc::string::String>,
+        ) -> Self {
+            self.deprecation_warning = Some(value.into());
+            self
+        }
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::edition_removed`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_edition_removed(mut self, value: impl Into<super::Edition>) -> Self {
+            self.edition_removed = Some(value.into());
+            self
+        }
     }
     impl ::buffa::DefaultInstance for FeatureSupport {
         fn default_instance() -> &'static Self {
@@ -12268,6 +12958,29 @@ impl EnumOptions {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumOptions";
 }
+impl EnumOptions {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::allow_alias`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_allow_alias(mut self, value: bool) -> Self {
+        self.allow_alias = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::deprecated`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_deprecated(mut self, value: bool) -> Self {
+        self.deprecated = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::deprecated_legacy_json_field_conflicts`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_deprecated_legacy_json_field_conflicts(mut self, value: bool) -> Self {
+        self.deprecated_legacy_json_field_conflicts = Some(value);
+        self
+    }
+}
 impl ::buffa::DefaultInstance for EnumOptions {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<EnumOptions> = ::buffa::__private::OnceBox::new();
@@ -12834,6 +13547,22 @@ impl EnumValueOptions {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumValueOptions";
 }
+impl EnumValueOptions {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::deprecated`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_deprecated(mut self, value: bool) -> Self {
+        self.deprecated = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::debug_redact`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_debug_redact(mut self, value: bool) -> Self {
+        self.debug_redact = Some(value);
+        self
+    }
+}
 impl ::buffa::DefaultInstance for EnumValueOptions {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<EnumValueOptions> = ::buffa::__private::OnceBox::new();
@@ -13387,6 +14116,15 @@ impl ServiceOptions {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.ServiceOptions";
 }
+impl ServiceOptions {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::deprecated`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_deprecated(mut self, value: bool) -> Self {
+        self.deprecated = Some(value);
+        self
+    }
+}
 impl ::buffa::DefaultInstance for ServiceOptions {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<ServiceOptions> = ::buffa::__private::OnceBox::new();
@@ -13859,6 +14597,25 @@ impl MethodOptions {
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.MethodOptions";
+}
+impl MethodOptions {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::deprecated`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_deprecated(mut self, value: bool) -> Self {
+        self.deprecated = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::idempotency_level`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_idempotency_level(
+        mut self,
+        value: impl Into<method_options::IdempotencyLevel>,
+    ) -> Self {
+        self.idempotency_level = Some(value.into());
+        self
+    }
 }
 impl ::buffa::DefaultInstance for MethodOptions {
     fn default_instance() -> &'static Self {
@@ -14579,6 +15336,59 @@ impl UninterpretedOption {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.UninterpretedOption";
 }
+impl UninterpretedOption {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::identifier_value`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_identifier_value(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.identifier_value = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::positive_int_value`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_positive_int_value(mut self, value: u64) -> Self {
+        self.positive_int_value = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::negative_int_value`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_negative_int_value(mut self, value: i64) -> Self {
+        self.negative_int_value = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::double_value`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_double_value(mut self, value: f64) -> Self {
+        self.double_value = Some(value);
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::string_value`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_string_value(
+        mut self,
+        value: impl Into<::buffa::alloc::vec::Vec<u8>>,
+    ) -> Self {
+        self.string_value = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::aggregate_value`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_aggregate_value(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.aggregate_value = Some(value.into());
+        self
+    }
+}
 impl ::buffa::DefaultInstance for UninterpretedOption {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<UninterpretedOption> = ::buffa::__private::OnceBox::new();
@@ -15280,6 +16090,85 @@ impl FeatureSet {
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FeatureSet";
+}
+impl FeatureSet {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::field_presence`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_field_presence(
+        mut self,
+        value: impl Into<feature_set::FieldPresence>,
+    ) -> Self {
+        self.field_presence = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::enum_type`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_enum_type(mut self, value: impl Into<feature_set::EnumType>) -> Self {
+        self.enum_type = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::repeated_field_encoding`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_repeated_field_encoding(
+        mut self,
+        value: impl Into<feature_set::RepeatedFieldEncoding>,
+    ) -> Self {
+        self.repeated_field_encoding = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::utf8_validation`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_utf8_validation(
+        mut self,
+        value: impl Into<feature_set::Utf8Validation>,
+    ) -> Self {
+        self.utf8_validation = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::message_encoding`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_message_encoding(
+        mut self,
+        value: impl Into<feature_set::MessageEncoding>,
+    ) -> Self {
+        self.message_encoding = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::json_format`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_json_format(
+        mut self,
+        value: impl Into<feature_set::JsonFormat>,
+    ) -> Self {
+        self.json_format = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::enforce_naming_style`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_enforce_naming_style(
+        mut self,
+        value: impl Into<feature_set::EnforceNamingStyle>,
+    ) -> Self {
+        self.enforce_naming_style = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::default_symbol_visibility`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_default_symbol_visibility(
+        mut self,
+        value: impl Into<feature_set::visibility_feature::DefaultSymbolVisibility>,
+    ) -> Self {
+        self.default_symbol_visibility = Some(value.into());
+        self
+    }
 }
 impl ::buffa::DefaultInstance for FeatureSet {
     fn default_instance() -> &'static Self {
@@ -17439,6 +18328,22 @@ impl FeatureSetDefaults {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FeatureSetDefaults";
 }
+impl FeatureSetDefaults {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::minimum_edition`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_minimum_edition(mut self, value: impl Into<Edition>) -> Self {
+        self.minimum_edition = Some(value.into());
+        self
+    }
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::maximum_edition`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_maximum_edition(mut self, value: impl Into<Edition>) -> Self {
+        self.maximum_edition = Some(value.into());
+        self
+    }
+}
 impl ::buffa::DefaultInstance for FeatureSetDefaults {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<FeatureSetDefaults> = ::buffa::__private::OnceBox::new();
@@ -17746,6 +18651,15 @@ pub mod feature_set_defaults {
         ///
         /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
         pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FeatureSetDefaults.FeatureSetEditionDefault";
+    }
+    impl FeatureSetEditionDefault {
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::edition`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_edition(mut self, value: impl Into<super::Edition>) -> Self {
+            self.edition = Some(value.into());
+            self
+        }
     }
     impl ::buffa::DefaultInstance for FeatureSetEditionDefault {
         fn default_instance() -> &'static Self {
@@ -18544,6 +19458,28 @@ pub mod source_code_info {
         /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
         pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.SourceCodeInfo.Location";
     }
+    impl Location {
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::leading_comments`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_leading_comments(
+            mut self,
+            value: impl Into<::buffa::alloc::string::String>,
+        ) -> Self {
+            self.leading_comments = Some(value.into());
+            self
+        }
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::trailing_comments`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_trailing_comments(
+            mut self,
+            value: impl Into<::buffa::alloc::string::String>,
+        ) -> Self {
+            self.trailing_comments = Some(value.into());
+            self
+        }
+    }
     impl ::buffa::DefaultInstance for Location {
         fn default_instance() -> &'static Self {
             static VALUE: ::buffa::__private::OnceBox<Location> = ::buffa::__private::OnceBox::new();
@@ -19197,6 +20133,42 @@ pub mod generated_code_info {
         ///
         /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
         pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.GeneratedCodeInfo.Annotation";
+    }
+    impl Annotation {
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::source_file`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_source_file(
+            mut self,
+            value: impl Into<::buffa::alloc::string::String>,
+        ) -> Self {
+            self.source_file = Some(value.into());
+            self
+        }
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::begin`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_begin(mut self, value: i32) -> Self {
+            self.begin = Some(value);
+            self
+        }
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::end`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_end(mut self, value: i32) -> Self {
+            self.end = Some(value);
+            self
+        }
+        #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+        #[inline]
+        ///Sets [`Self::semantic`] to `Some(value)`, consuming and returning `self`.
+        pub fn with_semantic(
+            mut self,
+            value: impl Into<super::generated_code_info::annotation::Semantic>,
+        ) -> Self {
+            self.semantic = Some(value.into());
+            self
+        }
     }
     impl ::buffa::DefaultInstance for Annotation {
         fn default_instance() -> &'static Self {

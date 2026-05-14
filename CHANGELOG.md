@@ -8,6 +8,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **Generated message structs now include `with_<field>(value) -> Self`
+  builder-style setter methods for every explicit-presence field** (proto3
+  `optional`, proto2 `optional`, and editions fields with
+  `field_presence = EXPLICIT`). This allows chained construction without
+  `Some(...)` wrapping:
+
+  ```rust
+  let req = GetSecretRequest::default()
+      .with_name("alice")
+      .with_timeout_ms(30_000)
+      .with_enabled(true);
+  ```
+
+  String fields accept `impl Into<String>` (`&str` works directly); bytes
+  fields accept `impl Into<Vec<u8>>` or `impl Into<bytes::Bytes>` (byte
+  array literals like `b"data"` work directly); enum fields accept
+  `impl Into<EnumValue<E>>` (bare variant works directly, no
+  `EnumValue::Known(...)` wrapper needed); plain scalars take the bare
+  type to keep integer-literal inference unambiguous. Message fields
+  (`MessageField<T>`), repeated fields, map fields, oneof variants,
+  proto2 `required` fields, and implicit-presence fields are unaffected.
+  To clear a field, assign `None` directly. Setters are pure inherent
+  methods with no runtime dependency, so they're emitted unconditionally
+  regardless of `gate_impls_on_crate_features`. Disable per compilation
+  unit with `CodeGenConfig::generate_with_setters = false`,
+  `buffa_build::Config::generate_with_setters(false)`, or the
+  `with_setters=false` plugin opt. **Consumers with checked-in generated
+  code** will see new methods on regen.
+  ([#30](https://github.com/anthropics/buffa/issues/30),
+  [#93](https://github.com/anthropics/buffa/pull/93), by @tejas-dharani)
+
 - **`buffa::MessageName` trait exposes a generated message's protobuf
   identifiers as compile-time `&'static str` constants.** Codegen emits
   `impl MessageName for #Msg` (and `for #MsgView<'a>`) with four consts:
@@ -279,29 +310,6 @@ and `__private::arbitrary_bytes`, none of which exist in `buffa` 0.4.0.
 
 ### Added
 
-- Generated message structs now include `with_<field>(value) -> Self` builder
-  methods for every explicit-presence scalar, bytes, and enum field (proto3
-  `optional`, proto2 `optional`, and editions fields with
-  `field_presence = EXPLICIT`). This allows chained construction without
-  `Some(...)` wrapping:
-
-  ```rust
-  let req = GetSecretRequest::default()
-      .with_name("alice")
-      .with_timeout_ms(30_000)
-      .with_enabled(true);
-  ```
-
-  String fields accept `impl Into<String>` (`&str` works directly); bytes
-  fields accept `impl Into<Vec<u8>>` or `impl Into<bytes::Bytes>` (byte
-  array literals like `b"data"` work directly); enum fields accept
-  `impl Into<EnumValue<E>>` (bare variant works directly, no
-  `EnumValue::Known(...)` wrapper needed); plain scalars take the bare
-  type. Message fields (`MessageField<T>`), repeated fields, map fields,
-  oneof variants, proto2 `required` fields, and implicit-presence fields
-  are unaffected. To clear a field, assign `None` directly.
-  Controlled by `CodeGenConfig::generate_with_setters` (default `true`).
-  ([#30](https://github.com/anthropics/buffa/issues/30))
 - `buffa_codegen::GeneratedFileKind::Companion` and `apply_companions` let
   downstream code generators (e.g. connect-rust) supply extra per-proto
   files that buffa wires into the per-package stitcher, instead of having
