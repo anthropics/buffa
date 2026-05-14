@@ -25,6 +25,7 @@ pub mod context;
 pub(crate) mod defaults;
 pub(crate) mod enumeration;
 pub(crate) mod extension;
+pub(crate) mod feature_gates;
 pub(crate) mod features;
 #[doc(hidden)]
 pub use buffa_descriptor::generated;
@@ -309,6 +310,42 @@ pub struct CodeGenConfig {
     /// `#[derive(strum::EnumIter)]` when the user does not want to apply the
     /// same attribute to every message in the matched scope.
     pub enum_attributes: Vec<(String, String)>,
+    /// Wrap generated `impl`s in `#[cfg(feature = "...")]` instead of
+    /// emitting them unconditionally.
+    ///
+    /// When `true`, the impls controlled by [`generate_json`],
+    /// [`generate_views`], and [`generate_text`] are emitted wrapped in
+    /// `#[cfg(feature = "json" | "views" | "text")]` (or
+    /// `#[cfg_attr(feature = ..., ...)]` for derives and field attributes)
+    /// rather than unconditionally. The consuming crate must define matching
+    /// Cargo features that enable the corresponding runtime support, e.g.:
+    ///
+    /// ```toml
+    /// [features]
+    /// json  = ["buffa/json", "dep:serde", "dep:serde_json"]
+    /// views = []
+    /// text  = ["buffa/text"]
+    /// ```
+    ///
+    /// The [`generate_*`] flags still control *whether* an impl kind is
+    /// emitted at all — this flag only controls whether it is `cfg`-gated.
+    /// `generate_arbitrary` is always `cfg_attr`-gated on
+    /// `feature = "arbitrary"` regardless of this flag, because `arbitrary`
+    /// is an optional dependency by design.
+    ///
+    /// This is the mechanism that lets `buffa-descriptor` and `buffa-types`
+    /// ship every impl while keeping the codegen toolchain
+    /// (`buffa-codegen`/`buffa-build`/`protoc-gen-buffa`) lean: those crates
+    /// depend on `buffa-descriptor` with `default-features = false` and so
+    /// don't pull `serde`/`serde_json`/`base64`. Most consumers don't need
+    /// this — they decide at build-script time whether to generate JSON, and
+    /// if they say yes, they want `impl Serialize` to just exist.
+    ///
+    /// [`generate_json`]: Self::generate_json
+    /// [`generate_views`]: Self::generate_views
+    /// [`generate_text`]: Self::generate_text
+    /// [`generate_*`]: Self::generate_json
+    pub gate_impls_on_crate_features: bool,
 }
 
 impl Default for CodeGenConfig {
@@ -329,7 +366,19 @@ impl Default for CodeGenConfig {
             field_attributes: Vec::new(),
             message_attributes: Vec::new(),
             enum_attributes: Vec::new(),
+            gate_impls_on_crate_features: false,
         }
+    }
+}
+
+impl CodeGenConfig {
+    /// Active [`feature_gates::FeatureGates`] for this config.
+    ///
+    /// Recomputed on each call (cheap — three boolean ANDs); call once at
+    /// the top of a generation function and thread through, or call inline
+    /// at each use site, whichever reads better.
+    pub(crate) fn feature_gates(&self) -> feature_gates::FeatureGates {
+        feature_gates::FeatureGates::for_config(self)
     }
 }
 
@@ -375,6 +424,83 @@ pub(crate) fn effective_extern_paths(
     }
 
     paths
+}
+
+/// Compute the effective file-level extern path list.
+///
+/// File-level mappings route a specific `.proto` file to a Rust module root,
+/// taking priority over the package-level mappings from
+/// [`effective_extern_paths`]. They exist to resolve a structural problem:
+/// `descriptor.proto` is in the same `google.protobuf` package as the
+/// JSON-mappable WKTs (`Timestamp`, `Any`, …), but its types live in
+/// `buffa-descriptor`, not `buffa-types`. A single package-keyed
+/// `.google.protobuf` extern_path can route the package to one crate or the
+/// other; it can't split it. The file-level mapping splits it.
+///
+/// Auto-injected mappings (when not suppressed):
+///
+/// | Proto file | Rust module |
+/// |---|---|
+/// | `google/protobuf/descriptor.proto` | `::buffa_descriptor::generated::descriptor` |
+/// | `google/protobuf/compiler/plugin.proto` | `::buffa_descriptor::generated::compiler` |
+///
+/// Suppression conditions, evaluated **per file**:
+///
+/// - **A user-provided `extern_path` covers the file's package.** That
+///   override has covered the file's types since the package mapping was
+///   introduced; auto-injecting a higher-priority file-level mapping would
+///   silently redirect them away from the user's crate. Matching is via
+///   the same longest-prefix logic the package resolver uses, so both an
+///   exact `.google.protobuf` mapping and a sub-package
+///   `.google.protobuf.compiler` mapping suppress the entries they cover —
+///   `.google.protobuf` suppresses both, `.google.protobuf.compiler`
+///   suppresses only `plugin.proto`.
+/// - **The proto file itself is in `files_to_generate`.** When building
+///   `buffa-descriptor` (or any local copy of `descriptor.proto`), its types
+///   must resolve to the local module, not externally.
+///
+/// Currently internal-only — there is no `CodeGenConfig` field for
+/// user-provided file-level mappings. The user-facing `extern_path` API
+/// remains package-prefix keyed; per-file or per-type overrides may be added
+/// later as a public feature if a concrete need arises.
+pub(crate) fn effective_file_extern_paths(
+    files_to_generate: &[String],
+    config: &CodeGenConfig,
+) -> Vec<(String, String)> {
+    // (proto file path, proto package, Rust module root). The package is
+    // recorded alongside the file so the user-override suppression check
+    // is per-file: a `.google.protobuf.compiler` extern_path covers only
+    // `plugin.proto`, while `.google.protobuf` covers both.
+    const DESCRIPTOR_FILES: [(&str, &str, &str); 2] = [
+        (
+            "google/protobuf/descriptor.proto",
+            "google.protobuf",
+            "::buffa_descriptor::generated::descriptor",
+        ),
+        (
+            "google/protobuf/compiler/plugin.proto",
+            "google.protobuf.compiler",
+            "::buffa_descriptor::generated::compiler",
+        ),
+    ];
+
+    DESCRIPTOR_FILES
+        .into_iter()
+        .filter(|(proto_file, package, _)| {
+            // Yield to a user package-level extern_path that already covers
+            // this file's package: anyone who wrote
+            // `extern_path(".google.protobuf", "::my_crate")` (or a
+            // sub-package mapping) today routes these types to their crate;
+            // the auto-injected file-level mapping must not silently
+            // outrank it.
+            if context::resolve_extern_prefix(package, &config.extern_paths).is_some() {
+                return false;
+            }
+            // Don't externalize a file we're generating locally.
+            !files_to_generate.iter().any(|f| f == proto_file)
+        })
+        .map(|(proto_file, _, rust_module)| (proto_file.to_string(), rust_module.to_string()))
+        .collect()
 }
 
 /// Generate Rust source files from a set of file descriptors.
@@ -723,10 +849,13 @@ fn generate_proto_content(
             let view_ident = format_ident!("{top_level_name}View");
             root_reexports.push(message::ReexportCandidate {
                 name: view_ident.to_string(),
-                tokens: quote! {
-                    #[doc(inline)]
-                    pub use self :: #sentinel :: view :: #view_ident;
-                },
+                tokens: feature_gates::cfg_block(
+                    quote! {
+                        #[doc(inline)]
+                        pub use self :: #sentinel :: view :: #view_ident;
+                    },
+                    ctx.config.feature_gates().views,
+                ),
             });
         }
     }
@@ -949,15 +1078,19 @@ fn surviving_root_reexports(
 
     // `register_types`, when emitted, lives at `__buffa::register_types`.
     // `self::` and `#[doc(inline)]` for the same reasons as the view
-    // re-exports above.
+    // re-exports above. Same `any(json, text)` gate as the fn itself.
     if ctx.config.emit_register_fn && !reg.is_empty() {
         let sentinel = make_field_ident(context::SENTINEL_MOD);
+        let json_or_text = ctx.config.feature_gates().json_or_text();
         candidates.push(message::ReexportCandidate {
             name: "register_types".to_string(),
-            tokens: quote! {
-                #[doc(inline)]
-                pub use self :: #sentinel :: register_types;
-            },
+            tokens: feature_gates::cfg_block_any(
+                quote! {
+                    #[doc(inline)]
+                    pub use self :: #sentinel :: register_types;
+                },
+                &json_or_text,
+            ),
         });
     }
 
@@ -1003,14 +1136,17 @@ fn generate_package_mod(
     // sufficient — `view_oneof` non-empty implies `view` non-empty.
     debug_assert!(view_oneof.is_empty() || !view.is_empty());
     let view_mod = if ctx.config.generate_views && !view.is_empty() {
-        quote! {
-            pub mod view {
-                #[allow(unused_imports)]
-                use super::*;
-                #(#view)*
-                #view_oneof_mod
-            }
-        }
+        feature_gates::cfg_block(
+            quote! {
+                pub mod view {
+                    #[allow(unused_imports)]
+                    use super::*;
+                    #(#view)*
+                    #view_oneof_mod
+                }
+            },
+            ctx.config.feature_gates().views,
+        )
     } else {
         TokenStream::new()
     };
@@ -1040,19 +1176,58 @@ fn generate_package_mod(
     };
 
     let register_fn = if ctx.config.emit_register_fn && !reg.is_empty() {
-        let json_any = &reg.json_any;
-        let json_ext = &reg.json_ext;
-        let text_any = &reg.text_any;
-        let text_ext = &reg.text_ext;
-        quote! {
-            /// Register this package's `Any` type entries and extension entries.
-            pub fn register_types(reg: &mut ::buffa::type_registry::TypeRegistry) {
-                #( reg.register_json_any(super::#json_any); )*
-                #( reg.register_json_ext(super::#json_ext); )*
-                #( reg.register_text_any(super::#text_any); )*
-                #( reg.register_text_ext(super::#text_ext); )*
-            }
-        }
+        let gates = ctx.config.feature_gates();
+        // When the gated consts (`__*_JSON_ANY` / `__*_TEXT_ANY`) are
+        // `#[cfg(feature = "...")]`, each registration statement that
+        // references them gets the same gate. `#[cfg]` on a statement is
+        // allowed; the call disappears with the const.
+        let json_regs = reg
+            .json_any
+            .iter()
+            .map(|p| {
+                feature_gates::cfg_block(quote! { reg.register_json_any(super::#p); }, gates.json)
+            })
+            .chain(reg.json_ext.iter().map(|p| {
+                feature_gates::cfg_block(quote! { reg.register_json_ext(super::#p); }, gates.json)
+            }));
+        let text_regs = reg
+            .text_any
+            .iter()
+            .map(|p| {
+                feature_gates::cfg_block(quote! { reg.register_text_any(super::#p); }, gates.text)
+            })
+            .chain(reg.text_ext.iter().map(|p| {
+                feature_gates::cfg_block(quote! { reg.register_text_ext(super::#p); }, gates.text)
+            }));
+        // When gating, a feature subset may leave one bucket of statements
+        // cfg'd out while the other survives — `reg` is still used. But if
+        // `register_types` itself is gated on `any(json, text)` (below),
+        // the only reachable bodies have at least one statement, so `reg`
+        // can't be unused. Keep `#[allow(unused_variables)]` defensively
+        // anyway: it's harmless, and the alternative — proving the
+        // invariant holds across future statement-shape changes — is
+        // brittle.
+        let allow_unused = if ctx.config.gate_impls_on_crate_features {
+            quote! { #[allow(unused_variables)] }
+        } else {
+            quote! {}
+        };
+        // The fn is useless without at least one of the gated modes that
+        // populate it — and `::buffa::type_registry::TypeRegistry` may
+        // become feature-gated in the runtime in a future release. Gate the
+        // fn on `any(...)` of whichever modes are active so it disappears
+        // alongside the last entry.
+        feature_gates::cfg_block_any(
+            quote! {
+                /// Register this package's `Any` type entries and extension entries.
+                #allow_unused
+                pub fn register_types(reg: &mut ::buffa::type_registry::TypeRegistry) {
+                    #(#json_regs)*
+                    #(#text_regs)*
+                }
+            },
+            &gates.json_or_text(),
+        )
     } else {
         TokenStream::new()
     };

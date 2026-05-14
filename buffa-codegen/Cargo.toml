@@ -12,7 +12,10 @@ categories = ["development-tools::build-utils"]
 [dependencies]
 # `path` wins for local workspace development; `version` is used on publish.
 buffa = { path = "../buffa", version = "0.5.2" }
-buffa-descriptor = { workspace = true }
+# Codegen reads descriptors via the binary codec only — no views / json /
+# text. The workspace dep already declares `default-features = false`; add
+# back `std` (it's a build-time tool, never `no_std`).
+buffa-descriptor = { workspace = true, features = ["std"] }
 prettyplease = { workspace = true }
 proc-macro2 = { workspace = true }
 quote = { workspace = true }

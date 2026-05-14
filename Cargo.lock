@@ -97,7 +97,10 @@ dependencies = [
 name = "buffa-descriptor"
 version = "0.5.2"
 dependencies = [
+ "arbitrary",
  "buffa",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

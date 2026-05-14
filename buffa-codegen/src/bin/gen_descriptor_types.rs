@@ -36,11 +36,25 @@ fn main() {
         eprintln!("  - {}", f.name.as_deref().unwrap_or("<unnamed>"));
     }
 
-    // Use default config with views and serde disabled — descriptor types
-    // only need binary encode/decode for codegen purposes.
+    // Generate every impl kind, but gated on `buffa-descriptor`'s crate
+    // features (`json` / `views` / `text` / `arbitrary`).
+    //
+    // - **codegen toolchain** (`buffa-codegen` / `buffa-build` /
+    //   `protoc-gen-buffa`) deps on `buffa-descriptor` with
+    //   `default-features = false` — only the binary codec compiles. No
+    //   `serde` / `serde_json` / `base64` in the build graph.
+    // - **downstream consumers** whose protos reference `descriptor.proto`
+    //   types as fields (e.g. anything depending on
+    //   `buf/validate/validate.proto`, which uses
+    //   `google.protobuf.FieldDescriptorProto.Type`, or
+    //   `buf.registry.module.v1` which embeds `FileDescriptorSet`) enable
+    //   the features they need in their `Cargo.toml`. ([#113])
     let mut config = buffa_codegen::CodeGenConfig::default();
-    config.generate_views = false;
-    config.generate_json = false;
+    config.generate_views = true;
+    config.generate_json = true;
+    config.generate_text = true;
+    config.generate_arbitrary = true;
+    config.gate_impls_on_crate_features = true;
 
     let files_to_generate = vec![
         "google/protobuf/descriptor.proto".to_string(),

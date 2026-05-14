@@ -156,21 +156,25 @@ fn generate_one(
         format!("{scope_fqn}.{proto_name}")
     };
 
+    let gates = ctx.config.feature_gates();
     let (json_const, json_ident) = if ctx.config.generate_json {
         match json_helper_tokens(ctx, field, ty, repeated, current_package, nesting)? {
             Some((to_fn, from_fn)) => {
                 let ident = format_ident!("__{}_JSON_EXT", const_ident);
-                let tokens = quote! {
-                    #[doc(hidden)]
-                    pub const #ident: ::buffa::type_registry::JsonExtEntry
-                        = ::buffa::type_registry::JsonExtEntry {
-                            number: #number,
-                            full_name: #full_name,
-                            extendee: #extendee_no_dot,
-                            to_json: #to_fn,
-                            from_json: #from_fn,
-                        };
-                };
+                let tokens = crate::feature_gates::cfg_block(
+                    quote! {
+                        #[doc(hidden)]
+                        pub const #ident: ::buffa::type_registry::JsonExtEntry
+                            = ::buffa::type_registry::JsonExtEntry {
+                                number: #number,
+                                full_name: #full_name,
+                                extendee: #extendee_no_dot,
+                                to_json: #to_fn,
+                                from_json: #from_fn,
+                            };
+                    },
+                    gates.json,
+                );
                 (tokens, Some(ident))
             }
             None => (quote! {}, None),
@@ -183,17 +187,20 @@ fn generate_one(
         match text_helper_tokens(ctx, field, ty, current_package, nesting)? {
             Some((te, tm)) => {
                 let ident = format_ident!("__{}_TEXT_EXT", const_ident);
-                let tokens = quote! {
-                    #[doc(hidden)]
-                    pub const #ident: ::buffa::type_registry::TextExtEntry
-                        = ::buffa::type_registry::TextExtEntry {
-                            number: #number,
-                            full_name: #full_name,
-                            extendee: #extendee_no_dot,
-                            text_encode: #te,
-                            text_merge: #tm,
-                        };
-                };
+                let tokens = crate::feature_gates::cfg_block(
+                    quote! {
+                        #[doc(hidden)]
+                        pub const #ident: ::buffa::type_registry::TextExtEntry
+                            = ::buffa::type_registry::TextExtEntry {
+                                number: #number,
+                                full_name: #full_name,
+                                extendee: #extendee_no_dot,
+                                text_encode: #te,
+                                text_merge: #tm,
+                            };
+                    },
+                    gates.text,
+                );
                 (tokens, Some(ident))
             }
             None => (quote! {}, None),

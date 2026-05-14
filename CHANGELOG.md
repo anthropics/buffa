@@ -8,19 +8,103 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- **`buffa::MessageFullName` trait exposes the protobuf full name of a
-  generated message as a compile-time `&'static str` constant.** Codegen
-  emits `impl MessageFullName for #Msg { const FULL_NAME: &'static str =
-  "pkg.Msg"; }` for every message (fully-qualified, no leading dot;
-  nested messages use their full dotted path). The trait is a separate
-  supertrait of [`Message`] rather than an item on `Message` itself, so
-  hand-written `Message` impls remain valid without it. For messages
-  that also implement `ExtensionSet`, `FULL_NAME` is guaranteed equal
-  to `ExtensionSet::PROTO_FQN` (both derive from the same codegen
-  source). Useful as a generic bound for type-erased registries,
-  logging, and reflection — `fn name<T: MessageFullName>() -> &'static
-  str { T::FULL_NAME }`. The trait is **not** object-safe (associated
-  `const` only), so use it as a bound, not `dyn MessageFullName`.
+- **`buffa::MessageName` trait exposes a generated message's protobuf
+  identifiers as compile-time `&'static str` constants.** Codegen emits
+  `impl MessageName for #Msg` (and `for #MsgView<'a>`) with four consts:
+  `PACKAGE` (`"my.pkg"`, empty for the unnamed root package), `NAME`
+  (`"Outer.Inner"` — unqualified, with `.` between nesting levels),
+  `FULL_NAME` (`"my.pkg.Outer.Inner"`), and `TYPE_URL`
+  (`"type.googleapis.com/my.pkg.Outer.Inner"` — the
+  `google.protobuf.Any.type_url` form). All four are computed at codegen
+  time as string literals, so there's no runtime allocation or
+  concatenation — unlike `prost::Name`, whose `full_name()` and
+  `type_url()` are runtime `format!` calls. `PACKAGE` and `NAME` are
+  separate consts because the dotted `FULL_NAME` cannot be split
+  unambiguously (`foo.Bar.Baz` could be package `foo.Bar` + message `Baz`
+  or package `foo` + nested `Bar.Baz`).
+
+  The trait has no supertrait — it doesn't reach into the wire codec —
+  so view types implement it too: a generic event-sourcing registry can
+  bound on `T: MessageName` and dispatch zero-copy views and owned
+  messages identically. Useful for type-erased registries, logging, and
+  any code that needs the protobuf name without the descriptor machinery.
+  The inherent `Foo::TYPE_URL` const generated since 0.4.0 is unchanged
+  and equal to `<Foo as MessageName>::TYPE_URL`; for messages that also
+  implement `ExtensionSet`, `FULL_NAME` is equal to
+  `ExtensionSet::PROTO_FQN` (all derive from the same codegen source).
+  `MessageName` is **not** object-safe (associated `const` only) — use it
+  as a bound, not `dyn MessageName`. Migrating from `prost::Name`: rename
+  the bound and replace runtime `M::full_name()` / `M::type_url()` calls
+  with the consts. ([#108](https://github.com/anthropics/buffa/pull/108),
+  by @yordis)
+
+- **`buf.build/anthropics/buffa` is published to the public Buf Schema
+  Registry.** `buf generate` can now reference `protoc-gen-buffa` as a
+  `remote:` plugin with no local install: `remote: buf.build/anthropics/buffa`
+  with `opt: [file_per_package=true]` and a small hand-written `pub mod`
+  tree, or paired with a locally-installed `protoc-gen-buffa-packaging`
+  for a generated `mod.rs`. The README quick-start, `docs/guide.md`
+  ["Using buf"](docs/guide.md#using-buf) section, and a new
+  [`examples/bsr-quickstart/`](examples/bsr-quickstart/) project document
+  the workflow. The stale in-repo `protoc-gen-buffa/buf.plugin.yaml`
+  metadata file is removed — the canonical plugin definition lives in
+  [bufbuild/plugins](https://github.com/bufbuild/plugins).
+
+- **`buffa-codegen`: `CodeGenConfig::gate_impls_on_crate_features`.**
+  When `true`, generated impls controlled by `generate_json`,
+  `generate_views`, and `generate_text` are wrapped in
+  `#[cfg(feature = "json" | "views" | "text")]` (or `#[cfg_attr(...)]` for
+  derives and field attributes) instead of being emitted unconditionally.
+  The consuming crate defines matching Cargo features and enables the
+  corresponding runtime support (`buffa/json`, `buffa/text`, `serde`, …)
+  behind them. The `generate_*` flags still control *whether* an impl kind
+  is emitted; the new flag only controls *how*. Default `false` — no
+  change to existing output. This is the codegen mechanism that will let
+  `buffa-descriptor` and `buffa-types` ship every impl while keeping the
+  codegen toolchain (`buffa-codegen` / `buffa-build` / `protoc-gen-buffa`)
+  lean — it depends on them with `default-features = false`. Tracked in
+  [#113](https://github.com/anthropics/buffa/issues/113); follow-ups add
+  the `buffa-build` builder method and `protoc-gen-buffa` plugin opt.
+
+- **`buffa-descriptor`: regenerated with views, JSON, text, and arbitrary
+  impls behind crate features.** `descriptor.proto` and
+  `compiler/plugin.proto` types now ship the full impl surface — gated on
+  `views`, `json`, `text`, and `arbitrary` Cargo features so the codegen
+  toolchain (`buffa-codegen` / `buffa-build` / `protoc-gen-buffa`) can
+  depend on `buffa-descriptor` with `default-features = false` and stay
+  free of `serde` / `serde_json` / `base64` / `arbitrary`. **Consumers
+  whose protos reference a `descriptor.proto` type as a field (most
+  commonly anything depending on `buf/validate/validate.proto`, or
+  `buf.registry.module.v1` / `buf.alpha.image.v1` which embed
+  `FileDescriptorSet` / `FileDescriptorProto`) must enable the
+  `buffa-descriptor` features matching their codegen modes** —
+  `views = ["buffa-descriptor/views"]`, `json = ["buffa-descriptor/json"]`,
+  etc., or just `buffa-descriptor = { ..., features = ["views", "json"] }`.
+  This closes [#113](https://github.com/anthropics/buffa/issues/113): the
+  full `bufbuild/registry` and `bufbuild/buf` modules now generate and
+  compile cleanly with `views=true` + `json=true`.
+
+  **Migration:** if your `Cargo.toml` already declares `buffa-descriptor`
+  as a dependency, add the features matching your codegen config:
+
+  ```toml
+  # build.rs uses .generate_views(true).generate_json(true)
+  buffa-descriptor = { version = "0.6", features = ["views", "json"] }
+  ```
+
+  If you don't declare `buffa-descriptor` directly, the failure mode is a
+  missing-impl error at the embedding type's serde / view call site (e.g.
+  `the trait bound FileDescriptorSet: serde::Deserialize is not
+  satisfied`); add `buffa-descriptor` with the right features.
+
+  The `buffa_descriptor::generated` module tree now nests
+  `google.protobuf.compiler` inside `google.protobuf` to mirror the proto
+  package hierarchy (so cross-package `super::*` references in the view
+  code resolve); the previous sibling-style
+  `buffa_descriptor::generated::compiler` and
+  `buffa_descriptor::generated::{FileDescriptorProto, GeneratedCodeInfo}`
+  paths are preserved with `pub use` re-exports.
+
 - `serde::Serialize` is now implemented for generated view types when `generate_json` is
   enabled, allowing zero-copy JSON serialization without `.to_owned_message()`.
   `OwnedView<V>` also gains a blanket `Serialize` impl so `serde_json::to_string(&owned_view)`
@@ -54,6 +138,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `buffa-types`, and `serde` (the latter for the `#[derive]` macro). No
   generated output exists for this path in the checked-in WKTs (none declare
   extension ranges), so no regen.
+
+- **`buffa-codegen`: `descriptor.proto` types now resolve to
+  `buffa-descriptor`, not `buffa-types`.** The auto-injected WKT
+  extern_path `.google.protobuf` → `::buffa_types::google::protobuf`
+  covers everything in the `google.protobuf` package, including
+  `descriptor.proto` types — but `buffa-types` only ships the
+  JSON-mappable WKTs. Any proto referencing a `descriptor.proto` type as
+  a field — e.g. `buf/validate/validate.proto`, which has three `optional
+  google.protobuf.FieldDescriptorProto.Type` fields — produced a
+  generated path that doesn't exist:
+  `::buffa_types::google::protobuf::field_descriptor_proto::Type`. An
+  internal **file-level** extern resolution now routes
+  `google/protobuf/descriptor.proto` to
+  `::buffa_descriptor::generated::descriptor` and
+  `google/protobuf/compiler/plugin.proto` to
+  `::buffa_descriptor::generated::compiler`, taking priority over the
+  package-level WKT mapping. Suppression mirrors the WKT mapping: a user
+  `.google.protobuf` extern_path overrides it (preserving the long-standing
+  behaviour that the override covers descriptor types too), and a file in
+  `files_to_generate` resolves locally. **Consumers whose protos
+  `import "google/protobuf/descriptor.proto"` and reference its types as
+  fields must add `buffa-descriptor` to their `[dependencies]`** — the
+  same way protos that reference WKTs require `buffa-types`. The
+  user-facing `extern_path` API is unchanged (still package-prefix keyed).
+
+- **`buffa`: closed-enum JSON helpers no longer require the enum to
+  `impl Deserialize`.** `opt_closed_enum`, `repeated_closed_enum`, and
+  `map_closed_enum` deserialized via `serde_json::from_value::<E>()`,
+  which bound `E: DeserializeOwned`. That meant a closed-enum field whose
+  enum type lives in an externally-generated crate built *without*
+  `generate_json` — e.g. `google.protobuf.FieldDescriptorProto.Type` from
+  `buffa-descriptor`, referenced by `buf/validate/validate.proto` — could
+  not satisfy the bound and refused to compile under `json=true` codegen.
+  The helpers now decode the buffered `serde_json::Value` directly via the
+  `Enumeration` trait (`from_proto_name`, `from_i32`, default for `null`),
+  which is the same dispatch the codegen-emitted `Deserialize` impl
+  performs anyway. The `DeserializeOwned` bound is removed (a relaxation —
+  non-breaking). Lenient mode (`ignore_unknown_enum_values`) is unchanged:
+  any element that fails to decode — unknown variant, out-of-range
+  integer, or wrong JSON type — is dropped from the container / leaves the
+  optional unset, exactly as before. Additionally, that lenient filtering
+  for closed-enum containers now works under `no_std`: the previous
+  implementation needed the `std`-only scoped strict-mode override to
+  surface a distinguishable error from the inner deserialize, but the new
+  `Enumeration`-direct dispatch has no inner deserialize to override.
 
 ### Changed
 

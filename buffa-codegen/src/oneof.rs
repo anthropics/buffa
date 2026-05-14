@@ -266,7 +266,10 @@ pub fn generate_oneof_enum(
         .collect();
 
     let serde_impls = if ctx.config.generate_json {
-        generate_oneof_serialize(&rust_enum_ident, &variants_info)
+        crate::feature_gates::cfg_block(
+            generate_oneof_serialize(&rust_enum_ident, &variants_info),
+            ctx.config.feature_gates().json,
+        )
     } else {
         quote! {}
     };
