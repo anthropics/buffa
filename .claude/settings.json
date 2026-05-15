@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git blame:*)",
+      "Bash(git show:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo clippy:*)"
+    ]
+  }
+}
