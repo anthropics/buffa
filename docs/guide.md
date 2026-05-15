@@ -9,11 +9,11 @@ Add buffa to your project:
 ```toml
 # Cargo.toml
 [dependencies]
-buffa = "0.5"
-buffa-types = "0.5"       # well-known types (Timestamp, Duration, Any, etc.)
+buffa = "0.6"
+buffa-types = "0.6"       # well-known types (Timestamp, Duration, Any, etc.)
 
 [build-dependencies]
-buffa-build = "0.5"
+buffa-build = "0.6"
 ```
 
 ### Feature flags
@@ -28,8 +28,8 @@ Both `buffa` and `buffa-types` share the same feature flag names:
 
 ```toml
 # Enable JSON support
-buffa = { version = "0.5", features = ["json"] }
-buffa-types = { version = "0.5", features = ["json"] }
+buffa = { version = "0.6", features = ["json"] }
+buffa-types = { version = "0.6", features = ["json"] }
 ```
 
 ## Prerequisites
@@ -196,7 +196,7 @@ This requires `buffa-types` as a dependency in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-buffa-types = "0.5"
+buffa-types = "0.6"
 ```
 
 `buffa-types` is a pure source crate — it does **not** run `protoc` or any code generation at build time. If your protos use WKTs but you generate your own Rust code ahead-of-time (via `buf generate` or a `protoc` script), then `buffa` + `buffa-types` is your entire runtime dependency surface.
@@ -219,12 +219,20 @@ This disables the automatic mapping and routes all `google.protobuf.*` reference
 
 ```toml
 [dependencies]
-buffa-descriptor = "0.5"
+buffa-descriptor = "0.6"
 ```
 
 If your protos import `descriptor.proto` only to declare custom options (`extend google.protobuf.MessageOptions { ... }`) and never reference a descriptor type as a *field type*, no `buffa-descriptor` dependency is required — extension declarations don't generate field-type references.
 
-`buffa-descriptor` is generated without views, JSON, or text impls (it exists primarily to bootstrap `buffa-codegen`). Its **enum** types — the only descriptor types referenced as field types in practice — work with all codegen modes. Descriptor **message** types referenced as fields with `views=true`, `json=true`, or `text=true` will not currently compile; if you hit this, please [file an issue](https://github.com/anthropics/buffa/issues).
+`buffa-descriptor` ships its view, JSON, text, and arbitrary impls behind crate features (`views`, `json`, `text`, `arbitrary`), all off by default. The codegen toolchain depends on it with `default-features = false`, so building `buffa-codegen` / `buffa-build` / `protoc-gen-buffa` doesn't pull in `serde` or `serde_json`. **If your protos reference a descriptor message type as a field type and you generate with `views=true`, `json=true`, or `text=true`, enable the matching `buffa-descriptor` features**:
+
+```toml
+[dependencies]
+# Codegen with .generate_views(true).generate_json(true)
+buffa-descriptor = { version = "0.6", features = ["views", "json"] }
+```
+
+Descriptor **enum** types referenced as field types (the most common case — e.g. `google.protobuf.FieldDescriptorProto.Type` in protovalidate) work with the default feature set. The features are only needed for descriptor **message** types referenced as fields (e.g. `FileDescriptorSet`, `FileDescriptorProto`). If you hit a missing-impl error like `the trait bound FileDescriptorSet: serde::Deserialize is not satisfied`, add `buffa-descriptor` with the right features.
 
 A user-provided `.google.protobuf` extern_path covers descriptor types too — the auto-routing yields to it, preserving the behaviour from before `buffa-descriptor` routing existed.
 
@@ -350,25 +358,25 @@ Download the binaries for your platform from the [releases page](https://github.
 
 ```sh
 # Download binaries + cosign signatures + certificates (both plugins match)
-gh release download v0.5.2 --repo anthropics/buffa \
+gh release download v0.6.0 --repo anthropics/buffa \
     --pattern 'protoc-gen-buffa*-linux-x86_64*'
 
 # Verify with GitHub attestations (requires gh CLI ≥ 2.49)
-gh attestation verify protoc-gen-buffa-v0.5.2-linux-x86_64 --repo anthropics/buffa
-gh attestation verify protoc-gen-buffa-packaging-v0.5.2-linux-x86_64 --repo anthropics/buffa
+gh attestation verify protoc-gen-buffa-v0.6.0-linux-x86_64 --repo anthropics/buffa
+gh attestation verify protoc-gen-buffa-packaging-v0.6.0-linux-x86_64 --repo anthropics/buffa
 
 # Or with cosign (standalone, no gh required) — shown for one binary
 cosign verify-blob \
-    --signature protoc-gen-buffa-v0.5.2-linux-x86_64.sig \
-    --certificate protoc-gen-buffa-v0.5.2-linux-x86_64.pem \
+    --signature protoc-gen-buffa-v0.6.0-linux-x86_64.sig \
+    --certificate protoc-gen-buffa-v0.6.0-linux-x86_64.pem \
     --certificate-identity-regexp "github.com/anthropics/buffa" \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    protoc-gen-buffa-v0.5.2-linux-x86_64
+    protoc-gen-buffa-v0.6.0-linux-x86_64
 
 # Install both
-chmod +x protoc-gen-buffa-v0.5.2-linux-x86_64 protoc-gen-buffa-packaging-v0.5.2-linux-x86_64
-mv protoc-gen-buffa-v0.5.2-linux-x86_64 ~/.local/bin/protoc-gen-buffa
-mv protoc-gen-buffa-packaging-v0.5.2-linux-x86_64 ~/.local/bin/protoc-gen-buffa-packaging
+chmod +x protoc-gen-buffa-v0.6.0-linux-x86_64 protoc-gen-buffa-packaging-v0.6.0-linux-x86_64
+mv protoc-gen-buffa-v0.6.0-linux-x86_64 ~/.local/bin/protoc-gen-buffa
+mv protoc-gen-buffa-packaging-v0.6.0-linux-x86_64 ~/.local/bin/protoc-gen-buffa-packaging
 ```
 
 Available platforms: `linux-x86_64`, `linux-aarch64`, `darwin-x86_64`, `darwin-aarch64`, `windows-x86_64` (`.exe`). All releases include SHA-256 checksums, Sigstore cosign signatures, and signed SLSA build provenance for supply chain verification.
@@ -409,7 +417,7 @@ pub mod example {
 mod gen;
 ```
 
-Pin the plugin version for reproducible builds: `remote: buf.build/anthropics/buffa:v0.5.3`. Match it to the `buffa` runtime crate version in your `Cargo.toml` — generated code from a newer plugin may reference items that don't exist in an older runtime.
+Pin the plugin version for reproducible builds: `remote: buf.build/anthropics/buffa:v0.6.0`. Match it to the `buffa` runtime crate version in your `Cargo.toml` — generated code from a newer plugin may reference items that don't exist in an older runtime.
 
 The complete, runnable [`examples/bsr-quickstart/`](../examples/bsr-quickstart/) project uses this layout.
 
@@ -1081,7 +1089,7 @@ Enable the `json` feature and `generate_json(true)` in your build config:
 ```toml
 # Cargo.toml
 [dependencies]
-buffa = { version = "0.5", features = ["json"] }
+buffa = { version = "0.6", features = ["json"] }
 # Required: generated `#[derive(::serde::Serialize, ::serde::Deserialize)]`
 # expands to `extern crate serde as _serde;`, so the consumer crate must
 # depend on `serde` directly. `serde_json` is *not* required by generated
@@ -1118,6 +1126,15 @@ let json = serde_json::to_string(&msg)?;
 let msg: Person = serde_json::from_str(&json)?;
 ```
 
+When `generate_views(true)` is also enabled, generated **view** types implement
+`serde::Serialize` directly, so you can serialize a decoded view to JSON without
+first calling `to_owned_message()`. `OwnedView<V>` has a blanket `Serialize` impl
+too, so `serde_json::to_string(&owned_view)` works the same way. Two limitations
+relative to the owned form: extension fields are not included in view JSON output
+(serialize the owned form to include them), and the view impl uses
+`serialize_map(None)`, which `serde_json` accepts but length-prefixed formats like
+`bincode` reject — use the owned form for those serializers.
+
 ### JSON parse options
 
 For lenient parsing (e.g., ignoring unknown enum string values):
@@ -1143,7 +1160,7 @@ Enable the `text` feature and `generate_text(true)`:
 ```toml
 # Cargo.toml
 [dependencies]
-buffa = { version = "0.5", features = ["text"] }
+buffa = { version = "0.6", features = ["text"] }
 ```
 
 ```rust,ignore
@@ -1274,8 +1291,8 @@ let obj = Struct::from_fields([
 Buffa works without `std` (requires `alloc`):
 
 ```toml
-buffa = { version = "0.5", default-features = false }
-buffa-types = { version = "0.5", default-features = false }
+buffa = { version = "0.6", default-features = false }
+buffa-types = { version = "0.6", default-features = false }
 ```
 
 In `no_std` mode:
