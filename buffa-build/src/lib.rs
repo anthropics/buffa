@@ -221,6 +221,34 @@ impl Config {
         self
     }
 
+    /// Enable or disable `with_*` builder-style setter methods for
+    /// explicit-presence fields (default: true).
+    ///
+    /// Each explicit-presence scalar, bytes, or enum field gets a
+    /// `pub fn with_<name>(mut self, value: T) -> Self` method that wraps the
+    /// value in `Some(...)` and returns `self`, enabling chained construction
+    /// without the `Some(...)` boilerplate:
+    ///
+    /// ```ignore
+    /// let req = MyRequest::default()
+    ///     .with_name("alice")
+    ///     .with_timeout_ms(30_000);
+    /// ```
+    ///
+    /// String, bytes, and enum setters take `impl Into<T>` (so `&str`,
+    /// `b"..."` literals, and bare enum variants work directly); other
+    /// scalars take `T` to keep integer-literal inference unambiguous.
+    ///
+    /// Setters are pure inherent methods with no runtime dependency — they
+    /// don't interact with the `json`/`views`/`text` feature gates. Disable
+    /// only if you want to keep generated code minimal or have a competing
+    /// `with_*` convention in your own crate.
+    #[must_use]
+    pub fn generate_with_setters(mut self, enabled: bool) -> Self {
+        self.codegen_config.generate_with_setters = enabled;
+        self
+    }
+
     /// Enable or disable unknown field preservation (default: true).
     ///
     /// When enabled (the default), unrecognized fields encountered during

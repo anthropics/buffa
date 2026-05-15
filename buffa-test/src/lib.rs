@@ -196,6 +196,15 @@ pub mod msgset {
     buffa::include_proto!("buffa.test.messageset");
 }
 
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types
+)]
+pub mod with_setters {
+    buffa::include_proto!("test.setters");
+}
+
 #[cfg(has_edition_2024)]
 #[allow(
     clippy::derivable_impls,

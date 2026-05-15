@@ -1,0 +1,29 @@
+// End-to-end regression for with_* setter methods (issue #30).
+// Exercises every field kind that should get a setter and verifies that
+// kinds that must not (message, repeated, implicit-presence) don't.
+
+syntax = "proto3";
+
+package test.setters;
+
+enum Priority {
+  PRIORITY_UNSPECIFIED = 0;
+  LOW = 1;
+  HIGH = 2;
+}
+
+message Request {
+  // Explicit-presence fields — each gets a with_* setter.
+  optional int32    count    = 1;
+  optional string   name     = 2;
+  optional bytes    payload  = 3;
+  optional bool     enabled  = 4;
+  optional Priority priority = 5;
+
+  // Implicit-presence fields — no setter.
+  int32  implicit_count = 6;
+  string implicit_name  = 7;
+
+  // Repeated — no setter.
+  repeated string tags = 8;
+}

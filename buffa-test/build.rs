@@ -262,6 +262,14 @@ fn main() {
         .compile()
         .expect("buffa_build failed for messageset.proto");
 
+    // with_* setter methods (issue #30) — explicit-presence scalars/enum/bytes.
+    buffa_build::Config::new()
+        .files(&["protos/with_setters.proto"])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .compile()
+        .expect("buffa_build failed for with_setters.proto");
+
     // Edition 2024 — requires protoc v30+ (stabilized edition 2024).
     // Older protoc rejects it with "later than the maximum supported edition".
     // Skip gracefully on older protoc so the crate still builds; tests are

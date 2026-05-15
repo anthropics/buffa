@@ -184,6 +184,34 @@ fn generate_message_with_nesting(
     // Collect field identifiers for the manual Debug impl (excludes __buffa_ internals).
     let mut debug_field_idents: Vec<&Ident> = generated_fields.iter().map(|f| &f.ident).collect();
 
+    let setter_methods: TokenStream = generated_fields
+        .iter()
+        .filter_map(|f| f.setter.as_ref().map(|s| (f, s)))
+        .map(|(f, s)| {
+            let field_ident = &f.ident;
+            let setter_ident = &s.ident;
+            let field_name = field_ident.to_string();
+            let doc = format!(
+                "Sets [`Self::{field_name}`] to `Some(value)`, consuming and returning `self`."
+            );
+            let body = if s.use_into {
+                quote! { Some(value.into()) }
+            } else {
+                quote! { Some(value) }
+            };
+            let param = &s.param_type;
+            quote! {
+                #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+                #[inline]
+                #[doc = #doc]
+                pub fn #setter_ident(mut self, value: #param) -> Self {
+                    self.#field_ident = #body;
+                    self
+                }
+            }
+        })
+        .collect();
+
     // Module name for this message (snake_case of proto name).
     let proto_name = msg.name.as_deref().unwrap_or(rust_name);
     let mod_name_str = crate::oneof::to_snake_case(proto_name);
@@ -684,6 +712,16 @@ fn generate_message_with_nesting(
     let message_doc =
         crate::comments::doc_attrs_resolved(ctx.comment(proto_fqn), proto_fqn, &ctx.type_map);
 
+    let with_setters_impl = if ctx.config.generate_with_setters && !setter_methods.is_empty() {
+        quote! {
+            impl #name_ident {
+                #setter_methods
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     let top_level = quote! {
         #message_doc
         #[derive(Clone, PartialEq, #derive_default)]
@@ -708,6 +746,8 @@ fn generate_message_with_nesting(
             /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
             pub const TYPE_URL: &'static str = #type_url;
         }
+
+        #with_setters_impl
 
         #message_impl
 
@@ -1270,6 +1310,9 @@ struct FieldInfo {
     /// features — that field is TYPE_MESSAGE so the overlay doesn't fire.
     /// See `map_serde_module`.
     map_value_enum_closed: Option<bool>,
+    /// The bare inner type `T` when `is_optional = true` (`rust_type` is `Option<T>`).
+    /// `None` for all non-optional fields.
+    inner_opt_type: Option<TokenStream>,
 }
 
 /// Resolve the Rust type and map-entry metadata for a single field.
@@ -1314,6 +1357,7 @@ fn classify_field(
         quote! { #vec<u8> }
     };
 
+    let mut inner_opt_type: Option<TokenStream> = None;
     let rust_type = if let Some(entry) = map_entry {
         map_rust_type_from_entry(scope, entry, resolver)?
     } else if is_repeated {
@@ -1340,6 +1384,7 @@ fn classify_field(
         } else {
             scalar_rust_type(field_type, resolver)?
         };
+        inner_opt_type = Some(inner.clone());
         {
             let opt = resolver.option();
             quote! { #opt<#inner> }
@@ -1402,7 +1447,24 @@ fn classify_field(
         map_key_type,
         map_value_type,
         map_value_enum_closed,
+        inner_opt_type,
     })
+}
+
+/// Setter method info for a single explicit-presence field.
+struct SetterInfo {
+    ident: Ident,
+    param_type: TokenStream,
+    /// `true`  → emit `Some(value.into())` and take `impl Into<T>`.
+    ///   Set for `string` (accepts `&str`), `bytes` (accepts `b"..."`
+    ///   array literals via `From<&[u8; N]> for Vec<u8>`, or `Vec<u8>`
+    ///   for `bytes_fields`-tagged `bytes::Bytes`), and `enum`
+    ///   (accepts the bare variant via `From<E> for EnumValue<E>`).
+    /// `false` → emit `Some(value)` and take `T` directly.
+    ///   Set for numeric scalars and `bool` — `impl Into<i32>` would
+    ///   make integer literals ambiguous (`30` could be `i8`/`i16`/...);
+    ///   the bare type lets inference settle them.
+    use_into: bool,
 }
 
 /// Generate a single field declaration.
@@ -1414,6 +1476,7 @@ fn classify_field(
 struct GeneratedField {
     tokens: TokenStream,
     ident: Ident,
+    setter: Option<SetterInfo>,
 }
 
 fn generate_field(
@@ -1478,9 +1541,36 @@ fn generate_field(
         #custom_field_attrs
         pub #rust_name: #rust_type,
     };
+
+    // Use inner_opt_type as the gate: it is set only when classify_field
+    // actually took the is_optional branch (i.e. the struct field is Option<T>).
+    // is_optional alone is not sufficient — proto2 repeated fields can have
+    // is_optional=true (explicit-presence default) while is_repeated=true.
+    let setter = if let Some(inner) = &info.inner_opt_type {
+        let field_type = crate::impl_message::effective_type(ctx, field, features);
+        let setter_ident = format_ident!("with_{}", field_name);
+        // impl Into<T> where a common conversion exists:
+        //   String: &str. Vec<u8>: &[u8; N] (From<&[T; N]> stable since Rust 1.74).
+        //   bytes::Bytes: Vec<u8>. EnumValue<E>: E (From<E> impl on EnumValue).
+        let (param_type, use_into) = match field_type {
+            Type::TYPE_STRING | Type::TYPE_BYTES | Type::TYPE_ENUM => {
+                (quote! { impl Into<#inner> }, true)
+            }
+            _ => (quote! { #inner }, false),
+        };
+        Some(SetterInfo {
+            ident: setter_ident,
+            param_type,
+            use_into,
+        })
+    } else {
+        None
+    };
+
     Ok(Some(GeneratedField {
         tokens,
         ident: rust_name,
+        setter,
     }))
 }
 

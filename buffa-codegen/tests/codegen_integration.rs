@@ -973,3 +973,171 @@ fn test_view_serialize_proto2_required_multi_field_parses() {
         "view Serialize impl must be emitted: {content}"
     );
 }
+
+// ── with_* setter tests ───────────────────────────────────────────────────────
+
+#[test]
+fn with_setters_emitted_for_explicit_presence_fields() {
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        enum Color { COLOR_UNSPECIFIED = 0; RED = 1; }
+        message Msg {
+          optional int32   count  = 1;
+          optional string  name   = 2;
+          optional bytes   data   = 3;
+          optional Color   color  = 4;
+          // implicit-presence fields — no setter
+          int32   implicit_int    = 5;
+          string  implicit_str    = 6;
+          // repeated — no setter
+          repeated string tags    = 7;
+        }
+        "#,
+        &no_views(),
+    );
+
+    // Explicit-presence fields get setters.
+    assert!(
+        content.contains("pub fn with_count"),
+        "with_count missing: {content}"
+    );
+    assert!(
+        content.contains("pub fn with_name"),
+        "with_name missing: {content}"
+    );
+    assert!(
+        content.contains("pub fn with_data"),
+        "with_data missing: {content}"
+    );
+    assert!(
+        content.contains("pub fn with_color"),
+        "with_color missing: {content}"
+    );
+
+    // String setter uses impl Into<...> for &str ergonomics.
+    assert!(
+        content.contains("impl Into"),
+        "string setter should use impl Into: {content}"
+    );
+
+    // Implicit-presence and repeated fields must NOT get setters.
+    assert!(
+        !content.contains("with_implicit_int"),
+        "implicit int should not get setter: {content}"
+    );
+    assert!(
+        !content.contains("with_implicit_str"),
+        "implicit string should not get setter: {content}"
+    );
+    assert!(
+        !content.contains("with_tags"),
+        "repeated field should not get setter: {content}"
+    );
+}
+
+#[test]
+fn with_setters_disabled_by_config() {
+    let mut config = no_views();
+    config.generate_with_setters = false;
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Msg { optional int32 count = 1; }
+        "#,
+        &config,
+    );
+    assert!(
+        !content.contains("pub fn with_count"),
+        "setter should be absent when generate_with_setters=false: {content}"
+    );
+}
+
+#[test]
+fn with_setters_bytes_type_uses_into() {
+    let mut config = no_views();
+    config.bytes_fields.push(".test.Msg.data".into());
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Msg { optional bytes data = 1; }
+        "#,
+        &config,
+    );
+    // bytes::Bytes field should use impl Into for ergonomics.
+    assert!(
+        content.contains("pub fn with_data"),
+        "with_data missing: {content}"
+    );
+    assert!(
+        content.contains("impl Into"),
+        "bytes::Bytes setter should use impl Into: {content}"
+    );
+}
+
+#[test]
+fn with_setters_vec_u8_uses_into() {
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Msg { optional bytes data = 1; }
+        "#,
+        &no_views(),
+    );
+    // Vec<u8> bytes field uses impl Into: From<&[T; N]> for Vec<T> is stable
+    // since Rust 1.74, so b"hello" works directly without .to_vec().
+    assert!(
+        content.contains("pub fn with_data"),
+        "with_data missing: {content}"
+    );
+    assert!(
+        content.contains("impl Into"),
+        "Vec<u8> setter should use impl Into: {content}"
+    );
+}
+
+#[test]
+fn with_setters_enum_uses_into() {
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        enum Color { COLOR_UNSPECIFIED = 0; RED = 1; }
+        message Msg { optional Color color = 1; }
+        "#,
+        &no_views(),
+    );
+    // EnumValue<E>: From<E>, so impl Into<EnumValue<E>> lets callers pass the
+    // enum variant directly without wrapping in EnumValue::Known(...).
+    assert!(
+        content.contains("pub fn with_color"),
+        "with_color missing: {content}"
+    );
+    assert!(
+        content.contains("impl Into"),
+        "enum setter should use impl Into: {content}"
+    );
+}
+
+#[test]
+fn with_setters_proto2_repeated_no_setter() {
+    // Regression: proto2 repeated fields have is_explicit_presence=true due to
+    // proto2's EXPLICIT presence default, but their struct field is Vec<T>,
+    // not Option<T>. They must not receive a setter.
+    let content = generate_proto(
+        r#"
+        syntax = "proto2";
+        package test;
+        message Msg { repeated string items = 1; }
+        "#,
+        &no_views(),
+    );
+    assert!(
+        !content.contains("with_items"),
+        "proto2 repeated field should not get setter: {content}"
+    );
+}
