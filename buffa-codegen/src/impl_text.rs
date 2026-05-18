@@ -713,7 +713,17 @@ fn repeated_merge_arm(
                 Type::TYPE_FLOAT => quote! { __d.read_f32() },
                 Type::TYPE_DOUBLE => quote! { __d.read_f64() },
                 Type::TYPE_BOOL => quote! { __d.read_bool() },
-                _ => unreachable!(),
+                // The outer match handles all non-numeric variants in its
+                // earlier arms, so only numeric scalars reach this `_` branch.
+                // Listed here so the inner match stays exhaustive — adding a
+                // `Type` variant becomes a compile error rather than a panic.
+                Type::TYPE_STRING
+                | Type::TYPE_BYTES
+                | Type::TYPE_ENUM
+                | Type::TYPE_MESSAGE
+                | Type::TYPE_GROUP => {
+                    unreachable!("text repeated read arm: non-numeric type {:?}", ty)
+                }
             };
             quote! { #call }
         }
