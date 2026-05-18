@@ -177,6 +177,50 @@ impl Config {
         self
     }
 
+    /// Wrap generated `impl`s in `#[cfg(feature = "...")]` instead of
+    /// emitting them unconditionally (default: false).
+    ///
+    /// When enabled, the impls controlled by [`generate_json`],
+    /// [`generate_views`], and [`generate_text`] are wrapped in
+    /// `#[cfg(feature = "json" | "views" | "text")]` (or
+    /// `#[cfg_attr(feature = ..., ...)]` for derives and field attributes)
+    /// rather than emitted unconditionally. The crate consuming the
+    /// generated code must define matching Cargo features that enable the
+    /// corresponding runtime support:
+    ///
+    /// ```toml
+    /// [features]
+    /// json  = ["buffa/json", "dep:serde", "dep:serde_json"]
+    /// views = []
+    /// text  = ["buffa/text"]
+    /// ```
+    ///
+    /// The `generate_*` flags still control *whether* an impl kind is
+    /// emitted at all — this flag only controls whether it is `cfg`-gated.
+    /// `generate_arbitrary` is always `cfg_attr`-gated on
+    /// `feature = "arbitrary"` regardless of this flag, because `arbitrary`
+    /// is an optional dependency by design.
+    ///
+    /// Reach for this when generated code is the **public interface of a
+    /// library crate** consumed by downstream projects with different
+    /// feature needs — exactly the shape of `buffa-descriptor` and
+    /// `buffa-types`, which ship every impl while letting the codegen
+    /// toolchain (`buffa-codegen`/`buffa-build`/`protoc-gen-buffa`) depend
+    /// on them with `default-features = false` and stay free of
+    /// `serde`/`serde_json`/`base64`. Most consumers of `buffa-build` are
+    /// **not** in this position: a `build.rs` that decides at build-script
+    /// time whether to generate JSON wants `impl Serialize` to just exist.
+    /// Default `false`.
+    ///
+    /// [`generate_json`]: Self::generate_json
+    /// [`generate_views`]: Self::generate_views
+    /// [`generate_text`]: Self::generate_text
+    #[must_use]
+    pub fn gate_impls_on_crate_features(mut self, enabled: bool) -> Self {
+        self.codegen_config.gate_impls_on_crate_features = enabled;
+        self
+    }
+
     /// Enable or disable `with_*` builder-style setter methods for
     /// explicit-presence fields (default: true).
     ///

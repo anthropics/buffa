@@ -178,6 +178,11 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                 "json" => codegen.generate_json = value.trim() == "true",
                 "text" => codegen.generate_text = value.trim() == "true",
                 "arbitrary" => codegen.generate_arbitrary = value.trim() == "true",
+                // `gate_impls=true` wraps generated impls in `#[cfg(feature = ...)]`
+                // instead of emitting them unconditionally. For library crates whose
+                // generated code is itself a public dependency surface; most plugin
+                // invocations want the default (off).
+                "gate_impls" => codegen.gate_impls_on_crate_features = value.trim() == "true",
                 "allow_message_set" => codegen.allow_message_set = value.trim() == "true",
                 "strict_utf8" | "strict_utf8_mapping" => {
                     codegen.strict_utf8_mapping = value.trim() == "true"
@@ -348,6 +353,18 @@ mod tests {
     fn register_types_default_is_true() {
         let config = parse_config("").unwrap();
         assert!(config.codegen.emit_register_fn);
+    }
+
+    #[test]
+    fn gate_impls_true() {
+        let config = parse_config("gate_impls=true").unwrap();
+        assert!(config.codegen.gate_impls_on_crate_features);
+    }
+
+    #[test]
+    fn gate_impls_default_is_false() {
+        let config = parse_config("").unwrap();
+        assert!(!config.codegen.gate_impls_on_crate_features);
     }
 
     #[test]
