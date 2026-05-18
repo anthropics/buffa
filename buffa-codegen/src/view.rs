@@ -1333,7 +1333,7 @@ fn build_to_owned_fields(
         }
         let ty = effective_type(ctx, field, features);
         let init = if is_repeated {
-            repeated_to_owned(scope, ty, &ident, name)?
+            repeated_to_owned(scope, ty, &ident, name)
         } else {
             singular_to_owned(scope, field, ty, &ident, name)?
         };
@@ -1449,9 +1449,9 @@ fn repeated_to_owned(
     ty: Type,
     ident: &proc_macro2::Ident,
     field_name: &str,
-) -> Result<TokenStream, CodeGenError> {
+) -> TokenStream {
     let MessageScope { ctx, proto_fqn, .. } = scope;
-    Ok(match ty {
+    match ty {
         Type::TYPE_STRING => quote! { self.#ident.iter().map(|s| s.to_string()).collect() },
         Type::TYPE_BYTES => {
             // Vec<&[u8]>::iter() → b: &&[u8]. bytes_to_owned handles double-ref.
@@ -1462,7 +1462,7 @@ fn repeated_to_owned(
             quote! { self.#ident.iter().map(|v| v.to_owned_from_source(__buffa_src)).collect() }
         }
         _ => quote! { self.#ident.to_vec() },
-    })
+    }
 }
 
 fn map_to_owned_expr(
