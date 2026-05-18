@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-15
+
 ### Added
 
 - **Generated message structs now include `with_<field>(value) -> Self`
@@ -94,8 +96,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `buffa-descriptor` and `buffa-types` ship every impl while keeping the
   codegen toolchain (`buffa-codegen` / `buffa-build` / `protoc-gen-buffa`)
   lean — it depends on them with `default-features = false`. Tracked in
-  [#113](https://github.com/anthropics/buffa/issues/113); follow-ups add
-  the `buffa-build` builder method and `protoc-gen-buffa` plugin opt.
+  [#113](https://github.com/anthropics/buffa/issues/113). Exposed as
+  `buffa_build::Config::gate_impls_on_crate_features(bool)` and the
+  `gate_impls=true` plugin opt, both default-off.
 
 - **`buffa-descriptor`: regenerated with views, JSON, text, and arbitrary
   impls behind crate features.** `descriptor.proto` and
@@ -744,7 +747,10 @@ This release publishes:
 
 MSRV: Rust 1.85.
 
-[Unreleased]: https://github.com/anthropics/buffa/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/anthropics/buffa/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/anthropics/buffa/compare/v0.5.2...v0.6.0
+[0.5.2]: https://github.com/anthropics/buffa/compare/v0.5.1...v0.5.2
+[0.5.1]: https://github.com/anthropics/buffa/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/anthropics/buffa/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/anthropics/buffa/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/anthropics/buffa/compare/v0.2.0...v0.3.0
