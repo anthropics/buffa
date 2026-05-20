@@ -56,7 +56,7 @@ use crate::error::DecodeError;
 /// Spec: <https://protobuf.dev/programming-guides/encoding/#signed-ints>
 #[inline]
 pub(crate) fn zigzag_encode_i32(value: i32) -> u32 {
-    ((value << 1) ^ (value >> 31)) as u32
+    ((value as u32) << 1) ^ ((value >> 31) as u32)
 }
 
 /// ZigZag decode an unsigned 32-bit integer to signed.
@@ -68,13 +68,7 @@ pub(crate) fn zigzag_decode_i32(value: u32) -> i32 {
 /// ZigZag encode a signed 64-bit integer.
 #[inline]
 pub(crate) fn zigzag_encode_i64(value: i64) -> u64 {
-    ((value << 1) ^ (value >> 63)) as u64
-}
-
-/// ZigZag decode an unsigned 64-bit integer to signed.
-#[inline]
-pub(crate) fn zigzag_decode_i64(value: u64) -> i64 {
-    ((value >> 1) as i64) ^ (-((value & 1) as i64))
+    ((value as u64) << 1) ^ ((value >> 63) as u64)
 }
 
 // ---------------------------------------------------------------------------
