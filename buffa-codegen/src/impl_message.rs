@@ -914,7 +914,11 @@ fn type_encoded_size_expr(ty: Type, val: &TokenStream) -> TokenStream {
             quote! { ::buffa::types::FIXED64_ENCODED_LEN as u32 }
         }
         Type::TYPE_BOOL => quote! { ::buffa::types::BOOL_ENCODED_LEN as u32 },
-        _ => unreachable!(
+        Type::TYPE_STRING
+        | Type::TYPE_BYTES
+        | Type::TYPE_ENUM
+        | Type::TYPE_MESSAGE
+        | Type::TYPE_GROUP => unreachable!(
             "type_encoded_size_expr called for non-numeric type {:?}",
             ty
         ),
@@ -1016,7 +1020,11 @@ fn encode_fn_token(ty: Type) -> TokenStream {
         Type::TYPE_FLOAT => quote! { ::buffa::types::encode_float },
         Type::TYPE_DOUBLE => quote! { ::buffa::types::encode_double },
         Type::TYPE_BOOL => quote! { ::buffa::types::encode_bool },
-        _ => unreachable!("encode_fn_token called for non-numeric type {:?}", ty),
+        Type::TYPE_STRING
+        | Type::TYPE_BYTES
+        | Type::TYPE_ENUM
+        | Type::TYPE_MESSAGE
+        | Type::TYPE_GROUP => unreachable!("encode_fn_token called for non-numeric type {:?}", ty),
     }
 }
 
@@ -1035,7 +1043,11 @@ pub(crate) fn decode_fn_token(ty: Type) -> TokenStream {
         Type::TYPE_FLOAT => quote! { ::buffa::types::decode_float },
         Type::TYPE_DOUBLE => quote! { ::buffa::types::decode_double },
         Type::TYPE_BOOL => quote! { ::buffa::types::decode_bool },
-        _ => unreachable!("decode_fn_token called for non-numeric type {:?}", ty),
+        Type::TYPE_STRING
+        | Type::TYPE_BYTES
+        | Type::TYPE_ENUM
+        | Type::TYPE_MESSAGE
+        | Type::TYPE_GROUP => unreachable!("decode_fn_token called for non-numeric type {:?}", ty),
     }
 }
 
@@ -1056,7 +1068,13 @@ pub(crate) fn is_non_default_expr(ty: Type, field_ident: &Ident) -> TokenStream 
         Type::TYPE_FLOAT => quote! { self.#field_ident.to_bits() != 0u32 },
         Type::TYPE_DOUBLE => quote! { self.#field_ident.to_bits() != 0u64 },
         Type::TYPE_BOOL => quote! { self.#field_ident },
-        _ => unreachable!("is_non_default_expr called for non-numeric type {:?}", ty),
+        Type::TYPE_STRING
+        | Type::TYPE_BYTES
+        | Type::TYPE_ENUM
+        | Type::TYPE_MESSAGE
+        | Type::TYPE_GROUP => {
+            unreachable!("is_non_default_expr called for non-numeric type {:?}", ty)
+        }
     }
 }
 
@@ -1959,7 +1977,28 @@ fn repeated_merge_arm(
                     quote! { ::buffa::types::decode_bytes(buf)? }
                 }
             }
-            _ => unreachable!("repeated_merge_arm: unhandled unpacked type {:?}", ty),
+            // Message and group are handled by early returns above; the
+            // remaining types satisfy `is_packed_type` and never reach this
+            // unpacked branch. Enumerated so adding a `Type` variant is a
+            // compile error here rather than a runtime panic during codegen.
+            Type::TYPE_MESSAGE
+            | Type::TYPE_GROUP
+            | Type::TYPE_ENUM
+            | Type::TYPE_BOOL
+            | Type::TYPE_INT32
+            | Type::TYPE_INT64
+            | Type::TYPE_UINT32
+            | Type::TYPE_UINT64
+            | Type::TYPE_SINT32
+            | Type::TYPE_SINT64
+            | Type::TYPE_FIXED32
+            | Type::TYPE_FIXED64
+            | Type::TYPE_SFIXED32
+            | Type::TYPE_SFIXED64
+            | Type::TYPE_FLOAT
+            | Type::TYPE_DOUBLE => {
+                unreachable!("repeated_merge_arm: unhandled unpacked type {:?}", ty)
+            }
         };
         return Ok(quote! {
             #field_number => {
