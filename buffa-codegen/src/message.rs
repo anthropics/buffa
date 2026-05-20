@@ -1362,7 +1362,7 @@ fn classify_field(
         map_rust_type_from_entry(scope, entry, resolver)?
     } else if is_repeated {
         let elem = if field_type == Type::TYPE_BYTES {
-            bytes_type.clone()
+            bytes_type
         } else {
             scalar_or_message_type_nested(ctx, field, current_package, nesting, features, resolver)?
         };
@@ -1380,7 +1380,7 @@ fn classify_field(
         let inner = if field_type == Type::TYPE_ENUM {
             resolve_enum_type(scope, field, resolver)?
         } else if field_type == Type::TYPE_BYTES {
-            bytes_type.clone()
+            bytes_type
         } else {
             scalar_rust_type(field_type, resolver)?
         };
@@ -2006,38 +2006,40 @@ fn skip_serializing_predicate(
     } else if info.is_optional {
         Some("::core::option::Option::is_none")
     } else {
-        singular_skip_predicate(field_type, features)
+        Some(singular_skip_predicate(field_type, features))
     }
 }
 
 /// Determine the `skip_serializing_if` predicate for a singular field.
-fn singular_skip_predicate(field_type: Type, features: &ResolvedFeatures) -> Option<&'static str> {
+///
+/// Every singular type has a default-value predicate, so this always
+/// returns one — the caller [`skip_serializing_predicate`] supplies the
+/// `None` cases (required/repeated/map/optional fields).
+fn singular_skip_predicate(field_type: Type, features: &ResolvedFeatures) -> &'static str {
     match field_type {
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
-            Some("::buffa::json_helpers::skip_if::is_unset_message_field")
+            "::buffa::json_helpers::skip_if::is_unset_message_field"
         }
-        Type::TYPE_ENUM => Some(if is_closed_enum(features) {
-            "::buffa::json_helpers::skip_if::is_default_closed_enum"
-        } else {
-            "::buffa::json_helpers::skip_if::is_default_enum_value"
-        }),
+        Type::TYPE_ENUM => {
+            if is_closed_enum(features) {
+                "::buffa::json_helpers::skip_if::is_default_closed_enum"
+            } else {
+                "::buffa::json_helpers::skip_if::is_default_enum_value"
+            }
+        }
         Type::TYPE_INT64 | Type::TYPE_SINT64 | Type::TYPE_SFIXED64 => {
-            Some("::buffa::json_helpers::skip_if::is_zero_i64")
+            "::buffa::json_helpers::skip_if::is_zero_i64"
         }
-        Type::TYPE_UINT64 | Type::TYPE_FIXED64 => {
-            Some("::buffa::json_helpers::skip_if::is_zero_u64")
-        }
+        Type::TYPE_UINT64 | Type::TYPE_FIXED64 => "::buffa::json_helpers::skip_if::is_zero_u64",
         Type::TYPE_INT32 | Type::TYPE_SINT32 | Type::TYPE_SFIXED32 => {
-            Some("::buffa::json_helpers::skip_if::is_zero_i32")
+            "::buffa::json_helpers::skip_if::is_zero_i32"
         }
-        Type::TYPE_UINT32 | Type::TYPE_FIXED32 => {
-            Some("::buffa::json_helpers::skip_if::is_zero_u32")
-        }
-        Type::TYPE_BOOL => Some("::buffa::json_helpers::skip_if::is_false"),
-        Type::TYPE_FLOAT => Some("::buffa::json_helpers::skip_if::is_zero_f32"),
-        Type::TYPE_DOUBLE => Some("::buffa::json_helpers::skip_if::is_zero_f64"),
-        Type::TYPE_STRING => Some("::buffa::json_helpers::skip_if::is_empty_str"),
-        Type::TYPE_BYTES => Some("::buffa::json_helpers::skip_if::is_empty_bytes"),
+        Type::TYPE_UINT32 | Type::TYPE_FIXED32 => "::buffa::json_helpers::skip_if::is_zero_u32",
+        Type::TYPE_BOOL => "::buffa::json_helpers::skip_if::is_false",
+        Type::TYPE_FLOAT => "::buffa::json_helpers::skip_if::is_zero_f32",
+        Type::TYPE_DOUBLE => "::buffa::json_helpers::skip_if::is_zero_f64",
+        Type::TYPE_STRING => "::buffa::json_helpers::skip_if::is_empty_str",
+        Type::TYPE_BYTES => "::buffa::json_helpers::skip_if::is_empty_bytes",
     }
 }
 

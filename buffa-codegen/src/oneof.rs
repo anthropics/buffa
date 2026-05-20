@@ -588,7 +588,9 @@ pub(crate) fn to_snake_case(s: &str) -> String {
                 result.push('_');
             }
         }
-        result.push(c.to_lowercase().next().unwrap());
+        // `to_lowercase()` may yield multiple chars (e.g. `İ` → `i\u{307}`);
+        // extend with the full sequence rather than truncating to the first.
+        result.extend(c.to_lowercase());
     }
     result
 }
