@@ -1,0 +1,20 @@
+edition = "2023";
+
+package reflect.editions;
+
+message Editions {
+  // editions 2023 default: explicit presence
+  int32 implicit_default = 1 [features.field_presence = IMPLICIT];
+  int32 explicit_default = 2;
+  // editions 2023 default: packed
+  repeated int32 packed_default = 3;
+  repeated int32 unpacked = 4 [features.repeated_field_encoding = EXPANDED];
+  // editions 2023: closed enum
+  Status status = 5;
+}
+
+enum Status {
+  option features.enum_type = CLOSED;
+  STATUS_UNSPECIFIED = 0;
+  ACTIVE = 1;
+}

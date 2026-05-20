@@ -41,3 +41,5 @@ json = ["buffa/json", "dep:serde", "dep:serde_json"]
 text = ["buffa/text"]
 ## `arbitrary::Arbitrary` derive for fuzzing.
 arbitrary = ["buffa/arbitrary", "dep:arbitrary"]
+## Runtime reflection: `DescriptorPool`, edition feature resolution.
+reflect = []

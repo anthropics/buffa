@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package reflect.test;
+
+message Scalars {
+  double f_double = 1;
+  float f_float = 2;
+  int32 f_int32 = 3;
+  int64 f_int64 = 4;
+  uint32 f_uint32 = 5;
+  uint64 f_uint64 = 6;
+  sint32 f_sint32 = 7;
+  sint64 f_sint64 = 8;
+  fixed32 f_fixed32 = 9;
+  fixed64 f_fixed64 = 10;
+  sfixed32 f_sfixed32 = 11;
+  sfixed64 f_sfixed64 = 12;
+  bool f_bool = 13;
+  string f_string = 14;
+  bytes f_bytes = 15;
+  optional int32 f_opt = 16;
+}
+
+message Containers {
+  repeated int32 packed_ints = 1;
+  repeated string strings = 2;
+  map<string, int32> tags = 3;
+  map<int32, Inner> children = 4;
+  Inner nested = 5;
+  Color color = 6;
+  repeated Color colors = 7;
+}
+
+message Inner {
+  string id = 1;
+  int32 value = 2;
+}
+
+enum Color {
+  COLOR_UNSPECIFIED = 0;
+  RED = 1;
+  GREEN = 2;
+  BLUE = 3;
+}
+
+message OneOf {
+  oneof variant {
+    int32 num = 1;
+    string text = 2;
+    Inner msg = 3;
+  }
+}
+
+// Reflection test service — exercises ServiceDescriptor/MethodDescriptor
+// linking. Unary, client-streaming, server-streaming, and bidi variants
+// for the streaming-flag accessors.
+service Demo {
+  rpc Get(Inner) returns (Containers);
+  rpc Push(stream Inner) returns (Containers);
+  rpc Pull(Inner) returns (stream Containers);
+  rpc Sync(stream Inner) returns (stream Containers);
+}

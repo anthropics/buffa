@@ -33,9 +33,13 @@ extern crate alloc;
 mod desc;
 pub mod features;
 pub mod generated;
+#[cfg(feature = "reflect")]
+pub mod pool;
 
 pub use desc::{
     EnumDescriptor, EnumIndex, EnumValueDescriptor, FieldDescriptor, FieldKind, MessageDescriptor,
     MessageIndex, MethodDescriptor, OneofDescriptor, ScalarType, ServiceDescriptor, ServiceIndex,
     SingularKind,
 };
+#[cfg(feature = "reflect")]
+pub use pool::{DescriptorPool, PoolError};
