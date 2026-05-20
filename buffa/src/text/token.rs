@@ -317,7 +317,7 @@ impl<'a> Tokenizer<'a> {
                 LastKind::Bof => {
                     // Top-level: expect EOF or a field name.
                     if at_eof {
-                        return self.emit_eof();
+                        return Ok(self.emit_eof());
                     }
                     return self.parse_field_name();
                 }
@@ -331,11 +331,11 @@ impl<'a> Tokenizer<'a> {
                     match ch {
                         b'{' | b'<' => {
                             self.push_open(ch)?;
-                            return self.emit(TokenKind::MessageOpen, 1);
+                            return Ok(self.emit(TokenKind::MessageOpen, 1));
                         }
                         b'[' => {
                             self.push_open(ch)?;
-                            return self.emit(TokenKind::ListOpen, 1);
+                            return Ok(self.emit(TokenKind::ListOpen, 1));
                         }
                         _ => return self.parse_scalar(),
                     }
@@ -347,7 +347,7 @@ impl<'a> Tokenizer<'a> {
                     match open {
                         OpenKind::Top => {
                             if at_eof {
-                                return self.emit_eof();
+                                return Ok(self.emit_eof());
                             }
                             match self.rest()[0] {
                                 b',' => {
@@ -370,7 +370,7 @@ impl<'a> Tokenizer<'a> {
                             let ch = self.rest()[0];
                             if ch == close {
                                 self.pop_open();
-                                return self.emit(TokenKind::MessageClose, 1);
+                                return Ok(self.emit(TokenKind::MessageClose, 1));
                             }
                             if ch == other_close(close) {
                                 return Err(self.err_here(ParseErrorKind::DelimiterMismatch));
@@ -397,7 +397,7 @@ impl<'a> Tokenizer<'a> {
                             match ch {
                                 b']' => {
                                     self.pop_open();
-                                    return self.emit(TokenKind::ListClose, 1);
+                                    return Ok(self.emit(TokenKind::ListClose, 1));
                                 }
                                 b',' => {
                                     self.consume(1);
@@ -425,7 +425,7 @@ impl<'a> Tokenizer<'a> {
                     let ch = self.rest()[0];
                     if ch == close {
                         self.pop_open();
-                        return self.emit(TokenKind::MessageClose, 1);
+                        return Ok(self.emit(TokenKind::MessageClose, 1));
                     }
                     if ch == other_close(close) {
                         return Err(self.err_here(ParseErrorKind::DelimiterMismatch));
@@ -442,11 +442,11 @@ impl<'a> Tokenizer<'a> {
                     match ch {
                         b']' => {
                             self.pop_open();
-                            return self.emit(TokenKind::ListClose, 1);
+                            return Ok(self.emit(TokenKind::ListClose, 1));
                         }
                         b'{' | b'<' => {
                             self.push_open(ch)?;
-                            return self.emit(TokenKind::MessageOpen, 1);
+                            return Ok(self.emit(TokenKind::MessageOpen, 1));
                         }
                         _ => return self.parse_scalar(),
                     }
@@ -457,7 +457,7 @@ impl<'a> Tokenizer<'a> {
                     match open {
                         OpenKind::Top => {
                             if at_eof {
-                                return self.emit_eof();
+                                return Ok(self.emit_eof());
                             }
                             return self.parse_field_name();
                         }
@@ -468,7 +468,7 @@ impl<'a> Tokenizer<'a> {
                             let ch = self.rest()[0];
                             if ch == close {
                                 self.pop_open();
-                                return self.emit(TokenKind::MessageClose, 1);
+                                return Ok(self.emit(TokenKind::MessageClose, 1));
                             }
                             if ch == other_close(close) {
                                 return Err(self.err_here(ParseErrorKind::DelimiterMismatch));
@@ -486,7 +486,7 @@ impl<'a> Tokenizer<'a> {
                             match ch {
                                 b'{' | b'<' => {
                                     self.push_open(ch)?;
-                                    return self.emit(TokenKind::MessageOpen, 1);
+                                    return Ok(self.emit(TokenKind::MessageOpen, 1));
                                 }
                                 _ => return self.parse_scalar(),
                             }
@@ -497,7 +497,7 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    fn emit(&mut self, kind: TokenKind, len: usize) -> Result<Token<'a>, ParseError> {
+    fn emit(&mut self, kind: TokenKind, len: usize) -> Token<'a> {
         let pos = self.cursor;
         let raw = &self.input[pos..pos + len];
         self.consume(len);
@@ -510,25 +510,25 @@ impl<'a> Tokenizer<'a> {
             TokenKind::ListClose => LastKind::ListClose,
             TokenKind::Eof => LastKind::Bof, // unused; emit_eof handles Eof
         };
-        Ok(Token {
+        Token {
             kind,
             raw,
             pos,
             name_kind: NameKind::Ident,
             scalar_kind: ScalarKind::Number,
             has_separator: false,
-        })
+        }
     }
 
-    fn emit_eof(&mut self) -> Result<Token<'a>, ParseError> {
-        Ok(Token {
+    fn emit_eof(&mut self) -> Token<'a> {
+        Token {
             kind: TokenKind::Eof,
             raw: &self.input[self.input.len()..],
             pos: self.input.len(),
             name_kind: NameKind::Ident,
             scalar_kind: ScalarKind::Number,
             has_separator: false,
-        })
+        }
     }
 
     /// Parse a field name: identifier, `[type.name]`, or field number.
