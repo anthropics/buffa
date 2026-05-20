@@ -249,6 +249,66 @@ impl Config {
         self
     }
 
+    /// Generate `impl Reflectable` for owned message types (default: false).
+    ///
+    /// When enabled, each generated message gets a bridge-mode reflection
+    /// impl: `foo.reflect()` returns a [`ReflectCow`] wrapping a
+    /// [`DynamicMessage`] decoded from `foo`'s wire encoding, against a
+    /// lazily-built [`DescriptorPool`] embedded as `FileDescriptorSet`
+    /// bytes. The pool is reachable as `your_crate::your_pkg::descriptor_pool()`.
+    ///
+    /// # Cargo.toml setup
+    ///
+    /// The consuming crate must depend on `buffa-descriptor` with the
+    /// `reflect` feature and on `std`:
+    ///
+    /// ```toml
+    /// [dependencies]
+    /// buffa = { version = "0.7", features = ["std"] }
+    /// buffa-descriptor = { version = "0.7", features = ["reflect", "std"] }
+    /// ```
+    ///
+    /// When [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features)
+    /// is also on, the impls are wrapped in `#[cfg(feature = "reflect")]`,
+    /// so the consuming crate must declare a forwarding feature:
+    ///
+    /// ```toml
+    /// [features]
+    /// reflect = ["buffa-descriptor/reflect"]
+    /// ```
+    ///
+    /// **Without the feature declared, the generated `Reflectable` impls
+    /// silently disappear** — `cfg(feature = "reflect")` is permanently
+    /// false in a crate that doesn't declare it. The first call to
+    /// `.reflect()` fails to compile with "trait `Reflectable` not
+    /// implemented", which is a misleading diagnostic. Most consumers
+    /// should leave `gate_impls_on_crate_features` off.
+    ///
+    /// # Performance
+    ///
+    /// `reflect()` is one full encode/decode round-trip plus a heap
+    /// allocation. For repeated reflective access, hold onto the returned
+    /// handle rather than calling `reflect()` per field. The first call
+    /// also pays a one-time pool build cost.
+    ///
+    /// # Build time and binary size
+    ///
+    /// Each generated package embeds its own copy of the full
+    /// `FileDescriptorSet` (transitive closure). For a single-package
+    /// crate this is one copy. For a multi-package codegen run the bytes
+    /// duplicate per package — measurable for large proto trees. The
+    /// serialization happens once per `compile()` call (not per package),
+    /// so build-time CPU does not scale with package count.
+    ///
+    /// [`ReflectCow`]: https://docs.rs/buffa-descriptor/latest/buffa_descriptor/reflect/enum.ReflectCow.html
+    /// [`DynamicMessage`]: https://docs.rs/buffa-descriptor/latest/buffa_descriptor/reflect/struct.DynamicMessage.html
+    /// [`DescriptorPool`]: https://docs.rs/buffa-descriptor/latest/buffa_descriptor/struct.DescriptorPool.html
+    #[must_use]
+    pub fn generate_reflection(mut self, enabled: bool) -> Self {
+        self.codegen_config.generate_reflection = enabled;
+        self
+    }
+
     /// Enable or disable unknown field preservation (default: true).
     ///
     /// When enabled (the default), unrecognized fields encountered during

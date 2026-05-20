@@ -192,6 +192,7 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                 // methods. Like `register_types`, the default is on, so the
                 // accepted spelling is the negation.
                 "with_setters" => codegen.generate_with_setters = value.trim() != "false",
+                "reflection" => codegen.generate_reflection = value.trim() == "true",
                 "file_per_package" => codegen.file_per_package = value.trim() == "true",
                 "extern_path" => {
                     // value is "<proto_path>=<rust_path>"

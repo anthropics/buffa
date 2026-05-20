@@ -28,6 +28,7 @@ use crate::CodeGenConfig;
 pub(crate) const JSON_FEATURE: &str = "json";
 pub(crate) const VIEWS_FEATURE: &str = "views";
 pub(crate) const TEXT_FEATURE: &str = "text";
+pub(crate) const REFLECT_FEATURE: &str = "reflect";
 
 /// Resolved feature-gate names for the current codegen run, computed once
 /// from [`CodeGenConfig`] and threaded through codegen call-sites.
@@ -42,6 +43,7 @@ pub(crate) struct FeatureGates {
     pub(crate) json: Option<&'static str>,
     pub(crate) views: Option<&'static str>,
     pub(crate) text: Option<&'static str>,
+    pub(crate) reflect: Option<&'static str>,
 }
 
 impl FeatureGates {
@@ -54,6 +56,7 @@ impl FeatureGates {
             json: config.generate_json.then_some(JSON_FEATURE),
             views: config.generate_views.then_some(VIEWS_FEATURE),
             text: config.generate_text.then_some(TEXT_FEATURE),
+            reflect: config.generate_reflection.then_some(REFLECT_FEATURE),
         }
     }
 

@@ -598,6 +598,24 @@ pub fn generate_message_impl(
         &quote! { #name_ident },
     );
 
+    // Bridge-mode reflection: `impl Reflectable` resolving against the
+    // package's embedded descriptor pool. Skipped for map entry synthetic
+    // messages — they're not registered in the pool by name and consumers
+    // never reflect over them directly.
+    let reflectable_impl = if ctx.config.generate_reflection
+        && !msg
+            .options
+            .as_option()
+            .is_some_and(|o| o.map_entry.unwrap_or(false))
+    {
+        crate::feature_gates::cfg_block(
+            crate::reflect::reflectable_impl(&quote! { #name_ident }, &quote! { __buffa }),
+            ctx.config.feature_gates().reflect,
+        )
+    } else {
+        quote! {}
+    };
+
     Ok(quote! {
         impl ::buffa::DefaultInstance for #name_ident {
             fn default_instance() -> &'static Self {
@@ -606,6 +624,8 @@ pub fn generate_message_impl(
                 VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
             }
         }
+
+        #reflectable_impl
 
         #message_name_impl
 

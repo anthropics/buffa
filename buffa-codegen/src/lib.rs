@@ -35,6 +35,7 @@ pub(crate) mod impl_text;
 pub(crate) mod imports;
 pub(crate) mod message;
 pub(crate) mod oneof;
+pub(crate) mod reflect;
 pub(crate) mod view;
 
 use crate::generated::descriptor::FileDescriptorProto;
@@ -370,6 +371,37 @@ pub struct CodeGenConfig {
     ///
     /// Defaults to `true`.
     pub generate_with_setters: bool,
+    /// Generate `impl Reflectable` for owned message types (bridge mode).
+    ///
+    /// When enabled, each generated message gets an
+    /// `impl ::buffa_descriptor::reflect::Reflectable` whose `reflect()`
+    /// round-trips through `DynamicMessage` (encode → decode → reflective
+    /// handle), and the package's `__buffa::reflect` submodule embeds the
+    /// `FileDescriptorSet` bytes plus a lazily-built `DescriptorPool`.
+    ///
+    /// **Runtime requirements** — the consuming crate must depend on:
+    /// - `buffa-descriptor` with the `reflect` feature.
+    /// - `std` (the lazy pool accessor uses `std::sync::OnceLock`).
+    ///
+    /// When [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features)
+    /// is on, the impls are wrapped in `#[cfg(feature = "reflect")]` so the
+    /// consuming crate can opt out per build.
+    ///
+    /// **Performance** — `reflect()` is one full encode/decode round-trip
+    /// plus a heap allocation. The first call also pays a one-time pool
+    /// build cost (linking the embedded `FileDescriptorSet`). The vtable
+    /// mode (zero-copy reflective access) is a deferred follow-up; the
+    /// call-site contract is the same either way, so flipping modes later
+    /// requires no consumer-code diff.
+    ///
+    /// **Binary size** — each package embeds its own copy of the full
+    /// `FileDescriptorSet` (transitive closure). For a multi-package
+    /// codegen run this duplicates the FDS bytes per package. Acceptable
+    /// for the bridge prototype; deduplication via a crate-root module is
+    /// a planned follow-up.
+    ///
+    /// Defaults to `false`.
+    pub generate_reflection: bool,
 }
 
 impl Default for CodeGenConfig {
@@ -392,6 +424,7 @@ impl Default for CodeGenConfig {
             enum_attributes: Vec::new(),
             gate_impls_on_crate_features: false,
             generate_with_setters: true,
+            generate_reflection: false,
         }
     }
 }
@@ -558,9 +591,19 @@ pub fn generate(
         by_package.entry(pkg).or_default().push(file_desc);
     }
 
+    // Reflection: serialize the FileDescriptorSet once, regardless of how
+    // many packages are in the request. Each package embeds its own copy of
+    // the bytes (binary-size dedup is a follow-up), but the build-time
+    // re-encoding cost shouldn't scale with the package count.
+    let fds_bytes = if config.generate_reflection {
+        reflect::encode_fds_once(file_descriptors)
+    } else {
+        Vec::new()
+    };
+
     let mut output = Vec::new();
     for (package, files) in by_package {
-        generate_package(&ctx, &package, &files, &mut output)?;
+        generate_package(&ctx, &package, &files, &fds_bytes, &mut output)?;
     }
 
     Ok(output)
@@ -966,6 +1009,7 @@ fn generate_package(
     ctx: &context::CodeGenContext,
     current_package: &str,
     files: &[&FileDescriptorProto],
+    fds_bytes: &[u8],
     out: &mut Vec<GeneratedFile>,
 ) -> Result<(), CodeGenError> {
     // Registry paths are package-root-relative; `register_types` lives at
@@ -1060,7 +1104,7 @@ fn generate_package(
         },
         package: current_package.to_string(),
         kind: GeneratedFileKind::PackageMod,
-        content: generate_package_mod(ctx, &sections, &reg, &reexport_block)?,
+        content: generate_package_mod(ctx, &sections, &reg, &reexport_block, fds_bytes)?,
     });
 
     Ok(())
@@ -1130,6 +1174,7 @@ fn generate_package_mod(
     sections: &PackageSections,
     reg: &message::RegistryPaths,
     root_reexports: &TokenStream,
+    fds_bytes: &[u8],
 ) -> Result<String, CodeGenError> {
     use crate::idents::make_field_ident;
 
@@ -1257,6 +1302,22 @@ fn generate_package_mod(
         TokenStream::new()
     };
 
+    // Reflection: embed the FileDescriptorSet bytes and a lazy pool
+    // accessor so per-message `Reflectable` impls have a descriptor pool to
+    // resolve against. Lives inside `__buffa` so the impls can reach it via
+    // a relative `__buffa::reflect::descriptor_pool()` path. A package-root
+    // `pub use` re-exports `descriptor_pool` so consumers don't have to
+    // route through the reserved `__buffa` sentinel.
+    let (reflect_mod, reflect_reexport) = if ctx.config.generate_reflection {
+        let gate = ctx.config.feature_gates().reflect;
+        (
+            feature_gates::cfg_block(reflect::reflect_pool_module(fds_bytes), gate),
+            feature_gates::cfg_block(reflect::pool_accessor_reexport(&quote! { __buffa }), gate),
+        )
+    } else {
+        (TokenStream::new(), TokenStream::new())
+    };
+
     let sentinel = make_field_ident(context::SENTINEL_MOD);
     // The whole `pub mod __buffa { ... }` wrapper is itself omitted
     // when none of its inner modules or `register_types` exist.
@@ -1264,6 +1325,7 @@ fn generate_package_mod(
         && oneof_mod.is_empty()
         && ext_mod.is_empty()
         && register_fn.is_empty()
+        && reflect_mod.is_empty()
     {
         TokenStream::new()
     } else {
@@ -1277,6 +1339,7 @@ fn generate_package_mod(
                 #oneof_mod
                 #ext_mod
                 #register_fn
+                #reflect_mod
             }
         }
     };
@@ -1284,6 +1347,7 @@ fn generate_package_mod(
     let tokens = quote! {
         #(#owned)*
         #buffa_mod
+        #reflect_reexport
         #root_reexports
     };
 

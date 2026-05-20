@@ -1,9 +1,12 @@
 fn main() {
-    // Basic proto — the original test file.
+    // Basic proto — the original test file. Also the codegen target for
+    // bridge-mode reflection (`generate_reflection(true)` emits
+    // `impl Reflectable` per message + a per-package descriptor pool).
     buffa_build::Config::new()
         .files(&["protos/basic.proto"])
         .includes(&["protos/"])
         .generate_text(true)
+        .generate_reflection(true)
         .compile()
         .expect("buffa_build failed for basic.proto");
 
