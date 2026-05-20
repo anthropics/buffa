@@ -243,4 +243,3 @@ fn service_descriptor_links() {
     let idx = p.service_index("reflect.test.Demo").expect("indexed");
     assert_eq!(p.service(idx).full_name(), "reflect.test.Demo");
 }
-
