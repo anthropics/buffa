@@ -19,3 +19,6 @@ serde_json = { workspace = true }
 
 [build-dependencies]
 buffa-build = { workspace = true }
+
+[dev-dependencies]
+buffa-descriptor = { workspace = true, features = ["reflect", "std"] }

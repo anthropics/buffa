@@ -35,6 +35,8 @@ pub mod features;
 pub mod generated;
 #[cfg(feature = "reflect")]
 pub mod pool;
+#[cfg(feature = "reflect")]
+pub mod reflect;
 
 pub use desc::{
     EnumDescriptor, EnumIndex, EnumValueDescriptor, FieldDescriptor, FieldKind, MessageDescriptor,
@@ -43,3 +45,8 @@ pub use desc::{
 };
 #[cfg(feature = "reflect")]
 pub use pool::{DescriptorPool, PoolError};
+#[cfg(feature = "reflect")]
+pub use reflect::{
+    DynamicMessage, MapKey, MapKeyRef, MapValue, ReflectCow, ReflectList, ReflectMap,
+    ReflectMessage, ReflectMessageMut, ReflectMode, Reflectable, Value, ValueRef,
+};
