@@ -110,12 +110,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         &config.codegen,
     )?;
 
-    // Build the response.
+    // Build the response. `generated` is consumed here so the names and
+    // contents move directly into the response rather than being cloned.
     let files: Vec<CodeGeneratorResponseFile> = generated
-        .iter()
+        .into_iter()
         .map(|g| CodeGeneratorResponseFile {
-            name: Some(g.name.clone()),
-            content: Some(g.content.clone()),
+            name: Some(g.name),
+            content: Some(g.content),
             ..Default::default()
         })
         .collect();
