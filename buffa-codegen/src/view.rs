@@ -1018,7 +1018,28 @@ fn repeated_decode_arm(
         let borrow = match ty {
             Type::TYPE_STRING => quote! { ::buffa::types::borrow_str(&mut cur)? },
             Type::TYPE_BYTES => quote! { ::buffa::types::borrow_bytes(&mut cur)? },
-            _ => unreachable!(),
+            // Message and group are handled by early returns above; the
+            // remaining types satisfy `is_packed_type` and never reach this
+            // unpacked branch. Enumerated so adding a `Type` variant is a
+            // compile error here rather than a runtime panic during codegen.
+            Type::TYPE_MESSAGE
+            | Type::TYPE_GROUP
+            | Type::TYPE_ENUM
+            | Type::TYPE_BOOL
+            | Type::TYPE_INT32
+            | Type::TYPE_INT64
+            | Type::TYPE_UINT32
+            | Type::TYPE_UINT64
+            | Type::TYPE_SINT32
+            | Type::TYPE_SINT64
+            | Type::TYPE_FIXED32
+            | Type::TYPE_FIXED64
+            | Type::TYPE_SFIXED32
+            | Type::TYPE_SFIXED64
+            | Type::TYPE_FLOAT
+            | Type::TYPE_DOUBLE => {
+                unreachable!("view repeated decode arm: unhandled unpacked type {:?}", ty)
+            }
         };
         return Ok(quote! {
             #field_number => {
@@ -1333,7 +1354,7 @@ fn build_to_owned_fields(
         }
         let ty = effective_type(ctx, field, features);
         let init = if is_repeated {
-            repeated_to_owned(scope, ty, &ident, name)?
+            repeated_to_owned(scope, ty, &ident, name)
         } else {
             singular_to_owned(scope, field, ty, &ident, name)?
         };
@@ -1449,9 +1470,9 @@ fn repeated_to_owned(
     ty: Type,
     ident: &proc_macro2::Ident,
     field_name: &str,
-) -> Result<TokenStream, CodeGenError> {
+) -> TokenStream {
     let MessageScope { ctx, proto_fqn, .. } = scope;
-    Ok(match ty {
+    match ty {
         Type::TYPE_STRING => quote! { self.#ident.iter().map(|s| s.to_string()).collect() },
         Type::TYPE_BYTES => {
             // Vec<&[u8]>::iter() → b: &&[u8]. bytes_to_owned handles double-ref.
@@ -1462,7 +1483,7 @@ fn repeated_to_owned(
             quote! { self.#ident.iter().map(|v| v.to_owned_from_source(__buffa_src)).collect() }
         }
         _ => quote! { self.#ident.to_vec() },
-    })
+    }
 }
 
 fn map_to_owned_expr(
@@ -2023,7 +2044,13 @@ fn scalar_skip_predicate(ty: Type) -> TokenStream {
         // The single call site is gated by `serde_helper_path(ty).is_some()`,
         // which only matches the scalar types above. Bytes is handled in an
         // earlier match arm.
-        _ => unreachable!("scalar_skip_predicate called for non-scalar"),
+        Type::TYPE_STRING
+        | Type::TYPE_BYTES
+        | Type::TYPE_ENUM
+        | Type::TYPE_MESSAGE
+        | Type::TYPE_GROUP => {
+            unreachable!("scalar_skip_predicate called for non-scalar {:?}", ty)
+        }
     }
 }
 
@@ -2135,7 +2162,11 @@ fn scalar_ty(ty: Type) -> TokenStream {
         Type::TYPE_INT32 | Type::TYPE_SINT32 | Type::TYPE_SFIXED32 => quote! { i32 },
         Type::TYPE_UINT32 | Type::TYPE_FIXED32 => quote! { u32 },
         Type::TYPE_BOOL => quote! { bool },
-        _ => unreachable!("scalar_ty called for non-scalar {:?}", ty),
+        Type::TYPE_STRING
+        | Type::TYPE_BYTES
+        | Type::TYPE_ENUM
+        | Type::TYPE_MESSAGE
+        | Type::TYPE_GROUP => unreachable!("scalar_ty called for non-scalar {:?}", ty),
     }
 }
 
