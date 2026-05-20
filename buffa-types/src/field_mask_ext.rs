@@ -68,59 +68,16 @@ impl IntoIterator for FieldMask {
 }
 
 // ── proto JSON camelCase ↔ snake_case conversion ──────────────────────────────
+//
+// The shared conversion primitives live in `buffa::json_helpers::wkt`. Both
+// this typed serde impl and `buffa-descriptor`'s reflective JSON codec call
+// into the same code, so the two paths can't drift on edge cases the
+// conformance suite exercises.
 
-/// Convert a snake_case field path to lowerCamelCase, handling dotted sub-paths.
-///
-/// Each `.`-separated component is converted independently so that
-/// `"user.first_name"` → `"user.firstName"`.
 #[cfg(feature = "json")]
 use alloc::vec::Vec;
-
 #[cfg(feature = "json")]
-fn snake_to_camel(path: &str) -> String {
-    path.split('.')
-        .map(|component| {
-            let mut out = String::with_capacity(component.len());
-            let mut capitalize_next = false;
-            for ch in component.chars() {
-                if ch == '_' {
-                    capitalize_next = true;
-                } else if capitalize_next {
-                    out.extend(ch.to_uppercase());
-                    capitalize_next = false;
-                } else {
-                    out.push(ch);
-                }
-            }
-            out
-        })
-        .collect::<Vec<_>>()
-        .join(".")
-}
-
-/// Convert a lowerCamelCase field path to snake_case, handling dotted sub-paths.
-#[cfg(feature = "json")]
-fn camel_to_snake(path: &str) -> String {
-    path.split('.')
-        .map(|component| {
-            let mut out = String::with_capacity(component.len() + 4);
-            for ch in component.chars() {
-                if ch.is_uppercase() {
-                    // No underscore before the first char of a component,
-                    // even if it's uppercase (PascalCase → snake, not _snake).
-                    if !out.is_empty() {
-                        out.push('_');
-                    }
-                    out.extend(ch.to_lowercase());
-                } else {
-                    out.push(ch);
-                }
-            }
-            out
-        })
-        .collect::<Vec<_>>()
-        .join(".")
-}
+use buffa::json_helpers::wkt::{camel_to_snake, snake_to_camel};
 
 // ── serde impls ──────────────────────────────────────────────────────────────
 

@@ -16,6 +16,18 @@
 //!
 //! A [`skip_if`] submodule provides `skip_serializing_if` predicates for
 //! omitting default-valued fields from JSON output.
+//!
+//! The [`wkt`] submodule provides the shared formatting and parsing
+//! primitives for the well-known types' JSON forms (`Timestamp` RFC 3339,
+//! `Duration` decimal seconds, `FieldMask` camelCase). Both `buffa-types`'s
+//! typed serde impls and `buffa-descriptor`'s reflective JSON codec call
+//! into it, so the two paths can't drift on edge cases the conformance
+//! suite exercises. It's `#[doc(hidden)]` because the supported entry
+//! points are the typed serde impls and `DynamicMessage`'s JSON codec —
+//! these helpers operate on raw scalars and have no semver contract.
+
+#[doc(hidden)]
+pub mod wkt;
 
 use alloc::string::ToString;
 

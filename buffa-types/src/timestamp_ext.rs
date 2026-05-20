@@ -176,182 +176,34 @@ impl From<std::time::SystemTime> for Timestamp {
 }
 
 // ── RFC 3339 formatting ──────────────────────────────────────────────────────
+//
+// The shared formatting and parsing primitives live in
+// `buffa::json_helpers::wkt`. Both this typed serde impl and `buffa-descriptor`'s
+// reflective JSON codec call into the same code, so the two paths can't drift
+// on edge cases the conformance suite exercises. The functions below are thin
+// adapters that preserve the `Option`-returning private API the test suite
+// targets.
 
-/// Convert unix-epoch days to a proleptic Gregorian (year, month, day).
-/// Uses Howard Hinnant's civil calendar algorithm.
 #[cfg(feature = "json")]
-fn days_to_date(days: i64) -> (i64, u8, u8) {
-    let z = days + 719468;
-    let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
-    let doe = z - era * 146097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    (
-        yoe + era * 400 + if m <= 2 { 1 } else { 0 },
-        m as u8,
-        d as u8,
-    )
-}
+use buffa::json_helpers::wkt::{MAX_TIMESTAMP_SECS, MIN_TIMESTAMP_SECS};
+// The civil-calendar helpers are exercised directly by the test module.
+#[cfg(all(test, feature = "json"))]
+use buffa::json_helpers::wkt::{date_to_days, days_to_date};
 
-/// Convert a proleptic Gregorian date to unix-epoch days.
-///
-/// Returns `None` if the date components are out of range or do not form a
-/// valid calendar date (e.g. February 30 or June 31).  Validity is checked by
-/// a round-trip through [`days_to_date`]: if the computed day number maps back
-/// to a different date the input was not a real calendar date.
-#[cfg(feature = "json")]
-fn date_to_days(y: i64, m: u8, d: u8) -> Option<i64> {
-    if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
-        return None;
-    }
-    let (ya, ma) = if m <= 2 { (y - 1, m + 9) } else { (y, m - 3) };
-    let era = (if ya >= 0 { ya } else { ya - 399 }) / 400;
-    let yoe = ya - era * 400;
-    let doy = (153 * ma as i64 + 2) / 5 + d as i64 - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146097 + doe - 719468;
-    // Verify the computed day number round-trips back to the same date.
-    // This rejects dates like "Feb 30" that the formula maps to a different day.
-    if days_to_date(days) != (y, m, d) {
-        return None;
-    }
-    Some(days)
-}
-
-/// Format a unix timestamp as an RFC 3339 string (UTC, Z suffix).
-/// Nanosecond precision is auto-detected (0, 3, 6, or 9 fractional digits).
 #[cfg(feature = "json")]
 fn timestamp_to_rfc3339(secs: i64, nanos: i32) -> alloc::string::String {
-    use alloc::format;
-    use alloc::string::String;
-    let (tod, day) = {
-        let r = secs % 86400;
-        if r >= 0 {
-            (r, secs / 86400)
-        } else {
-            (r + 86400, secs / 86400 - 1)
-        }
-    };
-    let (y, mo, d) = days_to_date(day);
-    let h = tod / 3600;
-    let mi = (tod % 3600) / 60;
-    let s = tod % 60;
-    let frac = if nanos == 0 {
-        String::new()
-    } else if nanos % 1_000_000 == 0 {
-        format!(".{:03}", nanos / 1_000_000)
-    } else if nanos % 1_000 == 0 {
-        format!(".{:06}", nanos / 1_000)
-    } else {
-        format!(".{:09}", nanos)
-    };
-    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}{frac}Z")
+    // The serde `Serialize` impl validates `seconds` and `nanos` bounds
+    // before calling this; `expect` documents the invariant.
+    buffa::json_helpers::wkt::fmt_timestamp(secs, nanos)
+        .expect("Timestamp validated before formatting")
 }
 
-/// Parse an RFC 3339 string to (unix_seconds, nanos). Accepts uppercase `Z`
-/// suffix and UTC offsets (`+HH:MM` / `-HH:MM`). Lowercase `t` and `z`
-/// are rejected per the proto3 JSON spec.
 #[cfg(feature = "json")]
 fn parse_rfc3339(s: &str) -> Option<(i64, i32)> {
-    // RFC 3339 timestamps are pure ASCII. Reject non-ASCII early to avoid
-    // panics from byte-offset string slicing on multi-byte UTF-8 input.
-    if !s.is_ascii() {
-        return None;
-    }
-    // Proto3 JSON spec requires uppercase 'Z' suffix (not lowercase).
-    let (dt, tz_offset) = if let Some(rest) = s.strip_suffix('Z') {
-        (rest, 0i64)
-    } else {
-        let len = s.len();
-        if len < 6 {
-            return None;
-        }
-        let sign: i64 = match s.as_bytes()[len - 6] {
-            b'+' => -1,
-            b'-' => 1,
-            _ => return None,
-        };
-        // Offset must be `(+|-)HH:MM` with colon separator and valid ranges.
-        if s.as_bytes()[len - 3] != b':' {
-            return None;
-        }
-        let oh: i64 = s[len - 5..len - 3].parse().ok()?;
-        let om: i64 = s[len - 2..].parse().ok()?;
-        if !(0..=23).contains(&oh) || !(0..=59).contains(&om) {
-            return None;
-        }
-        (&s[..len - 6], sign * (oh * 3600 + om * 60))
-    };
-
-    // Proto3 JSON spec requires uppercase 'T' separator (not lowercase).
-    let t = dt.find('T')?;
-    let (date, time) = (&dt[..t], &dt[t + 1..]);
-    if date.len() != 10 || time.len() < 8 {
-        return None;
-    }
-
-    // Validate structural separators (hyphens in date, colons in time).
-    let date_b = date.as_bytes();
-    let time_b = time.as_bytes();
-    if date_b[4] != b'-' || date_b[7] != b'-' || time_b[2] != b':' || time_b[5] != b':' {
-        return None;
-    }
-
-    let year: i64 = date[0..4].parse().ok()?;
-    let month: u8 = date[5..7].parse().ok()?;
-    let day: u8 = date[8..10].parse().ok()?;
-    let hour: i64 = time[0..2].parse().ok()?;
-    let min: i64 = time[3..5].parse().ok()?;
-    let sec: i64 = time[6..8].parse().ok()?;
-    // RFC 3339: hour 0-23, minute 0-59, second 0-60 (leap seconds).
-    // Proto3 JSON spec inherits RFC 3339 but Timestamp uses Unix epoch
-    // seconds which has no leap-second representation, so reject 60.
-    if !(0..=23).contains(&hour) || !(0..=59).contains(&min) || !(0..=59).contains(&sec) {
-        return None;
-    }
-
-    let nanos = if time.len() > 8 {
-        if time.as_bytes()[8] != b'.' {
-            return None;
-        }
-        let frac = &time[9..];
-        // All chars must be digits (i32::parse accepts '-' and '+', which
-        // would let e.g. "T23:59:59.-3Z" produce negative nanos).
-        if frac.is_empty() || frac.len() > 9 || !frac.bytes().all(|b| b.is_ascii_digit()) {
-            return None;
-        }
-        let n: i32 = frac.parse().ok()?;
-        n * 10_i32.pow(9 - frac.len() as u32)
-    } else {
-        0
-    };
-
-    // Proto spec: year must be in [1, 9999]. Check BEFORE applying the
-    // offset (cheap reject for most bad input)...
-    if !(1..=9999).contains(&year) {
-        return None;
-    }
-    let days = date_to_days(year, month, day)?;
-    let unix = days * 86400 + hour * 3600 + min * 60 + sec + tz_offset;
-    // ...and AFTER, because the offset can push a boundary timestamp past the
-    // valid range (e.g. "9999-12-31T23:59:59-23:59" has year 9999 but the
-    // UTC-equivalent is year 10000).
-    if !(MIN_TIMESTAMP_SECS..=MAX_TIMESTAMP_SECS).contains(&unix) {
-        return None;
-    }
-    Some((unix, nanos))
+    buffa::json_helpers::wkt::parse_timestamp(s).ok()
 }
 
 // ── serde impls ──────────────────────────────────────────────────────────────
-
-// Protobuf spec: Timestamp is restricted to years 0001–9999.
-#[cfg(feature = "json")]
-const MIN_TIMESTAMP_SECS: i64 = -62_135_596_800; // 0001-01-01T00:00:00Z
-#[cfg(feature = "json")]
-const MAX_TIMESTAMP_SECS: i64 = 253_402_300_799; // 9999-12-31T23:59:59Z
 
 #[cfg(feature = "json")]
 impl serde::Serialize for Timestamp {

@@ -72,97 +72,34 @@ impl From<std::time::Duration> for Duration {
 
 // ── RFC 3339-style decimal-seconds formatting ─────────────────────────────────
 
-/// Format a protobuf Duration as a decimal seconds string with an `s` suffix.
-///
-/// The nanos field is formatted with 0, 3, 6, or 9 fractional digits depending
-/// on precision needed. Negative durations (where `seconds < 0` or
-/// `seconds == 0 && nanos < 0`) are prefixed with `-`.
+// ── Decimal seconds formatting ──────────────────────────────────────────────
+//
+// The shared formatting and parsing primitives live in
+// `buffa::json_helpers::wkt`. Both this typed serde impl and `buffa-descriptor`'s
+// reflective JSON codec call into the same code, so the two paths can't drift
+// on edge cases the conformance suite exercises. The functions below are thin
+// adapters that preserve the `Option`-returning private API the test suite
+// targets.
+
 #[cfg(feature = "json")]
 fn duration_to_string(secs: i64, nanos: i32) -> alloc::string::String {
-    use alloc::format;
-    use alloc::string::String;
-    let negative = secs < 0 || (secs == 0 && nanos < 0);
-    let abs_secs = secs.unsigned_abs();
-    let abs_nanos = nanos.unsigned_abs();
-    let sign = if negative { "-" } else { "" };
-    let frac = if abs_nanos == 0 {
-        String::new()
-    } else if abs_nanos % 1_000_000 == 0 {
-        format!(".{:03}", abs_nanos / 1_000_000)
-    } else if abs_nanos % 1_000 == 0 {
-        format!(".{:06}", abs_nanos / 1_000)
-    } else {
-        format!(".{:09}", abs_nanos)
-    };
-    format!("{sign}{abs_secs}{frac}s")
+    // The serde `Serialize` impl validates `(seconds, nanos)` with
+    // `is_valid_duration` before calling this; `expect` documents the invariant.
+    buffa::json_helpers::wkt::fmt_duration(secs, nanos)
+        .expect("Duration validated before formatting")
 }
 
-/// Parse a decimal seconds string (e.g. `"1.5s"`, `"-0.001s"`) to (seconds, nanos).
-/// Returns `None` if the string is malformed.
 #[cfg(feature = "json")]
 fn parse_duration_string(s: &str) -> Option<(i64, i32)> {
-    let body = s.strip_suffix('s')?;
-    let negative = body.starts_with('-');
-    let body = if negative {
-        body.strip_prefix('-')?
-    } else {
-        body
-    };
-    // Reject residual sign after stripping: "--5s" would otherwise parse as
-    // -5 via i64::parse and the double negation would yield +5 silently.
-    if body.starts_with(['-', '+']) {
-        return None;
-    }
-
-    let (sec_str, nano_str) = match body.find('.') {
-        Some(dot) => (&body[..dot], &body[dot + 1..]),
-        None => (body, ""),
-    };
-
-    let abs_secs: i64 = sec_str.parse().ok()?;
-    let abs_nanos: i32 = if nano_str.is_empty() {
-        0
-    } else {
-        // All chars must be digits (i32::parse accepts '+'/'-', which would
-        // let e.g. "5.-3s" produce negative nanos).
-        if nano_str.len() > 9 || !nano_str.bytes().all(|b| b.is_ascii_digit()) {
-            return None;
-        }
-        let n: i32 = nano_str.parse().ok()?;
-        n * 10_i32.pow(9 - nano_str.len() as u32)
-    };
-
-    let (secs, nanos) = if negative {
-        (-abs_secs, -abs_nanos)
-    } else {
-        (abs_secs, abs_nanos)
-    };
-    if !is_valid_duration(secs, nanos) {
-        return None;
-    }
-    Some((secs, nanos))
+    buffa::json_helpers::wkt::parse_duration(s).ok()
 }
-
-// ── serde impls ──────────────────────────────────────────────────────────────
-
-// Protobuf spec: Duration is restricted to ±10,000 years ≈ ±315,576,000,000s.
-#[cfg(feature = "json")]
-const MAX_DURATION_SECS: i64 = 315_576_000_000;
 
 #[cfg(feature = "json")]
 fn is_valid_duration(secs: i64, nanos: i32) -> bool {
-    if !(-999_999_999..=999_999_999).contains(&nanos) {
-        return false;
-    }
-    if !(-MAX_DURATION_SECS..=MAX_DURATION_SECS).contains(&secs) {
-        return false;
-    }
-    // Sign consistency: nanos must match seconds sign (or be zero).
-    if (secs > 0 && nanos < 0) || (secs < 0 && nanos > 0) {
-        return false;
-    }
-    true
+    buffa::json_helpers::wkt::validate_duration(secs, nanos).is_ok()
 }
+
+// ── serde impls ──────────────────────────────────────────────────────────────
 
 #[cfg(feature = "json")]
 impl serde::Serialize for Duration {
