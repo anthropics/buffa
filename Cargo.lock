@@ -110,6 +110,7 @@ dependencies = [
  "arbitrary",
  "buffa",
  "buffa-build",
+ "buffa-descriptor",
  "buffa-types",
  "bytes",
  "serde",

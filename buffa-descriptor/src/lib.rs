@@ -45,6 +45,8 @@ pub use desc::{
 };
 #[cfg(feature = "reflect")]
 pub use pool::{DescriptorPool, PoolError};
+#[cfg(all(feature = "reflect", feature = "json"))]
+pub use reflect::DynamicMessageSeed;
 #[cfg(feature = "reflect")]
 pub use reflect::{
     DynamicMessage, MapKey, MapKeyRef, MapValue, ReflectCow, ReflectList, ReflectMap,

@@ -23,10 +23,14 @@
 //! `buffa-descriptor` for the descriptor types.
 
 mod dynamic;
+#[cfg(feature = "json")]
+mod json;
 mod message;
 mod value;
 
 pub use dynamic::DynamicMessage;
+#[cfg(feature = "json")]
+pub use json::DynamicMessageSeed;
 pub use message::{ReflectCow, ReflectMessage, ReflectMessageMut, Reflectable};
 pub use value::{MapKey, MapKeyRef, MapValue, ReflectList, ReflectMap, Value, ValueRef};
 
