@@ -56,3 +56,13 @@ BUFFA_VIEW_JSON=1 run_suite view-json \
     --failure_list /known_failures_view_json.txt \
     --maximum_edition 2024 \
     /usr/local/bin/buffa-conformance
+
+# Via-reflect mode: routes binary input through DynamicMessage's
+# descriptor-driven decode/encode. Verifies the runtime reflection codec
+# against the conformance corpus. Only binary→binary is exercised — JSON
+# and text on DynamicMessage are future work.
+BUFFA_VIA_REFLECT=1 run_suite reflect \
+    conformance_test_runner \
+    --failure_list /known_failures_reflect.txt \
+    --maximum_edition 2024 \
+    /usr/local/bin/buffa-conformance

@@ -55,6 +55,7 @@ COPY conformance/known_failures_nostd.txt       /known_failures_nostd.txt
 COPY conformance/known_failures_view.txt        /known_failures_view.txt
 COPY conformance/known_failures_view_json.txt   /known_failures_view_json.txt
 COPY conformance/known_failures_text.txt        /known_failures_text.txt
+COPY conformance/known_failures_reflect.txt      /known_failures_reflect.txt
 COPY conformance/run-conformance.sh             /run-conformance.sh
 RUN chmod +x /run-conformance.sh
 

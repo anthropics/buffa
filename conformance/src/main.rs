@@ -173,6 +173,81 @@ fn view_json() -> bool {
     *FLAG.get_or_init(|| std::env::var("BUFFA_VIEW_JSON").as_deref() == Ok("1"))
 }
 
+// ── Via-reflect mode ─────────────────────────────────────────────────────
+//
+// When `BUFFA_VIA_REFLECT=1`, binary input is decoded into a
+// `DynamicMessage` (descriptor-driven, no per-type code) and re-encoded
+// from it. Verifies the reflection runtime's wire codec against the
+// conformance corpus, independently of any generated message type. Only
+// binary→binary is exercised — JSON and text on `DynamicMessage` are
+// future work.
+
+#[cfg(not(no_protos))]
+fn via_reflect() -> bool {
+    static FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FLAG.get_or_init(|| std::env::var("BUFFA_VIA_REFLECT").as_deref() == Ok("1"))
+}
+
+/// Pool built from the conformance protos `FileDescriptorSet`, lazily
+/// initialised on first via-reflect request.
+#[cfg(not(no_protos))]
+fn reflect_pool() -> &'static std::sync::Arc<buffa_descriptor::DescriptorPool> {
+    static POOL: std::sync::OnceLock<std::sync::Arc<buffa_descriptor::DescriptorPool>> =
+        std::sync::OnceLock::new();
+    POOL.get_or_init(|| {
+        // The .fds is produced by build.rs (`emit_reflect_fds`) into OUT_DIR.
+        const FDS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/conformance_protos.fds"));
+        std::sync::Arc::new(
+            buffa_descriptor::DescriptorPool::decode(FDS)
+                .expect("conformance protos FDS decodes into a valid pool"),
+        )
+    })
+}
+
+/// Binary→binary via `DynamicMessage::decode → DynamicMessage::encode`.
+/// Routes binary or JSON input through `DynamicMessage` and emits binary or
+/// JSON output, exercising the descriptor-driven binary codec and the
+/// reflective serde impls.
+#[cfg(not(no_protos))]
+fn process_via_reflect(req: &envelope::Request) -> envelope::Response {
+    use buffa_descriptor::reflect::DynamicMessage;
+    use envelope::{Payload, Response, WireFormat};
+    let pool = reflect_pool();
+    let Some(idx) = pool.message_index(&req.message_type) else {
+        return Response::Skipped(format!(
+            "message type '{}' not in reflect pool",
+            req.message_type
+        ));
+    };
+    // Decode input.
+    let msg = match &req.payload {
+        Some(Payload::Protobuf(b)) => {
+            match DynamicMessage::decode(std::sync::Arc::clone(pool), idx, b) {
+                Ok(m) => m,
+                Err(e) => return Response::ParseError(format!("{e}")),
+            }
+        }
+        Some(Payload::Json(s)) => {
+            match DynamicMessage::from_json(std::sync::Arc::clone(pool), idx, s) {
+                Ok(m) => m,
+                Err(e) => return Response::ParseError(format!("{e}")),
+            }
+        }
+        _ => {
+            return Response::Skipped("reflect mode: only protobuf and JSON input exercised".into())
+        }
+    };
+    // Encode output.
+    match req.requested_output_format {
+        WireFormat::Protobuf => Response::ProtobufPayload(msg.encode_to_vec()),
+        WireFormat::Json => match msg.to_json() {
+            Ok(s) => Response::JsonPayload(s),
+            Err(e) => Response::SerializeError(format!("{e}")),
+        },
+        _ => Response::Skipped("reflect mode: only protobuf and JSON output exercised".into()),
+    }
+}
+
 /// Decode `bytes` as a view and serialize that view directly to JSON.
 #[cfg(not(no_protos))]
 fn encode_view_json<'a, V>(bytes: &'a [u8]) -> envelope::Response
@@ -283,6 +358,30 @@ fn process(req: &envelope::Request) -> envelope::Response {
                 process_via_view(req)
             }
             _ => Response::Skipped("view mode: JSON and non-binary I/O skipped".into()),
+        };
+    }
+
+    // Via-reflect mode: binary and JSON I/O routed through DynamicMessage's
+    // descriptor-driven codec and reflective serde impls. Text format is
+    // skipped (no DynamicMessage textproto codec yet). Tests that the
+    // reference runner reports as `IsKnownIgnoreUnknownParsing` are skipped
+    // because the reflect deserializer always errors on unknown fields.
+    if via_reflect() {
+        if req.test_category == envelope::TestCategory::JsonIgnoreUnknownParsing {
+            return Response::Skipped(
+                "reflect mode: ignore-unknown JSON parsing not implemented".into(),
+            );
+        }
+        let is_proto_or_json =
+            matches!(&req.payload, Some(Payload::Protobuf(_) | Payload::Json(_)));
+        let out_proto_or_json = matches!(
+            req.requested_output_format,
+            WireFormat::Protobuf | WireFormat::Json
+        );
+        return if is_proto_or_json && out_proto_or_json {
+            process_via_reflect(req)
+        } else {
+            Response::Skipped("reflect mode: only protobuf and JSON I/O exercised".into())
         };
     }
 

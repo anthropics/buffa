@@ -79,4 +79,37 @@ fn main() {
 
     println!("cargo:rustc-check-cfg=cfg(has_editions_protos)");
     println!("cargo:rerun-if-changed=protos/");
+
+    // Produce a FileDescriptorSet for the via-reflect mode. The reflection
+    // runtime decodes this into a DescriptorPool and round-trips conformance
+    // binary input through DynamicMessage.
+    emit_reflect_fds(&manifest_dir);
+}
+
+/// Write `OUT_DIR/conformance_protos.fds` containing the conformance test
+/// message types and their transitive imports.
+fn emit_reflect_fds(manifest_dir: &std::path::Path) {
+    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR set by cargo");
+    let fds_out = std::path::Path::new(&out_dir).join("conformance_protos.fds");
+
+    let mut files = vec![
+        "google/protobuf/test_messages_proto3.proto",
+        "google/protobuf/test_messages_proto2.proto",
+    ];
+    let editions =
+        manifest_dir.join("protos/conformance/test_protos/test_messages_edition2023.proto");
+    if editions.exists() {
+        files.push("conformance/test_protos/test_messages_edition2023.proto");
+    }
+
+    let protoc = std::env::var("PROTOC").unwrap_or_else(|_| "protoc".into());
+    let status = std::process::Command::new(&protoc)
+        .arg("--include_imports")
+        .arg(format!("--descriptor_set_out={}", fds_out.display()))
+        .arg("-I")
+        .arg(manifest_dir.join("protos"))
+        .args(&files)
+        .status()
+        .expect("protoc invocation for reflect FDS");
+    assert!(status.success(), "protoc failed producing reflect FDS");
 }

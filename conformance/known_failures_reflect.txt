@@ -1,0 +1,19 @@
+# Known failures for the BUFFA_VIA_REFLECT mode.
+#
+# Duplicate JSON keys: serde_json's Deserializer follows the JSON RFC's
+# "behavior is undefined" stance and silently keeps the last value for a
+# duplicate key — the visitor never sees the first one, so the codec
+# cannot detect the duplicate. Fixing this needs an order-preserving
+# intermediate parse (serde_json's `preserve_order` feature plus a manual
+# duplicate check) or a custom JSON tokenizer. Recommended-tier; the
+# generated typed JSON path has the same limitation.
+Recommended.Proto2.JsonInput.FieldNameDuplicate
+Recommended.Proto2.JsonInput.FieldNameDuplicateDifferentCasing1
+Recommended.Proto2.JsonInput.FieldNameDuplicateDifferentCasing2
+Recommended.Proto3.JsonInput.FieldNameDuplicate
+Recommended.Proto3.JsonInput.FieldNameDuplicateDifferentCasing1
+Recommended.Proto3.JsonInput.FieldNameDuplicateDifferentCasing2
+
+# proto2 extension JSON keys (`[pkg.ext]`) are not supported by the
+# reflect deserializer — extensions are a phase-4 deliverable.
+Recommended.Proto2.JsonInput.FieldNameExtension.Validator
