@@ -1018,7 +1018,28 @@ fn repeated_decode_arm(
         let borrow = match ty {
             Type::TYPE_STRING => quote! { ::buffa::types::borrow_str(&mut cur)? },
             Type::TYPE_BYTES => quote! { ::buffa::types::borrow_bytes(&mut cur)? },
-            _ => unreachable!(),
+            // Message and group are handled by early returns above; the
+            // remaining types satisfy `is_packed_type` and never reach this
+            // unpacked branch. Enumerated so adding a `Type` variant is a
+            // compile error here rather than a runtime panic during codegen.
+            Type::TYPE_MESSAGE
+            | Type::TYPE_GROUP
+            | Type::TYPE_ENUM
+            | Type::TYPE_BOOL
+            | Type::TYPE_INT32
+            | Type::TYPE_INT64
+            | Type::TYPE_UINT32
+            | Type::TYPE_UINT64
+            | Type::TYPE_SINT32
+            | Type::TYPE_SINT64
+            | Type::TYPE_FIXED32
+            | Type::TYPE_FIXED64
+            | Type::TYPE_SFIXED32
+            | Type::TYPE_SFIXED64
+            | Type::TYPE_FLOAT
+            | Type::TYPE_DOUBLE => {
+                unreachable!("view repeated decode arm: unhandled unpacked type {:?}", ty)
+            }
         };
         return Ok(quote! {
             #field_number => {
@@ -2023,7 +2044,13 @@ fn scalar_skip_predicate(ty: Type) -> TokenStream {
         // The single call site is gated by `serde_helper_path(ty).is_some()`,
         // which only matches the scalar types above. Bytes is handled in an
         // earlier match arm.
-        _ => unreachable!("scalar_skip_predicate called for non-scalar"),
+        Type::TYPE_STRING
+        | Type::TYPE_BYTES
+        | Type::TYPE_ENUM
+        | Type::TYPE_MESSAGE
+        | Type::TYPE_GROUP => {
+            unreachable!("scalar_skip_predicate called for non-scalar {:?}", ty)
+        }
     }
 }
 
@@ -2135,7 +2162,11 @@ fn scalar_ty(ty: Type) -> TokenStream {
         Type::TYPE_INT32 | Type::TYPE_SINT32 | Type::TYPE_SFIXED32 => quote! { i32 },
         Type::TYPE_UINT32 | Type::TYPE_FIXED32 => quote! { u32 },
         Type::TYPE_BOOL => quote! { bool },
-        _ => unreachable!("scalar_ty called for non-scalar {:?}", ty),
+        Type::TYPE_STRING
+        | Type::TYPE_BYTES
+        | Type::TYPE_ENUM
+        | Type::TYPE_MESSAGE
+        | Type::TYPE_GROUP => unreachable!("scalar_ty called for non-scalar {:?}", ty),
     }
 }
 
