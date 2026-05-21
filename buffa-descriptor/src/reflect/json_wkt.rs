@@ -119,9 +119,12 @@ impl WktKind {
         pool: Arc<DescriptorPool>,
         midx: MessageIndex,
         d: D,
+        ignore_unknown: bool,
     ) -> Result<DynamicMessage, D::Error> {
+        // Only `Any` recurses into a user-defined message type; the other
+        // WKTs are closed schemas with no unknown-field concept.
         match self {
-            Self::Any => deserialize_any(pool, midx, d),
+            Self::Any => deserialize_any(pool, midx, d, ignore_unknown),
             Self::Timestamp => {
                 let s: String = String::deserialize(d)?;
                 let (secs, nanos) = parse_rfc3339(&s).map_err(de::Error::custom)?;
@@ -355,6 +358,10 @@ impl<'de> Visitor<'de> for StructVisitor {
             .ok_or_else(|| de::Error::custom("Value not in pool"))?;
         let mut fields: Vec<(MapKey, Value)> = Vec::new();
         while let Some(key) = map.next_key::<String>()? {
+            // The Value seed deliberately doesn't carry `ignore_unknown`:
+            // `google.protobuf.Value` is a closed schema (null/bool/number/
+            // string/Struct/ListValue) that cannot recurse into a
+            // user-defined message where unknown fields could appear.
             let v = map.next_value_seed(DynamicMessageSeed::new(Arc::clone(&self.pool), value_idx))?;
             fields.push((MapKey::String(key), Value::Message(v)));
         }
@@ -388,6 +395,8 @@ impl<'de> Visitor<'de> for ListValueVisitor {
             .message_index("google.protobuf.Value")
             .ok_or_else(|| de::Error::custom("Value not in pool"))?;
         let mut items = Vec::new();
+        // See `StructVisitor::visit_map` for why the Value seed doesn't
+        // carry `ignore_unknown`.
         while let Some(v) =
             seq.next_element_seed(DynamicMessageSeed::new(Arc::clone(&self.pool), value_idx))?
         {
@@ -471,6 +480,7 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
     pool: Arc<DescriptorPool>,
     midx: MessageIndex,
     d: D,
+    ignore_unknown: bool,
 ) -> Result<DynamicMessage, D::Error> {
     use serde::de::Error as _;
     let mut obj: serde_json::Map<String, serde_json::Value> =
@@ -504,8 +514,10 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
     } else {
         serde_json::Value::Object(obj)
     };
-    // Re-deserialize the inner JSON value into the inner message type.
+    // Re-deserialize the inner JSON value into the inner message type,
+    // propagating the lenient-parsing flag.
     let inner = DynamicMessageSeed::new(Arc::clone(&pool), inner_idx)
+        .ignore_unknown_fields(ignore_unknown)
         .deserialize(inner_json)
         .map_err(|e| D::Error::custom(format!("Any inner deserialize failed: {e}")))?;
     any.set_by_number(1, Value::String(type_url));
@@ -518,6 +530,7 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
     _pool: Arc<DescriptorPool>,
     _midx: MessageIndex,
     _d: D,
+    _ignore_unknown: bool,
 ) -> Result<DynamicMessage, D::Error> {
     Err(de::Error::custom(
         "Any JSON deserialization requires the `std` feature",

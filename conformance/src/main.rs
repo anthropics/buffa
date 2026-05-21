@@ -228,7 +228,15 @@ fn process_via_reflect(req: &envelope::Request) -> envelope::Response {
             }
         }
         Some(Payload::Json(s)) => {
-            match DynamicMessage::from_json(std::sync::Arc::clone(pool), idx, s) {
+            // The IgnoreUnknownParsing test category expects the parser to
+            // silently discard unknown fields instead of erroring.
+            let lenient = req.test_category == envelope::TestCategory::JsonIgnoreUnknownParsing;
+            let parsed = if lenient {
+                DynamicMessage::from_json_ignoring_unknown(std::sync::Arc::clone(pool), idx, s)
+            } else {
+                DynamicMessage::from_json(std::sync::Arc::clone(pool), idx, s)
+            };
+            match parsed {
                 Ok(m) => m,
                 Err(e) => return Response::ParseError(format!("{e}")),
             }
@@ -363,15 +371,10 @@ fn process(req: &envelope::Request) -> envelope::Response {
 
     // Via-reflect mode: binary and JSON I/O routed through DynamicMessage's
     // descriptor-driven codec and reflective serde impls. Text format is
-    // skipped (no DynamicMessage textproto codec yet). Tests that the
-    // reference runner reports as `IsKnownIgnoreUnknownParsing` are skipped
-    // because the reflect deserializer always errors on unknown fields.
+    // skipped (no DynamicMessage textproto codec yet). The
+    // `JsonIgnoreUnknownParsing` test category routes through
+    // `from_json_ignoring_unknown` inside `process_via_reflect`.
     if via_reflect() {
-        if req.test_category == envelope::TestCategory::JsonIgnoreUnknownParsing {
-            return Response::Skipped(
-                "reflect mode: ignore-unknown JSON parsing not implemented".into(),
-            );
-        }
         let is_proto_or_json =
             matches!(&req.payload, Some(Payload::Protobuf(_) | Payload::Json(_)));
         let out_proto_or_json = matches!(

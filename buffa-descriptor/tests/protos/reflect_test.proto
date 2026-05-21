@@ -29,6 +29,7 @@ message Containers {
   Inner nested = 5;
   Color color = 6;
   repeated Color colors = 7;
+  repeated Inner inners = 8;
 }
 
 message Inner {

@@ -17,8 +17,7 @@
 //! Known limitation: `google.protobuf.Any` requires the inner type to be
 //! registered in the same pool — the spec permits failing on unregistered
 //! types, and CEL evaluation requires the pool to carry the full schema
-//! anyway. Duplicate JSON keys are not detected (`serde_json` keeps the
-//! last value silently).
+//! anyway.
 
 use alloc::borrow::ToOwned;
 use alloc::format;
@@ -204,6 +203,10 @@ impl Serialize for MapKeyRef<'_> {
 impl DynamicMessage {
     /// Parse proto3 canonical JSON into a `DynamicMessage`.
     ///
+    /// Unknown fields are an error per the proto3 JSON spec. For lenient
+    /// parsing (a transcoding gateway accepting input from a newer schema
+    /// revision), use [`Self::from_json_ignoring_unknown`].
+    ///
     /// # Errors
     ///
     /// Returns a `serde_json::Error` if the input is not valid JSON or does
@@ -216,6 +219,38 @@ impl DynamicMessage {
     ) -> Result<Self, serde_json::Error> {
         let mut d = serde_json::Deserializer::from_str(json);
         let msg = DynamicMessageSeed::new(pool, msg_idx).deserialize(&mut d)?;
+        d.end()?;
+        Ok(msg)
+    }
+
+    /// Parse proto3 canonical JSON, silently discarding unknown fields.
+    ///
+    /// The proto3 JSON spec says parsers *should* reject unknown fields by
+    /// default but *may* provide an option to ignore them. This is that
+    /// option — use it when the JSON producer may be running a newer schema
+    /// revision than this pool carries. Unknown fields are discarded, not
+    /// preserved (there is no JSON equivalent of binary unknown-field
+    /// round-tripping).
+    ///
+    /// Only the unknown-field check is relaxed. Other proto3 JSON spec
+    /// violations — duplicate keys, multiple members of the same oneof,
+    /// null elements in repeated fields, malformed values on *known*
+    /// fields — remain errors.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `serde_json::Error` if the input is not valid JSON or a
+    /// *known* field does not match its descriptor.
+    #[cfg(feature = "std")]
+    pub fn from_json_ignoring_unknown(
+        pool: Arc<DescriptorPool>,
+        msg_idx: MessageIndex,
+        json: &str,
+    ) -> Result<Self, serde_json::Error> {
+        let mut d = serde_json::Deserializer::from_str(json);
+        let msg = DynamicMessageSeed::new(pool, msg_idx)
+            .ignore_unknown_fields(true)
+            .deserialize(&mut d)?;
         d.end()?;
         Ok(msg)
     }
@@ -237,16 +272,37 @@ impl DynamicMessage {
 /// `serde::Deserialize` has no parameters — the implementation can't know
 /// which message type it's parsing into. `DeserializeSeed` carries `self`
 /// into `deserialize`, so the pool and message index travel with it.
+///
+/// This is also the long-form API for combining parse options: the
+/// `from_json_*` constructors on [`DynamicMessage`] are conveniences over
+/// `DynamicMessageSeed::new(..).<options>.deserialize(..)`. New parse
+/// options are added here as builder-style setters rather than as new
+/// `from_json_*` constructor permutations.
 pub struct DynamicMessageSeed {
     pool: Arc<DescriptorPool>,
     msg_idx: MessageIndex,
+    ignore_unknown: bool,
 }
 
 impl DynamicMessageSeed {
     /// Create a seed for the given message type.
     #[must_use]
     pub fn new(pool: Arc<DescriptorPool>, msg_idx: MessageIndex) -> Self {
-        Self { pool, msg_idx }
+        Self {
+            pool,
+            msg_idx,
+            ignore_unknown: false,
+        }
+    }
+
+    /// Silently discard unknown fields instead of erroring (default: error).
+    ///
+    /// The setting propagates to nested messages, repeated elements, and map
+    /// values. See [`DynamicMessage::from_json_ignoring_unknown`].
+    #[must_use]
+    pub fn ignore_unknown_fields(mut self, ignore: bool) -> Self {
+        self.ignore_unknown = ignore;
+        self
     }
 }
 
@@ -256,11 +312,12 @@ impl<'de> DeserializeSeed<'de> for DynamicMessageSeed {
     fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
         let md = self.pool.message(self.msg_idx);
         if let Some(wkt) = WktKind::from_full_name(&md.full_name) {
-            return wkt.deserialize_message(self.pool, self.msg_idx, d);
+            return wkt.deserialize_message(self.pool, self.msg_idx, d, self.ignore_unknown);
         }
         d.deserialize_map(MessageVisitor {
             pool: self.pool,
             msg_idx: self.msg_idx,
+            ignore_unknown: self.ignore_unknown,
         })
     }
 }
@@ -268,6 +325,7 @@ impl<'de> DeserializeSeed<'de> for DynamicMessageSeed {
 struct MessageVisitor {
     pool: Arc<DescriptorPool>,
     msg_idx: MessageIndex,
+    ignore_unknown: bool,
 }
 
 impl<'de> Visitor<'de> for MessageVisitor {
@@ -288,6 +346,13 @@ impl<'de> Visitor<'de> for MessageVisitor {
         // have been written. Synthetic oneofs (proto3 `optional`) are
         // single-member and can't trigger this.
         let mut seen_oneofs: Vec<u16> = Vec::new();
+        // The spec also requires rejecting a field that appears more than
+        // once in the same object. serde_json's streaming deserializer
+        // yields every key in document order (it does not deduplicate), so
+        // tracking seen field numbers catches both exact duplicates and the
+        // proto-name/json-name casing variants (`foo_bar` then `fooBar`),
+        // which resolve to the same descriptor.
+        let mut seen_fields: Vec<u32> = Vec::new();
         while let Some(key) = map.next_key::<String>()? {
             // The proto3 JSON spec says parsers must accept both the camelCase
             // json_name and the original proto field name. `field_by_name`
@@ -295,9 +360,17 @@ impl<'de> Visitor<'de> for MessageVisitor {
             let md = self.pool.message(self.msg_idx);
             let fd = md.field_by_name(&key);
             let Some(fd) = fd else {
-                // Unknown field — error per the spec, unless ignore-unknown
-                // mode is active. The reflection prototype always errors;
-                // ignore-unknown plumbing is a follow-up.
+                // Unknown field — error per the spec, unless the caller
+                // opted into lenient parsing. Note that this `continue`
+                // bypasses the duplicate-key check below: a payload with
+                // the same *unknown* key twice is silently collapsed in
+                // lenient mode. There is no descriptor to deduplicate
+                // against, and the spec's no-duplicates rule is in terms
+                // of fields, not arbitrary keys.
+                if self.ignore_unknown {
+                    map.next_value::<de::IgnoredAny>()?;
+                    continue;
+                }
                 return Err(de::Error::custom(format!(
                     "unknown field {key:?} on message {}",
                     md.full_name
@@ -310,9 +383,17 @@ impl<'de> Visitor<'de> for MessageVisitor {
             let synthetic = oneof_index
                 .and_then(|oi| md.oneofs.get(oi as usize))
                 .is_some_and(|o| o.synthetic);
+            if seen_fields.contains(&number) {
+                return Err(de::Error::custom(format!(
+                    "duplicate field {key:?} on message {}",
+                    md.full_name
+                )));
+            }
+            seen_fields.push(number);
             let v = map.next_value_seed(FieldSeed {
                 pool: &self.pool,
                 kind,
+                ignore_unknown: self.ignore_unknown,
             })?;
             // null → leave the field unset (per spec, except NullValue which
             // FieldSeed handles).
@@ -362,6 +443,7 @@ impl<'de> Visitor<'de> for MessageVisitor {
 struct FieldSeed<'a> {
     pool: &'a Arc<DescriptorPool>,
     kind: FieldKind,
+    ignore_unknown: bool,
 }
 
 impl<'de> DeserializeSeed<'de> for FieldSeed<'_> {
@@ -375,16 +457,19 @@ impl<'de> DeserializeSeed<'de> for FieldSeed<'_> {
             FieldKind::Singular(sk) => SingularSeed {
                 pool: self.pool,
                 kind: sk,
+                ignore_unknown: self.ignore_unknown,
             }
             .deserialize(d),
             FieldKind::List(sk) => d.deserialize_any(ListVisitor {
                 pool: self.pool,
                 kind: sk,
+                ignore_unknown: self.ignore_unknown,
             }),
             FieldKind::Map { key, value } => d.deserialize_any(MapFieldVisitor {
                 pool: self.pool,
                 key,
                 value,
+                ignore_unknown: self.ignore_unknown,
             }),
         }
     }
@@ -393,6 +478,7 @@ impl<'de> DeserializeSeed<'de> for FieldSeed<'_> {
 struct SingularSeed<'a> {
     pool: &'a Arc<DescriptorPool>,
     kind: SingularKind,
+    ignore_unknown: bool,
 }
 
 impl<'de> DeserializeSeed<'de> for SingularSeed<'_> {
@@ -408,6 +494,7 @@ impl<'de> DeserializeSeed<'de> for SingularSeed<'_> {
                 // WKT seed so its visitor sees the unit token.
                 if self.pool.message(midx).full_name == "google.protobuf.Value" {
                     return DynamicMessageSeed::new(Arc::clone(self.pool), midx)
+                        .ignore_unknown_fields(self.ignore_unknown)
                         .deserialize(d)
                         .map(|m| Some(Value::Message(m)));
                 }
@@ -415,6 +502,7 @@ impl<'de> DeserializeSeed<'de> for SingularSeed<'_> {
                 d.deserialize_option(NestedMessageVisitor {
                     pool: self.pool,
                     midx,
+                    ignore_unknown: self.ignore_unknown,
                 })
             }
         }
@@ -448,6 +536,7 @@ fn deserialize_optional_scalar<'de, D: Deserializer<'de>>(
 struct NestedMessageVisitor<'a> {
     pool: &'a Arc<DescriptorPool>,
     midx: MessageIndex,
+    ignore_unknown: bool,
 }
 
 impl<'de> Visitor<'de> for NestedMessageVisitor<'_> {
@@ -467,6 +556,7 @@ impl<'de> Visitor<'de> for NestedMessageVisitor<'_> {
 
     fn visit_some<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
         DynamicMessageSeed::new(Arc::clone(self.pool), self.midx)
+            .ignore_unknown_fields(self.ignore_unknown)
             .deserialize(d)
             .map(|m| Some(Value::Message(m)))
     }
@@ -715,6 +805,7 @@ fn deserialize_enum<'de, D: Deserializer<'de>>(
 struct ListVisitor<'a> {
     pool: &'a Arc<DescriptorPool>,
     kind: SingularKind,
+    ignore_unknown: bool,
 }
 
 impl<'de> Visitor<'de> for ListVisitor<'_> {
@@ -730,6 +821,7 @@ impl<'de> Visitor<'de> for ListVisitor<'_> {
         while let Some(v) = seq.next_element_seed(SingularSeed {
             pool: self.pool,
             kind: self.kind,
+            ignore_unknown: self.ignore_unknown,
         })? {
             // Per the spec, repeated fields cannot contain null elements.
             let v = v.ok_or_else(|| de::Error::custom("null element in repeated field"))?;
@@ -743,6 +835,7 @@ struct MapFieldVisitor<'a> {
     pool: &'a Arc<DescriptorPool>,
     key: ScalarType,
     value: SingularKind,
+    ignore_unknown: bool,
 }
 
 impl<'de> Visitor<'de> for MapFieldVisitor<'_> {
@@ -762,6 +855,7 @@ impl<'de> Visitor<'de> for MapFieldVisitor<'_> {
             let v = map.next_value_seed(SingularSeed {
                 pool: self.pool,
                 kind: self.value,
+                ignore_unknown: self.ignore_unknown,
             })?;
             let v = v.ok_or_else(|| de::Error::custom("null value in map field"))?;
             out.push((k, v));
