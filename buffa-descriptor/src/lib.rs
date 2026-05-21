@@ -49,6 +49,6 @@ pub use pool::{DescriptorPool, PoolError};
 pub use reflect::DynamicMessageSeed;
 #[cfg(feature = "reflect")]
 pub use reflect::{
-    DynamicMessage, MapKey, MapKeyRef, MapValue, ReflectCow, ReflectList, ReflectMap,
+    AnyError, DynamicMessage, MapKey, MapKeyRef, MapValue, ReflectCow, ReflectList, ReflectMap,
     ReflectMessage, ReflectMessageMut, ReflectMode, Reflectable, Value, ValueRef,
 };

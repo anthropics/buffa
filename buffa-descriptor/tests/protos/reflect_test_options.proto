@@ -1,0 +1,38 @@
+// Custom options + Any + service, for testing options access, Any
+// pack/unpack, and symbol→file lookup. proto3 (custom options are the
+// one form of extension proto3 allows).
+syntax = "proto3";
+
+package reflect.opt;
+
+import "google/protobuf/descriptor.proto";
+import "google/protobuf/any.proto";
+
+// Custom options: extensions of the standard *Options messages.
+extend google.protobuf.FieldOptions {
+  optional string pii_class = 50001;
+}
+extend google.protobuf.MessageOptions {
+  optional bool audited = 50002;
+}
+extend google.protobuf.MethodOptions {
+  optional string http_path = 50003;
+}
+
+message Annotated {
+  option (audited) = true;
+
+  string email = 1 [(pii_class) = "email"];
+  int32 id = 2;
+}
+
+// Carries an Any, for pack/unpack tests.
+message Envelope {
+  google.protobuf.Any payload = 1;
+}
+
+service AnnotatedService {
+  rpc Do(Annotated) returns (Annotated) {
+    option (http_path) = "/v1/do";
+  }
+}

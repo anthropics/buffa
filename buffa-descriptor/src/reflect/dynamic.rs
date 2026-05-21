@@ -11,6 +11,7 @@
 //! deterministic (`BTreeMap` iteration) so re-encoding produces canonical
 //! output for known fields; unknown fields are appended in arrival order.
 
+use alloc::borrow::ToOwned;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -587,6 +588,187 @@ impl DynamicMessage {
     #[must_use]
     pub fn unknown_fields(&self) -> &UnknownFields {
         &self.unknown
+    }
+
+    // ── google.protobuf.Any ─────────────────────────────────────────────────
+
+    /// Decode the message wrapped in this `google.protobuf.Any`.
+    ///
+    /// Reads `type_url` (field 1), resolves the type name (the segment after
+    /// the last `/`) against this message's pool, and decodes `value`
+    /// (field 2) into a [`DynamicMessage`] of that type. This is the binary
+    /// counterpart of the `Any` JSON `@type` expansion; CEL `dyn` evaluation
+    /// unpacks `Any` values this way.
+    ///
+    /// # Errors
+    ///
+    /// - [`AnyError::NotAny`] if this message is not a `google.protobuf.Any`.
+    /// - [`AnyError::MissingTypeUrl`] if the `Any` has no `type_url`.
+    /// - [`AnyError::UnknownType`] if the `type_url` names a type the pool
+    ///   doesn't carry.
+    /// - [`AnyError::Decode`] if the wrapped bytes are malformed. Note that
+    ///   an `Any` whose `value` is absent or empty is **not** an error: it
+    ///   decodes to a default-valued message of the resolved type, per the
+    ///   protobuf default-value semantics.
+    pub fn unpack_any(&self) -> Result<DynamicMessage, AnyError> {
+        if self.message_descriptor().full_name != ANY_FULL_NAME {
+            return Err(AnyError::NotAny {
+                full_name: self.message_descriptor().full_name.clone(),
+            });
+        }
+        let type_url = match self.field_by_number(1) {
+            Some(Value::String(u)) if !u.is_empty() => u.as_str(),
+            // An absent, empty, or wrong-shape type_url is a distinct
+            // failure from "the URL named a type we don't have".
+            _ => return Err(AnyError::MissingTypeUrl),
+        };
+        let value: &[u8] = match self.field_by_number(2) {
+            Some(Value::Bytes(b)) => b,
+            _ => &[],
+        };
+        let type_name = type_url.rsplit('/').next().unwrap_or(type_url);
+        let idx = self
+            .pool
+            .message_index(type_name)
+            .ok_or_else(|| AnyError::UnknownType {
+                type_url: type_url.to_owned(),
+            })?;
+        DynamicMessage::decode(Arc::clone(&self.pool), idx, value).map_err(|source| {
+            AnyError::Decode {
+                type_url: type_url.to_owned(),
+                source,
+            }
+        })
+    }
+
+    /// Wrap this message in a `google.protobuf.Any`.
+    ///
+    /// Produces an `Any` with `type_url` = `type.googleapis.com/<full_name>`
+    /// (the Google convention; the prefix is informational and only the last
+    /// path segment is load-bearing on unpack) and `value` = this message's
+    /// encoded bytes, using the `google.protobuf.Any` descriptor from this
+    /// message's pool. Unknown fields on `self` are preserved in the encoded
+    /// `value`.
+    ///
+    /// `&self` is borrowed, not consumed — `self` remains usable.
+    ///
+    /// # Errors
+    ///
+    /// [`AnyError::AnyNotRegistered`] if the pool does not contain
+    /// `google.protobuf.Any` (e.g. a `FileDescriptorSet` built without the
+    /// well-known types).
+    pub fn pack_any(&self) -> Result<DynamicMessage, AnyError> {
+        let any_idx = self
+            .pool
+            .message_index(ANY_FULL_NAME)
+            .ok_or(AnyError::AnyNotRegistered)?;
+        let type_url = alloc::format!(
+            "type.googleapis.com/{}",
+            self.message_descriptor().full_name
+        );
+        let mut any = DynamicMessage::new(Arc::clone(&self.pool), any_idx);
+        any.insert_value(1, Value::String(type_url));
+        any.insert_value(2, Value::Bytes(self.encode_to_vec()));
+        Ok(any)
+    }
+
+    /// Decode a generated `*Options` message into a `DynamicMessage` of the
+    /// corresponding `google.protobuf.*Options` type, so its **custom
+    /// options** (extensions of the options type) can be read reflectively
+    /// by name.
+    ///
+    /// This is the convenience behind the custom-option flow documented on
+    /// [`FieldDescriptor::options`](crate::FieldDescriptor::options): it
+    /// resolves the options type by `O::FULL_NAME`, re-encodes `options`
+    /// (custom options survive on its unknown fields), and decodes against
+    /// the pool's descriptor for that type.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "json")] {
+    /// # use std::sync::Arc;
+    /// # use buffa_descriptor::{DescriptorPool, reflect::{DynamicMessage, ReflectMessage}};
+    /// # fn demo(pool: Arc<DescriptorPool>, field: &buffa_descriptor::FieldDescriptor) -> Option<()> {
+    /// let dyn_opts = DynamicMessage::from_options(Arc::clone(&pool), field.options()?)?;
+    /// let ext = pool.extension_by_name("my.pkg.opt")?;
+    /// let value = dyn_opts.get(ext.field());
+    /// # let _ = value; Some(())
+    /// # }
+    /// # }
+    /// ```
+    ///
+    /// Returns `None` if the options type (e.g. `google.protobuf.FieldOptions`)
+    /// is not registered in `pool` — register `descriptor.proto` alongside the
+    /// option-defining proto — or if the re-encoded options fail to decode.
+    #[must_use]
+    pub fn from_options<O>(pool: Arc<DescriptorPool>, options: &O) -> Option<Self>
+    where
+        O: Message + buffa::MessageName,
+    {
+        let idx = pool.message_index(O::FULL_NAME)?;
+        Self::decode(pool, idx, &options.encode_to_vec()).ok()
+    }
+}
+
+/// The fully-qualified name of `google.protobuf.Any`.
+const ANY_FULL_NAME: &str = "google.protobuf.Any";
+
+/// An error from [`DynamicMessage::unpack_any`] or
+/// [`DynamicMessage::pack_any`].
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub enum AnyError {
+    /// [`unpack_any`](DynamicMessage::unpack_any) was called on a message
+    /// that is not a `google.protobuf.Any`.
+    NotAny {
+        /// The actual message type.
+        full_name: String,
+    },
+    /// The pool does not contain `google.protobuf.Any`, so an `Any` cannot
+    /// be constructed.
+    AnyNotRegistered,
+    /// The `Any` has no `type_url` (field 1 absent, empty, or not a string).
+    MissingTypeUrl,
+    /// The `Any`'s `type_url` names a type the pool does not carry.
+    UnknownType {
+        /// The unresolvable type URL.
+        type_url: String,
+    },
+    /// The wrapped `value` bytes failed to decode against the resolved type.
+    Decode {
+        /// The `type_url` that resolved before the decode failed.
+        type_url: String,
+        /// The underlying wire-format error.
+        source: DecodeError,
+    },
+}
+
+impl core::fmt::Display for AnyError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::NotAny { full_name } => {
+                write!(f, "not a google.protobuf.Any: {full_name}")
+            }
+            Self::AnyNotRegistered => {
+                write!(f, "google.protobuf.Any is not registered in the pool")
+            }
+            Self::MissingTypeUrl => write!(f, "Any has no type_url"),
+            Self::UnknownType { type_url } => {
+                write!(f, "Any type_url {type_url:?} not registered in the pool")
+            }
+            Self::Decode { type_url, source } => {
+                write!(f, "Any value for {type_url:?} failed to decode: {source}")
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for AnyError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Decode { source, .. } => Some(source),
+            _ => None,
+        }
     }
 }
 

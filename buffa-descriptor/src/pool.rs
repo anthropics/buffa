@@ -23,6 +23,7 @@
 //! server reflection needs the raw bytes, and they're cheap to keep relative
 //! to the linked structures.
 
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -40,6 +41,14 @@ use crate::generated::descriptor::{
     FileDescriptorSet, ServiceDescriptorProto,
 };
 use buffa::editions::{EnumType, FieldPresence, MessageEncoding, RepeatedFieldEncoding};
+use buffa::MessageField;
+
+/// Clone a descriptor's raw `*Options` into a boxed `Option`, the form the
+/// linked descriptors store. `None` for the common no-options case; one
+/// allocation only when options are present.
+fn clone_options<T: Clone + Default>(opts: &MessageField<T>) -> Option<Box<T>> {
+    opts.as_option().cloned().map(Box::new)
+}
 
 /// Errors that can occur while building a [`DescriptorPool`].
 #[derive(Clone, Debug)]
@@ -168,6 +177,11 @@ pub struct DescriptorPool {
     extension_by_extendee: BTreeMap<(MessageIndex, u32), ExtensionIndex>,
     /// Filename → index into `files`.
     file_by_name: BTreeMap<String, usize>,
+    /// Declared symbol FQN → index into `files`. Covers messages (including
+    /// nested), enums (including nested), services, methods, and extensions
+    /// — the symbols gRPC server reflection's `FindFileContainingSymbol`
+    /// resolves.
+    symbol_file: BTreeMap<String, usize>,
 }
 
 impl DescriptorPool {
@@ -276,16 +290,110 @@ impl DescriptorPool {
             }
         }
 
-        // Record filenames for idempotent re-add.
+        // Record filenames (for idempotent re-add) and the symbol → file
+        // index (for `FindFileContainingSymbol`).
         let base = self.files.len();
         for (i, f) in new_files.iter().enumerate() {
+            let file_idx = base + i;
             if let Some(n) = f.name.as_deref() {
-                self.file_by_name.insert(n.to_string(), base + i);
+                self.file_by_name.insert(n.to_string(), file_idx);
             }
+            self.index_file_symbols(f, file_idx);
         }
         self.files.extend(new_files);
 
         Ok(())
+    }
+
+    /// Record every symbol declared in `file` into `symbol_file`. Indexes the
+    /// full set of named descriptors gRPC server reflection's
+    /// `FindFileContainingSymbol` accepts — messages, fields, oneofs,
+    /// enums, enum values, services, methods, and extensions — each at its
+    /// fully-qualified name, all mapping to the declaring file.
+    fn index_file_symbols(&mut self, file: &FileDescriptorProto, file_idx: usize) {
+        let pkg = file.package.as_deref().unwrap_or("");
+        let join = |scope: &str, name: &str| {
+            if scope.is_empty() {
+                name.to_string()
+            } else {
+                format!("{scope}.{name}")
+            }
+        };
+        for msg in &file.message_type {
+            self.index_message_symbols(pkg, msg, file_idx);
+        }
+        for e in &file.enum_type {
+            self.index_enum_symbols(pkg, e, file_idx);
+        }
+        for svc in &file.service {
+            let svc_fqn = join(pkg, svc.name.as_deref().unwrap_or(""));
+            for m in &svc.method {
+                self.symbol_file.insert(
+                    format!("{svc_fqn}.{}", m.name.as_deref().unwrap_or("")),
+                    file_idx,
+                );
+            }
+            self.symbol_file.insert(svc_fqn, file_idx);
+        }
+        for ext in &file.extension {
+            self.symbol_file
+                .insert(join(pkg, ext.name.as_deref().unwrap_or("")), file_idx);
+        }
+    }
+
+    /// Recursive helper for [`index_file_symbols`](Self::index_file_symbols):
+    /// records `msg` and everything declared inside it (fields, oneofs,
+    /// nested messages, nested enums, message-scoped extensions).
+    fn index_message_symbols(&mut self, scope: &str, msg: &DescriptorProto, file_idx: usize) {
+        let name = msg.name.as_deref().unwrap_or("");
+        let fqn = if scope.is_empty() {
+            name.to_string()
+        } else {
+            format!("{scope}.{name}")
+        };
+        for field in &msg.field {
+            self.symbol_file.insert(
+                format!("{fqn}.{}", field.name.as_deref().unwrap_or("")),
+                file_idx,
+            );
+        }
+        for oneof in &msg.oneof_decl {
+            self.symbol_file.insert(
+                format!("{fqn}.{}", oneof.name.as_deref().unwrap_or("")),
+                file_idx,
+            );
+        }
+        for nested in &msg.nested_type {
+            self.index_message_symbols(&fqn, nested, file_idx);
+        }
+        for e in &msg.enum_type {
+            self.index_enum_symbols(&fqn, e, file_idx);
+        }
+        for ext in &msg.extension {
+            self.symbol_file.insert(
+                format!("{fqn}.{}", ext.name.as_deref().unwrap_or("")),
+                file_idx,
+            );
+        }
+        self.symbol_file.insert(fqn, file_idx);
+    }
+
+    /// Record an enum and its values. Enum values live in the enum's
+    /// *parent* scope per protobuf naming (`pkg.VALUE`, not
+    /// `pkg.Enum.VALUE`), matching how gRPC reflection resolves them.
+    fn index_enum_symbols(&mut self, scope: &str, e: &EnumDescriptorProto, file_idx: usize) {
+        let fqn = if scope.is_empty() {
+            e.name.clone().unwrap_or_default()
+        } else {
+            format!("{scope}.{}", e.name.as_deref().unwrap_or(""))
+        };
+        for v in &e.value {
+            self.symbol_file.insert(
+                format!("{scope}.{}", v.name.as_deref().unwrap_or("")),
+                file_idx,
+            );
+        }
+        self.symbol_file.insert(fqn, file_idx);
     }
 
     // ── Public lookup API ──────────────────────────────────────────────────
@@ -474,38 +582,18 @@ impl DescriptorPool {
         Some(&self.files[idx])
     }
 
-    /// The `FileDescriptorProto` containing a fully-qualified symbol.
+    /// The `FileDescriptorProto` that declares a fully-qualified symbol, the
+    /// way gRPC server reflection's `FindFileContainingSymbol` resolves it.
+    ///
+    /// Resolves messages (including nested), enums (including nested),
+    /// services, methods (`pkg.Service.Method`), and extensions — every
+    /// symbol kind a reflection client queries. `O(log n)` over the symbol
+    /// index.
     #[must_use]
     pub fn file_containing_symbol(&self, full_name: &str) -> Option<&FileDescriptorProto> {
         let name = full_name.strip_prefix('.').unwrap_or(full_name);
-        // Walk up parent scopes until we find a registered name.
-        let mut cur = name;
-        loop {
-            if self.by_name.contains_key(cur) {
-                // Find the file declaring this top-level type.
-                return self.files.iter().find(|f| {
-                    let pkg = f.package.as_deref().unwrap_or("");
-                    let prefix = if pkg.is_empty() {
-                        String::new()
-                    } else {
-                        format!("{pkg}.")
-                    };
-                    if !cur.starts_with(&prefix) {
-                        return false;
-                    }
-                    let local = &cur[prefix.len()..];
-                    let top = local.split('.').next().unwrap_or(local);
-                    f.message_type
-                        .iter()
-                        .any(|m| m.name.as_deref() == Some(top))
-                        || f.enum_type.iter().any(|e| e.name.as_deref() == Some(top))
-                });
-            }
-            match cur.rfind('.') {
-                Some(p) => cur = &cur[..p],
-                None => return None,
-            }
-        }
+        let idx = *self.symbol_file.get(name)?;
+        Some(&self.files[idx])
     }
 
     // ── Pass 1: register names ──────────────────────────────────────────────
@@ -539,6 +627,7 @@ impl DescriptorPool {
             field_by_name: Vec::new(),
             oneofs: Vec::new(),
             extension_ranges: Vec::new(),
+            options: None,
         });
         for nested in &msg.nested_type {
             self.register_message(&fqn, nested)?;
@@ -575,6 +664,7 @@ impl DescriptorPool {
             full_name: fqn,
             values: Vec::new(),
             enum_type: EnumType::Open,
+            options: None,
         });
         Ok(())
     }
@@ -616,6 +706,7 @@ impl DescriptorPool {
                 name: o.name.clone().unwrap_or_default(),
                 field_indices: Vec::new(),
                 synthetic: false,
+                options: clone_options(&o.options),
             })
             .collect();
 
@@ -695,6 +786,7 @@ impl DescriptorPool {
             field_by_name,
             oneofs,
             extension_ranges,
+            options: clone_options(&msg.options),
         };
         let mut after = next_index + 1;
 
@@ -730,12 +822,14 @@ impl DescriptorPool {
             .map(|v| EnumValueDescriptor {
                 name: v.name.clone().unwrap_or_default(),
                 number: v.number.unwrap_or(0),
+                options: clone_options(&v.options),
             })
             .collect();
         self.enums[idx.0 as usize] = EnumDescriptor {
             full_name: fqn,
             values,
             enum_type: enum_features.enum_type,
+            options: clone_options(&e.options),
         };
         Ok(())
     }
@@ -769,6 +863,7 @@ impl DescriptorPool {
                     output,
                     client_streaming: m.client_streaming.unwrap_or(false),
                     server_streaming: m.server_streaming.unwrap_or(false),
+                    options: clone_options(&m.options),
                 })
             })
             .collect::<Result<Vec<_>, PoolError>>()?;
@@ -779,6 +874,7 @@ impl DescriptorPool {
         self.services.push(ServiceDescriptor {
             full_name: fqn,
             methods,
+            options: clone_options(&svc.options),
         });
         Ok(())
     }
@@ -1037,6 +1133,7 @@ impl DescriptorPool {
             packed,
             delimited,
             oneof_index,
+            options: clone_options(&f.options),
         })
     }
 

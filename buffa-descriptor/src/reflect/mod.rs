@@ -28,7 +28,7 @@ mod json;
 mod message;
 mod value;
 
-pub use dynamic::DynamicMessage;
+pub use dynamic::{AnyError, DynamicMessage};
 #[cfg(feature = "json")]
 pub use json::DynamicMessageSeed;
 pub use message::{ReflectCow, ReflectMessage, ReflectMessageMut, Reflectable};
