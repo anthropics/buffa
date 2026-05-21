@@ -394,3 +394,48 @@ borrowing model.
 - **Interop with the typed `ExtensionRegistry`.** Parallel systems for
   parallel storage models, the same way `DescriptorPool` doesn't interop
   with generated `MessageName` impls.
+
+## Custom options, Any pack/unpack, symbol→file (2026-05-21)
+
+The final reflection-parity items against protobuf-go / protobuf-es,
+landed together so the answer to "what does Go's reflection do that
+buffa's doesn't" is only ever the documented deferrals (proto2 declared
+defaults, text format on dynamic messages, descriptor-tree navigation).
+
+### Custom options
+
+Each linked descriptor (`Field`/`Message`/`Enum`/`EnumValue`/`Service`/
+`Method`/`Oneof`) exposes `options() -> Option<&XxxOptions>`, the raw
+generated options message cloned (boxed) at link time — `None` for the
+common no-options case. This matches Go's `desc.Options()`.
+
+Standard options read off the returned struct directly. **Custom
+options** are extensions of the `*Options` message; they survive on its
+unknown fields. The generic read path leans entirely on the extension
+machinery: `DynamicMessage::from_options(pool, field.options()?)`
+re-decodes the options as a `DynamicMessage` of
+`google.protobuf.FieldOptions` (resolved by `MessageName::FULL_NAME`),
+then `dyn_opts.get(ext.field())` reads the custom option by name. This
+requires `descriptor.proto` plus the option-defining proto in the pool;
+`from_options` returns `None` if the options type isn't registered.
+
+### Any pack/unpack
+
+`DynamicMessage::pack_any` / `unpack_any` — the binary counterpart to
+the `Any` JSON `@type` expansion, for CEL `dyn` evaluation. `unpack_any`
+resolves the `type_url`'s last path segment against the pool and decodes
+the `value` bytes; `pack_any` wraps a message with the
+`type.googleapis.com/` prefix. `AnyError` (`#[non_exhaustive]`, `Clone`)
+distinguishes not-an-Any / no-type-url / unknown-type / decode-failure,
+each carrying its context.
+
+### Symbol → file
+
+`DescriptorPool::file_containing_symbol` is now backed by a precomputed
+`symbol_file` index (`O(log n)`, replacing an `O(symbols × files)`
+parent-walk scan that only covered messages and enums). It indexes the
+full set of named descriptors gRPC server reflection's
+`FindFileContainingSymbol` accepts: messages, fields, oneofs, enums,
+enum values (in their parent scope per protobuf naming), services,
+methods, and extensions. This unblocks a `ServerReflection` adapter in
+connect-rust.

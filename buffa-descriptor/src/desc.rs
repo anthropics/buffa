@@ -30,10 +30,15 @@
 //! fields per message at 65 535.  `DescriptorPool` enforces this at
 //! construction time.  Field *numbers* remain `u32` per the protobuf spec.
 
+use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::generated::descriptor::field_descriptor_proto::Type as ProtoType;
+use crate::generated::descriptor::{
+    EnumOptions, EnumValueOptions, FieldOptions, MessageOptions, MethodOptions, OneofOptions,
+    ServiceOptions,
+};
 use buffa::editions::{EnumType, FieldPresence};
 
 /// Index of a [`MessageDescriptor`] within its owning pool.
@@ -158,6 +163,8 @@ pub struct FieldDescriptor {
     pub(crate) packed: bool,
     pub(crate) delimited: bool,
     pub(crate) oneof_index: Option<u16>,
+    /// Raw `FieldOptions`, boxed (`None` when the field declares none).
+    pub(crate) options: Option<Box<FieldOptions>>,
 }
 
 impl FieldDescriptor {
@@ -221,6 +228,34 @@ impl FieldDescriptor {
     pub fn oneof_index(&self) -> Option<u16> {
         self.oneof_index
     }
+
+    /// The raw `FieldOptions` for this field, if any were declared.
+    ///
+    /// Standard options (`deprecated`, etc.) read directly off the returned
+    /// struct. **Custom options** — `[(my.pkg.opt) = ...]` — are extensions
+    /// of `google.protobuf.FieldOptions`; they survive on the returned
+    /// struct's unknown fields. To read one generically, register the
+    /// option's defining proto (and `descriptor.proto`) in the same pool,
+    /// then reflect over the options via
+    /// [`DynamicMessage::from_options`](crate::reflect::DynamicMessage::from_options):
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reflect")] {
+    /// # use std::sync::Arc;
+    /// # use buffa_descriptor::{DescriptorPool, reflect::{DynamicMessage, ReflectMessage}};
+    /// # fn demo(pool: Arc<DescriptorPool>, field: &buffa_descriptor::FieldDescriptor) -> Option<()> {
+    /// let dyn_opts = DynamicMessage::from_options(Arc::clone(&pool), field.options()?)?;
+    /// let ext = pool.extension_by_name("my.pkg.opt")?;
+    /// let value = dyn_opts.get(ext.field());
+    /// # let _ = value; Some(())
+    /// # }
+    /// # }
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn options(&self) -> Option<&FieldOptions> {
+        self.options.as_deref()
+    }
 }
 
 /// A linked message descriptor.
@@ -239,6 +274,8 @@ pub struct MessageDescriptor {
     pub(crate) field_by_name: Vec<(String, u16)>,
     pub(crate) oneofs: Vec<OneofDescriptor>,
     pub(crate) extension_ranges: Vec<(u32, u32)>,
+    /// Raw `MessageOptions`, boxed (`None` when the message declares none).
+    pub(crate) options: Option<Box<MessageOptions>>,
 }
 
 impl MessageDescriptor {
@@ -248,6 +285,15 @@ impl MessageDescriptor {
     #[must_use]
     pub fn full_name(&self) -> &str {
         &self.full_name
+    }
+
+    /// The raw `MessageOptions` for this message, if any were declared.
+    ///
+    /// See [`FieldDescriptor::options`] for how to read custom options.
+    #[inline]
+    #[must_use]
+    pub fn options(&self) -> Option<&MessageOptions> {
+        self.options.as_deref()
     }
 
     /// Fields in source (declaration) order.
@@ -320,6 +366,8 @@ pub struct OneofDescriptor {
     pub(crate) name: String,
     pub(crate) field_indices: Vec<u16>,
     pub(crate) synthetic: bool,
+    /// Raw `OneofOptions`, boxed (`None` when the oneof declares none).
+    pub(crate) options: Option<Box<OneofOptions>>,
 }
 
 impl OneofDescriptor {
@@ -328,6 +376,15 @@ impl OneofDescriptor {
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// The raw `OneofOptions` for this oneof, if any were declared.
+    ///
+    /// See [`FieldDescriptor::options`] for how to read custom options.
+    #[inline]
+    #[must_use]
+    pub fn options(&self) -> Option<&OneofOptions> {
+        self.options.as_deref()
     }
 
     /// Indices into the parent message's [`fields`](MessageDescriptor::fields)
@@ -356,6 +413,8 @@ pub struct EnumDescriptor {
     pub(crate) full_name: String,
     pub(crate) values: Vec<EnumValueDescriptor>,
     pub(crate) enum_type: EnumType,
+    /// Raw `EnumOptions`, boxed (`None` when the enum declares none).
+    pub(crate) options: Option<Box<EnumOptions>>,
 }
 
 impl EnumDescriptor {
@@ -364,6 +423,15 @@ impl EnumDescriptor {
     #[must_use]
     pub fn full_name(&self) -> &str {
         &self.full_name
+    }
+
+    /// The raw `EnumOptions` for this enum, if any were declared.
+    ///
+    /// See [`FieldDescriptor::options`] for how to read custom options.
+    #[inline]
+    #[must_use]
+    pub fn options(&self) -> Option<&EnumOptions> {
+        self.options.as_deref()
     }
 
     /// Declared values in source order.
@@ -406,6 +474,8 @@ impl EnumDescriptor {
 pub struct EnumValueDescriptor {
     pub(crate) name: String,
     pub(crate) number: i32,
+    /// Raw `EnumValueOptions`, boxed (`None` when the value declares none).
+    pub(crate) options: Option<Box<EnumValueOptions>>,
 }
 
 impl EnumValueDescriptor {
@@ -421,6 +491,15 @@ impl EnumValueDescriptor {
     #[must_use]
     pub fn number(&self) -> i32 {
         self.number
+    }
+
+    /// The raw `EnumValueOptions` for this value, if any were declared.
+    ///
+    /// See [`FieldDescriptor::options`] for how to read custom options.
+    #[inline]
+    #[must_use]
+    pub fn options(&self) -> Option<&EnumValueOptions> {
+        self.options.as_deref()
     }
 }
 
@@ -443,6 +522,8 @@ pub struct ServiceIndex(pub(crate) u32);
 pub struct ServiceDescriptor {
     pub(crate) full_name: String,
     pub(crate) methods: Vec<MethodDescriptor>,
+    /// Raw `ServiceOptions`, boxed (`None` when the service declares none).
+    pub(crate) options: Option<Box<ServiceOptions>>,
 }
 
 impl ServiceDescriptor {
@@ -452,6 +533,15 @@ impl ServiceDescriptor {
     #[must_use]
     pub fn full_name(&self) -> &str {
         &self.full_name
+    }
+
+    /// The raw `ServiceOptions` for this service, if any were declared.
+    ///
+    /// See [`FieldDescriptor::options`] for how to read custom options.
+    #[inline]
+    #[must_use]
+    pub fn options(&self) -> Option<&ServiceOptions> {
+        self.options.as_deref()
     }
 
     /// Methods in declaration order.
@@ -480,6 +570,8 @@ pub struct MethodDescriptor {
     pub(crate) output: MessageIndex,
     pub(crate) client_streaming: bool,
     pub(crate) server_streaming: bool,
+    /// Raw `MethodOptions`, boxed (`None` when the method declares none).
+    pub(crate) options: Option<Box<MethodOptions>>,
 }
 
 impl MethodDescriptor {
@@ -516,6 +608,16 @@ impl MethodDescriptor {
     #[must_use]
     pub fn is_server_streaming(&self) -> bool {
         self.server_streaming
+    }
+
+    /// The raw `MethodOptions` for this method, if any were declared.
+    ///
+    /// `(google.api.http)` and other transcoding annotations live here as
+    /// custom options. See [`FieldDescriptor::options`] for how to read them.
+    #[inline]
+    #[must_use]
+    pub fn options(&self) -> Option<&MethodOptions> {
+        self.options.as_deref()
     }
 }
 
@@ -658,6 +760,7 @@ mod tests {
             packed: false,
             delimited: false,
             oneof_index: None,
+            options: None,
         }
     }
 
@@ -672,6 +775,7 @@ mod tests {
             field_by_name: alloc::vec![("a".into(), 0), ("b".into(), 1)],
             oneofs: Vec::new(),
             extension_ranges: alloc::vec![(100, 200), (1000, 2000)],
+            options: None,
         }
     }
 
@@ -702,6 +806,7 @@ mod tests {
             field_by_name: Vec::new(),
             oneofs: Vec::new(),
             extension_ranges: Vec::new(),
+            options: None,
         };
         assert!(m.field(1).is_none());
         assert!(m.field_by_name("anything").is_none());
@@ -727,18 +832,22 @@ mod tests {
             values: alloc::vec![
                 EnumValueDescriptor {
                     name: "RED".into(),
-                    number: 0
+                    number: 0,
+                    options: None,
                 },
                 EnumValueDescriptor {
                     name: "GREEN".into(),
-                    number: 1
+                    number: 1,
+                    options: None,
                 },
                 EnumValueDescriptor {
                     name: "ALIAS_RED".into(),
-                    number: 0
+                    number: 0,
+                    options: None,
                 },
             ],
             enum_type: EnumType::Open,
+            options: None,
         };
         assert_eq!(e.value(1).unwrap().name, "GREEN");
         assert_eq!(e.value(0).unwrap().name, "RED"); // first wins on alias
