@@ -268,3 +268,97 @@ fn unknown_fields_reachable_through_dyn_reflect_message() {
     assert!(ReflectMessage::unknown_fields(&outer).is_empty());
     let _: &UnknownFields = outer.unknown_fields();
 }
+
+#[test]
+fn field_mut_redacts_strings_at_any_depth() {
+    // The mutating-interceptor use case: redact every string in a message
+    // tree in place, through `&mut DynamicMessage`, without read-clone-set-back.
+    use buffa_descriptor::FieldKind;
+
+    let p = pool();
+    let containers_idx = p.message_index("reflect.test.Containers").unwrap();
+    let inner_idx = p.message_index("reflect.test.Inner").unwrap();
+    let cmd = p.message_by_name("reflect.test.Containers").unwrap();
+    let imd = p.message_by_name("reflect.test.Inner").unwrap();
+
+    // strings (field 2, repeated string), nested.id (5→1), inners[].id (8→1).
+    let mut nested = DynamicMessage::new(Arc::clone(&p), inner_idx);
+    nested.set(imd.field(1).unwrap(), Value::String("secret-nested".into()));
+    let mut elem = DynamicMessage::new(Arc::clone(&p), inner_idx);
+    elem.set(imd.field(1).unwrap(), Value::String("secret-elem".into()));
+
+    let mut msg = DynamicMessage::new(Arc::clone(&p), containers_idx);
+    msg.set(
+        cmd.field(2).unwrap(),
+        Value::List(vec![Value::String("secret-top".into())]),
+    );
+    msg.set(cmd.field(5).unwrap(), Value::Message(nested));
+    msg.set(
+        cmd.field(8).unwrap(),
+        Value::List(vec![Value::Message(elem)]),
+    );
+
+    redact_strings(&mut msg);
+
+    // The descriptor-keyed `field_mut` entry point also mutates in place.
+    if let Some(Value::List(items)) = msg.field_mut(cmd.field(2).unwrap()) {
+        items.push(Value::String("appended".into()));
+    }
+
+    // Top-level repeated string redacted.
+    let Some(Value::List(strings)) = msg.field_by_number(2) else {
+        panic!("strings missing");
+    };
+    assert_eq!(strings[0], Value::String("[REDACTED]".into()));
+    assert_eq!(strings[1], Value::String("appended".into()));
+    // Nested singular message's string redacted in place.
+    let Some(Value::Message(n)) = msg.field_by_number(5) else {
+        panic!("nested missing");
+    };
+    assert_eq!(
+        n.field_by_number(1),
+        Some(&Value::String("[REDACTED]".into()))
+    );
+    // Repeated message element's string redacted in place.
+    let Some(Value::List(items)) = msg.field_by_number(8) else {
+        panic!("inners missing");
+    };
+    let Value::Message(e) = &items[0] else {
+        panic!("elem not a message");
+    };
+    assert_eq!(
+        e.field_by_number(1),
+        Some(&Value::String("[REDACTED]".into()))
+    );
+
+    // Recursive redactor: clone the Arc pool so the descriptor borrow is
+    // independent of the `&mut DynamicMessage` borrow.
+    fn redact_strings(msg: &mut DynamicMessage) {
+        let pool = Arc::clone(msg.pool());
+        let md = pool.message(msg.message_index());
+        for fd in md.fields() {
+            let Some(value) = msg.field_by_number_mut(fd.number()) else {
+                continue;
+            };
+            match fd.kind() {
+                FieldKind::Singular(_) => redact_value(value),
+                FieldKind::List(_) => {
+                    if let Value::List(items) = value {
+                        for v in items {
+                            redact_value(v);
+                        }
+                    }
+                }
+                FieldKind::Map { .. } => {}
+            }
+        }
+    }
+
+    fn redact_value(v: &mut Value) {
+        match v {
+            Value::String(s) => *s = "[REDACTED]".into(),
+            Value::Message(inner) => redact_strings(inner),
+            _ => {}
+        }
+    }
+}

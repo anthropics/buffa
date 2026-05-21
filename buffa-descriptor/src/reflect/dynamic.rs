@@ -576,6 +576,72 @@ impl DynamicMessage {
         self.fields.get(&number)
     }
 
+    /// Mutably borrow a field's value by field number, if present.
+    ///
+    /// In-place mutation, the counterpart to [`field_by_number`](Self::field_by_number).
+    /// Returns `None` if the field is unset — use
+    /// [`ReflectMessageMut::set`](crate::reflect::ReflectMessageMut::set) to
+    /// assign an absent field.
+    ///
+    /// This is the primitive for deep mutation (e.g. an interceptor redacting
+    /// PII strings at any nesting depth) without the read-clone-set-back
+    /// dance: match the returned `&mut Value` and mutate the scalar, recurse
+    /// into a `Value::Message`, or walk a `Value::List`/`Value::Map`. The
+    /// descriptor-keyed [`field_mut`](Self::field_mut) is the ergonomic
+    /// convenience over this.
+    ///
+    /// Clone the [`Arc<DescriptorPool>`](Self::pool) before the loop so the
+    /// descriptor borrow is independent of the `&mut self` borrow:
+    ///
+    /// ```no_run
+    /// # use std::sync::Arc;
+    /// # use buffa_descriptor::reflect::{DynamicMessage, Value};
+    /// fn redact(msg: &mut DynamicMessage) {
+    ///     let pool = Arc::clone(msg.pool());
+    ///     let md = pool.message(msg.message_index());
+    ///     for fd in md.fields() {
+    ///         match msg.field_by_number_mut(fd.number()) {
+    ///             Some(Value::String(s)) => *s = "[REDACTED]".into(),
+    ///             Some(Value::Message(inner)) => redact(inner), // recurse
+    ///             _ => {}
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// Replacing the value with one whose shape doesn't match the field's
+    /// kind is permitted (the same latitude as `set`); the encoder defensively
+    /// skips a shape-mismatched value.
+    #[must_use]
+    pub fn field_by_number_mut(&mut self, number: u32) -> Option<&mut Value> {
+        self.fields.get_mut(&number)
+    }
+
+    /// Mutably borrow a field's value, if present.
+    ///
+    /// Descriptor-keyed convenience over [`field_by_number_mut`](Self::field_by_number_mut),
+    /// paralleling [`ReflectMessage::get`](crate::reflect::ReflectMessage::get).
+    /// `field` may be a declared field or a registered extension of this
+    /// message; both resolve by number.
+    ///
+    /// # Panics
+    ///
+    /// Debug builds assert that `field` is a member of this message's
+    /// descriptor (a declared field or a registered extension). A foreign
+    /// descriptor with a colliding number would otherwise silently hand back
+    /// the wrong field for mutation. Use [`field_by_number_mut`](Self::field_by_number_mut)
+    /// for the unchecked, number-keyed path.
+    #[must_use]
+    pub fn field_mut(&mut self, field: &FieldDescriptor) -> Option<&mut Value> {
+        debug_assert!(
+            self.field_or_extension(field.number)
+                .is_some_and(|f| core::ptr::eq(f, field)),
+            "FieldDescriptor passed to field_mut() is not a member of {}",
+            self.message_descriptor().full_name,
+        );
+        self.fields.get_mut(&field.number)
+    }
+
     /// Insert a field value by number, bypassing the descriptor-keyed
     /// `ReflectMessageMut::set` API. Used internally by the WKT JSON codecs,
     /// which know the field layout statically and do not need oneof clearing.
