@@ -251,7 +251,7 @@ One owned-tree collision remains, because protobuf is case-sensitive while Rust 
 <pkg>::oof::Thing                         # sub-package `pkg.oof` (unchanged)
 ```
 
-This activates only on a real collision (one that previously failed to compile), so output for every other schema is unchanged.
+This activates only on a real collision (one that previously failed to compile), so output for every other schema is unchanged. The deconfliction is computed per scope from the full descriptor set, so the colliding message and sub-package must be generated in the same `buffa_build::Config::compile()` invocation — codegen cannot deconflict against a package it does not see. The per-message suffix length depends only on which names collide in the scope, not on file or message declaration order.
 
 **File layout — up to five content files + one stitcher:**
 

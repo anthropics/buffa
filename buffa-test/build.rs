@@ -92,6 +92,20 @@ fn main() {
         .compile()
         .expect("buffa_build failed for modcollide.proto (module collision)");
 
+    // Issue #135, multi-message race: `Oof` + `Oof_` in `modrace`, with
+    // sub-packages `modrace.oof` + `modrace.oof_`. The two nested-types modules
+    // must get distinct deconflicted names (`oof__`, `oof___`). Compiling the
+    // nested layout in lib.rs is the end-to-end guard.
+    buffa_build::Config::new()
+        .files(&[
+            "protos/modrace.proto",
+            "protos/modrace_oof.proto",
+            "protos/modrace_oof_us.proto",
+        ])
+        .includes(&["protos/"])
+        .compile()
+        .expect("buffa_build failed for modrace.proto (multi-message race)");
+
     // Proto2 with custom defaults, required fields, closed enums.
     buffa_build::Config::new()
         .files(&["protos/proto2_defaults.proto"])

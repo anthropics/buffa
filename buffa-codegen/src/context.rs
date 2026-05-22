@@ -132,8 +132,11 @@ fn child_package_segments(package: &str, all_packages: &HashSet<String>) -> Hash
 /// threaded through the shared `taken` set — is what keeps two messages that
 /// would otherwise race to the same slot distinct (e.g. `Oof` and `Oof_`
 /// alongside sub-packages `oof` and `oof_` resolve to `oof__` and `oof___`,
-/// never both to `oof__`). The result is deterministic for a given declaration
-/// order, and the set of names is collision-free regardless of order.
+/// never both to `oof__`).
+///
+/// Colliding messages are assigned in a stable order (sorted by base name), so
+/// the per-message result is independent of declaration order — reordering the
+/// input files or messages never changes which name a given message receives.
 fn deconflict_package_modules(message_names: &[String], children: &HashSet<String>) -> Vec<String> {
     let bases: Vec<String> = message_names.iter().map(|n| to_snake_case(n)).collect();
     // Seed with everything fixed: sub-package segments, the sentinel, and every
@@ -141,20 +144,26 @@ fn deconflict_package_modules(message_names: &[String], children: &HashSet<Strin
     let mut taken: HashSet<String> = children.clone();
     taken.insert(SENTINEL_MOD.to_string());
     taken.extend(bases.iter().cloned());
-    bases
-        .into_iter()
-        .map(|base| {
-            if !children.contains(&base) {
-                return base;
-            }
-            let mut candidate = format!("{base}_");
-            while taken.contains(&candidate) {
-                candidate.push('_');
-            }
-            taken.insert(candidate.clone());
-            candidate
-        })
-        .collect()
+
+    // Result starts as the raw bases (correct for every non-colliding message),
+    // and colliding messages overwrite their slot. Assign in a stable order
+    // (sorted by base name) so the per-message suffix is independent of
+    // declaration order; two colliding messages can't both grab the same slot.
+    let mut out = bases.clone();
+    let mut order: Vec<usize> = (0..bases.len()).collect();
+    order.sort_by(|&a, &b| bases[a].cmp(&bases[b]));
+    for i in order {
+        if !children.contains(&bases[i]) {
+            continue;
+        }
+        let mut candidate = format!("{}_", bases[i]);
+        while taken.contains(&candidate) {
+            candidate.push('_');
+        }
+        taken.insert(candidate.clone());
+        out[i] = candidate;
+    }
+    out
 }
 
 impl<'a> CodeGenContext<'a> {
@@ -998,6 +1007,17 @@ mod tests {
         let set: HashSet<&String> = out.iter().collect();
         assert_eq!(set.len(), out.len());
         assert!(!out.contains(&"oof".to_string()) && !out.contains(&"oof_".to_string()));
+    }
+
+    #[test]
+    fn deconflict_is_independent_of_declaration_order() {
+        // Reordering the input must not change which message gets which name.
+        let ch = children(&["oof", "oof_"]);
+        let fwd = deconflict_package_modules(&names(&["Oof", "Oof_"]), &ch);
+        let rev = deconflict_package_modules(&names(&["Oof_", "Oof"]), &ch);
+        // fwd: [Oof, Oof_]; rev: [Oof_, Oof] — same per-name mapping either way.
+        assert_eq!(fwd, vec!["oof__".to_string(), "oof___".to_string()]);
+        assert_eq!(rev, vec!["oof___".to_string(), "oof__".to_string()]);
     }
 
     #[test]

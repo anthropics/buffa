@@ -887,8 +887,10 @@ fn generate_proto_content(
             quote! {}
         } else {
             let doc = format!(
-                "Nested items of `{top_level_name}`. The module name is \
-                 deconflicted from a sub-package of the same name (buffa#135)."
+                "Nested items of `{top_level_name}`. The module name carries a \
+                 trailing `_` to avoid a collision with another module in this \
+                 scope (a sub-package or sibling message of the same name). See \
+                 buffa#135."
             );
             quote! { #[doc = #doc] }
         };
@@ -1141,8 +1143,8 @@ fn surviving_root_reexports(
     use std::collections::BTreeSet;
 
     // Names already occupied at package root by real items: top-level
-    // messages, enums, message snake_case modules, and the `__buffa`
-    // sentinel itself. File-level extension consts live in
+    // messages, enums, message nested-types modules (deconflicted name, #135),
+    // and the `__buffa` sentinel itself. File-level extension consts live in
     // `__buffa::ext::`, not at the root, so they are *candidates* (added
     // by `generate_proto_content`) rather than occupants.
     let mut occupied: BTreeSet<String> = BTreeSet::new();

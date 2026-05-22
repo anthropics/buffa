@@ -95,6 +95,25 @@ pub mod modcollide {
     }
 }
 
+// Issue #135, multi-message race: `Oof`/`Oof_` nested modules deconflict to
+// `oof__`/`oof___` while sub-packages `oof`/`oof_` keep their names. Compiling
+// this nested layout proves the four modules coexist.
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod modrace {
+    buffa::include_proto!("modrace");
+    pub mod oof {
+        buffa::include_proto!("modrace.oof");
+    }
+    pub mod oof_ {
+        buffa::include_proto!("modrace.oof_");
+    }
+}
+
 #[allow(
     clippy::derivable_impls,
     clippy::match_single_binding,
