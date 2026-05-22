@@ -43,12 +43,12 @@ json = [
 ]
 arbitrary = ["dep:arbitrary", "smol_str?/arbitrary", "compact_str?/arbitrary"]
 text = []
-# Configurable `string` field representations. Enabling one of these lets
-# `buffa_build`'s `string_type` knob map proto `string` to that type; buffa
-# re-exports the crate so generated code references `::buffa::<crate>::<Type>`
-# and downstream crates do not declare the dependency themselves. `ecow` has
-# no native `arbitrary` impl, so buffa supplies a shim under the `arbitrary`
-# feature.
+# Configurable `string` field representations. Enabling one of these will let
+# `buffa_build`'s forthcoming `string_type` knob map proto `string` to that
+# type; buffa re-exports the crate so generated code references
+# `::buffa::<crate>::<Type>` and downstream crates do not declare the dependency
+# themselves. `ecow` has no native `arbitrary` impl, so buffa supplies a shim
+# under the `arbitrary` feature.
 smol_str = ["dep:smol_str"]
 ecow = ["dep:ecow"]
 compact_str = ["dep:compact_str"]

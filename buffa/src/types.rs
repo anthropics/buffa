@@ -447,15 +447,16 @@ pub fn string_encoded_len(value: &str) -> usize {
     varint_len(len as u64) + len
 }
 
-/// A Rust type usable as the in-memory representation of a proto `string` field.
+/// The bound generated code places on the Rust type used for a proto `string`
+/// field. You neither implement nor name this trait by hand — a blanket impl
+/// covers every conforming type, and a forthcoming `string_type` knob in
+/// `buffa_build` selects the concrete type at code-generation time.
 ///
-/// buffa generates [`String`] by default. The `string_type` knob in
-/// `buffa_build` can substitute a small-string-optimized type — such as
-/// [`smol_str::SmolStr`], [`ecow::EcoString`], or
-/// [`compact_str::CompactString`] — for read-mostly schemas where `String`'s
-/// growable buffer is unnecessary. Any type meeting these bounds qualifies, so
-/// there is nothing to implement by hand: the blanket impl below covers every
-/// conforming type.
+/// buffa generates [`String`] by default. The knob will be able to substitute a
+/// small-string-optimized type — such as `smol_str::SmolStr`,
+/// `ecow::EcoString`, or `compact_str::CompactString` (each behind the matching
+/// `buffa` feature) — for read-mostly schemas where `String`'s growable buffer
+/// is unnecessary.
 ///
 /// The bounds are exactly what generated code requires of a string field:
 ///
@@ -463,16 +464,27 @@ pub fn string_encoded_len(value: &str) -> usize {
 ///   hand-written `Debug` impl on message structs, and for `clear()` (which
 ///   resets the field to [`Default`] rather than relying on a `String`-specific
 ///   `clear`, since the small-string types may be immutable).
+/// - `Send + Sync` — so a message owning such a field stays `Send + Sync`;
+///   without this bound an exotic string type could silently make every
+///   containing message thread-unsafe.
 /// - [`AsRef<str>`] — the encoder borrows the field as `&str`;
 ///   [`encode_string`] and [`string_encoded_len`] take `&str`.
-/// - [`From<String>`] and [`From<&str>`](From) — the decode path
-///   ([`decode_string_to`]) and the view→owned conversion construct the field
-///   from freshly decoded text.
+/// - `From<String>` and `From<&str>` — used by the decode path
+///   ([`decode_string_to`]) and (once the knob lands) the view→owned conversion
+///   to construct the field from freshly decoded text.
 ///
-/// For the default `String` representation, `From<String>` is the identity, so
+/// For the default `String` representation every conversion is the identity, so
 /// the generic path costs nothing relative to the specialized one.
 pub trait ProtoString:
-    Clone + PartialEq + Default + core::fmt::Debug + AsRef<str> + From<String> + for<'a> From<&'a str>
+    Clone
+    + PartialEq
+    + Default
+    + core::fmt::Debug
+    + Send
+    + Sync
+    + AsRef<str>
+    + From<String>
+    + for<'a> From<&'a str>
 {
 }
 
@@ -481,11 +493,20 @@ impl<T> ProtoString for T where
         + PartialEq
         + Default
         + core::fmt::Debug
+        + Send
+        + Sync
         + AsRef<str>
         + From<String>
         + for<'a> From<&'a str>
 {
 }
+
+// The default representation must always satisfy the bound; freeze that
+// invariant against future changes to the trait's supertraits.
+const _: fn() = || {
+    fn assert_proto_string<S: ProtoString>() {}
+    assert_proto_string::<String>();
+};
 
 /// Decode a length-delimited `string` into a configurable [`ProtoString`] type.
 ///
@@ -1354,7 +1375,11 @@ mod tests {
     #[cfg(feature = "smol_str")]
     #[test]
     fn test_decode_string_to_smol_str() {
-        for s in ["", "id", "a".repeat(64).as_str()] {
+        // Lengths straddle the inline caps of all three SSO types (ecow ~15,
+        // smol_str 23, compact_str 24 bytes on 64-bit) plus a clearly-heap case.
+        for n in [0usize, 13, 14, 15, 22, 23, 24, 25, 64] {
+            let owned = "a".repeat(n);
+            let s = owned.as_str();
             let mut buf = Vec::new();
             encode_string(s, &mut buf);
             let decoded: smol_str::SmolStr = decode_string_to(&mut buf.as_slice()).unwrap();
@@ -1365,7 +1390,11 @@ mod tests {
     #[cfg(feature = "ecow")]
     #[test]
     fn test_decode_string_to_ecow() {
-        for s in ["", "id", "a".repeat(64).as_str()] {
+        // Lengths straddle the inline caps of all three SSO types (ecow ~15,
+        // smol_str 23, compact_str 24 bytes on 64-bit) plus a clearly-heap case.
+        for n in [0usize, 13, 14, 15, 22, 23, 24, 25, 64] {
+            let owned = "a".repeat(n);
+            let s = owned.as_str();
             let mut buf = Vec::new();
             encode_string(s, &mut buf);
             let decoded: ecow::EcoString = decode_string_to(&mut buf.as_slice()).unwrap();
@@ -1376,7 +1405,11 @@ mod tests {
     #[cfg(feature = "compact_str")]
     #[test]
     fn test_decode_string_to_compact_str() {
-        for s in ["", "id", "a".repeat(64).as_str()] {
+        // Lengths straddle the inline caps of all three SSO types (ecow ~15,
+        // smol_str 23, compact_str 24 bytes on 64-bit) plus a clearly-heap case.
+        for n in [0usize, 13, 14, 15, 22, 23, 24, 25, 64] {
+            let owned = "a".repeat(n);
+            let s = owned.as_str();
             let mut buf = Vec::new();
             encode_string(s, &mut buf);
             let decoded: compact_str::CompactString =

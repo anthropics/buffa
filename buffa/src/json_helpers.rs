@@ -334,7 +334,6 @@ pub mod proto_bool {
 ///
 /// Use with `#[serde(with = "::buffa::json_helpers::proto_string")]`.
 pub mod proto_string {
-    use alloc::string::ToString;
     use serde::{Deserializer, Serializer};
 
     /// Serialize a `string` field.
@@ -352,34 +351,39 @@ pub mod proto_string {
 
     /// Deserialize a `string` field (or JSON `null` → `""`).
     ///
-    /// Generic over the return type so that codegen's `string_type()` (which can
-    /// map the field to `smol_str::SmolStr`, `ecow::EcoString`, etc.) works
-    /// without a shim: the visitor produces `String`, the final `.into()`
-    /// converts. `String: From<String>` (identity) keeps the default path
-    /// zero-cost. Type inference picks `T` from the field type at the serde call
-    /// site. Mirrors the `bytes` module's generic deserialize.
+    /// Generic over the return type so that codegen's `string_type` knob (which
+    /// can map the field to `smol_str::SmolStr`, `ecow::EcoString`, etc.) works
+    /// without a per-type shim. The visitor constructs the target type directly:
+    /// `visit_str` goes through `From<&str>`, so a short string is inlined by an
+    /// SSO type without first allocating an intermediate `String`. `String`
+    /// itself satisfies both `From<&str>` and `From<String>`, keeping the
+    /// default path zero-extra-cost. Type inference picks `T` from the field
+    /// type at the serde call site.
     pub fn deserialize<'de, T, D>(d: D) -> Result<T, D::Error>
     where
-        T: From<alloc::string::String>,
+        T: for<'a> From<&'a str> + From<alloc::string::String>,
         D: Deserializer<'de>,
     {
-        struct V;
-        impl<'de> serde::de::Visitor<'de> for V {
-            type Value = alloc::string::String;
+        struct V<T>(core::marker::PhantomData<T>);
+        impl<'de, T> serde::de::Visitor<'de> for V<T>
+        where
+            T: for<'a> From<&'a str> + From<alloc::string::String>,
+        {
+            type Value = T;
             fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 f.write_str("a string or null")
             }
-            fn visit_unit<E>(self) -> Result<alloc::string::String, E> {
-                Ok(alloc::string::String::new())
+            fn visit_unit<E>(self) -> Result<T, E> {
+                Ok(T::from(""))
             }
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<alloc::string::String, E> {
-                Ok(v.to_string())
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<T, E> {
+                Ok(T::from(v))
             }
-            fn visit_string<E>(self, v: alloc::string::String) -> Result<alloc::string::String, E> {
-                Ok(v)
+            fn visit_string<E>(self, v: alloc::string::String) -> Result<T, E> {
+                Ok(T::from(v))
             }
         }
-        d.deserialize_any(V).map(T::from)
+        d.deserialize_any(V::<T>(core::marker::PhantomData))
     }
 }
 

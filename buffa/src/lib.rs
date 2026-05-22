@@ -73,6 +73,16 @@
 //! | `json` |  | Proto3 JSON via `serde` (the `json_helpers` and `any_registry` modules) |
 //! | `text` |  | Textproto (human-readable) encoding and decoding |
 //! | `arbitrary` |  | `arbitrary::Arbitrary` impls for fuzzing |
+//! | `smol_str` |  | Allow generated `string` fields to use `smol_str::SmolStr` (see [`ProtoString`]) |
+//! | `ecow` |  | Allow generated `string` fields to use `ecow::EcoString` (see [`ProtoString`]) |
+//! | `compact_str` |  | Allow generated `string` fields to use `compact_str::CompactString` (see [`ProtoString`]) |
+//!
+//! The three string-type flags compose with `json` and `arbitrary`: enabling,
+//! for example, both `smol_str` and `json` turns on `smol_str/serde`, and
+//! `smol_str` + `arbitrary` turns on `smol_str/arbitrary`. `ecow` has no native
+//! `Arbitrary` impl, so `ecow` + `arbitrary` is served by an in-crate shim
+//! instead. None of the three is selected by generated code until a build is
+//! configured to use it (see [`ProtoString`]).
 //!
 //! With `default-features = false` the crate is `#![no_std]` (requires
 //! `alloc`). Proto3 JSON serialization still works without `std` via
@@ -333,6 +343,10 @@ pub mod __private {
     pub fn arbitrary_ecow_vec(
         u: &mut ::arbitrary::Unstructured<'_>,
     ) -> ::arbitrary::Result<::alloc::vec::Vec<::ecow::EcoString>> {
+        // Materializing a `Vec<String>` first (rather than building `EcoString`s
+        // element-by-element) is deliberate: it makes the byte-consumption order
+        // identical to the underlying `Vec<String>` impl, which is what the
+        // parity test asserts. Do not "optimize" the intermediate `Vec` away.
         let vv: ::alloc::vec::Vec<::alloc::string::String> = ::arbitrary::Arbitrary::arbitrary(u)?;
         Ok(vv.into_iter().map(::ecow::EcoString::from).collect())
     }
