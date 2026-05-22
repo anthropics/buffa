@@ -295,6 +295,12 @@ structs and then encoding them.
 
 The reflection path (`DynamicMessage`) trades throughput for schema-agnostic processing: a CEL evaluator, a transcoding gateway, or a generic interceptor can encode, decode, and serialize messages it has no generated type for. These charts measure that genericity tax against the generated codec, on the same machine and with the same method as above. Only the four code-generated benchmark messages are covered, because reflection needs a generated type to compare against; `MediaFrame` is omitted.
 
+The three series:
+
+- **generated** — the typed codec `buffa-codegen` emits. Each message is a Rust struct with one field per proto field, and decode/encode are monomorphized to those fields. This is buffa's default path and the same `buffa` baseline charted under [Binary decode](#binary-decode) and [Binary encode](#binary-encode) above.
+- **reflect** — `DynamicMessage`: a single `BTreeMap<u32, Value>` keyed by field number, driven entirely by a runtime `DescriptorPool`. No generated type is involved.
+- **bridge round-trip** — what a generic interceptor pays *per message* to view a typed value through reflection. The codegen-derived `Reflectable` impl encodes the typed message and decodes the bytes back into a `DynamicMessage`, then hands it out as `&dyn ReflectMessage`. It is a generated encode plus a reflective decode, so it is always the slowest column.
+
 ![Reflection decode — ApiResponse](benchmarks/charts/reflect-decode-api_response.svg)
 ![Reflection decode — LogRecord](benchmarks/charts/reflect-decode-log_record.svg)
 ![Reflection decode — AnalyticsEvent](benchmarks/charts/reflect-decode-analytics_event.svg)
@@ -327,7 +333,11 @@ The reflection path (`DynamicMessage`) trades throughput for schema-agnostic pro
 
 </details>
 
-**Reading the numbers:** reflective decode runs roughly 1.7–4.7× the time of generated decode, and reflective encode 3.2–7.5×, because `DynamicMessage` dispatches every field through the descriptor and stores values in a `BTreeMap<u32, Value>` rather than typed struct fields. The **bridge round-trip** is the cost a generic interceptor pays per typed message to obtain a `&dyn ReflectMessage` through the derived `Reflectable` impl: a full generated encode followed by a reflective decode, so it is always the slowest column. This is the v1 bridge cost — a future zero-copy reflection mode would let a generated message expose its fields without the round-trip — but for the schema-driven use cases reflection targets, the genericity is the point, and the generated codec remains the path for throughput-sensitive work.
+**Why the gap, on decode (~1.7–4.7×).** Generated decode resolves each field number through a compile-time jump table and writes the value straight into a typed struct field. Reflective decode instead binary-searches the descriptor's field table for every field, matches on the field's kind at runtime, wraps the value in a `Value` enum, and inserts it into the `BTreeMap` — an ordered-map insertion that allocates a node, where `String`/`Bytes`/nested values carry their own heap allocations and each nested message becomes a fresh `DynamicMessage` with its own map. The spread across messages follows directly: `LogRecord` shows the smallest gap because its payload is dominated by string and map decoding — UTF-8 validation and allocation that *both* paths perform identically — so the fixed per-field reflection overhead is amortized over shared work. `GoogleMessage1` shows the largest gap because it is scalar-dense: the generated path is a tight jump table doing almost nothing per field, leaving the reflection per-field cost nowhere to hide.
+
+**Why the gap is wider on encode (~3.2–7.5×).** The generated encoder threads a `SizeCache` through one size pass, so each nested message's length is computed once and reused when its length prefix is written — this is buffa's linear-time serialization. `DynamicMessage` has no such cache: `encode_to_vec` runs a full `encoded_len()` traversal and then a full `encode()` traversal, and the encode traversal recomputes each nested message's size again to emit its length prefix. On flat messages that is a constant factor on top of the `BTreeMap` walk and per-field wire-type derivation; on deeply nested ones (`AnalyticsEvent`) the repeated size computation compounds with nesting depth.
+
+The **bridge round-trip** is the v1 cost of the encode-decode bridge; a future zero-copy reflection mode would let a generated message expose its fields without re-encoding. For now, the rule is simple: reach for reflection when the schema is only known at runtime, and stay on the generated codec when throughput is what matters.
 
 ## Conformance
 
