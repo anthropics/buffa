@@ -28,6 +28,8 @@ The Rust ecosystem lacks an actively maintained, pure-Rust library that supports
 
 - **Unknown field preservation.** Round-trip fidelity for proxy and middleware use cases.
 
+- **Runtime reflection.** `buffa-descriptor` (under the `reflect` feature) provides `DescriptorPool` and `DynamicMessage` for schema-driven encode, decode, and JSON without generated code — plus extensions, custom-option access, `Any` pack/unpack, and symbol→file lookup for gRPC server reflection. Generated types bridge into the same `ReflectMessage` trait via a derived `Reflectable` impl, so a CEL evaluator, transcoding gateway, or generic interceptor can treat typed and dynamic messages uniformly. See [Reflection](#reflection) for the cost relative to generated code.
+
 - **`no_std` + `alloc`.** The core runtime works without `std`, including JSON serialization via serde. Enabling `std` adds `std::io` integration, `std::time` conversions, and thread-local JSON parse options.
 
 ## Wire formats
@@ -44,7 +46,6 @@ buffa supports **binary**, **JSON**, and **text** protobuf encodings:
 
 These are intentionally out of scope:
 
-- **Runtime reflection** (`DynamicMessage`, descriptor-driven introspection) — planned for a future release. The descriptor types are now available in `buffa-descriptor` as a first step. Buffa remains a codegen-first library; if you need schema-agnostic processing today, consider preserving unknown fields or using `Any`.
 - **Proto2 optional-field getter methods** — `[default = X]` on `optional` fields does not generate `fn field_name(&self) -> T` unwrap-to-default accessors. Custom defaults are applied only to `required` fields via `impl Default`. Optional fields are `Option<T>`; use pattern matching or `.unwrap_or(X)`.
 - **Scoped `JsonParseOptions` in `no_std`** — serde's `Deserialize` trait has no context parameter, so runtime options must be passed through ambient state. In `std` builds, [`with_json_parse_options`] provides per-closure, per-thread scoping via a thread-local. In `no_std` builds, [`set_global_json_parse_options`] provides process-wide set-once configuration via a global atomic. The two APIs are mutually exclusive. The `no_std` global supports singular-enum accept-with-default but not repeated/map container filtering (which requires scoped strict-mode override).
 
@@ -289,6 +290,44 @@ structs and then encoding them.
 **`prost (bytes)`** uses `prost-build`'s `.bytes(["."])` config so every proto `bytes` field is generated as `bytes::Bytes` instead of `Vec<u8>`, and decodes from a `bytes::Bytes` input to exercise `Bytes`' zero-copy `copy_to_bytes` slicing. The substitution only affects the decode path, so only decode numbers are reported — `prost (bytes)` encode tracks default `prost` by construction. On the four non-bytes messages, `prost (bytes)` tracks default `prost` within noise (and is slightly slower on `ApiResponse` where the per-message `Bytes::clone` refcount overhead isn't offset by any actual zero-copy). On `MediaFrame` it runs ~2.4× faster than default `prost` at decode, confirming that prost's feature does land when it has bytes fields to work with. buffa views are in a different regime again: they borrow directly from the input buffer for strings, bytes, and nested message bodies, so `buffa (view)` on `MediaFrame` is ~3× the `prost (bytes)` number and ~4× `buffa`'s own owned decode. Views also benefit on the four non-bytes messages, where prost's `bytes` feature is inert.
 
 **Owned decode trade-offs:** buffa's owned decode is typically within ±10% of prost, trading a small throughput cost for features prost omits: unknown-field preservation by default, typed `EnumValue<E>` wrappers (not raw `i32`), and a type-stable decode loop that supports recursive message types without manual boxing. The zero-copy view path (`MyMessageView::decode_view`) sidesteps allocation entirely and is the recommended fast decode path. protobuf-v4's decode advantage on deeply-nested messages comes from upb's arena allocator — all sub-messages are bump-allocated in one arena rather than individually boxed.
+
+### Reflection
+
+The reflection path (`DynamicMessage`) trades throughput for schema-agnostic processing: a CEL evaluator, a transcoding gateway, or a generic interceptor can encode, decode, and serialize messages it has no generated type for. These charts measure that genericity tax against the generated codec, on the same machine and with the same method as above. Only the four code-generated benchmark messages are covered, because reflection needs a generated type to compare against; `MediaFrame` is omitted.
+
+![Reflection decode — ApiResponse](benchmarks/charts/reflect-decode-api_response.svg)
+![Reflection decode — LogRecord](benchmarks/charts/reflect-decode-log_record.svg)
+![Reflection decode — AnalyticsEvent](benchmarks/charts/reflect-decode-analytics_event.svg)
+![Reflection decode — GoogleMessage1](benchmarks/charts/reflect-decode-google_message1_proto3.svg)
+
+![Reflection encode — ApiResponse](benchmarks/charts/reflect-encode-api_response.svg)
+![Reflection encode — LogRecord](benchmarks/charts/reflect-encode-log_record.svg)
+![Reflection encode — AnalyticsEvent](benchmarks/charts/reflect-encode-analytics_event.svg)
+![Reflection encode — GoogleMessage1](benchmarks/charts/reflect-encode-google_message1_proto3.svg)
+
+<details><summary>Raw decode data (MiB/s, % vs generated)</summary>
+
+| Message | generated | reflect | bridge round-trip |
+|---------|------:|------:|------:|
+| ApiResponse | 834 | 323 (−61%) | 243 (−71%) |
+| LogRecord | 742 | 447 (−40%) | 364 (−51%) |
+| AnalyticsEvent | 221 | 83 (−62%) | 69 (−69%) |
+| GoogleMessage1 | 1,022 | 217 (−79%) | 210 (−79%) |
+
+</details>
+
+<details><summary>Raw encode data (MiB/s, % vs generated)</summary>
+
+| Message | generated | reflect |
+|---------|------:|------:|
+| ApiResponse | 2,562 | 685 (−73%) |
+| LogRecord | 4,107 | 1,292 (−69%) |
+| AnalyticsEvent | 594 | 99 (−83%) |
+| GoogleMessage1 | 2,636 | 353 (−87%) |
+
+</details>
+
+**Reading the numbers:** reflective decode runs roughly 1.7–4.7× the time of generated decode, and reflective encode 3.2–7.5×, because `DynamicMessage` dispatches every field through the descriptor and stores values in a `BTreeMap<u32, Value>` rather than typed struct fields. The **bridge round-trip** is the cost a generic interceptor pays per typed message to obtain a `&dyn ReflectMessage` through the derived `Reflectable` impl: a full generated encode followed by a reflective decode, so it is always the slowest column. This is the v1 bridge cost — a future zero-copy reflection mode would let a generated message expose its fields without the round-trip — but for the schema-driven use cases reflection targets, the genericity is the point, and the generated codec remains the path for throughput-sensitive work.
 
 ## Conformance
 
