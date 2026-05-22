@@ -1153,6 +1153,17 @@ proto_elem_json_delegate!(bool, proto_bool);
 proto_elem_json_delegate!(alloc::string::String, proto_string);
 proto_elem_json_delegate!(alloc::vec::Vec<u8>, bytes);
 
+// Configurable `string` field representations (codegen's `string_type()`), for
+// `repeated string` / `map<_, string>`. The `proto_string` with-module is
+// generic — `serialize` over `AsRef<str>`, `deserialize` over `From<String>` —
+// so each delegate is a one-liner with no per-type shim.
+#[cfg(feature = "smol_str")]
+proto_elem_json_delegate!(::smol_str::SmolStr, proto_string);
+#[cfg(feature = "ecow")]
+proto_elem_json_delegate!(::ecow::EcoString, proto_string);
+#[cfg(feature = "compact_str")]
+proto_elem_json_delegate!(::compact_str::CompactString, proto_string);
+
 // bytes::Bytes — for codegen's `use_bytes_type()` with `repeated bytes`.
 // Serialize: `Bytes: Deref<Target=[u8]>` → `bytes::serialize(&[u8], s)`.
 // Deserialize: `bytes::deserialize` is generic over `T: From<Vec<u8>>`;
