@@ -79,6 +79,16 @@ fn main() {
         .compile()
         .expect("buffa_build failed for nestpkg_*.proto");
 
+    // Issue #135: a message whose snake_case module name collides with a
+    // sibling sub-package. `message Oof` (nested types) in `modcollide` vs
+    // `package modcollide.oof`. Both files compiled together so codegen sees the
+    // sub-package and deconflicts the nested module to `oof_`.
+    buffa_build::Config::new()
+        .files(&["protos/modcollide.proto", "protos/modcollide_oof.proto"])
+        .includes(&["protos/"])
+        .compile()
+        .expect("buffa_build failed for modcollide.proto (module collision)");
+
     // Proto2 with custom defaults, required fields, closed enums.
     buffa_build::Config::new()
         .files(&["protos/proto2_defaults.proto"])

@@ -1,6 +1,6 @@
 //! Code generation context and descriptor-to-Rust mapping state.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::features::{self, ResolvedFeatures};
 use crate::generated::descriptor::{DescriptorProto, EnumDescriptorProto, FileDescriptorProto};
@@ -80,6 +80,76 @@ pub struct CodeGenContext<'a> {
     /// proto FQN they already have, rather than threading index-based paths
     /// through every function signature.
     comment_map: HashMap<String, String>,
+    /// Deconflicted module name for each top-level message, keyed by the
+    /// leading-dot FQN (`".pkg.Msg"`).
+    ///
+    /// A message's nested types live in a `snake_case(Name)` submodule. When
+    /// that name would collide with a sub-package module in the same scope
+    /// (proto is case-sensitive, so `message Oof` and `package foo.oof` both map
+    /// to `mod oof`), a trailing `_` is appended until the name is unique within
+    /// the scope's occupied set. Entries exist for every top-level message; the
+    /// value equals `snake_case(Name)` when no deconfliction was needed.
+    nested_module_names: HashMap<String, String>,
+}
+
+/// The immediate child-package segment names directly under `package`.
+///
+/// For `package` `"foo"` and known packages `{foo, foo.oof, foo.bar.baz}`, this
+/// is `{"oof", "bar"}` — the first segment after the `"foo."` prefix of each
+/// deeper package. These are exactly the sub-package module names that will be
+/// siblings of `foo`'s message-nesting modules.
+fn child_package_segments(package: &str, all_packages: &HashSet<String>) -> HashSet<String> {
+    let prefix = if package.is_empty() {
+        String::new()
+    } else {
+        format!("{package}.")
+    };
+    all_packages
+        .iter()
+        .filter_map(|p| {
+            let rest = if package.is_empty() {
+                Some(p.as_str())
+            } else {
+                p.strip_prefix(&prefix)
+            };
+            rest.filter(|r| !r.is_empty())
+                .map(|r| r.split('.').next().unwrap_or(r).to_string())
+        })
+        .collect()
+}
+
+/// Compute the (possibly deconflicted) nested-types module name for a top-level
+/// message. Returns `snake_case(name)` unchanged unless it collides with a
+/// sub-package segment, in which case `_` is appended until the candidate is
+/// clear of every sub-package segment, every sibling message's raw module name,
+/// and the `__buffa` sentinel.
+fn dedup_nested_module(
+    name: &str,
+    package: &str,
+    all_packages: &HashSet<String>,
+    pkg_message_names: &HashMap<String, Vec<String>>,
+) -> String {
+    let base = to_snake_case(name);
+    let children = child_package_segments(package, all_packages);
+    if !children.contains(&base) {
+        return base;
+    }
+    // Only deconflict against a real package collision. Grow against the full
+    // occupied set so the result is unique by construction.
+    let siblings: HashSet<String> = pkg_message_names
+        .get(package)
+        .into_iter()
+        .flatten()
+        .map(|n| to_snake_case(n))
+        .collect();
+    let mut candidate = format!("{base}_");
+    while children.contains(&candidate)
+        || siblings.contains(&candidate)
+        || candidate == SENTINEL_MOD
+    {
+        candidate.push('_');
+    }
+    candidate
 }
 
 impl<'a> CodeGenContext<'a> {
@@ -129,6 +199,25 @@ impl<'a> CodeGenContext<'a> {
         let mut package_of = HashMap::new();
         let mut enum_closedness = HashMap::new();
         let mut comment_map = HashMap::new();
+        let mut nested_module_names = HashMap::new();
+
+        // Pre-pass: collect every package and every package's top-level message
+        // names, so a message-nesting module can be deconflicted against
+        // sub-package modules (which may be declared in other files).
+        let mut all_packages: HashSet<String> = HashSet::new();
+        let mut pkg_message_names: HashMap<String, Vec<String>> = HashMap::new();
+        for file in files {
+            let package = file.package.as_deref().unwrap_or("").to_string();
+            all_packages.insert(package.clone());
+            for msg in &file.message_type {
+                if let Some(name) = &msg.name {
+                    pkg_message_names
+                        .entry(package.clone())
+                        .or_default()
+                        .push(name.clone());
+                }
+            }
+        }
 
         for file in files {
             comment_map.extend(crate::comments::fqn_comments(file));
@@ -170,7 +259,11 @@ impl<'a> CodeGenContext<'a> {
                     package_of.insert(fqn.clone(), package.to_string());
 
                     // Register nested messages using module-qualified paths.
-                    let snake = to_snake_case(name);
+                    // The parent module name is deconflicted against sub-package
+                    // modules (issue #135). Recorded so emission can reuse it.
+                    let snake =
+                        dedup_nested_module(name, package, &all_packages, &pkg_message_names);
+                    nested_module_names.insert(fqn.clone(), snake.clone());
                     let parent_mod = if rust_module.is_empty() {
                         snake
                     } else {
@@ -216,7 +309,28 @@ impl<'a> CodeGenContext<'a> {
             package_of,
             enum_closedness,
             comment_map,
+            nested_module_names,
         }
+    }
+
+    /// The nested-types module name for a top-level message, deconflicted
+    /// against sub-package modules (issue #135).
+    ///
+    /// `package` is the proto package (empty for none), `name` the message's
+    /// proto name. Returns the recorded deconflicted name (e.g. `oof_` when
+    /// `message Oof` collides with `package <pkg>.oof`), or `snake_case(name)`
+    /// when no override was recorded. Both emission and reference resolution go
+    /// through the same recorded value, so they always agree.
+    pub fn nested_module_name(&self, package: &str, name: &str) -> String {
+        let fqn = if package.is_empty() {
+            format!(".{name}")
+        } else {
+            format!(".{package}.{name}")
+        };
+        self.nested_module_names
+            .get(&fqn)
+            .cloned()
+            .unwrap_or_else(|| to_snake_case(name))
     }
 
     /// Build a context matching what [`generate()`](crate::generate) uses

@@ -879,7 +879,7 @@ fn generate_proto_content(
             &resolver,
         )?;
         owned.extend(owned_top);
-        let mod_ident = make_field_ident(&crate::oneof::to_snake_case(top_level_name));
+        let mod_ident = make_field_ident(&ctx.nested_module_name(current_package, top_level_name));
         for p in msg_reg.json_ext {
             reg.json_ext.push(quote! { #mod_ident :: #p });
         }

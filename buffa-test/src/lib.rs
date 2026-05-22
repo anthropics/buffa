@@ -78,6 +78,23 @@ pub mod nestpkg {
     }
 }
 
+// Issue #135: message-nesting module vs sub-package module collision. The
+// sub-package `modcollide.oof` is nested under `modcollide` as `pub mod oof`;
+// `message Oof`'s nested-types module is deconflicted to `oof_`, so the two no
+// longer redefine `mod oof`. Compiling this module is the regression guard.
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod modcollide {
+    buffa::include_proto!("modcollide");
+    pub mod oof {
+        buffa::include_proto!("modcollide.oof");
+    }
+}
+
 #[allow(
     clippy::derivable_impls,
     clippy::match_single_binding,

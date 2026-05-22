@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package modcollide.oof;
+
+message Thing {
+  int32 y = 1;
+}
