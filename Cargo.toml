@@ -67,7 +67,11 @@ thiserror = { version = "2", default-features = false }
 # `default-features = false` so they stay `no_std`; the relevant
 # `serde`/`arbitrary`/`std` sub-features are turned on by the matching `buffa`
 # feature (see buffa/Cargo.toml).
-smol_str = { version = "0.3", default-features = false }
+#
+# `smol_str` is capped below 0.3.4: that release raised its MSRV to 1.89, above
+# buffa's 1.85. 0.3.2 (no declared MSRV) keeps the `serde`/`arbitrary` features
+# we need. Relax the cap when buffa's MSRV reaches 1.89.
+smol_str = { version = ">=0.3, <0.3.4", default-features = false }
 ecow = { version = "0.2", default-features = false }
 compact_str = { version = "0.9", default-features = false }
 prettyplease = "0.2"
