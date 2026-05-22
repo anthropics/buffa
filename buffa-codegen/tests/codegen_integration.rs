@@ -852,6 +852,57 @@ fn module_collision_nested_message_vs_subpackage() {
 }
 
 #[test]
+fn module_collision_two_messages_race_to_distinct_names() {
+    // Pathological: `Oof`(oof) and `Oof_`(oof_) both collide, with sub-packages
+    // `foo.oof` AND `foo.oof_`. Each deconflicted name must be distinct from the
+    // other's and from both sub-packages — `oof__` and `oof___`, not both `oof__`.
+    let dir = tempfile::tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("foo.proto"),
+        "syntax = \"proto3\";\npackage foo;\n\
+         message Oof { message Inner { int32 x = 1; } Inner inner = 1; }\n\
+         message Oof_ { message Inner { int32 x = 1; } Inner inner = 1; }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("a.proto"),
+        "syntax = \"proto3\";\npackage foo.oof;\nmessage Thing { int32 y = 1; }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("b.proto"),
+        "syntax = \"proto3\";\npackage foo.oof_;\nmessage Widget { int32 z = 1; }\n",
+    )
+    .unwrap();
+    let fds = compile_protos(
+        &[
+            dir.path().join("foo.proto").to_str().unwrap(),
+            dir.path().join("a.proto").to_str().unwrap(),
+            dir.path().join("b.proto").to_str().unwrap(),
+        ],
+        &[dir.path().to_str().unwrap()],
+    );
+    let content = buffa_codegen::generate(&fds.file, &["foo.proto".into()], &no_views())
+        .expect("codegen")
+        .into_iter()
+        .map(|f| f.content)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Each message's `inner` field references its own deconflicted module.
+    // `oof__::Inner` is not a substring of `oof___::Inner`, so finding both
+    // proves the two modules are distinct (and neither is the bare `oof`/`oof_`).
+    assert!(
+        content.contains("oof__ :: Inner") || content.contains("oof__::Inner"),
+        "Oof should reference oof__::Inner: {content}"
+    );
+    assert!(
+        content.contains("oof___ :: Inner") || content.contains("oof___::Inner"),
+        "Oof_ should reference oof___::Inner: {content}"
+    );
+}
+
+#[test]
 fn module_no_collision_keeps_natural_module_name() {
     // Without a colliding sub-package, the nested module stays `oof` (no churn).
     let content = generate_proto(

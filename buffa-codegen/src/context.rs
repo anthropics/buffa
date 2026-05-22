@@ -118,43 +118,43 @@ fn child_package_segments(package: &str, all_packages: &HashSet<String>) -> Hash
         .collect()
 }
 
-/// Compute the (possibly deconflicted) nested-types module name for a top-level
-/// message. Returns `snake_case(name)` unchanged unless it collides with a
-/// sub-package segment, in which case `_` is appended until the candidate is
-/// clear of every sub-package segment, every sibling message's raw module name,
-/// and the `__buffa` sentinel.
+/// Deconflict the nested-types module names for one package's top-level
+/// messages against the sub-package modules in the same scope (issue #135).
 ///
-/// The result is independent of message iteration order: deconfliction only
-/// fires on a real sub-package collision, and the candidate grows past every
-/// sibling's *raw* module name, so two distinct messages can never resolve to
-/// the same deconflicted name.
-fn dedup_nested_module(
-    name: &str,
-    package: &str,
-    all_packages: &HashSet<String>,
-    pkg_message_names: &HashMap<String, Vec<String>>,
-) -> String {
-    let base = to_snake_case(name);
-    let children = child_package_segments(package, all_packages);
-    if !children.contains(&base) {
-        return base;
-    }
-    // Only deconflict against a real package collision. Grow against the full
-    // occupied set so the result is unique by construction.
-    let siblings: HashSet<String> = pkg_message_names
-        .get(package)
+/// `message_names` are the package's top-level message names in declaration
+/// order; `children` are the sub-package segment names that share the package's
+/// module scope. Returns one module name per input message, in the same order.
+///
+/// Each name is `snake_case(Name)` unless it collides with a sub-package
+/// segment, in which case `_` is appended until the candidate is unique against:
+/// the sub-package segments, every message's raw module name, the `__buffa`
+/// sentinel, **and every already-assigned deconflicted name**. That last set —
+/// threaded through the shared `taken` set — is what keeps two messages that
+/// would otherwise race to the same slot distinct (e.g. `Oof` and `Oof_`
+/// alongside sub-packages `oof` and `oof_` resolve to `oof__` and `oof___`,
+/// never both to `oof__`). The result is deterministic for a given declaration
+/// order, and the set of names is collision-free regardless of order.
+fn deconflict_package_modules(message_names: &[String], children: &HashSet<String>) -> Vec<String> {
+    let bases: Vec<String> = message_names.iter().map(|n| to_snake_case(n)).collect();
+    // Seed with everything fixed: sub-package segments, the sentinel, and every
+    // message's raw module name. Assigned deconflicted names are added as we go.
+    let mut taken: HashSet<String> = children.clone();
+    taken.insert(SENTINEL_MOD.to_string());
+    taken.extend(bases.iter().cloned());
+    bases
         .into_iter()
-        .flatten()
-        .map(|n| to_snake_case(n))
-        .collect();
-    let mut candidate = format!("{base}_");
-    while children.contains(&candidate)
-        || siblings.contains(&candidate)
-        || candidate == SENTINEL_MOD
-    {
-        candidate.push('_');
-    }
-    candidate
+        .map(|base| {
+            if !children.contains(&base) {
+                return base;
+            }
+            let mut candidate = format!("{base}_");
+            while taken.contains(&candidate) {
+                candidate.push('_');
+            }
+            taken.insert(candidate.clone());
+            candidate
+        })
+        .collect()
 }
 
 impl<'a> CodeGenContext<'a> {
@@ -235,6 +235,23 @@ impl<'a> CodeGenContext<'a> {
             }
         }
 
+        // Resolve the deconflicted nested-types module name for every top-level
+        // message, batched per package so racing deconflictions stay distinct.
+        // Each package is an independent scope, so the populated map is the same
+        // regardless of `pkg_message_names` iteration order.
+        for (package, names) in &pkg_message_names {
+            let children = child_package_segments(package, &all_packages);
+            let modules = deconflict_package_modules(names, &children);
+            for (name, module) in names.iter().zip(modules) {
+                let fqn = if package.is_empty() {
+                    format!(".{name}")
+                } else {
+                    format!(".{package}.{name}")
+                };
+                nested_module_names.insert(fqn, module);
+            }
+        }
+
         for file in files {
             comment_map.extend(crate::comments::fqn_comments(file));
             let package = file.package.as_deref().unwrap_or("");
@@ -276,10 +293,12 @@ impl<'a> CodeGenContext<'a> {
 
                     // Register nested messages using module-qualified paths.
                     // The parent module name is deconflicted against sub-package
-                    // modules (issue #135). Recorded so emission can reuse it.
-                    let snake =
-                        dedup_nested_module(name, package, &all_packages, &pkg_message_names);
-                    nested_module_names.insert(fqn.clone(), snake.clone());
+                    // modules (issue #135), precomputed above and looked up here
+                    // so emission and references share the same value.
+                    let snake = nested_module_names
+                        .get(&fqn)
+                        .cloned()
+                        .unwrap_or_else(|| to_snake_case(name));
                     let parent_mod = if rust_module.is_empty() {
                         snake
                     } else {
@@ -940,6 +959,72 @@ fn register_nested_enum_closedness(
 mod tests {
     use super::*;
     use crate::generated::descriptor::{DescriptorProto, EnumDescriptorProto, FileDescriptorProto};
+
+    fn children(segs: &[&str]) -> HashSet<String> {
+        segs.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn names(ns: &[&str]) -> Vec<String> {
+        ns.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn deconflict_no_collision_keeps_base() {
+        // No sub-package shares a module name → names are unchanged.
+        let out = deconflict_package_modules(&names(&["Oof", "Bar"]), &children(&["other"]));
+        assert_eq!(out, vec!["oof".to_string(), "bar".to_string()]);
+    }
+
+    #[test]
+    fn deconflict_single_collision_appends_underscore() {
+        let out = deconflict_package_modules(&names(&["Oof"]), &children(&["oof"]));
+        assert_eq!(out, vec!["oof_".to_string()]);
+    }
+
+    #[test]
+    fn deconflict_repeated_append_when_underscore_slot_also_taken() {
+        // Sub-packages `oof` AND `oof_` both exist → grow past both.
+        let out = deconflict_package_modules(&names(&["Oof"]), &children(&["oof", "oof_"]));
+        assert_eq!(out, vec!["oof__".to_string()]);
+    }
+
+    #[test]
+    fn deconflict_two_messages_racing_to_same_slot_stay_distinct() {
+        // `Oof` (oof) and `Oof_` (oof_), sub-packages `oof` and `oof_`. Without
+        // the shared `taken` set both would land on `oof__`.
+        let out = deconflict_package_modules(&names(&["Oof", "Oof_"]), &children(&["oof", "oof_"]));
+        assert_eq!(out, vec!["oof__".to_string(), "oof___".to_string()]);
+        // All distinct and clear of the sub-package modules.
+        let set: HashSet<&String> = out.iter().collect();
+        assert_eq!(set.len(), out.len());
+        assert!(!out.contains(&"oof".to_string()) && !out.contains(&"oof_".to_string()));
+    }
+
+    #[test]
+    fn deconflict_avoids_other_messages_raw_base() {
+        // `Oof` collides with sub-package `oof`; its `oof_` candidate must also
+        // avoid the raw module of a sibling message `Oof_`.
+        let out = deconflict_package_modules(&names(&["Oof", "Oof_"]), &children(&["oof"]));
+        // Oof -> oof_ is taken by Oof_'s raw base, so Oof -> oof__; Oof_ stays.
+        assert_eq!(out, vec!["oof__".to_string(), "oof_".to_string()]);
+    }
+
+    #[test]
+    fn deconflict_never_yields_the_sentinel() {
+        let out = deconflict_package_modules(&names(&["Buffa"]), &children(&["__buffa", "buffa"]));
+        // base `buffa` collides; `buffa_` is free, so it is chosen (not __buffa).
+        assert_eq!(out, vec!["buffa_".to_string()]);
+        assert_ne!(out[0], SENTINEL_MOD);
+    }
+
+    #[test]
+    fn child_package_segments_extracts_immediate_segment() {
+        let pkgs = children(&["foo", "foo.oof", "foo.bar.baz", "foobar"]);
+        let mut got: Vec<String> = child_package_segments("foo", &pkgs).into_iter().collect();
+        got.sort();
+        // `foo.oof` -> oof, `foo.bar.baz` -> bar; `foobar` is not a sub-package.
+        assert_eq!(got, vec!["bar".to_string(), "oof".to_string()]);
+    }
 
     fn make_file(
         name: &str,
