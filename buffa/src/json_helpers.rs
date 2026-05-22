@@ -334,31 +334,56 @@ pub mod proto_bool {
 ///
 /// Use with `#[serde(with = "::buffa::json_helpers::proto_string")]`.
 pub mod proto_string {
-    use alloc::string::ToString;
     use serde::{Deserializer, Serializer};
 
-    pub fn serialize<S: Serializer>(value: &str, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(value)
+    /// Serialize a `string` field.
+    ///
+    /// Generic over `T: AsRef<str>` so configurable string types
+    /// (`smol_str::SmolStr`, `ecow::EcoString`, ...) serialize without relying
+    /// on `Deref<Target = str>` coercion at the `#[serde(with = ...)]` call
+    /// site. `String` and `&str` both satisfy the bound.
+    pub fn serialize<T: AsRef<str> + ?Sized, S: Serializer>(
+        value: &T,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        s.serialize_str(value.as_ref())
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<alloc::string::String, D::Error> {
-        struct V;
-        impl<'de> serde::de::Visitor<'de> for V {
-            type Value = alloc::string::String;
+    /// Deserialize a `string` field (or JSON `null` → `""`).
+    ///
+    /// Generic over the return type so that codegen's `string_type` knob (which
+    /// can map the field to `smol_str::SmolStr`, `ecow::EcoString`, etc.) works
+    /// without a per-type shim. The visitor constructs the target type directly:
+    /// `visit_str` goes through `From<&str>`, so a short string is inlined by an
+    /// SSO type without first allocating an intermediate `String`. `String`
+    /// itself satisfies both `From<&str>` and `From<String>`, keeping the
+    /// default path zero-extra-cost. Type inference picks `T` from the field
+    /// type at the serde call site.
+    pub fn deserialize<'de, T, D>(d: D) -> Result<T, D::Error>
+    where
+        T: for<'a> From<&'a str> + From<alloc::string::String>,
+        D: Deserializer<'de>,
+    {
+        struct V<T>(core::marker::PhantomData<T>);
+        impl<'de, T> serde::de::Visitor<'de> for V<T>
+        where
+            T: for<'a> From<&'a str> + From<alloc::string::String>,
+        {
+            type Value = T;
             fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 f.write_str("a string or null")
             }
-            fn visit_unit<E>(self) -> Result<alloc::string::String, E> {
-                Ok(alloc::string::String::new())
+            fn visit_unit<E>(self) -> Result<T, E> {
+                Ok(T::from(""))
             }
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<alloc::string::String, E> {
-                Ok(v.to_string())
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<T, E> {
+                Ok(T::from(v))
             }
-            fn visit_string<E>(self, v: alloc::string::String) -> Result<alloc::string::String, E> {
-                Ok(v)
+            fn visit_string<E>(self, v: alloc::string::String) -> Result<T, E> {
+                Ok(T::from(v))
             }
         }
-        d.deserialize_any(V)
+        d.deserialize_any(V::<T>(core::marker::PhantomData))
     }
 }
 
@@ -1131,6 +1156,17 @@ proto_elem_json_delegate!(f64, double);
 proto_elem_json_delegate!(bool, proto_bool);
 proto_elem_json_delegate!(alloc::string::String, proto_string);
 proto_elem_json_delegate!(alloc::vec::Vec<u8>, bytes);
+
+// Configurable `string` field representations (codegen's `string_type()`), for
+// `repeated string` / `map<_, string>`. The `proto_string` with-module is
+// generic — `serialize` over `AsRef<str>`, `deserialize` over `From<String>` —
+// so each delegate is a one-liner with no per-type shim.
+#[cfg(feature = "smol_str")]
+proto_elem_json_delegate!(::smol_str::SmolStr, proto_string);
+#[cfg(feature = "ecow")]
+proto_elem_json_delegate!(::ecow::EcoString, proto_string);
+#[cfg(feature = "compact_str")]
+proto_elem_json_delegate!(::compact_str::CompactString, proto_string);
 
 // bytes::Bytes — for codegen's `use_bytes_type()` with `repeated bytes`.
 // Serialize: `Bytes: Deref<Target=[u8]>` → `bytes::serialize(&[u8], s)`.

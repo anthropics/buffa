@@ -73,6 +73,16 @@
 //! | `json` |  | Proto3 JSON via `serde` (the `json_helpers` and `any_registry` modules) |
 //! | `text` |  | Textproto (human-readable) encoding and decoding |
 //! | `arbitrary` |  | `arbitrary::Arbitrary` impls for fuzzing |
+//! | `smol_str` |  | Allow generated `string` fields to use `smol_str::SmolStr` (see [`ProtoString`]) |
+//! | `ecow` |  | Allow generated `string` fields to use `ecow::EcoString` (see [`ProtoString`]) |
+//! | `compact_str` |  | Allow generated `string` fields to use `compact_str::CompactString` (see [`ProtoString`]) |
+//!
+//! The three string-type flags compose with `json` and `arbitrary`: enabling,
+//! for example, both `smol_str` and `json` turns on `smol_str/serde`, and
+//! `smol_str` + `arbitrary` turns on `smol_str/arbitrary`. `ecow` has no native
+//! `Arbitrary` impl, so `ecow` + `arbitrary` is served by an in-crate shim
+//! instead. None of the three is selected by generated code until a build is
+//! configured to use it (see [`ProtoString`]).
 //!
 //! With `default-features = false` the crate is `#![no_std]` (requires
 //! `alloc`). Proto3 JSON serialization still works without `std` via
@@ -133,6 +143,21 @@ pub use ::bytes;
 #[cfg(feature = "json")]
 #[doc(hidden)]
 pub use ::serde_json;
+
+// Configurable `string` field representations. Re-exported so that code
+// generated with `buffa_build`'s `string_type` knob can name
+// `::buffa::smol_str::SmolStr` (etc.) without the consumer crate declaring the
+// dependency — the same arrangement as `bytes` above. Each is gated on the
+// matching `buffa` feature.
+#[cfg(feature = "compact_str")]
+#[doc(hidden)]
+pub use ::compact_str;
+#[cfg(feature = "ecow")]
+#[doc(hidden)]
+pub use ::ecow;
+#[cfg(feature = "smol_str")]
+#[doc(hidden)]
+pub use ::smol_str;
 
 /// Include the generated stitcher for a proto **package** from `OUT_DIR`.
 ///
@@ -218,6 +243,7 @@ pub use message::{DecodeOptions, Message, MessageName, RECURSION_LIMIT};
 pub use message_field::{DefaultInstance, MessageField};
 pub use oneof::Oneof;
 pub use size_cache::SizeCache;
+pub use types::ProtoString;
 pub use unknown_fields::{UnknownField, UnknownFieldData, UnknownFields};
 
 #[cfg(feature = "text")]
@@ -287,6 +313,43 @@ pub mod __private {
         let vv: ::alloc::vec::Vec<::alloc::vec::Vec<u8>> = ::arbitrary::Arbitrary::arbitrary(u)?;
         Ok(vv.into_iter().map(::bytes::Bytes::from).collect())
     }
+
+    /// `arbitrary` helpers for `ecow::EcoString` string fields.
+    ///
+    /// Unlike `smol_str::SmolStr` and `compact_str::CompactString`, `EcoString`
+    /// ships no `Arbitrary` impl, so codegen attaches
+    /// `#[arbitrary(with = ::buffa::__private::arbitrary_ecow*)]` to
+    /// `EcoString`-typed string fields (the same pattern used for
+    /// `bytes::Bytes`). The three variants cover singular, optional, and
+    /// repeated fields; oneof variant inner fields use `arbitrary_ecow`.
+    #[cfg(all(feature = "ecow", feature = "arbitrary"))]
+    pub fn arbitrary_ecow(
+        u: &mut ::arbitrary::Unstructured<'_>,
+    ) -> ::arbitrary::Result<::ecow::EcoString> {
+        let s: ::alloc::string::String = ::arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(::ecow::EcoString::from(s))
+    }
+
+    #[cfg(all(feature = "ecow", feature = "arbitrary"))]
+    pub fn arbitrary_ecow_opt(
+        u: &mut ::arbitrary::Unstructured<'_>,
+    ) -> ::arbitrary::Result<::core::option::Option<::ecow::EcoString>> {
+        let opt: ::core::option::Option<::alloc::string::String> =
+            ::arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(opt.map(::ecow::EcoString::from))
+    }
+
+    #[cfg(all(feature = "ecow", feature = "arbitrary"))]
+    pub fn arbitrary_ecow_vec(
+        u: &mut ::arbitrary::Unstructured<'_>,
+    ) -> ::arbitrary::Result<::alloc::vec::Vec<::ecow::EcoString>> {
+        // Materializing a `Vec<String>` first (rather than building `EcoString`s
+        // element-by-element) is deliberate: it makes the byte-consumption order
+        // identical to the underlying `Vec<String>` impl, which is what the
+        // parity test asserts. Do not "optimize" the intermediate `Vec` away.
+        let vv: ::alloc::vec::Vec<::alloc::string::String> = ::arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(vv.into_iter().map(::ecow::EcoString::from).collect())
+    }
 }
 
 #[cfg(all(test, feature = "arbitrary"))]
@@ -340,6 +403,32 @@ mod arbitrary_tests {
         assert_eq!(bs.len(), vs.len());
         for (b, v) in bs.iter().zip(&vs) {
             assert_eq!(b.slice(..).as_ref(), v.as_slice());
+        }
+    }
+
+    // The `EcoString` arbitrary shims must mirror the underlying `String` /
+    // `Option<String>` / `Vec<String>` impls, since `ecow` ships no native
+    // `Arbitrary`. The other two configurable string types use their own
+    // native impls and need no shim.
+    #[cfg(feature = "ecow")]
+    #[test]
+    fn arbitrary_ecow_matches_string() {
+        use super::__private::{arbitrary_ecow, arbitrary_ecow_opt, arbitrary_ecow_vec};
+        use alloc::string::String;
+
+        let s = arbitrary_ecow(&mut Unstructured::new(&SEED)).unwrap();
+        let v: String = Arbitrary::arbitrary(&mut Unstructured::new(&SEED)).unwrap();
+        assert_eq!(s.as_str(), v.as_str());
+
+        let so = arbitrary_ecow_opt(&mut Unstructured::new(&SEED)).unwrap();
+        let vo: Option<String> = Arbitrary::arbitrary(&mut Unstructured::new(&SEED)).unwrap();
+        assert_eq!(so.as_ref().map(|x| x.as_str()), vo.as_deref());
+
+        let sv = arbitrary_ecow_vec(&mut Unstructured::new(&SEED)).unwrap();
+        let vv: Vec<String> = Arbitrary::arbitrary(&mut Unstructured::new(&SEED)).unwrap();
+        assert_eq!(sv.len(), vv.len());
+        for (a, b) in sv.iter().zip(&vv) {
+            assert_eq!(a.as_str(), b.as_str());
         }
     }
 }

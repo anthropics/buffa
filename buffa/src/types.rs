@@ -447,6 +447,87 @@ pub fn string_encoded_len(value: &str) -> usize {
     varint_len(len as u64) + len
 }
 
+/// The bound generated code places on the Rust type used for a proto `string`
+/// field. You neither implement nor name this trait by hand — a blanket impl
+/// covers every conforming type, and a forthcoming `string_type` knob in
+/// `buffa_build` selects the concrete type at code-generation time.
+///
+/// buffa generates [`String`] by default. The knob will be able to substitute a
+/// small-string-optimized type — such as `smol_str::SmolStr`,
+/// `ecow::EcoString`, or `compact_str::CompactString` (each behind the matching
+/// `buffa` feature) — for read-mostly schemas where `String`'s growable buffer
+/// is unnecessary.
+///
+/// The bounds are exactly what generated code requires of a string field:
+///
+/// - `Clone + PartialEq + Default + Debug` — for the `#[derive(...)]` and the
+///   hand-written `Debug` impl on message structs, and for `clear()` (which
+///   resets the field to [`Default`] rather than relying on a `String`-specific
+///   `clear`, since the small-string types may be immutable).
+/// - `Send + Sync` — so a message owning such a field stays `Send + Sync`;
+///   without this bound an exotic string type could silently make every
+///   containing message thread-unsafe.
+/// - [`AsRef<str>`] — the encoder borrows the field as `&str`;
+///   [`encode_string`] and [`string_encoded_len`] take `&str`.
+/// - `From<String>` and `From<&str>` — used by the decode path
+///   ([`decode_string_to`]) and (once the knob lands) the view→owned conversion
+///   to construct the field from freshly decoded text.
+///
+/// For the default `String` representation every conversion is the identity, so
+/// the generic path costs nothing relative to the specialized one.
+pub trait ProtoString:
+    Clone
+    + PartialEq
+    + Default
+    + core::fmt::Debug
+    + Send
+    + Sync
+    + AsRef<str>
+    + From<String>
+    + for<'a> From<&'a str>
+{
+}
+
+impl<T> ProtoString for T where
+    T: Clone
+        + PartialEq
+        + Default
+        + core::fmt::Debug
+        + Send
+        + Sync
+        + AsRef<str>
+        + From<String>
+        + for<'a> From<&'a str>
+{
+}
+
+// The default representation must always satisfy the bound; freeze that
+// invariant against future changes to the trait's supertraits.
+const _: fn() = || {
+    fn assert_proto_string<S: ProtoString>() {}
+    assert_proto_string::<String>();
+};
+
+/// Decode a length-delimited `string` into a configurable [`ProtoString`] type.
+///
+/// This is the generic counterpart to [`decode_string`]: it reads the varint
+/// length prefix, copies that many bytes, and validates UTF-8 identically, then
+/// constructs the target representation via `From<String>`. Generated code uses
+/// the in-place [`merge_string`] for `String` fields (which reuses the existing
+/// allocation) and this helper for every other [`ProtoString`] type.
+///
+/// # Errors
+///
+/// Propagates the same errors as [`decode_string`]:
+/// - [`DecodeError::UnexpectedEof`] if the buffer is shorter than the declared
+///   length.
+/// - [`DecodeError::MessageTooLarge`] if the declared length overflows `usize`.
+/// - [`DecodeError::InvalidUtf8`] if the bytes are not valid UTF-8.
+#[inline]
+pub fn decode_string_to<S: ProtoString>(buf: &mut impl Buf) -> Result<S, DecodeError> {
+    decode_string(buf).map(S::from)
+}
+
 /// Encode a `bytes` value as a varint length prefix followed by raw bytes
 /// (wire type 2).
 #[inline]
@@ -1257,6 +1338,84 @@ mod tests {
         assert_eq!(string_encoded_len(""), 1);
         let decoded = decode_string(&mut buf.as_slice()).unwrap();
         assert_eq!(decoded, "");
+    }
+
+    #[test]
+    fn test_decode_string_to_roundtrip() {
+        // `decode_string_to::<S>` must decode identically to `decode_string`
+        // for any `ProtoString` type; `String` exercises the identity path.
+        for s in ["", "hello", "héllo", "世界", "a".repeat(128).as_str()] {
+            let mut buf = Vec::new();
+            encode_string(s, &mut buf);
+            let decoded: String = decode_string_to(&mut buf.as_slice()).unwrap();
+            assert_eq!(s, decoded);
+        }
+    }
+
+    #[test]
+    fn test_decode_string_to_propagates_errors() {
+        // Invalid UTF-8 surfaces before the `From<String>` conversion.
+        let bad: &[u8] = &[0x02, 0xFF, 0xFE];
+        assert_eq!(
+            decode_string_to::<String>(&mut &bad[..]),
+            Err(DecodeError::InvalidUtf8)
+        );
+        // Truncated payload is reported as EOF.
+        let short: &[u8] = &[0x04, 0x61, 0x62];
+        assert_eq!(
+            decode_string_to::<String>(&mut &short[..]),
+            Err(DecodeError::UnexpectedEof)
+        );
+    }
+
+    /// Every configurable string representation must decode identically to
+    /// `String` via the shared `decode_string_to` / `ProtoString` path. The
+    /// inputs straddle the small-string-optimization inline boundary so both
+    /// the inline and heap representations are exercised.
+    #[cfg(feature = "smol_str")]
+    #[test]
+    fn test_decode_string_to_smol_str() {
+        // Lengths straddle the inline caps of all three SSO types (ecow ~15,
+        // smol_str 23, compact_str 24 bytes on 64-bit) plus a clearly-heap case.
+        for n in [0usize, 13, 14, 15, 22, 23, 24, 25, 64] {
+            let owned = "a".repeat(n);
+            let s = owned.as_str();
+            let mut buf = Vec::new();
+            encode_string(s, &mut buf);
+            let decoded: smol_str::SmolStr = decode_string_to(&mut buf.as_slice()).unwrap();
+            assert_eq!(decoded.as_str(), s);
+        }
+    }
+
+    #[cfg(feature = "ecow")]
+    #[test]
+    fn test_decode_string_to_ecow() {
+        // Lengths straddle the inline caps of all three SSO types (ecow ~15,
+        // smol_str 23, compact_str 24 bytes on 64-bit) plus a clearly-heap case.
+        for n in [0usize, 13, 14, 15, 22, 23, 24, 25, 64] {
+            let owned = "a".repeat(n);
+            let s = owned.as_str();
+            let mut buf = Vec::new();
+            encode_string(s, &mut buf);
+            let decoded: ecow::EcoString = decode_string_to(&mut buf.as_slice()).unwrap();
+            assert_eq!(decoded.as_str(), s);
+        }
+    }
+
+    #[cfg(feature = "compact_str")]
+    #[test]
+    fn test_decode_string_to_compact_str() {
+        // Lengths straddle the inline caps of all three SSO types (ecow ~15,
+        // smol_str 23, compact_str 24 bytes on 64-bit) plus a clearly-heap case.
+        for n in [0usize, 13, 14, 15, 22, 23, 24, 25, 64] {
+            let owned = "a".repeat(n);
+            let s = owned.as_str();
+            let mut buf = Vec::new();
+            encode_string(s, &mut buf);
+            let decoded: compact_str::CompactString =
+                decode_string_to(&mut buf.as_slice()).unwrap();
+            assert_eq!(decoded.as_str(), s);
+        }
     }
 
     #[test]
