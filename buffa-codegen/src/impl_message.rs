@@ -887,9 +887,14 @@ fn scalar_clear_stmt(
 
     // If the field has a custom default value (proto2), use it instead of
     // the type's zero value so that clear() matches Default::default().
-    if let Some(default_expr) =
-        crate::defaults::parse_default_value(field, ctx, current_package, features, nesting)?
-    {
+    if let Some(default_expr) = crate::defaults::parse_default_value(
+        field,
+        ctx,
+        current_package,
+        features,
+        nesting,
+        field_string_repr(ctx, proto_fqn, field_name),
+    )? {
         return Ok(quote! { self.#ident = #default_expr; });
     }
 

@@ -23,6 +23,7 @@ pub fn parse_default_value(
     current_package: &str,
     features: &ResolvedFeatures,
     nesting: usize,
+    string_repr: crate::StringRepr,
 ) -> Result<Option<TokenStream>, CodeGenError> {
     use crate::generated::descriptor::field_descriptor_proto::Type;
 
@@ -90,8 +91,15 @@ pub fn parse_default_value(
             // the proto source literal is valid UTF-8 by definition.
             if crate::impl_message::effective_type(ctx, field, features) == Type::TYPE_BYTES {
                 quote! { ::buffa::alloc::string::String::from(#default_str).into_bytes() }
-            } else {
+            } else if string_repr.is_default() {
                 quote! { ::buffa::alloc::string::String::from(#default_str) }
+            } else {
+                // Non-default string types: convert via From<String>. The
+                // surrounding context (Default initializer / clear assignment)
+                // pins the target type, so `Into::into` infers it.
+                quote! {
+                    ::core::convert::Into::into(::buffa::alloc::string::String::from(#default_str))
+                }
             }
         }
         Type::TYPE_BYTES => {

@@ -259,6 +259,22 @@ pub mod string_types {
     ));
 }
 
+// proto2 `[default = "..."]` + string_type. Compiling this verifies the
+// generated Default impl and clear() build the literal via the configured
+// repr's From<String>.
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod string_proto2 {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/string_proto2_variant/stringproto2.mod.rs"
+    ));
+}
+
 // Views + preserve_unknown_fields=false: covers the else-branches in view
 // codegen that omit the unknown-fields view field. Compilation IS the test.
 #[allow(

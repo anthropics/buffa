@@ -181,20 +181,29 @@ pub enum GeneratedFileKind {
 /// Select a representation through `buffa_build`'s `string_type` /
 /// `string_type_in` builder methods. The wire format is identical regardless of
 /// representation — only the in-memory owned type changes; view types keep
-/// borrowing `&str`.
+/// borrowing `&str`, and `map<_, string>` / `map<string, _>` keys and values
+/// always stay `String`.
+///
+/// Sizes below are for 64-bit targets. See the buffa README for a fuller
+/// comparison of the small-string crates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum StringRepr {
-    /// `::buffa::alloc::string::String` (the default).
+    /// `::buffa::alloc::string::String` — 24-byte struct, growable and mutable
+    /// (the default).
     #[default]
     String,
-    /// `smol_str::SmolStr` — inline storage for short strings, `O(1)` clone of
-    /// long strings via `Arc<str>`. Requires the `buffa/smol_str` feature.
+    /// `smol_str::SmolStr` — 24-byte struct, inlines up to 23 bytes, `O(1)`
+    /// clone of long strings via `Arc<str>`. **Immutable** (assign a new value
+    /// to mutate). Requires the `buffa/smol_str` feature.
     SmolStr,
-    /// `ecow::EcoString` — 16-byte footprint, clone-on-write with `O(1)` clone.
+    /// `ecow::EcoString` — 16-byte struct, inlines up to 15 bytes, clone-on-write
+    /// with `O(1)` clone. **Immutable** (assign a new value to mutate).
     /// Requires the `buffa/ecow` feature.
     EcoString,
-    /// `compact_str::CompactString` — mutable, inline storage up to 24 bytes.
-    /// Requires the `buffa/compact_str` feature.
+    /// `compact_str::CompactString` — 24-byte struct, inlines up to 24 bytes,
+    /// mutable (a drop-in `String` replacement). Requires the
+    /// `buffa/compact_str` feature.
     CompactString,
 }
 
@@ -283,6 +292,10 @@ pub struct CodeGenConfig {
     /// (`".my.pkg.Msg.field"` → `CompactString`). Fields matching no rule use
     /// `String`. The path is matched with the same proto-segment-aware prefix
     /// logic as [`bytes_fields`](Self::bytes_fields).
+    ///
+    /// Applies to singular, optional, and repeated `string` fields and oneof
+    /// `string` variants. Map keys and values always stay `String`, mirroring
+    /// the bytes path (where map values always stay `Vec<u8>`).
     pub string_fields: Vec<(String, StringRepr)>,
     /// Honor `features.utf8_validation = NONE` by emitting `Vec<u8>` / `&[u8]`
     /// for such string fields instead of `String` / `&str`.

@@ -442,24 +442,32 @@ impl Config {
     }
 
     /// Map `string` fields to a [`StringRepr`] other than `String` for the
-    /// given proto path prefixes.
+    /// given proto path prefixes. The string counterpart to
+    /// [`use_bytes_type_in`](Self::use_bytes_type_in).
     ///
     /// Each path is a fully-qualified proto path prefix (e.g.
     /// `".my.pkg.MyMessage.name"` for one field, `".my.pkg"` for a package).
-    /// Rules accumulate and the **last** matching rule wins, so a broad
-    /// `string_type` can be refined by a later `string_type_in`. The selected
-    /// type's `buffa` feature (`smol_str`, `ecow`, or `compact_str`) must be
-    /// enabled by the downstream crate.
     ///
-    /// The wire format is unchanged; only the owned Rust type differs (view
-    /// types still borrow `&str`).
+    /// Rules accumulate and the **last** matching rule wins. Order therefore
+    /// matters: call [`string_type`](Self::string_type) (the broad default)
+    /// *first*, then `string_type_in` for narrower overrides — a broad rule
+    /// added after a specific one will shadow it.
+    ///
+    /// The downstream crate must enable the selected type's `buffa` feature
+    /// (`smol_str`, `ecow`, or `compact_str`); otherwise the generated
+    /// `::buffa::<crate>::<Type>` references fail to resolve.
+    ///
+    /// Only the owned Rust type changes: the wire format is unchanged, view
+    /// types still borrow `&str`, and `map<_, string>` keys and values stay
+    /// `String`.
     ///
     /// # Example
     ///
     /// ```rust,ignore
     /// use buffa_build::StringRepr;
     /// buffa_build::Config::new()
-    ///     .string_type_in(StringRepr::SmolStr, &[".my.pkg"])
+    ///     .string_type(StringRepr::SmolStr)                          // broad default first
+    ///     .string_type_in(StringRepr::CompactString, &[".my.pkg.Msg.body"]) // narrow override
     ///     .files(&["proto/my_service.proto"])
     ///     .includes(&["proto/"])
     ///     .compile()
@@ -475,9 +483,11 @@ impl Config {
 
     /// Map every `string` field in all messages to the given [`StringRepr`].
     ///
-    /// Convenience for `.string_type_in(repr, &["."])`. Use
-    /// [`string_type_in`](Self::string_type_in) to target specific paths, or to
-    /// override this default for a subset (later rules win).
+    /// Convenience for `.string_type_in(repr, &["."])`. Call this *before* any
+    /// [`string_type_in`](Self::string_type_in) overrides, since the last
+    /// matching rule wins (a `"."` rule added later shadows earlier specific
+    /// rules). `map<_, string>` keys and values stay `String`, and the
+    /// downstream crate must enable the selected type's `buffa` feature.
     #[must_use]
     pub fn string_type(mut self, repr: StringRepr) -> Self {
         self.codegen_config

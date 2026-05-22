@@ -24,6 +24,11 @@ fn test_string_type_field_types_are_configured() {
     let _: &::buffa::ecow::EcoString = &m.eco;
     // Map keys/values are unaffected — always String.
     let _: &std::collections::HashMap<String, String> = &m.by_key;
+    // The oneof string variant payload must also honor the configured repr.
+    let _: ::buffa::smol_str::SmolStr = match Choice::Named("x".into()) {
+        Choice::Named(s) => s,
+        Choice::Count(_) => unreachable!(),
+    };
 }
 
 fn sample() -> StringContexts {
@@ -107,6 +112,40 @@ fn test_string_type_json_roundtrip() {
     assert!(json.contains(r#""named":"chosen""#), "{json}");
     let back: StringContexts = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(back, msg);
+}
+
+#[test]
+fn test_string_type_text_roundtrip() {
+    // generate_text(true) is enabled for this module; the text decoder builds
+    // each configured string type via From<String> rather than a bare String.
+    let msg = sample();
+    let text = buffa::text::encode_to_string(&msg);
+    let back: StringContexts = buffa::text::decode_from_str(&text).expect("parse text");
+    assert_eq!(back, msg);
+    assert_eq!(back.singular.as_str(), "hello");
+    assert_eq!(back.eco.as_str(), "eco-value");
+    match &back.choice {
+        Some(Choice::Named(s)) => assert_eq!(s.as_str(), "chosen"),
+        other => panic!("expected Choice::Named, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_string_type_proto2_default() {
+    // proto2 `[default = "anonymous"]` on a required (bare) string field, with
+    // string_type(SmolStr): both Default and clear() must yield the literal as
+    // a SmolStr, not a String.
+    use crate::string_proto2::Defaults;
+    let d = Defaults::default();
+    assert_eq!(d.name.as_str(), "anonymous");
+    let _: ::buffa::smol_str::SmolStr = d.name.clone();
+
+    let mut m = Defaults {
+        name: "custom".into(),
+        ..Default::default()
+    };
+    m.clear();
+    assert_eq!(m.name.as_str(), "anonymous", "clear() restores the default");
 }
 
 #[test]

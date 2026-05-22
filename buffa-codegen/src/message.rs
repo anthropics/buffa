@@ -544,8 +544,15 @@ fn generate_message_with_nesting(
 
     // Check if any non-optional field has a custom default value, which
     // requires a hand-written `impl Default` instead of `#[derive(Default)]`.
-    let custom_default_impl =
-        generate_custom_default(ctx, msg, &name_ident, current_package, features, nesting)?;
+    let custom_default_impl = generate_custom_default(
+        ctx,
+        msg,
+        &name_ident,
+        current_package,
+        proto_fqn,
+        features,
+        nesting,
+    )?;
     let derive_default = if custom_default_impl.is_some() {
         quote! {}
     } else {
@@ -1234,10 +1241,17 @@ fn custom_deser_oneof_group(
         // return type, which pins the generic T in json_helpers::bytes::
         // deserialize to Bytes (vs the Vec<u8> default). No downstream
         // shim needed — the helper is generic over T: From<Vec<u8>>.
+        let variant_string_repr = if field_type == Type::TYPE_STRING {
+            crate::impl_message::field_string_repr(ctx, proto_fqn, proto_name)
+        } else {
+            crate::StringRepr::String
+        };
         let variant_type = if field_type == Type::TYPE_BYTES
             && crate::impl_message::field_uses_bytes(ctx, proto_fqn, proto_name)
         {
             quote! { ::buffa::bytes::Bytes }
+        } else if field_type == Type::TYPE_STRING && !variant_string_repr.is_default() {
+            variant_string_repr.type_path(resolver)
         } else {
             scalar_or_message_type_nested(ctx, field, current_package, nesting, features, resolver)?
         };
@@ -2145,6 +2159,7 @@ fn generate_custom_default(
     msg: &DescriptorProto,
     name_ident: &Ident,
     current_package: &str,
+    proto_fqn: &str,
     features: &ResolvedFeatures,
     nesting: usize,
 ) -> Result<Option<TokenStream>, CodeGenError> {
@@ -2209,7 +2224,14 @@ fn generate_custom_default(
             continue;
         }
 
-        if let Some(expr) = parse_default_value(field, ctx, current_package, features, nesting)? {
+        if let Some(expr) = parse_default_value(
+            field,
+            ctx,
+            current_package,
+            features,
+            nesting,
+            crate::impl_message::field_string_repr(ctx, proto_fqn, field_name),
+        )? {
             field_inits.push(quote! { #field_ident: #expr, });
         } else {
             field_inits.push(quote! { #field_ident: ::core::default::Default::default(), });

@@ -202,9 +202,24 @@ fn main() {
         )
         .generate_json(true)
         .generate_arbitrary(true)
+        .generate_text(true)
         .out_dir(string_out)
         .compile()
         .expect("buffa_build failed for string_types.proto with string_type");
+
+    // proto2 `[default = "..."]` + string_type: a required string field is a
+    // bare type, so its Default impl and clear() must build the literal via the
+    // configured repr's From<String>, not String::from.
+    let string_p2_out =
+        std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("string_proto2_variant");
+    std::fs::create_dir_all(&string_p2_out).expect("create string_proto2_variant dir");
+    buffa_build::Config::new()
+        .files(&["protos/string_proto2.proto"])
+        .includes(&["protos/"])
+        .string_type(buffa_build::StringRepr::SmolStr)
+        .out_dir(string_p2_out)
+        .compile()
+        .expect("buffa_build failed for string_proto2.proto with string_type");
 
     // Regression #88: bytes_fields + generate_arbitrary(true).
     // BytesContexts in basic.proto has singular, optional, repeated, and oneof
