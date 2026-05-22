@@ -1,10 +1,24 @@
 # Vtable-mode `ReflectMessage` for message views
 
-**Status:** Recommendation / pre-implementation analysis
+**Status:** Pre-implementation analysis, partially landed
 **Builds on:** `reflect-prototype` branch (`docs/investigations/reflection-prototype-2026-05.md`)
 **Scope:** Generate `impl ReflectMessage` directly on view types (and optionally
 owned types), eliminating the bridge-mode encode → decode → `DynamicMessage`
 round-trip. This is the deferred `ReflectMode::VTable` deliverable.
+
+## Progress
+
+- **2026-05-22** — Component 3 (the `ValueRef::List`/`Map` trait-object
+  refactor) has **landed.** This was flagged below as the only component with
+  real design risk and the reason vtable mode was deferred. `ValueRef` now
+  carries `List(&'a dyn ReflectList)` and `Map(&'a dyn ReflectMap)`, the
+  `ReflectList` / `ReflectMap` traits exist (with the no-alloc `get_str` CEL
+  path), `DynamicMessage` implements them for `Vec<Value>` / `MapValue`, and
+  conformance passes with the new shape. The API-breaking, conformance-gated
+  refactor that would have been painful to do after a release is therefore
+  behind us. Everything that remains is additive codegen and additive runtime
+  trait impls — no consumer-facing breaking change. See the revised §3 and the
+  revised sequencing for what this means for the remaining work.
 
 ## Why
 
@@ -75,8 +89,10 @@ impl<'a> ::buffa_descriptor::reflect::ReflectMessage for FooView<'a> {
                     .unwrap_or(WorkloadView::default_view_instance()),
             )),
 
-            // repeated/map — see component 3 (this is the open design decision)
-            7 => /* ValueRef::List(...) — see §3 */,
+            // repeated/map — just borrow the view container; the blanket
+            // ReflectList/ReflectMap impls (§3) do the rest. No per-field codegen.
+            7 => ValueRef::List(&self.tags),
+            8 => ValueRef::Map(&self.labels),
 
             _ => {
                 debug_assert!(false, "field {} not in {}", field.number(), Self::FULL_NAME);
@@ -170,30 +186,15 @@ populated once when the pool is built. One lock instead of N, but adds a
 `HashMap` lookup per call. The per-message `OnceLock` is faster after warmup
 and keeps the per-message codegen self-contained. Prefer per-message.
 
-### 3. `ValueRef::List` and `ValueRef::Map` — open design decision
+### 3. `ValueRef::List` and `ValueRef::Map` — RESOLVED (landed)
 
-**This is the reason vtable mode was deferred and the only component with
-real design risk. It needs a decision before 0.7.0 ships.**
+**This was the reason vtable mode was deferred and the only component with
+real design risk. It has been resolved: option (a) below was adopted and has
+landed.** The remaining text records the decision and the runtime that shipped,
+and then specifies the *view-side* container impls that the vtable codegen
+needs — which were not part of the landed change.
 
-The current variants require materialized storage:
-
-```rust
-pub enum ValueRef<'a> {
-    // ...
-    List(&'a [Value]),
-    Map(&'a MapValue),
-}
-```
-
-`DynamicMessage` stores repeated/map fields as `Value::List(Vec<Value>)` and
-`Value::Map(MapValue)` already, so it can return a slice/borrow.
-
-A view holds `RepeatedView<'a, T>` (a `Vec<T>` where `T` is the per-element
-view type — `&'a str`, `i32`, `BarView<'a>`, etc.) and `MapView<'a, K, V>`.
-**There is no `&[Value]` to hand out.** A vtable `get()` would have to allocate
-a `Vec<Value>` and find somewhere to store it so the borrow outlives the call.
-
-#### Option (a) — change to trait objects (recommended)
+`ValueRef` now carries trait objects rather than materialized storage:
 
 ```rust
 pub enum ValueRef<'a> {
@@ -202,77 +203,128 @@ pub enum ValueRef<'a> {
     Map(&'a dyn ReflectMap),
 }
 
-pub trait ReflectList {
+pub trait ReflectList: core::fmt::Debug {
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool { self.len() == 0 }
     fn get(&self, idx: usize) -> Option<ValueRef<'_>>;
     fn for_each(&self, f: &mut dyn FnMut(ValueRef<'_>));
 }
 
-pub trait ReflectMap {
+pub trait ReflectMap: core::fmt::Debug {
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool { self.len() == 0 }
     fn get(&self, key: &MapKey) -> Option<ValueRef<'_>>;
-    /// Visit entries. Iteration order is unspecified — callers must not
-    /// depend on it (matches DynamicMessage and protobuf semantics).
-    fn for_each(&self, f: &mut dyn FnMut(ValueRef<'_>, ValueRef<'_>));
+    fn get_str(&self, key: &str) -> Option<ValueRef<'_>>; // no-alloc CEL path
+    fn for_each(&self, f: &mut dyn FnMut(MapKeyRef<'_>, ValueRef<'_>));
 }
 ```
 
-`Vec<Value>` and `MapValue` impl these trivially (`Value::as_ref()` already
-exists). `RepeatedView<'a, T>` and `MapView<'a, K, V>` impl them per element
-type — codegen emits these or a small set of generic impls covers the scalar
-cases. This is structurally symmetric with the existing
-`ReflectCow::Borrowed(&dyn ReflectMessage)` pattern, which is already accepted
-in the design.
+Bridge mode implements `ReflectList for Vec<Value>` and `ReflectMap for
+MapValue`, so `DynamicMessage` returns a borrow with one extra vtable
+indirection per element access. The `size_of::<ValueRef>() <= 32` and
+`size_of::<ReflectCow>() <= 24` assertions in `value.rs` still hold: a
+`&dyn ReflectList` is a 16-byte fat pointer, the same width the old `&[Value]`
+would have been. Conformance passes with this shape (the bridge tests in
+`buffa-test/tests/reflect_bridge.rs` exercise `List`/`Map`/`get_str`).
 
-Size: `&dyn ReflectList` is a 16-byte fat pointer. `&'a [Value]` is also 16
-bytes. `&'a MapValue` is 8 bytes → 16. `ValueRef`'s 32-byte budget assertion
-still holds (largest variant remains `String`/`Bytes` at 16 + tag, or
-`Message(ReflectCow)` at 16 + tag).
+The two rejected alternatives are kept here for the record, because the
+reasoning still constrains future changes:
 
-Cost: one virtual dispatch per element access. The conformance JSON serializer
-and the WKT codecs iterate via `for_each_set` already — they switch from a
-slice loop to a `for_each` callback. Mechanical.
+- **`OnceCell<Vec<Value>>` cache per repeated field on the view.** Materialize
+  on first access, cache, return the slice. Rejected: it grows the view struct
+  (a wire-format type) with one cell per repeated/map field, still allocates
+  once per field per view instance — defeating the field-mask use case — and
+  `OnceCell` is `!Sync`, which breaks `Send + Sync` `OwnedView`.
+- **A separate `LazyValueRef` for vtable, `ValueRef` for bridge.** Rejected:
+  dual API surface forever, and it breaks the `ReflectMode` zero-diff promise
+  (a call site matching `ValueRef::List` would not handle `LazyValueRef::List`).
+  The `ReflectCow` design explicitly chose unified return types over parallel
+  APIs; this stays consistent with it.
 
-Break: this is a breaking change to `ValueRef`. The prototype is on a local
-unpushed branch — there are zero released consumers. **Make the change before
-`buffa-descriptor` 0.7.0 ships.** If 0.7.0 ships with `&[Value]` and vtable
-mode lands in 0.8.0, this becomes a breaking `ValueRef` change with downstream
-consumers, or a permanent parallel `LazyValueRef` API. Neither is good.
+#### What still has to be built: container impls for the view types
 
-#### Option (b) — `OnceCell<Vec<Value>>` cache per repeated field on the view
+The landed change covers the *bridge* side (`Vec<Value>` / `MapValue`). The
+vtable side needs `ReflectList` / `ReflectMap` implemented for the view
+containers — `RepeatedView<'a, T>` and `MapView<'a, K, V>` — so a view's
+`get()` can return `ValueRef::List(&self.tags)` directly.
 
-Materialize on first access, cache, return the slice. Works without touching
-`ValueRef`. Costs:
+**One generic container impl per container; per-element conversion through a
+helper trait.** The container impls are fully generic and live in
+`buffa-descriptor` — because `ReflectList` / `ReflectMap` are local there and
+the view containers (`RepeatedView` / `MapView`) are foreign from `buffa`, the
+orphan rule permits an impl of the local trait for the foreign type with no
+restriction. Codegen emits *zero* per-field container boilerplate — the
+repeated/map arm of `get()` is just `ValueRef::List(&self.tags)`.
 
-- View struct grows by one `OnceCell<Vec<Value>>` per repeated/map field.
-- `OnceCell` is `!Sync` — `OnceLock` would be needed for `Send + Sync` views,
-  which `OwnedView` requires.
-- Repeated-field reflection still allocates, just once per field per view
-  instance. Defeats the point for field-mask consumers.
-- Pollutes the view struct (a wire-format type) with reflection state.
+```rust
+// in buffa-descriptor.
 
-**Reject this option.** It optimizes for not changing `ValueRef` at the cost
-of every other axis.
+/// Per-element conversion to a borrowed reflective value.
+pub trait ReflectElement: core::fmt::Debug {
+    fn as_value_ref(&self) -> ValueRef<'_>;
+}
+impl ReflectElement for i32 { /* I32 */ }   // + i64/u32/u64/bool/f32/f64
+impl ReflectElement for &str { /* String */ }
+impl ReflectElement for &[u8] { /* Bytes */ }
+impl<E: Enumeration> ReflectElement for EnumValue<E> { /* EnumNumber(to_i32) */ }
 
-#### Option (c) — separate `LazyValueRef` for vtable, keep `ValueRef` for bridge
+/// Per-key conversion (the spec-valid map-key types only).
+pub trait ReflectMapKey: core::fmt::Debug {
+    fn as_map_key_ref(&self) -> MapKeyRef<'_>;
+}
+impl ReflectMapKey for i32 { /* I32 */ }    // + i64/u32/u64/bool
+impl ReflectMapKey for &str { /* String */ }
 
-A second value type returned by a second trait method. Avoids the break,
-costs: dual API surface forever, every reflection consumer needs two code
-paths or an adapter, the `ReflectMode` zero-diff promise is broken (call
-sites that handle `ValueRef::List(&[Value])` don't handle
-`LazyValueRef::List(&dyn ReflectList)`).
+impl<'a, T: ReflectElement> ReflectList for RepeatedView<'a, T> { /* … */ }
+impl<'a, K: ReflectMapKey, V: ReflectElement> ReflectMap for MapView<'a, K, V> { /* … */ }
+```
 
-**Reject this option.** The `ReflectCow` design explicitly chose unified
-return types over parallel APIs (see the module doc in
-`buffa-descriptor/src/reflect/message.rs`). Be consistent.
+**The message and enum element cases need a one-line codegen impl, not a
+blanket — this is a coherence constraint, not a choice.** The tempting shape is
+`impl<M: ReflectMessage> ReflectElement for M`, letting repeated-of-message fall
+out automatically. Rust rejects it (E0119): a trait-bound blanket
+`impl<M: ReflectMessage> ReflectElement for M` overlaps with every concrete
+impl — `impl ReflectElement for i32` included — because the compiler cannot
+prove `i32: !ReflectMessage` (nothing forbids `buffa-descriptor` from later
+adding `impl ReflectMessage for i32`, and sealing does not factor into the
+overlap check). The same argument kills `impl<E: Enumeration> ReflectElement
+for E` for bare (closed) enums. So:
 
-#### Decision needed
+- **Scalars, `&str`, `&[u8]`, `EnumValue<E>`** get concrete (or single-type-
+  constructor) impls in `buffa-descriptor`. `EnumValue<E>` is fine because it is
+  a distinct type constructor, not a bare type parameter — it cannot overlap a
+  scalar.
+- **Message views (`FooView<'a>`) and bare closed enums (`SomeEnum`)** get a
+  one-line `impl ReflectElement` emitted by codegen — an impl of a foreign
+  trait for a local type, which the orphan rule allows in the consumer crate.
+  This is per *type*, not per *field*: a message used in ten repeated fields
+  still gets one impl. The repeated-of-message and map-of-message cases the
+  original draft flagged for an early spike then resolve through that
+  per-type impl plus the generic container impl — no per-field codegen, but not
+  the zero-codegen the blanket would have given.
 
-Adopt option (a). Land the `ValueRef::List`/`Map` change as its own commit
-*ahead of* the vtable codegen, with conformance run before and after to prove
-no regression. The vtable codegen then targets the new shape from the start.
+Two further wrinkles to handle in the impls:
+
+1. **`get_str` on a generic `MapView<K, V>`.** It cannot dispatch on `K` at the
+   type level, so `get_str` does a linear scan and matches
+   `MapKeyRef::String(_)` per entry, returning `None` for a non-string-keyed
+   map. This is acceptable: `MapView` lookup is already documented as `O(n)`
+   (the runtime comment calls this fine for the small maps protobuf produces),
+   so vtable maps match bridge maps in behavior, not in asymptotics. A consumer
+   that needs `O(1)` collects into a `HashMap`.
+2. **`&[u8]` map keys (the exotic case).** A `string` map key with editions
+   `utf8_validation = NONE` is typed `&'a [u8]` in the view, but `MapKeyRef`
+   has no bytes variant (bytes are not a spec-valid map key). The proto type
+   *is* `string`, so the bytes are normally valid UTF-8; `ReflectMapKey for
+   &[u8]` converts via `from_utf8` and falls back to `""` on invalid input,
+   with a `debug_assert`. This keeps every generated map satisfiable by the
+   generic impl. Flagged as a low-severity correctness nuance, not a blocker.
+3. **Coherence with the bridge impls.** The bridge `impl ReflectList for
+   Vec<Value>` does not collide with the view impls, because the view containers
+   are `RepeatedView` / `MapView`, not `Vec` / `MapValue`. This only becomes a
+   problem for **owned-message vtable** (component 6), where the owned repeated
+   field is a `Vec<T>` — see that component for the resolution
+   (`impl ReflectElement for Value`, dropping the bespoke `Vec<Value>` impl).
 
 ### 4. `ReflectMode::VTable` plumbing
 
@@ -308,17 +360,38 @@ will use.
 
 ## Sequencing
 
-1. **`ValueRef::List`/`Map` change first, as its own commit.** Update
-   `DynamicMessage`, the JSON serde, the WKT codecs, the conformance runner.
-   Run conformance — must remain at 0 unexpected failures. This is a focused
-   refactor with a clear pass/fail gate.
-2. **Per-message `MessageIndex` memoization.** Small, independent.
-3. **`impl ReflectMessage for FooView<'a>` codegen.** The main deliverable.
-   Test against the existing `reflect_e2e.rs` tests by running them through
-   both bridge and vtable mode.
-4. **`ReflectMode::VTable` wiring.** Once (3) is solid.
-5. **`OwnedView` entry-point test.** Trivial once (3)–(4) land; do it as the
-   acceptance test.
+Step 1 (`ValueRef::List`/`Map` trait objects) has landed — see the Progress
+note. The remaining work, as a sequence of self-contained PRs each within the
+≤250-net-line budget:
+
+1. ✅ **`ValueRef::List`/`Map` trait-object refactor.** Done. `ValueRef` carries
+   `&dyn ReflectList` / `&dyn ReflectMap`; `DynamicMessage` implements the
+   bridge side; conformance passes.
+2. **Runtime container impls for the view types (§3).** `ReflectElement` /
+   `ReflectMapKey` traits plus blanket `ReflectList` / `ReflectMap` for
+   `RepeatedView` / `MapView`, in `buffa-descriptor`. Independent of codegen and
+   testable with hand-written views. Do this first — it de-risks the rest.
+3. **`impl ReflectMessage for FooView<'a>` codegen + per-message `MessageIndex`
+   memoization (§1, §2).** The main deliverable, and the only high-risk PR.
+   Land it behind an internal mode flag so it merges without flipping any
+   default. Oneof dispatch and enum-number extraction are the tricky `get()`
+   arms.
+4. **`ReflectMode::VTable` plumbing (§4).** `BuildConfig::reflect_mode`, the
+   `CodeGenConfig` field, `feature_gates`, the `protoc-gen-buffa` option, and
+   the vtable `Reflectable::reflect()` body (`ReflectCow::Borrowed(self)`).
+   Once (3) is solid.
+5. **Acceptance: conformance via-vtable run + `OwnedView` entry-point test
+   (§5).** A `BUFFA_VIA_VTABLE` runner mode (decode_view → reflect → reflective
+   serialize), parallel to the existing `BUFFA_VIEW_JSON` / `BUFFA_VIA_REFLECT`
+   modes, plus the `OwnedView` → `&dyn ReflectMessage` test. Mostly test code;
+   a strong correctness gate.
+6. **Owned-message vtable (optional follow-up).** `impl ReflectMessage` for the
+   owned struct, for the interceptor use case that holds an in-memory message
+   rather than wire bytes. Needs container impls for owned collections
+   (`Vec<T>`), which forces the coherence resolution noted in §3: implement
+   `ReflectElement for Value` and drop the bespoke `impl ReflectList for
+   Vec<Value>`, unifying both paths. Scoped after views because views are the
+   zero-copy headline and owned vtable touches landed bridge code.
 
 ## What this does *not* solve
 
@@ -337,17 +410,24 @@ later, which is the right call — don't gate downstream work on this.
 
 ## Risks
 
-- **Conformance regression from the `ValueRef` refactor.** Mitigated by
-  landing it first with the conformance gate.
-- **Codegen complexity for repeated-of-message and map-with-message-value.**
-  These need `ReflectList`/`ReflectMap` impls that yield
-  `ValueRef::Message(ReflectCow::Borrowed(&BarView))` per element. The
-  borrow lifetime ties to `&self` (the `RepeatedView`); covariance makes it
-  work but it's the most fiddly codegen case. Spike it early.
-- **Oneof reflection.** Verify the `FooKindView<'a>` enum codegen exposes
-  the active variant in a way that the `get()` match can dispatch on. May
-  need a small accessor on the generated oneof enum.
-- **Recursive message types.** `MessageFieldView<V>` boxes precisely to
-  break recursion; verify `default_view_instance()` for a self-recursive
-  message doesn't recurse infinitely (it shouldn't — the default has no
-  set fields — but check).
+- **Conformance regression from the `ValueRef` refactor.** Retired — the
+  refactor landed behind the conformance gate with no unexpected failures.
+- **Repeated-of-message and map-with-message-value.** Downgraded from "most
+  fiddly codegen case, spike it early" to a non-issue for codegen: the blanket
+  `impl<M: ReflectMessage> ReflectElement for M` (§3) handles them with no
+  per-field codegen. The residual risk is purely in the generic impls
+  themselves — the per-element borrow lifetime ties to `&self` (the
+  `RepeatedView`), and covariance makes it work. Cover it with a test in PR 2,
+  not a codegen spike.
+- **Oneof reflection.** Verify the `FooKindView<'a>` enum codegen exposes the
+  active variant in a way the `get()` match can dispatch on. May need a small
+  accessor on the generated oneof view enum. This is now the sharpest remaining
+  codegen risk (PR 3).
+- **Enum-number extraction.** Views store enum fields as
+  `buffa::EnumValue<E>`, not a bare `i32`; `get()` must extract the wire number.
+  Confirm the `EnumValue` accessor and add the `ReflectElement for EnumValue<E>`
+  impl in PR 2.
+- **Recursive message types.** `MessageFieldView<V>` boxes precisely to break
+  recursion; verify `default_view_instance()` for a self-recursive message does
+  not recurse infinitely (it should not — the default has no set fields — but
+  check).

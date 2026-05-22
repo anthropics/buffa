@@ -27,12 +27,14 @@ mod dynamic;
 mod json;
 mod message;
 mod value;
+mod view;
 
 pub use dynamic::{AnyError, DynamicMessage};
 #[cfg(feature = "json")]
 pub use json::DynamicMessageSeed;
 pub use message::{ReflectCow, ReflectMessage, ReflectMessageMut, Reflectable};
 pub use value::{MapKey, MapKeyRef, MapValue, ReflectList, ReflectMap, Value, ValueRef};
+pub use view::{ReflectElement, ReflectMapKey};
 
 /// Per-message reflection mode, selected at codegen time.
 ///
