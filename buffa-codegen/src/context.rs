@@ -540,6 +540,24 @@ impl<'a> CodeGenContext<'a> {
             .iter()
             .any(|prefix| matches_proto_prefix(prefix, field_fqn))
     }
+
+    /// Resolve the [`StringRepr`](crate::StringRepr) for a `string` field at the
+    /// given proto path.
+    ///
+    /// `field_fqn` is the fully-qualified proto field path, e.g.
+    /// `".my.pkg.MyMessage.name"`. Rules in `config.string_fields` are matched
+    /// with the same proto-segment-aware prefix logic as
+    /// [`use_bytes_type`](Self::use_bytes_type); the **last** matching rule wins,
+    /// letting a specific override follow a broad default. Fields matching no
+    /// rule use [`StringRepr::String`](crate::StringRepr::String).
+    pub fn string_repr(&self, field_fqn: &str) -> crate::StringRepr {
+        self.config
+            .string_fields
+            .iter()
+            .rev()
+            .find(|(prefix, _)| matches_proto_prefix(prefix, field_fqn))
+            .map_or(crate::StringRepr::default(), |(_, repr)| *repr)
+    }
 }
 
 /// Scope-local context for code generation within a message.

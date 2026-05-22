@@ -11,7 +11,14 @@ arbitrary = ["dep:arbitrary", "buffa/arbitrary"]
 
 [dependencies]
 arbitrary = { workspace = true, optional = true }
-buffa = { workspace = true, features = ["std", "json", "text"] }
+buffa = { workspace = true, features = [
+    "std",
+    "json",
+    "text",
+    "smol_str",
+    "ecow",
+    "compact_str",
+] }
 # `reflect`+`json` so the codegen-emitted `impl Reflectable` and the
 # embedded descriptor pool resolve. `json` because `basic.proto` is also
 # generated with `generate_text(true)` and the pool decodes the WKT

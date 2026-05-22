@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package stringtypes;
+
+// Exercises the configurable `string_type` knob across every string-field
+// shape (singular, optional, repeated, oneof, map). The build compiles this
+// with a broad SmolStr default plus per-field CompactString/EcoString
+// overrides, so a single compiled module covers all three representations and
+// all decode/clear/view/json/arbitrary code paths.
+message StringContexts {
+  string singular = 1;
+  optional string maybe = 2;
+  repeated string many = 3;
+  // Per-field override targets (see build.rs string_type_in rules).
+  string compact = 4;
+  string eco = 5;
+  // Map keys/values are unaffected by string_type — always String.
+  map<string, string> by_key = 6;
+  oneof choice {
+    string named = 7;
+    int32 count = 8;
+  }
+}

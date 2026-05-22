@@ -808,6 +808,120 @@ fn inline_bytes_field_selective_mapping() {
 }
 
 #[test]
+fn inline_string_field_mapping() {
+    use buffa_codegen::StringRepr;
+    let mut config = no_views();
+    config.string_fields.push((".".into(), StringRepr::SmolStr));
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Msg {
+          string name = 1;
+          optional string nick = 2;
+          repeated string tags = 3;
+        }
+        "#,
+        &config,
+    );
+    assert!(
+        content.contains("::buffa::smol_str::SmolStr"),
+        "string fields should use SmolStr: {content}"
+    );
+    // Non-optional singular decode must use the generic helper, not merge_string.
+    assert!(
+        content.contains("::buffa::types::decode_string_to"),
+        "decode must use decode_string_to for non-default string repr: {content}"
+    );
+    assert!(
+        !content.contains("merge_string(&mut self"),
+        "must not call merge_string on a non-default string field: {content}"
+    );
+}
+
+#[test]
+fn inline_string_field_selective_and_override() {
+    use buffa_codegen::StringRepr;
+    let mut config = no_views();
+    // Broad default, then a more specific override (last match wins).
+    config.string_fields.push((".".into(), StringRepr::SmolStr));
+    config
+        .string_fields
+        .push((".test.Msg.code".into(), StringRepr::CompactString));
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Msg {
+          string name = 1;
+          string code = 2;
+        }
+        "#,
+        &config,
+    );
+    assert!(
+        content.contains("::buffa::smol_str::SmolStr"),
+        "broad rule should apply SmolStr to `name`: {content}"
+    );
+    assert!(
+        content.contains("::buffa::compact_str::CompactString"),
+        "specific override should apply CompactString to `code`: {content}"
+    );
+}
+
+#[test]
+fn inline_string_ecow_emits_arbitrary_shim() {
+    use buffa_codegen::StringRepr;
+    let mut config = no_views();
+    config.generate_arbitrary = true;
+    config
+        .string_fields
+        .push((".".into(), StringRepr::EcoString));
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Msg { string name = 1; }
+        "#,
+        &config,
+    );
+    assert!(
+        content.contains("::buffa::ecow::EcoString"),
+        "string field should use EcoString: {content}"
+    );
+    // EcoString has no native Arbitrary impl — codegen must attach the shim.
+    assert!(
+        content.contains("arbitrary(with = ::buffa::__private::arbitrary_ecow"),
+        "EcoString field must use the arbitrary_ecow shim: {content}"
+    );
+}
+
+#[test]
+fn inline_string_default_is_unchanged() {
+    // With no string_fields rule, output must still use String + merge_string.
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Msg { string name = 1; }
+        "#,
+        &no_views(),
+    );
+    assert!(
+        content.contains("::buffa::alloc::string::String"),
+        "default string repr should remain String: {content}"
+    );
+    assert!(
+        content.contains("merge_string(&mut self"),
+        "default string field should keep the in-place merge_string fast path: {content}"
+    );
+    assert!(
+        !content.contains("decode_string_to"),
+        "default string field must not use the generic decode helper: {content}"
+    );
+}
+
+#[test]
 fn inline_preserve_unknown_fields_disabled() {
     let mut config = no_views();
     config.preserve_unknown_fields = false;

@@ -43,6 +43,7 @@ mod nesting;
 mod nestpkg;
 mod proto2;
 mod proto3_semantics;
+mod string_type;
 mod textproto;
 mod utf8_validation;
 mod view;

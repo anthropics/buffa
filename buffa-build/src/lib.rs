@@ -33,6 +33,8 @@ use buffa::Message;
 use buffa_codegen::generated::descriptor::FileDescriptorSet;
 
 use buffa_codegen::CodeGenConfig;
+#[doc(inline)]
+pub use buffa_codegen::StringRepr;
 
 /// How to produce a `FileDescriptorSet` from `.proto` files.
 #[derive(Debug, Clone, Default)]
@@ -436,6 +438,51 @@ impl Config {
     #[must_use]
     pub fn use_bytes_type(mut self) -> Self {
         self.codegen_config.bytes_fields.push(".".to_string());
+        self
+    }
+
+    /// Map `string` fields to a [`StringRepr`] other than `String` for the
+    /// given proto path prefixes.
+    ///
+    /// Each path is a fully-qualified proto path prefix (e.g.
+    /// `".my.pkg.MyMessage.name"` for one field, `".my.pkg"` for a package).
+    /// Rules accumulate and the **last** matching rule wins, so a broad
+    /// `string_type` can be refined by a later `string_type_in`. The selected
+    /// type's `buffa` feature (`smol_str`, `ecow`, or `compact_str`) must be
+    /// enabled by the downstream crate.
+    ///
+    /// The wire format is unchanged; only the owned Rust type differs (view
+    /// types still borrow `&str`).
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use buffa_build::StringRepr;
+    /// buffa_build::Config::new()
+    ///     .string_type_in(StringRepr::SmolStr, &[".my.pkg"])
+    ///     .files(&["proto/my_service.proto"])
+    ///     .includes(&["proto/"])
+    ///     .compile()
+    ///     .unwrap();
+    /// ```
+    #[must_use]
+    pub fn string_type_in(mut self, repr: StringRepr, paths: &[impl AsRef<str>]) -> Self {
+        self.codegen_config
+            .string_fields
+            .extend(paths.iter().map(|p| (p.as_ref().to_string(), repr)));
+        self
+    }
+
+    /// Map every `string` field in all messages to the given [`StringRepr`].
+    ///
+    /// Convenience for `.string_type_in(repr, &["."])`. Use
+    /// [`string_type_in`](Self::string_type_in) to target specific paths, or to
+    /// override this default for a subset (later rules win).
+    #[must_use]
+    pub fn string_type(mut self, repr: StringRepr) -> Self {
+        self.codegen_config
+            .string_fields
+            .push((".".to_string(), repr));
         self
     }
 

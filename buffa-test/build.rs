@@ -181,6 +181,31 @@ fn main() {
         .compile()
         .expect("buffa_build failed for basic.proto with use_bytes_type");
 
+    // Configurable string_type: a broad SmolStr default plus per-field
+    // CompactString / EcoString overrides, with generate_json + arbitrary so
+    // every string code path (decode/clear/view/json/arbitrary, including the
+    // EcoString arbitrary shim) is compiled. Map keys/values stay String.
+    let string_out =
+        std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("string_variant");
+    std::fs::create_dir_all(&string_out).expect("create string_variant dir");
+    buffa_build::Config::new()
+        .files(&["protos/string_types.proto"])
+        .includes(&["protos/"])
+        .string_type(buffa_build::StringRepr::SmolStr)
+        .string_type_in(
+            buffa_build::StringRepr::CompactString,
+            &[".stringtypes.StringContexts.compact"],
+        )
+        .string_type_in(
+            buffa_build::StringRepr::EcoString,
+            &[".stringtypes.StringContexts.eco"],
+        )
+        .generate_json(true)
+        .generate_arbitrary(true)
+        .out_dir(string_out)
+        .compile()
+        .expect("buffa_build failed for string_types.proto with string_type");
+
     // Regression #88: bytes_fields + generate_arbitrary(true).
     // BytesContexts in basic.proto has singular, optional, repeated, and oneof
     // bytes fields — this compilation exercises all four shim paths.
