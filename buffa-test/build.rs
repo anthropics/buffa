@@ -82,10 +82,13 @@ fn main() {
     // Issue #135: a message whose snake_case module name collides with a
     // sibling sub-package. `message Oof` (nested types) in `modcollide` vs
     // `package modcollide.oof`. Both files compiled together so codegen sees the
-    // sub-package and deconflicts the nested module to `oof_`.
+    // sub-package and deconflicts the nested module to `oof_`. JSON is enabled so
+    // the Any-registry paths bubbled from the nested message resolve through the
+    // deconflicted module (`super::oof_::__INNER_JSON_ANY`, not `super::oof::…`).
     buffa_build::Config::new()
         .files(&["protos/modcollide.proto", "protos/modcollide_oof.proto"])
         .includes(&["protos/"])
+        .generate_json(true)
         .compile()
         .expect("buffa_build failed for modcollide.proto (module collision)");
 

@@ -32,9 +32,16 @@ fn test_subpackage_message_keeps_natural_path() {
     // unaffected by the nested-module deconfliction.
     let t = crate::modcollide::oof::Thing {
         y: 9,
+        // The sub-package message's OWN nested type is emitted normally under
+        // `oof::thing::Detail` — deconfliction does not leak into sub-packages.
+        detail: buffa::MessageField::some(crate::modcollide::oof::thing::Detail {
+            z: 3,
+            ..Default::default()
+        }),
         ..Default::default()
     };
     let wire = t.encode_to_vec();
     let back = crate::modcollide::oof::Thing::decode(&mut wire.as_slice()).expect("decode");
     assert_eq!(back.y, 9);
+    assert_eq!(back.detail.as_option().map(|d| d.z), Some(3));
 }

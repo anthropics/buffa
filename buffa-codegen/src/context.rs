@@ -123,6 +123,11 @@ fn child_package_segments(package: &str, all_packages: &HashSet<String>) -> Hash
 /// sub-package segment, in which case `_` is appended until the candidate is
 /// clear of every sub-package segment, every sibling message's raw module name,
 /// and the `__buffa` sentinel.
+///
+/// The result is independent of message iteration order: deconfliction only
+/// fires on a real sub-package collision, and the candidate grows past every
+/// sibling's *raw* module name, so two distinct messages can never resolve to
+/// the same deconflicted name.
 fn dedup_nested_module(
     name: &str,
     package: &str,
@@ -201,18 +206,29 @@ impl<'a> CodeGenContext<'a> {
         let mut comment_map = HashMap::new();
         let mut nested_module_names = HashMap::new();
 
-        // Pre-pass: collect every package and every package's top-level message
-        // names, so a message-nesting module can be deconflicted against
-        // sub-package modules (which may be declared in other files).
+        // Pre-pass: collect every locally-emitted package and its top-level
+        // message names, so a message-nesting module can be deconflicted against
+        // sub-package modules (which may be declared in other files). Files
+        // resolved to an extern crate are skipped: they emit no local module, so
+        // their package cannot collide and must not trigger a spurious rename.
         let mut all_packages: HashSet<String> = HashSet::new();
         let mut pkg_message_names: HashMap<String, Vec<String>> = HashMap::new();
         for file in files {
-            let package = file.package.as_deref().unwrap_or("").to_string();
-            all_packages.insert(package.clone());
+            let package = file.package.as_deref().unwrap_or("");
+            let is_extern = file
+                .name
+                .as_deref()
+                .and_then(|n| resolve_file_extern(n, file_extern_paths))
+                .is_some()
+                || resolve_extern_prefix(package, effective_extern_paths).is_some();
+            if is_extern {
+                continue;
+            }
+            all_packages.insert(package.to_string());
             for msg in &file.message_type {
                 if let Some(name) = &msg.name {
                     pkg_message_names
-                        .entry(package.clone())
+                        .entry(package.to_string())
                         .or_default()
                         .push(name.clone());
                 }

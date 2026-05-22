@@ -862,9 +862,15 @@ fn module_no_collision_keeps_natural_module_name() {
         "#,
         &no_views(),
     );
-    assert!(content.contains("pub mod oof "), "{content}");
+    // The nested module is present and NOT deconflicted (no `_` suffix). The
+    // `!oof_` check is the meaningful guard; `oof::Inner` confirms the module
+    // exists, both robust to prettyplease spacing.
     assert!(
-        !content.contains("pub mod oof_"),
+        content.contains("oof :: Inner") || content.contains("oof::Inner"),
+        "{content}"
+    );
+    assert!(
+        !content.contains("pub mod oof_") && !content.contains("oof_ ::"),
         "no spurious dedup: {content}"
     );
 }
