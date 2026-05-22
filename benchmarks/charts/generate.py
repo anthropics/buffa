@@ -41,6 +41,10 @@ COLORS = {
     "prost (bytes)": "#EEAE62",
     "protobuf-v4": "#E45756",
     "Go": "#54A24B",
+    # Reflection comparison (buffa-only: generated codec vs DynamicMessage).
+    "generated": "#4C78A8",
+    "reflect": "#B279A2",
+    "bridge round-trip": "#9D755D",
 }
 
 MESSAGES = ["ApiResponse", "LogRecord", "AnalyticsEvent", "GoogleMessage1", "MediaFrame"]
@@ -164,12 +168,19 @@ def _get_go(data: dict[str, float], op: str, msg_display: str) -> float | None:
     return data.get(key)
 
 
+def _get_reflect(data: dict[str, float], msg_display: str, op: str) -> float | None:
+    # The reflect bench groups by display-case message name:
+    # `reflect/ApiResponse/decode/generated`.
+    return data.get(f"reflect/{msg_display}/{op}")
+
+
 def build_tables(
     buffa: dict[str, float],
     prost: dict[str, float],
     prost_bytes: dict[str, float],
     google: dict[str, float],
     go: dict[str, float],
+    reflect: dict[str, float],
 ) -> dict[str, dict[str, dict[str, float | None]]]:
     """Build structured data for each chart.
 
@@ -207,6 +218,15 @@ def build_tables(
             ("buffa",        lambda ms, md: _get(buffa, "buffa", ms, "json_decode")),
             ("prost",        lambda ms, md: _get(prost, "prost", ms, "json_decode")),
             ("Go",           lambda ms, md: _get_go(go, "JsonDecode", md)),
+        ]),
+        ("reflect-decode", [
+            ("generated",         lambda ms, md: _get_reflect(reflect, md, "decode/generated")),
+            ("reflect",           lambda ms, md: _get_reflect(reflect, md, "decode/reflect")),
+            ("bridge round-trip", lambda ms, md: _get_reflect(reflect, md, "reflect/bridge_round_trip")),
+        ]),
+        ("reflect-encode", [
+            ("generated", lambda ms, md: _get_reflect(reflect, md, "encode/generated")),
+            ("reflect",   lambda ms, md: _get_reflect(reflect, md, "encode/reflect")),
         ]),
     ]:
         table: dict[str, dict[str, float | None]] = {}
@@ -379,6 +399,8 @@ def generate_readme_tables(tables: dict[str, dict[str, dict[str, float | None]]]
         "build-encode": ("Build + binary encode", "buffa"),
         "json-encode": ("JSON encode", "buffa"),
         "json-decode": ("JSON decode", "buffa"),
+        "reflect-decode": ("Reflection decode", "generated"),
+        "reflect-encode": ("Reflection encode", "generated"),
     }
 
     for chart_name, table in tables.items():
@@ -425,16 +447,17 @@ def main() -> None:
     prost = load_criterion("prost")
     prost_bytes = load_criterion("prost-bytes")
     google = load_criterion("google")
+    reflect = load_criterion("reflect")
 
     go_path = results_dir / "go.txt"
     go = parse_go(go_path.read_text()) if go_path.exists() else {}
 
     print(f"Parsed: {len(buffa)} buffa, {len(prost)} prost, "
           f"{len(prost_bytes)} prost-bytes, {len(google)} google, "
-          f"{len(go)} Go benchmarks")
+          f"{len(go)} Go, {len(reflect)} reflect benchmarks")
 
     # Build structured tables.
-    tables = build_tables(buffa, prost, prost_bytes, google, go)
+    tables = build_tables(buffa, prost, prost_bytes, google, go, reflect)
 
     # Generate SVGs.
     chart_titles = {
@@ -443,6 +466,8 @@ def main() -> None:
         "build-encode": "Build + Binary Encode Throughput (from borrowed source data)",
         "json-encode": "JSON Encode Throughput",
         "json-decode": "JSON Decode Throughput",
+        "reflect-decode": "Reflection Decode Throughput (generated vs DynamicMessage)",
+        "reflect-encode": "Reflection Encode Throughput (generated vs DynamicMessage)",
     }
 
     # Per-message SVGs: one file per (chart, message) so each can use its own
