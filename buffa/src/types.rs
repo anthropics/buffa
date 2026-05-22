@@ -447,6 +447,66 @@ pub fn string_encoded_len(value: &str) -> usize {
     varint_len(len as u64) + len
 }
 
+/// A Rust type usable as the in-memory representation of a proto `string` field.
+///
+/// buffa generates [`String`] by default. The `string_type` knob in
+/// `buffa_build` can substitute a small-string-optimized type — such as
+/// [`smol_str::SmolStr`], [`ecow::EcoString`], or
+/// [`compact_str::CompactString`] — for read-mostly schemas where `String`'s
+/// growable buffer is unnecessary. Any type meeting these bounds qualifies, so
+/// there is nothing to implement by hand: the blanket impl below covers every
+/// conforming type.
+///
+/// The bounds are exactly what generated code requires of a string field:
+///
+/// - `Clone + PartialEq + Default + Debug` — for the `#[derive(...)]` and the
+///   hand-written `Debug` impl on message structs, and for `clear()` (which
+///   resets the field to [`Default`] rather than relying on a `String`-specific
+///   `clear`, since the small-string types may be immutable).
+/// - [`AsRef<str>`] — the encoder borrows the field as `&str`;
+///   [`encode_string`] and [`string_encoded_len`] take `&str`.
+/// - [`From<String>`] and [`From<&str>`](From) — the decode path
+///   ([`decode_string_to`]) and the view→owned conversion construct the field
+///   from freshly decoded text.
+///
+/// For the default `String` representation, `From<String>` is the identity, so
+/// the generic path costs nothing relative to the specialized one.
+pub trait ProtoString:
+    Clone + PartialEq + Default + core::fmt::Debug + AsRef<str> + From<String> + for<'a> From<&'a str>
+{
+}
+
+impl<T> ProtoString for T where
+    T: Clone
+        + PartialEq
+        + Default
+        + core::fmt::Debug
+        + AsRef<str>
+        + From<String>
+        + for<'a> From<&'a str>
+{
+}
+
+/// Decode a length-delimited `string` into a configurable [`ProtoString`] type.
+///
+/// This is the generic counterpart to [`decode_string`]: it reads the varint
+/// length prefix, copies that many bytes, and validates UTF-8 identically, then
+/// constructs the target representation via `From<String>`. Generated code uses
+/// the in-place [`merge_string`] for `String` fields (which reuses the existing
+/// allocation) and this helper for every other [`ProtoString`] type.
+///
+/// # Errors
+///
+/// Propagates the same errors as [`decode_string`]:
+/// - [`DecodeError::UnexpectedEof`] if the buffer is shorter than the declared
+///   length.
+/// - [`DecodeError::MessageTooLarge`] if the declared length overflows `usize`.
+/// - [`DecodeError::InvalidUtf8`] if the bytes are not valid UTF-8.
+#[inline]
+pub fn decode_string_to<S: ProtoString>(buf: &mut impl Buf) -> Result<S, DecodeError> {
+    decode_string(buf).map(S::from)
+}
+
 /// Encode a `bytes` value as a varint length prefix followed by raw bytes
 /// (wire type 2).
 #[inline]
@@ -1257,6 +1317,34 @@ mod tests {
         assert_eq!(string_encoded_len(""), 1);
         let decoded = decode_string(&mut buf.as_slice()).unwrap();
         assert_eq!(decoded, "");
+    }
+
+    #[test]
+    fn test_decode_string_to_roundtrip() {
+        // `decode_string_to::<S>` must decode identically to `decode_string`
+        // for any `ProtoString` type; `String` exercises the identity path.
+        for s in ["", "hello", "héllo", "世界", "a".repeat(128).as_str()] {
+            let mut buf = Vec::new();
+            encode_string(s, &mut buf);
+            let decoded: String = decode_string_to(&mut buf.as_slice()).unwrap();
+            assert_eq!(s, decoded);
+        }
+    }
+
+    #[test]
+    fn test_decode_string_to_propagates_errors() {
+        // Invalid UTF-8 surfaces before the `From<String>` conversion.
+        let bad: &[u8] = &[0x02, 0xFF, 0xFE];
+        assert_eq!(
+            decode_string_to::<String>(&mut &bad[..]),
+            Err(DecodeError::InvalidUtf8)
+        );
+        // Truncated payload is reported as EOF.
+        let short: &[u8] = &[0x04, 0x61, 0x62];
+        assert_eq!(
+            decode_string_to::<String>(&mut &short[..]),
+            Err(DecodeError::UnexpectedEof)
+        );
     }
 
     #[test]

@@ -218,6 +218,7 @@ pub use message::{DecodeOptions, Message, MessageName, RECURSION_LIMIT};
 pub use message_field::{DefaultInstance, MessageField};
 pub use oneof::Oneof;
 pub use size_cache::SizeCache;
+pub use types::ProtoString;
 pub use unknown_fields::{UnknownField, UnknownFieldData, UnknownFields};
 
 #[cfg(feature = "text")]

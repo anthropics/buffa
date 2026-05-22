@@ -337,11 +337,32 @@ pub mod proto_string {
     use alloc::string::ToString;
     use serde::{Deserializer, Serializer};
 
-    pub fn serialize<S: Serializer>(value: &str, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(value)
+    /// Serialize a `string` field.
+    ///
+    /// Generic over `T: AsRef<str>` so configurable string types
+    /// (`smol_str::SmolStr`, `ecow::EcoString`, ...) serialize without relying
+    /// on `Deref<Target = str>` coercion at the `#[serde(with = ...)]` call
+    /// site. `String` and `&str` both satisfy the bound.
+    pub fn serialize<T: AsRef<str> + ?Sized, S: Serializer>(
+        value: &T,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        s.serialize_str(value.as_ref())
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<alloc::string::String, D::Error> {
+    /// Deserialize a `string` field (or JSON `null` → `""`).
+    ///
+    /// Generic over the return type so that codegen's `string_type()` (which can
+    /// map the field to `smol_str::SmolStr`, `ecow::EcoString`, etc.) works
+    /// without a shim: the visitor produces `String`, the final `.into()`
+    /// converts. `String: From<String>` (identity) keeps the default path
+    /// zero-cost. Type inference picks `T` from the field type at the serde call
+    /// site. Mirrors the `bytes` module's generic deserialize.
+    pub fn deserialize<'de, T, D>(d: D) -> Result<T, D::Error>
+    where
+        T: From<alloc::string::String>,
+        D: Deserializer<'de>,
+    {
         struct V;
         impl<'de> serde::de::Visitor<'de> for V {
             type Value = alloc::string::String;
@@ -358,7 +379,7 @@ pub mod proto_string {
                 Ok(v)
             }
         }
-        d.deserialize_any(V)
+        d.deserialize_any(V).map(T::from)
     }
 }
 
