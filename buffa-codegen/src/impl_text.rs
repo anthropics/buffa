@@ -25,13 +25,25 @@ use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
 use crate::generated::descriptor::{DescriptorProto, FieldDescriptorProto};
 use crate::idents::rust_path_to_tokens;
 use crate::impl_message::{
-    effective_type, effective_type_in_map_entry, field_uses_bytes, find_map_entry_fields,
-    is_explicit_presence_scalar, is_non_default_expr, is_real_oneof_member, is_required_field,
-    is_supported_field_type,
+    effective_type, effective_type_in_map_entry, field_string_repr, field_uses_bytes,
+    find_map_entry_fields, is_explicit_presence_scalar, is_non_default_expr, is_real_oneof_member,
+    is_required_field, is_supported_field_type,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident};
 use crate::oneof::is_boxed_variant;
 use crate::CodeGenError;
+
+/// Wrap a text-decoded owned `String` expression in the conversion to the
+/// configured [`StringRepr`](crate::StringRepr). The default `String` keeps the
+/// expression verbatim (byte-identical output); other reprs convert via
+/// `From<String>`.
+fn text_string_into(repr: crate::StringRepr, owned: TokenStream) -> TokenStream {
+    if repr.is_default() {
+        owned
+    } else {
+        quote! { ::core::convert::Into::into(#owned) }
+    }
+}
 
 /// Generate `impl ::buffa::text::TextFormat for #name_ident { ... }`.
 ///
@@ -610,7 +622,10 @@ fn scalar_merge_arm(
     // String: `read_string()` returns `Cow<str>`, need `.into_owned()`.
     // Bytes: `read_bytes()` returns `Vec<u8>`; `bytes::Bytes: From<Vec<u8>>`.
     let read = match ty {
-        Type::TYPE_STRING => quote! { dec.read_string()?.into_owned() },
+        Type::TYPE_STRING => text_string_into(
+            field_string_repr(ctx, proto_fqn, proto_name),
+            quote! { dec.read_string()?.into_owned() },
+        ),
         Type::TYPE_BYTES if use_bytes => quote! { ::buffa::bytes::Bytes::from(dec.read_bytes()?) },
         _ => read_call(ty),
     };
@@ -691,7 +706,11 @@ fn repeated_merge_arm(
             enum_read(closed, &enum_ty, &format_ident!("__d"))
         }
         Type::TYPE_STRING => {
-            quote! { ::core::result::Result::Ok(__d.read_string()?.into_owned()) }
+            let v = text_string_into(
+                field_string_repr(ctx, proto_fqn, proto_name),
+                quote! { __d.read_string()?.into_owned() },
+            );
+            quote! { ::core::result::Result::Ok(#v) }
         }
         Type::TYPE_BYTES if use_bytes => {
             quote! { ::core::result::Result::Ok(::buffa::bytes::Bytes::from(__d.read_bytes()?)) }
@@ -850,11 +869,17 @@ fn oneof_merge_arms(
                     );
                 }
             }
-            Type::TYPE_STRING => quote! {
-                self.#field_ident = ::core::option::Option::Some(
-                    #qualified::#variant(dec.read_string()?.into_owned())
+            Type::TYPE_STRING => {
+                let read = text_string_into(
+                    field_string_repr(ctx, proto_fqn, proto_name),
+                    quote! { dec.read_string()?.into_owned() },
                 );
-            },
+                quote! {
+                    self.#field_ident = ::core::option::Option::Some(
+                        #qualified::#variant(#read)
+                    );
+                }
+            }
             Type::TYPE_BYTES => {
                 let read = if use_bytes {
                     quote! { ::buffa::bytes::Bytes::from(dec.read_bytes()?) }

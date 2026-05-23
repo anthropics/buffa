@@ -7,7 +7,7 @@ use quote::{format_ident, quote};
 
 use crate::context::CodeGenContext;
 use crate::features::ResolvedFeatures;
-use crate::impl_message::field_uses_bytes;
+use crate::impl_message::{field_string_repr, field_uses_bytes};
 use crate::message::scalar_or_message_type_nested;
 use crate::CodeGenError;
 
@@ -65,6 +65,9 @@ struct VariantInfo {
     custom_attrs: TokenStream,
     /// Used to emit `#[arbitrary(with = ...)]` alongside `derive(Arbitrary)`.
     use_bytes: bool,
+    /// Owned string representation for a `string` variant (default `String`).
+    /// Drives both the variant type and the EcoString arbitrary shim.
+    string_repr: crate::StringRepr,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -115,8 +118,16 @@ fn collect_variant_info(
             // msg_nesting, so the enum body sits at `nesting + 3`.
             let use_bytes =
                 field_type == Type::TYPE_BYTES && field_uses_bytes(ctx, proto_fqn, proto_name);
+            // Configurable owned string representation for a `string` variant.
+            let string_repr = if field_type == Type::TYPE_STRING {
+                field_string_repr(ctx, proto_fqn, proto_name)
+            } else {
+                crate::StringRepr::String
+            };
             let rust_type = if use_bytes {
                 quote! { ::buffa::bytes::Bytes }
+            } else if field_type == Type::TYPE_STRING && !string_repr.is_default() {
+                string_repr.type_path(resolver)
             } else {
                 scalar_or_message_type_nested(
                     ctx,
@@ -139,6 +150,7 @@ fn collect_variant_info(
                 is_null_value: is_null_value_field(field),
                 custom_attrs,
                 use_bytes,
+                string_repr,
             })
         })
         .collect()
@@ -195,6 +207,12 @@ pub fn generate_oneof_enum(
             // enum variants — the attribute must be on the inner field.
             let arbitrary_field_attr = if ctx.config.generate_arbitrary && v.use_bytes {
                 quote! { #[cfg_attr(feature = "arbitrary", arbitrary(with = ::buffa::__private::arbitrary_bytes))] }
+            } else if ctx.config.generate_arbitrary
+                && v.string_repr == crate::StringRepr::EcoString
+            {
+                // EcoString has no native Arbitrary impl (unlike SmolStr /
+                // CompactString), so the derived enum impl needs the shim.
+                quote! { #[cfg_attr(feature = "arbitrary", arbitrary(with = ::buffa::__private::arbitrary_ecow))] }
             } else {
                 quote! {}
             };

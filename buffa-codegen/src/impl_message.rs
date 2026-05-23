@@ -849,6 +849,20 @@ pub(crate) fn field_uses_bytes(ctx: &CodeGenContext, proto_fqn: &str, field_name
     ctx.use_bytes_type(&field_fqn)
 }
 
+/// Resolve the [`StringRepr`](crate::StringRepr) for a `string`-typed field.
+///
+/// `proto_fqn` is the fully-qualified message name (no leading dot). Matched
+/// against `config.string_fields` as `".my.pkg.Msg.field"`. Returns
+/// [`StringRepr::String`](crate::StringRepr::String) for fields with no rule.
+pub(crate) fn field_string_repr(
+    ctx: &CodeGenContext,
+    proto_fqn: &str,
+    field_name: &str,
+) -> crate::StringRepr {
+    let field_fqn = format!(".{}.{}", proto_fqn, field_name);
+    ctx.string_repr(&field_fqn)
+}
+
 fn scalar_clear_stmt(
     field: &FieldDescriptorProto,
     ctx: &CodeGenContext,
@@ -873,14 +887,27 @@ fn scalar_clear_stmt(
 
     // If the field has a custom default value (proto2), use it instead of
     // the type's zero value so that clear() matches Default::default().
-    if let Some(default_expr) =
-        crate::defaults::parse_default_value(field, ctx, current_package, features, nesting)?
-    {
+    if let Some(default_expr) = crate::defaults::parse_default_value(
+        field,
+        ctx,
+        current_package,
+        features,
+        nesting,
+        field_string_repr(ctx, proto_fqn, field_name),
+    )? {
         return Ok(quote! { self.#ident = #default_expr; });
     }
 
     match ty {
-        Type::TYPE_STRING => Ok(quote! { self.#ident.clear(); }),
+        Type::TYPE_STRING => {
+            // Non-default string types may be immutable (no `clear()`), so
+            // reset to the default value uniformly.
+            if field_string_repr(ctx, proto_fqn, field_name).is_default() {
+                Ok(quote! { self.#ident.clear(); })
+            } else {
+                Ok(quote! { self.#ident = ::core::default::Default::default(); })
+            }
+        }
         Type::TYPE_BYTES => {
             // bytes::Bytes is immutable (no clear()), so reassign.
             if use_bytes {
@@ -1463,6 +1490,7 @@ fn scalar_write_to_stmt(
 ///
 /// Emits `field_number => { wire_check; self.field = Some(decoded_value); }`.
 /// Proto3 optional fields and proto2 optional non-message fields use this path.
+#[allow(clippy::too_many_arguments)]
 fn explicit_presence_merge_arm(
     ident: &Ident,
     field_number: u32,
@@ -1470,16 +1498,25 @@ fn explicit_presence_merge_arm(
     features: &ResolvedFeatures,
     wire_check: &TokenStream,
     use_bytes: bool,
+    string_repr: crate::StringRepr,
     preserve_unknown_fields: bool,
 ) -> TokenStream {
     match ty {
-        Type::TYPE_STRING => quote! {
+        Type::TYPE_STRING if string_repr.is_default() => quote! {
             #field_number => {
                 #wire_check
                 ::buffa::types::merge_string(
                     self.#ident.get_or_insert_with(::buffa::alloc::string::String::new),
                     buf,
                 )?;
+            }
+        },
+        Type::TYPE_STRING => quote! {
+            #field_number => {
+                #wire_check
+                self.#ident = ::core::option::Option::Some(
+                    ::buffa::types::decode_string_to(buf)?
+                );
             }
         },
         Type::TYPE_BYTES => {
@@ -1560,6 +1597,7 @@ fn scalar_merge_arm(
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
     let use_bytes = ty == Type::TYPE_BYTES && field_uses_bytes(ctx, proto_fqn, field_name);
+    let string_repr = field_string_repr(ctx, proto_fqn, field_name);
     let ident = make_field_ident(field_name);
     let wire_type = wire_type_token(ty);
     let expected_byte = wire_type_byte(ty);
@@ -1575,6 +1613,7 @@ fn scalar_merge_arm(
             features,
             &wire_check,
             use_bytes,
+            string_repr,
             preserve_unknown_fields,
         ));
     }
@@ -1589,10 +1628,21 @@ fn scalar_merge_arm(
     // decode_bytes which always allocate a fresh Vec/String.
     match ty {
         Type::TYPE_STRING => {
-            return Ok(quote! {
-                #field_number => {
-                    #wire_check
-                    ::buffa::types::merge_string(&mut self.#ident, buf)?;
+            return Ok(if string_repr.is_default() {
+                quote! {
+                    #field_number => {
+                        #wire_check
+                        ::buffa::types::merge_string(&mut self.#ident, buf)?;
+                    }
+                }
+            } else {
+                // Non-default string types are constructed fresh on decode; the
+                // in-place `merge_string` allocation reuse is `String`-only.
+                quote! {
+                    #field_number => {
+                        #wire_check
+                        self.#ident = ::buffa::types::decode_string_to(buf)?;
+                    }
                 }
             });
         }
@@ -1989,7 +2039,10 @@ fn repeated_merge_arm(
             2u8,
         );
         let decode_expr = match ty {
-            Type::TYPE_STRING => quote! { ::buffa::types::decode_string(buf)? },
+            Type::TYPE_STRING if field_string_repr(ctx, proto_fqn, field_name).is_default() => {
+                quote! { ::buffa::types::decode_string(buf)? }
+            }
+            Type::TYPE_STRING => quote! { ::buffa::types::decode_string_to(buf)? },
             Type::TYPE_BYTES => {
                 if use_bytes {
                     quote! { ::buffa::types::decode_bytes_to_bytes(buf)? }
@@ -2275,19 +2328,27 @@ fn oneof_merge_arm(
     features: &ResolvedFeatures,
     preserve_unknown_fields: bool,
     use_bytes: bool,
+    string_repr: crate::StringRepr,
 ) -> TokenStream {
     let wire_type = wire_type_token(ty);
     let wire_byte = wire_type_byte(ty);
     let wire_check = wire_type_check(field_number, &wire_type, wire_byte);
     match ty {
-        Type::TYPE_STRING => quote! {
-            #field_number => {
-                #wire_check
-                self.#field_ident = ::core::option::Option::Some(
-                    #enum_ident::#variant_ident(::buffa::types::decode_string(buf)?)
-                );
+        Type::TYPE_STRING => {
+            let decoded = if string_repr.is_default() {
+                quote! { ::buffa::types::decode_string(buf)? }
+            } else {
+                quote! { ::buffa::types::decode_string_to(buf)? }
+            };
+            quote! {
+                #field_number => {
+                    #wire_check
+                    self.#field_ident = ::core::option::Option::Some(
+                        #enum_ident::#variant_ident(#decoded)
+                    );
+                }
             }
-        },
+        }
         Type::TYPE_BYTES => {
             let decoded = if use_bytes {
                 quote! { ::buffa::types::decode_bytes_to_bytes(buf)? }
@@ -2427,6 +2488,7 @@ fn generate_oneof_impls(
         ));
         let field_features = crate::features::resolve_field(ctx, field, features);
         let use_bytes = ty == Type::TYPE_BYTES && field_uses_bytes(ctx, proto_fqn, field_name);
+        let string_repr = field_string_repr(ctx, proto_fqn, field_name);
         merge_arm_list.push(oneof_merge_arm(
             &field_ident,
             &qualified_enum,
@@ -2436,6 +2498,7 @@ fn generate_oneof_impls(
             &field_features,
             preserve_unknown_fields,
             use_bytes,
+            string_repr,
         ));
     }
 

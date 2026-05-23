@@ -361,7 +361,9 @@ Compatibility is tested against protoc v21.12, v22.5, v25.5, v27.3, v29.5, and v
 
 ## Minimum supported Rust version
 
-1.85
+The current MSRV is 1.85.
+
+buffa's MSRV tracks the release ~12 months behind the latest stable, re-evaluated each time a release is cut. Defaulting to the year-old release maximizes compatibility for downstream crates; we move it forward sooner only when a valuable dependency or language feature requires it, and never past the current stable. While buffa is pre-1.0, an MSRV bump is a minor (0.x) release and is noted in the CHANGELOG.
 
 ## License
 

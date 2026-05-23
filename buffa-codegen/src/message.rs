@@ -558,8 +558,15 @@ fn generate_message_with_nesting(
 
     // Check if any non-optional field has a custom default value, which
     // requires a hand-written `impl Default` instead of `#[derive(Default)]`.
-    let custom_default_impl =
-        generate_custom_default(ctx, msg, &name_ident, current_package, features, nesting)?;
+    let custom_default_impl = generate_custom_default(
+        ctx,
+        msg,
+        &name_ident,
+        current_package,
+        proto_fqn,
+        features,
+        nesting,
+    )?;
     let derive_default = if custom_default_impl.is_some() {
         quote! {}
     } else {
@@ -1248,10 +1255,17 @@ fn custom_deser_oneof_group(
         // return type, which pins the generic T in json_helpers::bytes::
         // deserialize to Bytes (vs the Vec<u8> default). No downstream
         // shim needed — the helper is generic over T: From<Vec<u8>>.
+        let variant_string_repr = if field_type == Type::TYPE_STRING {
+            crate::impl_message::field_string_repr(ctx, proto_fqn, proto_name)
+        } else {
+            crate::StringRepr::String
+        };
         let variant_type = if field_type == Type::TYPE_BYTES
             && crate::impl_message::field_uses_bytes(ctx, proto_fqn, proto_name)
         {
             quote! { ::buffa::bytes::Bytes }
+        } else if field_type == Type::TYPE_STRING && !variant_string_repr.is_default() {
+            variant_string_repr.type_path(resolver)
         } else {
             scalar_or_message_type_nested(ctx, field, current_package, nesting, features, resolver)?
         };
@@ -1311,6 +1325,11 @@ struct FieldInfo {
     /// True when the field is proto type `bytes` AND matches the `bytes_fields`
     /// config — i.e. the struct field type is `bytes::Bytes` not `Vec<u8>`.
     use_bytes: bool,
+    /// The owned Rust type used for this field when it is proto type `string`
+    /// (singular, optional, or repeated; map keys/values are unaffected).
+    /// [`StringRepr::String`] for non-string fields and for string fields with
+    /// no matching `string_fields` rule.
+    string_repr: crate::StringRepr,
     /// Proto2 `required` (or editions `LEGACY_REQUIRED`). Required fields
     /// must always appear in JSON output regardless of value, matching the
     /// binary encoder's always-encode semantics.
@@ -1371,12 +1390,24 @@ fn classify_field(
         quote! { #vec<u8> }
     };
 
+    // Configurable owned representation for `string` fields (default `String`).
+    // Map keys/values are unaffected — they always use `String`, mirroring the
+    // bytes path where map values always stay `Vec<u8>`.
+    let string_repr = if field_type == Type::TYPE_STRING {
+        ctx.string_repr(&field_fqn)
+    } else {
+        crate::StringRepr::String
+    };
+    let string_type = string_repr.type_path(resolver);
+
     let mut inner_opt_type: Option<TokenStream> = None;
     let rust_type = if let Some(entry) = map_entry {
         map_rust_type_from_entry(scope, entry, resolver)?
     } else if is_repeated {
         let elem = if field_type == Type::TYPE_BYTES {
             bytes_type
+        } else if field_type == Type::TYPE_STRING {
+            string_type
         } else {
             scalar_or_message_type_nested(ctx, field, current_package, nesting, features, resolver)?
         };
@@ -1395,6 +1426,8 @@ fn classify_field(
             resolve_enum_type(scope, field, resolver)?
         } else if field_type == Type::TYPE_BYTES {
             bytes_type
+        } else if field_type == Type::TYPE_STRING {
+            string_type
         } else {
             scalar_rust_type(field_type, resolver)?
         };
@@ -1407,6 +1440,8 @@ fn classify_field(
         resolve_enum_type(scope, field, resolver)?
     } else if field_type == Type::TYPE_BYTES {
         bytes_type
+    } else if field_type == Type::TYPE_STRING {
+        string_type
     } else {
         scalar_rust_type(field_type, resolver)?
     };
@@ -1458,6 +1493,7 @@ fn classify_field(
         is_optional,
         is_required,
         use_bytes,
+        string_repr,
         map_key_type,
         map_value_type,
         map_value_enum_closed,
@@ -1542,6 +1578,20 @@ fn generate_field(
             quote! { ::buffa::__private::arbitrary_bytes_vec }
         } else {
             quote! { ::buffa::__private::arbitrary_bytes }
+        };
+        quote! { #[cfg_attr(feature = "arbitrary", arbitrary(with = #helper))] }
+    } else if ctx.config.generate_arbitrary
+        && info.string_repr == crate::StringRepr::EcoString
+        && !info.is_map
+    {
+        // `ecow::EcoString` has no native `Arbitrary` impl; smol_str and
+        // compact_str do, so only EcoString needs the shim.
+        let helper = if info.is_optional {
+            quote! { ::buffa::__private::arbitrary_ecow_opt }
+        } else if info.is_repeated {
+            quote! { ::buffa::__private::arbitrary_ecow_vec }
+        } else {
+            quote! { ::buffa::__private::arbitrary_ecow }
         };
         quote! { #[cfg_attr(feature = "arbitrary", arbitrary(with = #helper))] }
     } else {
@@ -2123,6 +2173,7 @@ fn generate_custom_default(
     msg: &DescriptorProto,
     name_ident: &Ident,
     current_package: &str,
+    proto_fqn: &str,
     features: &ResolvedFeatures,
     nesting: usize,
 ) -> Result<Option<TokenStream>, CodeGenError> {
@@ -2187,7 +2238,14 @@ fn generate_custom_default(
             continue;
         }
 
-        if let Some(expr) = parse_default_value(field, ctx, current_package, features, nesting)? {
+        if let Some(expr) = parse_default_value(
+            field,
+            ctx,
+            current_package,
+            features,
+            nesting,
+            crate::impl_message::field_string_repr(ctx, proto_fqn, field_name),
+        )? {
             field_inits.push(quote! { #field_ident: #expr, });
         } else {
             field_inits.push(quote! { #field_ident: ::core::default::Default::default(), });

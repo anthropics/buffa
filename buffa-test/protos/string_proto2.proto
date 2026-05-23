@@ -1,0 +1,13 @@
+syntax = "proto2";
+
+package stringproto2;
+
+// Exercises proto2 `[default = "..."]` combined with the `string_type` knob.
+// A `required` string field is a bare (non-Option) type, so its generated
+// `Default` impl and `clear()` both materialize the literal via the configured
+// representation's `From<String>` rather than `String::from`. Compiling this
+// module is the regression guard for that path.
+message Defaults {
+  required string name = 1 [default = "anonymous"];
+  optional int32 n = 2;
+}

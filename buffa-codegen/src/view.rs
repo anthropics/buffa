@@ -18,7 +18,7 @@ use crate::context::{ancillary_prefix, AncillaryKind, CodeGenContext, MessageSco
 use crate::features::ResolvedFeatures;
 use crate::impl_message::{
     closed_enum_decode, closed_enum_decode_with_unknown, decode_fn_token, effective_type,
-    effective_type_in_map_entry, field_uses_bytes, find_map_entry_fields,
+    effective_type_in_map_entry, field_string_repr, field_uses_bytes, find_map_entry_fields,
     is_explicit_presence_scalar, is_packed_type, is_real_oneof_member, is_required_field,
     is_supported_field_type, validated_field_number, wire_type_byte, wire_type_check,
     wire_type_token,
@@ -1421,6 +1421,28 @@ fn build_to_owned_fields(
     Ok(out)
 }
 
+/// Convert a string view binding to the owned `string`-field type.
+///
+/// The default `String` keeps the original `binding.to_string()` (which
+/// auto-derefs through a `&&str` binding), so default output is byte-identical
+/// to before this knob existed. Other representations build via `From<&str>`
+/// with the owned field type driving `Into` inference; `Into::into` takes its
+/// argument by value and does not auto-deref, so `double_ref` sites (iterator
+/// and match-ergonomics bindings that are `&&str`) get one explicit `*`.
+fn str_view_to_owned(
+    repr: crate::StringRepr,
+    binding: TokenStream,
+    double_ref: bool,
+) -> TokenStream {
+    if repr.is_default() {
+        quote! { #binding.to_string() }
+    } else if double_ref {
+        quote! { ::core::convert::Into::into(*#binding) }
+    } else {
+        quote! { ::core::convert::Into::into(#binding) }
+    }
+}
+
 fn singular_to_owned(
     scope: MessageScope<'_>,
     field: &FieldDescriptorProto,
@@ -1436,7 +1458,17 @@ fn singular_to_owned(
     } = scope;
     if is_explicit_presence_scalar(field, ty, features) {
         return Ok(match ty {
-            Type::TYPE_STRING => quote! { self.#ident.map(|s| s.to_string()) },
+            Type::TYPE_STRING => {
+                // Option<&str>::map. The default keeps `|s| s.to_string()`; for
+                // other reprs pass the `Into::into` fn directly rather than
+                // wrapping it in a closure (avoids clippy::redundant_closure in
+                // the consumer crate). Inference picks the target from the field.
+                if field_string_repr(ctx, proto_fqn, field_name).is_default() {
+                    quote! { self.#ident.map(|s| s.to_string()) }
+                } else {
+                    quote! { self.#ident.map(::core::convert::Into::into) }
+                }
+            }
             Type::TYPE_BYTES => {
                 let conv = bytes_to_owned(ctx, proto_fqn, field_name, quote! { b });
                 quote! { self.#ident.map(|b| #conv) }
@@ -1445,7 +1477,11 @@ fn singular_to_owned(
         });
     }
     Ok(match ty {
-        Type::TYPE_STRING => quote! { self.#ident.to_string() },
+        Type::TYPE_STRING => str_view_to_owned(
+            field_string_repr(ctx, proto_fqn, field_name),
+            quote! { self.#ident },
+            false,
+        ),
         Type::TYPE_BYTES => bytes_to_owned(ctx, proto_fqn, field_name, quote! { self.#ident }),
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
             let owned_path = resolve_owned_path(scope, field)?;
@@ -1473,7 +1509,15 @@ fn repeated_to_owned(
 ) -> TokenStream {
     let MessageScope { ctx, proto_fqn, .. } = scope;
     match ty {
-        Type::TYPE_STRING => quote! { self.#ident.iter().map(|s| s.to_string()).collect() },
+        Type::TYPE_STRING => {
+            // RepeatedView<&str>::iter() yields `&&str` (double ref).
+            let conv = str_view_to_owned(
+                field_string_repr(ctx, proto_fqn, field_name),
+                quote! { s },
+                true,
+            );
+            quote! { self.#ident.iter().map(|s| #conv).collect() }
+        }
         Type::TYPE_BYTES => {
             // Vec<&[u8]>::iter() → b: &&[u8]. bytes_to_owned handles double-ref.
             let conv = bytes_to_owned(ctx, proto_fqn, field_name, quote! { b });
@@ -1521,7 +1565,14 @@ fn map_to_owned_expr(
 fn oneof_variant_to_owned(scope: MessageScope<'_>, ty: Type, field_name: &str) -> TokenStream {
     let MessageScope { ctx, proto_fqn, .. } = scope;
     match ty {
-        Type::TYPE_STRING => quote! { v.to_string() },
+        Type::TYPE_STRING => {
+            // Match ergonomics on `&ViewEnum` binds `v` as `&&str` (double ref).
+            str_view_to_owned(
+                field_string_repr(ctx, proto_fqn, field_name),
+                quote! { v },
+                true,
+            )
+        }
         // match-ergonomics on &ViewEnum → v: &&[u8]. bytes_to_owned handles it.
         Type::TYPE_BYTES => bytes_to_owned(ctx, proto_fqn, field_name, quote! { v }),
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {

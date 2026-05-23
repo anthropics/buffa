@@ -169,6 +169,65 @@ pub enum GeneratedFileKind {
     Companion,
 }
 
+/// The Rust type a proto `string` field maps to in generated owned structs.
+///
+/// The default is [`String`](StringRepr::String). The other variants are
+/// small-string-optimized types that avoid `String`'s growable buffer for
+/// read-mostly schemas; each is gated behind the matching `buffa` Cargo feature
+/// (`smol_str`, `ecow`, `compact_str`), and the downstream crate must enable
+/// that feature so the re-exported type path (`::buffa::smol_str::SmolStr`,
+/// etc.) resolves.
+///
+/// Select a representation through `buffa_build`'s `string_type` /
+/// `string_type_in` builder methods. The wire format is identical regardless of
+/// representation — only the in-memory owned type changes; view types keep
+/// borrowing `&str`, and `map<_, string>` / `map<string, _>` keys and values
+/// always stay `String`.
+///
+/// Sizes below are for 64-bit targets. See the buffa README for a fuller
+/// comparison of the small-string crates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum StringRepr {
+    /// `::buffa::alloc::string::String` — 24-byte struct, growable and mutable
+    /// (the default).
+    #[default]
+    String,
+    /// `smol_str::SmolStr` — 24-byte struct, inlines up to 23 bytes, `O(1)`
+    /// clone of long strings via `Arc<str>`. **Immutable** (assign a new value
+    /// to mutate). Requires the `buffa/smol_str` feature.
+    SmolStr,
+    /// `ecow::EcoString` — 16-byte struct, inlines up to 15 bytes, clone-on-write
+    /// with `O(1)` clone. **Immutable** (assign a new value to mutate).
+    /// Requires the `buffa/ecow` feature.
+    EcoString,
+    /// `compact_str::CompactString` — 24-byte struct, inlines up to 24 bytes,
+    /// mutable (a drop-in `String` replacement). Requires the
+    /// `buffa/compact_str` feature.
+    CompactString,
+}
+
+impl StringRepr {
+    /// The owned Rust type path emitted for a `string` field with this
+    /// representation.
+    pub(crate) fn type_path(self, resolver: &imports::ImportResolver) -> proc_macro2::TokenStream {
+        use quote::quote;
+        match self {
+            StringRepr::String => resolver.string(),
+            StringRepr::SmolStr => quote! { ::buffa::smol_str::SmolStr },
+            StringRepr::EcoString => quote! { ::buffa::ecow::EcoString },
+            StringRepr::CompactString => quote! { ::buffa::compact_str::CompactString },
+        }
+    }
+
+    /// Whether this is the default `String` representation, which keeps the
+    /// `String`-specialized fast paths (in-place `merge_string`, `clear()`,
+    /// native `Arbitrary`) instead of the generic `ProtoString` ones.
+    pub(crate) fn is_default(self) -> bool {
+        matches!(self, StringRepr::String)
+    }
+}
+
 /// Configuration for code generation.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -227,6 +286,17 @@ pub struct CodeGenConfig {
     /// a specific field, or `"."` for all bytes fields). The path is matched
     /// as a prefix, so `"."` applies to every bytes field in every message.
     pub bytes_fields: Vec<String>,
+    /// Ordered (proto-path-prefix, [`StringRepr`]) rules selecting the Rust type
+    /// for `string` fields. Later rules win, so a broad rule (e.g. `"."` →
+    /// `SmolStr`) can be refined by a more specific one
+    /// (`".my.pkg.Msg.field"` → `CompactString`). Fields matching no rule use
+    /// `String`. The path is matched with the same proto-segment-aware prefix
+    /// logic as [`bytes_fields`](Self::bytes_fields).
+    ///
+    /// Applies to singular, optional, and repeated `string` fields and oneof
+    /// `string` variants. Map keys and values always stay `String`, mirroring
+    /// the bytes path (where map values always stay `Vec<u8>`).
+    pub string_fields: Vec<(String, StringRepr)>,
     /// Honor `features.utf8_validation = NONE` by emitting `Vec<u8>` / `&[u8]`
     /// for such string fields instead of `String` / `&str`.
     ///
@@ -413,6 +483,7 @@ impl Default for CodeGenConfig {
             generate_arbitrary: false,
             extern_paths: Vec::new(),
             bytes_fields: Vec::new(),
+            string_fields: Vec::new(),
             strict_utf8_mapping: false,
             allow_message_set: false,
             generate_text: false,

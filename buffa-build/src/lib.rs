@@ -33,6 +33,8 @@ use buffa::Message;
 use buffa_codegen::generated::descriptor::FileDescriptorSet;
 
 use buffa_codegen::CodeGenConfig;
+#[doc(inline)]
+pub use buffa_codegen::StringRepr;
 
 /// How to produce a `FileDescriptorSet` from `.proto` files.
 #[derive(Debug, Clone, Default)]
@@ -436,6 +438,61 @@ impl Config {
     #[must_use]
     pub fn use_bytes_type(mut self) -> Self {
         self.codegen_config.bytes_fields.push(".".to_string());
+        self
+    }
+
+    /// Map `string` fields to a [`StringRepr`] other than `String` for the
+    /// given proto path prefixes. The string counterpart to
+    /// [`use_bytes_type_in`](Self::use_bytes_type_in).
+    ///
+    /// Each path is a fully-qualified proto path prefix (e.g.
+    /// `".my.pkg.MyMessage.name"` for one field, `".my.pkg"` for a package).
+    ///
+    /// Rules accumulate and the **last** matching rule wins. Order therefore
+    /// matters: call [`string_type`](Self::string_type) (the broad default)
+    /// *first*, then `string_type_in` for narrower overrides — a broad rule
+    /// added after a specific one will shadow it.
+    ///
+    /// The downstream crate must enable the selected type's `buffa` feature
+    /// (`smol_str`, `ecow`, or `compact_str`); otherwise the generated
+    /// `::buffa::<crate>::<Type>` references fail to resolve.
+    ///
+    /// Only the owned Rust type changes: the wire format is unchanged, view
+    /// types still borrow `&str`, and `map<_, string>` keys and values stay
+    /// `String`.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use buffa_build::StringRepr;
+    /// buffa_build::Config::new()
+    ///     .string_type(StringRepr::SmolStr)                          // broad default first
+    ///     .string_type_in(StringRepr::CompactString, &[".my.pkg.Msg.body"]) // narrow override
+    ///     .files(&["proto/my_service.proto"])
+    ///     .includes(&["proto/"])
+    ///     .compile()
+    ///     .unwrap();
+    /// ```
+    #[must_use]
+    pub fn string_type_in(mut self, repr: StringRepr, paths: &[impl AsRef<str>]) -> Self {
+        self.codegen_config
+            .string_fields
+            .extend(paths.iter().map(|p| (p.as_ref().to_string(), repr)));
+        self
+    }
+
+    /// Map every `string` field in all messages to the given [`StringRepr`].
+    ///
+    /// Convenience for `.string_type_in(repr, &["."])`. Call this *before* any
+    /// [`string_type_in`](Self::string_type_in) overrides, since the last
+    /// matching rule wins (a `"."` rule added later shadows earlier specific
+    /// rules). `map<_, string>` keys and values stay `String`, and the
+    /// downstream crate must enable the selected type's `buffa` feature.
+    #[must_use]
+    pub fn string_type(mut self, repr: StringRepr) -> Self {
+        self.codegen_config
+            .string_fields
+            .push((".".to_string(), repr));
         self
     }
 
