@@ -192,6 +192,37 @@ pub(crate) fn generate_view_with_nesting(
         quote! {}
     };
 
+    // Vtable-mode reflection: `impl ReflectMessage` directly on the view.
+    // Skipped for map entry synthetic messages (not registered in the pool by
+    // name; consumers never reflect over them directly), matching the
+    // bridge-mode `Reflectable` skip.
+    let is_map_entry = msg
+        .options
+        .as_option()
+        .is_some_and(|o| o.map_entry.unwrap_or(false));
+    let reflect_view_impls =
+        if ctx.config.generate_reflection && ctx.config.generate_reflection_vtable && !is_map_entry
+        {
+            // `reflect_view_impls` emits three sibling items (the ReflectMessage
+            // impl, the ReflectElement impl, and an inherent impl for the
+            // memoized index). `cfg_const_block` wraps them in a single
+            // `#[cfg] const _` so one gate covers all three; a bare `cfg_block`
+            // would gate only the first and leak the rest.
+            crate::feature_gates::cfg_const_block(
+                crate::reflect_view::reflect_view_impls(
+                    view_scope,
+                    msg,
+                    &view_ident,
+                    view_depth,
+                    &view_oneof_prefix,
+                    &oneof_idents,
+                )?,
+                ctx.config.feature_gates().reflect,
+            )
+        } else {
+            quote! {}
+        };
+
     // When preserving unknowns we capture `before_tag` so we can compute the
     // raw byte span after `skip_field` advances the cursor.
     let before_tag_capture = if ctx.config.preserve_unknown_fields {
@@ -369,6 +400,8 @@ pub(crate) fn generate_view_with_nesting(
                 this
             }
         }
+
+        #reflect_view_impls
     };
 
     Ok((top_level, mod_items))
@@ -2243,7 +2276,7 @@ fn resolve_enum_ty(
 /// `scope.nesting` must be the **total** depth of the caller below the
 /// package root (msg-nesting + kind-depth offset already applied by the
 /// caller — `+2` for view-struct bodies, `+4` for view-oneof-enum bodies).
-fn resolve_view_ty_tokens(
+pub(crate) fn resolve_view_ty_tokens(
     scope: MessageScope<'_>,
     field: &FieldDescriptorProto,
 ) -> Result<TokenStream, CodeGenError> {

@@ -311,6 +311,26 @@ impl Config {
         self
     }
 
+    /// Additionally emit vtable-mode reflection (`impl ReflectMessage` on view
+    /// types) on top of the bridge-mode `Reflectable` impl.
+    ///
+    /// Requires [`generate_reflection`](Self::generate_reflection) and view
+    /// generation (both must be enabled — [`compile`](Self::compile) errors
+    /// otherwise). Vtable mode reads view struct fields directly through
+    /// `ReflectMessage`, with no encode/decode round-trip and no per-field
+    /// allocation for fields that are not read.
+    ///
+    /// **Experimental and `#[doc(hidden)]`.** This is a stopgap until the
+    /// public `ReflectMode` selector lands; the name and shape may change. It
+    /// is hidden from the rendered docs to avoid advertising an API that will
+    /// be superseded — internal builds use it directly.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn generate_reflection_vtable(mut self, enabled: bool) -> Self {
+        self.codegen_config.generate_reflection_vtable = enabled;
+        self
+    }
+
     /// Enable or disable unknown field preservation (default: true).
     ///
     /// When enabled (the default), unrecognized fields encountered during

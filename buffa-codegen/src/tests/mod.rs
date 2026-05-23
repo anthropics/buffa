@@ -57,4 +57,5 @@ mod json_codegen;
 mod naming;
 mod proto2;
 mod reexports;
+mod reflect_view;
 mod view_codegen;

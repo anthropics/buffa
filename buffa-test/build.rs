@@ -7,6 +7,7 @@ fn main() {
         .includes(&["protos/"])
         .generate_text(true)
         .generate_reflection(true)
+        .generate_reflection_vtable(true)
         .compile()
         .expect("buffa_build failed for basic.proto");
 
@@ -79,11 +80,17 @@ fn main() {
         .compile()
         .expect("buffa_build failed for nestpkg_*.proto");
 
-    // Proto2 with custom defaults, required fields, closed enums.
+    // Proto2 with custom defaults, required fields, closed enums. Vtable
+    // reflection is enabled here specifically to compile the closed-enum and
+    // required-field reflect paths (basic.proto is proto3 / open enums only):
+    // closed enums are stored as bare enum types, whose `to_i32` is the
+    // `Enumeration` trait method.
     buffa_build::Config::new()
         .files(&["protos/proto2_defaults.proto"])
         .includes(&["protos/"])
         .generate_text(true)
+        .generate_reflection(true)
+        .generate_reflection_vtable(true)
         .compile()
         .expect("buffa_build failed for proto2_defaults.proto");
 

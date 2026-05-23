@@ -36,6 +36,7 @@ pub(crate) mod imports;
 pub(crate) mod message;
 pub(crate) mod oneof;
 pub(crate) mod reflect;
+pub(crate) mod reflect_view;
 pub(crate) mod view;
 
 use crate::generated::descriptor::FileDescriptorProto;
@@ -459,10 +460,9 @@ pub struct CodeGenConfig {
     ///
     /// **Performance** — `reflect()` is one full encode/decode round-trip
     /// plus a heap allocation. The first call also pays a one-time pool
-    /// build cost (linking the embedded `FileDescriptorSet`). The vtable
-    /// mode (zero-copy reflective access) is a deferred follow-up; the
-    /// call-site contract is the same either way, so flipping modes later
-    /// requires no consumer-code diff.
+    /// build cost (linking the embedded `FileDescriptorSet`). For zero-copy
+    /// reflective access over view types without the round-trip, additionally
+    /// enable [`generate_reflection_vtable`](Self::generate_reflection_vtable).
     ///
     /// **Binary size** — each package embeds its own copy of the full
     /// `FileDescriptorSet` (transitive closure). For a multi-package
@@ -472,6 +472,18 @@ pub struct CodeGenConfig {
     ///
     /// Defaults to `false`.
     pub generate_reflection: bool,
+    /// Additionally emit `impl ReflectMessage` / `impl ReflectElement` on view
+    /// types (vtable mode), on top of the bridge-mode `Reflectable` impl.
+    ///
+    /// Requires [`generate_reflection`](Self::generate_reflection) (the vtable
+    /// impls resolve against the same embedded `DescriptorPool`) and
+    /// [`generate_views`](Self::generate_views). Internal flag, not yet exposed
+    /// through `buffa-build`; the public `ReflectMode` surface is wired
+    /// separately. Vtable mode reads view struct fields directly — no
+    /// encode/decode round-trip and no per-field allocation.
+    ///
+    /// Defaults to `false`.
+    pub generate_reflection_vtable: bool,
 }
 
 impl Default for CodeGenConfig {
@@ -496,6 +508,7 @@ impl Default for CodeGenConfig {
             gate_impls_on_crate_features: false,
             generate_with_setters: true,
             generate_reflection: false,
+            generate_reflection_vtable: false,
         }
     }
 }
@@ -648,6 +661,20 @@ pub fn generate(
     files_to_generate: &[String],
     config: &CodeGenConfig,
 ) -> Result<Vec<GeneratedFile>, CodeGenError> {
+    // Vtable reflection emits `impl ReflectMessage` on view types and resolves
+    // against the per-package descriptor pool, so it needs both view generation
+    // and bridge-mode reflection (which emits that pool). Without this check the
+    // flag would silently emit nothing and the consumer would hit an opaque
+    // "FooView: ReflectMessage is not satisfied" error far from the cause.
+    if config.generate_reflection_vtable && (!config.generate_reflection || !config.generate_views)
+    {
+        return Err(CodeGenError::Other(
+            "generate_reflection_vtable requires both generate_reflection and \
+             generate_views to be enabled"
+                .into(),
+        ));
+    }
+
     let ctx = context::CodeGenContext::for_generate(file_descriptors, files_to_generate, config);
 
     // Group requested files by package. BTreeMap → deterministic output order.
