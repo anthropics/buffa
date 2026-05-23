@@ -399,12 +399,6 @@ below). The remaining open items are noted under "Not yet done" at the end.
    Value` and dropping the bespoke `impl ReflectList for Vec<Value>`. owned
    `unknown_fields()` is overridden to preserve unknowns (bridge parity).
 
-### Not yet done
-
-- **Benchmark numbers in the README.** The `reflect` bench gained vtable cases
-  (6–10× over bridge, ~4× over pure `DynamicMessage`); regenerating the README
-  charts through the pinned Xeon harness is outstanding.
-
 ### Done since
 
 - ✅ **`VTable` is the default reflection mode.** `generate_reflection(true)` (and
@@ -412,6 +406,12 @@ below). The remaining open items are noted under "Not yet done" at the end.
   via `reflect_mode(ReflectMode::Bridge)`. Vtable no longer requires views — the
   owned `impl ReflectMessage` is self-contained, so views-off builds get
   owned-only vtable reflection rather than an error.
+- ✅ **README reflection charts regenerated.** The `reflect` bench's new cases are
+  charted: a `view` series on reflection-decode (zero-copy decode is the floor,
+  +25% to +153% over the generated owned codec) and a new reflection-read chart
+  (`vtable` vs `bridge` vs `dynamic` — vtable runs 4–7× faster than the bridge
+  round-trip). Regenerated through the Docker bench harness; see the README note
+  that these reflection charts run on the dev host, not the pinned Xeon runner.
 
 ## What this does *not* solve
 

@@ -28,8 +28,8 @@
   <text x="720.0" y="143" text-anchor="middle" class="axis-label">3,000</text>
   <text x="430.0" y="158" text-anchor="middle" class="axis-label">MiB/s</text>
   <text x="130" y="108.0" text-anchor="end" class="label">ApiResponse</text>
-  <rect x="140" y="80.0" width="495.3" height="22" rx="2" fill="#4C78A8"/>
-  <text x="639.3" y="95.0" class="value">2,561</text>
-  <rect x="140" y="106.0" width="132.3" height="22" rx="2" fill="#B279A2"/>
-  <text x="276.3" y="121.0" class="value">684</text>
+  <rect x="140" y="80.0" width="453.8" height="22" rx="2" fill="#4C78A8"/>
+  <text x="597.8" y="95.0" class="value">2,347</text>
+  <rect x="140" y="106.0" width="129.4" height="22" rx="2" fill="#B279A2"/>
+  <text x="273.4" y="121.0" class="value">669</text>
 </svg>

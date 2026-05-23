@@ -28,7 +28,7 @@ The Rust ecosystem lacks an actively maintained, pure-Rust library that supports
 
 - **Unknown field preservation.** Round-trip fidelity for proxy and middleware use cases.
 
-- **Runtime reflection.** `buffa-descriptor` (under the `reflect` feature) provides `DescriptorPool` and `DynamicMessage` for schema-driven encode, decode, and JSON without generated code — plus extensions, custom-option access, `Any` pack/unpack, and symbol→file lookup for gRPC server reflection. Generated types bridge into the same `ReflectMessage` trait via a derived `Reflectable` impl, so a CEL evaluator, transcoding gateway, or generic interceptor can treat typed and dynamic messages uniformly. See [Reflection](#reflection) for the cost relative to generated code.
+- **Runtime reflection.** `buffa-descriptor` (under the `reflect` feature) provides `DescriptorPool` and `DynamicMessage` for schema-driven encode, decode, and JSON without generated code — plus extensions, custom-option access, `Any` pack/unpack, and symbol→file lookup for gRPC server reflection. Generated types implement the same `ReflectMessage` trait directly (vtable mode), so `foo.reflect()` borrows in place and a CEL evaluator, transcoding gateway, or generic interceptor treats typed and dynamic messages uniformly — without a re-encode round-trip. See [Reflection](#reflection) for the cost relative to generated code.
 
 - **`no_std` + `alloc`.** The core runtime works without `std`, including JSON serialization via serde. Enabling `std` adds `std::io` integration, `std::time` conversions, and thread-local JSON parse options.
 
@@ -293,18 +293,35 @@ structs and then encoding them.
 
 ### Reflection
 
-The reflection path (`DynamicMessage`) trades throughput for schema-agnostic processing: a CEL evaluator, a transcoding gateway, or a generic interceptor can encode, decode, and serialize messages it has no generated type for. These charts measure that genericity tax against the generated codec, on the same machine and with the same method as above. Only the four code-generated benchmark messages are covered, because reflection needs a generated type to compare against; `MediaFrame` is omitted.
+Reflection lets a CEL evaluator, a transcoding gateway, or a generic interceptor encode, decode, and serialize messages it has no generated type for. buffa offers two implementations, selected with `reflect_mode`: **bridge** keeps generated code small (`foo.reflect()` re-encodes the typed message and decodes the bytes into a `DynamicMessage`), while **vtable** — the default when reflection is enabled — implements `ReflectMessage` directly on the generated types so `foo.reflect()` borrows `foo` in place, with no round-trip. Both hand out the same `&dyn ReflectMessage`, so the call site does not change between modes.
 
-The three series:
+These charts measure the genericity tax against the generated codec. Only the four code-generated benchmark messages are covered, because reflection needs a generated type to compare against; `MediaFrame` is omitted. They are regenerated through the Docker benchmark harness, but — unlike the cross-implementation charts above — on the development host rather than the pinned Xeon runner, so read them as a buffa-internal comparison (generated vs. reflect vs. view vs. vtable), not against the numbers in the sections above.
 
-- **generated** — the typed codec `buffa-codegen` emits. Each message is a Rust struct with one field per proto field, and decode/encode are monomorphized to those fields. This is buffa's default path and the same `buffa` baseline charted under [Binary decode](#binary-decode) and [Binary encode](#binary-encode) above.
+#### Decode
+
+- **generated** — the typed codec `buffa-codegen` emits: a Rust struct with one field per proto field, decode monomorphized to those fields. The same `buffa` baseline charted under [Binary decode](#binary-decode).
 - **reflect** — `DynamicMessage`: a single `BTreeMap<u32, Value>` keyed by field number, driven entirely by a runtime `DescriptorPool`. No generated type is involved.
-- **bridge round-trip** — what a generic interceptor pays *per message* to view a typed value through reflection. The codegen-derived `Reflectable` impl encodes the typed message and decodes the bytes back into a `DynamicMessage`, then hands it out as `&dyn ReflectMessage`. It is a generated encode plus a reflective decode, so it is always the slowest column.
+- **view** — zero-copy `decode_view`: strings and bytes borrow from the input buffer instead of being copied into owned `String`/`Vec`, so it decodes *faster than the generated owned codec*. This is the floor every vtable reflection read builds on.
 
 ![Reflection decode — ApiResponse](benchmarks/charts/reflect-decode-api_response.svg)
 ![Reflection decode — LogRecord](benchmarks/charts/reflect-decode-log_record.svg)
 ![Reflection decode — AnalyticsEvent](benchmarks/charts/reflect-decode-analytics_event.svg)
 ![Reflection decode — GoogleMessage1](benchmarks/charts/reflect-decode-google_message1_proto3.svg)
+
+#### Read
+
+The interceptor / field-mask workload: take a wire payload, obtain a reflective handle, and read every set field. This is where vtable mode pays off — it is dominated by the cheap zero-copy decode, so it runs several times faster than either reflection alternative.
+
+- **vtable** — `decode_view`, then read through the borrowed `&dyn ReflectMessage`. No round-trip, no per-field allocation.
+- **bridge** — decode the owned message, then round-trip it into a `DynamicMessage` (the cost the codegen `Reflectable` paid per call before vtable mode).
+- **dynamic** — decode straight into a `DynamicMessage`, no typed step (pure reflection).
+
+![Reflection read — ApiResponse](benchmarks/charts/reflect-read-api_response.svg)
+![Reflection read — LogRecord](benchmarks/charts/reflect-read-log_record.svg)
+![Reflection read — AnalyticsEvent](benchmarks/charts/reflect-read-analytics_event.svg)
+![Reflection read — GoogleMessage1](benchmarks/charts/reflect-read-google_message1_proto3.svg)
+
+#### Encode
 
 ![Reflection encode — ApiResponse](benchmarks/charts/reflect-encode-api_response.svg)
 ![Reflection encode — LogRecord](benchmarks/charts/reflect-encode-log_record.svg)
@@ -313,12 +330,23 @@ The three series:
 
 <details><summary>Raw decode data (MiB/s, % vs generated)</summary>
 
-| Message | generated | reflect | bridge round-trip |
+| Message | generated | reflect | view |
 |---------|------:|------:|------:|
-| ApiResponse | 834 | 323 (−61%) | 243 (−71%) |
-| LogRecord | 742 | 447 (−40%) | 364 (−51%) |
-| AnalyticsEvent | 221 | 83 (−62%) | 69 (−69%) |
-| GoogleMessage1 | 1,022 | 217 (−79%) | 210 (−79%) |
+| ApiResponse | 831 | 320 (−61%) | 1,422 (+71%) |
+| LogRecord | 779 | 448 (−42%) | 1,971 (+153%) |
+| AnalyticsEvent | 220 | 83 (−62%) | 317 (+44%) |
+| GoogleMessage1 | 1,020 | 198 (−81%) | 1,274 (+25%) |
+
+</details>
+
+<details><summary>Raw read data (MiB/s, decode + scan all fields, % vs bridge)</summary>
+
+| Message | vtable | bridge | dynamic |
+|---------|------:|------:|------:|
+| ApiResponse | 799 (+398%) | 160 | 233 (+46%) |
+| LogRecord | 1,462 (+667%) | 191 | 356 (+86%) |
+| AnalyticsEvent | 315 (+516%) | 51 | 83 (+62%) |
+| GoogleMessage1 | 654 (+351%) | 145 | 153 (+6%) |
 
 </details>
 
@@ -326,10 +354,10 @@ The three series:
 
 | Message | generated | reflect |
 |---------|------:|------:|
-| ApiResponse | 2,562 | 685 (−73%) |
-| LogRecord | 4,107 | 1,292 (−69%) |
-| AnalyticsEvent | 594 | 99 (−83%) |
-| GoogleMessage1 | 2,636 | 353 (−87%) |
+| ApiResponse | 2,347 | 670 (−71%) |
+| LogRecord | 3,689 | 1,232 (−67%) |
+| AnalyticsEvent | 573 | 96 (−83%) |
+| GoogleMessage1 | 2,222 | 352 (−84%) |
 
 </details>
 
