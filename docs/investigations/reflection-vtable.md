@@ -401,11 +401,6 @@ below). The remaining open items are noted under "Not yet done" at the end.
 
 ### Not yet done
 
-- **`string_type != String` + repeated + vtable.** `ReflectElement` is
-  implemented for `String` but not `SmolStr` / `EcoString` / `CompactString`, so
-  a `repeated` string field generated with a non-default string repr *and*
-  vtable mode would fail to compile. Both knobs are experimental; documented as
-  a known gap on `ReflectElement`.
 - **Flip the default `ReflectMode` to `VTable`.** Bridge remains the default; the
   switch is a one-line change once vtable mode has soaked.
 - **Benchmark numbers in the README.** The `reflect` bench gained vtable cases

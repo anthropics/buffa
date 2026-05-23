@@ -61,10 +61,11 @@ use super::value::{MapKey, MapKeyRef, ReflectList, ReflectMap, Value, ValueRef};
 /// derive [`Debug`] (the supertrait lets the generic container impls satisfy
 /// *their* `Debug` supertrait through the container's derive).
 ///
-/// Note: the non-default `string_type` representations (`SmolStr`,
-/// `EcoString`, `CompactString`) are **not** implemented here — a `repeated`
-/// string field generated with one of those plus vtable mode would need a
-/// matching impl. Both knobs are experimental, so this is a known gap.
+/// The non-default `string_type` representations (`SmolStr`, `EcoString`,
+/// `CompactString`) have impls gated behind the matching `buffa-descriptor`
+/// feature (`smol_str` / `ecow` / `compact_str`), for reflecting a `repeated`
+/// field of that type in vtable mode. A consumer building with both that
+/// `string_type` and vtable reflection must enable the corresponding feature.
 pub trait ReflectElement: core::fmt::Debug {
     /// Borrow this element as a [`ValueRef`].
     #[must_use]
@@ -160,6 +161,33 @@ impl ReflectElement for Bytes {
 impl ReflectElement for Value {
     fn as_value_ref(&self) -> ValueRef<'_> {
         self.as_ref()
+    }
+}
+
+// Configurable `string_type` representations, for reflecting a `repeated <repr>`
+// field in vtable mode. Each is gated on the matching `buffa-descriptor` feature
+// (which forwards to `buffa`'s). Only the repeated case needs these: singular
+// fields reflect via `&self.field` (any repr derefs to `str`), and `map` string
+// keys/values always stay `String`. All reprs satisfy `AsRef<str>`.
+
+#[cfg(feature = "smol_str")]
+impl ReflectElement for buffa::smol_str::SmolStr {
+    fn as_value_ref(&self) -> ValueRef<'_> {
+        ValueRef::String(self.as_ref())
+    }
+}
+
+#[cfg(feature = "ecow")]
+impl ReflectElement for buffa::ecow::EcoString {
+    fn as_value_ref(&self) -> ValueRef<'_> {
+        ValueRef::String(self.as_ref())
+    }
+}
+
+#[cfg(feature = "compact_str")]
+impl ReflectElement for buffa::compact_str::CompactString {
+    fn as_value_ref(&self) -> ValueRef<'_> {
+        ValueRef::String(self.as_ref())
     }
 }
 
