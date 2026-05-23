@@ -598,20 +598,45 @@ pub fn generate_message_impl(
         &quote! { #name_ident },
     );
 
-    // Bridge-mode reflection: `impl Reflectable` resolving against the
-    // package's embedded descriptor pool. Skipped for map entry synthetic
-    // messages — they're not registered in the pool by name and consumers
-    // never reflect over them directly.
-    let reflectable_impl = if ctx.config.generate_reflection
-        && !msg
-            .options
-            .as_option()
-            .is_some_and(|o| o.map_entry.unwrap_or(false))
-    {
-        crate::feature_gates::cfg_block(
-            crate::reflect::reflectable_impl(&quote! { #name_ident }, &quote! { __buffa }),
-            ctx.config.feature_gates().reflect,
-        )
+    // Reflection: `impl Reflectable` resolving against the package's embedded
+    // descriptor pool. Skipped for map entry synthetic messages — they're not
+    // registered in the pool by name and consumers never reflect over them.
+    //
+    // In vtable mode this also emits `impl ReflectMessage` / `impl
+    // ReflectElement` on the owned struct and makes `reflect()` borrow `self`
+    // directly (no encode/decode round-trip). In bridge mode `reflect()` boxes
+    // a `DynamicMessage` from a round-trip.
+    let is_map_entry = msg
+        .options
+        .as_option()
+        .is_some_and(|o| o.map_entry.unwrap_or(false));
+    let reflectable_impl = if ctx.config.generate_reflection && !is_map_entry {
+        let gate = ctx.config.feature_gates().reflect;
+        if ctx.config.generate_reflection_vtable {
+            let buffa_path = quote! { __buffa };
+            let owned = crate::reflect_owned::reflect_owned_impls(
+                &crate::reflect_owned::OwnedReflectScope {
+                    ctx,
+                    msg,
+                    name_ident: &name_ident,
+                    buffa_path: &buffa_path,
+                    current_package,
+                    features,
+                    oneof_idents,
+                    oneof_prefix,
+                    nesting,
+                },
+            )?;
+            let reflect_body = crate::reflect::reflectable_impl_vtable(&quote! { #name_ident });
+            // Multiple sibling impls (ReflectMessage, ReflectElement, the memo
+            // inherent impl, Reflectable) — gate them together with one cfg.
+            crate::feature_gates::cfg_const_block(quote! { #owned #reflect_body }, gate)
+        } else {
+            crate::feature_gates::cfg_block(
+                crate::reflect::reflectable_impl(&quote! { #name_ident }, &quote! { __buffa }),
+                gate,
+            )
+        }
     } else {
         quote! {}
     };

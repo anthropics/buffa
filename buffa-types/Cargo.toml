@@ -22,7 +22,7 @@ arbitrary = ["dep:arbitrary", "buffa/arbitrary"]
 # etc.) and owned types. Pulls `buffa-descriptor` and requires `std` (the
 # embedded descriptor pool uses `std::sync::OnceLock`). Off by default so
 # `no_std` consumers and those that don't reflect pay nothing.
-reflect = ["dep:buffa-descriptor", "buffa-descriptor/reflect", "std"]
+reflect = ["dep:buffa-descriptor", "buffa-descriptor/reflect", "buffa-descriptor/std", "std"]
 
 [dependencies]
 arbitrary = { workspace = true, optional = true }

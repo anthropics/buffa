@@ -44,17 +44,27 @@ use super::value::{MapKey, MapKeyRef, ReflectList, ReflectMap, Value, ValueRef};
 /// Conversion of a single repeated-field element (or map value) to a borrowed
 /// [`ValueRef`].
 ///
-/// Implemented here for the closed set of view element types (scalars, `&str`,
-/// `&[u8]`, [`EnumValue`]). Codegen emits a one-line impl for each generated
-/// message view type (yielding [`ValueRef::Message`]) and each bare closed
-/// enum (yielding [`ValueRef::EnumNumber`]) — these cannot be covered by a
-/// blanket impl without colliding with the scalar impls under Rust's coherence
-/// rules.
+/// Implemented here for the closed set of element types the runtime knows:
+/// scalars, `&str` / `&[u8]` (view storage), `String` / `Vec<u8>` /
+/// [`Bytes`](buffa::bytes::Bytes) (owned storage), [`EnumValue`], and
+/// [`Value`](super::Value) (bridge storage). Codegen emits a one-line impl for
+/// each generated message type (view and owned, yielding [`ValueRef::Message`])
+/// and each bare closed enum (yielding [`ValueRef::EnumNumber`]) — these cannot
+/// be covered by a blanket impl without colliding with the scalar impls under
+/// Rust's coherence rules.
 ///
-/// A hand-written or codegen-emitted implementer must also derive [`Debug`]:
-/// the [`core::fmt::Debug`] supertrait is what lets the generic [`ReflectList`]
-/// / [`ReflectMap`] impls below satisfy *their* own `Debug` supertrait through
-/// the `RepeatedView<T>: Debug` / `MapView<K, V>: Debug` derives.
+/// # Contract
+///
+/// `as_value_ref` must return the **same variant** on every call for a given
+/// value — the generic [`ReflectList`] / [`ReflectMap`] impls and their callers
+/// assume a `Vec<T>` / `HashMap<_, T>` is homogeneous. An implementer must also
+/// derive [`Debug`] (the supertrait lets the generic container impls satisfy
+/// *their* `Debug` supertrait through the container's derive).
+///
+/// Note: the non-default `string_type` representations (`SmolStr`,
+/// `EcoString`, `CompactString`) are **not** implemented here — a `repeated`
+/// string field generated with one of those plus vtable mode would need a
+/// matching impl. Both knobs are experimental, so this is a known gap.
 pub trait ReflectElement: core::fmt::Debug {
     /// Borrow this element as a [`ValueRef`].
     #[must_use]

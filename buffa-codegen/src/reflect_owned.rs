@@ -1,85 +1,68 @@
-//! Code generation for vtable-mode reflection on view types.
+//! Code generation for vtable-mode reflection on owned message types.
 //!
-//! When [`CodeGenConfig::generate_reflection`](crate::CodeGenConfig::generate_reflection)
-//! and the internal `generate_reflection_vtable` flag are both set, each
-//! generated view type gets:
+//! Parallel to [`reflect_view`](crate::reflect_view), but for the owned struct
+//! rather than the zero-copy view. When vtable mode is on, each owned message
+//! gets:
 //!
-//! - `impl ::buffa_descriptor::reflect::ReflectMessage for FooView<'a>` — a
-//!   zero-copy reflective accessor that reads struct fields directly, with no
-//!   encode/decode round-trip and no `DynamicMessage`.
-//! - `impl ::buffa_descriptor::reflect::ReflectElement for FooView<'a>` — so a
-//!   `RepeatedView`/`MapView` of this message reflects through the generic
-//!   container impls in `buffa-descriptor` (see that crate's `reflect::view`).
+//! - `impl ReflectMessage for Foo` — reads owned struct fields directly
+//!   (`String`/`Vec<u8>`/`MessageField`/`Vec`/`HashMap`/owned oneof enum),
+//!   backed by the owned-container reflect impls in `buffa-descriptor`.
+//! - `impl ReflectElement for Foo` — so a `Vec<Foo>` / `HashMap<_, Foo>`
+//!   reflects through the generic container impls.
 //! - A memoized per-message `MessageIndex` accessor.
 //!
-//! The bridge-mode `Reflectable` impl (on the owned message) is emitted
-//! separately by [`reflect`](crate::reflect) and is unaffected; the
-//! `Reflectable::reflect()` body switch to borrow the view directly is wired in
-//! a later change. This module only adds the `ReflectMessage` surface.
+//! The owned `Reflectable::reflect()` body is then `ReflectCow::Borrowed(self)`
+//! (emitted by [`reflect`](crate::reflect)), so reflecting an in-memory message
+//! costs no encode/decode round-trip — the interceptor use case. Bridge mode
+//! keeps the round-trip body and emits none of this.
 
 use std::collections::HashMap;
 
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use crate::context::{MessageScope, SENTINEL_MOD};
-use crate::features::resolve_field;
+use crate::context::CodeGenContext;
+use crate::features::{resolve_field, ResolvedFeatures};
 use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
 use crate::generated::descriptor::DescriptorProto;
 use crate::idents::make_field_ident;
 use crate::impl_message::{
     effective_type, is_explicit_presence_scalar, is_real_oneof_member, is_supported_field_type,
 };
-use crate::message::{is_closed_enum, is_map_field};
+use crate::message::{is_closed_enum, is_map_field, rust_path_to_tokens};
 use crate::oneof::oneof_variant_ident;
-use crate::view::resolve_view_ty_tokens;
+use crate::reflect_view::{scalar_default, scalar_variant};
 use crate::CodeGenError;
 
-/// The `ValueRef` scalar variant for a wire-numeric proto type.
-///
-/// Mirrors the wire form, matching `DynamicMessage`: `int32`/`sint32`/`sfixed32`
-/// all map to `I32`, etc. String, bytes, enum, and message types are handled by
-/// the callers, not here.
-pub(crate) fn scalar_variant(ty: Type) -> TokenStream {
-    match ty {
-        Type::TYPE_INT32 | Type::TYPE_SINT32 | Type::TYPE_SFIXED32 => quote! { I32 },
-        Type::TYPE_INT64 | Type::TYPE_SINT64 | Type::TYPE_SFIXED64 => quote! { I64 },
-        Type::TYPE_UINT32 | Type::TYPE_FIXED32 => quote! { U32 },
-        Type::TYPE_UINT64 | Type::TYPE_FIXED64 => quote! { U64 },
-        Type::TYPE_BOOL => quote! { Bool },
-        Type::TYPE_FLOAT => quote! { F32 },
-        Type::TYPE_DOUBLE => quote! { F64 },
-        // Non-scalar types never reach this helper.
-        _ => quote! { Bool },
-    }
+/// Context needed to emit the owned-message vtable impls, mirroring the
+/// arguments [`generate_message_impl`](crate::impl_message::generate_message_impl)
+/// already has in hand.
+pub(crate) struct OwnedReflectScope<'a> {
+    pub ctx: &'a CodeGenContext<'a>,
+    pub msg: &'a DescriptorProto,
+    pub name_ident: &'a proc_macro2::Ident,
+    pub buffa_path: &'a TokenStream,
+    pub current_package: &'a str,
+    pub features: &'a ResolvedFeatures,
+    pub oneof_idents: &'a HashMap<usize, proc_macro2::Ident>,
+    pub oneof_prefix: &'a TokenStream,
+    pub nesting: usize,
 }
 
-/// The default literal for a wire-numeric proto type (`0`, `0.0`, or `false`).
-pub(crate) fn scalar_default(ty: Type) -> TokenStream {
-    match ty {
-        Type::TYPE_BOOL => quote! { false },
-        Type::TYPE_FLOAT | Type::TYPE_DOUBLE => quote! { 0.0 },
-        _ => quote! { 0 },
-    }
-}
-
-/// Generate the vtable reflection impls for a single view type.
-///
-/// `view_scope` is the view struct's scope (`nesting + 2` below the package
-/// root). `view_depth` is that same depth, used to climb back to the package
-/// root for the `__buffa::reflect::descriptor_pool()` accessor. `oneof_idents`
-/// and `view_oneof_prefix` come from the view-struct generation so oneof
-/// members dispatch through the same view-oneof enum.
-pub(crate) fn reflect_view_impls(
-    view_scope: MessageScope<'_>,
-    msg: &DescriptorProto,
-    view_ident: &proc_macro2::Ident,
-    view_depth: usize,
-    view_oneof_prefix: &TokenStream,
-    oneof_idents: &HashMap<usize, proc_macro2::Ident>,
+/// Generate `impl ReflectMessage` + `impl ReflectElement` + the memoized
+/// `MessageIndex` accessor for an owned message.
+pub(crate) fn reflect_owned_impls(
+    scope: &OwnedReflectScope<'_>,
 ) -> Result<TokenStream, CodeGenError> {
-    let MessageScope { ctx, .. } = view_scope;
-    let features = view_scope.features;
+    let ctx = scope.ctx;
+    let msg = scope.msg;
+    let name_ident = scope.name_ident;
+    let buffa_path = scope.buffa_path;
+    let current_package = scope.current_package;
+    let features = scope.features;
+    let oneof_idents = scope.oneof_idents;
+    let oneof_prefix = scope.oneof_prefix;
+    let nesting = scope.nesting;
     let vr = quote! { ::buffa_descriptor::reflect::ValueRef };
     let cow = quote! { ::buffa_descriptor::reflect::ReflectCow };
 
@@ -100,19 +83,17 @@ pub(crate) fn reflect_view_impls(
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?;
         let id = make_field_ident(name);
-        // `FieldDescriptor::number()` (matched on below) returns `u32`; proto
-        // field numbers are always positive.
         let number = field.number.unwrap_or(0) as u32;
         let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;
 
         if is_repeated && is_map_field(msg, field) {
             get_arms.push(quote! { #number => #vr::Map(&self.#id), });
-            has_arms.push(quote! { #number => !::buffa::MapView::is_empty(&self.#id), });
+            has_arms.push(quote! { #number => !self.#id.is_empty(), });
             continue;
         }
         if is_repeated {
             get_arms.push(quote! { #number => #vr::List(&self.#id), });
-            has_arms.push(quote! { #number => !::buffa::RepeatedView::is_empty(&self.#id), });
+            has_arms.push(quote! { #number => !self.#id.is_empty(), });
             continue;
         }
 
@@ -121,11 +102,11 @@ pub(crate) fn reflect_view_impls(
             // Stored as `Option<T>`; absent singular returns the type default.
             match ty {
                 Type::TYPE_STRING => (
-                    quote! { #vr::String(self.#id.unwrap_or("")) },
+                    quote! { #vr::String(self.#id.as_deref().unwrap_or("")) },
                     quote! { self.#id.is_some() },
                 ),
                 Type::TYPE_BYTES => (
-                    quote! { #vr::Bytes(self.#id.unwrap_or(&[])) },
+                    quote! { #vr::Bytes(self.#id.as_deref().unwrap_or(&[])) },
                     quote! { self.#id.is_some() },
                 ),
                 Type::TYPE_ENUM => (
@@ -143,31 +124,25 @@ pub(crate) fn reflect_view_impls(
             }
         } else {
             // Implicit presence: absent is the default value, present is
-            // non-default. proto2 `required` fields also fall here (they are
-            // stored as bare types, not `Option`), so a required field set to
-            // its type default reflects as `has() == false` — the view layer
-            // cannot distinguish wire-set-to-default from absent.
+            // non-default. proto2 `required` fields also fall here (stored as
+            // bare types), so a required field set to its default reflects as
+            // `has() == false` — the same limitation the view path documents.
             match ty {
                 Type::TYPE_STRING => (
-                    quote! { #vr::String(self.#id) },
+                    quote! { #vr::String(&self.#id) },
                     quote! { !self.#id.is_empty() },
                 ),
                 Type::TYPE_BYTES => (
-                    quote! { #vr::Bytes(self.#id) },
+                    quote! { #vr::Bytes(&self.#id[..]) },
                     quote! { !self.#id.is_empty() },
                 ),
                 Type::TYPE_MESSAGE | Type::TYPE_GROUP => (
-                    // `MessageFieldView` derefs to the inner view, or the static
-                    // default instance when unset — so the borrow is always
-                    // valid and absent fields read as the empty message.
+                    // `MessageField` derefs to the inner message, or the static
+                    // default instance when unset, so the borrow is always valid.
                     quote! { #vr::Message(#cow::Borrowed(&*self.#id)) },
                     quote! { self.#id.is_set() },
                 ),
                 Type::TYPE_ENUM => {
-                    // A closed enum's default need not be zero (editions allows
-                    // a non-zero first value), so "non-default" compares against
-                    // the type default rather than `to_i32() != 0`. Open enums
-                    // (`EnumValue`) always default to the zero wire value.
                     let has_val = if is_closed_enum(&f_features) {
                         quote! { self.#id != ::core::default::Default::default() }
                     } else {
@@ -190,7 +165,7 @@ pub(crate) fn reflect_view_impls(
         has_arms.push(quote! { #number => #has_val, });
     }
 
-    // Oneof members dispatch through the `Option<KindView>` struct field.
+    // Oneof members dispatch through the `Option<Kind>` struct field.
     for (idx, oneof) in msg.oneof_decl.iter().enumerate() {
         let Some(base_ident) = oneof_idents.get(&idx) else {
             continue;
@@ -200,7 +175,7 @@ pub(crate) fn reflect_view_impls(
             .as_deref()
             .ok_or(CodeGenError::MissingField("oneof.name"))?;
         let field_ident = make_field_ident(oneof_name);
-        let view_enum = quote! { #view_oneof_prefix #base_ident };
+        let oneof_enum = quote! { #oneof_prefix #base_ident };
 
         for field in msg
             .field
@@ -217,14 +192,14 @@ pub(crate) fn reflect_view_impls(
 
             let (active, default) = match ty {
                 Type::TYPE_STRING => (quote! { #vr::String(v) }, quote! { #vr::String("") }),
-                Type::TYPE_BYTES => (quote! { #vr::Bytes(v) }, quote! { #vr::Bytes(&[]) }),
+                Type::TYPE_BYTES => (quote! { #vr::Bytes(&v[..]) }, quote! { #vr::Bytes(&[]) }),
                 Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
-                    let view_ty = resolve_view_ty_tokens(view_scope, field)?;
+                    let owned_ty = resolve_owned_message_ty(ctx, field, current_package, nesting)?;
                     (
                         quote! { #vr::Message(#cow::Borrowed(&**v)) },
                         quote! {
                             #vr::Message(#cow::Borrowed(
-                                <#view_ty as ::buffa::view::DefaultViewInstance>::default_view_instance(),
+                                <#owned_ty as ::buffa::DefaultInstance>::default_instance(),
                             ))
                         },
                     )
@@ -245,29 +220,38 @@ pub(crate) fn reflect_view_impls(
 
             get_arms.push(quote! {
                 #number => match &self.#field_ident {
-                    ::core::option::Option::Some(#view_enum::#variant(v)) => #active,
+                    ::core::option::Option::Some(#oneof_enum::#variant(v)) => #active,
                     _ => #default,
                 },
             });
             has_arms.push(quote! {
                 #number => ::core::matches!(
                     &self.#field_ident,
-                    ::core::option::Option::Some(#view_enum::#variant(_))
+                    ::core::option::Option::Some(#oneof_enum::#variant(_))
                 ),
             });
         }
     }
 
-    // Path from the view module back to `__buffa::reflect::descriptor_pool()`.
-    let mut supers = TokenStream::new();
-    for _ in 0..view_depth {
-        supers.extend(quote! { super:: });
-    }
-    let sentinel = make_field_ident(SENTINEL_MOD);
-    let pool = quote! { #supers #sentinel::reflect::descriptor_pool() };
+    let pool = quote! { #buffa_path::reflect::descriptor_pool() };
+
+    // Preserve unknown fields through reflection, matching the bridge path
+    // (`DynamicMessage` carries them). Without this override the trait default
+    // returns an empty set, so a recursive reflective walk over nested messages
+    // would silently drop fields the local schema doesn't know — the exact
+    // regression `ReflectMessage::unknown_fields`'s own doc warns against.
+    let unknown_fields_method = if ctx.config.preserve_unknown_fields {
+        quote! {
+            fn unknown_fields(&self) -> &::buffa::UnknownFields {
+                &self.__buffa_unknown_fields
+            }
+        }
+    } else {
+        quote! {}
+    };
 
     Ok(quote! {
-        impl<'a> ::buffa_descriptor::reflect::ReflectMessage for #view_ident<'a> {
+        impl ::buffa_descriptor::reflect::ReflectMessage for #name_ident {
             fn message_descriptor(&self) -> &::buffa_descriptor::MessageDescriptor {
                 #pool.message(Self::__buffa_reflect_message_index())
             }
@@ -276,10 +260,11 @@ pub(crate) fn reflect_view_impls(
                 #pool
             }
 
+            #unknown_fields_method
+
             fn get(&self, field: &::buffa_descriptor::FieldDescriptor) -> #vr<'_> {
-                // Closed enums are stored as the bare enum type, whose `to_i32`
-                // is the `Enumeration` trait method (open enums use the inherent
-                // `EnumValue::to_i32`, which needs no import). No-op for messages
+                // Closed enums use the `Enumeration` trait `to_i32`; open enums
+                // (`EnumValue`) use the inherent one. No-op import for messages
                 // without enum fields.
                 #[allow(unused_imports)]
                 use ::buffa::Enumeration as _;
@@ -288,7 +273,7 @@ pub(crate) fn reflect_view_impls(
                     _ => {
                         ::core::debug_assert!(
                             false,
-                            "field number {} is not a member of this view's reflect get()",
+                            "field number {} is not a member of this message's reflect get()",
                             field.number(),
                         );
                         #vr::Bool(false)
@@ -316,31 +301,23 @@ pub(crate) fn reflect_view_impls(
             }
 
             fn to_dynamic(&self) -> ::buffa_descriptor::reflect::DynamicMessage {
-                // The one allocating path in vtable mode (an explicit owned
-                // snapshot — plain field reads never reach it). Encode the view
-                // directly and decode into a `DynamicMessage`, skipping the
-                // intermediate owned-message tree that `from_message` would build.
-                let bytes = ::buffa::ViewEncode::encode_to_vec(self);
-                ::buffa_descriptor::reflect::DynamicMessage::decode(
+                ::buffa_descriptor::reflect::DynamicMessage::from_message(
+                    self,
                     ::buffa::alloc::sync::Arc::clone(#pool),
                     Self::__buffa_reflect_message_index(),
-                    &bytes,
                 )
-                .expect("view re-encodes to bytes decodable against its own descriptor")
             }
         }
 
-        impl<'a> ::buffa_descriptor::reflect::ReflectElement for #view_ident<'a> {
+        impl ::buffa_descriptor::reflect::ReflectElement for #name_ident {
             fn as_value_ref(&self) -> #vr<'_> {
                 #vr::Message(#cow::Borrowed(self))
             }
         }
 
-        impl<'a> #view_ident<'a> {
-            /// Memoized `MessageIndex` for this view's message type, resolved
-            /// once against the package's embedded descriptor pool. An inherent
-            /// associated fn (not a free fn) so sibling views in the same module
-            /// do not collide.
+        impl #name_ident {
+            /// Memoized `MessageIndex` for this message type, resolved once
+            /// against the package's embedded descriptor pool.
             #[doc(hidden)]
             fn __buffa_reflect_message_index() -> ::buffa_descriptor::MessageIndex {
                 static IDX: ::std::sync::OnceLock<::buffa_descriptor::MessageIndex> =
@@ -348,9 +325,31 @@ pub(crate) fn reflect_view_impls(
                 *IDX.get_or_init(|| {
                     #pool
                         .message_index(<Self as ::buffa::MessageName>::FULL_NAME)
-                        .expect("generated view type is registered in the embedded descriptor pool")
+                        .expect("generated message is registered in the embedded descriptor pool")
                 })
             }
         }
     })
+}
+
+/// Resolve the owned Rust type token for a message-typed oneof member, used for
+/// the unset-member default (`<Ty as DefaultInstance>::default_instance()`).
+fn resolve_owned_message_ty(
+    ctx: &CodeGenContext,
+    field: &crate::generated::descriptor::FieldDescriptorProto,
+    current_package: &str,
+    nesting: usize,
+) -> Result<TokenStream, CodeGenError> {
+    let dotted = field
+        .type_name
+        .as_deref()
+        .ok_or(CodeGenError::MissingField("field.type_name"))?;
+    let path = ctx
+        .rust_type_relative(dotted, current_package, nesting)
+        .ok_or_else(|| {
+            CodeGenError::Other(format!(
+                "owned type for oneof message '{dotted}' not resolvable"
+            ))
+        })?;
+    Ok(rust_path_to_tokens(&path))
 }

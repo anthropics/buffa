@@ -13,20 +13,24 @@
 //!    `decode/view` (`decode_view`, zero-copy — strings/bytes borrow from the
 //!    input, so this is the floor, below even generated decode).
 //! 2. **Encode** — `encode/generated` vs. `encode/reflect`.
-//! 3. **Bridge round-trip** — `t.reflect()`: one full encode + decode + boxed
-//!    `DynamicMessage`, the cost of the codegen-emitted `Reflectable` impl.
+//! 3. **Owned-message reflection** — `bridge_round_trip`
+//!    (`DynamicMessage::from_message`: encode + decode + box, the bridge cost)
+//!    vs. `owned_vtable_read_all` (borrow the owned message via `ReflectMessage`
+//!    and scan it — no round-trip). This is the win from vtable mode making
+//!    `Reflectable::reflect()` borrow `self`.
 //! 4. **From wire bytes to reflective field reads** — the interceptor /
 //!    field-mask workload, in `read_one` and `read_all` variants across three
 //!    handle strategies: `vtable_*` (`decode_view` + borrow as
-//!    `&dyn ReflectMessage`), `bridge_*` (`T::decode` then `.reflect()`), and
-//!    `dynamic_*` (`DynamicMessage::decode`). Vtable reflection is dominated by
-//!    the cheap zero-copy `decode_view`, so it lands well below both the bridge
-//!    round-trip and pure `DynamicMessage` reflection.
+//!    `&dyn ReflectMessage`), `bridge_*` (`T::decode` then
+//!    `DynamicMessage::from_message`), and `dynamic_*` (`DynamicMessage::decode`).
+//!    Vtable reflection is dominated by the cheap zero-copy `decode_view`, so it
+//!    lands well below both the bridge round-trip and pure `DynamicMessage`
+//!    reflection.
 
 use std::sync::Arc;
 
 use buffa::{Message, MessageView};
-use buffa_descriptor::reflect::{DynamicMessage, ReflectMessage, Reflectable};
+use buffa_descriptor::reflect::{DynamicMessage, ReflectMessage};
 use buffa_descriptor::{DescriptorPool, MessageIndex};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 
@@ -101,7 +105,7 @@ fn bench_message<M>(
     vt_read_one: impl Fn(&[u8]),
     vt_read_all: impl Fn(&[u8]),
 ) where
-    M: Message + Default + Reflectable,
+    M: Message + Default + ReflectMessage,
 {
     let dataset = load_dataset(dataset_bytes);
     let bytes = total_payload_bytes(&dataset);
@@ -179,7 +183,18 @@ fn bench_message<M>(
     group.bench_function("reflect/bridge_round_trip", |b| {
         b.iter(|| {
             for m in &typed {
-                criterion::black_box(m.reflect());
+                criterion::black_box(DynamicMessage::from_message(m, Arc::clone(p), idx));
+            }
+        });
+    });
+
+    // Owned-message reflection (a server reflecting its in-memory response):
+    // vtable mode borrows the owned message directly via `ReflectMessage`, so
+    // there is no round-trip — contrast with `bridge_round_trip` above.
+    group.bench_function("reflect/owned_vtable_read_all", |b| {
+        b.iter(|| {
+            for m in &typed {
+                read_all(m);
             }
         });
     });
@@ -191,7 +206,7 @@ fn bench_message<M>(
     // "read one field" and "read all set fields" variant:
     //
     //   vtable  — decode_view(bytes), borrow as &dyn ReflectMessage
-    //   bridge  — M::decode(bytes) then .reflect() (encode + decode + Box)
+    //   bridge  — M::decode(bytes) then DynamicMessage::from_message (round-trip)
     //   dynamic — DynamicMessage::decode(bytes) (pure reflection, no typed step)
 
     group.bench_function("reflect/vtable_read_one", |b| {
@@ -213,7 +228,8 @@ fn bench_message<M>(
         b.iter(|| {
             for payload in &dataset.payload {
                 let m = M::decode_from_slice(payload).expect("decode");
-                read_one(&*m.reflect());
+                let dm = DynamicMessage::from_message(&m, Arc::clone(p), idx);
+                read_one(&dm);
             }
         });
     });
@@ -221,7 +237,8 @@ fn bench_message<M>(
         b.iter(|| {
             for payload in &dataset.payload {
                 let m = M::decode_from_slice(payload).expect("decode");
-                read_all(&*m.reflect());
+                let dm = DynamicMessage::from_message(&m, Arc::clone(p), idx);
+                read_all(&dm);
             }
         });
     });

@@ -36,6 +36,7 @@ pub(crate) mod imports;
 pub(crate) mod message;
 pub(crate) mod oneof;
 pub(crate) mod reflect;
+pub(crate) mod reflect_owned;
 pub(crate) mod reflect_view;
 pub(crate) mod view;
 
@@ -478,15 +479,20 @@ pub struct CodeGenConfig {
     ///
     /// Defaults to `false`.
     pub generate_reflection: bool,
-    /// Additionally emit `impl ReflectMessage` / `impl ReflectElement` on view
-    /// types (vtable mode), on top of the bridge-mode `Reflectable` impl.
+    /// Emit vtable-mode reflection: `impl ReflectMessage` / `impl
+    /// ReflectElement` on **both** the view types and the owned message
+    /// structs, and switch the owned `Reflectable::reflect()` body to borrow
+    /// `self` (`ReflectCow::Borrowed(self)`) instead of the bridge round-trip.
     ///
-    /// Requires [`generate_reflection`](Self::generate_reflection) (the vtable
-    /// impls resolve against the same embedded `DescriptorPool`) and
-    /// [`generate_views`](Self::generate_views). Internal flag, not yet exposed
-    /// through `buffa-build`; the public `ReflectMode` surface is wired
-    /// separately. Vtable mode reads view struct fields directly — no
-    /// encode/decode round-trip and no per-field allocation.
+    /// Reflective access then reads struct fields in place — no encode/decode
+    /// round-trip and no per-field allocation — for both a decoded view and an
+    /// in-memory owned message.
+    ///
+    /// Requires [`generate_reflection`](Self::generate_reflection) (the impls
+    /// resolve against the same embedded `DescriptorPool`) and
+    /// [`generate_views`](Self::generate_views). Internal flag, exposed
+    /// experimentally through `buffa_build::Config::generate_reflection_vtable`
+    /// until the public `ReflectMode` surface lands.
     ///
     /// Defaults to `false`.
     pub generate_reflection_vtable: bool,
