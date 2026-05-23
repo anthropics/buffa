@@ -1,6 +1,21 @@
 //! Vtable-mode reflection codegen: config validation and emitted impls.
 
 use super::*;
+use crate::ReflectMode;
+
+#[test]
+fn reflect_mode_maps_to_config_flags() {
+    let mut c = CodeGenConfig::default();
+
+    ReflectMode::Off.apply(&mut c);
+    assert!(!c.generate_reflection && !c.generate_reflection_vtable);
+
+    ReflectMode::Bridge.apply(&mut c);
+    assert!(c.generate_reflection && !c.generate_reflection_vtable);
+
+    ReflectMode::VTable.apply(&mut c);
+    assert!(c.generate_reflection && c.generate_reflection_vtable);
+}
 
 /// A config with both bridge reflection and vtable mode enabled.
 fn vtable_config() -> CodeGenConfig {

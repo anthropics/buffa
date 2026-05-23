@@ -34,6 +34,8 @@ use buffa_codegen::generated::descriptor::FileDescriptorSet;
 
 use buffa_codegen::CodeGenConfig;
 #[doc(inline)]
+pub use buffa_codegen::ReflectMode;
+#[doc(inline)]
 pub use buffa_codegen::StringRepr;
 
 /// How to produce a `FileDescriptorSet` from `.proto` files.
@@ -330,23 +332,22 @@ impl Config {
         self
     }
 
-    /// Additionally emit vtable-mode reflection (`impl ReflectMessage` on view
-    /// types) on top of the bridge-mode `Reflectable` impl.
+    /// Select the reflection mode (the fuller form of
+    /// [`generate_reflection`](Self::generate_reflection)).
     ///
-    /// Requires [`generate_reflection`](Self::generate_reflection) and view
-    /// generation (both must be enabled — [`compile`](Self::compile) errors
-    /// otherwise). Vtable mode reads view struct fields directly through
-    /// `ReflectMessage`, with no encode/decode round-trip and no per-field
-    /// allocation for fields that are not read.
+    /// - [`ReflectMode::Off`] — no reflection (the default).
+    /// - [`ReflectMode::Bridge`] — `reflect()` round-trips through
+    ///   `DynamicMessage`; equivalent to `generate_reflection(true)`.
+    /// - [`ReflectMode::VTable`] — `impl ReflectMessage` on owned and view
+    ///   types, and `reflect()` borrows `self` with no round-trip. Requires
+    ///   view generation (on by default).
     ///
-    /// **Experimental and `#[doc(hidden)]`.** This is a stopgap until the
-    /// public `ReflectMode` selector lands; the name and shape may change. It
-    /// is hidden from the rendered docs to avoid advertising an API that will
-    /// be superseded — internal builds use it directly.
-    #[doc(hidden)]
+    /// All non-`Off` modes require the consuming crate to depend on
+    /// `buffa-descriptor` with its `reflect` feature and on `std`. The call
+    /// site (`foo.reflect().get(fd)`) is identical across modes.
     #[must_use]
-    pub fn generate_reflection_vtable(mut self, enabled: bool) -> Self {
-        self.codegen_config.generate_reflection_vtable = enabled;
+    pub fn reflect_mode(mut self, mode: ReflectMode) -> Self {
+        mode.apply(&mut self.codegen_config);
         self
     }
 

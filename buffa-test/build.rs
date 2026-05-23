@@ -6,8 +6,7 @@ fn main() {
         .files(&["protos/basic.proto"])
         .includes(&["protos/"])
         .generate_text(true)
-        .generate_reflection(true)
-        .generate_reflection_vtable(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
         .compile()
         .expect("buffa_build failed for basic.proto");
 
@@ -89,8 +88,7 @@ fn main() {
         .files(&["protos/proto2_defaults.proto"])
         .includes(&["protos/"])
         .generate_text(true)
-        .generate_reflection(true)
-        .generate_reflection_vtable(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
         .compile()
         .expect("buffa_build failed for proto2_defaults.proto");
 

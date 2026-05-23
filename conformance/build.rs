@@ -32,8 +32,7 @@ fn main() {
         .includes(&["protos/"])
         .generate_json(true)
         .generate_text(true)
-        .generate_reflection(true)
-        .generate_reflection_vtable(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
         .gate_reflect_on_crate_feature(true)
         .compile()
         .expect("buffa_build failed for test_messages_proto3.proto");
@@ -45,8 +44,7 @@ fn main() {
         .generate_json(true)
         .generate_text(true)
         .allow_message_set(true)
-        .generate_reflection(true)
-        .generate_reflection_vtable(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
         .gate_reflect_on_crate_feature(true)
         .compile()
         .expect("buffa_build failed for test_messages_proto2.proto");
@@ -59,8 +57,7 @@ fn main() {
             .includes(&[&protos_dir])
             .generate_json(true)
             .generate_text(true)
-            .generate_reflection(true)
-            .generate_reflection_vtable(true)
+            .reflect_mode(buffa_build::ReflectMode::VTable)
             .gate_reflect_on_crate_feature(true)
             .compile()
             .expect("buffa_build failed for test_messages_proto3_editions.proto");
@@ -72,8 +69,7 @@ fn main() {
             .generate_json(true)
             .generate_text(true)
             .allow_message_set(true)
-            .generate_reflection(true)
-            .generate_reflection_vtable(true)
+            .reflect_mode(buffa_build::ReflectMode::VTable)
             .gate_reflect_on_crate_feature(true)
             .compile()
             .expect("buffa_build failed for test_messages_proto2_editions.proto");

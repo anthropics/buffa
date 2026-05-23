@@ -194,6 +194,21 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                 // accepted spelling is the negation.
                 "with_setters" => codegen.generate_with_setters = value.trim() != "false",
                 "reflection" => codegen.generate_reflection = value.trim() == "true",
+                // `reflect_mode=off|bridge|vtable` is the fuller form of
+                // `reflection=`. `vtable` additionally emits `impl ReflectMessage`
+                // on owned + view types and makes `reflect()` borrow `self`.
+                "reflect_mode" => match value.trim() {
+                    "off" => buffa_codegen::ReflectMode::Off.apply(&mut codegen),
+                    "bridge" => buffa_codegen::ReflectMode::Bridge.apply(&mut codegen),
+                    "vtable" => buffa_codegen::ReflectMode::VTable.apply(&mut codegen),
+                    other => {
+                        eprintln!(
+                            "protoc-gen-buffa: invalid reflect_mode '{}', \
+                             expected off, bridge, or vtable",
+                            other
+                        );
+                    }
+                },
                 "file_per_package" => codegen.file_per_package = value.trim() == "true",
                 "extern_path" => {
                     // value is "<proto_path>=<rust_path>"
