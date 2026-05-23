@@ -405,6 +405,12 @@ pub struct CodeGenConfig {
     /// `feature = "arbitrary"` regardless of this flag, because `arbitrary`
     /// is an optional dependency by design.
     ///
+    /// When [`generate_reflection`](Self::generate_reflection) is also on, the
+    /// reflection impls are gated on `feature = "reflect"` alongside
+    /// json/views/text. To gate *only* reflection without gating json/views/text,
+    /// use [`gate_reflect_on_crate_feature`](Self::gate_reflect_on_crate_feature)
+    /// instead.
+    ///
     /// This is the mechanism that lets `buffa-descriptor` and `buffa-types`
     /// ship every impl while keeping the codegen toolchain
     /// (`buffa-codegen`/`buffa-build`/`protoc-gen-buffa`) lean: those crates
@@ -484,6 +490,27 @@ pub struct CodeGenConfig {
     ///
     /// Defaults to `false`.
     pub generate_reflection_vtable: bool,
+    /// Gate the reflection impls behind a `reflect` crate feature, *without*
+    /// gating json/views/text (unlike
+    /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features),
+    /// which gates them all together).
+    ///
+    /// Used by crates that ship view/text impls unconditionally but want the
+    /// reflection surface — which pulls a `buffa-descriptor` dependency and
+    /// `std` — to be opt-in. `buffa-types` is the motivating case: its WKT
+    /// views are always available, but `impl ReflectMessage` for them is gated
+    /// behind `buffa-types`'s `reflect` feature.
+    ///
+    /// When [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features)
+    /// is already on, reflection is gated regardless and this flag is ignored.
+    ///
+    /// This is a low-level knob for internal codegen tooling (it is set
+    /// directly by `gen_wkt_types`) and is not surfaced through `buffa-build`,
+    /// whose consumers ship a single crate and rarely need feature-gated
+    /// reflection.
+    ///
+    /// Defaults to `false`.
+    pub gate_reflect_on_crate_feature: bool,
 }
 
 impl Default for CodeGenConfig {
@@ -509,6 +536,7 @@ impl Default for CodeGenConfig {
             generate_with_setters: true,
             generate_reflection: false,
             generate_reflection_vtable: false,
+            gate_reflect_on_crate_feature: false,
         }
     }
 }

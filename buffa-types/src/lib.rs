@@ -36,6 +36,19 @@
 //! - `Any::pack` / `Any::unpack` helpers
 //! - `Value` constructors: [`Value::null`](google::protobuf::Value::null), `From<f64>`, `From<String>`, `From<bool>`, etc.
 //! - Wrapper type `From`/`Into` impls
+//!
+//! # Cargo features
+//!
+//! - **`std`** (default) — standard-library integration (`SystemTime`/`Duration`
+//!   conversions, `std::error::Error`). Without it the crate is `no_std` + `alloc`.
+//! - **`json`** — proto3 canonical JSON serde for the WKTs.
+//! - **`arbitrary`** — `arbitrary::Arbitrary` derives for fuzzing.
+//! - **`reflect`** — runtime reflection: the WKT view types implement
+//!   `buffa_descriptor::reflect::ReflectMessage`, so a message that has a WKT
+//!   field can reflect over it. This pulls a `buffa-descriptor` dependency and
+//!   requires `std` (the embedded descriptor pool uses `std::sync::OnceLock`).
+//!   If you reach for `&view as &dyn ReflectMessage` on a WKT view and the
+//!   compiler says `ReflectMessage` is not implemented, enable this feature.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(rustdoc::broken_intra_doc_links)]

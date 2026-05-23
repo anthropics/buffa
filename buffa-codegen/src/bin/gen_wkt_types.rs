@@ -93,6 +93,14 @@ fn main() {
     config.generate_json = false;
     config.generate_text = true;
     config.emit_register_fn = false;
+    // Vtable reflection for the WKT views (`impl ReflectMessage for TimestampView`
+    // etc.), so consumer protos that reference WKTs can reflect over them. The
+    // reflection surface pulls a `buffa-descriptor` dependency and `std`, so it
+    // is gated behind buffa-types' `reflect` feature via
+    // `gate_reflect_on_crate_feature` — views and text stay unconditional.
+    config.generate_reflection = true;
+    config.generate_reflection_vtable = true;
+    config.gate_reflect_on_crate_feature = true;
     // `Any.value` carries arbitrary encoded payloads that callers commonly
     // cache and clone into `repeated google.protobuf.Any` response fields.
     // `Bytes::clone()` is a refcount bump rather than a payload memcpy.

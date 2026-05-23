@@ -136,6 +136,7 @@ version = "0.6.0"
 dependencies = [
  "arbitrary",
  "buffa",
+ "buffa-descriptor",
  "bytes",
  "criterion",
  "serde",

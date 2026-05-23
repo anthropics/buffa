@@ -32,6 +32,49 @@ impl ::buffa::DefaultInstance for DoubleValue {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+#[cfg(feature = "reflect")]
+impl ::buffa_descriptor::reflect::Reflectable for DoubleValue {
+    /// Bridge-mode reflective handle: encodes `self` and decodes
+    /// it into a [`DynamicMessage`](::buffa_descriptor::reflect::DynamicMessage)
+    /// against the package's embedded descriptor pool.
+    ///
+    /// # Performance
+    ///
+    /// One full encode/decode round-trip plus a heap allocation per
+    /// call. Hold onto the returned handle for repeated field reads
+    /// rather than calling `reflect()` per field.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the embedded `FileDescriptorSet` is malformed or
+    /// `Self::FULL_NAME` is not registered. Both indicate codegen
+    /// emitted inconsistent output, not consumer misuse — except
+    /// when this type was re-exported from a different
+    /// `buffa-build` invocation, whose pool is a different
+    /// instance. Each `generate_reflection(true)` codegen run
+    /// embeds its own pool; do not mix `reflect()` calls across
+    /// independently-generated crates.
+    fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
+        let pool = __buffa::reflect::descriptor_pool();
+        let idx = pool
+            .message_index(<Self as ::buffa::MessageName>::FULL_NAME)
+            .unwrap_or_else(|| {
+                panic!(
+                    "type {:?} not registered in this package's descriptor pool (cross-crate reflect()?)",
+                    < Self as ::buffa::MessageName > ::FULL_NAME,
+                )
+            });
+        ::buffa_descriptor::reflect::ReflectCow::Owned(
+            ::buffa::alloc::boxed::Box::new(
+                ::buffa_descriptor::reflect::DynamicMessage::from_message(
+                    self,
+                    ::buffa::alloc::sync::Arc::clone(pool),
+                    idx,
+                ),
+            ),
+        )
+    }
+}
 impl ::buffa::MessageName for DoubleValue {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "DoubleValue";
@@ -175,6 +218,49 @@ impl ::buffa::DefaultInstance for FloatValue {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<FloatValue> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+    }
+}
+#[cfg(feature = "reflect")]
+impl ::buffa_descriptor::reflect::Reflectable for FloatValue {
+    /// Bridge-mode reflective handle: encodes `self` and decodes
+    /// it into a [`DynamicMessage`](::buffa_descriptor::reflect::DynamicMessage)
+    /// against the package's embedded descriptor pool.
+    ///
+    /// # Performance
+    ///
+    /// One full encode/decode round-trip plus a heap allocation per
+    /// call. Hold onto the returned handle for repeated field reads
+    /// rather than calling `reflect()` per field.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the embedded `FileDescriptorSet` is malformed or
+    /// `Self::FULL_NAME` is not registered. Both indicate codegen
+    /// emitted inconsistent output, not consumer misuse — except
+    /// when this type was re-exported from a different
+    /// `buffa-build` invocation, whose pool is a different
+    /// instance. Each `generate_reflection(true)` codegen run
+    /// embeds its own pool; do not mix `reflect()` calls across
+    /// independently-generated crates.
+    fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
+        let pool = __buffa::reflect::descriptor_pool();
+        let idx = pool
+            .message_index(<Self as ::buffa::MessageName>::FULL_NAME)
+            .unwrap_or_else(|| {
+                panic!(
+                    "type {:?} not registered in this package's descriptor pool (cross-crate reflect()?)",
+                    < Self as ::buffa::MessageName > ::FULL_NAME,
+                )
+            });
+        ::buffa_descriptor::reflect::ReflectCow::Owned(
+            ::buffa::alloc::boxed::Box::new(
+                ::buffa_descriptor::reflect::DynamicMessage::from_message(
+                    self,
+                    ::buffa::alloc::sync::Arc::clone(pool),
+                    idx,
+                ),
+            ),
+        )
     }
 }
 impl ::buffa::MessageName for FloatValue {
@@ -322,6 +408,49 @@ impl ::buffa::DefaultInstance for Int64Value {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+#[cfg(feature = "reflect")]
+impl ::buffa_descriptor::reflect::Reflectable for Int64Value {
+    /// Bridge-mode reflective handle: encodes `self` and decodes
+    /// it into a [`DynamicMessage`](::buffa_descriptor::reflect::DynamicMessage)
+    /// against the package's embedded descriptor pool.
+    ///
+    /// # Performance
+    ///
+    /// One full encode/decode round-trip plus a heap allocation per
+    /// call. Hold onto the returned handle for repeated field reads
+    /// rather than calling `reflect()` per field.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the embedded `FileDescriptorSet` is malformed or
+    /// `Self::FULL_NAME` is not registered. Both indicate codegen
+    /// emitted inconsistent output, not consumer misuse — except
+    /// when this type was re-exported from a different
+    /// `buffa-build` invocation, whose pool is a different
+    /// instance. Each `generate_reflection(true)` codegen run
+    /// embeds its own pool; do not mix `reflect()` calls across
+    /// independently-generated crates.
+    fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
+        let pool = __buffa::reflect::descriptor_pool();
+        let idx = pool
+            .message_index(<Self as ::buffa::MessageName>::FULL_NAME)
+            .unwrap_or_else(|| {
+                panic!(
+                    "type {:?} not registered in this package's descriptor pool (cross-crate reflect()?)",
+                    < Self as ::buffa::MessageName > ::FULL_NAME,
+                )
+            });
+        ::buffa_descriptor::reflect::ReflectCow::Owned(
+            ::buffa::alloc::boxed::Box::new(
+                ::buffa_descriptor::reflect::DynamicMessage::from_message(
+                    self,
+                    ::buffa::alloc::sync::Arc::clone(pool),
+                    idx,
+                ),
+            ),
+        )
+    }
+}
 impl ::buffa::MessageName for Int64Value {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "Int64Value";
@@ -465,6 +594,49 @@ impl ::buffa::DefaultInstance for UInt64Value {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<UInt64Value> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+    }
+}
+#[cfg(feature = "reflect")]
+impl ::buffa_descriptor::reflect::Reflectable for UInt64Value {
+    /// Bridge-mode reflective handle: encodes `self` and decodes
+    /// it into a [`DynamicMessage`](::buffa_descriptor::reflect::DynamicMessage)
+    /// against the package's embedded descriptor pool.
+    ///
+    /// # Performance
+    ///
+    /// One full encode/decode round-trip plus a heap allocation per
+    /// call. Hold onto the returned handle for repeated field reads
+    /// rather than calling `reflect()` per field.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the embedded `FileDescriptorSet` is malformed or
+    /// `Self::FULL_NAME` is not registered. Both indicate codegen
+    /// emitted inconsistent output, not consumer misuse — except
+    /// when this type was re-exported from a different
+    /// `buffa-build` invocation, whose pool is a different
+    /// instance. Each `generate_reflection(true)` codegen run
+    /// embeds its own pool; do not mix `reflect()` calls across
+    /// independently-generated crates.
+    fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
+        let pool = __buffa::reflect::descriptor_pool();
+        let idx = pool
+            .message_index(<Self as ::buffa::MessageName>::FULL_NAME)
+            .unwrap_or_else(|| {
+                panic!(
+                    "type {:?} not registered in this package's descriptor pool (cross-crate reflect()?)",
+                    < Self as ::buffa::MessageName > ::FULL_NAME,
+                )
+            });
+        ::buffa_descriptor::reflect::ReflectCow::Owned(
+            ::buffa::alloc::boxed::Box::new(
+                ::buffa_descriptor::reflect::DynamicMessage::from_message(
+                    self,
+                    ::buffa::alloc::sync::Arc::clone(pool),
+                    idx,
+                ),
+            ),
+        )
     }
 }
 impl ::buffa::MessageName for UInt64Value {
@@ -612,6 +784,49 @@ impl ::buffa::DefaultInstance for Int32Value {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+#[cfg(feature = "reflect")]
+impl ::buffa_descriptor::reflect::Reflectable for Int32Value {
+    /// Bridge-mode reflective handle: encodes `self` and decodes
+    /// it into a [`DynamicMessage`](::buffa_descriptor::reflect::DynamicMessage)
+    /// against the package's embedded descriptor pool.
+    ///
+    /// # Performance
+    ///
+    /// One full encode/decode round-trip plus a heap allocation per
+    /// call. Hold onto the returned handle for repeated field reads
+    /// rather than calling `reflect()` per field.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the embedded `FileDescriptorSet` is malformed or
+    /// `Self::FULL_NAME` is not registered. Both indicate codegen
+    /// emitted inconsistent output, not consumer misuse — except
+    /// when this type was re-exported from a different
+    /// `buffa-build` invocation, whose pool is a different
+    /// instance. Each `generate_reflection(true)` codegen run
+    /// embeds its own pool; do not mix `reflect()` calls across
+    /// independently-generated crates.
+    fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
+        let pool = __buffa::reflect::descriptor_pool();
+        let idx = pool
+            .message_index(<Self as ::buffa::MessageName>::FULL_NAME)
+            .unwrap_or_else(|| {
+                panic!(
+                    "type {:?} not registered in this package's descriptor pool (cross-crate reflect()?)",
+                    < Self as ::buffa::MessageName > ::FULL_NAME,
+                )
+            });
+        ::buffa_descriptor::reflect::ReflectCow::Owned(
+            ::buffa::alloc::boxed::Box::new(
+                ::buffa_descriptor::reflect::DynamicMessage::from_message(
+                    self,
+                    ::buffa::alloc::sync::Arc::clone(pool),
+                    idx,
+                ),
+            ),
+        )
+    }
+}
 impl ::buffa::MessageName for Int32Value {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "Int32Value";
@@ -755,6 +970,49 @@ impl ::buffa::DefaultInstance for UInt32Value {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<UInt32Value> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+    }
+}
+#[cfg(feature = "reflect")]
+impl ::buffa_descriptor::reflect::Reflectable for UInt32Value {
+    /// Bridge-mode reflective handle: encodes `self` and decodes
+    /// it into a [`DynamicMessage`](::buffa_descriptor::reflect::DynamicMessage)
+    /// against the package's embedded descriptor pool.
+    ///
+    /// # Performance
+    ///
+    /// One full encode/decode round-trip plus a heap allocation per
+    /// call. Hold onto the returned handle for repeated field reads
+    /// rather than calling `reflect()` per field.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the embedded `FileDescriptorSet` is malformed or
+    /// `Self::FULL_NAME` is not registered. Both indicate codegen
+    /// emitted inconsistent output, not consumer misuse — except
+    /// when this type was re-exported from a different
+    /// `buffa-build` invocation, whose pool is a different
+    /// instance. Each `generate_reflection(true)` codegen run
+    /// embeds its own pool; do not mix `reflect()` calls across
+    /// independently-generated crates.
+    fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
+        let pool = __buffa::reflect::descriptor_pool();
+        let idx = pool
+            .message_index(<Self as ::buffa::MessageName>::FULL_NAME)
+            .unwrap_or_else(|| {
+                panic!(
+                    "type {:?} not registered in this package's descriptor pool (cross-crate reflect()?)",
+                    < Self as ::buffa::MessageName > ::FULL_NAME,
+                )
+            });
+        ::buffa_descriptor::reflect::ReflectCow::Owned(
+            ::buffa::alloc::boxed::Box::new(
+                ::buffa_descriptor::reflect::DynamicMessage::from_message(
+                    self,
+                    ::buffa::alloc::sync::Arc::clone(pool),
+                    idx,
+                ),
+            ),
+        )
     }
 }
 impl ::buffa::MessageName for UInt32Value {
@@ -902,6 +1160,49 @@ impl ::buffa::DefaultInstance for BoolValue {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+#[cfg(feature = "reflect")]
+impl ::buffa_descriptor::reflect::Reflectable for BoolValue {
+    /// Bridge-mode reflective handle: encodes `self` and decodes
+    /// it into a [`DynamicMessage`](::buffa_descriptor::reflect::DynamicMessage)
+    /// against the package's embedded descriptor pool.
+    ///
+    /// # Performance
+    ///
+    /// One full encode/decode round-trip plus a heap allocation per
+    /// call. Hold onto the returned handle for repeated field reads
+    /// rather than calling `reflect()` per field.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the embedded `FileDescriptorSet` is malformed or
+    /// `Self::FULL_NAME` is not registered. Both indicate codegen
+    /// emitted inconsistent output, not consumer misuse — except
+    /// when this type was re-exported from a different
+    /// `buffa-build` invocation, whose pool is a different
+    /// instance. Each `generate_reflection(true)` codegen run
+    /// embeds its own pool; do not mix `reflect()` calls across
+    /// independently-generated crates.
+    fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
+        let pool = __buffa::reflect::descriptor_pool();
+        let idx = pool
+            .message_index(<Self as ::buffa::MessageName>::FULL_NAME)
+            .unwrap_or_else(|| {
+                panic!(
+                    "type {:?} not registered in this package's descriptor pool (cross-crate reflect()?)",
+                    < Self as ::buffa::MessageName > ::FULL_NAME,
+                )
+            });
+        ::buffa_descriptor::reflect::ReflectCow::Owned(
+            ::buffa::alloc::boxed::Box::new(
+                ::buffa_descriptor::reflect::DynamicMessage::from_message(
+                    self,
+                    ::buffa::alloc::sync::Arc::clone(pool),
+                    idx,
+                ),
+            ),
+        )
+    }
+}
 impl ::buffa::MessageName for BoolValue {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "BoolValue";
@@ -1045,6 +1346,49 @@ impl ::buffa::DefaultInstance for StringValue {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<StringValue> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+    }
+}
+#[cfg(feature = "reflect")]
+impl ::buffa_descriptor::reflect::Reflectable for StringValue {
+    /// Bridge-mode reflective handle: encodes `self` and decodes
+    /// it into a [`DynamicMessage`](::buffa_descriptor::reflect::DynamicMessage)
+    /// against the package's embedded descriptor pool.
+    ///
+    /// # Performance
+    ///
+    /// One full encode/decode round-trip plus a heap allocation per
+    /// call. Hold onto the returned handle for repeated field reads
+    /// rather than calling `reflect()` per field.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the embedded `FileDescriptorSet` is malformed or
+    /// `Self::FULL_NAME` is not registered. Both indicate codegen
+    /// emitted inconsistent output, not consumer misuse — except
+    /// when this type was re-exported from a different
+    /// `buffa-build` invocation, whose pool is a different
+    /// instance. Each `generate_reflection(true)` codegen run
+    /// embeds its own pool; do not mix `reflect()` calls across
+    /// independently-generated crates.
+    fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
+        let pool = __buffa::reflect::descriptor_pool();
+        let idx = pool
+            .message_index(<Self as ::buffa::MessageName>::FULL_NAME)
+            .unwrap_or_else(|| {
+                panic!(
+                    "type {:?} not registered in this package's descriptor pool (cross-crate reflect()?)",
+                    < Self as ::buffa::MessageName > ::FULL_NAME,
+                )
+            });
+        ::buffa_descriptor::reflect::ReflectCow::Owned(
+            ::buffa::alloc::boxed::Box::new(
+                ::buffa_descriptor::reflect::DynamicMessage::from_message(
+                    self,
+                    ::buffa::alloc::sync::Arc::clone(pool),
+                    idx,
+                ),
+            ),
+        )
     }
 }
 impl ::buffa::MessageName for StringValue {
@@ -1193,6 +1537,49 @@ impl ::buffa::DefaultInstance for BytesValue {
     fn default_instance() -> &'static Self {
         static VALUE: ::buffa::__private::OnceBox<BytesValue> = ::buffa::__private::OnceBox::new();
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+    }
+}
+#[cfg(feature = "reflect")]
+impl ::buffa_descriptor::reflect::Reflectable for BytesValue {
+    /// Bridge-mode reflective handle: encodes `self` and decodes
+    /// it into a [`DynamicMessage`](::buffa_descriptor::reflect::DynamicMessage)
+    /// against the package's embedded descriptor pool.
+    ///
+    /// # Performance
+    ///
+    /// One full encode/decode round-trip plus a heap allocation per
+    /// call. Hold onto the returned handle for repeated field reads
+    /// rather than calling `reflect()` per field.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the embedded `FileDescriptorSet` is malformed or
+    /// `Self::FULL_NAME` is not registered. Both indicate codegen
+    /// emitted inconsistent output, not consumer misuse — except
+    /// when this type was re-exported from a different
+    /// `buffa-build` invocation, whose pool is a different
+    /// instance. Each `generate_reflection(true)` codegen run
+    /// embeds its own pool; do not mix `reflect()` calls across
+    /// independently-generated crates.
+    fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
+        let pool = __buffa::reflect::descriptor_pool();
+        let idx = pool
+            .message_index(<Self as ::buffa::MessageName>::FULL_NAME)
+            .unwrap_or_else(|| {
+                panic!(
+                    "type {:?} not registered in this package's descriptor pool (cross-crate reflect()?)",
+                    < Self as ::buffa::MessageName > ::FULL_NAME,
+                )
+            });
+        ::buffa_descriptor::reflect::ReflectCow::Owned(
+            ::buffa::alloc::boxed::Box::new(
+                ::buffa_descriptor::reflect::DynamicMessage::from_message(
+                    self,
+                    ::buffa::alloc::sync::Arc::clone(pool),
+                    idx,
+                ),
+            ),
+        )
     }
 }
 impl ::buffa::MessageName for BytesValue {

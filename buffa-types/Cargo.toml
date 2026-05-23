@@ -18,12 +18,20 @@ default = ["std"]
 std = ["buffa/std", "thiserror/std", "serde?/std", "serde_json?/std"]
 json = ["dep:serde", "dep:serde_json", "buffa/json"]
 arbitrary = ["dep:arbitrary", "buffa/arbitrary"]
+# Runtime reflection for the WKT views (`impl ReflectMessage for TimestampView`,
+# etc.) and owned types. Pulls `buffa-descriptor` and requires `std` (the
+# embedded descriptor pool uses `std::sync::OnceLock`). Off by default so
+# `no_std` consumers and those that don't reflect pay nothing.
+reflect = ["dep:buffa-descriptor", "buffa-descriptor/reflect", "std"]
 
 [dependencies]
 arbitrary = { workspace = true, optional = true }
 # `buffa/text` is zero-dep and the WKT generated code unconditionally impls
 # `TextFormat` — enabled here so the checked-in src/generated/ always compiles.
 buffa = { workspace = true, default-features = false, features = ["text"] }
+# Optional: only when the `reflect` feature is on. The generated WKT reflect
+# impls reference `::buffa_descriptor::reflect::*`.
+buffa-descriptor = { workspace = true, optional = true }
 # Generated `Any.value: Bytes` (via `bytes_fields` in gen_wkt_types) emits
 # `::bytes::Bytes` paths, so the crate is referenced directly.
 bytes = { workspace = true }
