@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Vtable reflection mode.** Generated types now implement
+  `buffa_descriptor::reflect::ReflectMessage` directly — on both the owned
+  structs and the zero-copy view types — so `foo.reflect()` borrows `foo` in
+  place (`ReflectCow::Borrowed`) with no encode/decode round-trip and no
+  per-field allocation. This is the path a CEL evaluator, transcoding gateway, or
+  generic interceptor takes to read fields by descriptor; reflecting a decoded
+  view runs several times faster than the previous bridge round-trip. Select the
+  mode with the new `buffa_build::ReflectMode` enum:
+
+  ```rust
+  buffa_build::Config::new()
+      .reflect_mode(buffa_build::ReflectMode::VTable) // or ::Bridge / ::Off
+      .compile()?;
+  ```
+
+  The `protoc-gen-buffa` equivalent is `reflect_mode=off|bridge|vtable`. Vtable
+  mode does not require view generation: with views off, only the owned
+  `ReflectMessage` is emitted.
+- **`buffa-types` `reflect` feature.** Well-known types (`Timestamp`,
+  `Duration`, `Struct`/`Value`, `Any`, wrappers, …) now implement
+  `ReflectMessage`, so messages that embed WKTs reflect end to end.
+- **`ReflectElement` for the configurable `string_type` representations**
+  (`SmolStr`, `EcoString`, `CompactString`), gated behind the matching
+  `buffa-descriptor` feature, so a `repeated <repr>` field reflects in vtable
+  mode.
+
+### Changed
+
+- **`generate_reflection(true)` now selects vtable mode** (previously bridge).
+  The reflective API is unchanged (`foo.reflect().get(fd)`), so call sites do not
+  change, but generated code grows by one `impl ReflectMessage` per type. Opt
+  back into the smaller round-trip implementation with
+  `reflect_mode(ReflectMode::Bridge)`.
+
 ## [0.6.0] - 2026-05-15
 
 ### Added
