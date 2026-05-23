@@ -401,11 +401,17 @@ below). The remaining open items are noted under "Not yet done" at the end.
 
 ### Not yet done
 
-- **Flip the default `ReflectMode` to `VTable`.** Bridge remains the default; the
-  switch is a one-line change once vtable mode has soaked.
 - **Benchmark numbers in the README.** The `reflect` bench gained vtable cases
   (6–10× over bridge, ~4× over pure `DynamicMessage`); regenerating the README
   charts through the pinned Xeon harness is outstanding.
+
+### Done since
+
+- ✅ **`VTable` is the default reflection mode.** `generate_reflection(true)` (and
+  `protoc-gen-buffa`'s `reflection=true`) now select `VTable`; `Bridge` is opt-in
+  via `reflect_mode(ReflectMode::Bridge)`. Vtable no longer requires views — the
+  owned `impl ReflectMessage` is self-contained, so views-off builds get
+  owned-only vtable reflection rather than an error.
 
 ## What this does *not* solve
 

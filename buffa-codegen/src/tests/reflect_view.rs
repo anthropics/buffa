@@ -78,18 +78,26 @@ fn vtable_without_reflection_is_rejected() {
 }
 
 #[test]
-fn vtable_without_views_is_rejected() {
+fn vtable_without_views_emits_owned_only() {
+    // Owned vtable is self-contained, so views-off + vtable is allowed: it
+    // emits the owned `impl ReflectMessage` but no view impls (there are no
+    // views).
     let config = CodeGenConfig {
         generate_reflection: true,
         generate_reflection_vtable: true,
         generate_views: false,
         ..Default::default()
     };
-    let err = generate(&[msg_file()], &["vt.proto".to_string()], &config)
-        .expect_err("vtable without views must error");
+    let files =
+        generate(&[msg_file()], &["vt.proto".to_string()], &config).expect("should generate");
+    let content = joined(&files);
     assert!(
-        err.to_string().contains("generate_views"),
-        "error should name the missing prerequisite: {err}"
+        content.contains("impl ::buffa_descriptor::reflect::ReflectMessage for Msg"),
+        "owned ReflectMessage must be emitted: {content}"
+    );
+    assert!(
+        !content.contains("ReflectMessage for MsgView"),
+        "no view impls when views are off: {content}"
     );
 }
 

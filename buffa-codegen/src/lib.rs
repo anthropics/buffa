@@ -732,16 +732,15 @@ pub fn generate(
     files_to_generate: &[String],
     config: &CodeGenConfig,
 ) -> Result<Vec<GeneratedFile>, CodeGenError> {
-    // Vtable reflection emits `impl ReflectMessage` on view types and resolves
-    // against the per-package descriptor pool, so it needs both view generation
-    // and bridge-mode reflection (which emits that pool). Without this check the
-    // flag would silently emit nothing and the consumer would hit an opaque
-    // "FooView: ReflectMessage is not satisfied" error far from the cause.
-    if config.generate_reflection_vtable && (!config.generate_reflection || !config.generate_views)
-    {
+    // Vtable reflection resolves against the per-package descriptor pool, which
+    // is emitted by bridge-mode reflection — so it requires `generate_reflection`.
+    // It does NOT require views: the owned `impl ReflectMessage` is self-contained,
+    // so with views off, vtable mode still emits owned-message reflection (the
+    // view impls are simply skipped along with the views).
+    if config.generate_reflection_vtable && !config.generate_reflection {
         return Err(CodeGenError::Other(
-            "generate_reflection_vtable requires both generate_reflection and \
-             generate_views to be enabled"
+            "generate_reflection_vtable requires generate_reflection to be enabled \
+             (it provides the descriptor pool the reflect impls resolve against)"
                 .into(),
         ));
     }

@@ -193,7 +193,17 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                 // methods. Like `register_types`, the default is on, so the
                 // accepted spelling is the negation.
                 "with_setters" => codegen.generate_with_setters = value.trim() != "false",
-                "reflection" => codegen.generate_reflection = value.trim() == "true",
+                // `reflection=true` selects the fast vtable mode (same as
+                // `reflect_mode=vtable`); `reflect_mode=bridge` opts into the
+                // smaller round-trip implementation.
+                "reflection" => {
+                    let mode = if value.trim() == "true" {
+                        buffa_codegen::ReflectMode::VTable
+                    } else {
+                        buffa_codegen::ReflectMode::Off
+                    };
+                    mode.apply(&mut codegen);
+                }
                 // `reflect_mode=off|bridge|vtable` is the fuller form of
                 // `reflection=`. `vtable` additionally emits `impl ReflectMessage`
                 // on owned + view types and makes `reflect()` borrow `self`.
