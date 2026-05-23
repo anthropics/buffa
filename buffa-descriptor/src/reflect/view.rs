@@ -1,14 +1,20 @@
-//! Reflective container access over zero-copy [view types](buffa::view).
+//! Reflective container access for vtable-mode reflection.
 //!
 //! This module bridges the reflection value model ([`ValueRef`],
-//! [`ReflectList`], [`ReflectMap`]) to the view containers
-//! [`RepeatedView`](buffa::RepeatedView) and [`MapView`](buffa::MapView), so a
-//! vtable-mode `impl ReflectMessage for FooView<'a>` can return
-//! `ValueRef::List(&self.tags)` / `ValueRef::Map(&self.labels)` without
-//! materializing a `Vec<Value>` or `MapValue`. The bridge path
-//! ([`DynamicMessage`](super::DynamicMessage)) implements the same
-//! [`ReflectList`] / [`ReflectMap`] traits for `Vec<Value>` / `MapValue` (see
-//! `value.rs`); these impls are the vtable counterpart.
+//! [`ReflectList`], [`ReflectMap`]) to the concrete containers generated code
+//! holds, so a vtable-mode `impl ReflectMessage` can return
+//! `ValueRef::List(&self.tags)` / `ValueRef::Map(&self.labels)` directly:
+//!
+//! - **View types** — [`RepeatedView`](buffa::RepeatedView) /
+//!   [`MapView`](buffa::MapView), borrowing `&str` / `&[u8]` elements.
+//! - **Owned types** — `Vec<T>` / `std::collections::HashMap<K, V>`, with owned
+//!   `String` / `Vec<u8>` / [`Bytes`](buffa::bytes::Bytes) elements.
+//!
+//! The generic `ReflectList for Vec<T>` impl also subsumes the bridge
+//! [`DynamicMessage`](super::DynamicMessage)'s `Vec<Value>` storage (via
+//! `impl ReflectElement for Value`), so there is a single list impl rather than
+//! a bespoke one per backing type. [`MapValue`](super::MapValue) keeps its own
+//! [`ReflectMap`] impl in `value.rs` (it is a distinct sorted-vec type).
 //!
 //! ## Why a per-element helper trait, and why it is not a blanket
 //!
@@ -27,9 +33,13 @@
 //!
 //! See `docs/investigations/reflection-vtable.md` §3 for the full rationale.
 
+use alloc::string::String;
+use alloc::vec::Vec;
+
+use buffa::bytes::Bytes;
 use buffa::{EnumValue, Enumeration, MapView, RepeatedView};
 
-use super::value::{MapKey, MapKeyRef, ReflectList, ReflectMap, ValueRef};
+use super::value::{MapKey, MapKeyRef, ReflectList, ReflectMap, Value, ValueRef};
 
 /// Conversion of a single repeated-field element (or map value) to a borrowed
 /// [`ValueRef`].
@@ -111,6 +121,38 @@ impl<E: Enumeration> ReflectElement for EnumValue<E> {
     }
 }
 
+// ── Owned element impls ─────────────────────────────────────────────────────
+//
+// Owned messages hold `String` / `Vec<u8>` / `Bytes` (rather than the view
+// path's borrowed `&str` / `&[u8]`) and store repeated/map fields as `Vec` /
+// `HashMap`. These impls let the generic container impls below cover owned
+// collections too. `Value` is included so the bridge `DynamicMessage`'s
+// `Vec<Value>` rides the same generic `ReflectList` impl.
+
+impl ReflectElement for String {
+    fn as_value_ref(&self) -> ValueRef<'_> {
+        ValueRef::String(self)
+    }
+}
+
+impl ReflectElement for Vec<u8> {
+    fn as_value_ref(&self) -> ValueRef<'_> {
+        ValueRef::Bytes(self)
+    }
+}
+
+impl ReflectElement for Bytes {
+    fn as_value_ref(&self) -> ValueRef<'_> {
+        ValueRef::Bytes(self)
+    }
+}
+
+impl ReflectElement for Value {
+    fn as_value_ref(&self) -> ValueRef<'_> {
+        self.as_ref()
+    }
+}
+
 // ── Map key impls (spec-valid key set) ──────────────────────────────────────
 
 macro_rules! impl_scalar_key {
@@ -132,6 +174,12 @@ impl_scalar_key! {
 }
 
 impl ReflectMapKey for &str {
+    fn as_map_key_ref(&self) -> MapKeyRef<'_> {
+        MapKeyRef::String(self)
+    }
+}
+
+impl ReflectMapKey for String {
     fn as_map_key_ref(&self) -> MapKeyRef<'_> {
         MapKeyRef::String(self)
     }
@@ -206,6 +254,57 @@ impl<K: ReflectMapKey, V: ReflectElement> ReflectMap for MapView<'_, K, V> {
         // Dedup to distinct keys (last-write-wins), matching the bridge path so
         // both reflection modes visit each logical entry exactly once.
         for (k, v) in self.iter_unique() {
+            f(k.as_map_key_ref(), v.as_value_ref());
+        }
+    }
+}
+
+// ── Owned containers ────────────────────────────────────────────────────────
+
+/// Owned repeated storage (`Vec<T>`). Also subsumes the bridge
+/// `DynamicMessage`'s `Vec<Value>` (via `impl ReflectElement for Value`), so
+/// there is no separate `ReflectList for Vec<Value>`.
+impl<T: ReflectElement> ReflectList for Vec<T> {
+    fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+
+    fn get(&self, idx: usize) -> Option<ValueRef<'_>> {
+        self.as_slice().get(idx).map(ReflectElement::as_value_ref)
+    }
+
+    fn for_each(&self, f: &mut dyn FnMut(ValueRef<'_>)) {
+        for elem in self {
+            f(elem.as_value_ref());
+        }
+    }
+}
+
+/// Owned map storage. Keys are unique by construction (no dedup needed). Vtable
+/// reflection requires `std` (the descriptor pool uses `OnceLock`), so the
+/// owned-map impl is `std`-gated and targets `std::collections::HashMap` — the
+/// concrete type generated code uses for `map` fields under `std`.
+#[cfg(feature = "std")]
+impl<K: ReflectMapKey, V: ReflectElement> ReflectMap for std::collections::HashMap<K, V> {
+    fn len(&self) -> usize {
+        Self::len(self)
+    }
+
+    fn get(&self, key: &MapKey) -> Option<ValueRef<'_>> {
+        let want = key.as_ref();
+        self.iter()
+            .find(|(k, _)| k.as_map_key_ref() == want)
+            .map(|(_, v)| v.as_value_ref())
+    }
+
+    fn get_str(&self, key: &str) -> Option<ValueRef<'_>> {
+        self.iter()
+            .find(|(k, _)| matches!(k.as_map_key_ref(), MapKeyRef::String(s) if s == key))
+            .map(|(_, v)| v.as_value_ref())
+    }
+
+    fn for_each(&self, f: &mut dyn FnMut(MapKeyRef<'_>, ValueRef<'_>)) {
+        for (k, v) in self {
             f(k.as_map_key_ref(), v.as_value_ref());
         }
     }
@@ -345,5 +444,49 @@ mod tests {
             }
         });
         assert_eq!(keys, vec!["apples".to_string()]);
+    }
+
+    // ── Owned containers (owned-message vtable path) ─────────────────────────
+
+    #[test]
+    fn owned_vec_of_string() {
+        let v: Vec<String> = vec!["a".to_string(), "b".to_string()];
+        let list: &dyn ReflectList = &v;
+        assert_eq!(list.len(), 2);
+        assert!(matches!(list.get(0), Some(ValueRef::String("a"))));
+        assert!(matches!(list.get(1), Some(ValueRef::String("b"))));
+    }
+
+    #[test]
+    fn owned_vec_of_value_still_reflects() {
+        // The bridge `DynamicMessage` repeated storage rides the generic impl
+        // via `impl ReflectElement for Value`.
+        let v: Vec<Value> = vec![Value::I32(7), Value::I32(11)];
+        let list: &dyn ReflectList = &v;
+        assert_eq!(list.len(), 2);
+        assert!(matches!(list.get(1), Some(ValueRef::I32(11))));
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn owned_hashmap() {
+        let mut m: std::collections::HashMap<String, i32> = std::collections::HashMap::new();
+        m.insert("apples".to_string(), 3);
+        m.insert("oranges".to_string(), 7);
+        let map: &dyn ReflectMap = &m;
+        assert_eq!(map.len(), 2);
+        assert!(matches!(map.get_str("apples"), Some(ValueRef::I32(3))));
+        assert!(matches!(
+            map.get(&MapKey::String("oranges".into())),
+            Some(ValueRef::I32(7))
+        ));
+        assert!(map.get_str("durian").is_none());
+        let mut total = 0;
+        map.for_each(&mut |_k, v| {
+            if let ValueRef::I32(n) = v {
+                total += n;
+            }
+        });
+        assert_eq!(total, 10);
     }
 }

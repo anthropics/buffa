@@ -272,22 +272,9 @@ impl MapKey {
     }
 }
 
-// `Vec<Value>` rather than `[Value]` so the `&Vec<Value> → &dyn ReflectList`
-// unsizing coercion is valid — Rust requires the source type of an unsizing
-// coercion to be `Sized`, and `[Value]` isn't.
-impl ReflectList for Vec<Value> {
-    fn len(&self) -> usize {
-        Self::len(self)
-    }
-    fn get(&self, idx: usize) -> Option<ValueRef<'_>> {
-        self.as_slice().get(idx).map(Value::as_ref)
-    }
-    fn for_each(&self, f: &mut dyn FnMut(ValueRef<'_>)) {
-        for v in self.as_slice() {
-            f(v.as_ref());
-        }
-    }
-}
+// `Vec<Value>` reflects through the generic `impl<T: ReflectElement>
+// ReflectList for Vec<T>` in `view.rs` (with `impl ReflectElement for Value`),
+// so there is no bespoke `ReflectList for Vec<Value>` here.
 
 impl ReflectMap for MapValue {
     fn len(&self) -> usize {
