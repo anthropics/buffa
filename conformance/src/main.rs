@@ -256,6 +256,81 @@ fn process_via_reflect(req: &envelope::Request) -> envelope::Response {
     }
 }
 
+// ── Via-vtable mode ────────────────────────────────────────────────────────
+//
+// When `BUFFA_VIA_VTABLE=1`, binary input is decoded into a view, a
+// `DynamicMessage` is rebuilt by walking the view's vtable `ReflectMessage`
+// surface (`for_each_set` + `get`), and that `DynamicMessage` is serialized to
+// JSON. This exercises the generated `impl ReflectMessage for FooView` against
+// the conformance JSON reference, independently of the view's own `Serialize`
+// impl (which `BUFFA_VIEW_JSON` covers). Only binary→JSON is exercised:
+// `for_each_set` excludes unknown fields, which JSON output drops anyway, so
+// there is no unknown-field divergence. Gated on the `reflect` feature (the
+// view `ReflectMessage` impls only exist there), so the no_std binary omits it.
+
+#[cfg(all(not(no_protos), feature = "reflect"))]
+fn via_vtable() -> bool {
+    static FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FLAG.get_or_init(|| std::env::var("BUFFA_VIA_VTABLE").as_deref() == Ok("1"))
+}
+
+/// Rebuild a `DynamicMessage` from any `ReflectMessage` by walking its set
+/// fields through the vtable surface. Nested messages and containers go through
+/// [`ValueRef::to_owned`]; the top-level `for_each_set`/`get` is the path under
+/// test.
+#[cfg(all(not(no_protos), feature = "reflect"))]
+fn reflect_to_dynamic(
+    m: &dyn buffa_descriptor::reflect::ReflectMessage,
+) -> buffa_descriptor::reflect::DynamicMessage {
+    use buffa_descriptor::reflect::ReflectMessageMut;
+    let mut out = buffa_descriptor::reflect::DynamicMessage::new_by_name(
+        std::sync::Arc::clone(m.pool()),
+        m.message_descriptor().full_name(),
+    )
+    .expect("reflected message type is registered in its own descriptor pool");
+    m.for_each_set(&mut |fd, vr| out.set(fd, vr.to_owned()));
+    out
+}
+
+/// Binary→JSON via `decode_view → reflect_to_dynamic → DynamicMessage::to_json`.
+#[cfg(all(not(no_protos), feature = "reflect"))]
+fn vtable_json<'a, V>(bytes: &'a [u8]) -> envelope::Response
+where
+    V: buffa::MessageView<'a> + buffa_descriptor::reflect::ReflectMessage,
+{
+    use envelope::Response;
+    let view = match V::decode_view(bytes) {
+        Ok(v) => v,
+        Err(e) => return Response::ParseError(format!("{e}")),
+    };
+    match reflect_to_dynamic(&view).to_json() {
+        Ok(s) => Response::JsonPayload(s),
+        Err(e) => Response::SerializeError(format!("{e}")),
+    }
+}
+
+/// Dispatch the vtable JSON path by message type.
+#[cfg(all(not(no_protos), feature = "reflect"))]
+fn process_via_vtable(req: &envelope::Request) -> envelope::Response {
+    use envelope::{Payload, Response};
+    let Some(Payload::Protobuf(b)) = &req.payload else {
+        return Response::RuntimeError("process_via_vtable called without protobuf payload".into());
+    };
+    match req.message_type.as_str() {
+        MSG_PROTO3 => vtable_json::<proto3::__buffa::view::TestAllTypesProto3View<'_>>(b),
+        MSG_PROTO2 => vtable_json::<proto2::__buffa::view::TestAllTypesProto2View<'_>>(b),
+        #[cfg(has_editions_protos)]
+        MSG_EDITIONS_PROTO3 => {
+            vtable_json::<editions_proto3::__buffa::view::TestAllTypesProto3View<'_>>(b)
+        }
+        #[cfg(has_editions_protos)]
+        MSG_EDITIONS_PROTO2 => {
+            vtable_json::<editions_proto2::__buffa::view::TestAllTypesProto2View<'_>>(b)
+        }
+        other => Response::Skipped(format!("message type '{other}' not in vtable dispatch")),
+    }
+}
+
 /// Decode `bytes` as a view and serialize that view directly to JSON.
 #[cfg(not(no_protos))]
 fn encode_view_json<'a, V>(bytes: &'a [u8]) -> envelope::Response
@@ -398,6 +473,18 @@ fn process(req: &envelope::Request) -> envelope::Response {
                 process_view_json(req)
             }
             _ => Response::Skipped("view-json mode: only binary→JSON exercised".into()),
+        };
+    }
+
+    // Via-vtable mode: binary→JSON through the view's `ReflectMessage` surface.
+    // Only present when the `reflect` feature is on (the std binary).
+    #[cfg(feature = "reflect")]
+    if via_vtable() {
+        return match &req.payload {
+            Some(Payload::Protobuf(_)) if req.requested_output_format == WireFormat::Json => {
+                process_via_vtable(req)
+            }
+            _ => Response::Skipped("vtable mode: only binary→JSON exercised".into()),
         };
     }
 
@@ -544,7 +631,7 @@ fn process_editions(
 ) -> envelope::Response {
     #[cfg(has_editions_protos)]
     {
-        return process_editions_inner(req, ignore_unknown);
+        process_editions_inner(req, ignore_unknown)
     }
     #[cfg(not(has_editions_protos))]
     envelope::Response::Skipped(format!(

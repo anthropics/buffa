@@ -223,6 +223,25 @@ impl Config {
         self
     }
 
+    /// Gate only the reflection impls behind a `reflect` crate feature, without
+    /// gating json/views/text (unlike
+    /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features),
+    /// which gates them together).
+    ///
+    /// For crates that ship views/text unconditionally but want the
+    /// `buffa-descriptor`-dependent (and `std`-requiring) reflection surface to
+    /// be opt-in. `buffa-types` is the motivating case.
+    ///
+    /// **Experimental and `#[doc(hidden)]`**, paired with
+    /// [`generate_reflection_vtable`](Self::generate_reflection_vtable) until the
+    /// public `ReflectMode` selector lands.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn gate_reflect_on_crate_feature(mut self, enabled: bool) -> Self {
+        self.codegen_config.gate_reflect_on_crate_feature = enabled;
+        self
+    }
+
     /// Enable or disable `with_*` builder-style setter methods for
     /// explicit-presence fields (default: true).
     ///

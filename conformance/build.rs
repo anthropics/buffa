@@ -21,12 +21,20 @@ fn main() {
     // WKT types come from buffa-types (with hand-written serde impls).
     // We only generate the test message types here.
 
+    // Vtable reflection is enabled on the view-bearing builds (proto3/proto2 and
+    // their editions variants) for the BUFFA_VIA_VTABLE run. It is gated behind
+    // the conformance `reflect` feature (via `gate_reflect_on_crate_feature`),
+    // so the no_std binary — built `--no-default-features` — omits it.
+
     // TestAllTypesProto3 with serde + textproto enabled.
     buffa_build::Config::new()
         .files(&["protos/google/protobuf/test_messages_proto3.proto"])
         .includes(&["protos/"])
         .generate_json(true)
         .generate_text(true)
+        .generate_reflection(true)
+        .generate_reflection_vtable(true)
+        .gate_reflect_on_crate_feature(true)
         .compile()
         .expect("buffa_build failed for test_messages_proto3.proto");
 
@@ -37,6 +45,9 @@ fn main() {
         .generate_json(true)
         .generate_text(true)
         .allow_message_set(true)
+        .generate_reflection(true)
+        .generate_reflection_vtable(true)
+        .gate_reflect_on_crate_feature(true)
         .compile()
         .expect("buffa_build failed for test_messages_proto2.proto");
 
@@ -48,6 +59,9 @@ fn main() {
             .includes(&[&protos_dir])
             .generate_json(true)
             .generate_text(true)
+            .generate_reflection(true)
+            .generate_reflection_vtable(true)
+            .gate_reflect_on_crate_feature(true)
             .compile()
             .expect("buffa_build failed for test_messages_proto3_editions.proto");
 
@@ -58,6 +72,9 @@ fn main() {
             .generate_json(true)
             .generate_text(true)
             .allow_message_set(true)
+            .generate_reflection(true)
+            .generate_reflection_vtable(true)
+            .gate_reflect_on_crate_feature(true)
             .compile()
             .expect("buffa_build failed for test_messages_proto2_editions.proto");
 

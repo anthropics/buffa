@@ -504,10 +504,10 @@ pub struct CodeGenConfig {
     /// When [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features)
     /// is already on, reflection is gated regardless and this flag is ignored.
     ///
-    /// This is a low-level knob for internal codegen tooling (it is set
-    /// directly by `gen_wkt_types`) and is not surfaced through `buffa-build`,
-    /// whose consumers ship a single crate and rarely need feature-gated
-    /// reflection.
+    /// A low-level knob for crates whose generated code is a public interface
+    /// (`buffa-types`, the conformance harness). Set directly by `gen_wkt_types`
+    /// and exposed through `buffa_build::Config::gate_reflect_on_crate_feature`
+    /// (currently `#[doc(hidden)]`, paired with the experimental vtable flag).
     ///
     /// Defaults to `false`.
     pub gate_reflect_on_crate_feature: bool,

@@ -25,7 +25,12 @@ publish = false
 
 [features]
 default = ["buffa-std"]
-buffa-std = ["buffa/std", "buffa-types/std"]
+# `reflect` enables vtable-mode reflection on the generated view types and the
+# WKT views (BUFFA_VIA_VTABLE run). It requires std, so it rides on `buffa-std`
+# (the default) and is absent from the `--no-default-features` no_std binary —
+# whose generated code therefore omits the reflect impls.
+buffa-std = ["buffa/std", "buffa-types/std", "reflect"]
+reflect = ["buffa-types/reflect"]
 
 [dependencies]
 buffa = { path = "../buffa", default-features = false, features = ["json", "text"] }
