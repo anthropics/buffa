@@ -53,6 +53,7 @@ mod comments;
 mod custom_attributes;
 mod feature_gating;
 mod generation;
+mod idiomatic_enums;
 mod json_codegen;
 mod naming;
 mod proto2;

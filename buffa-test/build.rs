@@ -100,6 +100,33 @@ fn main() {
         .compile()
         .expect("buffa_build failed for nestpkg_*.proto");
 
+    // Issue #135: a message whose snake_case module name collides with a
+    // sibling sub-package. `message Oof` (nested types) in `modcollide` vs
+    // `package modcollide.oof`. Both files compiled together so codegen sees the
+    // sub-package and deconflicts the nested module to `oof_`. JSON is enabled so
+    // the Any-registry paths bubbled from the nested message resolve through the
+    // deconflicted module (`super::oof_::__INNER_JSON_ANY`, not `super::oof::…`).
+    buffa_build::Config::new()
+        .files(&["protos/modcollide.proto", "protos/modcollide_oof.proto"])
+        .includes(&["protos/"])
+        .generate_json(true)
+        .compile()
+        .expect("buffa_build failed for modcollide.proto (module collision)");
+
+    // Issue #135, multi-message race: `Oof` + `Oof_` in `modrace`, with
+    // sub-packages `modrace.oof` + `modrace.oof_`. The two nested-types modules
+    // must get distinct deconflicted names (`oof__`, `oof___`). Compiling the
+    // nested layout in lib.rs is the end-to-end guard.
+    buffa_build::Config::new()
+        .files(&[
+            "protos/modrace.proto",
+            "protos/modrace_oof.proto",
+            "protos/modrace_oof_us.proto",
+        ])
+        .includes(&["protos/"])
+        .compile()
+        .expect("buffa_build failed for modrace.proto (multi-message race)");
+
     // Proto2 with custom defaults, required fields, closed enums. Vtable
     // reflection is enabled here specifically to compile the closed-enum and
     // required-field reflect paths (basic.proto is proto3 / open enums only):

@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **Module redefinition error when a message and a sub-package share a name
+  (#135).** A message with nested types emits a `snake_case(MessageName)`
+  submodule, which collided with a sibling sub-package of the same name
+  (protobuf is case-sensitive — `message Oof` and `package foo.oof` legally
+  coexist — but both mapped to `mod oof`, producing an E0428). Codegen now
+  deconflicts the **nested-types module** by appending `_` (e.g. `oof_`; more
+  underscores if several modules collide in the same scope — see DESIGN.md),
+  leaving the message struct (`foo::Oof`) and the sub-package module
+  (`foo::oof`) at their natural names. This only triggers on a collision that
+  previously failed to compile, so existing output is unchanged. Two caveats:
+  (1) if you *add* a sub-package whose name collides with an existing message's
+  nested-types module, paths to those nested types move from `foo::oof::…` to
+  `foo::oof_::…`; (2) both packages must be generated in the same
+  `buffa_build::Config::compile()` call — deconfliction cannot span separate
+  compilations, since each only sees its own descriptor set.
+
 ## [0.6.0] - 2026-05-15
 
 ### Added

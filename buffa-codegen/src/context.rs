@@ -1,6 +1,6 @@
 //! Code generation context and descriptor-to-Rust mapping state.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::features::{self, ResolvedFeatures};
 use crate::generated::descriptor::{DescriptorProto, EnumDescriptorProto, FileDescriptorProto};
@@ -80,6 +80,102 @@ pub struct CodeGenContext<'a> {
     /// proto FQN they already have, rather than threading index-based paths
     /// through every function signature.
     comment_map: HashMap<String, String>,
+    /// Deconflicted module name for each top-level message, keyed by the
+    /// leading-dot FQN (`".pkg.Msg"`).
+    ///
+    /// A message's nested types live in a `snake_case(Name)` submodule. When
+    /// that name would collide with a sub-package module in the same scope
+    /// (proto is case-sensitive, so `message Oof` and `package foo.oof` both map
+    /// to `mod oof`), a trailing `_` is appended until the name is unique within
+    /// the scope's occupied set. Entries exist for every top-level message; the
+    /// value equals `snake_case(Name)` when no deconfliction was needed.
+    nested_module_names: HashMap<String, String>,
+    /// Non-fatal diagnostics accumulated during generation (e.g. an enum whose
+    /// idiomatic CamelCase aliases were suppressed by a naming conflict).
+    ///
+    /// Interior-mutable so deeply-nested codegen helpers can record a warning
+    /// through the shared `&CodeGenContext` without threading a sink through
+    /// every signature. Drained by [`generate_with_diagnostics`] after
+    /// generation; callers surface them as build warnings. The `RefCell` commits
+    /// the context to single-threaded use; switch to a `Mutex` if package
+    /// generation is ever parallelized.
+    ///
+    /// [`generate_with_diagnostics`]: crate::generate_with_diagnostics
+    warnings: std::cell::RefCell<Vec<crate::CodeGenWarning>>,
+}
+
+/// The immediate child-package segment names directly under `package`.
+///
+/// For `package` `"foo"` and known packages `{foo, foo.oof, foo.bar.baz}`, this
+/// is `{"oof", "bar"}` — the first segment after the `"foo."` prefix of each
+/// deeper package. These are exactly the sub-package module names that will be
+/// siblings of `foo`'s message-nesting modules.
+fn child_package_segments(package: &str, all_packages: &HashSet<String>) -> HashSet<String> {
+    let prefix = if package.is_empty() {
+        String::new()
+    } else {
+        format!("{package}.")
+    };
+    all_packages
+        .iter()
+        .filter_map(|p| {
+            let rest = if package.is_empty() {
+                Some(p.as_str())
+            } else {
+                p.strip_prefix(&prefix)
+            };
+            rest.filter(|r| !r.is_empty())
+                .map(|r| r.split('.').next().unwrap_or(r).to_string())
+        })
+        .collect()
+}
+
+/// Deconflict the nested-types module names for one package's top-level
+/// messages against the sub-package modules in the same scope (issue #135).
+///
+/// `message_names` are the package's top-level message names in declaration
+/// order; `children` are the sub-package segment names that share the package's
+/// module scope. Returns one module name per input message, in the same order.
+///
+/// Each name is `snake_case(Name)` unless it collides with a sub-package
+/// segment, in which case `_` is appended until the candidate is unique against:
+/// the sub-package segments, every message's raw module name, the `__buffa`
+/// sentinel, **and every already-assigned deconflicted name**. That last set —
+/// threaded through the shared `taken` set — is what keeps two messages that
+/// would otherwise race to the same slot distinct (e.g. `Oof` and `Oof_`
+/// alongside sub-packages `oof` and `oof_` resolve to `oof__` and `oof___`,
+/// never both to `oof__`).
+///
+/// Colliding messages are assigned in a stable order (sorted by base name), so
+/// the per-message result is independent of declaration order — reordering the
+/// input files or messages never changes which name a given message receives.
+fn deconflict_package_modules(message_names: &[String], children: &HashSet<String>) -> Vec<String> {
+    let bases: Vec<String> = message_names.iter().map(|n| to_snake_case(n)).collect();
+    // Seed with everything fixed: sub-package segments, the sentinel, and every
+    // message's raw module name. Assigned deconflicted names are added as we go.
+    let mut taken: HashSet<String> = children.clone();
+    taken.insert(SENTINEL_MOD.to_string());
+    taken.extend(bases.iter().cloned());
+
+    // Result starts as the raw bases (correct for every non-colliding message),
+    // and colliding messages overwrite their slot. Assign in a stable order
+    // (sorted by base name) so the per-message suffix is independent of
+    // declaration order; two colliding messages can't both grab the same slot.
+    let mut out = bases.clone();
+    let mut order: Vec<usize> = (0..bases.len()).collect();
+    order.sort_by(|&a, &b| bases[a].cmp(&bases[b]));
+    for i in order {
+        if !children.contains(&bases[i]) {
+            continue;
+        }
+        let mut candidate = format!("{}_", bases[i]);
+        while taken.contains(&candidate) {
+            candidate.push('_');
+        }
+        taken.insert(candidate.clone());
+        out[i] = candidate;
+    }
+    out
 }
 
 impl<'a> CodeGenContext<'a> {
@@ -129,6 +225,53 @@ impl<'a> CodeGenContext<'a> {
         let mut package_of = HashMap::new();
         let mut enum_closedness = HashMap::new();
         let mut comment_map = HashMap::new();
+        let mut nested_module_names = HashMap::new();
+
+        // Pre-pass: collect every locally-emitted package and its top-level
+        // message names, so a message-nesting module can be deconflicted against
+        // sub-package modules (which may be declared in other files). Files
+        // resolved to an extern crate are skipped: they emit no local module, so
+        // their package cannot collide and must not trigger a spurious rename.
+        let mut all_packages: HashSet<String> = HashSet::new();
+        let mut pkg_message_names: HashMap<String, Vec<String>> = HashMap::new();
+        for file in files {
+            let package = file.package.as_deref().unwrap_or("");
+            let is_extern = file
+                .name
+                .as_deref()
+                .and_then(|n| resolve_file_extern(n, file_extern_paths))
+                .is_some()
+                || resolve_extern_prefix(package, effective_extern_paths).is_some();
+            if is_extern {
+                continue;
+            }
+            all_packages.insert(package.to_string());
+            for msg in &file.message_type {
+                if let Some(name) = &msg.name {
+                    pkg_message_names
+                        .entry(package.to_string())
+                        .or_default()
+                        .push(name.clone());
+                }
+            }
+        }
+
+        // Resolve the deconflicted nested-types module name for every top-level
+        // message, batched per package so racing deconflictions stay distinct.
+        // Each package is an independent scope, so the populated map is the same
+        // regardless of `pkg_message_names` iteration order.
+        for (package, names) in &pkg_message_names {
+            let children = child_package_segments(package, &all_packages);
+            let modules = deconflict_package_modules(names, &children);
+            for (name, module) in names.iter().zip(modules) {
+                let fqn = if package.is_empty() {
+                    format!(".{name}")
+                } else {
+                    format!(".{package}.{name}")
+                };
+                nested_module_names.insert(fqn, module);
+            }
+        }
 
         for file in files {
             comment_map.extend(crate::comments::fqn_comments(file));
@@ -170,7 +313,13 @@ impl<'a> CodeGenContext<'a> {
                     package_of.insert(fqn.clone(), package.to_string());
 
                     // Register nested messages using module-qualified paths.
-                    let snake = to_snake_case(name);
+                    // The parent module name is deconflicted against sub-package
+                    // modules (issue #135), precomputed above and looked up here
+                    // so emission and references share the same value.
+                    let snake = nested_module_names
+                        .get(&fqn)
+                        .cloned()
+                        .unwrap_or_else(|| to_snake_case(name));
                     let parent_mod = if rust_module.is_empty() {
                         snake
                     } else {
@@ -216,7 +365,43 @@ impl<'a> CodeGenContext<'a> {
             package_of,
             enum_closedness,
             comment_map,
+            nested_module_names,
+            warnings: std::cell::RefCell::new(Vec::new()),
         }
+    }
+
+    /// Record a non-fatal diagnostic to surface as a build warning.
+    pub(crate) fn warn(&self, warning: crate::CodeGenWarning) {
+        self.warnings.borrow_mut().push(warning);
+    }
+
+    /// Drain the diagnostics accumulated during generation.
+    ///
+    /// `pub(crate)` so it can only be called from [`generate_with_diagnostics`]
+    /// after all packages are generated — draining mid-flight would truncate the
+    /// diagnostic stream.
+    pub(crate) fn take_warnings(&self) -> Vec<crate::CodeGenWarning> {
+        self.warnings.take()
+    }
+
+    /// The nested-types module name for a top-level message, deconflicted
+    /// against sub-package modules (issue #135).
+    ///
+    /// `package` is the proto package (empty for none), `name` the message's
+    /// proto name. Returns the recorded deconflicted name (e.g. `oof_` when
+    /// `message Oof` collides with `package <pkg>.oof`), or `snake_case(name)`
+    /// when no override was recorded. Both emission and reference resolution go
+    /// through the same recorded value, so they always agree.
+    pub fn nested_module_name(&self, package: &str, name: &str) -> String {
+        let fqn = if package.is_empty() {
+            format!(".{name}")
+        } else {
+            format!(".{package}.{name}")
+        };
+        self.nested_module_names
+            .get(&fqn)
+            .cloned()
+            .unwrap_or_else(|| to_snake_case(name))
     }
 
     /// Build a context matching what [`generate()`](crate::generate) uses
@@ -828,6 +1013,83 @@ fn register_nested_enum_closedness(
 mod tests {
     use super::*;
     use crate::generated::descriptor::{DescriptorProto, EnumDescriptorProto, FileDescriptorProto};
+
+    fn children(segs: &[&str]) -> HashSet<String> {
+        segs.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn names(ns: &[&str]) -> Vec<String> {
+        ns.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn deconflict_no_collision_keeps_base() {
+        // No sub-package shares a module name → names are unchanged.
+        let out = deconflict_package_modules(&names(&["Oof", "Bar"]), &children(&["other"]));
+        assert_eq!(out, vec!["oof".to_string(), "bar".to_string()]);
+    }
+
+    #[test]
+    fn deconflict_single_collision_appends_underscore() {
+        let out = deconflict_package_modules(&names(&["Oof"]), &children(&["oof"]));
+        assert_eq!(out, vec!["oof_".to_string()]);
+    }
+
+    #[test]
+    fn deconflict_repeated_append_when_underscore_slot_also_taken() {
+        // Sub-packages `oof` AND `oof_` both exist → grow past both.
+        let out = deconflict_package_modules(&names(&["Oof"]), &children(&["oof", "oof_"]));
+        assert_eq!(out, vec!["oof__".to_string()]);
+    }
+
+    #[test]
+    fn deconflict_two_messages_racing_to_same_slot_stay_distinct() {
+        // `Oof` (oof) and `Oof_` (oof_), sub-packages `oof` and `oof_`. Without
+        // the shared `taken` set both would land on `oof__`.
+        let out = deconflict_package_modules(&names(&["Oof", "Oof_"]), &children(&["oof", "oof_"]));
+        assert_eq!(out, vec!["oof__".to_string(), "oof___".to_string()]);
+        // All distinct and clear of the sub-package modules.
+        let set: HashSet<&String> = out.iter().collect();
+        assert_eq!(set.len(), out.len());
+        assert!(!out.contains(&"oof".to_string()) && !out.contains(&"oof_".to_string()));
+    }
+
+    #[test]
+    fn deconflict_is_independent_of_declaration_order() {
+        // Reordering the input must not change which message gets which name.
+        let ch = children(&["oof", "oof_"]);
+        let fwd = deconflict_package_modules(&names(&["Oof", "Oof_"]), &ch);
+        let rev = deconflict_package_modules(&names(&["Oof_", "Oof"]), &ch);
+        // fwd: [Oof, Oof_]; rev: [Oof_, Oof] — same per-name mapping either way.
+        assert_eq!(fwd, vec!["oof__".to_string(), "oof___".to_string()]);
+        assert_eq!(rev, vec!["oof___".to_string(), "oof__".to_string()]);
+    }
+
+    #[test]
+    fn deconflict_avoids_other_messages_raw_base() {
+        // `Oof` collides with sub-package `oof`; its `oof_` candidate must also
+        // avoid the raw module of a sibling message `Oof_`.
+        let out = deconflict_package_modules(&names(&["Oof", "Oof_"]), &children(&["oof"]));
+        // Oof -> oof_ is taken by Oof_'s raw base, so Oof -> oof__; Oof_ stays.
+        assert_eq!(out, vec!["oof__".to_string(), "oof_".to_string()]);
+    }
+
+    #[test]
+    fn deconflict_never_yields_the_sentinel() {
+        let out = deconflict_package_modules(&names(&["Buffa"]), &children(&["__buffa", "buffa"]));
+        // base `buffa` collides; `buffa_` is free, so it is chosen (not __buffa).
+        assert_eq!(out, vec!["buffa_".to_string()]);
+        assert_ne!(out[0], SENTINEL_MOD);
+    }
+
+    #[test]
+    fn child_package_segments_extracts_immediate_segment() {
+        let pkgs = children(&["foo", "foo.oof", "foo.bar.baz", "foobar"]);
+        let mut got: Vec<String> = child_package_segments("foo", &pkgs).into_iter().collect();
+        got.sort();
+        // `foo.oof` -> oof, `foo.bar.baz` -> bar; `foobar` is not a sub-package.
+        assert_eq!(got, vec!["bar".to_string(), "oof".to_string()]);
+    }
 
     fn make_file(
         name: &str,

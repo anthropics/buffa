@@ -808,6 +808,125 @@ fn inline_bytes_field_selective_mapping() {
 }
 
 #[test]
+fn module_collision_nested_message_vs_subpackage() {
+    // Issue #135: `message Oof` (with nested types) snake-cases to module `oof`,
+    // colliding with sibling sub-package `foo.oof`. Both compiled together so
+    // codegen sees the sub-package and deconflicts the nested module to `oof_`.
+    let dir = tempfile::tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("foo.proto"),
+        "syntax = \"proto3\";\npackage foo;\nmessage Oof { message Inner { int32 x = 1; } Inner inner = 1; }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("foo_oof.proto"),
+        "syntax = \"proto3\";\npackage foo.oof;\nmessage Thing { int32 y = 1; }\n",
+    )
+    .unwrap();
+    let fds = compile_protos(
+        &[
+            dir.path().join("foo.proto").to_str().unwrap(),
+            dir.path().join("foo_oof.proto").to_str().unwrap(),
+        ],
+        &[dir.path().to_str().unwrap()],
+    );
+    let config = no_views();
+    let content = buffa_codegen::generate(&fds.file, &["foo.proto".into()], &config)
+        .expect("codegen")
+        .into_iter()
+        .map(|f| f.content)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // The nested-types module is deconflicted; references use the same name.
+    assert!(
+        content.contains("pub mod oof_"),
+        "nested module should be deconflicted to `oof_`: {content}"
+    );
+    assert!(
+        content.contains("oof_ :: Inner") || content.contains("oof_::Inner"),
+        "nested-type references should use the deconflicted module: {content}"
+    );
+    // The struct itself (PascalCase) is untouched.
+    assert!(content.contains("struct Oof"), "{content}");
+}
+
+#[test]
+fn module_collision_two_messages_race_to_distinct_names() {
+    // Pathological: `Oof`(oof) and `Oof_`(oof_) both collide, with sub-packages
+    // `foo.oof` AND `foo.oof_`. Each deconflicted name must be distinct from the
+    // other's and from both sub-packages — `oof__` and `oof___`, not both `oof__`.
+    let dir = tempfile::tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("foo.proto"),
+        "syntax = \"proto3\";\npackage foo;\n\
+         message Oof { message Inner { int32 x = 1; } Inner inner = 1; }\n\
+         message Oof_ { message Inner { int32 x = 1; } Inner inner = 1; }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("a.proto"),
+        "syntax = \"proto3\";\npackage foo.oof;\nmessage Thing { int32 y = 1; }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("b.proto"),
+        "syntax = \"proto3\";\npackage foo.oof_;\nmessage Widget { int32 z = 1; }\n",
+    )
+    .unwrap();
+    let fds = compile_protos(
+        &[
+            dir.path().join("foo.proto").to_str().unwrap(),
+            dir.path().join("a.proto").to_str().unwrap(),
+            dir.path().join("b.proto").to_str().unwrap(),
+        ],
+        &[dir.path().to_str().unwrap()],
+    );
+    let content = buffa_codegen::generate(&fds.file, &["foo.proto".into()], &no_views())
+        .expect("codegen")
+        .into_iter()
+        .map(|f| f.content)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Each message's `inner` field references its own deconflicted module.
+    // `oof__::Inner` is not a substring of `oof___::Inner`, so finding both
+    // proves the two modules are distinct (and neither is the bare `oof`/`oof_`).
+    assert!(
+        content.contains("oof__ :: Inner") || content.contains("oof__::Inner"),
+        "Oof should reference oof__::Inner: {content}"
+    );
+    assert!(
+        content.contains("oof___ :: Inner") || content.contains("oof___::Inner"),
+        "Oof_ should reference oof___::Inner: {content}"
+    );
+}
+
+#[test]
+fn module_no_collision_keeps_natural_module_name() {
+    // Without a colliding sub-package, the nested module stays `oof` (no churn).
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package foo;
+        message Oof { message Inner { int32 x = 1; } Inner inner = 1; }
+        "#,
+        &no_views(),
+    );
+    // The nested module is present and NOT deconflicted (no `_` suffix). The
+    // `!oof_` check is the meaningful guard; `oof::Inner` confirms the module
+    // exists, both robust to prettyplease spacing.
+    assert!(
+        content.contains("oof :: Inner") || content.contains("oof::Inner"),
+        "{content}"
+    );
+    assert!(
+        !content.contains("pub mod oof_") && !content.contains("oof_ ::"),
+        "no spurious dedup: {content}"
+    );
+}
+
+#[test]
 fn inline_string_field_mapping() {
     use buffa_codegen::StringRepr;
     let mut config = no_views();

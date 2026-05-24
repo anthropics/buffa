@@ -12,6 +12,26 @@ pub enum Severity {
     ERROR = 4i32,
     FATAL = 5i32,
 }
+impl Severity {
+    ///Idiomatic alias for [`Self::SEVERITY_UNSPECIFIED`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const SeverityUnspecified: Self = Self::SEVERITY_UNSPECIFIED;
+    ///Idiomatic alias for [`Self::DEBUG`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const Debug: Self = Self::DEBUG;
+    ///Idiomatic alias for [`Self::INFO`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const Info: Self = Self::INFO;
+    ///Idiomatic alias for [`Self::WARN`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const Warn: Self = Self::WARN;
+    ///Idiomatic alias for [`Self::ERROR`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const Error: Self = Self::ERROR;
+    ///Idiomatic alias for [`Self::FATAL`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const Fatal: Self = Self::FATAL;
+}
 impl ::core::default::Default for Severity {
     fn default() -> Self {
         Self::SEVERITY_UNSPECIFIED
