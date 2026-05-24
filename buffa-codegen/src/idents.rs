@@ -76,6 +76,85 @@ pub fn make_field_ident(name: &str) -> Ident {
     }
 }
 
+/// Convert a protobuf enum value name to `UpperCamelCase`.
+///
+/// Word boundaries are underscores **and** case transitions, so the conversion
+/// works on the canonical `SHOUTY_SNAKE_CASE` (`RULE_LEVEL_HIGH` → `RuleLevelHigh`)
+/// as well as non-canonical mixed-case inputs: a lower→upper transition starts a
+/// word (`myValue` → `MyValue`) and an acronym ends a word at the upper→lower
+/// transition (`HTTPServer` → `HttpServer`). Each word's first character is
+/// upper-cased and the rest lower-cased.
+///
+/// The conversion is intentionally lossy: `FOO_BAR` and `FOO__BAR` both collapse
+/// to `FooBar`, and `HTTPServer` and `HTTP_SERVER` both produce `HttpServer`. The
+/// caller is responsible for detecting the resulting collisions.
+///
+/// A leading digit in the output is only reachable when the caller has stripped
+/// a prefix first (e.g. `VERSION_2` → `2`); it is preserved verbatim, so callers
+/// that need a valid Rust identifier must check for it themselves.
+#[must_use]
+pub fn to_upper_camel_case(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::new();
+    let mut start_of_word = true;
+    for (i, &ch) in chars.iter().enumerate() {
+        if ch == '_' {
+            start_of_word = true;
+            continue;
+        }
+        // Within a run of non-underscore characters, detect a word boundary at
+        // case transitions so mixed-case input splits correctly.
+        if !start_of_word && i > 0 {
+            let prev = chars[i - 1];
+            let lower_to_upper = prev.is_lowercase() && ch.is_uppercase();
+            let acronym_end = prev.is_uppercase()
+                && ch.is_uppercase()
+                && chars.get(i + 1).is_some_and(|c| c.is_lowercase());
+            if lower_to_upper || acronym_end {
+                start_of_word = true;
+            }
+        }
+        if start_of_word {
+            out.extend(ch.to_uppercase());
+            start_of_word = false;
+        } else {
+            out.extend(ch.to_lowercase());
+        }
+    }
+    out
+}
+
+/// Convert a type name to `SHOUTY_SNAKE_CASE`.
+///
+/// Used to reconstruct the conventional enum-value prefix from an enum's proto
+/// name so it can be stripped: `RuleLevel` → `RULE_LEVEL` (then values like
+/// `RULE_LEVEL_HIGH` lose the `RULE_LEVEL_` prefix). An underscore is inserted
+/// at each lower→upper boundary and at acronym→word boundaries
+/// (`HTTPServer` → `HTTP_SERVER`); existing underscores are preserved without
+/// doubling.
+#[must_use]
+pub fn to_shouty_snake_case(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::new();
+    for (i, &ch) in chars.iter().enumerate() {
+        if ch == '_' {
+            out.push('_');
+            continue;
+        }
+        if i > 0 && ch.is_uppercase() && chars[i - 1] != '_' {
+            let prev = chars[i - 1];
+            let prev_starts_word = prev.is_lowercase() || prev.is_ascii_digit();
+            let acronym_boundary =
+                prev.is_uppercase() && chars.get(i + 1).is_some_and(|c| c.is_lowercase());
+            if prev_starts_word || acronym_boundary {
+                out.push('_');
+            }
+        }
+        out.extend(ch.to_uppercase());
+    }
+    out
+}
+
 /// Escape a proto package segment for use as a Rust `mod` name.
 ///
 /// Returns `r#` prefix for raw-able keywords, `_` suffix for path-position
@@ -245,6 +324,69 @@ mod tests {
     fn escape_mod_non_raw_keyword() {
         assert_eq!(escape_mod_ident("self"), "self_");
         assert_eq!(escape_mod_ident("super"), "super_");
+    }
+
+    #[test]
+    fn upper_camel_basic() {
+        assert_eq!(to_upper_camel_case("RULE_LEVEL_HIGH"), "RuleLevelHigh");
+        assert_eq!(to_upper_camel_case("UNKNOWN"), "Unknown");
+        assert_eq!(to_upper_camel_case("low_priority"), "LowPriority");
+        assert_eq!(to_upper_camel_case("HTTP_SERVER"), "HttpServer");
+    }
+
+    #[test]
+    fn upper_camel_lossy_collisions() {
+        // Doubled and absent underscores collapse to the same identifier — the
+        // caller must detect this.
+        assert_eq!(to_upper_camel_case("FOO_BAR"), "FooBar");
+        assert_eq!(to_upper_camel_case("FOO__BAR"), "FooBar");
+        // Acronym vs snake also collapse — both must resolve to one identifier
+        // so the caller can detect the collision.
+        assert_eq!(to_upper_camel_case("HTTPServer"), "HttpServer");
+        assert_eq!(to_upper_camel_case("HTTP_SERVER"), "HttpServer");
+    }
+
+    #[test]
+    fn upper_camel_mixed_case_input() {
+        // Case transitions are word boundaries, so an already-CamelCase value
+        // round-trips (and is later skipped as a redundant alias).
+        assert_eq!(to_upper_camel_case("MyValue"), "MyValue");
+        assert_eq!(to_upper_camel_case("fooBar"), "FooBar");
+        assert_eq!(to_upper_camel_case("Active"), "Active");
+    }
+
+    #[test]
+    fn upper_camel_digit_and_empty() {
+        // Reachable only after a prefix strip; preserved verbatim for the
+        // caller's validity check.
+        assert_eq!(to_upper_camel_case("2"), "2");
+        assert_eq!(to_upper_camel_case(""), "");
+        assert_eq!(to_upper_camel_case("FOO_2"), "Foo2");
+    }
+
+    #[test]
+    fn upper_camel_keyword_source() {
+        // `SELF` folds to the keyword `Self`; identifier escaping is the
+        // caller's job (via `make_field_ident`).
+        assert_eq!(to_upper_camel_case("SELF"), "Self");
+    }
+
+    #[test]
+    fn shouty_snake_basic() {
+        assert_eq!(to_shouty_snake_case("RuleLevel"), "RULE_LEVEL");
+        assert_eq!(to_shouty_snake_case("NullValue"), "NULL_VALUE");
+        assert_eq!(to_shouty_snake_case("Type"), "TYPE");
+    }
+
+    #[test]
+    fn shouty_snake_acronym() {
+        assert_eq!(to_shouty_snake_case("HTTPServer"), "HTTP_SERVER");
+    }
+
+    #[test]
+    fn shouty_snake_already_snakey() {
+        // Idempotent on names that already carry underscores.
+        assert_eq!(to_shouty_snake_case("RULE_LEVEL"), "RULE_LEVEL");
     }
 
     #[test]

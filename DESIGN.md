@@ -241,7 +241,17 @@ Ancillary generated items (views, oneof enums, file-level extensions, the per-pa
 
 Oneof and view-oneof enums drop the `Oneof`/`View` suffix — the tree position disambiguates. View structs keep the `View` suffix because owned and view types are routinely co-imported (`use pkg::{Foo, __buffa::view::FooView}`).
 
-This makes name collisions **structurally impossible**: a oneof `kind` and a nested message `Kind` can coexist because they land in different trees. There is no suffix-escalation or rename escape hatch; codegen emits proto names verbatim.
+Moving ancillary items under `__buffa::` removes almost every collision: a oneof `kind` and a nested message `Kind` coexist because they land in different trees.
+
+One owned-tree collision remains, because protobuf is case-sensitive while Rust module names are not: a message's nested-types module is `snake_case(MessageName)`, so `message Oof` and a sibling sub-package `pkg.oof` both want `pkg::oof`. When this happens, codegen deconflicts the **nested-types module** by appending `_` (and repeating until the name is unique against the sub-package segments, sibling message modules, and the `__buffa` sentinel in that scope). The message struct (`pkg::Oof`) and the sub-package module (`pkg::oof`) keep their natural names; only the nested-types module moves:
+
+```text
+<pkg>::Oof                                # owned struct (unchanged)
+<pkg>::oof_::Inner                        # nested owned — module deconflicted from sub-package `oof`
+<pkg>::oof::Thing                         # sub-package `pkg.oof` (unchanged)
+```
+
+This activates only on a real collision (one that previously failed to compile), so output for every other schema is unchanged. The deconfliction is computed per scope from the full descriptor set, so the colliding message and sub-package must be generated in the same `buffa_build::Config::compile()` invocation — codegen cannot deconflict against a package it does not see. The per-message suffix length depends only on which names collide in the scope, not on file or message declaration order.
 
 **File layout — up to five content files + one stitcher:**
 

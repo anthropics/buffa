@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package modcollide.oof;
+
+message Thing {
+  // A nested message inside the sub-package's own message: its module (`thing`)
+  // must be emitted normally — the deconfliction rule applies to the parent
+  // package's message-nesting modules, not to sub-package emission.
+  message Detail {
+    int32 z = 1;
+  }
+  Detail detail = 1;
+  int32 y = 2;
+}

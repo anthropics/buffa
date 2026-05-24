@@ -36,6 +36,47 @@ pub enum Edition {
     /// support a new edition.
     EDITION_MAX = 2147483647i32,
 }
+impl Edition {
+    ///Idiomatic alias for [`Self::EDITION_UNKNOWN`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const EditionUnknown: Self = Self::EDITION_UNKNOWN;
+    ///Idiomatic alias for [`Self::EDITION_LEGACY`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const EditionLegacy: Self = Self::EDITION_LEGACY;
+    ///Idiomatic alias for [`Self::EDITION_PROTO2`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const EditionProto2: Self = Self::EDITION_PROTO2;
+    ///Idiomatic alias for [`Self::EDITION_PROTO3`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const EditionProto3: Self = Self::EDITION_PROTO3;
+    ///Idiomatic alias for [`Self::EDITION_2023`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const Edition2023: Self = Self::EDITION_2023;
+    ///Idiomatic alias for [`Self::EDITION_2024`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const Edition2024: Self = Self::EDITION_2024;
+    ///Idiomatic alias for [`Self::EDITION_UNSTABLE`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const EditionUnstable: Self = Self::EDITION_UNSTABLE;
+    ///Idiomatic alias for [`Self::EDITION_1_TEST_ONLY`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const Edition1TestOnly: Self = Self::EDITION_1_TEST_ONLY;
+    ///Idiomatic alias for [`Self::EDITION_2_TEST_ONLY`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const Edition2TestOnly: Self = Self::EDITION_2_TEST_ONLY;
+    ///Idiomatic alias for [`Self::EDITION_99997_TEST_ONLY`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const Edition99997TestOnly: Self = Self::EDITION_99997_TEST_ONLY;
+    ///Idiomatic alias for [`Self::EDITION_99998_TEST_ONLY`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const Edition99998TestOnly: Self = Self::EDITION_99998_TEST_ONLY;
+    ///Idiomatic alias for [`Self::EDITION_99999_TEST_ONLY`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const Edition99999TestOnly: Self = Self::EDITION_99999_TEST_ONLY;
+    ///Idiomatic alias for [`Self::EDITION_MAX`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const EditionMax: Self = Self::EDITION_MAX;
+}
 impl ::core::default::Default for Edition {
     fn default() -> Self {
         Self::EDITION_UNKNOWN
@@ -227,6 +268,17 @@ pub enum SymbolVisibility {
     VISIBILITY_UNSET = 0i32,
     VISIBILITY_LOCAL = 1i32,
     VISIBILITY_EXPORT = 2i32,
+}
+impl SymbolVisibility {
+    ///Idiomatic alias for [`Self::VISIBILITY_UNSET`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const VisibilityUnset: Self = Self::VISIBILITY_UNSET;
+    ///Idiomatic alias for [`Self::VISIBILITY_LOCAL`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const VisibilityLocal: Self = Self::VISIBILITY_LOCAL;
+    ///Idiomatic alias for [`Self::VISIBILITY_EXPORT`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const VisibilityExport: Self = Self::VISIBILITY_EXPORT;
 }
 impl ::core::default::Default for SymbolVisibility {
     fn default() -> Self {
@@ -3478,6 +3530,14 @@ pub mod extension_range_options {
         DECLARATION = 0i32,
         UNVERIFIED = 1i32,
     }
+    impl VerificationState {
+        ///Idiomatic alias for [`Self::DECLARATION`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Declaration: Self = Self::DECLARATION;
+        ///Idiomatic alias for [`Self::UNVERIFIED`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Unverified: Self = Self::UNVERIFIED;
+    }
     impl ::core::default::Default for VerificationState {
         fn default() -> Self {
             Self::DECLARATION
@@ -4830,6 +4890,62 @@ pub mod field_descriptor_proto {
         /// Uses ZigZag encoding.
         TYPE_SINT64 = 18i32,
     }
+    impl Type {
+        ///Idiomatic alias for [`Self::TYPE_DOUBLE`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Double: Self = Self::TYPE_DOUBLE;
+        ///Idiomatic alias for [`Self::TYPE_FLOAT`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Float: Self = Self::TYPE_FLOAT;
+        ///Idiomatic alias for [`Self::TYPE_INT64`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Int64: Self = Self::TYPE_INT64;
+        ///Idiomatic alias for [`Self::TYPE_UINT64`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Uint64: Self = Self::TYPE_UINT64;
+        ///Idiomatic alias for [`Self::TYPE_INT32`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Int32: Self = Self::TYPE_INT32;
+        ///Idiomatic alias for [`Self::TYPE_FIXED64`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Fixed64: Self = Self::TYPE_FIXED64;
+        ///Idiomatic alias for [`Self::TYPE_FIXED32`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Fixed32: Self = Self::TYPE_FIXED32;
+        ///Idiomatic alias for [`Self::TYPE_BOOL`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Bool: Self = Self::TYPE_BOOL;
+        ///Idiomatic alias for [`Self::TYPE_STRING`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const String: Self = Self::TYPE_STRING;
+        ///Idiomatic alias for [`Self::TYPE_GROUP`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Group: Self = Self::TYPE_GROUP;
+        ///Idiomatic alias for [`Self::TYPE_MESSAGE`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Message: Self = Self::TYPE_MESSAGE;
+        ///Idiomatic alias for [`Self::TYPE_BYTES`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Bytes: Self = Self::TYPE_BYTES;
+        ///Idiomatic alias for [`Self::TYPE_UINT32`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Uint32: Self = Self::TYPE_UINT32;
+        ///Idiomatic alias for [`Self::TYPE_ENUM`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Enum: Self = Self::TYPE_ENUM;
+        ///Idiomatic alias for [`Self::TYPE_SFIXED32`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Sfixed32: Self = Self::TYPE_SFIXED32;
+        ///Idiomatic alias for [`Self::TYPE_SFIXED64`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Sfixed64: Self = Self::TYPE_SFIXED64;
+        ///Idiomatic alias for [`Self::TYPE_SINT32`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Sint32: Self = Self::TYPE_SINT32;
+        ///Idiomatic alias for [`Self::TYPE_SINT64`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Sint64: Self = Self::TYPE_SINT64;
+    }
     impl ::core::default::Default for Type {
         fn default() -> Self {
             Self::TYPE_DOUBLE
@@ -5032,6 +5148,17 @@ pub mod field_descriptor_proto {
         /// it's explicitly prohibited.  In Editions, the `field_presence` feature
         /// can be used to get this behavior.
         LABEL_REQUIRED = 2i32,
+    }
+    impl Label {
+        ///Idiomatic alias for [`Self::LABEL_OPTIONAL`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Optional: Self = Self::LABEL_OPTIONAL;
+        ///Idiomatic alias for [`Self::LABEL_REPEATED`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Repeated: Self = Self::LABEL_REPEATED;
+        ///Idiomatic alias for [`Self::LABEL_REQUIRED`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Required: Self = Self::LABEL_REQUIRED;
     }
     impl ::core::default::Default for Label {
         fn default() -> Self {
@@ -8965,6 +9092,17 @@ pub mod file_options {
         /// Generate code using MessageLite and the lite runtime.
         LITE_RUNTIME = 3i32,
     }
+    impl OptimizeMode {
+        ///Idiomatic alias for [`Self::SPEED`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Speed: Self = Self::SPEED;
+        ///Idiomatic alias for [`Self::CODE_SIZE`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const CodeSize: Self = Self::CODE_SIZE;
+        ///Idiomatic alias for [`Self::LITE_RUNTIME`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const LiteRuntime: Self = Self::LITE_RUNTIME;
+    }
     impl ::core::default::Default for OptimizeMode {
         fn default() -> Self {
             Self::SPEED
@@ -11181,6 +11319,17 @@ pub mod field_options {
         CORD = 1i32,
         STRING_PIECE = 2i32,
     }
+    impl CType {
+        ///Idiomatic alias for [`Self::STRING`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const String: Self = Self::STRING;
+        ///Idiomatic alias for [`Self::CORD`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Cord: Self = Self::CORD;
+        ///Idiomatic alias for [`Self::STRING_PIECE`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const StringPiece: Self = Self::STRING_PIECE;
+    }
     impl ::core::default::Default for CType {
         fn default() -> Self {
             Self::STRING
@@ -11319,6 +11468,17 @@ pub mod field_options {
         /// Use JavaScript numbers.
         JS_NUMBER = 2i32,
     }
+    impl JSType {
+        ///Idiomatic alias for [`Self::JS_NORMAL`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const JsNormal: Self = Self::JS_NORMAL;
+        ///Idiomatic alias for [`Self::JS_STRING`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const JsString: Self = Self::JS_STRING;
+        ///Idiomatic alias for [`Self::JS_NUMBER`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const JsNumber: Self = Self::JS_NUMBER;
+    }
     impl ::core::default::Default for JSType {
         fn default() -> Self {
             Self::JS_NORMAL
@@ -11456,6 +11616,17 @@ pub mod field_options {
         RETENTION_UNKNOWN = 0i32,
         RETENTION_RUNTIME = 1i32,
         RETENTION_SOURCE = 2i32,
+    }
+    impl OptionRetention {
+        ///Idiomatic alias for [`Self::RETENTION_UNKNOWN`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const RetentionUnknown: Self = Self::RETENTION_UNKNOWN;
+        ///Idiomatic alias for [`Self::RETENTION_RUNTIME`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const RetentionRuntime: Self = Self::RETENTION_RUNTIME;
+        ///Idiomatic alias for [`Self::RETENTION_SOURCE`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const RetentionSource: Self = Self::RETENTION_SOURCE;
     }
     impl ::core::default::Default for OptionRetention {
         fn default() -> Self {
@@ -11610,6 +11781,38 @@ pub mod field_options {
         TARGET_TYPE_ENUM_ENTRY = 7i32,
         TARGET_TYPE_SERVICE = 8i32,
         TARGET_TYPE_METHOD = 9i32,
+    }
+    impl OptionTargetType {
+        ///Idiomatic alias for [`Self::TARGET_TYPE_UNKNOWN`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const TargetTypeUnknown: Self = Self::TARGET_TYPE_UNKNOWN;
+        ///Idiomatic alias for [`Self::TARGET_TYPE_FILE`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const TargetTypeFile: Self = Self::TARGET_TYPE_FILE;
+        ///Idiomatic alias for [`Self::TARGET_TYPE_EXTENSION_RANGE`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const TargetTypeExtensionRange: Self = Self::TARGET_TYPE_EXTENSION_RANGE;
+        ///Idiomatic alias for [`Self::TARGET_TYPE_MESSAGE`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const TargetTypeMessage: Self = Self::TARGET_TYPE_MESSAGE;
+        ///Idiomatic alias for [`Self::TARGET_TYPE_FIELD`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const TargetTypeField: Self = Self::TARGET_TYPE_FIELD;
+        ///Idiomatic alias for [`Self::TARGET_TYPE_ONEOF`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const TargetTypeOneof: Self = Self::TARGET_TYPE_ONEOF;
+        ///Idiomatic alias for [`Self::TARGET_TYPE_ENUM`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const TargetTypeEnum: Self = Self::TARGET_TYPE_ENUM;
+        ///Idiomatic alias for [`Self::TARGET_TYPE_ENUM_ENTRY`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const TargetTypeEnumEntry: Self = Self::TARGET_TYPE_ENUM_ENTRY;
+        ///Idiomatic alias for [`Self::TARGET_TYPE_SERVICE`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const TargetTypeService: Self = Self::TARGET_TYPE_SERVICE;
+        ///Idiomatic alias for [`Self::TARGET_TYPE_METHOD`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const TargetTypeMethod: Self = Self::TARGET_TYPE_METHOD;
     }
     impl ::core::default::Default for OptionTargetType {
         fn default() -> Self {
@@ -15091,6 +15294,17 @@ pub mod method_options {
         /// idempotent, but may have side effects
         IDEMPOTENT = 2i32,
     }
+    impl IdempotencyLevel {
+        ///Idiomatic alias for [`Self::IDEMPOTENCY_UNKNOWN`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const IdempotencyUnknown: Self = Self::IDEMPOTENCY_UNKNOWN;
+        ///Idiomatic alias for [`Self::NO_SIDE_EFFECTS`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const NoSideEffects: Self = Self::NO_SIDE_EFFECTS;
+        ///Idiomatic alias for [`Self::IDEMPOTENT`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Idempotent: Self = Self::IDEMPOTENT;
+    }
     impl ::core::default::Default for IdempotencyLevel {
         fn default() -> Self {
             Self::IDEMPOTENCY_UNKNOWN
@@ -16947,6 +17161,20 @@ pub mod feature_set {
         IMPLICIT = 2i32,
         LEGACY_REQUIRED = 3i32,
     }
+    impl FieldPresence {
+        ///Idiomatic alias for [`Self::FIELD_PRESENCE_UNKNOWN`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const FieldPresenceUnknown: Self = Self::FIELD_PRESENCE_UNKNOWN;
+        ///Idiomatic alias for [`Self::EXPLICIT`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Explicit: Self = Self::EXPLICIT;
+        ///Idiomatic alias for [`Self::IMPLICIT`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Implicit: Self = Self::IMPLICIT;
+        ///Idiomatic alias for [`Self::LEGACY_REQUIRED`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const LegacyRequired: Self = Self::LEGACY_REQUIRED;
+    }
     impl ::core::default::Default for FieldPresence {
         fn default() -> Self {
             Self::FIELD_PRESENCE_UNKNOWN
@@ -17094,6 +17322,17 @@ pub mod feature_set {
         OPEN = 1i32,
         CLOSED = 2i32,
     }
+    impl EnumType {
+        ///Idiomatic alias for [`Self::ENUM_TYPE_UNKNOWN`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const EnumTypeUnknown: Self = Self::ENUM_TYPE_UNKNOWN;
+        ///Idiomatic alias for [`Self::OPEN`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Open: Self = Self::OPEN;
+        ///Idiomatic alias for [`Self::CLOSED`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Closed: Self = Self::CLOSED;
+    }
     impl ::core::default::Default for EnumType {
         fn default() -> Self {
             Self::ENUM_TYPE_UNKNOWN
@@ -17232,6 +17471,17 @@ pub mod feature_set {
         REPEATED_FIELD_ENCODING_UNKNOWN = 0i32,
         PACKED = 1i32,
         EXPANDED = 2i32,
+    }
+    impl RepeatedFieldEncoding {
+        ///Idiomatic alias for [`Self::REPEATED_FIELD_ENCODING_UNKNOWN`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const RepeatedFieldEncodingUnknown: Self = Self::REPEATED_FIELD_ENCODING_UNKNOWN;
+        ///Idiomatic alias for [`Self::PACKED`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Packed: Self = Self::PACKED;
+        ///Idiomatic alias for [`Self::EXPANDED`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Expanded: Self = Self::EXPANDED;
     }
     impl ::core::default::Default for RepeatedFieldEncoding {
         fn default() -> Self {
@@ -17379,6 +17629,17 @@ pub mod feature_set {
         VERIFY = 2i32,
         NONE = 3i32,
     }
+    impl Utf8Validation {
+        ///Idiomatic alias for [`Self::UTF8_VALIDATION_UNKNOWN`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Utf8ValidationUnknown: Self = Self::UTF8_VALIDATION_UNKNOWN;
+        ///Idiomatic alias for [`Self::VERIFY`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Verify: Self = Self::VERIFY;
+        ///Idiomatic alias for [`Self::NONE`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const None: Self = Self::NONE;
+    }
     impl ::core::default::Default for Utf8Validation {
         fn default() -> Self {
             Self::UTF8_VALIDATION_UNKNOWN
@@ -17518,6 +17779,17 @@ pub mod feature_set {
         MESSAGE_ENCODING_UNKNOWN = 0i32,
         LENGTH_PREFIXED = 1i32,
         DELIMITED = 2i32,
+    }
+    impl MessageEncoding {
+        ///Idiomatic alias for [`Self::MESSAGE_ENCODING_UNKNOWN`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const MessageEncodingUnknown: Self = Self::MESSAGE_ENCODING_UNKNOWN;
+        ///Idiomatic alias for [`Self::LENGTH_PREFIXED`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const LengthPrefixed: Self = Self::LENGTH_PREFIXED;
+        ///Idiomatic alias for [`Self::DELIMITED`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Delimited: Self = Self::DELIMITED;
     }
     impl ::core::default::Default for MessageEncoding {
         fn default() -> Self {
@@ -17659,6 +17931,17 @@ pub mod feature_set {
         ALLOW = 1i32,
         LEGACY_BEST_EFFORT = 2i32,
     }
+    impl JsonFormat {
+        ///Idiomatic alias for [`Self::JSON_FORMAT_UNKNOWN`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const JsonFormatUnknown: Self = Self::JSON_FORMAT_UNKNOWN;
+        ///Idiomatic alias for [`Self::ALLOW`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Allow: Self = Self::ALLOW;
+        ///Idiomatic alias for [`Self::LEGACY_BEST_EFFORT`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const LegacyBestEffort: Self = Self::LEGACY_BEST_EFFORT;
+    }
     impl ::core::default::Default for JsonFormat {
         fn default() -> Self {
             Self::JSON_FORMAT_UNKNOWN
@@ -17799,6 +18082,17 @@ pub mod feature_set {
         ENFORCE_NAMING_STYLE_UNKNOWN = 0i32,
         STYLE2024 = 1i32,
         STYLE_LEGACY = 2i32,
+    }
+    impl EnforceNamingStyle {
+        ///Idiomatic alias for [`Self::ENFORCE_NAMING_STYLE_UNKNOWN`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const EnforceNamingStyleUnknown: Self = Self::ENFORCE_NAMING_STYLE_UNKNOWN;
+        ///Idiomatic alias for [`Self::STYLE2024`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Style2024: Self = Self::STYLE2024;
+        ///Idiomatic alias for [`Self::STYLE_LEGACY`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const StyleLegacy: Self = Self::STYLE_LEGACY;
     }
     impl ::core::default::Default for EnforceNamingStyle {
         fn default() -> Self {
@@ -18091,6 +18385,23 @@ pub mod feature_set {
             /// With special case caveat for message { enum {} reserved 1 to max; }
             /// This is the recommended setting for new protos.
             STRICT = 4i32,
+        }
+        impl DefaultSymbolVisibility {
+            ///Idiomatic alias for [`Self::DEFAULT_SYMBOL_VISIBILITY_UNKNOWN`]; `Debug` prints the variant name.
+            #[allow(non_upper_case_globals)]
+            pub const DefaultSymbolVisibilityUnknown: Self = Self::DEFAULT_SYMBOL_VISIBILITY_UNKNOWN;
+            ///Idiomatic alias for [`Self::EXPORT_ALL`]; `Debug` prints the variant name.
+            #[allow(non_upper_case_globals)]
+            pub const ExportAll: Self = Self::EXPORT_ALL;
+            ///Idiomatic alias for [`Self::EXPORT_TOP_LEVEL`]; `Debug` prints the variant name.
+            #[allow(non_upper_case_globals)]
+            pub const ExportTopLevel: Self = Self::EXPORT_TOP_LEVEL;
+            ///Idiomatic alias for [`Self::LOCAL_ALL`]; `Debug` prints the variant name.
+            #[allow(non_upper_case_globals)]
+            pub const LocalAll: Self = Self::LOCAL_ALL;
+            ///Idiomatic alias for [`Self::STRICT`]; `Debug` prints the variant name.
+            #[allow(non_upper_case_globals)]
+            pub const Strict: Self = Self::STRICT;
         }
         impl ::core::default::Default for DefaultSymbolVisibility {
             fn default() -> Self {
@@ -20498,6 +20809,17 @@ pub mod generated_code_info {
             SET = 1i32,
             /// An alias to the element is returned.
             ALIAS = 2i32,
+        }
+        impl Semantic {
+            ///Idiomatic alias for [`Self::NONE`]; `Debug` prints the variant name.
+            #[allow(non_upper_case_globals)]
+            pub const None: Self = Self::NONE;
+            ///Idiomatic alias for [`Self::SET`]; `Debug` prints the variant name.
+            #[allow(non_upper_case_globals)]
+            pub const Set: Self = Self::SET;
+            ///Idiomatic alias for [`Self::ALIAS`]; `Debug` prints the variant name.
+            #[allow(non_upper_case_globals)]
+            pub const Alias: Self = Self::ALIAS;
         }
         impl ::core::default::Default for Semantic {
             fn default() -> Self {

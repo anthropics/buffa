@@ -61,8 +61,12 @@ fn main() {
         "google/protobuf/compiler/plugin.proto".to_string(),
     ];
 
-    let generated = buffa_codegen::generate(&descriptor_set.file, &files_to_generate, &config)
-        .expect("code generation failed");
+    let (generated, warnings) =
+        buffa_codegen::generate_with_diagnostics(&descriptor_set.file, &files_to_generate, &config)
+            .expect("code generation failed");
+    for warning in &warnings {
+        eprintln!("warning: buffa: {warning}");
+    }
 
     let out_dir = std::path::Path::new(&args[2]);
     fs::create_dir_all(out_dir).expect("failed to create output dir");
