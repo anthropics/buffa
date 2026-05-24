@@ -1199,6 +1199,17 @@ pub mod code_generator_response {
         FEATURE_PROTO3_OPTIONAL = 1i32,
         FEATURE_SUPPORTS_EDITIONS = 2i32,
     }
+    impl Feature {
+        ///Idiomatic alias for [`Self::FEATURE_NONE`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const None: Self = Self::FEATURE_NONE;
+        ///Idiomatic alias for [`Self::FEATURE_PROTO3_OPTIONAL`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const Proto3Optional: Self = Self::FEATURE_PROTO3_OPTIONAL;
+        ///Idiomatic alias for [`Self::FEATURE_SUPPORTS_EDITIONS`]; `Debug` prints the variant name.
+        #[allow(non_upper_case_globals)]
+        pub const SupportsEditions: Self = Self::FEATURE_SUPPORTS_EDITIONS;
+    }
     impl ::core::default::Default for Feature {
         fn default() -> Self {
             Self::FEATURE_NONE

@@ -125,6 +125,13 @@ pub fn generate_enum(
     // fall back to the first primary variant.
     let mut zero_variant: Option<Ident> = None;
     let mut first_variant: Option<Ident> = None;
+    // Per-value records for idiomatic CamelCase alias generation, collected only
+    // when the feature is enabled. Each entry is
+    // `(proto_value_name, alias_target, own_ident_string)` where
+    // `own_ident_string` is the value's existing variant/alias identifier (which
+    // a CamelCase alias must not duplicate) and `alias_target` is the variant a
+    // generated `const` would point at.
+    let mut value_records: Vec<(String, Ident, String)> = Vec::new();
 
     for v in &enum_desc.value {
         let value_name = v
@@ -150,6 +157,13 @@ pub fn generate_enum(
             from_proto_name_arms.push(quote! {
                 #value_name => ::core::option::Option::Some(Self::#primary_ident)
             });
+            if ctx.config.idiomatic_enum_aliases {
+                value_records.push((
+                    value_name.to_string(),
+                    primary_ident,
+                    variant_ident.to_string(),
+                ));
+            }
         } else {
             seen.insert(number, value_name);
             if first_variant.is_none() {
@@ -168,16 +182,31 @@ pub fn generate_enum(
             proto_name_arms.push(quote! {
                 Self::#variant_ident => #value_name
             });
+            if ctx.config.idiomatic_enum_aliases {
+                value_records.push((
+                    value_name.to_string(),
+                    variant_ident.clone(),
+                    variant_ident.to_string(),
+                ));
+            }
             value_idents.push(variant_ident);
         }
     }
 
-    let alias_block = if alias_consts.is_empty() {
+    // Idiomatic CamelCase aliases (feature-gated; `value_records` is empty when
+    // disabled). Returns the extra `const` items to emit and, when aliases are
+    // suppressed by a conflict, a doc note to append to the enum.
+    let enum_simple_name = enum_desc.name.as_deref().unwrap_or(rust_name);
+    let (idiomatic_consts, idiomatic_doc_note) =
+        idiomatic_aliases(ctx, rust_name, enum_simple_name, value_records);
+
+    let alias_block = if alias_consts.is_empty() && idiomatic_consts.is_empty() {
         quote! {}
     } else {
         quote! {
             impl #name_ident {
                 #(#alias_consts)*
+                #(#idiomatic_consts)*
             }
         }
     };
@@ -223,8 +252,11 @@ pub fn generate_enum(
         quote! {}
     };
 
-    let enum_doc =
-        crate::comments::doc_attrs_resolved(ctx.comment(proto_fqn), proto_fqn, &ctx.type_map);
+    let enum_doc = {
+        let base =
+            crate::comments::doc_attrs_resolved(ctx.comment(proto_fqn), proto_fqn, &ctx.type_map);
+        quote! { #base #idiomatic_doc_note }
+    };
     let custom_type_attrs = crate::context::CodeGenContext::matching_attributes(
         &ctx.config.type_attributes,
         proto_fqn,
@@ -281,4 +313,162 @@ pub fn generate_enum(
             }
         }
     })
+}
+
+/// Compute idiomatic `UpperCamelCase` alias `const`s for an enum.
+///
+/// `records` holds one entry per proto value (empty when the feature is
+/// disabled): `(proto_value_name, alias_target, own_ident_string)`, where
+/// `own_ident_string` is the value's existing variant/alias identifier (which a
+/// CamelCase alias must not duplicate). The proto names stay the definitive
+/// variants; this only adds aliases.
+///
+/// Returns the `const` items to emit and a doc-note token stream (empty unless
+/// aliases were suppressed). The rule is all-or-nothing per enum: if any two
+/// values would collide after conversion — or a value would yield an invalid
+/// identifier — no aliases are emitted, a [`CodeGenWarning`](crate::CodeGenWarning)
+/// is recorded on `ctx`, and the returned doc note explains the suppression. This
+/// guarantees a match is never forced to mix `SHOUTY_SNAKE_CASE` and idiomatic
+/// names.
+fn idiomatic_aliases(
+    ctx: &CodeGenContext,
+    rust_name: &str,
+    enum_simple_name: &str,
+    records: Vec<(String, Ident, String)>,
+) -> (Vec<TokenStream>, TokenStream) {
+    use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+    use std::fmt::Write;
+
+    if records.is_empty() {
+        return (Vec::new(), quote! {});
+    }
+
+    let is_valid = |c: &str| !c.is_empty() && !c.starts_with(|ch: char| ch.is_ascii_digit());
+
+    let prefix = format!("{}_", crate::idents::to_shouty_snake_case(enum_simple_name));
+
+    // Strip the enum-name prefix only if *every* value carries it and stays a
+    // valid identifier afterwards; otherwise keep full names. Deciding this for
+    // the whole enum (not per value) keeps the result from mixing stripped and
+    // unstripped names.
+    let strip = records.iter().all(|(name, ..)| {
+        name.strip_prefix(&prefix)
+            .is_some_and(|base| is_valid(&crate::idents::to_upper_camel_case(base)))
+    });
+
+    let camel = |name: &str| {
+        let base = if strip {
+            name.strip_prefix(&prefix).unwrap_or(name)
+        } else {
+            name
+        };
+        crate::idents::to_upper_camel_case(base)
+    };
+
+    // Identifiers already occupying the enum's type namespace (variants + proto
+    // `allow_alias` consts), guaranteed unique by protobuf, owned so `records`
+    // can be consumed below.
+    let existing: HashSet<String> = records.iter().map(|(_, _, own)| own.clone()).collect();
+
+    // Group proto values by the escaped CamelCase identifier they would claim.
+    // A value also pulls in the owner of an existing variant/alias its CamelCase
+    // form lands on — that is the silent variant↔const shadow case.
+    let mut buckets: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut invalid: BTreeSet<String> = BTreeSet::new();
+    {
+        let owner: HashMap<&str, &str> = records
+            .iter()
+            .map(|(name, _, own)| (own.as_str(), name.as_str()))
+            .collect();
+        for (name, _, _) in &records {
+            let candidate = camel(name);
+            if !is_valid(&candidate) {
+                // Defensive: unreachable under the current strip logic (the
+                // stripped path is taken only when every value stays valid, and
+                // the unstripped path uses raw proto names, which are never empty
+                // or digit-leading). Kept so a future converter that can emit an
+                // invalid identifier still suppresses rather than emits bad code.
+                invalid.insert(name.clone());
+                continue;
+            }
+            let escaped = crate::idents::make_field_ident(&candidate).to_string();
+            if let Some(&existing_owner) = owner.get(escaped.as_str()) {
+                buckets
+                    .entry(escaped.clone())
+                    .or_default()
+                    .insert(existing_owner.to_string());
+            }
+            buckets.entry(escaped).or_default().insert(name.clone());
+        }
+    }
+
+    let conflicts: Vec<(&String, &BTreeSet<String>)> = buckets
+        .iter()
+        .filter(|(_, claimants)| claimants.len() > 1)
+        .collect();
+
+    if conflicts.is_empty() && invalid.is_empty() {
+        // Clean: emit an alias for every value whose CamelCase form differs from
+        // its own variant/alias identifier (skipping the redundant ones, which
+        // are the only way an emitted name can already be in `existing`).
+        let consts = records
+            .into_iter()
+            .filter_map(|(name, target, _own)| {
+                let escaped = crate::idents::make_field_ident(&camel(&name));
+                if existing.contains(&escaped.to_string()) {
+                    return None;
+                }
+                // A short doc instead of duplicating the variant's proto comment:
+                // links the reader to the canonical variant and warns that
+                // `Debug` prints the variant name, not this alias.
+                let alias_doc = format!(
+                    "Idiomatic alias for [`Self::{target}`]; `Debug` prints the variant name."
+                );
+                Some(quote! {
+                    #[doc = #alias_doc]
+                    #[allow(non_upper_case_globals)]
+                    pub const #escaped: Self = Self::#target;
+                })
+            })
+            .collect();
+        return (consts, quote! {});
+    }
+
+    // Suppressed: record a structured warning and an enum doc note describing
+    // every clash, so the reason is visible both at build time and in docs.
+    let conflict_data: Vec<crate::AliasConflict> = conflicts
+        .iter()
+        .map(|(camel_ident, claimants)| crate::AliasConflict {
+            camel_target: (*camel_ident).clone(),
+            proto_values: claimants.iter().cloned().collect(),
+        })
+        .collect();
+    let invalid_data: Vec<String> = invalid.into_iter().collect();
+
+    // Build the doc note by borrowing, then hand both lists to `warn` by move.
+    let mut note = String::from(
+        "Idiomatic CamelCase aliases are not generated for this enum: two or more proto values \
+         collide after conversion (or would be invalid identifiers). Use the `SHOUTY_SNAKE_CASE` \
+         variants directly. Collisions:\n",
+    );
+    for conflict in &conflict_data {
+        let joined = conflict
+            .proto_values
+            .iter()
+            .map(|n| format!("`{n}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let _ = writeln!(note, "- {joined} → `{}`", conflict.camel_target);
+    }
+    for name in &invalid_data {
+        let _ = writeln!(note, "- `{name}` produces an invalid identifier");
+    }
+
+    ctx.warn(crate::CodeGenWarning::IdiomaticAliasesSuppressed {
+        enum_name: rust_name.to_string(),
+        conflicts: conflict_data,
+        invalid: invalid_data,
+    });
+
+    (Vec::new(), quote! { #[doc = #note] })
 }

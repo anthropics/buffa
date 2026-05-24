@@ -100,8 +100,12 @@ fn main() {
 
     let files_to_generate: Vec<String> = WKT_PROTOS.iter().map(|s| s.to_string()).collect();
 
-    let generated = buffa_codegen::generate(&descriptor_set.file, &files_to_generate, &config)
-        .expect("code generation failed");
+    let (generated, warnings) =
+        buffa_codegen::generate_with_diagnostics(&descriptor_set.file, &files_to_generate, &config)
+            .expect("code generation failed");
+    for warning in &warnings {
+        eprintln!("warning: buffa: {warning}");
+    }
 
     let out_dir = Path::new(&args[2]);
     fs::create_dir_all(out_dir).expect("failed to create output dir");

@@ -90,6 +90,18 @@ pub struct CodeGenContext<'a> {
     /// the scope's occupied set. Entries exist for every top-level message; the
     /// value equals `snake_case(Name)` when no deconfliction was needed.
     nested_module_names: HashMap<String, String>,
+    /// Non-fatal diagnostics accumulated during generation (e.g. an enum whose
+    /// idiomatic CamelCase aliases were suppressed by a naming conflict).
+    ///
+    /// Interior-mutable so deeply-nested codegen helpers can record a warning
+    /// through the shared `&CodeGenContext` without threading a sink through
+    /// every signature. Drained by [`generate_with_diagnostics`] after
+    /// generation; callers surface them as build warnings. The `RefCell` commits
+    /// the context to single-threaded use; switch to a `Mutex` if package
+    /// generation is ever parallelized.
+    ///
+    /// [`generate_with_diagnostics`]: crate::generate_with_diagnostics
+    warnings: std::cell::RefCell<Vec<crate::CodeGenWarning>>,
 }
 
 /// The immediate child-package segment names directly under `package`.
@@ -354,7 +366,22 @@ impl<'a> CodeGenContext<'a> {
             enum_closedness,
             comment_map,
             nested_module_names,
+            warnings: std::cell::RefCell::new(Vec::new()),
         }
+    }
+
+    /// Record a non-fatal diagnostic to surface as a build warning.
+    pub(crate) fn warn(&self, warning: crate::CodeGenWarning) {
+        self.warnings.borrow_mut().push(warning);
+    }
+
+    /// Drain the diagnostics accumulated during generation.
+    ///
+    /// `pub(crate)` so it can only be called from [`generate_with_diagnostics`]
+    /// after all packages are generated — draining mid-flight would truncate the
+    /// diagnostic stream.
+    pub(crate) fn take_warnings(&self) -> Vec<crate::CodeGenWarning> {
+        self.warnings.take()
     }
 
     /// The nested-types module name for a top-level message, deconflicted

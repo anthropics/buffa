@@ -472,6 +472,36 @@ pub struct CodeGenConfig {
     ///
     /// Defaults to `false`.
     pub generate_reflection: bool,
+    /// Emit idiomatic `UpperCamelCase` constant aliases alongside each enum
+    /// variant.
+    ///
+    /// Protobuf style names enum values in `SHOUTY_SNAKE_CASE`, conventionally
+    /// prefixed with the enum name (`RULE_LEVEL_HIGH`). Those names remain the
+    /// definitive Rust variants — they are guaranteed unique and valid by
+    /// protobuf, and existing references (including `Debug` output) are
+    /// unchanged. When this is enabled, codegen additionally emits associated
+    /// `const`s with the prefix stripped and the name converted to
+    /// `UpperCamelCase` (`RULE_LEVEL_HIGH` → `High`), so downstream code can
+    /// write `RuleLevel::High`.
+    ///
+    /// The conversion is lossy, so two values can collide (`FOO_BAR` and
+    /// `FOO__BAR` both map to `FooBar`). The rule is all-or-nothing per enum:
+    /// if any two values would collide after conversion, or a value would yield
+    /// an invalid identifier, **no** aliases are emitted for that enum (a
+    /// [`CodeGenWarning`] and an enum doc note explain why). This keeps every
+    /// match either fully `SHOUTY_SNAKE_CASE` or fully idiomatic, never a forced
+    /// mix.
+    ///
+    /// The aliases are associated `const`s, which work in pattern position too:
+    /// a `match` written entirely against aliases is still exhaustiveness-checked
+    /// (the "non-exhaustive" error names the underlying `SHOUTY_SNAKE_CASE`
+    /// variant, since that is the canonical name).
+    ///
+    /// Defaults to `true`: the aliases are purely additive (the proto names
+    /// remain the variants, and `Debug` is unchanged), so enabling by default is
+    /// backward-compatible, and the all-or-nothing rule guarantees correctness on
+    /// any enum.
+    pub idiomatic_enum_aliases: bool,
 }
 
 impl Default for CodeGenConfig {
@@ -496,6 +526,7 @@ impl Default for CodeGenConfig {
             gate_impls_on_crate_features: false,
             generate_with_setters: true,
             generate_reflection: false,
+            idiomatic_enum_aliases: true,
         }
     }
 }
@@ -632,6 +663,79 @@ pub(crate) fn effective_file_extern_paths(
         .collect()
 }
 
+/// One CamelCase collision: a target identifier and the proto value names that
+/// would all convert onto it.
+///
+/// Part of [`CodeGenWarning::IdiomaticAliasesSuppressed`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AliasConflict {
+    /// The `UpperCamelCase` identifier the colliding values map to.
+    pub camel_target: String,
+    /// The proto value names that convert onto `camel_target` (includes a
+    /// literal variant name when an alias would shadow it).
+    pub proto_values: Vec<String>,
+}
+
+/// A non-fatal diagnostic produced during code generation.
+///
+/// Returned by [`generate_with_diagnostics`]. Render the human-readable form via
+/// the [`Display`](core::fmt::Display) impl (e.g. `cargo:warning={warning}`), or
+/// match on the variant for programmatic handling. The enum and its variants are
+/// `#[non_exhaustive]` so new diagnostic kinds and fields can be added without a
+/// breaking change.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CodeGenWarning {
+    /// Idiomatic CamelCase aliases were suppressed for an enum because two or
+    /// more proto values collide after conversion, or a value would convert to
+    /// an invalid identifier. The enum's `SHOUTY_SNAKE_CASE` variants are
+    /// unaffected.
+    #[non_exhaustive]
+    IdiomaticAliasesSuppressed {
+        /// The Rust name of the affected enum.
+        enum_name: String,
+        /// Each collision, by target identifier. Empty if the only problem was
+        /// invalid identifiers.
+        conflicts: Vec<AliasConflict>,
+        /// Proto values that would convert to an invalid Rust identifier.
+        invalid: Vec<String>,
+    },
+}
+
+impl core::fmt::Display for CodeGenWarning {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::IdiomaticAliasesSuppressed {
+                enum_name,
+                conflicts,
+                invalid,
+            } => {
+                // Name the cause accurately: a collision, an invalid identifier,
+                // or both.
+                let cause = match (conflicts.is_empty(), invalid.is_empty()) {
+                    (false, true) => "naming conflict",
+                    (true, false) => "invalid identifier",
+                    _ => "naming conflict / invalid identifier",
+                };
+                write!(
+                    f,
+                    "enum `{enum_name}`: idiomatic CamelCase aliases suppressed ({cause})"
+                )?;
+                let mut parts: Vec<String> = conflicts
+                    .iter()
+                    .map(|c| format!("{} → {}", c.proto_values.join(", "), c.camel_target))
+                    .collect();
+                parts.extend(invalid.iter().map(|n| format!("{n} → invalid identifier")));
+                if !parts.is_empty() {
+                    write!(f, ": {}", parts.join("; "))?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
 /// Generate Rust source files from a set of file descriptors.
 ///
 /// `files_to_generate` is the set of file names that were explicitly requested
@@ -643,11 +747,44 @@ pub(crate) fn effective_file_extern_paths(
 /// are omitted); each distinct package emits one `<pkg>.mod.rs`
 /// stitcher. Packages are processed in sorted order for deterministic
 /// output.
+///
+/// # Diagnostics
+///
+/// Non-fatal diagnostics produced during generation (e.g. an enum whose
+/// idiomatic CamelCase aliases were suppressed by a naming conflict) are
+/// **discarded** here. Use [`generate_with_diagnostics`] to receive them and
+/// surface them as build warnings.
 pub fn generate(
     file_descriptors: &[FileDescriptorProto],
     files_to_generate: &[String],
     config: &CodeGenConfig,
 ) -> Result<Vec<GeneratedFile>, CodeGenError> {
+    Ok(generate_with_diagnostics(file_descriptors, files_to_generate, config)?.0)
+}
+
+/// Like [`generate`], but also returns the non-fatal [`CodeGenWarning`]s
+/// collected during generation (e.g. enums whose idiomatic CamelCase aliases
+/// were suppressed by a naming conflict).
+///
+/// Surface each warning via its [`Display`](core::fmt::Display) impl — e.g. as a
+/// `cargo:warning=...` from a `build.rs`, or on stderr from a standalone
+/// generator — or match on it for programmatic handling. [`generate`] discards
+/// them, so existing callers are unaffected.
+///
+/// Warnings are returned only on success. On error, any warnings already
+/// collected are dropped along with the partial output — the [`CodeGenError`]
+/// is the actionable signal.
+///
+/// # Errors
+///
+/// Returns [`CodeGenError::FileNotFound`] if a name in `files_to_generate` has
+/// no matching descriptor, and other [`CodeGenError`] variants for malformed
+/// descriptors (e.g. a missing required field) encountered while generating.
+pub fn generate_with_diagnostics(
+    file_descriptors: &[FileDescriptorProto],
+    files_to_generate: &[String],
+    config: &CodeGenConfig,
+) -> Result<(Vec<GeneratedFile>, Vec<CodeGenWarning>), CodeGenError> {
     let ctx = context::CodeGenContext::for_generate(file_descriptors, files_to_generate, config);
 
     // Group requested files by package. BTreeMap → deterministic output order.
@@ -677,7 +814,7 @@ pub fn generate(
         generate_package(&ctx, &package, &files, &fds_bytes, &mut output)?;
     }
 
-    Ok(output)
+    Ok((output, ctx.take_warnings()))
 }
 
 /// Generate a module tree that assembles per-package `.mod.rs` files into

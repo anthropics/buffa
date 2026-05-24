@@ -32,7 +32,8 @@ use std::process::Command;
 use buffa::Message;
 use buffa_codegen::generated::descriptor::FileDescriptorSet;
 
-use buffa_codegen::CodeGenConfig;
+#[doc(inline)]
+pub use buffa_codegen::CodeGenConfig;
 #[doc(inline)]
 pub use buffa_codegen::StringRepr;
 
@@ -308,6 +309,24 @@ impl Config {
     #[must_use]
     pub fn generate_reflection(mut self, enabled: bool) -> Self {
         self.codegen_config.generate_reflection = enabled;
+        self
+    }
+
+    /// Enable or disable idiomatic `UpperCamelCase` enum aliases (matches the
+    /// [`CodeGenConfig`] default, currently on).
+    ///
+    /// Protobuf enum values are `SHOUTY_SNAKE_CASE` and stay the definitive Rust
+    /// variants. When enabled, codegen additionally emits associated `const`s
+    /// with the enum-name prefix stripped and the name converted to
+    /// `UpperCamelCase` (`RULE_LEVEL_HIGH` → `RuleLevel::High`), purely
+    /// additively — existing references and `Debug` output are unchanged.
+    ///
+    /// Aliases are suppressed per enum (with a build warning and a doc note) if
+    /// any two values would collide after conversion, so a match is never forced
+    /// to mix conventions. See [`CodeGenConfig::idiomatic_enum_aliases`].
+    #[must_use]
+    pub fn idiomatic_enum_aliases(mut self, enabled: bool) -> Self {
+        self.codegen_config.idiomatic_enum_aliases = enabled;
         self
     }
 
@@ -819,8 +838,18 @@ impl Config {
         // `.mod.rs` stitcher; only the stitchers need wiring into the
         // module tree (content files are reached via `include!` from
         // there).
-        let generated =
-            buffa_codegen::generate(&fds.file, &files_to_generate, &self.codegen_config)?;
+        let (generated, warnings) = buffa_codegen::generate_with_diagnostics(
+            &fds.file,
+            &files_to_generate,
+            &self.codegen_config,
+        )?;
+
+        // Surface non-fatal codegen diagnostics as Cargo build warnings. This
+        // runs inside the consumer's `build.rs`, so `cargo:warning=` is shown in
+        // their normal `cargo build` output.
+        for warning in warnings {
+            println!("cargo:warning=buffa: {warning}");
+        }
 
         // Write output files; collect (name, package) for PackageMod entries.
         let mut output_entries: Vec<(String, String)> = Vec::new();
