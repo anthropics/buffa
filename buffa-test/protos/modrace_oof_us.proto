@@ -1,0 +1,5 @@
+syntax = "proto3";
+
+package modrace.oof_;
+
+message Widget { int32 z = 1; }

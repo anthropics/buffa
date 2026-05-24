@@ -12,6 +12,11 @@ pub enum NullValue {
     /// Null value.
     NULL_VALUE = 0i32,
 }
+impl NullValue {
+    ///Idiomatic alias for [`Self::NULL_VALUE`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const NullValue: Self = Self::NULL_VALUE;
+}
 impl ::core::default::Default for NullValue {
     fn default() -> Self {
         Self::NULL_VALUE

@@ -1,0 +1,5 @@
+syntax = "proto3";
+
+package modrace.oof;
+
+message Thing { int32 y = 1; }

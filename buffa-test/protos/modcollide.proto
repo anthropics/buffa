@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package modcollide;
+
+// Regression for issue #135: `message Oof` (with nested types) snake-cases to
+// module `oof`, which would collide with the sibling sub-package `modcollide.oof`
+// (see modcollide_oof.proto). Codegen deconflicts the nested-types module to
+// `oof_`, leaving the sub-package module `oof` and the struct `Oof` untouched.
+message Oof {
+  message Inner {
+    int32 x = 1;
+  }
+  Inner inner = 1;
+}

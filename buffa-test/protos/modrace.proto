@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package modrace;
+
+// Issue #135, multi-message race: two messages whose snake_case modules collide
+// with two sibling sub-packages (`modrace.oof` and `modrace.oof_`). The batch
+// deconfliction must give them distinct names — `oof__` (Oof) and `oof___`
+// (Oof_) — never both `oof__`. Compiling this is the regression guard.
+message Oof {
+  message Inner { int32 x = 1; }
+  Inner inner = 1;
+}
+message Oof_ {
+  message Inner { int32 x = 1; }
+  Inner inner = 1;
+}

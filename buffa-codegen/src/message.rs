@@ -212,10 +212,24 @@ fn generate_message_with_nesting(
         })
         .collect();
 
-    // Module name for this message (snake_case of proto name).
+    // Module name for this message (snake_case of proto name). Used for the
+    // `__buffa` ancillary trees (view/oneof), which are sentinel-isolated and so
+    // never need deconfliction.
     let proto_name = msg.name.as_deref().unwrap_or(rust_name);
     let mod_name_str = crate::oneof::to_snake_case(proto_name);
     let mod_ident = make_field_ident(&mod_name_str);
+
+    // The module name under which THIS message's owned `owned_mod` is wrapped by
+    // its caller. For a top-level message (nesting 0) the caller is `lib.rs`,
+    // which uses the deconflicted name (issue #135); for a nested message the
+    // parent wraps with the raw snake name. The owned Any-registry paths bubbled
+    // from nested messages are prefixed with this so they resolve to the actual
+    // module location.
+    let owned_wrap_ident = if nesting == 0 {
+        make_field_ident(&ctx.nested_module_name(current_package, proto_name))
+    } else {
+        mod_ident.clone()
+    };
 
     // Compute oneof enum identifiers for all non-synthetic oneofs up front.
     let oneof_idents = crate::oneof::resolve_oneof_idents(msg);
@@ -603,13 +617,13 @@ fn generate_message_with_nesting(
         for p in nested_out.reg.text_ext {
             reg_paths.text_ext.push(quote! { #nested_mod :: #p });
         }
-        // Any paths: nested's struct-scope → our struct-scope = prefix
-        // with our own module ident (where nested's owned_top lands).
+        // Any paths: nested's struct-scope → our struct-scope = prefix with the
+        // module our owned_mod is wrapped in (deconflicted at the top level).
         for p in nested_out.reg.json_any {
-            reg_paths.json_any.push(quote! { #mod_ident :: #p });
+            reg_paths.json_any.push(quote! { #owned_wrap_ident :: #p });
         }
         for p in nested_out.reg.text_any {
-            reg_paths.text_any.push(quote! { #mod_ident :: #p });
+            reg_paths.text_any.push(quote! { #owned_wrap_ident :: #p });
         }
 
         if !nested_out.owned_mod.is_empty() {
