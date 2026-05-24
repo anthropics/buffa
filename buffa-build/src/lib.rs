@@ -441,6 +441,36 @@ impl Config {
         self
     }
 
+    /// Store the matching message-typed oneof variants inline instead of
+    /// wrapping them in `Box<T>`.
+    ///
+    /// By default every message/group oneof variant is boxed so that recursive
+    /// types compile. For non-recursive variants the `Box` is pure overhead (an
+    /// allocation per construction); this opts the matching variants out.
+    ///
+    /// Each path is a fully-qualified proto variant path prefix, e.g.
+    /// `".my.pkg.MyMessage.body.small"` for one variant or `".my.pkg"` for a
+    /// package (same matching as [`use_bytes_type_in`](Self::use_bytes_type_in)).
+    /// Opting a *recursive* variant out is rejected at codegen time, since the
+    /// resulting type would be unsized.
+    #[must_use]
+    pub fn unbox_oneof_in(mut self, paths: &[impl AsRef<str>]) -> Self {
+        self.codegen_config
+            .unboxed_oneof_fields
+            .extend(paths.iter().map(|p| p.as_ref().to_string()));
+        self
+    }
+
+    /// Store every non-recursive message-typed oneof variant inline instead of
+    /// boxing it. Convenience for `.unbox_oneof_in(&["."])`.
+    #[must_use]
+    pub fn unbox_oneof(mut self) -> Self {
+        self.codegen_config
+            .unboxed_oneof_fields
+            .push(".".to_string());
+        self
+    }
+
     /// Map `string` fields to a [`StringRepr`] other than `String` for the
     /// given proto path prefixes. The string counterpart to
     /// [`use_bytes_type_in`](Self::use_bytes_type_in).

@@ -699,6 +699,19 @@ impl<'a> CodeGenContext<'a> {
             .any(|prefix| matches_proto_prefix(prefix, field_fqn))
     }
 
+    /// Check whether a message-typed oneof variant at the given proto path was
+    /// opted out of `Box` wrapping via `config.unboxed_oneof_fields`.
+    ///
+    /// `variant_fqn` is the fully-qualified variant path, e.g.
+    /// `".my.pkg.MyMessage.body.small"`. Matched with the same
+    /// proto-segment-aware prefix logic as [`use_bytes_type`](Self::use_bytes_type).
+    pub fn oneof_unboxed(&self, variant_fqn: &str) -> bool {
+        self.config
+            .unboxed_oneof_fields
+            .iter()
+            .any(|prefix| matches_proto_prefix(prefix, variant_fqn))
+    }
+
     /// Resolve the [`StringRepr`](crate::StringRepr) for a `string` field at the
     /// given proto path.
     ///

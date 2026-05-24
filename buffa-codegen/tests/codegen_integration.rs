@@ -562,6 +562,82 @@ fn inline_oneof_duplicate_message_type_no_from_collision() {
 }
 
 #[test]
+fn inline_oneof_unbox_opt_out_drops_box() {
+    // unbox_oneof opts a non-recursive message variant out of Box wrapping.
+    // The opted-out variant stores its message inline; sibling message
+    // variants left alone stay boxed.
+    let mut config = no_views();
+    config
+        .unboxed_oneof_fields
+        .push(".test.Envelope.body.small".to_string());
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Small { int32 value = 1; }
+        message Large { string label = 1; }
+        message Envelope {
+          oneof body {
+            Small small = 1;
+            Large large = 2;
+          }
+        }
+        "#,
+        &config,
+    );
+    // `small` is stored inline, `large` stays boxed.
+    assert!(
+        content.contains("Small(super::super::super::Small)"),
+        "opted-out variant should be stored inline: {content}"
+    );
+    assert!(
+        content.contains("Large(::buffa::alloc::boxed::Box<super::super::super::Large>)"),
+        "unmatched variant should stay boxed: {content}"
+    );
+    // The From impl for the inline variant moves the value in without a Box.
+    assert!(
+        content.contains("Self::Small(v)"),
+        "From impl for the inline variant must not wrap in Box: {content}"
+    );
+}
+
+#[test]
+fn inline_oneof_unbox_recursive_variant_is_rejected() {
+    // Opting a recursive variant out of boxing would make the enum unsized,
+    // so codegen must reject it rather than emit code that fails to compile.
+    let proto = dedent(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Node {
+          oneof kind {
+            Node child = 1;
+            int32 leaf = 2;
+          }
+        }
+        "#,
+    );
+    let dir = tempfile::tempdir().expect("temp dir");
+    let proto_path = dir.path().join("test.proto");
+    std::fs::write(&proto_path, &proto).expect("write proto");
+    let fds = compile_protos(
+        &[proto_path.to_str().unwrap()],
+        &[dir.path().to_str().unwrap()],
+    );
+
+    let mut config = no_views();
+    config
+        .unboxed_oneof_fields
+        .push(".test.Node.kind.child".to_string());
+    let result = buffa_codegen::generate(&fds.file, &["test.proto".into()], &config);
+    let err = result.expect_err("unboxing a recursive variant should error");
+    assert!(
+        err.to_string().contains("recursive"),
+        "error should explain the recursion: {err}"
+    );
+}
+
+#[test]
 fn inline_proto2_required_no_json_skip() {
     // Regression: proto2 required fields got skip_serializing_if, so a
     // required int32 with value 0 was omitted from JSON. The binary encoder

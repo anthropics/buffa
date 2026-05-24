@@ -35,6 +35,20 @@ fn main() {
         .compile()
         .expect("buffa_build failed for nested_deep.proto");
 
+    // unbox_oneof — a non-recursive message oneof variant stored inline rather
+    // than behind a Box. `Envelope.body.small` is opted out; `large` stays
+    // boxed. Views + JSON + text all enabled so every boxing site is compiled
+    // for both shapes (enum decl, From impl, binary merge, JSON deser, text
+    // encode). Runtime round-trips live in `tests/unbox_oneof.rs`.
+    buffa_build::Config::new()
+        .files(&["protos/unbox_oneof.proto"])
+        .includes(&["protos/"])
+        .unbox_oneof_in(&[".unboxoneof.Envelope.body.small"])
+        .generate_json(true)
+        .generate_text(true)
+        .compile()
+        .expect("buffa_build failed for unbox_oneof.proto");
+
     // WKT usage — well-known types are auto-mapped to buffa-types.
     buffa_build::Config::new()
         .files(&["protos/wkt_usage.proto"])

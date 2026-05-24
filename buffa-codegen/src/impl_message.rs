@@ -2329,10 +2329,24 @@ fn oneof_merge_arm(
     preserve_unknown_fields: bool,
     use_bytes: bool,
     string_repr: crate::StringRepr,
+    boxed: bool,
 ) -> TokenStream {
     let wire_type = wire_type_token(ty);
     let wire_byte = wire_type_byte(ty);
     let wire_check = wire_type_check(field_number, &wire_type, wire_byte);
+    // Message/group variants merge into the existing value. When boxed, the
+    // binding is `&mut Box<M>` (deref once); when stored inline it is `&mut M`,
+    // and the freshly decoded value is moved in without a `Box`.
+    let existing_ref = if boxed {
+        quote! { &mut **existing }
+    } else {
+        quote! { existing }
+    };
+    let wrapped_val = if boxed {
+        quote! { ::buffa::alloc::boxed::Box::new(val) }
+    } else {
+        quote! { val }
+    };
     match ty {
         Type::TYPE_STRING => {
             let decoded = if string_repr.is_default() {
@@ -2405,12 +2419,12 @@ fn oneof_merge_arm(
                 if let ::core::option::Option::Some(
                     #enum_ident::#variant_ident(ref mut existing)
                 ) = self.#field_ident {
-                    ::buffa::Message::merge_length_delimited(&mut **existing, buf, depth)?;
+                    ::buffa::Message::merge_length_delimited(#existing_ref, buf, depth)?;
                 } else {
                     let mut val = ::core::default::Default::default();
                     ::buffa::Message::merge_length_delimited(&mut val, buf, depth)?;
                     self.#field_ident = ::core::option::Option::Some(
-                        #enum_ident::#variant_ident(::buffa::alloc::boxed::Box::new(val))
+                        #enum_ident::#variant_ident(#wrapped_val)
                     );
                 }
             }
@@ -2421,12 +2435,12 @@ fn oneof_merge_arm(
                 if let ::core::option::Option::Some(
                     #enum_ident::#variant_ident(ref mut existing)
                 ) = self.#field_ident {
-                    ::buffa::Message::merge_group(&mut **existing, buf, depth, #field_number)?;
+                    ::buffa::Message::merge_group(#existing_ref, buf, depth, #field_number)?;
                 } else {
                     let mut val = ::core::default::Default::default();
                     ::buffa::Message::merge_group(&mut val, buf, depth, #field_number)?;
                     self.#field_ident = ::core::option::Option::Some(
-                        #enum_ident::#variant_ident(::buffa::alloc::boxed::Box::new(val))
+                        #enum_ident::#variant_ident(#wrapped_val)
                     );
                 }
             }
@@ -2489,6 +2503,11 @@ fn generate_oneof_impls(
         let field_features = crate::features::resolve_field(ctx, field, features);
         let use_bytes = ty == Type::TYPE_BYTES && field_uses_bytes(ctx, proto_fqn, field_name);
         let string_repr = field_string_repr(ctx, proto_fqn, field_name);
+        let boxed = crate::oneof::variant_boxed(
+            ctx,
+            ty,
+            &format!(".{proto_fqn}.{oneof_name}.{field_name}"),
+        );
         merge_arm_list.push(oneof_merge_arm(
             &field_ident,
             &qualified_enum,
@@ -2499,6 +2518,7 @@ fn generate_oneof_impls(
             preserve_unknown_fields,
             use_bytes,
             string_repr,
+            boxed,
         ));
     }
 

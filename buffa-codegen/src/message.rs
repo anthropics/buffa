@@ -1278,7 +1278,11 @@ fn custom_deser_oneof_group(
             proto_name,
             field_type,
             null_forward: crate::oneof::null_is_valid_value(field),
-            is_boxed: crate::oneof::is_boxed_variant(field_type),
+            is_boxed: crate::oneof::variant_boxed(
+                ctx,
+                field_type,
+                &format!(".{proto_fqn}.{oneof_name}.{proto_name}"),
+            ),
             enum_ident: &qualified_enum,
             result_var: &var_ident,
             oneof_name,

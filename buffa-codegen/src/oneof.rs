@@ -1,7 +1,9 @@
 //! Oneof enum code generation.
 
 use crate::generated::descriptor::field_descriptor_proto::Type;
-use crate::generated::descriptor::{DescriptorProto, FieldDescriptorProto, OneofDescriptorProto};
+use crate::generated::descriptor::{
+    DescriptorProto, FieldDescriptorProto, FileDescriptorProto, OneofDescriptorProto,
+};
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
 
@@ -48,6 +50,106 @@ pub(crate) fn is_boxed_variant(ty: Type) -> bool {
     matches!(ty, Type::TYPE_MESSAGE | Type::TYPE_GROUP)
 }
 
+/// Returns `true` when a oneof variant is stored in a `Box`.
+///
+/// Message and group variants box by default (see [`is_boxed_variant`]); a
+/// matching `config.unboxed_oneof_fields` rule opts the variant out, storing
+/// it inline. `variant_fqn` is the leading-dot variant path, e.g.
+/// `".my.pkg.MyMessage.body.small"`. Recursive opt-outs are rejected at the
+/// point of collection (see `collect_variant_info`), so callers can store the
+/// value inline without a further unsized-type check.
+pub(crate) fn variant_boxed(ctx: &CodeGenContext, ty: Type, variant_fqn: &str) -> bool {
+    is_boxed_variant(ty) && !ctx.oneof_unboxed(variant_fqn)
+}
+
+/// Build a map from fully-qualified message name (no leading dot) to its
+/// descriptor, walking every file and its nested types.
+fn message_index(
+    files: &[FileDescriptorProto],
+) -> std::collections::HashMap<String, &DescriptorProto> {
+    fn walk<'a>(
+        map: &mut std::collections::HashMap<String, &'a DescriptorProto>,
+        prefix: &str,
+        msg: &'a DescriptorProto,
+    ) {
+        let Some(name) = msg.name.as_deref() else {
+            return;
+        };
+        let fqn = if prefix.is_empty() {
+            name.to_string()
+        } else {
+            format!("{prefix}.{name}")
+        };
+        for nested in &msg.nested_type {
+            walk(map, &fqn, nested);
+        }
+        map.insert(fqn, msg);
+    }
+
+    let mut map = std::collections::HashMap::new();
+    for file in files {
+        let package = file.package.as_deref().unwrap_or("");
+        for msg in &file.message_type {
+            walk(&mut map, package, msg);
+        }
+    }
+    map
+}
+
+/// Returns `true` when storing a variant of message type `target` inline
+/// inside `enclosing` would produce an unsized type.
+///
+/// `enclosing` and `target` are fully-qualified message names without a
+/// leading dot. A cycle is only reachable through message-typed oneof variants
+/// that are themselves opted out of boxing (singular message fields are
+/// `Option<Box<_>>`, repeated fields are `Vec`, and maps are heap-backed, so
+/// none of those carry storage inline). The walk follows those opted-out edges
+/// from `target`; if it reaches `enclosing`, the opt-out is recursive.
+fn unboxing_is_recursive(ctx: &CodeGenContext, enclosing: &str, target: &str) -> bool {
+    let index = message_index(ctx.files);
+    let mut seen = std::collections::HashSet::new();
+    let mut stack = vec![target.to_string()];
+    while let Some(current) = stack.pop() {
+        if current == enclosing {
+            return true;
+        }
+        if !seen.insert(current.clone()) {
+            continue;
+        }
+        let Some(msg) = index.get(current.as_str()) else {
+            continue;
+        };
+        for field in &msg.field {
+            if !crate::impl_message::is_real_oneof_member(field) {
+                continue;
+            }
+            let ty = field.r#type.unwrap_or_default();
+            if !is_boxed_variant(ty) {
+                continue;
+            }
+            let (Some(oneof_idx), Some(field_name), Some(type_name)) = (
+                field.oneof_index,
+                field.name.as_deref(),
+                field.type_name.as_deref(),
+            ) else {
+                continue;
+            };
+            let Some(oneof_name) = msg
+                .oneof_decl
+                .get(oneof_idx as usize)
+                .and_then(|o| o.name.as_deref())
+            else {
+                continue;
+            };
+            let variant_fqn = format!(".{current}.{oneof_name}.{field_name}");
+            if ctx.oneof_unboxed(&variant_fqn) {
+                stack.push(type_name.trim_start_matches('.').to_string());
+            }
+        }
+    }
+    false
+}
+
 /// Metadata for a single oneof variant.
 struct VariantInfo {
     variant_ident: proc_macro2::Ident,
@@ -58,7 +160,9 @@ struct VariantInfo {
     field_type: Type,
     /// See [`is_null_value_field`].
     is_null_value: bool,
-    /// True for message/group types (boxed in the owned enum).
+    /// Whether the variant is stored in a `Box` (see [`variant_boxed`]):
+    /// message/group types are boxed unless opted out via
+    /// `config.unboxed_oneof_fields`.
     is_boxed: bool,
     /// Custom attributes matched via `CodeGenConfig::field_attributes` on the
     /// variant's fully-qualified path (`{oneof_fqn}.{variant_proto_name}`).
@@ -141,12 +245,28 @@ fn collect_variant_info(
             let variant_fqn = format!("{proto_fqn}.{oneof_name}.{proto_name}");
             let custom_attrs =
                 CodeGenContext::matching_attributes(&ctx.config.field_attributes, &variant_fqn)?;
+            // Reject opting a recursive variant out of boxing: stored inline the
+            // type would be unsized. Checked once here so the four downstream
+            // boxing sites can trust `variant_boxed`.
+            let dotted_fqn = format!(".{variant_fqn}");
+            let is_boxed = variant_boxed(ctx, field_type, &dotted_fqn);
+            if is_boxed_variant(field_type) && !is_boxed {
+                if let Some(target) = field.type_name.as_deref() {
+                    if unboxing_is_recursive(ctx, proto_fqn, target.trim_start_matches('.')) {
+                        return Err(CodeGenError::Other(format!(
+                            "oneof variant `{variant_fqn}` is recursive and cannot be \
+                             unboxed via unbox_oneof: storing it inline would make the \
+                             generated enum unsized. Drop the rule for this variant."
+                        )));
+                    }
+                }
+            }
             Ok(VariantInfo {
                 variant_ident,
                 rust_type,
                 json_name,
                 field_type,
-                is_boxed: is_boxed_variant(field_type),
+                is_boxed,
                 is_null_value: is_null_value_field(field),
                 custom_attrs,
                 use_bytes,
@@ -239,12 +359,15 @@ pub fn generate_oneof_enum(
     // proto type names (so their string representations match).
     let mut type_counts: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
-    for v in variants_info.iter().filter(|v| v.is_boxed) {
+    for v in variants_info
+        .iter()
+        .filter(|v| is_boxed_variant(v.field_type))
+    {
         *type_counts.entry(v.rust_type.to_string()).or_insert(0) += 1;
     }
     let from_impls: Vec<_> = variants_info
         .iter()
-        .filter(|v| v.is_boxed && type_counts[&v.rust_type.to_string()] == 1)
+        .filter(|v| is_boxed_variant(v.field_type) && type_counts[&v.rust_type.to_string()] == 1)
         .map(|v| {
             let ident = &v.variant_ident;
             let ty = &v.rust_type;
@@ -257,11 +380,17 @@ pub fn generate_oneof_enum(
             // type in the impl header. `crate::…` is treated as local for
             // orphan purposes (it IS the current crate) so only `::` gates.
             let ty_is_extern = ty_str.trim_start().starts_with("::");
+            // Unboxed variants store the value inline; boxed ones wrap it.
+            let wrapped = if v.is_boxed {
+                quote! { ::buffa::alloc::boxed::Box::new(v) }
+            } else {
+                quote! { v }
+            };
             // From<T> for Oneof — always legal (Oneof is local in T0 position).
             let from_oneof = quote! {
                 impl From<#ty> for #rust_enum_ident {
                     fn from(v: #ty) -> Self {
-                        Self::#ident(::buffa::alloc::boxed::Box::new(v))
+                        Self::#ident(#wrapped)
                     }
                 }
             };

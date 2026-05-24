@@ -46,6 +46,7 @@ mod proto2;
 mod proto3_semantics;
 mod string_type;
 mod textproto;
+mod unbox_oneof;
 mod utf8_validation;
 mod view;
 mod view_json;
