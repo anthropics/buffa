@@ -74,10 +74,9 @@ message BytesContexts {
     bytes raw = 4;
     string text = 5;
   }
-  // bytes_fields config does NOT apply to map values (map_rust_type_from_entry
-  // goes through scalar_rust_type which unconditionally uses Vec<u8>). This
-  // field pins that behaviour: if someone implements bytes_fields-for-maps on
-  // only one of {owned, view-to_owned}, the type mismatch compiles-out here.
+  // Pins `bytes_fields` → `map<K, bytes>` behavior (#76). See
+  // `Config::use_bytes_type` docs for the rule and the `map<bytes, bytes>`
+  // carve-out; tests in bytes_type.rs assert wire / view→owned / JSON parity.
   map<string, bytes> by_key = 6;
 }
 

@@ -27,7 +27,7 @@ use crate::idents::rust_path_to_tokens;
 use crate::impl_message::{
     effective_type, effective_type_in_map_entry, field_string_repr, field_uses_bytes,
     find_map_entry_fields, is_explicit_presence_scalar, is_non_default_expr, is_real_oneof_member,
-    is_required_field, is_supported_field_type,
+    is_required_field, is_supported_field_type, map_value_use_bytes,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident};
 use crate::oneof::is_boxed_variant;
@@ -215,7 +215,7 @@ pub(crate) fn generate_text_impl(
     }
     let map_merge: Vec<_> = map_fields
         .iter()
-        .map(|f| map_merge_arm(ctx, msg, f, current_package, features, nesting))
+        .map(|f| map_merge_arm(ctx, msg, f, current_package, proto_fqn, features, nesting))
         .collect::<Result<_, _>>()?;
 
     // Extension bracket syntax `[pkg.ext] { ... }` — encode side writes
@@ -978,6 +978,7 @@ fn map_merge_arm(
     msg: &DescriptorProto,
     field: &FieldDescriptorProto,
     current_package: &str,
+    proto_fqn: &str,
     features: &ResolvedFeatures,
     nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
@@ -1007,8 +1008,11 @@ fn map_merge_arm(
         }
     };
 
-    // Value read. Map values are never `bytes::Bytes` (see basic.proto
-    // comment: map_rust_type_from_entry unconditionally uses Vec<u8>).
+    // `bytes_fields` on `map<K, bytes>` → value type is `Bytes`; convert
+    // `read_bytes()`'s `Vec<u8>` via `Bytes::from`. The bytes-key carve-out
+    // lives in the shared `map_value_use_bytes` predicate.
+    let value_use_bytes =
+        map_value_use_bytes(ctx, Some(key_ty), Some(val_ty), proto_fqn, proto_name);
     let val_read = match val_ty {
         Type::TYPE_MESSAGE => quote! {
             {
@@ -1024,6 +1028,9 @@ fn map_merge_arm(
             quote! { #read? }
         }
         Type::TYPE_STRING => quote! { __d.read_string()?.into_owned() },
+        Type::TYPE_BYTES if value_use_bytes => {
+            quote! { ::buffa::bytes::Bytes::from(__d.read_bytes()?) }
+        }
         Type::TYPE_BYTES => quote! { __d.read_bytes()? },
         Type::TYPE_INT32 | Type::TYPE_SINT32 | Type::TYPE_SFIXED32 => quote! { __d.read_i32()? },
         Type::TYPE_INT64 | Type::TYPE_SINT64 | Type::TYPE_SFIXED64 => quote! { __d.read_i64()? },
