@@ -408,6 +408,15 @@ impl Config {
     /// **JSON note**: fields normalized to bytes serialize as base64 in JSON
     /// (the proto3 JSON encoding for `bytes`). Keep strict mapping disabled
     /// for fields that need JSON string interop with other implementations.
+    ///
+    /// **Interaction with [`use_bytes_type`]**: when both are enabled,
+    /// `map<bytes, bytes>` values stay `Vec<u8>` (the bytes-keyed JSON helper
+    /// is concrete `HashMap<Vec<u8>, Vec<u8>>`). All other `bytes` shapes —
+    /// singular / optional / repeated / oneof / `map<non-bytes, bytes>` —
+    /// still become `bytes::Bytes`. The asymmetry is documented; if you hit
+    /// it, see issue #76.
+    ///
+    /// [`use_bytes_type`]: Self::use_bytes_type
     #[must_use]
     pub fn strict_utf8_mapping(mut self, enabled: bool) -> Self {
         self.codegen_config.strict_utf8_mapping = enabled;
@@ -471,11 +480,24 @@ impl Config {
     /// to all bytes fields, or specify individual field paths like
     /// `".my.pkg.MyMessage.data"`.
     ///
+    /// Applies uniformly to singular, optional, repeated, oneof, **and
+    /// `map<K, bytes>`** values — the map case lets `view → owned`
+    /// conversion participate in the `to_owned_from_source` zero-copy
+    /// `slice_ref` path. One carve-out: an effective `map<bytes, bytes>` keeps
+    /// `Vec<u8>` values (the JSON helper for that combination is concrete
+    /// `HashMap<Vec<u8>, Vec<u8>>`); every other shape becomes `Bytes`. A
+    /// `bytes` map key is only reachable when [`strict_utf8_mapping`] is enabled
+    /// *and* the `map<string, bytes>` field carries
+    /// `[features.utf8_validation = NONE]` on its key, which normalizes the
+    /// string key to `bytes` — `strict_utf8_mapping` alone does not trigger it.
+    ///
+    /// [`strict_utf8_mapping`]: Self::strict_utf8_mapping
+    ///
     /// # Example
     ///
     /// ```rust,ignore
     /// buffa_build::Config::new()
-    ///     .bytes(&["."])  // all bytes fields use Bytes
+    ///     .use_bytes_type_in(&["."])  // all bytes fields use Bytes
     ///     .files(&["proto/my_service.proto"])
     ///     .includes(&["proto/"])
     ///     .compile()
@@ -491,8 +513,14 @@ impl Config {
 
     /// Use `bytes::Bytes` for all `bytes` fields in all messages.
     ///
-    /// This is a convenience for `.use_bytes_type_in(&["."])`. Use `.use_bytes_type_in(&[...])` with
-    /// specific proto paths if you only want `Bytes` for certain fields.
+    /// This is a convenience for `.use_bytes_type_in(&["."])`. Use
+    /// [`use_bytes_type_in`] with specific proto paths if you only want `Bytes`
+    /// for certain fields. See that method for the path-matching semantics, the
+    /// `map<K, bytes>` rule, and the `map<bytes, bytes>` carve-out under
+    /// [`strict_utf8_mapping`].
+    ///
+    /// [`use_bytes_type_in`]: Self::use_bytes_type_in
+    /// [`strict_utf8_mapping`]: Self::strict_utf8_mapping
     #[must_use]
     pub fn use_bytes_type(mut self) -> Self {
         self.codegen_config.bytes_fields.push(".".to_string());

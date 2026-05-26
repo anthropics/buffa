@@ -438,7 +438,7 @@ pub fn generate_message_impl(
             FieldKind::Map(f) => {
                 compute_stmts.push(map_compute_size_stmt(ctx, msg, f, features)?);
                 write_stmts.push(map_write_to_stmt(ctx, msg, f, features)?);
-                merge_arms.push(map_merge_arm(ctx, msg, f, features)?);
+                merge_arms.push(map_merge_arm(ctx, msg, f, proto_fqn, features)?);
                 clear_stmts.push(vec_field_clear_stmt(f)?);
             }
             FieldKind::Oneof {
@@ -847,6 +847,36 @@ fn vec_field_clear_stmt(field: &FieldDescriptorProto) -> Result<TokenStream, Cod
 pub(crate) fn field_uses_bytes(ctx: &CodeGenContext, proto_fqn: &str, field_name: &str) -> bool {
     let field_fqn = format!(".{}.{}", proto_fqn, field_name);
     ctx.use_bytes_type(&field_fqn)
+}
+
+/// Whether a `map<K, bytes>` value field should use `bytes::Bytes` instead of
+/// `Vec<u8>`.
+///
+/// Single source of truth for the `bytes_fields` → map-value rule, shared by
+/// `classify_field` (owned struct type, serde, and `arbitrary`), the binary and
+/// text `map_merge_arm` decoders, and `view::map_to_owned_expr`. Centralizing it
+/// keeps every site in agreement — a split decision would emit a `Bytes` value
+/// on one side and `Vec<u8>` on another, surfacing only as a compile error in
+/// the consuming crate.
+///
+/// `key_ty` / `val_ty` are the **effective** map-entry types (see
+/// [`effective_type_in_map_entry`]); `None` means the entry lacks that field and
+/// is treated as non-`bytes`, so a non-map caller naturally yields `false`. The
+/// value becomes `Bytes` only when the value is proto `bytes`, the outer map
+/// field matches `bytes_fields`, and the key is *not* effective-`bytes`. The key
+/// carve-out tracks the one JSON helper (`bytes_key_bytes_val_map`) whose
+/// signature is the concrete `HashMap<Vec<u8>, Vec<u8>>`; when the key is
+/// effective-`bytes` the value must stay `Vec<u8>` to match it.
+pub(crate) fn map_value_use_bytes(
+    ctx: &CodeGenContext,
+    key_ty: Option<Type>,
+    val_ty: Option<Type>,
+    proto_fqn: &str,
+    field_name: &str,
+) -> bool {
+    val_ty == Some(Type::TYPE_BYTES)
+        && key_ty != Some(Type::TYPE_BYTES)
+        && field_uses_bytes(ctx, proto_fqn, field_name)
 }
 
 /// Resolve the [`StringRepr`](crate::StringRepr) for a `string`-typed field.
@@ -2616,11 +2646,17 @@ fn map_element_encode_stmt(ty: Type, tag_num: u32, var: &Ident) -> TokenStream {
 /// `buf_expr` is the token stream for the buffer expression — typically
 /// `quote! { buf }` when the buffer is the outer `merge_to_limit` parameter
 /// (already `&mut impl Buf`).
+///
+/// `use_bytes` switches a `bytes`-typed element from `decode_bytes` (→ `Vec<u8>`)
+/// to `decode_bytes_to_bytes` (→ `bytes::Bytes`, zero-copy when `buf` is
+/// `Bytes`-backed). Only meaningful for value reads on `map<K, bytes>` fields
+/// when the outer field matches `bytes_fields`; keys are never bytes-typed.
 fn map_element_decode_stmt(
     ty: Type,
     var: &Ident,
     buf_expr: &TokenStream,
     features: &ResolvedFeatures,
+    use_bytes: bool,
 ) -> TokenStream {
     let wire_type = wire_type_token(ty);
     let wire_byte = wire_type_byte(ty);
@@ -2636,6 +2672,9 @@ fn map_element_decode_stmt(
     let closed = is_closed_enum(features);
     let assign = match ty {
         Type::TYPE_STRING => quote! { #var = ::buffa::types::decode_string(#buf_expr)?; },
+        Type::TYPE_BYTES if use_bytes => {
+            quote! { #var = ::buffa::types::decode_bytes_to_bytes(#buf_expr)?; }
+        }
         Type::TYPE_BYTES => quote! { #var = ::buffa::types::decode_bytes(#buf_expr)?; },
         Type::TYPE_ENUM => {
             if closed {
@@ -2772,6 +2811,7 @@ fn map_merge_arm(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
     field: &FieldDescriptorProto,
+    proto_fqn: &str,
     features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
     let field_name = field
@@ -2790,8 +2830,12 @@ fn map_merge_arm(
     // referenced enum's declaration (not the parent message's).
     let key_features = crate::features::resolve_field(ctx, key_fd, features);
     let val_features = crate::features::resolve_field(ctx, val_fd, features);
-    let decode_key = map_element_decode_stmt(key_ty, &k, &buf_expr, &key_features);
-    let decode_val = map_element_decode_stmt(val_ty, &v, &buf_expr, &val_features);
+    // `bytes_fields` on `map<K, bytes>` → value decodes into `Bytes` (shared
+    // carve-out in `map_value_use_bytes`; bytes-key + bytes-value stays `Vec<u8>`).
+    let value_use_bytes =
+        map_value_use_bytes(ctx, Some(key_ty), Some(val_ty), proto_fqn, field_name);
+    let decode_key = map_element_decode_stmt(key_ty, &k, &buf_expr, &key_features, false);
+    let decode_val = map_element_decode_stmt(val_ty, &v, &buf_expr, &val_features, value_use_bytes);
     let wire_check = wire_type_check(
         field_number,
         &quote! { ::buffa::encoding::WireType::LengthDelimited },

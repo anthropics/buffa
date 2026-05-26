@@ -215,6 +215,27 @@ fn main() {
         .compile()
         .expect("buffa_build failed for basic.proto with use_bytes_type");
 
+    // Carve-out (#76): a `map<string, bytes>` whose key carries
+    // `[features.utf8_validation = NONE]`, compiled with BOTH
+    // strict_utf8_mapping() and use_bytes_type(). strict_utf8_mapping normalizes
+    // the NONE-validated string key to an effective `bytes` key, so the entry is
+    // an effective `map<bytes, bytes>`, whose JSON helper
+    // (`bytes_key_bytes_val_map`) is the concrete `HashMap<Vec<u8>, Vec<u8>>`.
+    // The value must therefore stay `Vec<u8>` despite use_bytes_type(), NOT
+    // promote to `Bytes`. This module pins that the predicate honors the carve-out.
+    let utf8_bytes_out =
+        std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("utf8_bytes_variant");
+    std::fs::create_dir_all(&utf8_bytes_out).expect("create utf8_bytes_variant dir");
+    buffa_build::Config::new()
+        .files(&["protos/utf8_validation.proto"])
+        .includes(&["protos/"])
+        .strict_utf8_mapping(true)
+        .use_bytes_type()
+        .generate_json(true)
+        .out_dir(utf8_bytes_out)
+        .compile()
+        .expect("buffa_build failed for utf8_validation.proto with strict_utf8_mapping + use_bytes_type");
+
     // Configurable string_type: a broad SmolStr default plus per-field
     // CompactString / EcoString overrides, with generate_json + arbitrary so
     // every string code path (decode/clear/view/json/arbitrary, including the

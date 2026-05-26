@@ -20,8 +20,8 @@ use crate::impl_message::{
     closed_enum_decode, closed_enum_decode_with_unknown, decode_fn_token, effective_type,
     effective_type_in_map_entry, field_string_repr, field_uses_bytes, find_map_entry_fields,
     is_explicit_presence_scalar, is_packed_type, is_real_oneof_member, is_required_field,
-    is_supported_field_type, validated_field_number, wire_type_byte, wire_type_check,
-    wire_type_token,
+    is_supported_field_type, map_value_use_bytes, validated_field_number, wire_type_byte,
+    wire_type_check, wire_type_token,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident, rust_path_to_tokens};
 use crate::oneof::{is_null_value_field, serde_helper_path};
@@ -1569,18 +1569,39 @@ fn map_to_owned_expr(
     field: &FieldDescriptorProto,
     ident: &proc_macro2::Ident,
 ) -> Result<TokenStream, CodeGenError> {
-    let MessageScope { ctx, features, .. } = scope;
+    let MessageScope {
+        ctx,
+        proto_fqn,
+        features,
+        ..
+    } = scope;
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
+    let field_name = field
+        .name
+        .as_deref()
+        .ok_or(CodeGenError::MissingField("field.name"))?;
+    let key_ty = effective_type_in_map_entry(ctx, key_fd, features);
+    let val_ty = effective_type_in_map_entry(ctx, val_fd, features);
 
-    let key_conv = match effective_type_in_map_entry(ctx, key_fd, features) {
+    let key_conv = match key_ty {
         Type::TYPE_STRING => quote! { k.to_string() },
         // utf8_validation = NONE on a string map key: &[u8] → Vec<u8>.
         Type::TYPE_BYTES => quote! { k.to_vec() },
         _ => quote! { *k },
     };
 
-    let val_conv = match effective_type_in_map_entry(ctx, val_fd, features) {
+    // `bytes_fields` on the outer map field promotes `bytes` values to `Bytes`,
+    // matching the owned-side map type (shared carve-out in `map_value_use_bytes`).
+    // When it holds, emit `bytes_from_source` directly: the predicate already
+    // implies `field_uses_bytes`, so routing through `bytes_to_owned` (which
+    // re-checks it) would be redundant.
+    let value_use_bytes =
+        map_value_use_bytes(ctx, Some(key_ty), Some(val_ty), proto_fqn, field_name);
+    let val_conv = match val_ty {
         Type::TYPE_STRING => quote! { v.to_string() },
+        Type::TYPE_BYTES if value_use_bytes => {
+            quote! { ::buffa::view::bytes_from_source(__buffa_src, v) }
+        }
         Type::TYPE_BYTES => quote! { v.to_vec() },
         Type::TYPE_MESSAGE => {
             // Verify the owned path resolves (catches missing imports at codegen time).

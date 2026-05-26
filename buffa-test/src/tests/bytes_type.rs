@@ -295,7 +295,9 @@ fn test_bytes_type_json_all_contexts_roundtrip() {
             bytes::Bytes::from_static(b""),
         ],
         choice: Some(ChoiceOneof::Raw(bytes::Bytes::from_static(&[0xDE, 0xAD]))),
-        by_key: [("k".to_string(), vec![0x05])].into_iter().collect(),
+        by_key: [("k".to_string(), bytes::Bytes::from_static(&[0x05]))]
+            .into_iter()
+            .collect(),
         ..Default::default()
     };
     let json = serde_json::to_string(&msg).expect("serialize");
@@ -363,24 +365,97 @@ fn test_bytes_type_json_cross_decodes_external_json() {
 }
 
 #[test]
-fn test_bytes_type_map_value_stays_vec() {
-    // bytes_fields config does NOT propagate into map key/value types
-    // (map_rust_type_from_entry → scalar_rust_type hardcodes Vec<u8>).
-    // map_to_owned_expr correspondingly uses .to_vec(), not bytes_to_owned().
-    // This test pins that agreement: if one side changes, compilation breaks.
+fn test_bytes_type_map_value_uses_bytes() {
+    // Issue #76: bytes_fields propagates into map values (was Vec<u8>, now Bytes).
+    // Owned type, view→owned, encode, JSON, text, and arbitrary all agree on
+    // `Bytes` as the value type when `use_bytes_type()` is configured. This
+    // test pins the agreement: if any side regresses, compilation breaks.
     use buffa::MessageView;
     let msg = BytesContexts {
-        by_key: [("k".to_string(), b"v".to_vec())].into_iter().collect(),
+        by_key: [("k".to_string(), bytes::Bytes::from_static(b"v"))]
+            .into_iter()
+            .collect(),
         ..Default::default()
     };
-    // Type assertion: map value is Vec<u8>, not bytes::Bytes, even under
+    // Type assertion: map value is bytes::Bytes, not Vec<u8>, under
     // use_bytes_type().
-    let _: &std::collections::HashMap<String, Vec<u8>> = &msg.by_key;
+    let _: &std::collections::HashMap<String, bytes::Bytes> = &msg.by_key;
 
     let wire = msg.encode_to_vec();
     let view = BytesContextsView::decode_view(&wire).expect("decode_view");
     let owned: BytesContexts = view.to_owned_message();
-    assert_eq!(owned.by_key.get("k").map(Vec::as_slice), Some(&b"v"[..]));
+    assert_eq!(owned.by_key.get("k").map(|b| &b[..]), Some(&b"v"[..]));
+
+    // Owned binary decode (impl_message::map_merge_arm's decode_bytes_to_bytes
+    // arm), distinct from the view→owned path above.
+    let decoded = BytesContexts::decode(&mut wire.as_slice()).expect("decode");
+    let _: &std::collections::HashMap<String, bytes::Bytes> = &decoded.by_key;
+    assert_eq!(decoded.by_key.get("k").map(|b| &b[..]), Some(&b"v"[..]));
+}
+
+#[test]
+fn test_bytes_type_map_value_to_owned_from_source_zero_copy() {
+    // Issue #76: with bytes_fields, map<K, bytes> values participate in
+    // slice_ref'ing during to_owned_from_source — same as singular/repeated/
+    // oneof bytes_fields. Tested separately from the round-trip so the aliasing
+    // assertion is precise.
+    use buffa::MessageView;
+    let msg = BytesContexts {
+        by_key: [("k".to_string(), bytes::Bytes::from_static(b"map-val"))]
+            .into_iter()
+            .collect(),
+        ..Default::default()
+    };
+    let buf = bytes::Bytes::from(msg.encode_to_vec());
+    let in_buf = |p: *const u8| {
+        let r = buf.as_ptr() as usize..buf.as_ptr() as usize + buf.len();
+        r.contains(&(p as usize))
+    };
+
+    let view = BytesContextsView::decode_view(&buf).expect("decode_view");
+    let owned = view.to_owned_from_source(Some(&buf));
+
+    let value = owned.by_key.get("k").expect("map value");
+    assert_eq!(&value[..], b"map-val");
+    assert!(
+        in_buf(value.as_ptr()),
+        "map<K, bytes> value should slice_ref"
+    );
+}
+
+#[test]
+fn test_bytes_type_map_bytes_key_value_stays_vec() {
+    // Carve-out (#76): `raw_blobs` is a `map<string, bytes>` whose key carries
+    // `[features.utf8_validation = NONE]`, compiled with strict_utf8_mapping() +
+    // use_bytes_type(). strict_utf8_mapping normalizes the NONE-validated key to
+    // an effective `bytes` key, making the entry an effective `map<bytes, bytes>`.
+    // Its JSON helper (`bytes_key_bytes_val_map`) is the concrete
+    // `HashMap<Vec<u8>, Vec<u8>>`, so the value must stay `Vec<u8>` despite
+    // use_bytes_type() — promoting it to `Bytes` would be a
+    // `#[serde(with = ...)]` type mismatch. Contrast with
+    // `test_bytes_type_map_value_uses_bytes`, where a plain `String`-keyed map
+    // does promote the value to `Bytes`.
+    use crate::utf8_bytes::StringNoValidation;
+
+    let msg = StringNoValidation {
+        raw_blobs: [(b"k".to_vec(), b"v".to_vec())].into_iter().collect(),
+        ..Default::default()
+    };
+    // Both key and value are Vec<u8> here, NOT bytes::Bytes.
+    let _: &std::collections::HashMap<Vec<u8>, Vec<u8>> = &msg.raw_blobs;
+
+    // Wire round-trip into the owned type.
+    let wire = msg.encode_to_vec();
+    let decoded = StringNoValidation::decode(&mut wire.as_slice()).expect("decode");
+    assert_eq!(
+        decoded.raw_blobs.get(&b"k"[..]).map(Vec::as_slice),
+        Some(&b"v"[..])
+    );
+
+    // JSON round-trip through bytes_key_bytes_val_map (base64 key + value).
+    let json = serde_json::to_string(&msg).expect("serialize");
+    let back: StringNoValidation = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(back.raw_blobs, msg.raw_blobs);
 }
 
 #[test]
@@ -397,7 +472,9 @@ fn test_bytes_type_view_encode_roundtrip() {
         ],
         maybe: Some(bytes::Bytes::from_static(&[0x00, 0xFF])),
         choice: Some(ChoiceOneof::Raw(bytes::Bytes::from_static(b"o"))),
-        by_key: [("k".to_string(), b"v".to_vec())].into_iter().collect(),
+        by_key: [("k".to_string(), bytes::Bytes::from_static(b"v"))]
+            .into_iter()
+            .collect(),
         ..Default::default()
     };
     let wire = msg.encode_to_vec();

@@ -265,6 +265,23 @@ pub mod basic_bytes {
     include!(concat!(env!("OUT_DIR"), "/bytes_variant/basic.mod.rs"));
 }
 
+// Carve-out (#76): utf8_validation.proto with a NONE-keyed `map<string, bytes>`,
+// compiled with strict_utf8_mapping() + use_bytes_type(). The effective
+// `map<bytes, bytes>` keeps `Vec<u8>` values; runtime checks live in
+// `tests/bytes_type.rs`.
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod utf8_bytes {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/utf8_bytes_variant/utf8test.mod.rs"
+    ));
+}
+
 // Regression #88: bytes_fields + generate_arbitrary(true). Compilation is the
 // primary assertion — all four bytes field shapes (singular, optional,
 // repeated, oneof variant) must compile with the arbitrary shims in place.
