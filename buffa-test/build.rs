@@ -182,6 +182,18 @@ fn main() {
         .compile()
         .expect("buffa_build failed for cross_package.proto");
 
+    // Per-type extern_path references (issue #111) — maps individual type
+    // FQNs (.basic.Person, .basic.Status) to crate::basic, rather than the
+    // whole `.basic` package. Exercises exact-FQN resolution end-to-end.
+    buffa_build::Config::new()
+        .files(&["protos/cross_package_pertype.proto"])
+        .includes(&["protos/"])
+        .extern_path(".basic.Person", "crate::basic::Person")
+        .extern_path(".basic.Status", "crate::basic::Status")
+        .generate_views(false)
+        .compile()
+        .expect("buffa_build failed for cross_package_pertype.proto");
+
     // Cross-syntax import: proto2 file using a proto3-declared enum.
     // Spec: enum closedness follows the DECLARING file's syntax, so the
     // proto3 enum stays open even when referenced from proto2.

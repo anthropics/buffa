@@ -81,6 +81,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `buffa_build::Config::compile()` call — deconfliction cannot span separate
   compilations, since each only sees its own descriptor set.
 
+- **Per-type `extern_path` mappings were silently ignored (#111).** An
+  `extern_path` entry naming a single type FQN (e.g.
+  `.extern_path(".google.protobuf.Timestamp", "::my_types::Timestamp")`, the
+  prost/tonic idiom) parsed but never matched, because resolution only
+  considered package prefixes. Type references now resolve per-type: an exact
+  type-FQN entry wins over the internal `descriptor.proto` routing, which wins
+  over the longest matching package prefix, which wins over local generation.
+  Nested types inherit an enclosing message's override, resolving to the
+  override's parent module plus the usual `snake_case(MessageName)`
+  nested-types module. Note that entries which previously had no effect now
+  take effect: a type-FQN entry (including a typo'd one) that was a silent
+  no-op before will now change the generated reference, and a wrong target
+  surfaces as a compile error in the generated code.
+
 ## [0.6.0] - 2026-05-15
 
 ### Added

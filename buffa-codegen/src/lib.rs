@@ -307,11 +307,15 @@ pub struct CodeGenConfig {
     pub generate_arbitrary: bool,
     /// External type path mappings.
     ///
-    /// Each entry maps a fully-qualified protobuf path prefix (e.g.,
-    /// `".my.common"`) to a Rust module path (e.g., `"::common_protos"`).
-    /// Types under the proto prefix will reference the extern Rust path
-    /// instead of being generated, allowing shared proto packages to be
-    /// compiled once in a dedicated crate and referenced from others.
+    /// Each entry maps either a fully-qualified protobuf package prefix
+    /// (e.g., `".my.common"`) to a Rust module path (e.g.,
+    /// `"::common_protos"`), or a single type FQN (e.g.,
+    /// `".my.common.Shared"`) to a full Rust type path (e.g.,
+    /// `"::shared_types::Shared"`). Matched types reference the extern Rust
+    /// path instead of being generated, allowing shared proto packages to be
+    /// compiled once in a dedicated crate and referenced from others. An
+    /// exact type-FQN entry wins over a covering package prefix; otherwise
+    /// the longest matching prefix wins.
     ///
     /// Well-known types (`google.protobuf.*`) are automatically mapped to
     /// `::buffa_types::google::protobuf::*` without needing an explicit
@@ -704,9 +708,10 @@ pub(crate) fn effective_extern_paths(
 ///   must resolve to the local module, not externally.
 ///
 /// Currently internal-only — there is no `CodeGenConfig` field for
-/// user-provided file-level mappings. The user-facing `extern_path` API
-/// remains package-prefix keyed; per-file or per-type overrides may be added
-/// later as a public feature if a concrete need arises.
+/// user-provided *file-level* mappings. The user-facing `extern_path` API is
+/// keyed by proto package *or* type FQN (per-type overrides, issue #111);
+/// per-file overrides may be added later as a public feature if a concrete
+/// need arises.
 pub(crate) fn effective_file_extern_paths(
     files_to_generate: &[String],
     config: &CodeGenConfig,

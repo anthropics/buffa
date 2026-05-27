@@ -70,6 +70,11 @@ pub mod cross_syntax {
 }
 
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod cross_pertype {
+    buffa::include_proto!("test.cross_pertype");
+}
+
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod collisions {
     buffa::include_proto!("test.collisions");
 }

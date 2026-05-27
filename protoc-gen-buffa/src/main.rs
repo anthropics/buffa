@@ -161,8 +161,10 @@ struct PluginConfig {
 /// Parameters are comma-separated key=value pairs:
 ///   --buffa_opt=views=true,unknown_fields=false,json=true
 ///
-/// Extern paths use the format `extern_path=<proto>=<rust>`:
+/// Extern paths use the format `extern_path=<proto>=<rust>`, where `<proto>`
+/// is either a package or a single type FQN:
 ///   --buffa_opt=extern_path=.my.common=::common_protos
+///   --buffa_opt=extern_path=.my.common.Shared=::shared_types::Shared
 fn parse_config(params: &str) -> Result<PluginConfig, String> {
     let mut codegen = CodeGenConfig::default();
 
@@ -232,7 +234,8 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                     } else {
                         eprintln!(
                             "protoc-gen-buffa: invalid extern_path format '{}', \
-                             expected 'extern_path=.proto.pkg=::rust::path'",
+                             expected 'extern_path=.proto.pkg=::rust::path' \
+                             (or a type FQN, 'extern_path=.proto.pkg.Type=::rust::path::Type')",
                             value
                         );
                     }

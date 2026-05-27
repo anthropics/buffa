@@ -451,21 +451,56 @@ impl Config {
 
     /// Declare an external type path mapping.
     ///
-    /// Types under the given protobuf path prefix will reference the specified
-    /// Rust module path instead of being generated. This allows shared proto
-    /// packages to be compiled once in a dedicated crate and referenced from
-    /// others.
+    /// The matched types reference the specified Rust path instead of being
+    /// generated. This allows shared proto packages to be compiled once in a
+    /// dedicated crate and referenced from others.
     ///
-    /// `proto_path` is a fully-qualified protobuf package path, e.g.,
-    /// `".my.common"` or `"my.common"` (the leading dot is optional and will
-    /// be added automatically). `rust_path` is the Rust module path where
-    /// those types are accessible (e.g., `"::common_protos"`).
+    /// `proto_path` is a fully-qualified protobuf path — either a **package**
+    /// (`".my.common"`, mapping every type under it to a Rust module root) or a
+    /// single **type FQN** (`".google.protobuf.Timestamp"`, mapping just that
+    /// type, the prost/tonic idiom). The leading dot is optional and is added
+    /// automatically. As in prost, the most specific entry wins: an exact type
+    /// FQN beats a covering package prefix, which in turn beats a shorter
+    /// prefix.
+    ///
+    /// `rust_path` is where the type(s) are accessible — a module root for a
+    /// package mapping (e.g. `"::common_protos"`) or a full type path for a
+    /// per-type mapping (e.g. `"::pbjson_types::Timestamp"`). It must be an
+    /// absolute path (starting with `::` or `crate::`); any other value is
+    /// emitted into the generated code verbatim and will fail to resolve there.
+    ///
+    /// **Nested types** inherit an enclosing message's per-type override:
+    /// mapping `.my.pkg.Outer` to `::ext::Outer` resolves `.my.pkg.Outer.Inner`
+    /// to `::ext::outer::Inner` — the override's parent module plus buffa's
+    /// usual `snake_case(MessageName)` nested-types module (snake case of the
+    /// *proto* message name, regardless of the override's final segment). This
+    /// matches the layout of another buffa-generated crate; for a target crate
+    /// laid out differently, add explicit per-type entries for the nested types
+    /// as well.
+    ///
+    /// # Limitations
+    ///
+    /// An extern type that is referenced by a generated **view** must map to
+    /// another buffa-generated crate — the view path is composed as
+    /// `<rust_path_root>::__buffa::view::…`, which a non-buffa crate (e.g.
+    /// `pbjson_types`) does not provide. Map per-type to a buffa crate, or
+    /// disable views ([`generate_views(false)`](Self::generate_views)), for
+    /// such types.
+    ///
+    /// A misconfigured mapping (a typo'd FQN target, a non-absolute
+    /// `rust_path`, or a view-referenced type mapped to a non-buffa crate) is
+    /// not diagnosed at generation time; it surfaces as an unresolved-path
+    /// error when the generated code is compiled.
     ///
     /// # Example
     ///
     /// ```rust,ignore
     /// buffa_build::Config::new()
+    ///     // Whole-package mapping.
     ///     .extern_path(".my.common", "::common_protos")
+    ///     // Per-type mapping (issue #111) — overrides the package prefix for
+    ///     // just this type.
+    ///     .extern_path(".google.protobuf.Timestamp", "::common_protos::well_known::Timestamp")
     ///     .files(&["proto/my_service.proto"])
     ///     .includes(&["proto/"])
     ///     .compile()
