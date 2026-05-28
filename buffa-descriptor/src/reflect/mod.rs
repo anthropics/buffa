@@ -22,19 +22,19 @@
 //! also the natural home, since reflection consumers already declare
 //! `buffa-descriptor` for the descriptor types.
 
+mod containers;
 mod dynamic;
 #[cfg(feature = "json")]
 mod json;
 mod message;
 mod value;
-mod view;
 
+pub use containers::{ReflectElement, ReflectMapKey};
 pub use dynamic::{AnyError, DynamicMessage};
 #[cfg(feature = "json")]
 pub use json::DynamicMessageSeed;
 pub use message::{ReflectCow, ReflectMessage, ReflectMessageMut, Reflectable};
 pub use value::{MapKey, MapKeyRef, MapValue, ReflectList, ReflectMap, Value, ValueRef};
-pub use view::{ReflectElement, ReflectMapKey};
 
 /// Per-message reflection mode, selected at codegen time.
 ///

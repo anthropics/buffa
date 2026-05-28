@@ -24,6 +24,11 @@ message StringNoValidation {
 
   // Map with NONE key and value → HashMap<Vec<u8>, Vec<u8>>.
   map<string, string> raw_labels = 5 [features.utf8_validation = NONE];
+
+  // NONE applies to the synthetic string key (the bytes value is unaffected).
+  // Under strict_utf8_mapping + use_bytes_type this exercises the #76 carve-out:
+  // the effective `map<bytes, bytes>` keeps `Vec<u8>` values, NOT `Bytes`.
+  map<string, bytes> raw_blobs = 6 [features.utf8_validation = NONE];
 }
 
 message OneofNoValidation {

@@ -35,6 +35,8 @@ use buffa_codegen::generated::descriptor::FileDescriptorSet;
 #[doc(inline)]
 pub use buffa_codegen::CodeGenConfig;
 #[doc(inline)]
+pub use buffa_codegen::ReflectMode;
+#[doc(inline)]
 pub use buffa_codegen::StringRepr;
 
 /// How to produce a `FileDescriptorSet` from `.proto` files.
@@ -271,13 +273,18 @@ impl Config {
         self
     }
 
-    /// Generate `impl Reflectable` for owned message types (default: false).
+    /// Enable reflection on generated types (default: off).
     ///
-    /// When enabled, each generated message gets a bridge-mode reflection
-    /// impl: `foo.reflect()` returns a [`ReflectCow`] wrapping a
-    /// [`DynamicMessage`] decoded from `foo`'s wire encoding, against a
-    /// lazily-built [`DescriptorPool`] embedded as `FileDescriptorSet`
-    /// bytes. The pool is reachable as `your_crate::your_pkg::descriptor_pool()`.
+    /// `generate_reflection(true)` selects [`ReflectMode::VTable`] — the fast
+    /// path: `foo.reflect()` borrows `foo` directly (no encode/decode
+    /// round-trip), and owned and view types implement `ReflectMessage`. For
+    /// the smaller bridge implementation (`reflect()` round-trips through a
+    /// [`DynamicMessage`]), use [`reflect_mode(ReflectMode::Bridge)`](Self::reflect_mode)
+    /// instead. `generate_reflection(false)` is [`ReflectMode::Off`].
+    ///
+    /// Either mode embeds a lazily-built [`DescriptorPool`] (as
+    /// `FileDescriptorSet` bytes) reachable as
+    /// `your_crate::your_pkg::descriptor_pool()`.
     ///
     /// # Cargo.toml setup
     ///
@@ -308,10 +315,10 @@ impl Config {
     ///
     /// # Performance
     ///
-    /// `reflect()` is one full encode/decode round-trip plus a heap
-    /// allocation. For repeated reflective access, hold onto the returned
-    /// handle rather than calling `reflect()` per field. The first call
-    /// also pays a one-time pool build cost.
+    /// In the default vtable mode, `reflect()` borrows `self` — no round-trip,
+    /// no allocation; reflective accessors read fields in place. (Bridge mode
+    /// instead pays one encode/decode round-trip plus a heap allocation per
+    /// call.) Either way the first call pays a one-time pool build cost.
     ///
     /// # Build time and binary size
     ///
@@ -320,34 +327,42 @@ impl Config {
     /// crate this is one copy. For a multi-package codegen run the bytes
     /// duplicate per package — measurable for large proto trees. The
     /// serialization happens once per `compile()` call (not per package),
-    /// so build-time CPU does not scale with package count.
+    /// so build-time CPU does not scale with package count. Vtable mode also
+    /// emits an `impl ReflectMessage` per type, so it produces more code than
+    /// bridge mode.
     ///
     /// [`ReflectCow`]: https://docs.rs/buffa-descriptor/latest/buffa_descriptor/reflect/enum.ReflectCow.html
     /// [`DynamicMessage`]: https://docs.rs/buffa-descriptor/latest/buffa_descriptor/reflect/struct.DynamicMessage.html
     /// [`DescriptorPool`]: https://docs.rs/buffa-descriptor/latest/buffa_descriptor/struct.DescriptorPool.html
     #[must_use]
     pub fn generate_reflection(mut self, enabled: bool) -> Self {
-        self.codegen_config.generate_reflection = enabled;
+        // The simple on/off knob selects the fast vtable path; Bridge is opt-in
+        // via `reflect_mode`.
+        let mode = if enabled {
+            ReflectMode::VTable
+        } else {
+            ReflectMode::Off
+        };
+        mode.apply(&mut self.codegen_config);
         self
     }
 
-    /// Additionally emit vtable-mode reflection (`impl ReflectMessage` on view
-    /// types) on top of the bridge-mode `Reflectable` impl.
+    /// Select the reflection mode (the fuller form of
+    /// [`generate_reflection`](Self::generate_reflection)).
     ///
-    /// Requires [`generate_reflection`](Self::generate_reflection) and view
-    /// generation (both must be enabled — [`compile`](Self::compile) errors
-    /// otherwise). Vtable mode reads view struct fields directly through
-    /// `ReflectMessage`, with no encode/decode round-trip and no per-field
-    /// allocation for fields that are not read.
+    /// - [`ReflectMode::Off`] — no reflection (the default).
+    /// - [`ReflectMode::Bridge`] — `reflect()` round-trips through
+    ///   `DynamicMessage`; equivalent to `generate_reflection(true)`.
+    /// - [`ReflectMode::VTable`] — `impl ReflectMessage` on owned and view
+    ///   types, and `reflect()` borrows `self` with no round-trip. Requires
+    ///   view generation (on by default).
     ///
-    /// **Experimental and `#[doc(hidden)]`.** This is a stopgap until the
-    /// public `ReflectMode` selector lands; the name and shape may change. It
-    /// is hidden from the rendered docs to avoid advertising an API that will
-    /// be superseded — internal builds use it directly.
-    #[doc(hidden)]
+    /// All non-`Off` modes require the consuming crate to depend on
+    /// `buffa-descriptor` with its `reflect` feature and on `std`. The call
+    /// site (`foo.reflect().get(fd)`) is identical across modes.
     #[must_use]
-    pub fn generate_reflection_vtable(mut self, enabled: bool) -> Self {
-        self.codegen_config.generate_reflection_vtable = enabled;
+    pub fn reflect_mode(mut self, mode: ReflectMode) -> Self {
+        mode.apply(&mut self.codegen_config);
         self
     }
 
@@ -408,6 +423,15 @@ impl Config {
     /// **JSON note**: fields normalized to bytes serialize as base64 in JSON
     /// (the proto3 JSON encoding for `bytes`). Keep strict mapping disabled
     /// for fields that need JSON string interop with other implementations.
+    ///
+    /// **Interaction with [`use_bytes_type`]**: when both are enabled,
+    /// `map<bytes, bytes>` values stay `Vec<u8>` (the bytes-keyed JSON helper
+    /// is concrete `HashMap<Vec<u8>, Vec<u8>>`). All other `bytes` shapes —
+    /// singular / optional / repeated / oneof / `map<non-bytes, bytes>` —
+    /// still become `bytes::Bytes`. The asymmetry is documented; if you hit
+    /// it, see issue #76.
+    ///
+    /// [`use_bytes_type`]: Self::use_bytes_type
     #[must_use]
     pub fn strict_utf8_mapping(mut self, enabled: bool) -> Self {
         self.codegen_config.strict_utf8_mapping = enabled;
@@ -427,21 +451,56 @@ impl Config {
 
     /// Declare an external type path mapping.
     ///
-    /// Types under the given protobuf path prefix will reference the specified
-    /// Rust module path instead of being generated. This allows shared proto
-    /// packages to be compiled once in a dedicated crate and referenced from
-    /// others.
+    /// The matched types reference the specified Rust path instead of being
+    /// generated. This allows shared proto packages to be compiled once in a
+    /// dedicated crate and referenced from others.
     ///
-    /// `proto_path` is a fully-qualified protobuf package path, e.g.,
-    /// `".my.common"` or `"my.common"` (the leading dot is optional and will
-    /// be added automatically). `rust_path` is the Rust module path where
-    /// those types are accessible (e.g., `"::common_protos"`).
+    /// `proto_path` is a fully-qualified protobuf path — either a **package**
+    /// (`".my.common"`, mapping every type under it to a Rust module root) or a
+    /// single **type FQN** (`".google.protobuf.Timestamp"`, mapping just that
+    /// type, the prost/tonic idiom). The leading dot is optional and is added
+    /// automatically. As in prost, the most specific entry wins: an exact type
+    /// FQN beats a covering package prefix, which in turn beats a shorter
+    /// prefix.
+    ///
+    /// `rust_path` is where the type(s) are accessible — a module root for a
+    /// package mapping (e.g. `"::common_protos"`) or a full type path for a
+    /// per-type mapping (e.g. `"::pbjson_types::Timestamp"`). It must be an
+    /// absolute path (starting with `::` or `crate::`); any other value is
+    /// emitted into the generated code verbatim and will fail to resolve there.
+    ///
+    /// **Nested types** inherit an enclosing message's per-type override:
+    /// mapping `.my.pkg.Outer` to `::ext::Outer` resolves `.my.pkg.Outer.Inner`
+    /// to `::ext::outer::Inner` — the override's parent module plus buffa's
+    /// usual `snake_case(MessageName)` nested-types module (snake case of the
+    /// *proto* message name, regardless of the override's final segment). This
+    /// matches the layout of another buffa-generated crate; for a target crate
+    /// laid out differently, add explicit per-type entries for the nested types
+    /// as well.
+    ///
+    /// # Limitations
+    ///
+    /// An extern type that is referenced by a generated **view** must map to
+    /// another buffa-generated crate — the view path is composed as
+    /// `<rust_path_root>::__buffa::view::…`, which a non-buffa crate (e.g.
+    /// `pbjson_types`) does not provide. Map per-type to a buffa crate, or
+    /// disable views ([`generate_views(false)`](Self::generate_views)), for
+    /// such types.
+    ///
+    /// A misconfigured mapping (a typo'd FQN target, a non-absolute
+    /// `rust_path`, or a view-referenced type mapped to a non-buffa crate) is
+    /// not diagnosed at generation time; it surfaces as an unresolved-path
+    /// error when the generated code is compiled.
     ///
     /// # Example
     ///
     /// ```rust,ignore
     /// buffa_build::Config::new()
+    ///     // Whole-package mapping.
     ///     .extern_path(".my.common", "::common_protos")
+    ///     // Per-type mapping (issue #111) — overrides the package prefix for
+    ///     // just this type.
+    ///     .extern_path(".google.protobuf.Timestamp", "::common_protos::well_known::Timestamp")
     ///     .files(&["proto/my_service.proto"])
     ///     .includes(&["proto/"])
     ///     .compile()
@@ -471,11 +530,24 @@ impl Config {
     /// to all bytes fields, or specify individual field paths like
     /// `".my.pkg.MyMessage.data"`.
     ///
+    /// Applies uniformly to singular, optional, repeated, oneof, **and
+    /// `map<K, bytes>`** values — the map case lets `view → owned`
+    /// conversion participate in the `to_owned_from_source` zero-copy
+    /// `slice_ref` path. One carve-out: an effective `map<bytes, bytes>` keeps
+    /// `Vec<u8>` values (the JSON helper for that combination is concrete
+    /// `HashMap<Vec<u8>, Vec<u8>>`); every other shape becomes `Bytes`. A
+    /// `bytes` map key is only reachable when [`strict_utf8_mapping`] is enabled
+    /// *and* the `map<string, bytes>` field carries
+    /// `[features.utf8_validation = NONE]` on its key, which normalizes the
+    /// string key to `bytes` — `strict_utf8_mapping` alone does not trigger it.
+    ///
+    /// [`strict_utf8_mapping`]: Self::strict_utf8_mapping
+    ///
     /// # Example
     ///
     /// ```rust,ignore
     /// buffa_build::Config::new()
-    ///     .bytes(&["."])  // all bytes fields use Bytes
+    ///     .use_bytes_type_in(&["."])  // all bytes fields use Bytes
     ///     .files(&["proto/my_service.proto"])
     ///     .includes(&["proto/"])
     ///     .compile()
@@ -491,8 +563,14 @@ impl Config {
 
     /// Use `bytes::Bytes` for all `bytes` fields in all messages.
     ///
-    /// This is a convenience for `.use_bytes_type_in(&["."])`. Use `.use_bytes_type_in(&[...])` with
-    /// specific proto paths if you only want `Bytes` for certain fields.
+    /// This is a convenience for `.use_bytes_type_in(&["."])`. Use
+    /// [`use_bytes_type_in`] with specific proto paths if you only want `Bytes`
+    /// for certain fields. See that method for the path-matching semantics, the
+    /// `map<K, bytes>` rule, and the `map<bytes, bytes>` carve-out under
+    /// [`strict_utf8_mapping`].
+    ///
+    /// [`use_bytes_type_in`]: Self::use_bytes_type_in
+    /// [`strict_utf8_mapping`]: Self::strict_utf8_mapping
     #[must_use]
     pub fn use_bytes_type(mut self) -> Self {
         self.codegen_config.bytes_fields.push(".".to_string());

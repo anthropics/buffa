@@ -203,18 +203,23 @@ impl<'a> CodeGenContext<'a> {
     ///
     /// `file_extern_paths` maps a `.proto` file's full path (as reported in
     /// `FileDescriptorProto.name`, e.g. `"google/protobuf/descriptor.proto"`)
-    /// to a Rust module root. It takes priority over package-level
-    /// `effective_extern_paths`, which lets two files in the same proto
+    /// to a Rust module root. It takes priority over a package-level
+    /// `effective_extern_paths` match, which lets two files in the same proto
     /// package (`google.protobuf`) resolve to different external crates —
     /// `descriptor.proto` types to `buffa-descriptor`, every other
     /// `google.protobuf` WKT to `buffa-types`. Without this split a single
     /// package-keyed mapping would route everything to one crate or the
     /// other.
     ///
+    /// Per-type resolution priority (issue #111), most specific first: an
+    /// **exact** `extern_path` entry for a type's FQN, then the **file-level**
+    /// mapping above, then a **package/prefix** `extern_path` match, then the
+    /// **local** package path. See [`resolve_type_path`].
+    ///
     /// File-level mappings are an internal mechanism used for the
     /// auto-injected descriptor-types routing. They are not part of the
-    /// public `CodeGenConfig` API; user-facing `extern_path` entries remain
-    /// package-prefix keyed.
+    /// public `CodeGenConfig` API; user-facing `extern_path` entries are keyed
+    /// by proto package *or* type FQN.
     pub(crate) fn with_extern_resolution(
         files: &'a [FileDescriptorProto],
         config: &'a CodeGenConfig,
@@ -248,6 +253,20 @@ impl<'a> CodeGenContext<'a> {
             all_packages.insert(package.to_string());
             for msg in &file.message_type {
                 if let Some(name) = &msg.name {
+                    // A per-type `extern_path` override (issue #111) makes the
+                    // message extern: it emits no local module, so it must not
+                    // reserve a module name in sub-package deconfliction (#135).
+                    let fqn = if package.is_empty() {
+                        format!(".{name}")
+                    } else {
+                        format!(".{package}.{name}")
+                    };
+                    if effective_extern_paths
+                        .iter()
+                        .any(|(proto, _)| proto == &fqn)
+                    {
+                        continue;
+                    }
                     pkg_message_names
                         .entry(package.to_string())
                         .or_default()
@@ -283,48 +302,55 @@ impl<'a> CodeGenContext<'a> {
                 format!(".{}.", package)
             };
 
-            // Resolution priority: file-level extern → package-level extern →
-            // local module path. The file-level check must come first so two
+            // The file-level extern root (the internal descriptor.proto →
+            // buffa-descriptor split) and the local package module. Per-type
+            // resolution (issue #111) layers exact/longest-prefix `extern_path`
+            // matching on top, via `resolve_type_path`, which preserves the
+            // historic priority: per-type exact → file-level → package prefix →
+            // local. The file-level check still outranks a package prefix so two
             // files in the same proto package can route to different crates
             // (descriptor.proto → buffa-descriptor, timestamp.proto →
             // buffa-types).
-            let rust_module = if let Some(rust_root) = file
+            let file_root = file
                 .name
                 .as_deref()
-                .and_then(|n| resolve_file_extern(n, file_extern_paths))
-            {
-                rust_root.to_string()
-            } else if let Some(rust_root) = resolve_extern_prefix(package, effective_extern_paths) {
-                rust_root
-            } else {
-                package.replace('.', "::")
-            };
+                .and_then(|n| resolve_file_extern(n, file_extern_paths));
+            let local_module = package.replace('.', "::");
 
             // Register top-level messages
             for msg in &file.message_type {
                 if let Some(name) = &msg.name {
                     let fqn = format!("{}{}", proto_prefix, name);
-                    let rust_path = if rust_module.is_empty() {
-                        name.clone()
+                    let (rust_path, is_extern) = resolve_type_path(
+                        &fqn,
+                        name,
+                        file_root,
+                        &local_module,
+                        effective_extern_paths,
+                    );
+
+                    // The module the message's nested types live in. For a local
+                    // message it is `<package>::<module>`, where the module name
+                    // is deconflicted against sub-package modules (issue #135),
+                    // precomputed above and looked up here so emission and
+                    // references share the same value. For an extern/overridden
+                    // message no local module is emitted, so the nested module is
+                    // the resolved path's parent plus the plain `snake_case` name.
+                    let parent_mod = if is_extern {
+                        match rust_path.rsplit_once("::") {
+                            Some((parent, _)) => format!("{parent}::{}", to_snake_case(name)),
+                            None => to_snake_case(name),
+                        }
                     } else {
-                        format!("{}::{}", rust_module, name)
+                        let snake = nested_module_names
+                            .get(&fqn)
+                            .cloned()
+                            .unwrap_or_else(|| to_snake_case(name));
+                        join_mod(&local_module, &snake)
                     };
+
                     type_map.insert(fqn.clone(), rust_path);
                     package_of.insert(fqn.clone(), package.to_string());
-
-                    // Register nested messages using module-qualified paths.
-                    // The parent module name is deconflicted against sub-package
-                    // modules (issue #135), precomputed above and looked up here
-                    // so emission and references share the same value.
-                    let snake = nested_module_names
-                        .get(&fqn)
-                        .cloned()
-                        .unwrap_or_else(|| to_snake_case(name));
-                    let parent_mod = if rust_module.is_empty() {
-                        snake
-                    } else {
-                        format!("{}::{}", rust_module, snake)
-                    };
                     register_nested_types(
                         &mut type_map,
                         &mut package_of,
@@ -332,6 +358,7 @@ impl<'a> CodeGenContext<'a> {
                         &fqn,
                         &parent_mod,
                         msg,
+                        effective_extern_paths,
                     );
                     register_nested_enum_closedness(
                         &mut enum_closedness,
@@ -346,11 +373,13 @@ impl<'a> CodeGenContext<'a> {
             for enum_type in &file.enum_type {
                 if let Some(name) = &enum_type.name {
                     let fqn = format!("{}{}", proto_prefix, name);
-                    let rust_path = if rust_module.is_empty() {
-                        name.clone()
-                    } else {
-                        format!("{}::{}", rust_module, name)
-                    };
+                    let (rust_path, _) = resolve_type_path(
+                        &fqn,
+                        name,
+                        file_root,
+                        &local_module,
+                        effective_extern_paths,
+                    );
                     type_map.insert(fqn.clone(), rust_path);
                     package_of.insert(fqn.clone(), package.to_string());
                     register_enum_closedness(&mut enum_closedness, &fqn, &file_features, enum_type);
@@ -598,18 +627,19 @@ impl<'a> CodeGenContext<'a> {
             };
             // within_proto is dotted (e.g. "Outer.Inner"); within full_path
             // it's `outer::Inner` (snake_case modules + final PascalCase).
-            // Count the segments and strip that many from full_path.
+            // Count the segments and strip that many from full_path to recover
+            // the module the type lives in.
+            //
+            // For paths buffa builds itself (`<rust_module>::<within>`) and for
+            // per-type `extern_path` overrides whose target mirrors the proto
+            // nesting (the sensible case — e.g. mapping to another
+            // buffa-generated crate), `full_segs.len() >= within_segs`. A
+            // pathological override that maps a deeply-nested type to a shorter
+            // Rust path can't have a matching `__buffa::` view/oneof tree
+            // anyway, so we clamp with `saturating_sub` rather than panic and
+            // let the (unresolvable) reference surface as a normal compile error.
             let within_segs = within_proto.split('.').count();
             let full_segs: Vec<&str> = full_path.split("::").collect();
-            // Invariant: `full_path` was built by `CodeGenContext::new` as
-            // `<rust_module>::<within>`, so it always has at least
-            // `within_segs` trailing segments. If this fires the type_map
-            // and package_of maps are out of sync.
-            debug_assert!(
-                full_segs.len() >= within_segs,
-                "extern path '{full_path}' has fewer segments than \
-                 within-package proto path '{within_proto}'"
-            );
             let cut = full_segs.len().saturating_sub(within_segs);
             full_segs[..cut].join("::")
         } else {
@@ -939,10 +969,118 @@ pub(crate) fn resolve_extern_prefix(
     Some(format!("{}::{}", rust_prefix, suffix))
 }
 
+/// Resolve a fully-qualified proto **type** name against `extern_paths`,
+/// mirroring prost's `resolve_ident` (issue #111).
+///
+/// Unlike [`resolve_extern_prefix`] — which only matches a file's *package* and
+/// returns the package's Rust module — this matches the type's whole FQN:
+///
+/// 1. An **exact** `extern_path` entry for the FQN wins (a per-type override,
+///    e.g. `.google.protobuf.Timestamp = ::pbjson_types::Timestamp`).
+/// 2. Otherwise the **longest dotted-prefix** entry (a package or an enclosing
+///    type) applies, with the proto segments past that prefix rendered as
+///    `snake_case` modules and the final segment kept as the Rust type name —
+///    exactly the path [`CodeGenContext::new`] would otherwise build from
+///    [`resolve_extern_prefix`] plus the type name, so package-prefix mappings
+///    resolve identically to before.
+///
+/// `fqn` is the leading-dot form (e.g. `.google.protobuf.Timestamp`). Returns
+/// the full Rust type path, or `None` when nothing matches (the caller falls
+/// back to the local package path).
+fn resolve_extern_type(fqn: &str, extern_paths: &[(String, String)]) -> Option<String> {
+    // 1. Exact per-type entry — the mapping *is* the full Rust path.
+    if let Some((_, rust)) = extern_paths.iter().find(|(proto, _)| proto == fqn) {
+        return Some(rust.clone());
+    }
+
+    // 2. Longest dotted-prefix entry (package or enclosing type).
+    let mut best: Option<(&str, &str, usize)> = None;
+    for (proto_prefix, rust_prefix) in extern_paths {
+        let matches = proto_prefix == "."
+            || fqn
+                .strip_prefix(proto_prefix.as_str())
+                .is_some_and(|rest| rest.starts_with('.'));
+        if matches && best.is_none_or(|(_, _, best_len)| proto_prefix.len() > best_len) {
+            best = Some((proto_prefix, rust_prefix, proto_prefix.len()));
+        }
+    }
+
+    let (proto_prefix, rust_prefix, _) = best?;
+    // The catch-all `.` leaves the whole FQN (minus its leading dot); any other
+    // prefix leaves the `.`-separated remainder after the matched boundary.
+    let rest = if proto_prefix == "." {
+        fqn.strip_prefix('.').unwrap_or(fqn)
+    } else {
+        fqn.strip_prefix(proto_prefix)
+            .and_then(|r| r.strip_prefix('.'))
+            .unwrap_or("")
+    };
+    let mut segments = rest.split('.').collect::<Vec<_>>();
+    // The final segment is the type name (kept verbatim); the rest are modules.
+    let type_name = segments.pop()?;
+    let mut path = rust_prefix.to_string();
+    for module in segments {
+        path.push_str("::");
+        path.push_str(&to_snake_case(module));
+    }
+    path.push_str("::");
+    path.push_str(type_name);
+    Some(path)
+}
+
+/// Join a Rust module path and a type name, handling the empty (no-package)
+/// module by returning the bare type name.
+fn join_mod(module: &str, name: &str) -> String {
+    if module.is_empty() {
+        name.to_string()
+    } else {
+        format!("{module}::{name}")
+    }
+}
+
+/// Resolve a registered type's Rust path, applying per-type `extern_path`
+/// overrides (issue #111).
+///
+/// Priority, most specific first: an **exact** per-type FQN entry, then a
+/// **file-level** mapping (the internal `descriptor.proto` → `buffa-descriptor`
+/// split, which must outrank a package prefix), then the **longest
+/// dotted-prefix** entry (package or enclosing type, via [`resolve_extern_type`]),
+/// then the **local** package path.
+///
+/// Returns `(rust_path, is_extern)`; `is_extern` is `false` only for the local
+/// fallback, telling the caller whether the type emits a local module (and thus
+/// participates in sub-package deconfliction, issue #135).
+fn resolve_type_path(
+    fqn: &str,
+    name: &str,
+    file_root: Option<&str>,
+    local_module: &str,
+    extern_paths: &[(String, String)],
+) -> (String, bool) {
+    // The exact check is done here (not left to `resolve_extern_type`) so an
+    // exact per-type entry outranks the file-level mapping below; once it has
+    // failed, `resolve_extern_type`'s own exact pass can only fall through to
+    // its prefix logic.
+    if let Some((_, rust)) = extern_paths.iter().find(|(proto, _)| proto == fqn) {
+        (rust.clone(), true)
+    } else if let Some(root) = file_root {
+        (join_mod(root, name), true)
+    } else if let Some(path) = resolve_extern_type(fqn, extern_paths) {
+        (path, true)
+    } else {
+        (join_mod(local_module, name), false)
+    }
+}
+
 /// Recursively register nested messages and enums with module-qualified paths.
 ///
 /// Each nested message `Parent.Child` maps to `parent_mod::Child` in Rust,
 /// where `parent_mod` is the snake_case module path of the enclosing message.
+///
+/// A per-type `extern_path` override (issue #111) on a nested type's own FQN
+/// takes priority over the inherited `parent_mod` path; otherwise the nested
+/// type simply lives in `parent_mod` — which already reflects any override of an
+/// enclosing type, so a parent override cascades to its descendants.
 fn register_nested_types(
     type_map: &mut HashMap<String, String>,
     package_of: &mut HashMap<String, String>,
@@ -950,24 +1088,52 @@ fn register_nested_types(
     parent_fqn: &str,
     parent_mod: &str,
     msg: &crate::generated::descriptor::DescriptorProto,
+    extern_paths: &[(String, String)],
 ) {
     for nested in &msg.nested_type {
         if let Some(name) = &nested.name {
             let fqn = format!("{}.{}", parent_fqn, name);
-            let rust_path = format!("{}::{}", parent_mod, name);
+            // An exact per-type override wins; the child module is then the
+            // override's parent plus the plain snake_case name. Otherwise the
+            // type lives in `parent_mod`.
+            let (rust_path, child_mod) = match extern_paths.iter().find(|(proto, _)| proto == &fqn)
+            {
+                Some((_, rust)) => {
+                    let child = match rust.rsplit_once("::") {
+                        Some((parent, _)) => format!("{parent}::{}", to_snake_case(name)),
+                        None => to_snake_case(name),
+                    };
+                    (rust.clone(), child)
+                }
+                None => (
+                    format!("{parent_mod}::{name}"),
+                    format!("{parent_mod}::{}", to_snake_case(name)),
+                ),
+            };
             type_map.insert(fqn.clone(), rust_path);
             package_of.insert(fqn.clone(), package.to_string());
 
             // Recurse: nested-of-nested goes in a deeper module.
-            let child_mod = format!("{}::{}", parent_mod, to_snake_case(name));
-            register_nested_types(type_map, package_of, package, &fqn, &child_mod, nested);
+            register_nested_types(
+                type_map,
+                package_of,
+                package,
+                &fqn,
+                &child_mod,
+                nested,
+                extern_paths,
+            );
         }
     }
 
     for enum_type in &msg.enum_type {
         if let Some(name) = &enum_type.name {
             let fqn = format!("{}.{}", parent_fqn, name);
-            let rust_path = format!("{}::{}", parent_mod, name);
+            let rust_path = extern_paths
+                .iter()
+                .find(|(proto, _)| proto == &fqn)
+                .map(|(_, rust)| rust.clone())
+                .unwrap_or_else(|| format!("{parent_mod}::{name}"));
             type_map.insert(fqn.clone(), rust_path);
             package_of.insert(fqn, package.to_string());
         }
@@ -1290,6 +1456,129 @@ mod tests {
         let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
         assert_eq!(ctx.rust_type(".ns.a.MsgA"), Some("ns::a::MsgA"));
         assert_eq!(ctx.rust_type(".ns.b.MsgB"), Some("ns::b::MsgB"));
+    }
+
+    // ── Per-type FQN extern_path resolution (issue #111) ──────────────────
+    //
+    // `extern_path` historically matched only at the package-prefix level, so
+    // a mapping naming a concrete type FQN (e.g.
+    // `.google.protobuf.Timestamp=::pbjson_types::Timestamp`, a normal
+    // prost/tonic idiom) was silently ignored. These tests pin the prost
+    // `resolve_ident` behavior: an exact type FQN entry wins, otherwise the
+    // longest dotted-prefix (package or enclosing type) applies.
+
+    #[test]
+    fn test_extern_path_exact_per_type_match() {
+        let files = [make_file(
+            "test.proto",
+            "test.pkg",
+            vec![msg("Msg")],
+            vec![],
+        )];
+        let config = CodeGenConfig {
+            extern_paths: vec![(".test.pkg.Msg".into(), "::ext_crate::Msg".into())],
+            ..Default::default()
+        };
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+        // An exact per-type FQN mapping must be honored, not silently dropped.
+        assert_eq!(ctx.rust_type(".test.pkg.Msg"), Some("::ext_crate::Msg"));
+    }
+
+    #[test]
+    fn test_extern_path_per_type_overrides_package_prefix() {
+        // Package-level mapping covers the whole package; an exact per-type
+        // entry overrides it for that one type (exact-match-first), while a
+        // sibling still resolves via the package prefix.
+        let files = [make_file(
+            "test.proto",
+            "test.pkg",
+            vec![msg("Msg"), msg("Other")],
+            vec![],
+        )];
+        let config = CodeGenConfig {
+            extern_paths: vec![
+                (".test.pkg".into(), "::pkg_crate".into()),
+                (".test.pkg.Msg".into(), "::ext_crate::Msg".into()),
+            ],
+            ..Default::default()
+        };
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+        assert_eq!(ctx.rust_type(".test.pkg.Msg"), Some("::ext_crate::Msg"));
+        assert_eq!(ctx.rust_type(".test.pkg.Other"), Some("::pkg_crate::Other"));
+    }
+
+    #[test]
+    fn test_extern_path_nested_type_inherits_per_type_override() {
+        // A per-type override of a parent message cascades to its nested
+        // types via the snake_case module of the overridden path.
+        let outer = msg_with_nested("Outer", vec![msg("Inner")]);
+        let files = [make_file("test.proto", "test.pkg", vec![outer], vec![])];
+        let config = CodeGenConfig {
+            extern_paths: vec![(".test.pkg.Outer".into(), "::ext::Outer".into())],
+            ..Default::default()
+        };
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+        assert_eq!(ctx.rust_type(".test.pkg.Outer"), Some("::ext::Outer"));
+        assert_eq!(
+            ctx.rust_type(".test.pkg.Outer.Inner"),
+            Some("::ext::outer::Inner")
+        );
+    }
+
+    #[test]
+    fn test_extern_path_exact_per_type_enum() {
+        let files = [make_file(
+            "test.proto",
+            "test.pkg",
+            vec![],
+            vec![enum_desc("Status")],
+        )];
+        let config = CodeGenConfig {
+            extern_paths: vec![(".test.pkg.Status".into(), "::ext_crate::Status".into())],
+            ..Default::default()
+        };
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+        assert_eq!(
+            ctx.rust_type(".test.pkg.Status"),
+            Some("::ext_crate::Status")
+        );
+    }
+
+    #[test]
+    fn test_extern_path_package_prefix_still_resolves() {
+        // Guard: package-prefix mappings (the only historically-supported
+        // form) must keep resolving exactly as before.
+        let files = [make_file(
+            "test.proto",
+            "test.pkg",
+            vec![msg("Msg")],
+            vec![],
+        )];
+        let config = CodeGenConfig {
+            extern_paths: vec![(".test.pkg".into(), "::pkg_crate".into())],
+            ..Default::default()
+        };
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+        assert_eq!(ctx.rust_type(".test.pkg.Msg"), Some("::pkg_crate::Msg"));
+    }
+
+    #[test]
+    fn test_extern_path_per_type_does_not_affect_unmapped_type() {
+        // Guard: a per-type entry must not leak onto an unrelated type.
+        let files = [make_file(
+            "test.proto",
+            "test.pkg",
+            vec![msg("Msg"), msg("Other")],
+            vec![],
+        )];
+        let config = CodeGenConfig {
+            extern_paths: vec![(".test.pkg.Msg".into(), "::ext_crate::Msg".into())],
+            ..Default::default()
+        };
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+        assert_eq!(ctx.rust_type(".test.pkg.Msg"), Some("::ext_crate::Msg"));
+        // `Other` has no entry — resolves locally.
+        assert_eq!(ctx.rust_type(".test.pkg.Other"), Some("test::pkg::Other"));
     }
 
     #[test]
@@ -1655,6 +1944,70 @@ mod tests {
         assert_eq!(result, Some("crate::proto::google::type".into()));
     }
 
+    // ── resolve_extern_type — per-type FQN resolution (issue #111) ─────────
+
+    #[test]
+    fn test_resolve_extern_type_exact_match() {
+        // An exact entry for the type FQN is the full Rust path verbatim.
+        let result = resolve_extern_type(
+            ".google.protobuf.Timestamp",
+            &[(
+                ".google.protobuf.Timestamp".into(),
+                "::pbjson_types::Timestamp".into(),
+            )],
+        );
+        assert_eq!(result, Some("::pbjson_types::Timestamp".into()));
+    }
+
+    #[test]
+    fn test_resolve_extern_type_exact_wins_over_prefix() {
+        // Exact-match-first: the per-type entry beats a covering package entry.
+        let result = resolve_extern_type(
+            ".my.pkg.Msg",
+            &[
+                (".my.pkg".into(), "::pkg_crate".into()),
+                (".my.pkg.Msg".into(), "::ext_crate::Msg".into()),
+            ],
+        );
+        assert_eq!(result, Some("::ext_crate::Msg".into()));
+    }
+
+    #[test]
+    fn test_resolve_extern_type_package_prefix_appends_type() {
+        // A package prefix yields `<rust_prefix>::<sub modules>::<TypeName>`,
+        // matching what resolve_extern_prefix + the type name would build.
+        let result = resolve_extern_type(
+            ".my.common.sub.Msg",
+            &[(".my.common".into(), "::common_protos".into())],
+        );
+        assert_eq!(result, Some("::common_protos::sub::Msg".into()));
+    }
+
+    #[test]
+    fn test_resolve_extern_type_catchall() {
+        let result = resolve_extern_type(".greet.v1.Hello", &[(".".into(), "crate::proto".into())]);
+        assert_eq!(result, Some("crate::proto::greet::v1::Hello".into()));
+    }
+
+    #[test]
+    fn test_resolve_extern_type_no_match() {
+        let result = resolve_extern_type(
+            ".other.pkg.Msg",
+            &[(".my.common".into(), "::common_protos".into())],
+        );
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_resolve_extern_type_partial_name_no_match() {
+        // ".my.common" must not match ".my.commonext.Msg" (dot-boundary).
+        let result = resolve_extern_type(
+            ".my.commonext.Msg",
+            &[(".my.common".into(), "::common_protos".into())],
+        );
+        assert_eq!(result, None);
+    }
+
     // ── rust_type_relative_split — extern branch ────────────────────────
 
     #[test]
@@ -1708,6 +2061,38 @@ mod tests {
         assert!(split.is_extern);
         assert_eq!(split.to_package, "::buffa_types::google::protobuf");
         assert_eq!(split.within_package, "value::Inner");
+    }
+
+    #[test]
+    fn test_split_per_type_extern_override() {
+        // Per-type override (issue #111): the `__buffa::` boundary recovery must
+        // still split the override path at the package/within-package seam, so
+        // callers compose `<to_package>::__buffa::view::<within_package>`
+        // correctly. Both the overridden type and its nested children are
+        // exercised.
+        let outer = msg_with_nested("Outer", vec![msg("Inner")]);
+        let files = [make_file("custom.proto", "my.pkg", vec![outer], vec![])];
+        let config = CodeGenConfig {
+            extern_paths: vec![(".my.pkg.Outer".into(), "::ext::custom::Outer".into())],
+            ..Default::default()
+        };
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+
+        let split = ctx
+            .rust_type_relative_split(".my.pkg.Outer", "other.pkg", 2)
+            .expect("overridden type resolves");
+        assert!(split.is_extern);
+        assert_eq!(split.to_package, "::ext::custom");
+        assert_eq!(split.within_package, "Outer");
+
+        // The nested type inherits the override's module, and the seam is
+        // recovered the same way (2 within-package segments stripped).
+        let nested = ctx
+            .rust_type_relative_split(".my.pkg.Outer.Inner", "other.pkg", 0)
+            .expect("nested type resolves");
+        assert!(nested.is_extern);
+        assert_eq!(nested.to_package, "::ext::custom");
+        assert_eq!(nested.within_package, "outer::Inner");
     }
 
     #[test]

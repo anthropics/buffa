@@ -8,7 +8,7 @@
 //! reflection consumer holding raw bytes (an interceptor, a field-mask
 //! evaluator) uses.
 
-use buffa::{Message, MessageView};
+use buffa::{Message, MessageView, OwnedView};
 use buffa_descriptor::reflect::{MapKey, ReflectMessage, ValueRef};
 use buffa_test::basic::*;
 
@@ -219,5 +219,22 @@ fn vtable_to_dynamic_snapshot() {
     assert!(matches!(
         snapshot.get(snap_md.field(1).unwrap()),
         ValueRef::I32(42)
+    ));
+}
+
+#[test]
+fn vtable_owned_view_entry_point() {
+    // The entry point a reflection consumer holding raw wire bytes uses: wrap
+    // them in an `OwnedView` (lifetime-erased), reborrow to a tied-lifetime
+    // view, and reflect through `&dyn ReflectMessage`.
+    let bytes = buffa::bytes::Bytes::from(person_bytes());
+    let owned = OwnedView::<PersonView<'static>>::decode(bytes).expect("OwnedView::decode");
+    let view = owned.reborrow();
+    let r: &dyn ReflectMessage = view;
+    let md = r.message_descriptor();
+    assert!(matches!(r.get(md.field(1).unwrap()), ValueRef::I32(42)));
+    assert!(matches!(
+        r.get(md.field(2).unwrap()),
+        ValueRef::String("Ada")
     ));
 }

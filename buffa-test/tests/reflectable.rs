@@ -108,6 +108,96 @@ fn for_each_set_visits_set_fields() {
 }
 
 #[test]
+fn owned_vtable_matches_bridge_for_every_field() {
+    use buffa_descriptor::reflect::DynamicMessage;
+    use buffa_test::basic::{person, Inventory, Status};
+    use std::sync::Arc;
+
+    // A Person exercising every owned-vtable arm: scalars, string, bytes,
+    // bool, double, enum, nested message, repeated string + repeated scalar,
+    // explicit-presence optional, and a oneof.
+    let person = Person {
+        id: 42,
+        name: "Ada".into(),
+        avatar: vec![0xDE, 0xAD],
+        verified: true,
+        score: 9.5,
+        status: Status::ACTIVE.into(),
+        address: MessageField::some(Address {
+            street: "1 Main".into(),
+            zip_code: 12345,
+            ..Default::default()
+        }),
+        tags: vec!["x".into(), "y".into()],
+        lucky_numbers: vec![7, 11, 13],
+        maybe_age: Some(30),
+        contact: Some(person::Contact::Email("ada@example.com".into())),
+        ..Default::default()
+    };
+
+    // Compare the vtable reflection (reflect() → Borrowed(self)) against the
+    // bridge round-trip, field by field. `ValueRef` has no `PartialEq` (trait
+    // objects), so compare the owned `Value` snapshots.
+    let vt = person.reflect();
+    let md = vt.message_descriptor();
+    let pool = Arc::clone(vt.pool());
+    let idx = pool.message_index("basic.Person").unwrap();
+    let bridge = DynamicMessage::from_message(&person, Arc::clone(&pool), idx);
+
+    for fd in md.fields() {
+        assert_eq!(
+            vt.has(fd),
+            bridge.has(fd),
+            "has() mismatch on field {}",
+            fd.number()
+        );
+        if vt.has(fd) {
+            assert_eq!(
+                vt.get(fd).to_owned(),
+                bridge.get(fd).to_owned(),
+                "get() mismatch on field {}",
+                fd.number()
+            );
+        }
+    }
+
+    // Map fields (Inventory.stock: map<string, int32>) — separate message.
+    let mut stock = std::collections::HashMap::new();
+    stock.insert("apples".to_string(), 3);
+    stock.insert("oranges".to_string(), 7);
+    let inv = Inventory {
+        stock,
+        ..Default::default()
+    };
+    let inv_vt = inv.reflect();
+    let inv_md = inv_vt.message_descriptor();
+    let inv_idx = pool.message_index("basic.Inventory").unwrap();
+    let inv_bridge = DynamicMessage::from_message(&inv, Arc::clone(&pool), inv_idx);
+    let stock_fd = inv_md
+        .fields()
+        .iter()
+        .find(|f| f.name() == "stock")
+        .unwrap();
+    assert_eq!(
+        inv_vt.get(stock_fd).to_owned(),
+        inv_bridge.get(stock_fd).to_owned(),
+        "map field mismatch"
+    );
+}
+
+#[test]
+fn reflect_borrows_in_vtable_mode() {
+    use buffa_descriptor::reflect::ReflectCow;
+    // basic.proto is generated with vtable mode, so `reflect()` borrows `self`
+    // directly (no `DynamicMessage` round-trip / heap allocation).
+    let person = Person {
+        id: 1,
+        ..Default::default()
+    };
+    assert!(matches!(person.reflect(), ReflectCow::Borrowed(_)));
+}
+
+#[test]
 fn descriptor_pool_is_built_once() {
     // The pool is `OnceLock`-backed; multiple `reflect()` calls share it.
     let p1 = buffa_test::basic::descriptor_pool();

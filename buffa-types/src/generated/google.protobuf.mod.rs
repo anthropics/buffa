@@ -43,8 +43,9 @@ pub mod __buffa {
         include!("google.protobuf.struct.__oneof.rs");
     }
     #[cfg(feature = "reflect")]
-    /// Reflection support: embedded descriptor pool for bridge-mode
-    /// [`Reflectable`](::buffa_descriptor::reflect::Reflectable) impls.
+    /// Reflection support: embedded descriptor pool shared by this
+    /// package's [`Reflectable`](::buffa_descriptor::reflect::Reflectable)
+    /// and `ReflectMessage` impls (bridge and vtable mode alike).
     pub mod reflect {
         /// The serialized `FileDescriptorSet` for this codegen run,
         /// including transitive dependencies. Used to build the

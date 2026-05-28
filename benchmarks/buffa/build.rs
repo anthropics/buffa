@@ -7,8 +7,7 @@ fn main() {
         ])
         .includes(&["../proto/"])
         .generate_json(true)
-        .generate_reflection(true)
-        .generate_reflection_vtable(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
         .compile()
         .expect("failed to compile benchmark protos");
 }

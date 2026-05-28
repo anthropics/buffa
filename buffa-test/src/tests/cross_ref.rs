@@ -31,6 +31,36 @@ fn test_cross_package_round_trip() {
 }
 
 #[test]
+fn test_per_type_extern_path_round_trip() {
+    // Per-type `extern_path` (issue #111): the build maps `.basic.Person` and
+    // `.basic.Status` by exact FQN to crate::basic. If those mappings were
+    // ignored (the old behavior) the generated references would not compile;
+    // that this builds and round-trips proves per-type resolution works.
+    use crate::cross_pertype::PerTypeComposite;
+    // The field types below are crate::basic::Person / crate::basic::Status:
+    // this would not compile if the per-type mappings resolved to a local
+    // (non-existent) module instead.
+    let msg = PerTypeComposite {
+        person: buffa::MessageField::some(Person {
+            id: 7,
+            name: "Bob".into(),
+            status: buffa::EnumValue::Known(Status::ACTIVE),
+            ..Default::default()
+        }),
+        status: buffa::EnumValue::Known(Status::INACTIVE),
+        ..Default::default()
+    };
+    let decoded = round_trip(&msg);
+    assert_eq!(decoded.person.id, 7);
+    assert_eq!(decoded.person.name, "Bob");
+    assert_eq!(
+        decoded.person.status,
+        buffa::EnumValue::Known(Status::ACTIVE)
+    );
+    assert_eq!(decoded.status, buffa::EnumValue::Known(Status::INACTIVE));
+}
+
+#[test]
 fn test_cross_syntax_proto3_enum_in_proto2_is_open() {
     // Spec (protobuf.dev/programming-guides/enum): enum closedness
     // follows the DECLARING file's syntax. basic.Status is declared

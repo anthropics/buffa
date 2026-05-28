@@ -161,8 +161,10 @@ struct PluginConfig {
 /// Parameters are comma-separated key=value pairs:
 ///   --buffa_opt=views=true,unknown_fields=false,json=true
 ///
-/// Extern paths use the format `extern_path=<proto>=<rust>`:
+/// Extern paths use the format `extern_path=<proto>=<rust>`, where `<proto>`
+/// is either a package or a single type FQN:
 ///   --buffa_opt=extern_path=.my.common=::common_protos
+///   --buffa_opt=extern_path=.my.common.Shared=::shared_types::Shared
 fn parse_config(params: &str) -> Result<PluginConfig, String> {
     let mut codegen = CodeGenConfig::default();
 
@@ -193,7 +195,32 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                 // methods. Like `register_types`, the default is on, so the
                 // accepted spelling is the negation.
                 "with_setters" => codegen.generate_with_setters = value.trim() != "false",
-                "reflection" => codegen.generate_reflection = value.trim() == "true",
+                // `reflection=true` selects the fast vtable mode (same as
+                // `reflect_mode=vtable`); `reflect_mode=bridge` opts into the
+                // smaller round-trip implementation.
+                "reflection" => {
+                    let mode = if value.trim() == "true" {
+                        buffa_codegen::ReflectMode::VTable
+                    } else {
+                        buffa_codegen::ReflectMode::Off
+                    };
+                    mode.apply(&mut codegen);
+                }
+                // `reflect_mode=off|bridge|vtable` is the fuller form of
+                // `reflection=`. `vtable` additionally emits `impl ReflectMessage`
+                // on owned + view types and makes `reflect()` borrow `self`.
+                "reflect_mode" => match value.trim() {
+                    "off" => buffa_codegen::ReflectMode::Off.apply(&mut codegen),
+                    "bridge" => buffa_codegen::ReflectMode::Bridge.apply(&mut codegen),
+                    "vtable" => buffa_codegen::ReflectMode::VTable.apply(&mut codegen),
+                    other => {
+                        eprintln!(
+                            "protoc-gen-buffa: invalid reflect_mode '{}', \
+                             expected off, bridge, or vtable",
+                            other
+                        );
+                    }
+                },
                 "file_per_package" => codegen.file_per_package = value.trim() == "true",
                 "extern_path" => {
                     // value is "<proto_path>=<rust_path>"
@@ -207,7 +234,8 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                     } else {
                         eprintln!(
                             "protoc-gen-buffa: invalid extern_path format '{}', \
-                             expected 'extern_path=.proto.pkg=::rust::path'",
+                             expected 'extern_path=.proto.pkg=::rust::path' \
+                             (or a type FQN, 'extern_path=.proto.pkg.Type=::rust::path::Type')",
                             value
                         );
                     }

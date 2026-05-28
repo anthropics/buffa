@@ -181,7 +181,7 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.generate_arbitrary(bool)` | `false` | Emit `#[derive(arbitrary::Arbitrary)]` gated behind the `arbitrary` feature (for fuzzing) |
 | `.gate_impls_on_crate_features(bool)` | `false` | Wrap json/views/text impls in `#[cfg(feature = ...)]` for library crates whose generated code is a public dependency surface |
 | `.strict_utf8_mapping(bool)` | `false` | Map `utf8_validation = NONE` string fields to `Vec<u8>` / `&[u8]` instead of `String` (see [Skipping UTF-8 validation](#skipping-utf-8-validation)) |
-| `.extern_path(proto, rust)` | — | Map a proto package to an external Rust crate (see below) |
+| `.extern_path(proto, rust)` | — | Map a proto package or a single type to an external Rust path (see below) |
 | `.use_bytes_type()` | — | Use `bytes::Bytes` for all bytes fields |
 | `.use_bytes_type_in(&[...])` | — | Use `bytes::Bytes` for matching bytes fields |
 | `.use_buf()` | — | Use `buf build` instead of `protoc` for descriptor generation |
@@ -252,9 +252,25 @@ buffa_build::Config::new()
 
 With this configuration, any reference to a type like `my.common.SharedMessage` in `my_service.proto` will generate `::common_protos::SharedMessage` instead of a locally-generated struct.
 
-The proto path must start with `.` (fully qualified), though the leading dot is optional and will be added automatically. When multiple extern paths match, the longest prefix wins.
+The proto path must start with `.` (fully qualified), though the leading dot is optional and will be added automatically.
 
-**View types:** When view generation is enabled (the default), the codegen also expects a `FooView<'a>` type at `<extern_crate>::__buffa::view::FooView` for each extern-mapped message `Foo`. If you're using extern_path to reference types from another buffa-generated crate, the views are already there. If you're mapping to [custom type implementations](#custom-type-implementations), see that section for how to provide the view type.
+**Per-type mappings:** an entry may also name a single type instead of a package — the prost/tonic idiom for overriding individual types while the rest of the package generates (or routes) as usual:
+
+```rust,ignore
+buffa_build::Config::new()
+    // Whole-package mapping.
+    .extern_path(".my.common", "::common_protos")
+    // Per-type mapping: just this type; other my.common types still come from common_protos.
+    .extern_path(".my.common.SharedMessage", "::shared_types::SharedMessage")
+    .files(&["proto/my_service.proto"])
+    .includes(&["proto/"])
+    .compile()
+    .unwrap();
+```
+
+When several entries could match a reference, the most specific one wins: an exact type FQN beats a covering package prefix, and a longer package prefix beats a shorter one. Nested types inherit an enclosing message's per-type override — `my.common.SharedMessage.Inner` resolves to `::shared_types::shared_message::Inner`, i.e. the override's parent module plus buffa's usual `snake_case(MessageName)` nested-types module. That layout matches another buffa-generated crate; if the target crate lays out nested types differently, add explicit per-type entries for the nested types as well.
+
+**View types:** When view generation is enabled (the default), the codegen also expects a `FooView<'a>` type at `<extern_crate>::__buffa::view::FooView` for each extern-mapped message `Foo`. If you're using extern_path to reference types from another buffa-generated crate, the views are already there. If you're mapping to [custom type implementations](#custom-type-implementations), see that section for how to provide the view type. This applies to per-type mappings too: a message referenced by generated views must map to a buffa-generated crate, or view generation must be disabled (`.generate_views(false)`).
 
 ### Multi-package projects
 
@@ -474,7 +490,7 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `arbitrary=true` | Emit `#[derive(arbitrary::Arbitrary)]` for fuzzing |
 | `gate_impls=true` | Wrap json/views/text impls in `#[cfg(feature = ...)]` for library crates whose generated code is a public dependency surface (default: emitted unconditionally) |
 | `with_setters=false` | Disable `with_<name>()` builder-style setters for explicit-presence fields (default: emitted) |
-| `extern_path=.pkg=::rust` | Map a proto package to an external Rust path |
+| `extern_path=.pkg=::rust` | Map a proto package — or a single type, e.g. `extern_path=.pkg.Type=::rust::Type` — to an external Rust path |
 | `file_per_package=true` | Emit one `<dotted.package>.rs` per package instead of per-proto-file content + a `<dotted.pkg>.mod.rs` stitcher. Use this with the remote plugin when you don't want to install `protoc-gen-buffa-packaging` — see [Remote plugin only](#remote-plugin-only-no-local-install). Under `strategy: directory`, requires the input module to be `PACKAGE_DIRECTORY_MATCH`-clean. |
 
 #### BSR-generated SDKs
@@ -503,7 +519,7 @@ If you prefer to use `protoc` without buf:
 ```sh
 protoc --buffa_out=. --plugin=protoc-gen-buffa my_service.proto
 
-# With extern_path:
+# With extern_path (package-level or per-type):
 protoc --buffa_out=. \
     --buffa_opt=extern_path=.my.common=::common_protos \
     --plugin=protoc-gen-buffa my_service.proto

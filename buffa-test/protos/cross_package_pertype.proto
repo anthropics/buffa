@@ -1,0 +1,19 @@
+// Per-type `extern_path` resolution (issue #111). Unlike cross_package.proto
+// — which maps whole packages (`.basic` -> crate::basic) — this file's build
+// config maps individual type FQNs (`.basic.Person`, `.basic.Status`) to the
+// already-generated `crate::basic` types. Historically those per-type mappings
+// were silently ignored and the references resolved to non-existent local
+// modules; now they resolve to the mapped Rust paths.
+
+syntax = "proto3";
+
+package test.cross_pertype;
+
+import "basic.proto";
+
+message PerTypeComposite {
+  // Mapped by exact type FQN to crate::basic::Person.
+  basic.Person person = 1;
+  // Enum mapped by exact type FQN to crate::basic::Status.
+  basic.Status status = 2;
+}

@@ -96,12 +96,13 @@ CI (`check-generated-code` job) will fail if checked-in generated code is stale.
 
 ## Cross-Target Checks
 
-Run `task install-targets` to install the additional rustup targets needed by cross-target tasks. The targets are:
+`task check-nostd` adds the bare-metal `thumbv7em-none-eabihf` target on demand (it runs `rustup target add` itself, which is idempotent), so it needs no separate setup.
+
+For the 32-bit tasks, run `task install-targets` first to install the additional rustup target:
 
 - `i686-unknown-linux-gnu` — 32-bit x86 Linux (for `task check-32bit` / `task test-32bit`; `test-32bit` also needs `gcc-multilib`)
-- `thumbv7em-none-eabihf` — bare-metal ARM Cortex-M4 (for the second step of `task check-nostd`)
 
-The tasks have preconditions that print a clear error if the targets are missing.
+`task install-targets` also installs `thumbv7em-none-eabihf` for convenience; the `check-32bit` / `test-32bit` tasks have preconditions that print a clear error if the 32-bit target is missing.
 
 ## Continuous Integration
 

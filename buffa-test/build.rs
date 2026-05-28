@@ -6,10 +6,30 @@ fn main() {
         .files(&["protos/basic.proto"])
         .includes(&["protos/"])
         .generate_text(true)
-        .generate_reflection(true)
-        .generate_reflection_vtable(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
         .compile()
         .expect("buffa_build failed for basic.proto");
+
+    // views(false) + vtable: owned-message vtable reflection is self-contained,
+    // so it must compile without view generation (only owned impls emitted).
+    buffa_build::Config::new()
+        .files(&["protos/vtable_no_views.proto"])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for vtable_no_views.proto");
+
+    // string_type(SmolStr) + vtable: exercises `ReflectElement for SmolStr` on
+    // the repeated-string element path (`Vec<SmolStr>`). Singular string fields
+    // reflect via deref; map string keys/values stay `String`.
+    buffa_build::Config::new()
+        .files(&["protos/vtable_string_repr.proto"])
+        .includes(&["protos/"])
+        .string_type(buffa_build::StringRepr::SmolStr)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for vtable_string_repr.proto");
 
     // Comprehensive proto3 semantics: implicit vs explicit presence for all
     // scalar types, open-enum contexts, default packing, synthetic oneofs.
@@ -116,8 +136,7 @@ fn main() {
         .files(&["protos/proto2_defaults.proto"])
         .includes(&["protos/"])
         .generate_text(true)
-        .generate_reflection(true)
-        .generate_reflection_vtable(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
         .compile()
         .expect("buffa_build failed for proto2_defaults.proto");
 
@@ -162,6 +181,18 @@ fn main() {
         .generate_views(false)
         .compile()
         .expect("buffa_build failed for cross_package.proto");
+
+    // Per-type extern_path references (issue #111) — maps individual type
+    // FQNs (.basic.Person, .basic.Status) to crate::basic, rather than the
+    // whole `.basic` package. Exercises exact-FQN resolution end-to-end.
+    buffa_build::Config::new()
+        .files(&["protos/cross_package_pertype.proto"])
+        .includes(&["protos/"])
+        .extern_path(".basic.Person", "crate::basic::Person")
+        .extern_path(".basic.Status", "crate::basic::Status")
+        .generate_views(false)
+        .compile()
+        .expect("buffa_build failed for cross_package_pertype.proto");
 
     // Cross-syntax import: proto2 file using a proto3-declared enum.
     // Spec: enum closedness follows the DECLARING file's syntax, so the
@@ -214,6 +245,27 @@ fn main() {
         .out_dir(bytes_out)
         .compile()
         .expect("buffa_build failed for basic.proto with use_bytes_type");
+
+    // Carve-out (#76): a `map<string, bytes>` whose key carries
+    // `[features.utf8_validation = NONE]`, compiled with BOTH
+    // strict_utf8_mapping() and use_bytes_type(). strict_utf8_mapping normalizes
+    // the NONE-validated string key to an effective `bytes` key, so the entry is
+    // an effective `map<bytes, bytes>`, whose JSON helper
+    // (`bytes_key_bytes_val_map`) is the concrete `HashMap<Vec<u8>, Vec<u8>>`.
+    // The value must therefore stay `Vec<u8>` despite use_bytes_type(), NOT
+    // promote to `Bytes`. This module pins that the predicate honors the carve-out.
+    let utf8_bytes_out =
+        std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("utf8_bytes_variant");
+    std::fs::create_dir_all(&utf8_bytes_out).expect("create utf8_bytes_variant dir");
+    buffa_build::Config::new()
+        .files(&["protos/utf8_validation.proto"])
+        .includes(&["protos/"])
+        .strict_utf8_mapping(true)
+        .use_bytes_type()
+        .generate_json(true)
+        .out_dir(utf8_bytes_out)
+        .compile()
+        .expect("buffa_build failed for utf8_validation.proto with strict_utf8_mapping + use_bytes_type");
 
     // Configurable string_type: a broad SmolStr default plus per-field
     // CompactString / EcoString overrides, with generate_json + arbitrary so

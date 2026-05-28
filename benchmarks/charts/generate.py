@@ -44,7 +44,12 @@ COLORS = {
     # Reflection comparison (buffa-only: generated codec vs DynamicMessage).
     "generated": "#4C78A8",
     "reflect": "#B279A2",
+    "view": "#72B7B2",
     "bridge round-trip": "#9D755D",
+    # Reflection read (from wire bytes → reflective field reads).
+    "vtable": "#54A24B",
+    "bridge": "#9D755D",
+    "dynamic": "#B279A2",
 }
 
 MESSAGES = ["ApiResponse", "LogRecord", "AnalyticsEvent", "GoogleMessage1", "MediaFrame"]
@@ -220,13 +225,22 @@ def build_tables(
             ("Go",           lambda ms, md: _get_go(go, "JsonDecode", md)),
         ]),
         ("reflect-decode", [
-            ("generated",         lambda ms, md: _get_reflect(reflect, md, "decode/generated")),
-            ("reflect",           lambda ms, md: _get_reflect(reflect, md, "decode/reflect")),
-            ("bridge round-trip", lambda ms, md: _get_reflect(reflect, md, "reflect/bridge_round_trip")),
+            ("generated", lambda ms, md: _get_reflect(reflect, md, "decode/generated")),
+            ("reflect",   lambda ms, md: _get_reflect(reflect, md, "decode/reflect")),
+            ("view",      lambda ms, md: _get_reflect(reflect, md, "decode/view")),
         ]),
         ("reflect-encode", [
             ("generated", lambda ms, md: _get_reflect(reflect, md, "encode/generated")),
             ("reflect",   lambda ms, md: _get_reflect(reflect, md, "encode/reflect")),
+        ]),
+        # From wire bytes to reflective field reads (the interceptor / field-mask
+        # workload): decode a handle and scan all set fields. vtable borrows a
+        # decoded view; bridge round-trips through DynamicMessage; dynamic decodes
+        # straight into DynamicMessage.
+        ("reflect-read", [
+            ("vtable",  lambda ms, md: _get_reflect(reflect, md, "reflect/vtable_read_all")),
+            ("bridge",  lambda ms, md: _get_reflect(reflect, md, "reflect/bridge_read_all")),
+            ("dynamic", lambda ms, md: _get_reflect(reflect, md, "reflect/dynamic_read_all")),
         ]),
     ]:
         table: dict[str, dict[str, float | None]] = {}
@@ -401,6 +415,7 @@ def generate_readme_tables(tables: dict[str, dict[str, dict[str, float | None]]]
         "json-decode": ("JSON decode", "buffa"),
         "reflect-decode": ("Reflection decode", "generated"),
         "reflect-encode": ("Reflection encode", "generated"),
+        "reflect-read": ("Reflection read (decode + scan all fields)", "bridge"),
     }
 
     for chart_name, table in tables.items():
@@ -466,8 +481,9 @@ def main() -> None:
         "build-encode": "Build + Binary Encode Throughput (from borrowed source data)",
         "json-encode": "JSON Encode Throughput",
         "json-decode": "JSON Decode Throughput",
-        "reflect-decode": "Reflection Decode Throughput (generated vs DynamicMessage)",
+        "reflect-decode": "Reflection Decode Throughput (generated vs DynamicMessage vs view)",
         "reflect-encode": "Reflection Encode Throughput (generated vs DynamicMessage)",
+        "reflect-read": "Reflection Read Throughput (decode + scan all fields)",
     }
 
     # Per-message SVGs: one file per (chart, message) so each can use its own
