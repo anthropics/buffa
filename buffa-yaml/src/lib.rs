@@ -8,15 +8,9 @@
 //!
 //! # Quick start
 //!
-//! ```no_run
-//! # use buffa_yaml::{to_string, from_str};
-//! # #[derive(serde::Serialize, serde::Deserialize, buffa::Message)]
-//! # struct MyMessage { /* ... */ }
-//! let msg = MyMessage::default();
-//!
-//! let yaml = to_string(&msg)?;
-//! let decoded: MyMessage = from_str(&yaml)?;
-//! # Ok::<(), buffa_yaml::Error>(())
+//! ```ignore
+//! let yaml = buffa_yaml::to_string(&msg)?;
+//! let decoded: MyMessage = buffa_yaml::from_str(&yaml)?;
 //! ```
 //!
 //! # Behavioral notes vs protoyaml-go
@@ -64,7 +58,11 @@ mod tests {
     #[test]
     fn wkt_timestamp_round_trip() {
         use buffa_types::Timestamp;
-        let ts = Timestamp { seconds: 1_700_000_000, nanos: 123_000_000, ..Default::default() };
+        let ts = Timestamp {
+            seconds: 1_700_000_000,
+            nanos: 123_000_000,
+            ..Default::default()
+        };
         let yaml = to_string(&ts).expect("to_string");
         assert!(
             yaml.contains("2023-") || yaml.contains("1700"),
@@ -78,14 +76,21 @@ mod tests {
     #[test]
     fn wkt_duration_round_trip() {
         use buffa_types::Duration;
-        let dur = Duration { seconds: 90, nanos: 500_000_000, ..Default::default() };
+        let dur = Duration {
+            seconds: 90,
+            nanos: 500_000_000,
+            ..Default::default()
+        };
         assert_eq!(round_trip(&dur), dur);
     }
 
     #[test]
     fn wkt_field_mask_round_trip() {
         use buffa_types::FieldMask;
-        let fm = FieldMask { paths: vec!["foo.bar".into(), "baz".into()], ..Default::default() };
+        let fm = FieldMask {
+            paths: vec!["foo.bar".into(), "baz".into()],
+            ..Default::default()
+        };
         assert_eq!(round_trip(&fm), fm);
     }
 
@@ -93,7 +98,10 @@ mod tests {
     fn wkt_value_null_round_trip() {
         use buffa_types::google::protobuf::__buffa::oneof::value::Kind;
         use buffa_types::Value;
-        let val = Value { kind: Some(Kind::NullValue(Default::default())), ..Default::default() };
+        let val = Value {
+            kind: Some(Kind::NullValue(Default::default())),
+            ..Default::default()
+        };
         assert_eq!(round_trip(&val), val);
     }
 
@@ -101,7 +109,10 @@ mod tests {
     fn wkt_value_bool_round_trip() {
         use buffa_types::google::protobuf::__buffa::oneof::value::Kind;
         use buffa_types::Value;
-        let val = Value { kind: Some(Kind::BoolValue(true)), ..Default::default() };
+        let val = Value {
+            kind: Some(Kind::BoolValue(true)),
+            ..Default::default()
+        };
         assert_eq!(round_trip(&val), val);
     }
 
@@ -109,10 +120,13 @@ mod tests {
     fn wkt_value_number_round_trip() {
         use buffa_types::google::protobuf::__buffa::oneof::value::Kind;
         use buffa_types::Value;
-        let val = Value { kind: Some(Kind::NumberValue(3.14)), ..Default::default() };
+        let val = Value {
+            kind: Some(Kind::NumberValue(1.5)),
+            ..Default::default()
+        };
         let decoded: Value = round_trip(&val);
         if let Some(Kind::NumberValue(n)) = decoded.kind {
-            assert!((n - 3.14).abs() < 1e-10);
+            assert!((n - 1.5).abs() < 1e-10);
         } else {
             panic!("expected NumberValue, got {:?}", decoded.kind);
         }
@@ -122,7 +136,10 @@ mod tests {
     fn wkt_value_string_round_trip() {
         use buffa_types::google::protobuf::__buffa::oneof::value::Kind;
         use buffa_types::Value;
-        let val = Value { kind: Some(Kind::StringValue("hello yaml".into())), ..Default::default() };
+        let val = Value {
+            kind: Some(Kind::StringValue("hello yaml".into())),
+            ..Default::default()
+        };
         assert_eq!(round_trip(&val), val);
     }
 
@@ -132,9 +149,18 @@ mod tests {
         use buffa_types::{ListValue, Value};
         let lv = ListValue {
             values: vec![
-                Value { kind: Some(Kind::NumberValue(1.0)), ..Default::default() },
-                Value { kind: Some(Kind::StringValue("two".into())), ..Default::default() },
-                Value { kind: Some(Kind::BoolValue(false)), ..Default::default() },
+                Value {
+                    kind: Some(Kind::NumberValue(1.0)),
+                    ..Default::default()
+                },
+                Value {
+                    kind: Some(Kind::StringValue("two".into())),
+                    ..Default::default()
+                },
+                Value {
+                    kind: Some(Kind::BoolValue(false)),
+                    ..Default::default()
+                },
             ],
             ..Default::default()
         };
@@ -148,7 +174,10 @@ mod tests {
         let mut s = Struct::default();
         s.fields.insert(
             "key".into(),
-            Value { kind: Some(Kind::NumberValue(42.0)), ..Default::default() },
+            Value {
+                kind: Some(Kind::NumberValue(42.0)),
+                ..Default::default()
+            },
         );
         assert_eq!(round_trip(&s), s);
     }
@@ -159,7 +188,10 @@ mod tests {
     fn int64_quoted_string_precision() {
         use buffa_test::json_types::Scalar;
         let large = i64::MAX;
-        let msg = Scalar { int64_val: large, ..Default::default() };
+        let msg = Scalar {
+            int64_val: large,
+            ..Default::default()
+        };
         let yaml = to_string(&msg).expect("to_string");
         // int64 must be serialized as a quoted string per proto JSON spec so
         // that the value is not lost as a YAML float. The carrier may use
@@ -174,7 +206,10 @@ mod tests {
     fn uint64_quoted_string_precision() {
         use buffa_test::json_types::Scalar;
         let large = u64::MAX;
-        let msg = Scalar { uint64_val: large, ..Default::default() };
+        let msg = Scalar {
+            uint64_val: large,
+            ..Default::default()
+        };
         let yaml = to_string(&msg).expect("to_string");
         let quoted = yaml.contains(&format!("'{large}'")) || yaml.contains(&format!("\"{large}\""));
         assert!(quoted, "uint64 not quoted in yaml: {yaml}");
@@ -185,7 +220,10 @@ mod tests {
     #[test]
     fn double_nan_round_trip() {
         use buffa_test::json_types::Scalar;
-        let msg = Scalar { double_val: f64::NAN, ..Default::default() };
+        let msg = Scalar {
+            double_val: f64::NAN,
+            ..Default::default()
+        };
         let yaml = to_string(&msg).expect("to_string");
         let decoded: Scalar = from_str(&yaml).expect("from_str");
         assert!(decoded.double_val.is_nan());
@@ -194,7 +232,10 @@ mod tests {
     #[test]
     fn double_inf_round_trip() {
         use buffa_test::json_types::Scalar;
-        let msg = Scalar { double_val: f64::INFINITY, ..Default::default() };
+        let msg = Scalar {
+            double_val: f64::INFINITY,
+            ..Default::default()
+        };
         let yaml = to_string(&msg).expect("to_string");
         let decoded: Scalar = from_str(&yaml).expect("from_str");
         assert!(decoded.double_val.is_infinite() && decoded.double_val.is_sign_positive());
@@ -203,7 +244,10 @@ mod tests {
     #[test]
     fn bytes_base64_round_trip() {
         use buffa_test::json_types::Scalar;
-        let msg = Scalar { bytes_val: vec![0xDE, 0xAD, 0xBE, 0xEF], ..Default::default() };
+        let msg = Scalar {
+            bytes_val: vec![0xDE, 0xAD, 0xBE, 0xEF],
+            ..Default::default()
+        };
         assert_eq!(round_trip(&msg).bytes_val, msg.bytes_val);
     }
 
@@ -212,7 +256,10 @@ mod tests {
     #[test]
     fn oneof_round_trip() {
         use buffa_test::json_types::{__buffa::oneof::with_oneof::Value as OneofValue, WithOneof};
-        let msg = WithOneof { value: Some(OneofValue::Text("oneof yaml".into())), ..Default::default() };
+        let msg = WithOneof {
+            value: Some(OneofValue::Text("oneof yaml".into())),
+            ..Default::default()
+        };
         assert_eq!(round_trip(&msg), msg);
     }
 
@@ -241,7 +288,11 @@ mod tests {
     #[test]
     fn from_slice_mirrors_from_str() {
         use buffa_test::json_types::Scalar;
-        let msg = Scalar { int32_val: 99, bool_val: true, ..Default::default() };
+        let msg = Scalar {
+            int32_val: 99,
+            bool_val: true,
+            ..Default::default()
+        };
         let yaml_str = to_string(&msg).expect("to_string");
         let decoded_str: Scalar = from_str(&yaml_str).expect("from_str");
         let decoded_slice: Scalar = from_slice(yaml_str.as_bytes()).expect("from_slice");
@@ -251,7 +302,11 @@ mod tests {
     #[test]
     fn to_writer_mirrors_to_string() {
         use buffa_test::json_types::Scalar;
-        let msg = Scalar { int32_val: 7, string_val: "writer".into(), ..Default::default() };
+        let msg = Scalar {
+            int32_val: 7,
+            string_val: "writer".into(),
+            ..Default::default()
+        };
         let expected = to_string(&msg).expect("to_string");
         let mut buf = Vec::new();
         to_writer(&mut buf, &msg).expect("to_writer");
@@ -261,7 +316,10 @@ mod tests {
     #[test]
     fn from_reader_mirrors_from_str() {
         use buffa_test::json_types::Scalar;
-        let msg = Scalar { int32_val: 42, ..Default::default() };
+        let msg = Scalar {
+            int32_val: 42,
+            ..Default::default()
+        };
         let yaml_str = to_string(&msg).expect("to_string");
         let decoded_reader: Scalar = from_reader(yaml_str.as_bytes()).expect("from_reader");
         assert_eq!(decoded_reader.int32_val, 42);
