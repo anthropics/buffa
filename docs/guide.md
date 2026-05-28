@@ -909,30 +909,37 @@ For larger maps, collect into a `HashMap`: `let m: HashMap<_,_> = view.labels.in
 
 The `'a` lifetime on `PersonView<'a>` ties the view to the input buffer, preventing it from being used across async boundaries, in tower services, or anywhere a `'static` bound is required. `OwnedView<V>` solves this by storing the `bytes::Bytes` buffer alongside the decoded view, producing a `'static + Send + Sync` type:
 
+For each message, codegen also emits a `PersonOwnedView` wrapper — an `OwnedView<PersonView<'static>>` with one accessor method per field, so the common handler path needs no lifetime plumbing at all:
+
 ```rust,ignore
-use buffa::view::OwnedView;
 use bytes::Bytes;
 
 // Decode from a Bytes buffer (e.g., from hyper's request body)
 let bytes: Bytes = receive_body().await;
-let view = OwnedView::<PersonView>::decode(bytes)?;
+let view = PersonOwnedView::decode(bytes)?;
 
-// Direct field access via Deref — same ergonomics as a scoped view
-println!("name: {}", view.name);
-println!("id: {}", view.id);
+// Field accessors — each borrow is tied to `&view`
+println!("name: {}", view.name());
+println!("id: {}", view.id());
+
+// The full PersonView is available when you need struct patterns or iteration
+let person = view.view();
+for tag in person.tags.iter() { /* ... */ }
 
 // Convert to owned if needed for storage or mutation
 let owned: Person = view.to_owned_message();
 ```
 
-`OwnedView` implements `Deref<Target = V>`, so you access view fields directly without `.get()` calls. It also implements `Clone` (cheap — `Bytes` clone is an O(1) refcount bump), `Debug`, `PartialEq`, and `Eq` when the underlying view type does.
+When working with the generic `OwnedView<V>` directly (for example, a request type handed to you by an RPC framework), reach the inner view with `reborrow()`, which ties the borrow to the `OwnedView` itself: `let person = view.reborrow();` then `person.name`. Field access directly on the handle is deliberately not provided — the stored view's lifetime is a synthetic `'static`, and exposing it would let field borrows outlive the buffer they point into.
+
+`OwnedView` implements `Clone` (cheap — `Bytes` clone is an O(1) refcount bump), `Debug`, `PartialEq`, and `Eq` when the underlying view type does; the generated `PersonOwnedView` wrapper forwards `Clone` and `Debug`.
 
 **When to use which:**
 
 | Type | Lifetime | Use case |
 |------|----------|----------|
 | `PersonView<'a>` | Scoped (`'a`) | Synchronous processing, tests, CLI tools — when the buffer outlives all access |
-| `OwnedView<PersonView>` | `'static` | RPC handlers, `tokio::spawn`, tower services, channels — when `'static + Send` is required |
+| `PersonOwnedView` / `OwnedView<PersonView>` | `'static` | RPC handlers, `tokio::spawn`, tower services, channels — when `'static + Send` is required |
 | `Person` | Owned | Building messages, long-lived storage, mutation |
 
 **Decode options** work with `OwnedView` via `decode_with_options`:
@@ -967,9 +974,10 @@ impl MyService for MyServer {
         ctx: Context,
         req: OwnedView<MyRequestView<'static>>,
     ) -> Result<(MyResponse, Context), ConnectError> {
-        let name = req.name;      // &str, zero-copy borrow into the buffer
-        db.lookup(name).await;    // borrow held across .await — fine
-        let count = req.items.len();
+        let view = req.reborrow();   // &MyRequestView<'_>, tied to `req`
+        let name = view.name;        // &str, zero-copy borrow into the buffer
+        db.lookup(name).await;       // borrow held across .await — fine
+        let count = view.items.len();
         Ok((MyResponse { count: count as i32, ..Default::default() }, ctx))
     }
 }
@@ -1007,7 +1015,7 @@ async fn handle(
     req: OwnedView<LogRequestView<'static>>,
 ) -> Result<(Response, Context), ConnectError> {
     // One field needed → clone just that field.
-    let service_name = req.records[0].service_name.to_owned();
+    let service_name = req.reborrow().records[0].service_name.to_owned();
     tokio::spawn(async move { log_metrics(service_name).await });
 
     // Many fields needed → move the whole OwnedView (zero-copy).
@@ -1019,27 +1027,20 @@ async fn handle(
 }
 ```
 
-#### Returning a borrow into the request: `reborrow()`
+#### Why field access goes through `reborrow()`
 
-`OwnedView<V>` stores `V = FooView<'static>`, so `Deref` gives you back
-`&FooView<'static>` — borrows of view fields appear `'static` to the
-compiler. That works for the patterns above, but it falls over the moment
-you want to return a borrow tied to the request's lifetime:
+`OwnedView<V>` stores `V = FooView<'static>` internally — the borrows really
+point into the retained `Bytes` buffer, and the `'static` is synthetic. The
+handle deliberately does not expose `&FooView<'static>` (there is no `Deref`
+impl): if it did, field borrows would *appear* `'static` to the compiler and
+could be kept past the point where the `OwnedView` (and its buffer) is
+dropped.
 
-```rust,ignore
-// Fails to compile: rustc reports "borrowed value does not live long enough"
-// or "lifetime may not live long enough" — `&req.name` looks 'static.
-async fn lookup<'a>(
-    &'a self,
-    ctx: Context,
-    req: OwnedView<RecordRequestView<'static>>,
-) -> Result<(&'a str, Context), ConnectError> {
-    Ok((&req.name, ctx))
-}
-```
-
-Call [`OwnedView::reborrow()`](https://docs.rs/buffa/latest/buffa/view/struct.OwnedView.html#method.reborrow)
-to narrow `'static` down to the OwnedView's real lifetime:
+[`OwnedView::reborrow()`](https://docs.rs/buffa/latest/buffa/view/struct.OwnedView.html#method.reborrow)
+is the access path: it returns the view with the `'static` narrowed down to
+the OwnedView's real lifetime, so the borrow checker enforces exactly how
+long each field borrow may live. Returning a borrow tied to the request's
+lifetime works naturally:
 
 ```rust,ignore
 async fn lookup<'a>(
@@ -1052,10 +1053,11 @@ async fn lookup<'a>(
 }
 ```
 
-The reborrow is a pointer cast, not a copy — `req` is unchanged, drops
-normally, and you can call `reborrow()` repeatedly. This pattern is what
-to reach for whenever you see a borrow-checker error on a view field that
-you'd otherwise resort to `.to_owned()` for.
+The reborrow is a plain lifetime coercion, not a copy — `req` is unchanged,
+drops normally, and you can call `reborrow()` repeatedly (it compiles to
+nothing). The generated `FooOwnedView` wrapper does the same thing under the
+hood: each accessor method is `self.0.reborrow().field`, so `owned.name()`
+and `owned.reborrow().name` cost exactly the same.
 
 ### Encoding from views (`ViewEncode`)
 

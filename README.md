@@ -144,8 +144,8 @@ let view = MyMessageView::decode_view(&bytes).unwrap();
 println!("name: {}", view.name); // &str, no allocation
 
 // Decode (owned view — zero-copy + 'static, for async/RPC use)
-let owned_view = OwnedView::<MyMessageView>::decode(bytes.into()).unwrap();
-println!("name: {}", owned_view.name); // still zero-copy, but 'static + Send
+let owned_view = MyMessageOwnedView::decode(bytes.into()).unwrap();
+println!("name: {}", owned_view.name()); // still zero-copy, but 'static + Send
 ```
 
 ### JSON serialization (with `json` feature)

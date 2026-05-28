@@ -254,13 +254,11 @@ let owned: Person = view.to_owned_message();
 
 ### `OwnedView` for async/RPC use
 
-`OwnedView<V>` wraps a view with its backing `Bytes` buffer, producing a `'static + Send + Sync` type that works with tower, `tokio::spawn`, and RPC frameworks:
+`OwnedView<V>` wraps a view with its backing `Bytes` buffer, producing a `'static + Send + Sync` type that works with tower, `tokio::spawn`, and RPC frameworks. Codegen emits a per-message `PersonOwnedView` wrapper with field accessor methods:
 
 ```rust,ignore
-use buffa::view::OwnedView;
-
-let view = OwnedView::<PersonView>::decode(bytes)?;
-println!("name: {}", view.name);  // Deref, zero-copy, 'static
+let view = PersonOwnedView::decode(bytes)?;
+println!("name: {}", view.name());  // accessor, zero-copy, 'static
 ```
 
 ### Unknown field preservation

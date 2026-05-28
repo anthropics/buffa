@@ -8,6 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **Generated `FooOwnedView` wrapper types.** When views are generated, each
+  message now also gets a `FooOwnedView` — re-exported at the package root
+  next to `Foo` and `FooView` (canonical path `__buffa::view::FooOwnedView`):
+  a self-contained `'static` handle wrapping `OwnedView<FooView<'static>>`
+  with one accessor method per field (`owned.name()`, `owned.id()`, …). Every
+  accessor borrows from `&self`, so field data can never outlive the
+  underlying buffer, and the handle stays `Send + Sync` for async handlers and
+  spawned tasks. The wrapper forwards `decode` / `decode_with_options` /
+  `from_owned` / `to_owned_message` / `bytes` / `into_bytes`, exposes the full
+  view via `view()`, converts to and from the raw `OwnedView`, and serializes
+  to protobuf JSON when `generate_json` is enabled. A field or oneof whose
+  name collides with one of the wrapper's reserved method names keeps working
+  through `view()`; its accessor is skipped with a build warning
+  (`CodeGenWarning::OwnedViewAccessorSuppressed`).
 - **Vtable reflection mode.** Generated types now implement
   `buffa_descriptor::reflect::ReflectMessage` directly — on both the owned
   structs and the zero-copy view types — so `foo.reflect()` borrows `foo` in
@@ -36,6 +50,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **`OwnedView<V>` no longer implements `Deref<Target = V>`.** **Breaking.**
+  The `Deref` impl exposed the inner view as `FooView<'static>`, so borrowed
+  fields appeared `'static` to the compiler and could be held past the point
+  where the `OwnedView` (and the buffer they point into) was dropped — safe
+  code could end up reading freed memory. In practice this required the
+  calling application to deliberately store a field reference beyond the
+  handle's lifetime, so the practical exposure is limited, but the API should
+  not allow it at all. Field access now goes through `reborrow()` (one extra
+  call per scope: `let person = owned.reborrow(); person.name`) or, more
+  conveniently, the new generated `FooOwnedView` accessor methods, both of
+  which tie every borrow to the handle. Serializing the handle directly
+  (`serde_json::to_string(&owned_view)`) is unaffected.
 - **`generate_reflection(true)` now selects vtable mode** (previously bridge).
   The reflective API is unchanged (`foo.reflect().get(fd)`), so call sites do not
   change, but generated code grows by one `impl ReflectMessage` per type. Opt
