@@ -536,7 +536,8 @@ mod owned_view {
     #[test]
     fn blanket_impl_matches_owned() {
         // `OwnedView<V>` must implement `Serialize` via the blanket impl so
-        // that `serde_json::to_string(&owned_view)` works without `&*`.
+        // that `serde_json::to_string(&owned_view)` works on the handle
+        // directly (no reborrow needed).
         let owned = Scalars {
             i32: 99,
             s: "owned_view".into(),
@@ -548,7 +549,7 @@ mod owned_view {
             OwnedView::<ScalarsView<'static>>::decode(bytes).expect("decode OwnedView");
 
         let json_owned_view = serde_json::to_string(&owned_view).expect("serialize OwnedView");
-        let json_view = serde_json::to_string(&*owned_view).expect("serialize &view");
+        let json_view = serde_json::to_string(owned_view.reborrow()).expect("serialize &view");
         let json_owned = serde_json::to_string(&owned).expect("serialize owned");
 
         assert_eq!(json_owned_view, json_owned);

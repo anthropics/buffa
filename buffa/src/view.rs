@@ -40,11 +40,11 @@
 //! # Reborrowing from `OwnedView`
 //!
 //! [`OwnedView<V>`](OwnedView) wraps a decoded view with the lifetime erased
-//! to `'static`. Use [`Deref`](core::ops::Deref) (`&*owned` / `owned.name`)
-//! for inline field reads within the same scope. Use
-//! [`OwnedView::reborrow`] when you need to assign the view to a binding,
-//! pass it to a function with a non-`'static` lifetime parameter, or return
-//! a borrowed field:
+//! to `'static`. The inner view is reached through
+//! [`OwnedView::reborrow`], which ties the borrow to the `OwnedView` itself —
+//! field reads, assigning the view to a binding, passing it to a function
+//! with a non-`'static` lifetime parameter, and returning a borrowed field
+//! all go through the same call:
 //!
 //! ```no_run
 //! # use buffa::view::OwnedView;
@@ -55,11 +55,13 @@
 //! }
 //! ```
 //!
-//! `Deref` alone gives `&PersonView<'static>`, so field borrows *appear*
-//! `'static` to the compiler — this is unsound to rely on outside the scope
-//! that holds the `OwnedView`. Always use `reborrow` when the borrow needs
-//! to outlive the current expression. See [`OwnedView`] for a full
-//! side-by-side comparison.
+//! The view is deliberately not exposed as `&V` (e.g. via `Deref`): `V` is
+//! `FooView<'static>`, so its borrowed fields would *appear* `'static` to the
+//! compiler and could outlive the buffer they point into. `reborrow` narrows
+//! that synthetic `'static` down to the `OwnedView`'s real lifetime. Generated
+//! code also provides a per-message `FooOwnedView` wrapper with field accessor
+//! methods, so handler code rarely needs to call `reborrow` directly. See
+//! [`OwnedView`] for details.
 //!
 //! # Generated code shape
 //!
@@ -893,9 +895,9 @@ impl<'a> UnknownFieldsView<'a> {
 /// An owned, `'static` container for a decoded message view.
 ///
 /// `OwnedView` holds a [`Bytes`] buffer alongside the decoded view, ensuring
-/// the view's borrows remain valid for the container's lifetime. It implements
-/// [`Deref<Target = V>`](core::ops::Deref), so view fields are accessed
-/// directly — no `.get()` or unwrapping needed.
+/// the view's borrows remain valid for the container's lifetime. The inner
+/// view is reached through [`reborrow()`](OwnedView::reborrow), which returns
+/// it with a lifetime tied to `&self`.
 ///
 /// This type is `Send + Sync + 'static`, making it suitable for use across
 /// async boundaries, in tower services, and anywhere a `'static` bound is
@@ -914,48 +916,58 @@ impl<'a> UnknownFieldsView<'a> {
 /// let bytes: Bytes = receive_request_body().await;
 /// let view = OwnedView::<PersonView>::decode(bytes)?;
 ///
-/// // Direct field access via Deref — no .get() needed
-/// println!("name: {}", view.name);
-/// println!("id: {}", view.id);
+/// // Field access through reborrow — the borrow is tied to `view`.
+/// let person = view.reborrow();
+/// println!("name: {}", person.name);
+/// println!("id: {}", person.id);
 ///
 /// // Convert to owned if you need to store or mutate
 /// let owned: Person = view.to_owned_message();
 /// ```
 ///
+/// Generated code additionally provides a per-message `FooOwnedView` wrapper
+/// around `OwnedView<FooView<'static>>` with per-field accessor methods
+/// (`owned.name()`, `owned.id()`, …), so most handler code never touches
+/// `OwnedView` or `reborrow` directly.
+///
 /// For scoped access where the buffer's lifetime is known, use
 /// [`MessageView::decode_view`] directly — it has zero overhead beyond the
 /// decode itself.
 ///
-/// # `Deref` vs `reborrow`
+/// # Why field access goes through `reborrow`
 ///
-/// `OwnedView` implements [`Deref<Target = V>`](core::ops::Deref), so fields
-/// are accessible as `view.name`, `view.id`, etc. This is fine for reads that
-/// stay within the same scope as the `OwnedView`. However, `Deref` exposes
-/// `V = FooView<'static>`, so borrowed fields *appear* `'static` to the
-/// compiler — relying on that outside the owning scope is unsound.
-///
-/// **If you see `error[E0597]: borrowed value does not live long enough` or
-/// `lifetime may not live long enough` on a view field, reach for
-/// [`reborrow()`](OwnedView::reborrow).** It narrows the synthetic `'static`
-/// down to the OwnedView's real lifetime, letting you return view fields
-/// from a function or store them in a struct that outlives the immediate
-/// scope.
-///
-/// Use [`reborrow()`](OwnedView::reborrow) whenever the borrow needs to
-/// outlive the current expression — for example, storing the view in a local,
-/// passing it to a `'a`-bounded function, or returning a field from a handler:
+/// `OwnedView` stores `V = FooView<'static>`: the view's borrows really point
+/// into `self`'s [`Bytes`] buffer, and the `'static` is a synthetic lifetime
+/// established by the constructor. Exposing `&V` directly (for example via a
+/// `Deref` impl) would let borrowed fields *appear* `'static` to the
+/// compiler and escape the `OwnedView`'s scope, dangling once it drops.
+/// [`reborrow()`](OwnedView::reborrow) narrows the synthetic `'static` down
+/// to the `OwnedView`'s real lifetime, so the borrow checker enforces the
+/// actual validity of every field borrow:
 ///
 /// ```no_run
 /// # use buffa::view::OwnedView;
 /// # use buffa::__doctest_fixtures::PersonView;
-/// // Deref: fine for inline reads.
+/// // Inline reads: reborrow once, then use plain field access.
 /// fn log(owned: &OwnedView<PersonView<'static>>) {
-///     println!("{}", owned.name);  // OK — borrow dropped before function returns
+///     let person = owned.reborrow();
+///     println!("{}", person.name);
 /// }
 ///
-/// // reborrow: required when returning a borrowed field.
+/// // Returning a borrowed field: the result is tied to the OwnedView.
 /// fn name<'a>(owned: &'a OwnedView<PersonView<'static>>) -> &'a str {
 ///     owned.reborrow().name  // &'a str tied to the OwnedView's lifetime
+/// }
+/// ```
+///
+/// View fields are not reachable directly on the handle — this fails to
+/// compile rather than handing out a `'static` borrow into the buffer:
+///
+/// ```compile_fail,E0609
+/// # use buffa::view::OwnedView;
+/// # use buffa::__doctest_fixtures::PersonView;
+/// fn field(owned: &OwnedView<PersonView<'static>>) -> &'static str {
+///     owned.name // error[E0609]: no field `name` on type `&OwnedView<...>`
 /// }
 /// ```
 ///
@@ -1180,14 +1192,10 @@ where
     }
 }
 
-impl<V> core::ops::Deref for OwnedView<V> {
-    type Target = V;
-
-    #[inline]
-    fn deref(&self) -> &V {
-        &self.view // Deref through ManuallyDrop is transparent
-    }
-}
+// Deliberately NO `Deref<Target = V>` impl: `V` is `FooView<'static>`, so a
+// `&V` return would expose the synthetic `'static` on every borrowed field
+// and let it escape the OwnedView's scope (dangling once the buffer drops).
+// All access goes through `reborrow()`, which ties the borrow to `&self`.
 
 impl<V> core::fmt::Debug for OwnedView<V>
 where
@@ -1229,8 +1237,8 @@ impl<V> Eq for OwnedView<V> where V: Eq {}
 /// Serialize an `OwnedView<V>` by delegating to the inner view's `Serialize`
 /// impl.
 ///
-/// Equivalent to serializing `&*owned_view` directly, so
-/// `serde_json::to_string(&owned_view)` works without an explicit deref. When
+/// Equivalent to serializing `owned_view.reborrow()` directly, so
+/// `serde_json::to_string(&owned_view)` works on the handle itself. When
 /// `V` is a buffa-generated view with `generate_json` enabled, this produces
 /// protobuf JSON; the impl itself just forwards to whatever `V::serialize`
 /// does.
@@ -1239,7 +1247,7 @@ impl<V> Eq for OwnedView<V> where V: Eq {}
 #[cfg(feature = "json")]
 impl<V: ::serde::Serialize> ::serde::Serialize for OwnedView<V> {
     fn serialize<S: ::serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        ::serde::Serialize::serialize(&**self, s)
+        ::serde::Serialize::serialize(&*self.view, s)
     }
 }
 
@@ -1835,13 +1843,13 @@ mod tests {
     }
 
     #[test]
-    fn owned_view_decode_and_deref() {
+    fn owned_view_decode_and_reborrow() {
         let bytes = encode_simple(42, "hello");
         let view = OwnedView::<SimpleMessageView<'static>>::decode(bytes).unwrap();
 
-        // Access via Deref — no .get() needed
-        assert_eq!(view.id, 42);
-        assert_eq!(view.name, "hello");
+        // Field access via reborrow — the borrow is tied to `view`.
+        assert_eq!(view.reborrow().id, 42);
+        assert_eq!(view.reborrow().name, "hello");
     }
 
     #[test]
@@ -1894,8 +1902,8 @@ mod tests {
     fn owned_view_empty_message() {
         let bytes = Bytes::from_static(&[]);
         let view = OwnedView::<SimpleMessageView<'static>>::decode(bytes).unwrap();
-        assert_eq!(view.id, 0);
-        assert_eq!(view.name, "");
+        assert_eq!(view.reborrow().id, 0);
+        assert_eq!(view.reborrow().name, "");
     }
 
     #[test]
@@ -1911,8 +1919,8 @@ mod tests {
             name: "roundtrip".into(),
         };
         let view = OwnedView::<SimpleMessageView<'static>>::from_owned(&msg).expect("from_owned");
-        assert_eq!(view.id, 99);
-        assert_eq!(view.name, "roundtrip");
+        assert_eq!(view.reborrow().id, 99);
+        assert_eq!(view.reborrow().name, "roundtrip");
 
         let back = view.to_owned_message();
         assert_eq!(back, msg);
@@ -1924,8 +1932,8 @@ mod tests {
         let opts = crate::DecodeOptions::new().with_max_message_size(1024);
         let view =
             OwnedView::<SimpleMessageView<'static>>::decode_with_options(bytes, &opts).unwrap();
-        assert_eq!(view.id, 42);
-        assert_eq!(view.name, "opts");
+        assert_eq!(view.reborrow().id, 42);
+        assert_eq!(view.reborrow().name, "opts");
     }
 
     #[test]
@@ -1942,8 +1950,8 @@ mod tests {
         let view = OwnedView::<SimpleMessageView<'static>>::decode(bytes).unwrap();
         let cloned = view.clone();
         drop(view); // drop original — clone must still be valid
-        assert_eq!(cloned.id, 42);
-        assert_eq!(cloned.name, "cloned");
+        assert_eq!(cloned.reborrow().id, 42);
+        assert_eq!(cloned.reborrow().name, "cloned");
     }
 
     #[test]
@@ -2035,10 +2043,10 @@ mod tests {
         let buf = view.bytes();
         let buf_start = buf.as_ptr() as usize;
         let buf_end = buf_start + buf.len();
-        let name_ptr = view.name.as_ptr() as usize;
+        let name_ptr = view.reborrow().name.as_ptr() as usize;
         assert!(
             (buf_start..buf_end).contains(&name_ptr),
-            "view.name should point into the Bytes buffer"
+            "view name should point into the Bytes buffer"
         );
     }
 
@@ -2052,8 +2060,8 @@ mod tests {
             .map(|_| {
                 let v = Arc::clone(&view);
                 std::thread::spawn(move || {
-                    assert_eq!(v.id, 42);
-                    assert_eq!(v.name, "concurrent");
+                    assert_eq!(v.reborrow().id, 42);
+                    assert_eq!(v.reborrow().name, "concurrent");
                 })
             })
             .collect();
@@ -2072,8 +2080,8 @@ mod tests {
             let decoded = SimpleMessageView::decode_view(slice).unwrap();
             OwnedView::<SimpleMessageView<'static>>::from_parts(bytes, decoded)
         };
-        assert_eq!(view.id, 42);
-        assert_eq!(view.name, "parts");
+        assert_eq!(view.reborrow().id, 42);
+        assert_eq!(view.reborrow().name, "parts");
     }
 
     // ── ViewReborrow / OwnedView::reborrow ───────────────────────────────
@@ -2085,8 +2093,10 @@ mod tests {
         let reborrowed: &SimpleMessageView<'_> = owned.reborrow();
         assert_eq!(reborrowed.id, 7);
         assert_eq!(reborrowed.name, "hello");
-        // The reborrowed &str must point into the same Bytes buffer, not a copy.
-        assert!(core::ptr::eq(reborrowed.name.as_ptr(), owned.name.as_ptr()));
+        // The reborrowed &str must point into the Bytes buffer, not a copy.
+        let buf_start = owned.bytes().as_ptr() as usize;
+        let buf_end = buf_start + owned.bytes().len();
+        assert!((buf_start..buf_end).contains(&(reborrowed.name.as_ptr() as usize)));
     }
 
     #[test]
@@ -2097,6 +2107,6 @@ mod tests {
         let r2: &SimpleMessageView<'_> = owned.reborrow();
         assert_eq!(r1.name, r2.name);
         // `owned` still usable here
-        assert_eq!(owned.name, "world");
+        assert_eq!(owned.reborrow().name, "world");
     }
 }

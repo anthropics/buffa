@@ -373,9 +373,8 @@ mod tests {
         );
 
         // OwnedView path: the inherent OwnedView::to_owned_message routes
-        // through to_owned_from_source(Some(&self.bytes)). This is also the
-        // regression pin for inherent-method resolution shadowing the
-        // (full-copy) trait method reachable via Deref.
+        // through to_owned_from_source(Some(&self.bytes)), so the bytes field
+        // is a zero-copy slice_ref into the retained buffer.
         let ov = OwnedView::<AnyView<'static>>::decode(buf.clone()).unwrap();
         let owned2 = ov.to_owned_message();
         assert_eq!(owned2.value, src.value);
