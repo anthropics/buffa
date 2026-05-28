@@ -1772,4 +1772,7 @@ pub mod code_generator_response {
     #[cfg(feature = "views")]
     #[doc(inline)]
     pub use super::__buffa::view::code_generator_response::FileView;
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::code_generator_response::FileOwnedView;
 }

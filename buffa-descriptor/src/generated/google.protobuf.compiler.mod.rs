@@ -46,10 +46,19 @@ pub mod __buffa {
 pub use self::__buffa::view::VersionView;
 #[cfg(feature = "views")]
 #[doc(inline)]
+pub use self::__buffa::view::VersionOwnedView;
+#[cfg(feature = "views")]
+#[doc(inline)]
 pub use self::__buffa::view::CodeGeneratorRequestView;
 #[cfg(feature = "views")]
 #[doc(inline)]
+pub use self::__buffa::view::CodeGeneratorRequestOwnedView;
+#[cfg(feature = "views")]
+#[doc(inline)]
 pub use self::__buffa::view::CodeGeneratorResponseView;
+#[cfg(feature = "views")]
+#[doc(inline)]
+pub use self::__buffa::view::CodeGeneratorResponseOwnedView;
 #[cfg(any(feature = "json", feature = "text"))]
 #[doc(inline)]
 pub use self::__buffa::register_types;

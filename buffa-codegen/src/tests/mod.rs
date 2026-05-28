@@ -56,6 +56,7 @@ mod generation;
 mod idiomatic_enums;
 mod json_codegen;
 mod naming;
+mod owned_view_codegen;
 mod proto2;
 mod reexports;
 mod reflect_view;

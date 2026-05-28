@@ -203,6 +203,114 @@ impl ::buffa::ViewReborrow for FileDescriptorSetView<'static> {
         this
     }
 }
+/** Self-contained, `'static` owned view of a `FileDescriptorSet` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`FileDescriptorSetView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`FileDescriptorSetView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct FileDescriptorSetOwnedView(
+    ::buffa::OwnedView<FileDescriptorSetView<'static>>,
+);
+impl FileDescriptorSetOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FileDescriptorSetOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FileDescriptorSetOwnedView(
+                ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+            ),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::FileDescriptorSet,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FileDescriptorSetOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`FileDescriptorSetView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &FileDescriptorSetView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::FileDescriptorSet {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Field 1: `file`
+    #[must_use]
+    pub fn file(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::FileDescriptorProtoView<'_>,
+    > {
+        &self.0.reborrow().file
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<FileDescriptorSetView<'static>>>
+for FileDescriptorSetOwnedView {
+    fn from(inner: ::buffa::OwnedView<FileDescriptorSetView<'static>>) -> Self {
+        FileDescriptorSetOwnedView(inner)
+    }
+}
+impl ::core::convert::From<FileDescriptorSetOwnedView>
+for ::buffa::OwnedView<FileDescriptorSetView<'static>> {
+    fn from(wrapper: FileDescriptorSetOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for FileDescriptorSetOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
+    }
+}
 /// Describes a complete .proto file.
 #[derive(Clone, Debug, Default)]
 pub struct FileDescriptorProtoView<'a> {
@@ -969,6 +1077,234 @@ impl ::buffa::ViewReborrow for FileDescriptorProtoView<'static> {
         this
     }
 }
+/** Self-contained, `'static` owned view of a `FileDescriptorProto` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`FileDescriptorProtoView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`FileDescriptorProtoView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct FileDescriptorProtoOwnedView(
+    ::buffa::OwnedView<FileDescriptorProtoView<'static>>,
+);
+impl FileDescriptorProtoOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FileDescriptorProtoOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FileDescriptorProtoOwnedView(
+                ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+            ),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::FileDescriptorProto,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FileDescriptorProtoOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`FileDescriptorProtoView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &FileDescriptorProtoView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::FileDescriptorProto {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// file name, relative to root of source tree
+    ///
+    /// Field 1: `name`
+    #[must_use]
+    pub fn name(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().name
+    }
+    /// e.g. "foo", "foo.bar", etc.
+    ///
+    /// Field 2: `package`
+    #[must_use]
+    pub fn package(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().package
+    }
+    /// Names of files imported by this file.
+    ///
+    /// Field 3: `dependency`
+    #[must_use]
+    pub fn dependency(&self) -> &::buffa::RepeatedView<'_, &'_ str> {
+        &self.0.reborrow().dependency
+    }
+    /// Indexes of the public imported files in the dependency list above.
+    ///
+    /// Field 10: `public_dependency`
+    #[must_use]
+    pub fn public_dependency(&self) -> &::buffa::RepeatedView<'_, i32> {
+        &self.0.reborrow().public_dependency
+    }
+    /// Indexes of the weak imported files in the dependency list.
+    /// For Google-internal migration only. Do not use.
+    ///
+    /// Field 11: `weak_dependency`
+    #[must_use]
+    pub fn weak_dependency(&self) -> &::buffa::RepeatedView<'_, i32> {
+        &self.0.reborrow().weak_dependency
+    }
+    /// Names of files imported by this file purely for the purpose of providing
+    /// option extensions. These are excluded from the dependency list above.
+    ///
+    /// Field 15: `option_dependency`
+    #[must_use]
+    pub fn option_dependency(&self) -> &::buffa::RepeatedView<'_, &'_ str> {
+        &self.0.reborrow().option_dependency
+    }
+    /// All top-level definitions in this file.
+    ///
+    /// Field 4: `message_type`
+    #[must_use]
+    pub fn message_type(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::DescriptorProtoView<'_>,
+    > {
+        &self.0.reborrow().message_type
+    }
+    /// Field 5: `enum_type`
+    #[must_use]
+    pub fn enum_type(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::EnumDescriptorProtoView<'_>,
+    > {
+        &self.0.reborrow().enum_type
+    }
+    /// Field 6: `service`
+    #[must_use]
+    pub fn service(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::ServiceDescriptorProtoView<'_>,
+    > {
+        &self.0.reborrow().service
+    }
+    /// Field 7: `extension`
+    #[must_use]
+    pub fn extension(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::FieldDescriptorProtoView<'_>,
+    > {
+        &self.0.reborrow().extension
+    }
+    /// Field 8: `options`
+    #[must_use]
+    pub fn options(
+        &self,
+    ) -> &::buffa::MessageFieldView<super::super::__buffa::view::FileOptionsView<'_>> {
+        &self.0.reborrow().options
+    }
+    /// This field contains optional information about the original source code.
+    /// You may safely remove this entire field without harming runtime
+    /// functionality of the descriptors -- the information is needed only by
+    /// development tools.
+    ///
+    /// Field 9: `source_code_info`
+    #[must_use]
+    pub fn source_code_info(
+        &self,
+    ) -> &::buffa::MessageFieldView<
+        super::super::__buffa::view::SourceCodeInfoView<'_>,
+    > {
+        &self.0.reborrow().source_code_info
+    }
+    /// The syntax of the proto file.
+    /// The supported values are "proto2", "proto3", and "editions".
+    ///
+    /// If `edition` is present, this value must be "editions".
+    /// WARNING: This field should only be used by protobuf plugins or special
+    /// cases like the proto compiler. Other uses are discouraged and
+    /// developers should rely on the protoreflect APIs for their client language.
+    ///
+    /// Field 12: `syntax`
+    #[must_use]
+    pub fn syntax(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().syntax
+    }
+    /// The edition of the proto file.
+    /// WARNING: This field should only be used by protobuf plugins or special
+    /// cases like the proto compiler. Other uses are discouraged and
+    /// developers should rely on the protoreflect APIs for their client language.
+    ///
+    /// Field 14: `edition`
+    #[must_use]
+    pub fn edition(&self) -> ::core::option::Option<super::super::Edition> {
+        self.0.reborrow().edition
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<FileDescriptorProtoView<'static>>>
+for FileDescriptorProtoOwnedView {
+    fn from(inner: ::buffa::OwnedView<FileDescriptorProtoView<'static>>) -> Self {
+        FileDescriptorProtoOwnedView(inner)
+    }
+}
+impl ::core::convert::From<FileDescriptorProtoOwnedView>
+for ::buffa::OwnedView<FileDescriptorProtoView<'static>> {
+    fn from(wrapper: FileDescriptorProtoOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for FileDescriptorProtoOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
+    }
+}
 /// Describes a message type.
 #[derive(Clone, Debug, Default)]
 pub struct DescriptorProtoView<'a> {
@@ -1625,6 +1961,201 @@ impl ::buffa::ViewReborrow for DescriptorProtoView<'static> {
         this
     }
 }
+/** Self-contained, `'static` owned view of a `DescriptorProto` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`DescriptorProtoView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`DescriptorProtoView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct DescriptorProtoOwnedView(::buffa::OwnedView<DescriptorProtoView<'static>>);
+impl DescriptorProtoOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            DescriptorProtoOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            DescriptorProtoOwnedView(
+                ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+            ),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::DescriptorProto,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            DescriptorProtoOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`DescriptorProtoView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &DescriptorProtoView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::DescriptorProto {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Field 1: `name`
+    #[must_use]
+    pub fn name(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().name
+    }
+    /// Field 2: `field`
+    #[must_use]
+    pub fn field(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::FieldDescriptorProtoView<'_>,
+    > {
+        &self.0.reborrow().field
+    }
+    /// Field 6: `extension`
+    #[must_use]
+    pub fn extension(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::FieldDescriptorProtoView<'_>,
+    > {
+        &self.0.reborrow().extension
+    }
+    /// Field 3: `nested_type`
+    #[must_use]
+    pub fn nested_type(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::DescriptorProtoView<'_>,
+    > {
+        &self.0.reborrow().nested_type
+    }
+    /// Field 4: `enum_type`
+    #[must_use]
+    pub fn enum_type(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::EnumDescriptorProtoView<'_>,
+    > {
+        &self.0.reborrow().enum_type
+    }
+    /// Field 5: `extension_range`
+    #[must_use]
+    pub fn extension_range(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::descriptor_proto::ExtensionRangeView<'_>,
+    > {
+        &self.0.reborrow().extension_range
+    }
+    /// Field 8: `oneof_decl`
+    #[must_use]
+    pub fn oneof_decl(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::OneofDescriptorProtoView<'_>,
+    > {
+        &self.0.reborrow().oneof_decl
+    }
+    /// Field 7: `options`
+    #[must_use]
+    pub fn options(
+        &self,
+    ) -> &::buffa::MessageFieldView<
+        super::super::__buffa::view::MessageOptionsView<'_>,
+    > {
+        &self.0.reborrow().options
+    }
+    /// Field 9: `reserved_range`
+    #[must_use]
+    pub fn reserved_range(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::descriptor_proto::ReservedRangeView<'_>,
+    > {
+        &self.0.reborrow().reserved_range
+    }
+    /// Reserved field names, which may not be used by fields in the same message.
+    /// A given name may only be reserved once.
+    ///
+    /// Field 10: `reserved_name`
+    #[must_use]
+    pub fn reserved_name(&self) -> &::buffa::RepeatedView<'_, &'_ str> {
+        &self.0.reborrow().reserved_name
+    }
+    /// Support for `export` and `local` keywords on enums.
+    ///
+    /// Field 11: `visibility`
+    #[must_use]
+    pub fn visibility(&self) -> ::core::option::Option<super::super::SymbolVisibility> {
+        self.0.reborrow().visibility
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<DescriptorProtoView<'static>>>
+for DescriptorProtoOwnedView {
+    fn from(inner: ::buffa::OwnedView<DescriptorProtoView<'static>>) -> Self {
+        DescriptorProtoOwnedView(inner)
+    }
+}
+impl ::core::convert::From<DescriptorProtoOwnedView>
+for ::buffa::OwnedView<DescriptorProtoView<'static>> {
+    fn from(wrapper: DescriptorProtoOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for DescriptorProtoOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
+    }
+}
 pub mod descriptor_proto {
     #[allow(unused_imports)]
     use super::*;
@@ -1912,6 +2443,127 @@ pub mod descriptor_proto {
             this
         }
     }
+    /** Self-contained, `'static` owned view of a `ExtensionRange` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`ExtensionRangeView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`ExtensionRangeView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+    #[derive(Clone, Debug)]
+    pub struct ExtensionRangeOwnedView(::buffa::OwnedView<ExtensionRangeView<'static>>);
+    impl ExtensionRangeOwnedView {
+        /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+        ///
+        /// The view borrows directly from the buffer's data; the buffer is
+        /// retained inside the returned handle.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+        /// protobuf data.
+        pub fn decode(
+            bytes: ::buffa::bytes::Bytes,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                ExtensionRangeOwnedView(::buffa::OwnedView::decode(bytes)?),
+            )
+        }
+        /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+        /// max message size).
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+        /// exceeds the configured limits.
+        pub fn decode_with_options(
+            bytes: ::buffa::bytes::Bytes,
+            opts: &::buffa::DecodeOptions,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                ExtensionRangeOwnedView(
+                    ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+                ),
+            )
+        }
+        /// Build from an owned message via an encode → decode round-trip.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+        /// somehow invalid (should not happen for well-formed messages).
+        pub fn from_owned(
+            msg: &super::super::super::descriptor_proto::ExtensionRange,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                ExtensionRangeOwnedView(::buffa::OwnedView::from_owned(msg)?),
+            )
+        }
+        /// Borrow the full [`ExtensionRangeView`] with its lifetime tied to `&self`.
+        #[must_use]
+        pub fn view(&self) -> &ExtensionRangeView<'_> {
+            self.0.reborrow()
+        }
+        /// Convert to the owned message type.
+        #[must_use]
+        pub fn to_owned_message(
+            &self,
+        ) -> super::super::super::descriptor_proto::ExtensionRange {
+            self.0.to_owned_message()
+        }
+        /// The underlying bytes buffer.
+        #[must_use]
+        pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+            self.0.bytes()
+        }
+        /// Consume the handle, returning the underlying bytes buffer.
+        #[must_use]
+        pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+            self.0.into_bytes()
+        }
+        /// Inclusive.
+        ///
+        /// Field 1: `start`
+        #[must_use]
+        pub fn start(&self) -> ::core::option::Option<i32> {
+            self.0.reborrow().start
+        }
+        /// Exclusive.
+        ///
+        /// Field 2: `end`
+        #[must_use]
+        pub fn end(&self) -> ::core::option::Option<i32> {
+            self.0.reborrow().end
+        }
+        /// Field 3: `options`
+        #[must_use]
+        pub fn options(
+            &self,
+        ) -> &::buffa::MessageFieldView<
+            super::super::super::__buffa::view::ExtensionRangeOptionsView<'_>,
+        > {
+            &self.0.reborrow().options
+        }
+    }
+    impl ::core::convert::From<::buffa::OwnedView<ExtensionRangeView<'static>>>
+    for ExtensionRangeOwnedView {
+        fn from(inner: ::buffa::OwnedView<ExtensionRangeView<'static>>) -> Self {
+            ExtensionRangeOwnedView(inner)
+        }
+    }
+    impl ::core::convert::From<ExtensionRangeOwnedView>
+    for ::buffa::OwnedView<ExtensionRangeView<'static>> {
+        fn from(wrapper: ExtensionRangeOwnedView) -> Self {
+            wrapper.0
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::serde::Serialize for ExtensionRangeOwnedView {
+        fn serialize<__S: ::serde::Serializer>(
+            &self,
+            __s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
+            ::serde::Serialize::serialize(&self.0, __s)
+        }
+    }
     /// Range of reserved tag numbers. Reserved tag numbers may not be used by
     /// fields or extension ranges in the same message. Reserved ranges may
     /// not overlap.
@@ -2137,6 +2789,118 @@ pub mod descriptor_proto {
         type Reborrowed<'b> = ReservedRangeView<'b>;
         fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
             this
+        }
+    }
+    /** Self-contained, `'static` owned view of a `ReservedRange` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`ReservedRangeView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`ReservedRangeView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+    #[derive(Clone, Debug)]
+    pub struct ReservedRangeOwnedView(::buffa::OwnedView<ReservedRangeView<'static>>);
+    impl ReservedRangeOwnedView {
+        /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+        ///
+        /// The view borrows directly from the buffer's data; the buffer is
+        /// retained inside the returned handle.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+        /// protobuf data.
+        pub fn decode(
+            bytes: ::buffa::bytes::Bytes,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                ReservedRangeOwnedView(::buffa::OwnedView::decode(bytes)?),
+            )
+        }
+        /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+        /// max message size).
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+        /// exceeds the configured limits.
+        pub fn decode_with_options(
+            bytes: ::buffa::bytes::Bytes,
+            opts: &::buffa::DecodeOptions,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                ReservedRangeOwnedView(
+                    ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+                ),
+            )
+        }
+        /// Build from an owned message via an encode → decode round-trip.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+        /// somehow invalid (should not happen for well-formed messages).
+        pub fn from_owned(
+            msg: &super::super::super::descriptor_proto::ReservedRange,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                ReservedRangeOwnedView(::buffa::OwnedView::from_owned(msg)?),
+            )
+        }
+        /// Borrow the full [`ReservedRangeView`] with its lifetime tied to `&self`.
+        #[must_use]
+        pub fn view(&self) -> &ReservedRangeView<'_> {
+            self.0.reborrow()
+        }
+        /// Convert to the owned message type.
+        #[must_use]
+        pub fn to_owned_message(
+            &self,
+        ) -> super::super::super::descriptor_proto::ReservedRange {
+            self.0.to_owned_message()
+        }
+        /// The underlying bytes buffer.
+        #[must_use]
+        pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+            self.0.bytes()
+        }
+        /// Consume the handle, returning the underlying bytes buffer.
+        #[must_use]
+        pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+            self.0.into_bytes()
+        }
+        /// Inclusive.
+        ///
+        /// Field 1: `start`
+        #[must_use]
+        pub fn start(&self) -> ::core::option::Option<i32> {
+            self.0.reborrow().start
+        }
+        /// Exclusive.
+        ///
+        /// Field 2: `end`
+        #[must_use]
+        pub fn end(&self) -> ::core::option::Option<i32> {
+            self.0.reborrow().end
+        }
+    }
+    impl ::core::convert::From<::buffa::OwnedView<ReservedRangeView<'static>>>
+    for ReservedRangeOwnedView {
+        fn from(inner: ::buffa::OwnedView<ReservedRangeView<'static>>) -> Self {
+            ReservedRangeOwnedView(inner)
+        }
+    }
+    impl ::core::convert::From<ReservedRangeOwnedView>
+    for ::buffa::OwnedView<ReservedRangeView<'static>> {
+        fn from(wrapper: ReservedRangeOwnedView) -> Self {
+            wrapper.0
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::serde::Serialize for ReservedRangeOwnedView {
+        fn serialize<__S: ::serde::Serializer>(
+            &self,
+            __s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
+            ::serde::Serialize::serialize(&self.0, __s)
         }
     }
 }
@@ -2503,6 +3267,152 @@ impl ::buffa::ViewReborrow for ExtensionRangeOptionsView<'static> {
         this
     }
 }
+/** Self-contained, `'static` owned view of a `ExtensionRangeOptions` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`ExtensionRangeOptionsView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`ExtensionRangeOptionsView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct ExtensionRangeOptionsOwnedView(
+    ::buffa::OwnedView<ExtensionRangeOptionsView<'static>>,
+);
+impl ExtensionRangeOptionsOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            ExtensionRangeOptionsOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            ExtensionRangeOptionsOwnedView(
+                ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+            ),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::ExtensionRangeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            ExtensionRangeOptionsOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`ExtensionRangeOptionsView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &ExtensionRangeOptionsView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::ExtensionRangeOptions {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// The parser stores options it doesn't recognize here. See above.
+    ///
+    /// Field 999: `uninterpreted_option`
+    #[must_use]
+    pub fn uninterpreted_option(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::UninterpretedOptionView<'_>,
+    > {
+        &self.0.reborrow().uninterpreted_option
+    }
+    /// For external users: DO NOT USE. We are in the process of open sourcing
+    /// extension declaration and executing internal cleanups before it can be
+    /// used externally.
+    ///
+    /// Field 2: `declaration`
+    #[must_use]
+    pub fn declaration(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::extension_range_options::DeclarationView<'_>,
+    > {
+        &self.0.reborrow().declaration
+    }
+    /// Any features defined in the specific edition.
+    ///
+    /// Field 50: `features`
+    #[must_use]
+    pub fn features(
+        &self,
+    ) -> &::buffa::MessageFieldView<super::super::__buffa::view::FeatureSetView<'_>> {
+        &self.0.reborrow().features
+    }
+    /// The verification state of the range.
+    /// TODO: flip the default to DECLARATION once all empty ranges
+    /// are marked as UNVERIFIED.
+    ///
+    /// Field 3: `verification`
+    #[must_use]
+    pub fn verification(
+        &self,
+    ) -> ::core::option::Option<
+        super::super::extension_range_options::VerificationState,
+    > {
+        self.0.reborrow().verification
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<ExtensionRangeOptionsView<'static>>>
+for ExtensionRangeOptionsOwnedView {
+    fn from(inner: ::buffa::OwnedView<ExtensionRangeOptionsView<'static>>) -> Self {
+        ExtensionRangeOptionsOwnedView(inner)
+    }
+}
+impl ::core::convert::From<ExtensionRangeOptionsOwnedView>
+for ::buffa::OwnedView<ExtensionRangeOptionsView<'static>> {
+    fn from(wrapper: ExtensionRangeOptionsOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for ExtensionRangeOptionsOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
+    }
+}
 pub mod extension_range_options {
     #[allow(unused_imports)]
     use super::*;
@@ -2813,6 +3723,145 @@ pub mod extension_range_options {
         type Reborrowed<'b> = DeclarationView<'b>;
         fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
             this
+        }
+    }
+    /** Self-contained, `'static` owned view of a `Declaration` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`DeclarationView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`DeclarationView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+    #[derive(Clone, Debug)]
+    pub struct DeclarationOwnedView(::buffa::OwnedView<DeclarationView<'static>>);
+    impl DeclarationOwnedView {
+        /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+        ///
+        /// The view borrows directly from the buffer's data; the buffer is
+        /// retained inside the returned handle.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+        /// protobuf data.
+        pub fn decode(
+            bytes: ::buffa::bytes::Bytes,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                DeclarationOwnedView(::buffa::OwnedView::decode(bytes)?),
+            )
+        }
+        /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+        /// max message size).
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+        /// exceeds the configured limits.
+        pub fn decode_with_options(
+            bytes: ::buffa::bytes::Bytes,
+            opts: &::buffa::DecodeOptions,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                DeclarationOwnedView(
+                    ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+                ),
+            )
+        }
+        /// Build from an owned message via an encode → decode round-trip.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+        /// somehow invalid (should not happen for well-formed messages).
+        pub fn from_owned(
+            msg: &super::super::super::extension_range_options::Declaration,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                DeclarationOwnedView(::buffa::OwnedView::from_owned(msg)?),
+            )
+        }
+        /// Borrow the full [`DeclarationView`] with its lifetime tied to `&self`.
+        #[must_use]
+        pub fn view(&self) -> &DeclarationView<'_> {
+            self.0.reborrow()
+        }
+        /// Convert to the owned message type.
+        #[must_use]
+        pub fn to_owned_message(
+            &self,
+        ) -> super::super::super::extension_range_options::Declaration {
+            self.0.to_owned_message()
+        }
+        /// The underlying bytes buffer.
+        #[must_use]
+        pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+            self.0.bytes()
+        }
+        /// Consume the handle, returning the underlying bytes buffer.
+        #[must_use]
+        pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+            self.0.into_bytes()
+        }
+        /// The extension number declared within the extension range.
+        ///
+        /// Field 1: `number`
+        #[must_use]
+        pub fn number(&self) -> ::core::option::Option<i32> {
+            self.0.reborrow().number
+        }
+        /// The fully-qualified name of the extension field. There must be a leading
+        /// dot in front of the full name.
+        ///
+        /// Field 2: `full_name`
+        #[must_use]
+        pub fn full_name(&self) -> ::core::option::Option<&'_ str> {
+            self.0.reborrow().full_name
+        }
+        /// The fully-qualified type name of the extension field. Unlike
+        /// Metadata.type, Declaration.type must have a leading dot for messages
+        /// and enums.
+        ///
+        /// Field 3: `type`
+        #[must_use]
+        pub fn r#type(&self) -> ::core::option::Option<&'_ str> {
+            self.0.reborrow().r#type
+        }
+        /// If true, indicates that the number is reserved in the extension range,
+        /// and any extension field with the number will fail to compile. Set this
+        /// when a declared extension field is deleted.
+        ///
+        /// Field 5: `reserved`
+        #[must_use]
+        pub fn reserved(&self) -> ::core::option::Option<bool> {
+            self.0.reborrow().reserved
+        }
+        /// If true, indicates that the extension must be defined as repeated.
+        /// Otherwise the extension must be defined as optional.
+        ///
+        /// Field 6: `repeated`
+        #[must_use]
+        pub fn repeated(&self) -> ::core::option::Option<bool> {
+            self.0.reborrow().repeated
+        }
+    }
+    impl ::core::convert::From<::buffa::OwnedView<DeclarationView<'static>>>
+    for DeclarationOwnedView {
+        fn from(inner: ::buffa::OwnedView<DeclarationView<'static>>) -> Self {
+            DeclarationOwnedView(inner)
+        }
+    }
+    impl ::core::convert::From<DeclarationOwnedView>
+    for ::buffa::OwnedView<DeclarationView<'static>> {
+        fn from(wrapper: DeclarationOwnedView) -> Self {
+            wrapper.0
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::serde::Serialize for DeclarationOwnedView {
+        fn serialize<__S: ::serde::Serializer>(
+            &self,
+            __s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
+            ::serde::Serialize::serialize(&self.0, __s)
         }
     }
 }
@@ -3379,6 +4428,212 @@ impl ::buffa::ViewReborrow for FieldDescriptorProtoView<'static> {
         this
     }
 }
+/** Self-contained, `'static` owned view of a `FieldDescriptorProto` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`FieldDescriptorProtoView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`FieldDescriptorProtoView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct FieldDescriptorProtoOwnedView(
+    ::buffa::OwnedView<FieldDescriptorProtoView<'static>>,
+);
+impl FieldDescriptorProtoOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FieldDescriptorProtoOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FieldDescriptorProtoOwnedView(
+                ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+            ),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::FieldDescriptorProto,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FieldDescriptorProtoOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`FieldDescriptorProtoView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &FieldDescriptorProtoView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::FieldDescriptorProto {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Field 1: `name`
+    #[must_use]
+    pub fn name(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().name
+    }
+    /// Field 3: `number`
+    #[must_use]
+    pub fn number(&self) -> ::core::option::Option<i32> {
+        self.0.reborrow().number
+    }
+    /// Field 4: `label`
+    #[must_use]
+    pub fn label(
+        &self,
+    ) -> ::core::option::Option<super::super::field_descriptor_proto::Label> {
+        self.0.reborrow().label
+    }
+    /// If type_name is set, this need not be set.  If both this and type_name
+    /// are set, this must be one of TYPE_ENUM, TYPE_MESSAGE or TYPE_GROUP.
+    ///
+    /// Field 5: `type`
+    #[must_use]
+    pub fn r#type(
+        &self,
+    ) -> ::core::option::Option<super::super::field_descriptor_proto::Type> {
+        self.0.reborrow().r#type
+    }
+    /// For message and enum types, this is the name of the type.  If the name
+    /// starts with a '.', it is fully-qualified.  Otherwise, C++-like scoping
+    /// rules are used to find the type (i.e. first the nested types within this
+    /// message are searched, then within the parent, on up to the root
+    /// namespace).
+    ///
+    /// Field 6: `type_name`
+    #[must_use]
+    pub fn type_name(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().type_name
+    }
+    /// For extensions, this is the name of the type being extended.  It is
+    /// resolved in the same manner as type_name.
+    ///
+    /// Field 2: `extendee`
+    #[must_use]
+    pub fn extendee(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().extendee
+    }
+    /// For numeric types, contains the original text representation of the value.
+    /// For booleans, "true" or "false".
+    /// For strings, contains the default text contents (not escaped in any way).
+    /// For bytes, contains the C escaped value.  All bytes \>= 128 are escaped.
+    ///
+    /// Field 7: `default_value`
+    #[must_use]
+    pub fn default_value(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().default_value
+    }
+    /// If set, gives the index of a oneof in the containing type's oneof_decl
+    /// list.  This field is a member of that oneof.
+    ///
+    /// Field 9: `oneof_index`
+    #[must_use]
+    pub fn oneof_index(&self) -> ::core::option::Option<i32> {
+        self.0.reborrow().oneof_index
+    }
+    /// JSON name of this field. The value is set by protocol compiler. If the
+    /// user has set a "json_name" option on this field, that option's value
+    /// will be used. Otherwise, it's deduced from the field's name by converting
+    /// it to camelCase.
+    ///
+    /// Field 10: `json_name`
+    #[must_use]
+    pub fn json_name(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().json_name
+    }
+    /// Field 8: `options`
+    #[must_use]
+    pub fn options(
+        &self,
+    ) -> &::buffa::MessageFieldView<super::super::__buffa::view::FieldOptionsView<'_>> {
+        &self.0.reborrow().options
+    }
+    /// If true, this is a proto3 "optional". When a proto3 field is optional, it
+    /// tracks presence regardless of field type.
+    ///
+    /// When proto3_optional is true, this field must belong to a oneof to signal
+    /// to old proto3 clients that presence is tracked for this field. This oneof
+    /// is known as a "synthetic" oneof, and this field must be its sole member
+    /// (each proto3 optional field gets its own synthetic oneof). Synthetic oneofs
+    /// exist in the descriptor only, and do not generate any API. Synthetic oneofs
+    /// must be ordered after all "real" oneofs.
+    ///
+    /// For message fields, proto3_optional doesn't create any semantic change,
+    /// since non-repeated message fields always track presence. However it still
+    /// indicates the semantic detail of whether the user wrote "optional" or not.
+    /// This can be useful for round-tripping the .proto file. For consistency we
+    /// give message fields a synthetic oneof also, even though it is not required
+    /// to track presence. This is especially important because the parser can't
+    /// tell if a field is a message or an enum, so it must always create a
+    /// synthetic oneof.
+    ///
+    /// Proto2 optional fields do not set this flag, because they already indicate
+    /// optional with `LABEL_OPTIONAL`.
+    ///
+    /// Field 17: `proto3_optional`
+    #[must_use]
+    pub fn proto3_optional(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().proto3_optional
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<FieldDescriptorProtoView<'static>>>
+for FieldDescriptorProtoOwnedView {
+    fn from(inner: ::buffa::OwnedView<FieldDescriptorProtoView<'static>>) -> Self {
+        FieldDescriptorProtoOwnedView(inner)
+    }
+}
+impl ::core::convert::From<FieldDescriptorProtoOwnedView>
+for ::buffa::OwnedView<FieldDescriptorProtoView<'static>> {
+    fn from(wrapper: FieldDescriptorProtoOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for FieldDescriptorProtoOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
+    }
+}
 /// Describes a oneof.
 #[derive(Clone, Debug, Default)]
 pub struct OneofDescriptorProtoView<'a> {
@@ -3613,6 +4868,116 @@ impl ::buffa::ViewReborrow for OneofDescriptorProtoView<'static> {
     type Reborrowed<'b> = OneofDescriptorProtoView<'b>;
     fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
         this
+    }
+}
+/** Self-contained, `'static` owned view of a `OneofDescriptorProto` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`OneofDescriptorProtoView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`OneofDescriptorProtoView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct OneofDescriptorProtoOwnedView(
+    ::buffa::OwnedView<OneofDescriptorProtoView<'static>>,
+);
+impl OneofDescriptorProtoOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            OneofDescriptorProtoOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            OneofDescriptorProtoOwnedView(
+                ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+            ),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::OneofDescriptorProto,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            OneofDescriptorProtoOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`OneofDescriptorProtoView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &OneofDescriptorProtoView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::OneofDescriptorProto {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Field 1: `name`
+    #[must_use]
+    pub fn name(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().name
+    }
+    /// Field 2: `options`
+    #[must_use]
+    pub fn options(
+        &self,
+    ) -> &::buffa::MessageFieldView<super::super::__buffa::view::OneofOptionsView<'_>> {
+        &self.0.reborrow().options
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<OneofDescriptorProtoView<'static>>>
+for OneofDescriptorProtoOwnedView {
+    fn from(inner: ::buffa::OwnedView<OneofDescriptorProtoView<'static>>) -> Self {
+        OneofDescriptorProtoOwnedView(inner)
+    }
+}
+impl ::core::convert::From<OneofDescriptorProtoOwnedView>
+for ::buffa::OwnedView<OneofDescriptorProtoView<'static>> {
+    fn from(wrapper: OneofDescriptorProtoOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for OneofDescriptorProtoOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
     }
 }
 /// Describes an enum type.
@@ -4028,6 +5393,155 @@ impl ::buffa::ViewReborrow for EnumDescriptorProtoView<'static> {
         this
     }
 }
+/** Self-contained, `'static` owned view of a `EnumDescriptorProto` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`EnumDescriptorProtoView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`EnumDescriptorProtoView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct EnumDescriptorProtoOwnedView(
+    ::buffa::OwnedView<EnumDescriptorProtoView<'static>>,
+);
+impl EnumDescriptorProtoOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            EnumDescriptorProtoOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            EnumDescriptorProtoOwnedView(
+                ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+            ),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::EnumDescriptorProto,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            EnumDescriptorProtoOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`EnumDescriptorProtoView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &EnumDescriptorProtoView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::EnumDescriptorProto {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Field 1: `name`
+    #[must_use]
+    pub fn name(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().name
+    }
+    /// Field 2: `value`
+    #[must_use]
+    pub fn value(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::EnumValueDescriptorProtoView<'_>,
+    > {
+        &self.0.reborrow().value
+    }
+    /// Field 3: `options`
+    #[must_use]
+    pub fn options(
+        &self,
+    ) -> &::buffa::MessageFieldView<super::super::__buffa::view::EnumOptionsView<'_>> {
+        &self.0.reborrow().options
+    }
+    /// Range of reserved numeric values. Reserved numeric values may not be used
+    /// by enum values in the same enum declaration. Reserved ranges may not
+    /// overlap.
+    ///
+    /// Field 4: `reserved_range`
+    #[must_use]
+    pub fn reserved_range(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::enum_descriptor_proto::EnumReservedRangeView<'_>,
+    > {
+        &self.0.reborrow().reserved_range
+    }
+    /// Reserved enum value names, which may not be reused. A given name may only
+    /// be reserved once.
+    ///
+    /// Field 5: `reserved_name`
+    #[must_use]
+    pub fn reserved_name(&self) -> &::buffa::RepeatedView<'_, &'_ str> {
+        &self.0.reborrow().reserved_name
+    }
+    /// Support for `export` and `local` keywords on enums.
+    ///
+    /// Field 6: `visibility`
+    #[must_use]
+    pub fn visibility(&self) -> ::core::option::Option<super::super::SymbolVisibility> {
+        self.0.reborrow().visibility
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<EnumDescriptorProtoView<'static>>>
+for EnumDescriptorProtoOwnedView {
+    fn from(inner: ::buffa::OwnedView<EnumDescriptorProtoView<'static>>) -> Self {
+        EnumDescriptorProtoOwnedView(inner)
+    }
+}
+impl ::core::convert::From<EnumDescriptorProtoOwnedView>
+for ::buffa::OwnedView<EnumDescriptorProtoView<'static>> {
+    fn from(wrapper: EnumDescriptorProtoOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for EnumDescriptorProtoOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
+    }
+}
 pub mod enum_descriptor_proto {
     #[allow(unused_imports)]
     use super::*;
@@ -4259,6 +5773,120 @@ pub mod enum_descriptor_proto {
         type Reborrowed<'b> = EnumReservedRangeView<'b>;
         fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
             this
+        }
+    }
+    /** Self-contained, `'static` owned view of a `EnumReservedRange` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`EnumReservedRangeView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`EnumReservedRangeView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+    #[derive(Clone, Debug)]
+    pub struct EnumReservedRangeOwnedView(
+        ::buffa::OwnedView<EnumReservedRangeView<'static>>,
+    );
+    impl EnumReservedRangeOwnedView {
+        /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+        ///
+        /// The view borrows directly from the buffer's data; the buffer is
+        /// retained inside the returned handle.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+        /// protobuf data.
+        pub fn decode(
+            bytes: ::buffa::bytes::Bytes,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                EnumReservedRangeOwnedView(::buffa::OwnedView::decode(bytes)?),
+            )
+        }
+        /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+        /// max message size).
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+        /// exceeds the configured limits.
+        pub fn decode_with_options(
+            bytes: ::buffa::bytes::Bytes,
+            opts: &::buffa::DecodeOptions,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                EnumReservedRangeOwnedView(
+                    ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+                ),
+            )
+        }
+        /// Build from an owned message via an encode → decode round-trip.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+        /// somehow invalid (should not happen for well-formed messages).
+        pub fn from_owned(
+            msg: &super::super::super::enum_descriptor_proto::EnumReservedRange,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                EnumReservedRangeOwnedView(::buffa::OwnedView::from_owned(msg)?),
+            )
+        }
+        /// Borrow the full [`EnumReservedRangeView`] with its lifetime tied to `&self`.
+        #[must_use]
+        pub fn view(&self) -> &EnumReservedRangeView<'_> {
+            self.0.reborrow()
+        }
+        /// Convert to the owned message type.
+        #[must_use]
+        pub fn to_owned_message(
+            &self,
+        ) -> super::super::super::enum_descriptor_proto::EnumReservedRange {
+            self.0.to_owned_message()
+        }
+        /// The underlying bytes buffer.
+        #[must_use]
+        pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+            self.0.bytes()
+        }
+        /// Consume the handle, returning the underlying bytes buffer.
+        #[must_use]
+        pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+            self.0.into_bytes()
+        }
+        /// Inclusive.
+        ///
+        /// Field 1: `start`
+        #[must_use]
+        pub fn start(&self) -> ::core::option::Option<i32> {
+            self.0.reborrow().start
+        }
+        /// Inclusive.
+        ///
+        /// Field 2: `end`
+        #[must_use]
+        pub fn end(&self) -> ::core::option::Option<i32> {
+            self.0.reborrow().end
+        }
+    }
+    impl ::core::convert::From<::buffa::OwnedView<EnumReservedRangeView<'static>>>
+    for EnumReservedRangeOwnedView {
+        fn from(inner: ::buffa::OwnedView<EnumReservedRangeView<'static>>) -> Self {
+            EnumReservedRangeOwnedView(inner)
+        }
+    }
+    impl ::core::convert::From<EnumReservedRangeOwnedView>
+    for ::buffa::OwnedView<EnumReservedRangeView<'static>> {
+        fn from(wrapper: EnumReservedRangeOwnedView) -> Self {
+            wrapper.0
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::serde::Serialize for EnumReservedRangeOwnedView {
+        fn serialize<__S: ::serde::Serializer>(
+            &self,
+            __s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
+            ::serde::Serialize::serialize(&self.0, __s)
         }
     }
 }
@@ -4531,6 +6159,123 @@ impl ::buffa::ViewReborrow for EnumValueDescriptorProtoView<'static> {
     type Reborrowed<'b> = EnumValueDescriptorProtoView<'b>;
     fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
         this
+    }
+}
+/** Self-contained, `'static` owned view of a `EnumValueDescriptorProto` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`EnumValueDescriptorProtoView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`EnumValueDescriptorProtoView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct EnumValueDescriptorProtoOwnedView(
+    ::buffa::OwnedView<EnumValueDescriptorProtoView<'static>>,
+);
+impl EnumValueDescriptorProtoOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            EnumValueDescriptorProtoOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            EnumValueDescriptorProtoOwnedView(
+                ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+            ),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::EnumValueDescriptorProto,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            EnumValueDescriptorProtoOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`EnumValueDescriptorProtoView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &EnumValueDescriptorProtoView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::EnumValueDescriptorProto {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Field 1: `name`
+    #[must_use]
+    pub fn name(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().name
+    }
+    /// Field 2: `number`
+    #[must_use]
+    pub fn number(&self) -> ::core::option::Option<i32> {
+        self.0.reborrow().number
+    }
+    /// Field 3: `options`
+    #[must_use]
+    pub fn options(
+        &self,
+    ) -> &::buffa::MessageFieldView<
+        super::super::__buffa::view::EnumValueOptionsView<'_>,
+    > {
+        &self.0.reborrow().options
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<EnumValueDescriptorProtoView<'static>>>
+for EnumValueDescriptorProtoOwnedView {
+    fn from(inner: ::buffa::OwnedView<EnumValueDescriptorProtoView<'static>>) -> Self {
+        EnumValueDescriptorProtoOwnedView(inner)
+    }
+}
+impl ::core::convert::From<EnumValueDescriptorProtoOwnedView>
+for ::buffa::OwnedView<EnumValueDescriptorProtoView<'static>> {
+    fn from(wrapper: EnumValueDescriptorProtoOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for EnumValueDescriptorProtoOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
     }
 }
 /// Describes a service.
@@ -4817,6 +6562,128 @@ impl ::buffa::ViewReborrow for ServiceDescriptorProtoView<'static> {
     type Reborrowed<'b> = ServiceDescriptorProtoView<'b>;
     fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
         this
+    }
+}
+/** Self-contained, `'static` owned view of a `ServiceDescriptorProto` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`ServiceDescriptorProtoView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`ServiceDescriptorProtoView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct ServiceDescriptorProtoOwnedView(
+    ::buffa::OwnedView<ServiceDescriptorProtoView<'static>>,
+);
+impl ServiceDescriptorProtoOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            ServiceDescriptorProtoOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            ServiceDescriptorProtoOwnedView(
+                ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+            ),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::ServiceDescriptorProto,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            ServiceDescriptorProtoOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`ServiceDescriptorProtoView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &ServiceDescriptorProtoView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::ServiceDescriptorProto {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Field 1: `name`
+    #[must_use]
+    pub fn name(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().name
+    }
+    /// Field 2: `method`
+    #[must_use]
+    pub fn method(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::MethodDescriptorProtoView<'_>,
+    > {
+        &self.0.reborrow().method
+    }
+    /// Field 3: `options`
+    #[must_use]
+    pub fn options(
+        &self,
+    ) -> &::buffa::MessageFieldView<
+        super::super::__buffa::view::ServiceOptionsView<'_>,
+    > {
+        &self.0.reborrow().options
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<ServiceDescriptorProtoView<'static>>>
+for ServiceDescriptorProtoOwnedView {
+    fn from(inner: ::buffa::OwnedView<ServiceDescriptorProtoView<'static>>) -> Self {
+        ServiceDescriptorProtoOwnedView(inner)
+    }
+}
+impl ::core::convert::From<ServiceDescriptorProtoOwnedView>
+for ::buffa::OwnedView<ServiceDescriptorProtoView<'static>> {
+    fn from(wrapper: ServiceDescriptorProtoOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for ServiceDescriptorProtoOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
     }
 }
 /// Describes a method of a service.
@@ -5162,6 +7029,143 @@ impl ::buffa::ViewReborrow for MethodDescriptorProtoView<'static> {
     type Reborrowed<'b> = MethodDescriptorProtoView<'b>;
     fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
         this
+    }
+}
+/** Self-contained, `'static` owned view of a `MethodDescriptorProto` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`MethodDescriptorProtoView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`MethodDescriptorProtoView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct MethodDescriptorProtoOwnedView(
+    ::buffa::OwnedView<MethodDescriptorProtoView<'static>>,
+);
+impl MethodDescriptorProtoOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            MethodDescriptorProtoOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            MethodDescriptorProtoOwnedView(
+                ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+            ),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::MethodDescriptorProto,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            MethodDescriptorProtoOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`MethodDescriptorProtoView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &MethodDescriptorProtoView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::MethodDescriptorProto {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Field 1: `name`
+    #[must_use]
+    pub fn name(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().name
+    }
+    /// Input and output type names.  These are resolved in the same way as
+    /// FieldDescriptorProto.type_name, but must refer to a message type.
+    ///
+    /// Field 2: `input_type`
+    #[must_use]
+    pub fn input_type(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().input_type
+    }
+    /// Field 3: `output_type`
+    #[must_use]
+    pub fn output_type(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().output_type
+    }
+    /// Field 4: `options`
+    #[must_use]
+    pub fn options(
+        &self,
+    ) -> &::buffa::MessageFieldView<super::super::__buffa::view::MethodOptionsView<'_>> {
+        &self.0.reborrow().options
+    }
+    /// Identifies if client streams multiple client messages
+    ///
+    /// Field 5: `client_streaming`
+    #[must_use]
+    pub fn client_streaming(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().client_streaming
+    }
+    /// Identifies if server streams multiple server messages
+    ///
+    /// Field 6: `server_streaming`
+    #[must_use]
+    pub fn server_streaming(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().server_streaming
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<MethodDescriptorProtoView<'static>>>
+for MethodDescriptorProtoOwnedView {
+    fn from(inner: ::buffa::OwnedView<MethodDescriptorProtoView<'static>>) -> Self {
+        MethodDescriptorProtoOwnedView(inner)
+    }
+}
+impl ::core::convert::From<MethodDescriptorProtoOwnedView>
+for ::buffa::OwnedView<MethodDescriptorProtoView<'static>> {
+    fn from(wrapper: MethodDescriptorProtoOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for MethodDescriptorProtoOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
     }
 }
 /// ===================================================================
@@ -6061,6 +8065,303 @@ impl ::buffa::ViewReborrow for FileOptionsView<'static> {
         this
     }
 }
+/** Self-contained, `'static` owned view of a `FileOptions` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`FileOptionsView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`FileOptionsView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct FileOptionsOwnedView(::buffa::OwnedView<FileOptionsView<'static>>);
+impl FileOptionsOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FileOptionsOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FileOptionsOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::FileOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FileOptionsOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`FileOptionsView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &FileOptionsView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::FileOptions {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Sets the Java package where classes generated from this .proto will be
+    /// placed.  By default, the proto package is used, but this is often
+    /// inappropriate because proto packages do not normally start with backwards
+    /// domain names.
+    ///
+    /// Field 1: `java_package`
+    #[must_use]
+    pub fn java_package(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().java_package
+    }
+    /// Controls the name of the wrapper Java class generated for the .proto file.
+    /// That class will always contain the .proto file's getDescriptor() method as
+    /// well as any top-level extensions defined in the .proto file.
+    /// If java_multiple_files is disabled, then all the other classes from the
+    /// .proto file will be nested inside the single wrapper outer class.
+    ///
+    /// Field 8: `java_outer_classname`
+    #[must_use]
+    pub fn java_outer_classname(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().java_outer_classname
+    }
+    /// If enabled, then the Java code generator will generate a separate .java
+    /// file for each top-level message, enum, and service defined in the .proto
+    /// file.  Thus, these types will *not* be nested inside the wrapper class
+    /// named by java_outer_classname.  However, the wrapper class will still be
+    /// generated to contain the file's getDescriptor() method as well as any
+    /// top-level extensions defined in the file.
+    ///
+    /// Field 10: `java_multiple_files`
+    #[must_use]
+    pub fn java_multiple_files(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().java_multiple_files
+    }
+    /// This option does nothing.
+    ///
+    /// Field 20: `java_generate_equals_and_hash`
+    #[must_use]
+    pub fn java_generate_equals_and_hash(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().java_generate_equals_and_hash
+    }
+    /// A proto2 file can set this to true to opt in to UTF-8 checking for Java,
+    /// which will throw an exception if invalid UTF-8 is parsed from the wire or
+    /// assigned to a string field.
+    ///
+    /// TODO: clarify exactly what kinds of field types this option
+    /// applies to, and update these docs accordingly.
+    ///
+    /// Proto3 files already perform these checks. Setting the option explicitly to
+    /// false has no effect: it cannot be used to opt proto3 files out of UTF-8
+    /// checks.
+    ///
+    /// Field 27: `java_string_check_utf8`
+    #[must_use]
+    pub fn java_string_check_utf8(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().java_string_check_utf8
+    }
+    /// Field 9: `optimize_for`
+    #[must_use]
+    pub fn optimize_for(
+        &self,
+    ) -> ::core::option::Option<super::super::file_options::OptimizeMode> {
+        self.0.reborrow().optimize_for
+    }
+    /// Sets the Go package where structs generated from this .proto will be
+    /// placed. If omitted, the Go package will be derived from the following:
+    ///   - The basename of the package import path, if provided.
+    ///   - Otherwise, the package statement in the .proto file, if present.
+    ///   - Otherwise, the basename of the .proto file, without extension.
+    ///
+    /// Field 11: `go_package`
+    #[must_use]
+    pub fn go_package(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().go_package
+    }
+    /// Should generic services be generated in each language?  "Generic" services
+    /// are not specific to any particular RPC system.  They are generated by the
+    /// main code generators in each language (without additional plugins).
+    /// Generic services were the only kind of service generation supported by
+    /// early versions of google.protobuf.
+    ///
+    /// Generic services are now considered deprecated in favor of using plugins
+    /// that generate code specific to your particular RPC system.  Therefore,
+    /// these default to false.  Old code which depends on generic services should
+    /// explicitly set them to true.
+    ///
+    /// Field 16: `cc_generic_services`
+    #[must_use]
+    pub fn cc_generic_services(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().cc_generic_services
+    }
+    /// Field 17: `java_generic_services`
+    #[must_use]
+    pub fn java_generic_services(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().java_generic_services
+    }
+    /// Field 18: `py_generic_services`
+    #[must_use]
+    pub fn py_generic_services(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().py_generic_services
+    }
+    /// Is this file deprecated?
+    /// Depending on the target platform, this can emit Deprecated annotations
+    /// for everything in the file, or it will be completely ignored; in the very
+    /// least, this is a formalization for deprecating files.
+    ///
+    /// Field 23: `deprecated`
+    #[must_use]
+    pub fn deprecated(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().deprecated
+    }
+    /// Enables the use of arenas for the proto messages in this file. This applies
+    /// only to generated classes for C++.
+    ///
+    /// Field 31: `cc_enable_arenas`
+    #[must_use]
+    pub fn cc_enable_arenas(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().cc_enable_arenas
+    }
+    /// Sets the objective c class prefix which is prepended to all objective c
+    /// generated classes from this .proto. There is no default.
+    ///
+    /// Field 36: `objc_class_prefix`
+    #[must_use]
+    pub fn objc_class_prefix(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().objc_class_prefix
+    }
+    /// Namespace for generated classes; defaults to the package.
+    ///
+    /// Field 37: `csharp_namespace`
+    #[must_use]
+    pub fn csharp_namespace(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().csharp_namespace
+    }
+    /// By default Swift generators will take the proto package and CamelCase it
+    /// replacing '.' with underscore and use that to prefix the types/symbols
+    /// defined. When this options is provided, they will use this value instead
+    /// to prefix the types/symbols defined.
+    ///
+    /// Field 39: `swift_prefix`
+    #[must_use]
+    pub fn swift_prefix(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().swift_prefix
+    }
+    /// Sets the php class prefix which is prepended to all php generated classes
+    /// from this .proto. Default is empty.
+    ///
+    /// Field 40: `php_class_prefix`
+    #[must_use]
+    pub fn php_class_prefix(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().php_class_prefix
+    }
+    /// Use this option to change the namespace of php generated classes. Default
+    /// is empty. When this option is empty, the package name will be used for
+    /// determining the namespace.
+    ///
+    /// Field 41: `php_namespace`
+    #[must_use]
+    pub fn php_namespace(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().php_namespace
+    }
+    /// Use this option to change the namespace of php generated metadata classes.
+    /// Default is empty. When this option is empty, the proto file name will be
+    /// used for determining the namespace.
+    ///
+    /// Field 44: `php_metadata_namespace`
+    #[must_use]
+    pub fn php_metadata_namespace(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().php_metadata_namespace
+    }
+    /// Use this option to change the package of ruby generated classes. Default
+    /// is empty. When this option is not set, the package name will be used for
+    /// determining the ruby package.
+    ///
+    /// Field 45: `ruby_package`
+    #[must_use]
+    pub fn ruby_package(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().ruby_package
+    }
+    /// Any features defined in the specific edition.
+    /// WARNING: This field should only be used by protobuf plugins or special
+    /// cases like the proto compiler. Other uses are discouraged and
+    /// developers should rely on the protoreflect APIs for their client language.
+    ///
+    /// Field 50: `features`
+    #[must_use]
+    pub fn features(
+        &self,
+    ) -> &::buffa::MessageFieldView<super::super::__buffa::view::FeatureSetView<'_>> {
+        &self.0.reborrow().features
+    }
+    /// The parser stores options it doesn't recognize here.
+    /// See the documentation for the "Options" section above.
+    ///
+    /// Field 999: `uninterpreted_option`
+    #[must_use]
+    pub fn uninterpreted_option(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::UninterpretedOptionView<'_>,
+    > {
+        &self.0.reborrow().uninterpreted_option
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<FileOptionsView<'static>>>
+for FileOptionsOwnedView {
+    fn from(inner: ::buffa::OwnedView<FileOptionsView<'static>>) -> Self {
+        FileOptionsOwnedView(inner)
+    }
+}
+impl ::core::convert::From<FileOptionsOwnedView>
+for ::buffa::OwnedView<FileOptionsView<'static>> {
+    fn from(wrapper: FileOptionsOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for FileOptionsOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
+    }
+}
 #[derive(Clone, Debug, Default)]
 pub struct MessageOptionsView<'a> {
     /// Set true to use the old proto1 MessageSet wire format for extensions.
@@ -6520,6 +8821,220 @@ impl ::buffa::ViewReborrow for MessageOptionsView<'static> {
     type Reborrowed<'b> = MessageOptionsView<'b>;
     fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
         this
+    }
+}
+/** Self-contained, `'static` owned view of a `MessageOptions` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`MessageOptionsView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`MessageOptionsView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct MessageOptionsOwnedView(::buffa::OwnedView<MessageOptionsView<'static>>);
+impl MessageOptionsOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            MessageOptionsOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            MessageOptionsOwnedView(
+                ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+            ),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::MessageOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            MessageOptionsOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`MessageOptionsView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &MessageOptionsView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::MessageOptions {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Set true to use the old proto1 MessageSet wire format for extensions.
+    /// This is provided for backwards-compatibility with the MessageSet wire
+    /// format.  You should not use this for any other reason:  It's less
+    /// efficient, has fewer features, and is more complicated.
+    ///
+    /// The message must be defined exactly as follows:
+    ///   message Foo {
+    /// ```text
+    /// option message_set_wire_format = true;
+    /// extensions 4 to max;
+    /// ```
+    ///   }
+    /// Note that the message cannot have any defined fields; MessageSets only
+    /// have extensions.
+    ///
+    /// All extensions of your type must be singular messages; e.g. they cannot
+    /// be int32s, enums, or repeated messages.
+    ///
+    /// Because this is an option, the above two restrictions are not enforced by
+    /// the protocol compiler.
+    ///
+    /// Field 1: `message_set_wire_format`
+    #[must_use]
+    pub fn message_set_wire_format(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().message_set_wire_format
+    }
+    /// Disables the generation of the standard "descriptor()" accessor, which can
+    /// conflict with a field of the same name.  This is meant to make migration
+    /// from proto1 easier; new code should avoid fields named "descriptor".
+    ///
+    /// Field 2: `no_standard_descriptor_accessor`
+    #[must_use]
+    pub fn no_standard_descriptor_accessor(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().no_standard_descriptor_accessor
+    }
+    /// Is this message deprecated?
+    /// Depending on the target platform, this can emit Deprecated annotations
+    /// for the message, or it will be completely ignored; in the very least,
+    /// this is a formalization for deprecating messages.
+    ///
+    /// Field 3: `deprecated`
+    #[must_use]
+    pub fn deprecated(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().deprecated
+    }
+    /// Whether the message is an automatically generated map entry type for the
+    /// maps field.
+    ///
+    /// For maps fields:
+    /// ```text
+    /// map<KeyType, ValueType> map_field = 1;
+    /// ```
+    /// The parsed descriptor looks like:
+    /// ```text
+    /// message MapFieldEntry {
+    ///     option map_entry = true;
+    ///     optional KeyType key = 1;
+    ///     optional ValueType value = 2;
+    /// }
+    /// repeated MapFieldEntry map_field = 1;
+    /// ```
+    ///
+    /// Implementations may choose not to generate the map_entry=true message, but
+    /// use a native map in the target language to hold the keys and values.
+    /// The reflection APIs in such implementations still need to work as
+    /// if the field is a repeated message field.
+    ///
+    /// NOTE: Do not set the option in .proto files. Always use the maps syntax
+    /// instead. The option should only be implicitly set by the proto compiler
+    /// parser.
+    ///
+    /// Field 7: `map_entry`
+    #[must_use]
+    pub fn map_entry(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().map_entry
+    }
+    /// Enable the legacy handling of JSON field name conflicts.  This lowercases
+    /// and strips underscored from the fields before comparison in proto3 only.
+    /// The new behavior takes `json_name` into account and applies to proto2 as
+    /// well.
+    ///
+    /// This should only be used as a temporary measure against broken builds due
+    /// to the change in behavior for JSON field name conflicts.
+    ///
+    /// TODO This is legacy behavior we plan to remove once downstream
+    /// teams have had time to migrate.
+    ///
+    /// Field 11: `deprecated_legacy_json_field_conflicts`
+    #[must_use]
+    pub fn deprecated_legacy_json_field_conflicts(
+        &self,
+    ) -> ::core::option::Option<bool> {
+        self.0.reborrow().deprecated_legacy_json_field_conflicts
+    }
+    /// Any features defined in the specific edition.
+    /// WARNING: This field should only be used by protobuf plugins or special
+    /// cases like the proto compiler. Other uses are discouraged and
+    /// developers should rely on the protoreflect APIs for their client language.
+    ///
+    /// Field 12: `features`
+    #[must_use]
+    pub fn features(
+        &self,
+    ) -> &::buffa::MessageFieldView<super::super::__buffa::view::FeatureSetView<'_>> {
+        &self.0.reborrow().features
+    }
+    /// The parser stores options it doesn't recognize here. See above.
+    ///
+    /// Field 999: `uninterpreted_option`
+    #[must_use]
+    pub fn uninterpreted_option(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::UninterpretedOptionView<'_>,
+    > {
+        &self.0.reborrow().uninterpreted_option
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<MessageOptionsView<'static>>>
+for MessageOptionsOwnedView {
+    fn from(inner: ::buffa::OwnedView<MessageOptionsView<'static>>) -> Self {
+        MessageOptionsOwnedView(inner)
+    }
+}
+impl ::core::convert::From<MessageOptionsOwnedView>
+for ::buffa::OwnedView<MessageOptionsView<'static>> {
+    fn from(wrapper: MessageOptionsOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for MessageOptionsOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
     }
 }
 #[derive(Clone, Debug, Default)]
@@ -7285,6 +9800,263 @@ impl ::buffa::ViewReborrow for FieldOptionsView<'static> {
         this
     }
 }
+/** Self-contained, `'static` owned view of a `FieldOptions` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`FieldOptionsView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`FieldOptionsView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct FieldOptionsOwnedView(::buffa::OwnedView<FieldOptionsView<'static>>);
+impl FieldOptionsOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FieldOptionsOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FieldOptionsOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::FieldOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FieldOptionsOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`FieldOptionsView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &FieldOptionsView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::FieldOptions {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// NOTE: ctype is deprecated. Use `features.(pb.cpp).string_type` instead.
+    /// The ctype option instructs the C++ code generator to use a different
+    /// representation of the field than it normally would.  See the specific
+    /// options below.  This option is only implemented to support use of
+    /// \[ctype=CORD\] and \[ctype=STRING\] (the default) on non-repeated fields of
+    /// type "bytes" in the open source release.
+    /// TODO: make ctype actually deprecated.
+    ///
+    /// Field 1: `ctype`
+    #[must_use]
+    pub fn ctype(&self) -> ::core::option::Option<super::super::field_options::CType> {
+        self.0.reborrow().ctype
+    }
+    /// The packed option can be enabled for repeated primitive fields to enable
+    /// a more efficient representation on the wire. Rather than repeatedly
+    /// writing the tag and type for each element, the entire array is encoded as
+    /// a single length-delimited blob. In proto3, only explicit setting it to
+    /// false will avoid using packed encoding.  This option is prohibited in
+    /// Editions, but the `repeated_field_encoding` feature can be used to control
+    /// the behavior.
+    ///
+    /// Field 2: `packed`
+    #[must_use]
+    pub fn packed(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().packed
+    }
+    /// The jstype option determines the JavaScript type used for values of the
+    /// field.  The option is permitted only for 64 bit integral and fixed types
+    /// (int64, uint64, sint64, fixed64, sfixed64).  A field with jstype JS_STRING
+    /// is represented as JavaScript string, which avoids loss of precision that
+    /// can happen when a large value is converted to a floating point JavaScript.
+    /// Specifying JS_NUMBER for the jstype causes the generated JavaScript code to
+    /// use the JavaScript "number" type.  The behavior of the default option
+    /// JS_NORMAL is implementation dependent.
+    ///
+    /// This option is an enum to permit additional types to be added, e.g.
+    /// goog.math.Integer.
+    ///
+    /// Field 6: `jstype`
+    #[must_use]
+    pub fn jstype(&self) -> ::core::option::Option<super::super::field_options::JSType> {
+        self.0.reborrow().jstype
+    }
+    /// Should this field be parsed lazily?  Lazy applies only to message-type
+    /// fields.  It means that when the outer message is initially parsed, the
+    /// inner message's contents will not be parsed but instead stored in encoded
+    /// form.  The inner message will actually be parsed when it is first accessed.
+    ///
+    /// This is only a hint.  Implementations are free to choose whether to use
+    /// eager or lazy parsing regardless of the value of this option.  However,
+    /// setting this option true suggests that the protocol author believes that
+    /// using lazy parsing on this field is worth the additional bookkeeping
+    /// overhead typically needed to implement it.
+    ///
+    /// This option does not affect the public interface of any generated code;
+    /// all method signatures remain the same.  Furthermore, thread-safety of the
+    /// interface is not affected by this option; const methods remain safe to
+    /// call from multiple threads concurrently, while non-const methods continue
+    /// to require exclusive access.
+    ///
+    /// Note that lazy message fields are still eagerly verified to check
+    /// ill-formed wireformat or missing required fields. Calling IsInitialized()
+    /// on the outer message would fail if the inner message has missing required
+    /// fields. Failed verification would result in parsing failure (except when
+    /// uninitialized messages are acceptable).
+    ///
+    /// Field 5: `lazy`
+    #[must_use]
+    pub fn lazy(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().lazy
+    }
+    /// unverified_lazy does no correctness checks on the byte stream. This should
+    /// only be used where lazy with verification is prohibitive for performance
+    /// reasons.
+    ///
+    /// Field 15: `unverified_lazy`
+    #[must_use]
+    pub fn unverified_lazy(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().unverified_lazy
+    }
+    /// Is this field deprecated?
+    /// Depending on the target platform, this can emit Deprecated annotations
+    /// for accessors, or it will be completely ignored; in the very least, this
+    /// is a formalization for deprecating fields.
+    ///
+    /// Field 3: `deprecated`
+    #[must_use]
+    pub fn deprecated(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().deprecated
+    }
+    /// DEPRECATED. DO NOT USE!
+    /// For Google-internal migration only. Do not use.
+    ///
+    /// Field 10: `weak`
+    #[must_use]
+    pub fn weak(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().weak
+    }
+    /// Indicate that the field value should not be printed out when using debug
+    /// formats, e.g. when the field contains sensitive credentials.
+    ///
+    /// Field 16: `debug_redact`
+    #[must_use]
+    pub fn debug_redact(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().debug_redact
+    }
+    /// Field 17: `retention`
+    #[must_use]
+    pub fn retention(
+        &self,
+    ) -> ::core::option::Option<super::super::field_options::OptionRetention> {
+        self.0.reborrow().retention
+    }
+    /// Field 19: `targets`
+    #[must_use]
+    pub fn targets(
+        &self,
+    ) -> &::buffa::RepeatedView<'_, super::super::field_options::OptionTargetType> {
+        &self.0.reborrow().targets
+    }
+    /// Field 20: `edition_defaults`
+    #[must_use]
+    pub fn edition_defaults(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::field_options::EditionDefaultView<'_>,
+    > {
+        &self.0.reborrow().edition_defaults
+    }
+    /// Any features defined in the specific edition.
+    /// WARNING: This field should only be used by protobuf plugins or special
+    /// cases like the proto compiler. Other uses are discouraged and
+    /// developers should rely on the protoreflect APIs for their client language.
+    ///
+    /// Field 21: `features`
+    #[must_use]
+    pub fn features(
+        &self,
+    ) -> &::buffa::MessageFieldView<super::super::__buffa::view::FeatureSetView<'_>> {
+        &self.0.reborrow().features
+    }
+    /// Field 22: `feature_support`
+    #[must_use]
+    pub fn feature_support(
+        &self,
+    ) -> &::buffa::MessageFieldView<
+        super::super::__buffa::view::field_options::FeatureSupportView<'_>,
+    > {
+        &self.0.reborrow().feature_support
+    }
+    /// The parser stores options it doesn't recognize here. See above.
+    ///
+    /// Field 999: `uninterpreted_option`
+    #[must_use]
+    pub fn uninterpreted_option(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::UninterpretedOptionView<'_>,
+    > {
+        &self.0.reborrow().uninterpreted_option
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<FieldOptionsView<'static>>>
+for FieldOptionsOwnedView {
+    fn from(inner: ::buffa::OwnedView<FieldOptionsView<'static>>) -> Self {
+        FieldOptionsOwnedView(inner)
+    }
+}
+impl ::core::convert::From<FieldOptionsOwnedView>
+for ::buffa::OwnedView<FieldOptionsView<'static>> {
+    fn from(wrapper: FieldOptionsOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for FieldOptionsOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
+    }
+}
 pub mod field_options {
     #[allow(unused_imports)]
     use super::*;
@@ -7513,6 +10285,116 @@ pub mod field_options {
         type Reborrowed<'b> = EditionDefaultView<'b>;
         fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
             this
+        }
+    }
+    /** Self-contained, `'static` owned view of a `EditionDefault` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`EditionDefaultView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`EditionDefaultView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+    #[derive(Clone, Debug)]
+    pub struct EditionDefaultOwnedView(::buffa::OwnedView<EditionDefaultView<'static>>);
+    impl EditionDefaultOwnedView {
+        /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+        ///
+        /// The view borrows directly from the buffer's data; the buffer is
+        /// retained inside the returned handle.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+        /// protobuf data.
+        pub fn decode(
+            bytes: ::buffa::bytes::Bytes,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                EditionDefaultOwnedView(::buffa::OwnedView::decode(bytes)?),
+            )
+        }
+        /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+        /// max message size).
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+        /// exceeds the configured limits.
+        pub fn decode_with_options(
+            bytes: ::buffa::bytes::Bytes,
+            opts: &::buffa::DecodeOptions,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                EditionDefaultOwnedView(
+                    ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+                ),
+            )
+        }
+        /// Build from an owned message via an encode → decode round-trip.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+        /// somehow invalid (should not happen for well-formed messages).
+        pub fn from_owned(
+            msg: &super::super::super::field_options::EditionDefault,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                EditionDefaultOwnedView(::buffa::OwnedView::from_owned(msg)?),
+            )
+        }
+        /// Borrow the full [`EditionDefaultView`] with its lifetime tied to `&self`.
+        #[must_use]
+        pub fn view(&self) -> &EditionDefaultView<'_> {
+            self.0.reborrow()
+        }
+        /// Convert to the owned message type.
+        #[must_use]
+        pub fn to_owned_message(
+            &self,
+        ) -> super::super::super::field_options::EditionDefault {
+            self.0.to_owned_message()
+        }
+        /// The underlying bytes buffer.
+        #[must_use]
+        pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+            self.0.bytes()
+        }
+        /// Consume the handle, returning the underlying bytes buffer.
+        #[must_use]
+        pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+            self.0.into_bytes()
+        }
+        /// Field 3: `edition`
+        #[must_use]
+        pub fn edition(&self) -> ::core::option::Option<super::super::super::Edition> {
+            self.0.reborrow().edition
+        }
+        /// Textproto value.
+        ///
+        /// Field 2: `value`
+        #[must_use]
+        pub fn value(&self) -> ::core::option::Option<&'_ str> {
+            self.0.reborrow().value
+        }
+    }
+    impl ::core::convert::From<::buffa::OwnedView<EditionDefaultView<'static>>>
+    for EditionDefaultOwnedView {
+        fn from(inner: ::buffa::OwnedView<EditionDefaultView<'static>>) -> Self {
+            EditionDefaultOwnedView(inner)
+        }
+    }
+    impl ::core::convert::From<EditionDefaultOwnedView>
+    for ::buffa::OwnedView<EditionDefaultView<'static>> {
+        fn from(wrapper: EditionDefaultOwnedView) -> Self {
+            wrapper.0
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::serde::Serialize for EditionDefaultOwnedView {
+        fn serialize<__S: ::serde::Serializer>(
+            &self,
+            __s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
+            ::serde::Serialize::serialize(&self.0, __s)
         }
     }
     /// Information about the support window of a feature.
@@ -7841,6 +10723,144 @@ pub mod field_options {
             this
         }
     }
+    /** Self-contained, `'static` owned view of a `FeatureSupport` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`FeatureSupportView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`FeatureSupportView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+    #[derive(Clone, Debug)]
+    pub struct FeatureSupportOwnedView(::buffa::OwnedView<FeatureSupportView<'static>>);
+    impl FeatureSupportOwnedView {
+        /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+        ///
+        /// The view borrows directly from the buffer's data; the buffer is
+        /// retained inside the returned handle.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+        /// protobuf data.
+        pub fn decode(
+            bytes: ::buffa::bytes::Bytes,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                FeatureSupportOwnedView(::buffa::OwnedView::decode(bytes)?),
+            )
+        }
+        /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+        /// max message size).
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+        /// exceeds the configured limits.
+        pub fn decode_with_options(
+            bytes: ::buffa::bytes::Bytes,
+            opts: &::buffa::DecodeOptions,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                FeatureSupportOwnedView(
+                    ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+                ),
+            )
+        }
+        /// Build from an owned message via an encode → decode round-trip.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+        /// somehow invalid (should not happen for well-formed messages).
+        pub fn from_owned(
+            msg: &super::super::super::field_options::FeatureSupport,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                FeatureSupportOwnedView(::buffa::OwnedView::from_owned(msg)?),
+            )
+        }
+        /// Borrow the full [`FeatureSupportView`] with its lifetime tied to `&self`.
+        #[must_use]
+        pub fn view(&self) -> &FeatureSupportView<'_> {
+            self.0.reborrow()
+        }
+        /// Convert to the owned message type.
+        #[must_use]
+        pub fn to_owned_message(
+            &self,
+        ) -> super::super::super::field_options::FeatureSupport {
+            self.0.to_owned_message()
+        }
+        /// The underlying bytes buffer.
+        #[must_use]
+        pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+            self.0.bytes()
+        }
+        /// Consume the handle, returning the underlying bytes buffer.
+        #[must_use]
+        pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+            self.0.into_bytes()
+        }
+        /// The edition that this feature was first available in.  In editions
+        /// earlier than this one, the default assigned to EDITION_LEGACY will be
+        /// used, and proto files will not be able to override it.
+        ///
+        /// Field 1: `edition_introduced`
+        #[must_use]
+        pub fn edition_introduced(
+            &self,
+        ) -> ::core::option::Option<super::super::super::Edition> {
+            self.0.reborrow().edition_introduced
+        }
+        /// The edition this feature becomes deprecated in.  Using this after this
+        /// edition may trigger warnings.
+        ///
+        /// Field 2: `edition_deprecated`
+        #[must_use]
+        pub fn edition_deprecated(
+            &self,
+        ) -> ::core::option::Option<super::super::super::Edition> {
+            self.0.reborrow().edition_deprecated
+        }
+        /// The deprecation warning text if this feature is used after the edition it
+        /// was marked deprecated in.
+        ///
+        /// Field 3: `deprecation_warning`
+        #[must_use]
+        pub fn deprecation_warning(&self) -> ::core::option::Option<&'_ str> {
+            self.0.reborrow().deprecation_warning
+        }
+        /// The edition this feature is no longer available in.  In editions after
+        /// this one, the last default assigned will be used, and proto files will
+        /// not be able to override it.
+        ///
+        /// Field 4: `edition_removed`
+        #[must_use]
+        pub fn edition_removed(
+            &self,
+        ) -> ::core::option::Option<super::super::super::Edition> {
+            self.0.reborrow().edition_removed
+        }
+    }
+    impl ::core::convert::From<::buffa::OwnedView<FeatureSupportView<'static>>>
+    for FeatureSupportOwnedView {
+        fn from(inner: ::buffa::OwnedView<FeatureSupportView<'static>>) -> Self {
+            FeatureSupportOwnedView(inner)
+        }
+    }
+    impl ::core::convert::From<FeatureSupportOwnedView>
+    for ::buffa::OwnedView<FeatureSupportView<'static>> {
+        fn from(wrapper: FeatureSupportOwnedView) -> Self {
+            wrapper.0
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::serde::Serialize for FeatureSupportOwnedView {
+        fn serialize<__S: ::serde::Serializer>(
+            &self,
+            __s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
+            ::serde::Serialize::serialize(&self.0, __s)
+        }
+    }
 }
 #[derive(Clone, Debug, Default)]
 pub struct OneofOptionsView<'a> {
@@ -8105,6 +11125,124 @@ impl ::buffa::ViewReborrow for OneofOptionsView<'static> {
     type Reborrowed<'b> = OneofOptionsView<'b>;
     fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
         this
+    }
+}
+/** Self-contained, `'static` owned view of a `OneofOptions` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`OneofOptionsView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`OneofOptionsView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct OneofOptionsOwnedView(::buffa::OwnedView<OneofOptionsView<'static>>);
+impl OneofOptionsOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            OneofOptionsOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            OneofOptionsOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::OneofOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            OneofOptionsOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`OneofOptionsView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &OneofOptionsView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::OneofOptions {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Any features defined in the specific edition.
+    /// WARNING: This field should only be used by protobuf plugins or special
+    /// cases like the proto compiler. Other uses are discouraged and
+    /// developers should rely on the protoreflect APIs for their client language.
+    ///
+    /// Field 1: `features`
+    #[must_use]
+    pub fn features(
+        &self,
+    ) -> &::buffa::MessageFieldView<super::super::__buffa::view::FeatureSetView<'_>> {
+        &self.0.reborrow().features
+    }
+    /// The parser stores options it doesn't recognize here. See above.
+    ///
+    /// Field 999: `uninterpreted_option`
+    #[must_use]
+    pub fn uninterpreted_option(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::UninterpretedOptionView<'_>,
+    > {
+        &self.0.reborrow().uninterpreted_option
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<OneofOptionsView<'static>>>
+for OneofOptionsOwnedView {
+    fn from(inner: ::buffa::OwnedView<OneofOptionsView<'static>>) -> Self {
+        OneofOptionsOwnedView(inner)
+    }
+}
+impl ::core::convert::From<OneofOptionsOwnedView>
+for ::buffa::OwnedView<OneofOptionsView<'static>> {
+    fn from(wrapper: OneofOptionsOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for OneofOptionsOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
     }
 }
 #[derive(Clone, Debug, Default)]
@@ -8462,6 +11600,156 @@ impl ::buffa::ViewReborrow for EnumOptionsView<'static> {
     type Reborrowed<'b> = EnumOptionsView<'b>;
     fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
         this
+    }
+}
+/** Self-contained, `'static` owned view of a `EnumOptions` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`EnumOptionsView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`EnumOptionsView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct EnumOptionsOwnedView(::buffa::OwnedView<EnumOptionsView<'static>>);
+impl EnumOptionsOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            EnumOptionsOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            EnumOptionsOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::EnumOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            EnumOptionsOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`EnumOptionsView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &EnumOptionsView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::EnumOptions {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Set this option to true to allow mapping different tag names to the same
+    /// value.
+    ///
+    /// Field 2: `allow_alias`
+    #[must_use]
+    pub fn allow_alias(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().allow_alias
+    }
+    /// Is this enum deprecated?
+    /// Depending on the target platform, this can emit Deprecated annotations
+    /// for the enum, or it will be completely ignored; in the very least, this
+    /// is a formalization for deprecating enums.
+    ///
+    /// Field 3: `deprecated`
+    #[must_use]
+    pub fn deprecated(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().deprecated
+    }
+    /// Enable the legacy handling of JSON field name conflicts.  This lowercases
+    /// and strips underscored from the fields before comparison in proto3 only.
+    /// The new behavior takes `json_name` into account and applies to proto2 as
+    /// well.
+    /// TODO Remove this legacy behavior once downstream teams have
+    /// had time to migrate.
+    ///
+    /// Field 6: `deprecated_legacy_json_field_conflicts`
+    #[must_use]
+    pub fn deprecated_legacy_json_field_conflicts(
+        &self,
+    ) -> ::core::option::Option<bool> {
+        self.0.reborrow().deprecated_legacy_json_field_conflicts
+    }
+    /// Any features defined in the specific edition.
+    /// WARNING: This field should only be used by protobuf plugins or special
+    /// cases like the proto compiler. Other uses are discouraged and
+    /// developers should rely on the protoreflect APIs for their client language.
+    ///
+    /// Field 7: `features`
+    #[must_use]
+    pub fn features(
+        &self,
+    ) -> &::buffa::MessageFieldView<super::super::__buffa::view::FeatureSetView<'_>> {
+        &self.0.reborrow().features
+    }
+    /// The parser stores options it doesn't recognize here. See above.
+    ///
+    /// Field 999: `uninterpreted_option`
+    #[must_use]
+    pub fn uninterpreted_option(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::UninterpretedOptionView<'_>,
+    > {
+        &self.0.reborrow().uninterpreted_option
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<EnumOptionsView<'static>>>
+for EnumOptionsOwnedView {
+    fn from(inner: ::buffa::OwnedView<EnumOptionsView<'static>>) -> Self {
+        EnumOptionsOwnedView(inner)
+    }
+}
+impl ::core::convert::From<EnumOptionsOwnedView>
+for ::buffa::OwnedView<EnumOptionsView<'static>> {
+    fn from(wrapper: EnumOptionsOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for EnumOptionsOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
     }
 }
 #[derive(Clone, Debug, Default)]
@@ -8846,6 +12134,156 @@ impl ::buffa::ViewReborrow for EnumValueOptionsView<'static> {
         this
     }
 }
+/** Self-contained, `'static` owned view of a `EnumValueOptions` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`EnumValueOptionsView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`EnumValueOptionsView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct EnumValueOptionsOwnedView(::buffa::OwnedView<EnumValueOptionsView<'static>>);
+impl EnumValueOptionsOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            EnumValueOptionsOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            EnumValueOptionsOwnedView(
+                ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+            ),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::EnumValueOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            EnumValueOptionsOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`EnumValueOptionsView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &EnumValueOptionsView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::EnumValueOptions {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Is this enum value deprecated?
+    /// Depending on the target platform, this can emit Deprecated annotations
+    /// for the enum value, or it will be completely ignored; in the very least,
+    /// this is a formalization for deprecating enum values.
+    ///
+    /// Field 1: `deprecated`
+    #[must_use]
+    pub fn deprecated(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().deprecated
+    }
+    /// Any features defined in the specific edition.
+    /// WARNING: This field should only be used by protobuf plugins or special
+    /// cases like the proto compiler. Other uses are discouraged and
+    /// developers should rely on the protoreflect APIs for their client language.
+    ///
+    /// Field 2: `features`
+    #[must_use]
+    pub fn features(
+        &self,
+    ) -> &::buffa::MessageFieldView<super::super::__buffa::view::FeatureSetView<'_>> {
+        &self.0.reborrow().features
+    }
+    /// Indicate that fields annotated with this enum value should not be printed
+    /// out when using debug formats, e.g. when the field contains sensitive
+    /// credentials.
+    ///
+    /// Field 3: `debug_redact`
+    #[must_use]
+    pub fn debug_redact(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().debug_redact
+    }
+    /// Information about the support window of a feature value.
+    ///
+    /// Field 4: `feature_support`
+    #[must_use]
+    pub fn feature_support(
+        &self,
+    ) -> &::buffa::MessageFieldView<
+        super::super::__buffa::view::field_options::FeatureSupportView<'_>,
+    > {
+        &self.0.reborrow().feature_support
+    }
+    /// The parser stores options it doesn't recognize here. See above.
+    ///
+    /// Field 999: `uninterpreted_option`
+    #[must_use]
+    pub fn uninterpreted_option(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::UninterpretedOptionView<'_>,
+    > {
+        &self.0.reborrow().uninterpreted_option
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<EnumValueOptionsView<'static>>>
+for EnumValueOptionsOwnedView {
+    fn from(inner: ::buffa::OwnedView<EnumValueOptionsView<'static>>) -> Self {
+        EnumValueOptionsOwnedView(inner)
+    }
+}
+impl ::core::convert::From<EnumValueOptionsOwnedView>
+for ::buffa::OwnedView<EnumValueOptionsView<'static>> {
+    fn from(wrapper: EnumValueOptionsOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for EnumValueOptionsOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
+    }
+}
 #[derive(Clone, Debug, Default)]
 pub struct ServiceOptionsView<'a> {
     /// Any features defined in the specific edition.
@@ -9143,6 +12581,141 @@ impl ::buffa::ViewReborrow for ServiceOptionsView<'static> {
     type Reborrowed<'b> = ServiceOptionsView<'b>;
     fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
         this
+    }
+}
+/** Self-contained, `'static` owned view of a `ServiceOptions` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`ServiceOptionsView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`ServiceOptionsView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct ServiceOptionsOwnedView(::buffa::OwnedView<ServiceOptionsView<'static>>);
+impl ServiceOptionsOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            ServiceOptionsOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            ServiceOptionsOwnedView(
+                ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+            ),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::ServiceOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            ServiceOptionsOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`ServiceOptionsView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &ServiceOptionsView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::ServiceOptions {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Any features defined in the specific edition.
+    /// WARNING: This field should only be used by protobuf plugins or special
+    /// cases like the proto compiler. Other uses are discouraged and
+    /// developers should rely on the protoreflect APIs for their client language.
+    ///
+    /// Field 34: `features`
+    #[must_use]
+    pub fn features(
+        &self,
+    ) -> &::buffa::MessageFieldView<super::super::__buffa::view::FeatureSetView<'_>> {
+        &self.0.reborrow().features
+    }
+    /// Note:  Field numbers 1 through 32 are reserved for Google's internal RPC
+    ///   framework.  We apologize for hoarding these numbers to ourselves, but
+    ///   we were already using them long before we decided to release Protocol
+    ///   Buffers.
+    ///
+    /// Is this service deprecated?
+    /// Depending on the target platform, this can emit Deprecated annotations
+    /// for the service, or it will be completely ignored; in the very least,
+    /// this is a formalization for deprecating services.
+    ///
+    /// Field 33: `deprecated`
+    #[must_use]
+    pub fn deprecated(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().deprecated
+    }
+    /// The parser stores options it doesn't recognize here. See above.
+    ///
+    /// Field 999: `uninterpreted_option`
+    #[must_use]
+    pub fn uninterpreted_option(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::UninterpretedOptionView<'_>,
+    > {
+        &self.0.reborrow().uninterpreted_option
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<ServiceOptionsView<'static>>>
+for ServiceOptionsOwnedView {
+    fn from(inner: ::buffa::OwnedView<ServiceOptionsView<'static>>) -> Self {
+        ServiceOptionsOwnedView(inner)
+    }
+}
+impl ::core::convert::From<ServiceOptionsOwnedView>
+for ::buffa::OwnedView<ServiceOptionsView<'static>> {
+    fn from(wrapper: ServiceOptionsOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for ServiceOptionsOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
     }
 }
 #[derive(Clone, Debug, Default)]
@@ -9485,6 +13058,146 @@ impl ::buffa::ViewReborrow for MethodOptionsView<'static> {
     type Reborrowed<'b> = MethodOptionsView<'b>;
     fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
         this
+    }
+}
+/** Self-contained, `'static` owned view of a `MethodOptions` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`MethodOptionsView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`MethodOptionsView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct MethodOptionsOwnedView(::buffa::OwnedView<MethodOptionsView<'static>>);
+impl MethodOptionsOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            MethodOptionsOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            MethodOptionsOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::MethodOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            MethodOptionsOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`MethodOptionsView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &MethodOptionsView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::MethodOptions {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Note:  Field numbers 1 through 32 are reserved for Google's internal RPC
+    ///   framework.  We apologize for hoarding these numbers to ourselves, but
+    ///   we were already using them long before we decided to release Protocol
+    ///   Buffers.
+    ///
+    /// Is this method deprecated?
+    /// Depending on the target platform, this can emit Deprecated annotations
+    /// for the method, or it will be completely ignored; in the very least,
+    /// this is a formalization for deprecating methods.
+    ///
+    /// Field 33: `deprecated`
+    #[must_use]
+    pub fn deprecated(&self) -> ::core::option::Option<bool> {
+        self.0.reborrow().deprecated
+    }
+    /// Field 34: `idempotency_level`
+    #[must_use]
+    pub fn idempotency_level(
+        &self,
+    ) -> ::core::option::Option<super::super::method_options::IdempotencyLevel> {
+        self.0.reborrow().idempotency_level
+    }
+    /// Any features defined in the specific edition.
+    /// WARNING: This field should only be used by protobuf plugins or special
+    /// cases like the proto compiler. Other uses are discouraged and
+    /// developers should rely on the protoreflect APIs for their client language.
+    ///
+    /// Field 35: `features`
+    #[must_use]
+    pub fn features(
+        &self,
+    ) -> &::buffa::MessageFieldView<super::super::__buffa::view::FeatureSetView<'_>> {
+        &self.0.reborrow().features
+    }
+    /// The parser stores options it doesn't recognize here. See above.
+    ///
+    /// Field 999: `uninterpreted_option`
+    #[must_use]
+    pub fn uninterpreted_option(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::UninterpretedOptionView<'_>,
+    > {
+        &self.0.reborrow().uninterpreted_option
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<MethodOptionsView<'static>>>
+for MethodOptionsOwnedView {
+    fn from(inner: ::buffa::OwnedView<MethodOptionsView<'static>>) -> Self {
+        MethodOptionsOwnedView(inner)
+    }
+}
+impl ::core::convert::From<MethodOptionsOwnedView>
+for ::buffa::OwnedView<MethodOptionsView<'static>> {
+    fn from(wrapper: MethodOptionsOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for MethodOptionsOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
     }
 }
 /// A message representing a option the parser does not recognize. This only
@@ -9889,6 +13602,147 @@ impl ::buffa::ViewReborrow for UninterpretedOptionView<'static> {
         this
     }
 }
+/** Self-contained, `'static` owned view of a `UninterpretedOption` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`UninterpretedOptionView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`UninterpretedOptionView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct UninterpretedOptionOwnedView(
+    ::buffa::OwnedView<UninterpretedOptionView<'static>>,
+);
+impl UninterpretedOptionOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            UninterpretedOptionOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            UninterpretedOptionOwnedView(
+                ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+            ),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::UninterpretedOption,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            UninterpretedOptionOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`UninterpretedOptionView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &UninterpretedOptionView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::UninterpretedOption {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Field 2: `name`
+    #[must_use]
+    pub fn name(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::uninterpreted_option::NamePartView<'_>,
+    > {
+        &self.0.reborrow().name
+    }
+    /// The value of the uninterpreted option, in whatever type the tokenizer
+    /// identified it as during parsing. Exactly one of these should be set.
+    ///
+    /// Field 3: `identifier_value`
+    #[must_use]
+    pub fn identifier_value(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().identifier_value
+    }
+    /// Field 4: `positive_int_value`
+    #[must_use]
+    pub fn positive_int_value(&self) -> ::core::option::Option<u64> {
+        self.0.reborrow().positive_int_value
+    }
+    /// Field 5: `negative_int_value`
+    #[must_use]
+    pub fn negative_int_value(&self) -> ::core::option::Option<i64> {
+        self.0.reborrow().negative_int_value
+    }
+    /// Field 6: `double_value`
+    #[must_use]
+    pub fn double_value(&self) -> ::core::option::Option<f64> {
+        self.0.reborrow().double_value
+    }
+    /// Field 7: `string_value`
+    #[must_use]
+    pub fn string_value(&self) -> ::core::option::Option<&'_ [u8]> {
+        self.0.reborrow().string_value
+    }
+    /// Field 8: `aggregate_value`
+    #[must_use]
+    pub fn aggregate_value(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().aggregate_value
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<UninterpretedOptionView<'static>>>
+for UninterpretedOptionOwnedView {
+    fn from(inner: ::buffa::OwnedView<UninterpretedOptionView<'static>>) -> Self {
+        UninterpretedOptionOwnedView(inner)
+    }
+}
+impl ::core::convert::From<UninterpretedOptionOwnedView>
+for ::buffa::OwnedView<UninterpretedOptionView<'static>> {
+    fn from(wrapper: UninterpretedOptionOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for UninterpretedOptionOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
+    }
+}
 pub mod uninterpreted_option {
     #[allow(unused_imports)]
     use super::*;
@@ -10094,6 +13948,112 @@ pub mod uninterpreted_option {
         type Reborrowed<'b> = NamePartView<'b>;
         fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
             this
+        }
+    }
+    /** Self-contained, `'static` owned view of a `NamePart` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`NamePartView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`NamePartView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+    #[derive(Clone, Debug)]
+    pub struct NamePartOwnedView(::buffa::OwnedView<NamePartView<'static>>);
+    impl NamePartOwnedView {
+        /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+        ///
+        /// The view borrows directly from the buffer's data; the buffer is
+        /// retained inside the returned handle.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+        /// protobuf data.
+        pub fn decode(
+            bytes: ::buffa::bytes::Bytes,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                NamePartOwnedView(::buffa::OwnedView::decode(bytes)?),
+            )
+        }
+        /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+        /// max message size).
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+        /// exceeds the configured limits.
+        pub fn decode_with_options(
+            bytes: ::buffa::bytes::Bytes,
+            opts: &::buffa::DecodeOptions,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                NamePartOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+            )
+        }
+        /// Build from an owned message via an encode → decode round-trip.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+        /// somehow invalid (should not happen for well-formed messages).
+        pub fn from_owned(
+            msg: &super::super::super::uninterpreted_option::NamePart,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                NamePartOwnedView(::buffa::OwnedView::from_owned(msg)?),
+            )
+        }
+        /// Borrow the full [`NamePartView`] with its lifetime tied to `&self`.
+        #[must_use]
+        pub fn view(&self) -> &NamePartView<'_> {
+            self.0.reborrow()
+        }
+        /// Convert to the owned message type.
+        #[must_use]
+        pub fn to_owned_message(
+            &self,
+        ) -> super::super::super::uninterpreted_option::NamePart {
+            self.0.to_owned_message()
+        }
+        /// The underlying bytes buffer.
+        #[must_use]
+        pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+            self.0.bytes()
+        }
+        /// Consume the handle, returning the underlying bytes buffer.
+        #[must_use]
+        pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+            self.0.into_bytes()
+        }
+        /// Field 1: `name_part`
+        #[must_use]
+        pub fn name_part(&self) -> &'_ str {
+            self.0.reborrow().name_part
+        }
+        /// Field 2: `is_extension`
+        #[must_use]
+        pub fn is_extension(&self) -> bool {
+            self.0.reborrow().is_extension
+        }
+    }
+    impl ::core::convert::From<::buffa::OwnedView<NamePartView<'static>>>
+    for NamePartOwnedView {
+        fn from(inner: ::buffa::OwnedView<NamePartView<'static>>) -> Self {
+            NamePartOwnedView(inner)
+        }
+    }
+    impl ::core::convert::From<NamePartOwnedView>
+    for ::buffa::OwnedView<NamePartView<'static>> {
+        fn from(wrapper: NamePartOwnedView) -> Self {
+            wrapper.0
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::serde::Serialize for NamePartOwnedView {
+        fn serialize<__S: ::serde::Serializer>(
+            &self,
+            __s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
+            ::serde::Serialize::serialize(&self.0, __s)
         }
     }
 }
@@ -10596,6 +14556,158 @@ impl ::buffa::ViewReborrow for FeatureSetView<'static> {
         this
     }
 }
+/** Self-contained, `'static` owned view of a `FeatureSet` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`FeatureSetView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`FeatureSetView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct FeatureSetOwnedView(::buffa::OwnedView<FeatureSetView<'static>>);
+impl FeatureSetOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FeatureSetOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FeatureSetOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::FeatureSet,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FeatureSetOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`FeatureSetView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &FeatureSetView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::FeatureSet {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Field 1: `field_presence`
+    #[must_use]
+    pub fn field_presence(
+        &self,
+    ) -> ::core::option::Option<super::super::feature_set::FieldPresence> {
+        self.0.reborrow().field_presence
+    }
+    /// Field 2: `enum_type`
+    #[must_use]
+    pub fn enum_type(
+        &self,
+    ) -> ::core::option::Option<super::super::feature_set::EnumType> {
+        self.0.reborrow().enum_type
+    }
+    /// Field 3: `repeated_field_encoding`
+    #[must_use]
+    pub fn repeated_field_encoding(
+        &self,
+    ) -> ::core::option::Option<super::super::feature_set::RepeatedFieldEncoding> {
+        self.0.reborrow().repeated_field_encoding
+    }
+    /// Field 4: `utf8_validation`
+    #[must_use]
+    pub fn utf8_validation(
+        &self,
+    ) -> ::core::option::Option<super::super::feature_set::Utf8Validation> {
+        self.0.reborrow().utf8_validation
+    }
+    /// Field 5: `message_encoding`
+    #[must_use]
+    pub fn message_encoding(
+        &self,
+    ) -> ::core::option::Option<super::super::feature_set::MessageEncoding> {
+        self.0.reborrow().message_encoding
+    }
+    /// Field 6: `json_format`
+    #[must_use]
+    pub fn json_format(
+        &self,
+    ) -> ::core::option::Option<super::super::feature_set::JsonFormat> {
+        self.0.reborrow().json_format
+    }
+    /// Field 7: `enforce_naming_style`
+    #[must_use]
+    pub fn enforce_naming_style(
+        &self,
+    ) -> ::core::option::Option<super::super::feature_set::EnforceNamingStyle> {
+        self.0.reborrow().enforce_naming_style
+    }
+    /// Field 8: `default_symbol_visibility`
+    #[must_use]
+    pub fn default_symbol_visibility(
+        &self,
+    ) -> ::core::option::Option<
+        super::super::feature_set::visibility_feature::DefaultSymbolVisibility,
+    > {
+        self.0.reborrow().default_symbol_visibility
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<FeatureSetView<'static>>>
+for FeatureSetOwnedView {
+    fn from(inner: ::buffa::OwnedView<FeatureSetView<'static>>) -> Self {
+        FeatureSetOwnedView(inner)
+    }
+}
+impl ::core::convert::From<FeatureSetOwnedView>
+for ::buffa::OwnedView<FeatureSetView<'static>> {
+    fn from(wrapper: FeatureSetOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for FeatureSetOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
+    }
+}
 pub mod feature_set {
     #[allow(unused_imports)]
     use super::*;
@@ -10751,6 +14863,106 @@ pub mod feature_set {
         type Reborrowed<'b> = VisibilityFeatureView<'b>;
         fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
             this
+        }
+    }
+    /** Self-contained, `'static` owned view of a `VisibilityFeature` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`VisibilityFeatureView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`VisibilityFeatureView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+    #[derive(Clone, Debug)]
+    pub struct VisibilityFeatureOwnedView(
+        ::buffa::OwnedView<VisibilityFeatureView<'static>>,
+    );
+    impl VisibilityFeatureOwnedView {
+        /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+        ///
+        /// The view borrows directly from the buffer's data; the buffer is
+        /// retained inside the returned handle.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+        /// protobuf data.
+        pub fn decode(
+            bytes: ::buffa::bytes::Bytes,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                VisibilityFeatureOwnedView(::buffa::OwnedView::decode(bytes)?),
+            )
+        }
+        /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+        /// max message size).
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+        /// exceeds the configured limits.
+        pub fn decode_with_options(
+            bytes: ::buffa::bytes::Bytes,
+            opts: &::buffa::DecodeOptions,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                VisibilityFeatureOwnedView(
+                    ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+                ),
+            )
+        }
+        /// Build from an owned message via an encode → decode round-trip.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+        /// somehow invalid (should not happen for well-formed messages).
+        pub fn from_owned(
+            msg: &super::super::super::feature_set::VisibilityFeature,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                VisibilityFeatureOwnedView(::buffa::OwnedView::from_owned(msg)?),
+            )
+        }
+        /// Borrow the full [`VisibilityFeatureView`] with its lifetime tied to `&self`.
+        #[must_use]
+        pub fn view(&self) -> &VisibilityFeatureView<'_> {
+            self.0.reborrow()
+        }
+        /// Convert to the owned message type.
+        #[must_use]
+        pub fn to_owned_message(
+            &self,
+        ) -> super::super::super::feature_set::VisibilityFeature {
+            self.0.to_owned_message()
+        }
+        /// The underlying bytes buffer.
+        #[must_use]
+        pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+            self.0.bytes()
+        }
+        /// Consume the handle, returning the underlying bytes buffer.
+        #[must_use]
+        pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+            self.0.into_bytes()
+        }
+    }
+    impl ::core::convert::From<::buffa::OwnedView<VisibilityFeatureView<'static>>>
+    for VisibilityFeatureOwnedView {
+        fn from(inner: ::buffa::OwnedView<VisibilityFeatureView<'static>>) -> Self {
+            VisibilityFeatureOwnedView(inner)
+        }
+    }
+    impl ::core::convert::From<VisibilityFeatureOwnedView>
+    for ::buffa::OwnedView<VisibilityFeatureView<'static>> {
+        fn from(wrapper: VisibilityFeatureOwnedView) -> Self {
+            wrapper.0
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::serde::Serialize for VisibilityFeatureOwnedView {
+        fn serialize<__S: ::serde::Serializer>(
+            &self,
+            __s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
+            ::serde::Serialize::serialize(&self.0, __s)
         }
     }
 }
@@ -11046,6 +15258,132 @@ impl ::buffa::ViewReborrow for FeatureSetDefaultsView<'static> {
     type Reborrowed<'b> = FeatureSetDefaultsView<'b>;
     fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
         this
+    }
+}
+/** Self-contained, `'static` owned view of a `FeatureSetDefaults` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`FeatureSetDefaultsView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`FeatureSetDefaultsView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct FeatureSetDefaultsOwnedView(
+    ::buffa::OwnedView<FeatureSetDefaultsView<'static>>,
+);
+impl FeatureSetDefaultsOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FeatureSetDefaultsOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FeatureSetDefaultsOwnedView(
+                ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+            ),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::FeatureSetDefaults,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FeatureSetDefaultsOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`FeatureSetDefaultsView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &FeatureSetDefaultsView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::FeatureSetDefaults {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Field 1: `defaults`
+    #[must_use]
+    pub fn defaults(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::feature_set_defaults::FeatureSetEditionDefaultView<
+            '_,
+        >,
+    > {
+        &self.0.reborrow().defaults
+    }
+    /// The minimum supported edition (inclusive) when this was constructed.
+    /// Editions before this will not have defaults.
+    ///
+    /// Field 4: `minimum_edition`
+    #[must_use]
+    pub fn minimum_edition(&self) -> ::core::option::Option<super::super::Edition> {
+        self.0.reborrow().minimum_edition
+    }
+    /// The maximum known edition (inclusive) when this was constructed. Editions
+    /// after this will not have reliable defaults.
+    ///
+    /// Field 5: `maximum_edition`
+    #[must_use]
+    pub fn maximum_edition(&self) -> ::core::option::Option<super::super::Edition> {
+        self.0.reborrow().maximum_edition
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<FeatureSetDefaultsView<'static>>>
+for FeatureSetDefaultsOwnedView {
+    fn from(inner: ::buffa::OwnedView<FeatureSetDefaultsView<'static>>) -> Self {
+        FeatureSetDefaultsOwnedView(inner)
+    }
+}
+impl ::core::convert::From<FeatureSetDefaultsOwnedView>
+for ::buffa::OwnedView<FeatureSetDefaultsView<'static>> {
+    fn from(wrapper: FeatureSetDefaultsOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for FeatureSetDefaultsOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
     }
 }
 pub mod feature_set_defaults {
@@ -11383,6 +15721,135 @@ pub mod feature_set_defaults {
             this
         }
     }
+    /** Self-contained, `'static` owned view of a `FeatureSetEditionDefault` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`FeatureSetEditionDefaultView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`FeatureSetEditionDefaultView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+    #[derive(Clone, Debug)]
+    pub struct FeatureSetEditionDefaultOwnedView(
+        ::buffa::OwnedView<FeatureSetEditionDefaultView<'static>>,
+    );
+    impl FeatureSetEditionDefaultOwnedView {
+        /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+        ///
+        /// The view borrows directly from the buffer's data; the buffer is
+        /// retained inside the returned handle.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+        /// protobuf data.
+        pub fn decode(
+            bytes: ::buffa::bytes::Bytes,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                FeatureSetEditionDefaultOwnedView(::buffa::OwnedView::decode(bytes)?),
+            )
+        }
+        /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+        /// max message size).
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+        /// exceeds the configured limits.
+        pub fn decode_with_options(
+            bytes: ::buffa::bytes::Bytes,
+            opts: &::buffa::DecodeOptions,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                FeatureSetEditionDefaultOwnedView(
+                    ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+                ),
+            )
+        }
+        /// Build from an owned message via an encode → decode round-trip.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+        /// somehow invalid (should not happen for well-formed messages).
+        pub fn from_owned(
+            msg: &super::super::super::feature_set_defaults::FeatureSetEditionDefault,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                FeatureSetEditionDefaultOwnedView(::buffa::OwnedView::from_owned(msg)?),
+            )
+        }
+        /// Borrow the full [`FeatureSetEditionDefaultView`] with its lifetime tied to `&self`.
+        #[must_use]
+        pub fn view(&self) -> &FeatureSetEditionDefaultView<'_> {
+            self.0.reborrow()
+        }
+        /// Convert to the owned message type.
+        #[must_use]
+        pub fn to_owned_message(
+            &self,
+        ) -> super::super::super::feature_set_defaults::FeatureSetEditionDefault {
+            self.0.to_owned_message()
+        }
+        /// The underlying bytes buffer.
+        #[must_use]
+        pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+            self.0.bytes()
+        }
+        /// Consume the handle, returning the underlying bytes buffer.
+        #[must_use]
+        pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+            self.0.into_bytes()
+        }
+        /// Field 3: `edition`
+        #[must_use]
+        pub fn edition(&self) -> ::core::option::Option<super::super::super::Edition> {
+            self.0.reborrow().edition
+        }
+        /// Defaults of features that can be overridden in this edition.
+        ///
+        /// Field 4: `overridable_features`
+        #[must_use]
+        pub fn overridable_features(
+            &self,
+        ) -> &::buffa::MessageFieldView<
+            super::super::super::__buffa::view::FeatureSetView<'_>,
+        > {
+            &self.0.reborrow().overridable_features
+        }
+        /// Defaults of features that can't be overridden in this edition.
+        ///
+        /// Field 5: `fixed_features`
+        #[must_use]
+        pub fn fixed_features(
+            &self,
+        ) -> &::buffa::MessageFieldView<
+            super::super::super::__buffa::view::FeatureSetView<'_>,
+        > {
+            &self.0.reborrow().fixed_features
+        }
+    }
+    impl ::core::convert::From<::buffa::OwnedView<FeatureSetEditionDefaultView<'static>>>
+    for FeatureSetEditionDefaultOwnedView {
+        fn from(
+            inner: ::buffa::OwnedView<FeatureSetEditionDefaultView<'static>>,
+        ) -> Self {
+            FeatureSetEditionDefaultOwnedView(inner)
+        }
+    }
+    impl ::core::convert::From<FeatureSetEditionDefaultOwnedView>
+    for ::buffa::OwnedView<FeatureSetEditionDefaultView<'static>> {
+        fn from(wrapper: FeatureSetEditionDefaultOwnedView) -> Self {
+            wrapper.0
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::serde::Serialize for FeatureSetEditionDefaultOwnedView {
+        fn serialize<__S: ::serde::Serializer>(
+            &self,
+            __s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
+            ::serde::Serialize::serialize(&self.0, __s)
+        }
+    }
 }
 /// ===================================================================
 /// Optional source code info
@@ -11633,6 +16100,158 @@ impl ::buffa::ViewReborrow for SourceCodeInfoView<'static> {
     type Reborrowed<'b> = SourceCodeInfoView<'b>;
     fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
         this
+    }
+}
+/** Self-contained, `'static` owned view of a `SourceCodeInfo` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`SourceCodeInfoView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`SourceCodeInfoView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct SourceCodeInfoOwnedView(::buffa::OwnedView<SourceCodeInfoView<'static>>);
+impl SourceCodeInfoOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            SourceCodeInfoOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            SourceCodeInfoOwnedView(
+                ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+            ),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::SourceCodeInfo,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            SourceCodeInfoOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`SourceCodeInfoView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &SourceCodeInfoView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::SourceCodeInfo {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// A Location identifies a piece of source code in a .proto file which
+    /// corresponds to a particular definition.  This information is intended
+    /// to be useful to IDEs, code indexers, documentation generators, and similar
+    /// tools.
+    ///
+    /// For example, say we have a file like:
+    ///   message Foo {
+    /// ```text
+    /// optional string foo = 1;
+    /// ```
+    ///   }
+    /// Let's look at just the field definition:
+    ///   optional string foo = 1;
+    ///   ^       ^^     ^^  ^  ^^^
+    ///   a       bc     de  f  ghi
+    /// We have the following locations:
+    ///   span   path               represents
+    ///   \[a,i)  \[ 4, 0, 2, 0 \]     The whole field definition.
+    ///   \[a,b)  \[ 4, 0, 2, 0, 4 \]  The label (optional).
+    ///   \[c,d)  \[ 4, 0, 2, 0, 5 \]  The type (string).
+    ///   \[e,f)  \[ 4, 0, 2, 0, 1 \]  The name (foo).
+    ///   \[g,h)  \[ 4, 0, 2, 0, 3 \]  The number (1).
+    ///
+    /// Notes:
+    /// - A location may refer to a repeated field itself (i.e. not to any
+    ///   particular index within it).  This is used whenever a set of elements are
+    ///   logically enclosed in a single code segment.  For example, an entire
+    ///   extend block (possibly containing multiple extension definitions) will
+    ///   have an outer location whose path refers to the "extensions" repeated
+    ///   field without an index.
+    /// - Multiple locations may have the same path.  This happens when a single
+    ///   logical declaration is spread out across multiple places.  The most
+    ///   obvious example is the "extend" block again -- there may be multiple
+    ///   extend blocks in the same scope, each of which will have the same path.
+    /// - A location's span is not always a subset of its parent's span.  For
+    ///   example, the "extendee" of an extension declaration appears at the
+    ///   beginning of the "extend" block and is shared by all extensions within
+    ///   the block.
+    /// - Just because a location's span is a subset of some other location's span
+    ///   does not mean that it is a descendant.  For example, a "group" defines
+    ///   both a type and a field in a single declaration.  Thus, the locations
+    ///   corresponding to the type and field and their components will overlap.
+    /// - Code which tries to interpret locations should probably be designed to
+    ///   ignore those that it doesn't understand, as more types of locations could
+    ///   be recorded in the future.
+    ///
+    /// Field 1: `location`
+    #[must_use]
+    pub fn location(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::source_code_info::LocationView<'_>,
+    > {
+        &self.0.reborrow().location
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<SourceCodeInfoView<'static>>>
+for SourceCodeInfoOwnedView {
+    fn from(inner: ::buffa::OwnedView<SourceCodeInfoView<'static>>) -> Self {
+        SourceCodeInfoOwnedView(inner)
+    }
+}
+impl ::core::convert::From<SourceCodeInfoOwnedView>
+for ::buffa::OwnedView<SourceCodeInfoView<'static>> {
+    fn from(wrapper: SourceCodeInfoOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for SourceCodeInfoOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
     }
 }
 pub mod source_code_info {
@@ -12096,6 +16715,211 @@ pub mod source_code_info {
             this
         }
     }
+    /** Self-contained, `'static` owned view of a `Location` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`LocationView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`LocationView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+    #[derive(Clone, Debug)]
+    pub struct LocationOwnedView(::buffa::OwnedView<LocationView<'static>>);
+    impl LocationOwnedView {
+        /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+        ///
+        /// The view borrows directly from the buffer's data; the buffer is
+        /// retained inside the returned handle.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+        /// protobuf data.
+        pub fn decode(
+            bytes: ::buffa::bytes::Bytes,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                LocationOwnedView(::buffa::OwnedView::decode(bytes)?),
+            )
+        }
+        /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+        /// max message size).
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+        /// exceeds the configured limits.
+        pub fn decode_with_options(
+            bytes: ::buffa::bytes::Bytes,
+            opts: &::buffa::DecodeOptions,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                LocationOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+            )
+        }
+        /// Build from an owned message via an encode → decode round-trip.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+        /// somehow invalid (should not happen for well-formed messages).
+        pub fn from_owned(
+            msg: &super::super::super::source_code_info::Location,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                LocationOwnedView(::buffa::OwnedView::from_owned(msg)?),
+            )
+        }
+        /// Borrow the full [`LocationView`] with its lifetime tied to `&self`.
+        #[must_use]
+        pub fn view(&self) -> &LocationView<'_> {
+            self.0.reborrow()
+        }
+        /// Convert to the owned message type.
+        #[must_use]
+        pub fn to_owned_message(
+            &self,
+        ) -> super::super::super::source_code_info::Location {
+            self.0.to_owned_message()
+        }
+        /// The underlying bytes buffer.
+        #[must_use]
+        pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+            self.0.bytes()
+        }
+        /// Consume the handle, returning the underlying bytes buffer.
+        #[must_use]
+        pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+            self.0.into_bytes()
+        }
+        /// Identifies which part of the FileDescriptorProto was defined at this
+        /// location.
+        ///
+        /// Each element is a field number or an index.  They form a path from
+        /// the root FileDescriptorProto to the place where the definition appears.
+        /// For example, this path:
+        ///   \[ 4, 3, 2, 7, 1 \]
+        /// refers to:
+        ///   file.message_type(3)  // 4, 3
+        /// ```text
+        ///   .field(7)         // 2, 7
+        ///   .name()           // 1
+        /// ```
+        /// This is because FileDescriptorProto.message_type has field number 4:
+        ///   repeated DescriptorProto message_type = 4;
+        /// and DescriptorProto.field has field number 2:
+        ///   repeated FieldDescriptorProto field = 2;
+        /// and FieldDescriptorProto.name has field number 1:
+        ///   optional string name = 1;
+        ///
+        /// Thus, the above path gives the location of a field name.  If we removed
+        /// the last element:
+        ///   \[ 4, 3, 2, 7 \]
+        /// this path refers to the whole field declaration (from the beginning
+        /// of the label to the terminating semicolon).
+        ///
+        /// Field 1: `path`
+        #[must_use]
+        pub fn path(&self) -> &::buffa::RepeatedView<'_, i32> {
+            &self.0.reborrow().path
+        }
+        /// Always has exactly three or four elements: start line, start column,
+        /// end line (optional, otherwise assumed same as start line), end column.
+        /// These are packed into a single field for efficiency.  Note that line
+        /// and column numbers are zero-based -- typically you will want to add
+        /// 1 to each before displaying to a user.
+        ///
+        /// Field 2: `span`
+        #[must_use]
+        pub fn span(&self) -> &::buffa::RepeatedView<'_, i32> {
+            &self.0.reborrow().span
+        }
+        /// If this SourceCodeInfo represents a complete declaration, these are any
+        /// comments appearing before and after the declaration which appear to be
+        /// attached to the declaration.
+        ///
+        /// A series of line comments appearing on consecutive lines, with no other
+        /// tokens appearing on those lines, will be treated as a single comment.
+        ///
+        /// leading_detached_comments will keep paragraphs of comments that appear
+        /// before (but not connected to) the current element. Each paragraph,
+        /// separated by empty lines, will be one comment element in the repeated
+        /// field.
+        ///
+        /// Only the comment content is provided; comment markers (e.g. //) are
+        /// stripped out.  For block comments, leading whitespace and an asterisk
+        /// will be stripped from the beginning of each line other than the first.
+        /// Newlines are included in the output.
+        ///
+        /// Examples:
+        ///
+        ///   optional int32 foo = 1;  // Comment attached to foo.
+        ///   // Comment attached to bar.
+        ///   optional int32 bar = 2;
+        ///
+        ///   optional string baz = 3;
+        ///   // Comment attached to baz.
+        ///   // Another line attached to baz.
+        ///
+        ///   // Comment attached to moo.
+        ///   //
+        ///   // Another line attached to moo.
+        ///   optional double moo = 4;
+        ///
+        ///   // Detached comment for corge. This is not leading or trailing comments
+        ///   // to moo or corge because there are blank lines separating it from
+        ///   // both.
+        ///
+        ///   // Detached comment for corge paragraph 2.
+        ///
+        ///   optional string corge = 5;
+        ///   /* Block comment attached
+        /// ```text
+        /// * to corge.  Leading asterisks
+        /// * will be removed. */
+        /// ```
+        ///   /* Block comment attached to
+        /// ```text
+        /// * grault. */
+        /// ```
+        ///   optional int32 grault = 6;
+        ///
+        ///   // ignored detached comments.
+        ///
+        /// Field 3: `leading_comments`
+        #[must_use]
+        pub fn leading_comments(&self) -> ::core::option::Option<&'_ str> {
+            self.0.reborrow().leading_comments
+        }
+        /// Field 4: `trailing_comments`
+        #[must_use]
+        pub fn trailing_comments(&self) -> ::core::option::Option<&'_ str> {
+            self.0.reborrow().trailing_comments
+        }
+        /// Field 6: `leading_detached_comments`
+        #[must_use]
+        pub fn leading_detached_comments(&self) -> &::buffa::RepeatedView<'_, &'_ str> {
+            &self.0.reborrow().leading_detached_comments
+        }
+    }
+    impl ::core::convert::From<::buffa::OwnedView<LocationView<'static>>>
+    for LocationOwnedView {
+        fn from(inner: ::buffa::OwnedView<LocationView<'static>>) -> Self {
+            LocationOwnedView(inner)
+        }
+    }
+    impl ::core::convert::From<LocationOwnedView>
+    for ::buffa::OwnedView<LocationView<'static>> {
+        fn from(wrapper: LocationOwnedView) -> Self {
+            wrapper.0
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::serde::Serialize for LocationOwnedView {
+        fn serialize<__S: ::serde::Serializer>(
+            &self,
+            __s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
+            ::serde::Serialize::serialize(&self.0, __s)
+        }
+    }
 }
 /// Describes the relationship between generated code and its original source
 /// file. A GeneratedCodeInfo message is associated with only one generated
@@ -12301,6 +17125,117 @@ impl ::buffa::ViewReborrow for GeneratedCodeInfoView<'static> {
     type Reborrowed<'b> = GeneratedCodeInfoView<'b>;
     fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
         this
+    }
+}
+/** Self-contained, `'static` owned view of a `GeneratedCodeInfo` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`GeneratedCodeInfoView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`GeneratedCodeInfoView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct GeneratedCodeInfoOwnedView(
+    ::buffa::OwnedView<GeneratedCodeInfoView<'static>>,
+);
+impl GeneratedCodeInfoOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            GeneratedCodeInfoOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            GeneratedCodeInfoOwnedView(
+                ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+            ),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::GeneratedCodeInfo,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            GeneratedCodeInfoOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`GeneratedCodeInfoView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &GeneratedCodeInfoView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::GeneratedCodeInfo {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// An Annotation connects some span of text in generated code to an element
+    /// of its generating .proto file.
+    ///
+    /// Field 1: `annotation`
+    #[must_use]
+    pub fn annotation(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::generated_code_info::AnnotationView<'_>,
+    > {
+        &self.0.reborrow().annotation
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<GeneratedCodeInfoView<'static>>>
+for GeneratedCodeInfoOwnedView {
+    fn from(inner: ::buffa::OwnedView<GeneratedCodeInfoView<'static>>) -> Self {
+        GeneratedCodeInfoOwnedView(inner)
+    }
+}
+impl ::core::convert::From<GeneratedCodeInfoOwnedView>
+for ::buffa::OwnedView<GeneratedCodeInfoView<'static>> {
+    fn from(wrapper: GeneratedCodeInfoOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for GeneratedCodeInfoOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
     }
 }
 pub mod generated_code_info {
@@ -12672,6 +17607,145 @@ pub mod generated_code_info {
         type Reborrowed<'b> = AnnotationView<'b>;
         fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
             this
+        }
+    }
+    /** Self-contained, `'static` owned view of a `Annotation` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`AnnotationView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`AnnotationView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+    #[derive(Clone, Debug)]
+    pub struct AnnotationOwnedView(::buffa::OwnedView<AnnotationView<'static>>);
+    impl AnnotationOwnedView {
+        /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+        ///
+        /// The view borrows directly from the buffer's data; the buffer is
+        /// retained inside the returned handle.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+        /// protobuf data.
+        pub fn decode(
+            bytes: ::buffa::bytes::Bytes,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                AnnotationOwnedView(::buffa::OwnedView::decode(bytes)?),
+            )
+        }
+        /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+        /// max message size).
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+        /// exceeds the configured limits.
+        pub fn decode_with_options(
+            bytes: ::buffa::bytes::Bytes,
+            opts: &::buffa::DecodeOptions,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                AnnotationOwnedView(
+                    ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+                ),
+            )
+        }
+        /// Build from an owned message via an encode → decode round-trip.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+        /// somehow invalid (should not happen for well-formed messages).
+        pub fn from_owned(
+            msg: &super::super::super::generated_code_info::Annotation,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                AnnotationOwnedView(::buffa::OwnedView::from_owned(msg)?),
+            )
+        }
+        /// Borrow the full [`AnnotationView`] with its lifetime tied to `&self`.
+        #[must_use]
+        pub fn view(&self) -> &AnnotationView<'_> {
+            self.0.reborrow()
+        }
+        /// Convert to the owned message type.
+        #[must_use]
+        pub fn to_owned_message(
+            &self,
+        ) -> super::super::super::generated_code_info::Annotation {
+            self.0.to_owned_message()
+        }
+        /// The underlying bytes buffer.
+        #[must_use]
+        pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+            self.0.bytes()
+        }
+        /// Consume the handle, returning the underlying bytes buffer.
+        #[must_use]
+        pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+            self.0.into_bytes()
+        }
+        /// Identifies the element in the original source .proto file. This field
+        /// is formatted the same as SourceCodeInfo.Location.path.
+        ///
+        /// Field 1: `path`
+        #[must_use]
+        pub fn path(&self) -> &::buffa::RepeatedView<'_, i32> {
+            &self.0.reborrow().path
+        }
+        /// Identifies the filesystem path to the original source .proto.
+        ///
+        /// Field 2: `source_file`
+        #[must_use]
+        pub fn source_file(&self) -> ::core::option::Option<&'_ str> {
+            self.0.reborrow().source_file
+        }
+        /// Identifies the starting offset in bytes in the generated code
+        /// that relates to the identified object.
+        ///
+        /// Field 3: `begin`
+        #[must_use]
+        pub fn begin(&self) -> ::core::option::Option<i32> {
+            self.0.reborrow().begin
+        }
+        /// Identifies the ending offset in bytes in the generated code that
+        /// relates to the identified object. The end offset should be one past
+        /// the last relevant byte (so the length of the text = end - begin).
+        ///
+        /// Field 4: `end`
+        #[must_use]
+        pub fn end(&self) -> ::core::option::Option<i32> {
+            self.0.reborrow().end
+        }
+        /// Field 5: `semantic`
+        #[must_use]
+        pub fn semantic(
+            &self,
+        ) -> ::core::option::Option<
+            super::super::super::generated_code_info::annotation::Semantic,
+        > {
+            self.0.reborrow().semantic
+        }
+    }
+    impl ::core::convert::From<::buffa::OwnedView<AnnotationView<'static>>>
+    for AnnotationOwnedView {
+        fn from(inner: ::buffa::OwnedView<AnnotationView<'static>>) -> Self {
+            AnnotationOwnedView(inner)
+        }
+    }
+    impl ::core::convert::From<AnnotationOwnedView>
+    for ::buffa::OwnedView<AnnotationView<'static>> {
+        fn from(wrapper: AnnotationOwnedView) -> Self {
+            wrapper.0
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::serde::Serialize for AnnotationOwnedView {
+        fn serialize<__S: ::serde::Serializer>(
+            &self,
+            __s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
+            ::serde::Serialize::serialize(&self.0, __s)
         }
     }
 }

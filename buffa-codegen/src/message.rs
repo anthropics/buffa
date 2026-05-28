@@ -912,12 +912,22 @@ fn collect_natural_reexports(
     if ctx.config.generate_views {
         let views_gate = ctx.config.feature_gates().views;
         // Nested-message views: `__buffa::view::<msg>::BarView` → `BarView`.
+        // The owned-view wrapper rides along: `BarOwnedView` → `BarOwnedView`.
         for nested in non_map_nested {
             let view_ident = format_ident!("{}View", nested.name.as_deref().unwrap_or(""));
             candidates.push(ReexportCandidate {
                 name: view_ident.to_string(),
                 tokens: crate::feature_gates::cfg_block(
                     quote! { #inline pub use #view_prefix #view_ident; },
+                    views_gate,
+                ),
+            });
+            let owned_view_ident =
+                format_ident!("{}OwnedView", nested.name.as_deref().unwrap_or(""));
+            candidates.push(ReexportCandidate {
+                name: owned_view_ident.to_string(),
+                tokens: crate::feature_gates::cfg_block(
+                    quote! { #inline pub use #view_prefix #owned_view_ident; },
                     views_gate,
                 ),
             });

@@ -35,6 +35,7 @@ pub(crate) mod impl_text;
 pub(crate) mod imports;
 pub(crate) mod message;
 pub(crate) mod oneof;
+pub(crate) mod owned_view;
 pub(crate) mod reflect;
 pub(crate) mod reflect_owned;
 pub(crate) mod reflect_view;
@@ -790,6 +791,18 @@ pub enum CodeGenWarning {
         /// Proto values that would convert to an invalid Rust identifier.
         invalid: Vec<String>,
     },
+    /// A field or oneof accessor on a generated `FooOwnedView` wrapper was
+    /// suppressed because the proto name collides with one of the wrapper's
+    /// reserved method names (`decode`, `view`, `bytes`, …). The field stays
+    /// fully accessible through `view()` on the wrapper (or
+    /// `OwnedView::reborrow`).
+    #[non_exhaustive]
+    OwnedViewAccessorSuppressed {
+        /// The Rust name of the wrapper type (e.g. `FooOwnedView`).
+        wrapper_name: String,
+        /// The proto field or oneof name whose accessor was suppressed.
+        field_name: String,
+    },
 }
 
 impl core::fmt::Display for CodeGenWarning {
@@ -820,6 +833,16 @@ impl core::fmt::Display for CodeGenWarning {
                     write!(f, ": {}", parts.join("; "))?;
                 }
                 Ok(())
+            }
+            Self::OwnedViewAccessorSuppressed {
+                wrapper_name,
+                field_name,
+            } => {
+                write!(
+                    f,
+                    "`{wrapper_name}`: accessor for field `{field_name}` suppressed \
+                     (collides with a reserved wrapper method); use `.view().{field_name}` instead"
+                )
             }
         }
     }
@@ -1248,6 +1271,19 @@ fn generate_proto_content(
                     quote! {
                         #[doc(inline)]
                         pub use self :: #sentinel :: view :: #view_ident;
+                    },
+                    ctx.config.feature_gates().views,
+                ),
+            });
+            // The owned-view wrapper gets the same natural-path treatment as
+            // the view struct, so `pkg::FooOwnedView` works out of the box.
+            let owned_view_ident = format_ident!("{top_level_name}OwnedView");
+            root_reexports.push(message::ReexportCandidate {
+                name: owned_view_ident.to_string(),
+                tokens: feature_gates::cfg_block(
+                    quote! {
+                        #[doc(inline)]
+                        pub use self :: #sentinel :: view :: #owned_view_ident;
                     },
                     ctx.config.feature_gates().views,
                 ),

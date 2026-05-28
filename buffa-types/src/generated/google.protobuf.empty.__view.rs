@@ -138,6 +138,85 @@ impl ::buffa::ViewReborrow for EmptyView<'static> {
         this
     }
 }
+/** Self-contained, `'static` owned view of a `Empty` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`EmptyView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`EmptyView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct EmptyOwnedView(::buffa::OwnedView<EmptyView<'static>>);
+impl EmptyOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(EmptyOwnedView(::buffa::OwnedView::decode(bytes)?))
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            EmptyOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::Empty,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(EmptyOwnedView(::buffa::OwnedView::from_owned(msg)?))
+    }
+    /// Borrow the full [`EmptyView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &EmptyView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::Empty {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<EmptyView<'static>>> for EmptyOwnedView {
+    fn from(inner: ::buffa::OwnedView<EmptyView<'static>>) -> Self {
+        EmptyOwnedView(inner)
+    }
+}
+impl ::core::convert::From<EmptyOwnedView> for ::buffa::OwnedView<EmptyView<'static>> {
+    fn from(wrapper: EmptyOwnedView) -> Self {
+        wrapper.0
+    }
+}
 #[cfg(feature = "reflect")]
 const _: () = {
     impl<'a> ::buffa_descriptor::reflect::ReflectMessage for EmptyView<'a> {

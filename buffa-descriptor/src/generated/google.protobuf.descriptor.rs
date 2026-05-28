@@ -2933,7 +2933,13 @@ pub mod descriptor_proto {
     pub use super::__buffa::view::descriptor_proto::ExtensionRangeView;
     #[cfg(feature = "views")]
     #[doc(inline)]
+    pub use super::__buffa::view::descriptor_proto::ExtensionRangeOwnedView;
+    #[cfg(feature = "views")]
+    #[doc(inline)]
     pub use super::__buffa::view::descriptor_proto::ReservedRangeView;
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::descriptor_proto::ReservedRangeOwnedView;
 }
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "json", derive(::serde::Serialize))]
@@ -4077,6 +4083,9 @@ pub mod extension_range_options {
     #[cfg(feature = "views")]
     #[doc(inline)]
     pub use super::__buffa::view::extension_range_options::DeclarationView;
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::extension_range_options::DeclarationOwnedView;
 }
 /// Describes a field within a message.
 #[derive(Clone, PartialEq, Default)]
@@ -6245,6 +6254,9 @@ pub mod enum_descriptor_proto {
     #[cfg(feature = "views")]
     #[doc(inline)]
     pub use super::__buffa::view::enum_descriptor_proto::EnumReservedRangeView;
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::enum_descriptor_proto::EnumReservedRangeOwnedView;
 }
 /// Describes a value within an enum.
 #[derive(Clone, PartialEq, Default)]
@@ -12656,7 +12668,13 @@ pub mod field_options {
     pub use super::__buffa::view::field_options::EditionDefaultView;
     #[cfg(feature = "views")]
     #[doc(inline)]
+    pub use super::__buffa::view::field_options::EditionDefaultOwnedView;
+    #[cfg(feature = "views")]
+    #[doc(inline)]
     pub use super::__buffa::view::field_options::FeatureSupportView;
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::field_options::FeatureSupportOwnedView;
 }
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "json", derive(::serde::Serialize))]
@@ -16173,6 +16191,9 @@ pub mod uninterpreted_option {
     #[cfg(feature = "views")]
     #[doc(inline)]
     pub use super::__buffa::view::uninterpreted_option::NamePartView;
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::uninterpreted_option::NamePartOwnedView;
 }
 /// ===================================================================
 /// Features
@@ -18569,6 +18590,9 @@ pub mod feature_set {
     #[cfg(feature = "views")]
     #[doc(inline)]
     pub use super::__buffa::view::feature_set::VisibilityFeatureView;
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::feature_set::VisibilityFeatureOwnedView;
 }
 /// A compiled specification for the defaults of a set of features.  These
 /// messages are generated from FeatureSet extensions and can be used to seed
@@ -19214,6 +19238,9 @@ pub mod feature_set_defaults {
     #[cfg(feature = "views")]
     #[doc(inline)]
     pub use super::__buffa::view::feature_set_defaults::FeatureSetEditionDefaultView;
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::feature_set_defaults::FeatureSetEditionDefaultOwnedView;
 }
 /// ===================================================================
 /// Optional source code info
@@ -20147,6 +20174,9 @@ pub mod source_code_info {
     #[cfg(feature = "views")]
     #[doc(inline)]
     pub use super::__buffa::view::source_code_info::LocationView;
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::source_code_info::LocationOwnedView;
 }
 /// Describes the relationship between generated code and its original source
 /// file. A GeneratedCodeInfo message is associated with only one generated
@@ -20956,4 +20986,7 @@ pub mod generated_code_info {
     #[cfg(feature = "views")]
     #[doc(inline)]
     pub use super::__buffa::view::generated_code_info::AnnotationView;
+    #[cfg(feature = "views")]
+    #[doc(inline)]
+    pub use super::__buffa::view::generated_code_info::AnnotationOwnedView;
 }

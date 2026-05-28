@@ -305,6 +305,126 @@ impl ::buffa::ViewReborrow for AnyView<'static> {
         this
     }
 }
+/** Self-contained, `'static` owned view of a `Any` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`AnyView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`AnyView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct AnyOwnedView(::buffa::OwnedView<AnyView<'static>>);
+impl AnyOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(AnyOwnedView(::buffa::OwnedView::decode(bytes)?))
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            AnyOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::Any,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(AnyOwnedView(::buffa::OwnedView::from_owned(msg)?))
+    }
+    /// Borrow the full [`AnyView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &AnyView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::Any {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// A URL/resource name that uniquely identifies the type of the serialized
+    /// protocol buffer message. This string must contain at least
+    /// one "/" character. The last segment of the URL's path must represent
+    /// the fully qualified name of the type (as in
+    /// `path/google.protobuf.Duration`). The name should be in a canonical form
+    /// (e.g., leading "." is not accepted).
+    ///
+    /// In practice, teams usually precompile into the binary all types that they
+    /// expect it to use in the context of Any. However, for URLs which use the
+    /// scheme `http`, `https`, or no scheme, one can optionally set up a type
+    /// server that maps type URLs to message definitions as follows:
+    ///
+    /// * If no scheme is provided, `https` is assumed.
+    /// * An HTTP GET on the URL must yield a \[google.protobuf.Type\]\[\]
+    ///   value in binary format, or produce an error.
+    /// * Applications are allowed to cache lookup results based on the
+    ///   URL, or have them precompiled into a binary to avoid any
+    ///   lookup. Therefore, binary compatibility needs to be preserved
+    ///   on changes to types. (Use versioned type names to manage
+    ///   breaking changes.)
+    ///
+    /// Note: this functionality is not currently available in the official
+    /// protobuf release, and it is not used for type URLs beginning with
+    /// type.googleapis.com. As of May 2023, there are no widely used type server
+    /// implementations and no plans to implement one.
+    ///
+    /// Schemes other than `http`, `https` (or the empty scheme) might be
+    /// used with implementation specific semantics.
+    ///
+    /// Field 1: `type_url`
+    #[must_use]
+    pub fn type_url(&self) -> &'_ str {
+        self.0.reborrow().type_url
+    }
+    /// Must be a valid serialized protocol buffer of the above specified type.
+    ///
+    /// Field 2: `value`
+    #[must_use]
+    pub fn value(&self) -> &'_ [u8] {
+        self.0.reborrow().value
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<AnyView<'static>>> for AnyOwnedView {
+    fn from(inner: ::buffa::OwnedView<AnyView<'static>>) -> Self {
+        AnyOwnedView(inner)
+    }
+}
+impl ::core::convert::From<AnyOwnedView> for ::buffa::OwnedView<AnyView<'static>> {
+    fn from(wrapper: AnyOwnedView) -> Self {
+        wrapper.0
+    }
+}
 #[cfg(feature = "reflect")]
 const _: () = {
     impl<'a> ::buffa_descriptor::reflect::ReflectMessage for AnyView<'a> {

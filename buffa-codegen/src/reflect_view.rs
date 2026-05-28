@@ -219,7 +219,7 @@ pub(crate) fn reflect_view_impls(
                 Type::TYPE_STRING => (quote! { #vr::String(v) }, quote! { #vr::String("") }),
                 Type::TYPE_BYTES => (quote! { #vr::Bytes(v) }, quote! { #vr::Bytes(&[]) }),
                 Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
-                    let view_ty = resolve_view_ty_tokens(view_scope, field)?;
+                    let view_ty = resolve_view_ty_tokens(view_scope, field, &quote! { 'a })?;
                     (
                         quote! { #vr::Message(#cow::Borrowed(&**v)) },
                         quote! {

@@ -42,6 +42,7 @@ mod message_set;
 mod mod_collision;
 mod nesting;
 mod nestpkg;
+mod owned_view;
 mod proto2;
 mod proto3_semantics;
 mod string_type;

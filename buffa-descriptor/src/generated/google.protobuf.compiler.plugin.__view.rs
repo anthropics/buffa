@@ -281,6 +281,121 @@ impl ::buffa::ViewReborrow for VersionView<'static> {
         this
     }
 }
+/** Self-contained, `'static` owned view of a `Version` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`VersionView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`VersionView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct VersionOwnedView(::buffa::OwnedView<VersionView<'static>>);
+impl VersionOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(VersionOwnedView(::buffa::OwnedView::decode(bytes)?))
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            VersionOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::Version,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            VersionOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`VersionView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &VersionView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::Version {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Field 1: `major`
+    #[must_use]
+    pub fn major(&self) -> ::core::option::Option<i32> {
+        self.0.reborrow().major
+    }
+    /// Field 2: `minor`
+    #[must_use]
+    pub fn minor(&self) -> ::core::option::Option<i32> {
+        self.0.reborrow().minor
+    }
+    /// Field 3: `patch`
+    #[must_use]
+    pub fn patch(&self) -> ::core::option::Option<i32> {
+        self.0.reborrow().patch
+    }
+    /// A suffix for alpha, beta or rc release, e.g., "alpha-1", "rc2". It should
+    /// be empty for mainline stable releases.
+    ///
+    /// Field 4: `suffix`
+    #[must_use]
+    pub fn suffix(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().suffix
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<VersionView<'static>>>
+for VersionOwnedView {
+    fn from(inner: ::buffa::OwnedView<VersionView<'static>>) -> Self {
+        VersionOwnedView(inner)
+    }
+}
+impl ::core::convert::From<VersionOwnedView>
+for ::buffa::OwnedView<VersionView<'static>> {
+    fn from(wrapper: VersionOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for VersionOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
+    }
+}
 /// An encoded CodeGeneratorRequest is written to the plugin's stdin.
 #[derive(Clone, Debug, Default)]
 pub struct CodeGeneratorRequestView<'a> {
@@ -685,6 +800,173 @@ impl ::buffa::ViewReborrow for CodeGeneratorRequestView<'static> {
         this
     }
 }
+/** Self-contained, `'static` owned view of a `CodeGeneratorRequest` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`CodeGeneratorRequestView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`CodeGeneratorRequestView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct CodeGeneratorRequestOwnedView(
+    ::buffa::OwnedView<CodeGeneratorRequestView<'static>>,
+);
+impl CodeGeneratorRequestOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            CodeGeneratorRequestOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            CodeGeneratorRequestOwnedView(
+                ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+            ),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::CodeGeneratorRequest,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            CodeGeneratorRequestOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`CodeGeneratorRequestView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &CodeGeneratorRequestView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::CodeGeneratorRequest {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// The .proto files that were explicitly listed on the command-line.  The
+    /// code generator should generate code only for these files.  Each file's
+    /// descriptor will be included in proto_file, below.
+    ///
+    /// Field 1: `file_to_generate`
+    #[must_use]
+    pub fn file_to_generate(&self) -> &::buffa::RepeatedView<'_, &'_ str> {
+        &self.0.reborrow().file_to_generate
+    }
+    /// The generator parameter passed on the command-line.
+    ///
+    /// Field 2: `parameter`
+    #[must_use]
+    pub fn parameter(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().parameter
+    }
+    /// FileDescriptorProtos for all files in files_to_generate and everything
+    /// they import.  The files will appear in topological order, so each file
+    /// appears before any file that imports it.
+    ///
+    /// Note: the files listed in files_to_generate will include runtime-retention
+    /// options only, but all other files will include source-retention options.
+    /// The source_file_descriptors field below is available in case you need
+    /// source-retention options for files_to_generate.
+    ///
+    /// protoc guarantees that all proto_files will be written after
+    /// the fields above, even though this is not technically guaranteed by the
+    /// protobuf wire format.  This theoretically could allow a plugin to stream
+    /// in the FileDescriptorProtos and handle them one by one rather than read
+    /// the entire set into memory at once.  However, as of this writing, this
+    /// is not similarly optimized on protoc's end -- it will store all fields in
+    /// memory at once before sending them to the plugin.
+    ///
+    /// Type names of fields and extensions in the FileDescriptorProto are always
+    /// fully qualified.
+    ///
+    /// Field 15: `proto_file`
+    #[must_use]
+    pub fn proto_file(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::super::__buffa::view::FileDescriptorProtoView<'_>,
+    > {
+        &self.0.reborrow().proto_file
+    }
+    /// File descriptors with all options, including source-retention options.
+    /// These descriptors are only provided for the files listed in
+    /// files_to_generate.
+    ///
+    /// Field 17: `source_file_descriptors`
+    #[must_use]
+    pub fn source_file_descriptors(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::super::__buffa::view::FileDescriptorProtoView<'_>,
+    > {
+        &self.0.reborrow().source_file_descriptors
+    }
+    /// The version number of protocol compiler.
+    ///
+    /// Field 3: `compiler_version`
+    #[must_use]
+    pub fn compiler_version(
+        &self,
+    ) -> &::buffa::MessageFieldView<super::super::__buffa::view::VersionView<'_>> {
+        &self.0.reborrow().compiler_version
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<CodeGeneratorRequestView<'static>>>
+for CodeGeneratorRequestOwnedView {
+    fn from(inner: ::buffa::OwnedView<CodeGeneratorRequestView<'static>>) -> Self {
+        CodeGeneratorRequestOwnedView(inner)
+    }
+}
+impl ::core::convert::From<CodeGeneratorRequestOwnedView>
+for ::buffa::OwnedView<CodeGeneratorRequestView<'static>> {
+    fn from(wrapper: CodeGeneratorRequestOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for CodeGeneratorRequestOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
+    }
+}
 /// The plugin writes an encoded CodeGeneratorResponse to stdout.
 #[derive(Clone, Debug, Default)]
 pub struct CodeGeneratorResponseView<'a> {
@@ -1034,6 +1316,156 @@ impl ::buffa::ViewReborrow for CodeGeneratorResponseView<'static> {
     type Reborrowed<'b> = CodeGeneratorResponseView<'b>;
     fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
         this
+    }
+}
+/** Self-contained, `'static` owned view of a `CodeGeneratorResponse` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`CodeGeneratorResponseView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`CodeGeneratorResponseView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct CodeGeneratorResponseOwnedView(
+    ::buffa::OwnedView<CodeGeneratorResponseView<'static>>,
+);
+impl CodeGeneratorResponseOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            CodeGeneratorResponseOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            CodeGeneratorResponseOwnedView(
+                ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+            ),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::CodeGeneratorResponse,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            CodeGeneratorResponseOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`CodeGeneratorResponseView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &CodeGeneratorResponseView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::CodeGeneratorResponse {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Error message.  If non-empty, code generation failed.  The plugin process
+    /// should exit with status code zero even if it reports an error in this way.
+    ///
+    /// This should be used to indicate errors in .proto files which prevent the
+    /// code generator from generating correct code.  Errors which indicate a
+    /// problem in protoc itself -- such as the input CodeGeneratorRequest being
+    /// unparseable -- should be reported by writing a message to stderr and
+    /// exiting with a non-zero status code.
+    ///
+    /// Field 1: `error`
+    #[must_use]
+    pub fn error(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().error
+    }
+    /// A bitmask of supported features that the code generator supports.
+    /// This is a bitwise "or" of values from the Feature enum.
+    ///
+    /// Field 2: `supported_features`
+    #[must_use]
+    pub fn supported_features(&self) -> ::core::option::Option<u64> {
+        self.0.reborrow().supported_features
+    }
+    /// The minimum edition this plugin supports.  This will be treated as an
+    /// Edition enum, but we want to allow unknown values.  It should be specified
+    /// according the edition enum value, *not* the edition number.  Only takes
+    /// effect for plugins that have FEATURE_SUPPORTS_EDITIONS set.
+    ///
+    /// Field 3: `minimum_edition`
+    #[must_use]
+    pub fn minimum_edition(&self) -> ::core::option::Option<i32> {
+        self.0.reborrow().minimum_edition
+    }
+    /// The maximum edition this plugin supports.  This will be treated as an
+    /// Edition enum, but we want to allow unknown values.  It should be specified
+    /// according the edition enum value, *not* the edition number.  Only takes
+    /// effect for plugins that have FEATURE_SUPPORTS_EDITIONS set.
+    ///
+    /// Field 4: `maximum_edition`
+    #[must_use]
+    pub fn maximum_edition(&self) -> ::core::option::Option<i32> {
+        self.0.reborrow().maximum_edition
+    }
+    /// Field 15: `file`
+    #[must_use]
+    pub fn file(
+        &self,
+    ) -> &::buffa::RepeatedView<
+        '_,
+        super::super::__buffa::view::code_generator_response::FileView<'_>,
+    > {
+        &self.0.reborrow().file
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<CodeGeneratorResponseView<'static>>>
+for CodeGeneratorResponseOwnedView {
+    fn from(inner: ::buffa::OwnedView<CodeGeneratorResponseView<'static>>) -> Self {
+        CodeGeneratorResponseOwnedView(inner)
+    }
+}
+impl ::core::convert::From<CodeGeneratorResponseOwnedView>
+for ::buffa::OwnedView<CodeGeneratorResponseView<'static>> {
+    fn from(wrapper: CodeGeneratorResponseOwnedView) -> Self {
+        wrapper.0
+    }
+}
+#[cfg(feature = "json")]
+impl ::serde::Serialize for CodeGeneratorResponseOwnedView {
+    fn serialize<__S: ::serde::Serializer>(
+        &self,
+        __s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
+        ::serde::Serialize::serialize(&self.0, __s)
     }
 }
 pub mod code_generator_response {
@@ -1400,6 +1832,178 @@ pub mod code_generator_response {
         type Reborrowed<'b> = FileView<'b>;
         fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
             this
+        }
+    }
+    /** Self-contained, `'static` owned view of a `File` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`FileView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`FileView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+    #[derive(Clone, Debug)]
+    pub struct FileOwnedView(::buffa::OwnedView<FileView<'static>>);
+    impl FileOwnedView {
+        /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+        ///
+        /// The view borrows directly from the buffer's data; the buffer is
+        /// retained inside the returned handle.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+        /// protobuf data.
+        pub fn decode(
+            bytes: ::buffa::bytes::Bytes,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(FileOwnedView(::buffa::OwnedView::decode(bytes)?))
+        }
+        /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+        /// max message size).
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+        /// exceeds the configured limits.
+        pub fn decode_with_options(
+            bytes: ::buffa::bytes::Bytes,
+            opts: &::buffa::DecodeOptions,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                FileOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+            )
+        }
+        /// Build from an owned message via an encode → decode round-trip.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+        /// somehow invalid (should not happen for well-formed messages).
+        pub fn from_owned(
+            msg: &super::super::super::code_generator_response::File,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(
+                FileOwnedView(::buffa::OwnedView::from_owned(msg)?),
+            )
+        }
+        /// Borrow the full [`FileView`] with its lifetime tied to `&self`.
+        #[must_use]
+        pub fn view(&self) -> &FileView<'_> {
+            self.0.reborrow()
+        }
+        /// Convert to the owned message type.
+        #[must_use]
+        pub fn to_owned_message(
+            &self,
+        ) -> super::super::super::code_generator_response::File {
+            self.0.to_owned_message()
+        }
+        /// The underlying bytes buffer.
+        #[must_use]
+        pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+            self.0.bytes()
+        }
+        /// Consume the handle, returning the underlying bytes buffer.
+        #[must_use]
+        pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+            self.0.into_bytes()
+        }
+        /// The file name, relative to the output directory.  The name must not
+        /// contain "." or ".." components and must be relative, not be absolute (so,
+        /// the file cannot lie outside the output directory).  "/" must be used as
+        /// the path separator, not "\".
+        ///
+        /// If the name is omitted, the content will be appended to the previous
+        /// file.  This allows the generator to break large files into small chunks,
+        /// and allows the generated text to be streamed back to protoc so that large
+        /// files need not reside completely in memory at one time.  Note that as of
+        /// this writing protoc does not optimize for this -- it will read the entire
+        /// CodeGeneratorResponse before writing files to disk.
+        ///
+        /// Field 1: `name`
+        #[must_use]
+        pub fn name(&self) -> ::core::option::Option<&'_ str> {
+            self.0.reborrow().name
+        }
+        /// If non-empty, indicates that the named file should already exist, and the
+        /// content here is to be inserted into that file at a defined insertion
+        /// point.  This feature allows a code generator to extend the output
+        /// produced by another code generator.  The original generator may provide
+        /// insertion points by placing special annotations in the file that look
+        /// like:
+        ///   @@protoc_insertion_point(NAME)
+        /// The annotation can have arbitrary text before and after it on the line,
+        /// which allows it to be placed in a comment.  NAME should be replaced with
+        /// an identifier naming the point -- this is what other generators will use
+        /// as the insertion_point.  Code inserted at this point will be placed
+        /// immediately above the line containing the insertion point (thus multiple
+        /// insertions to the same point will come out in the order they were added).
+        /// The double-@ is intended to make it unlikely that the generated code
+        /// could contain things that look like insertion points by accident.
+        ///
+        /// For example, the C++ code generator places the following line in the
+        /// .pb.h files that it generates:
+        ///   // @@protoc_insertion_point(namespace_scope)
+        /// This line appears within the scope of the file's package namespace, but
+        /// outside of any particular class.  Another plugin can then specify the
+        /// insertion_point "namespace_scope" to generate additional classes or
+        /// other declarations that should be placed in this scope.
+        ///
+        /// Note that if the line containing the insertion point begins with
+        /// whitespace, the same whitespace will be added to every line of the
+        /// inserted text.  This is useful for languages like Python, where
+        /// indentation matters.  In these languages, the insertion point comment
+        /// should be indented the same amount as any inserted code will need to be
+        /// in order to work correctly in that context.
+        ///
+        /// The code generator that generates the initial file and the one which
+        /// inserts into it must both run as part of a single invocation of protoc.
+        /// Code generators are executed in the order in which they appear on the
+        /// command line.
+        ///
+        /// If |insertion_point| is present, |name| must also be present.
+        ///
+        /// Field 2: `insertion_point`
+        #[must_use]
+        pub fn insertion_point(&self) -> ::core::option::Option<&'_ str> {
+            self.0.reborrow().insertion_point
+        }
+        /// The file contents.
+        ///
+        /// Field 15: `content`
+        #[must_use]
+        pub fn content(&self) -> ::core::option::Option<&'_ str> {
+            self.0.reborrow().content
+        }
+        /// Information describing the file content being inserted. If an insertion
+        /// point is used, this information will be appropriately offset and inserted
+        /// into the code generation metadata for the generated files.
+        ///
+        /// Field 16: `generated_code_info`
+        #[must_use]
+        pub fn generated_code_info(
+            &self,
+        ) -> &::buffa::MessageFieldView<
+            super::super::super::super::__buffa::view::GeneratedCodeInfoView<'_>,
+        > {
+            &self.0.reborrow().generated_code_info
+        }
+    }
+    impl ::core::convert::From<::buffa::OwnedView<FileView<'static>>> for FileOwnedView {
+        fn from(inner: ::buffa::OwnedView<FileView<'static>>) -> Self {
+            FileOwnedView(inner)
+        }
+    }
+    impl ::core::convert::From<FileOwnedView> for ::buffa::OwnedView<FileView<'static>> {
+        fn from(wrapper: FileOwnedView) -> Self {
+            wrapper.0
+        }
+    }
+    #[cfg(feature = "json")]
+    impl ::serde::Serialize for FileOwnedView {
+        fn serialize<__S: ::serde::Serializer>(
+            &self,
+            __s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
+            ::serde::Serialize::serialize(&self.0, __s)
         }
     }
 }
