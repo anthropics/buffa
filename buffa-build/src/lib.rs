@@ -350,12 +350,14 @@ impl Config {
     /// Select the reflection mode (the fuller form of
     /// [`generate_reflection`](Self::generate_reflection)).
     ///
-    /// - [`ReflectMode::Off`] — no reflection (the default).
+    /// - [`ReflectMode::Off`] — no reflection (the default); equivalent to
+    ///   `generate_reflection(false)`.
     /// - [`ReflectMode::Bridge`] — `reflect()` round-trips through
-    ///   `DynamicMessage`; equivalent to `generate_reflection(true)`.
+    ///   `DynamicMessage`; smaller generated code, slower reflective access.
     /// - [`ReflectMode::VTable`] — `impl ReflectMessage` on owned and view
-    ///   types, and `reflect()` borrows `self` with no round-trip. Requires
-    ///   view generation (on by default).
+    ///   types, and `reflect()` borrows `self` with no round-trip; equivalent
+    ///   to `generate_reflection(true)`. Does not require view generation —
+    ///   with views off, only the owned impls are emitted.
     ///
     /// All non-`Off` modes require the consuming crate to depend on
     /// `buffa-descriptor` with its `reflect` feature and on `std`. The call

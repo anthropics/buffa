@@ -110,7 +110,7 @@ GitHub Actions CI (`.github/workflows/ci.yml`) runs on every push to `main` and 
 
 - **lint-and-test** — clippy + `cargo test --workspace` on stable
 - **lint-markdown** — markdownlint over all `*.md` (config: `.markdownlint.json`)
-- **msrv-check** — `cargo check --workspace` on Rust 1.85
+- **msrv-check** — `cargo check --workspace` on Rust 1.87
 - **check-nostd** — no_std (host + bare-metal ARM) and 32-bit compilation checks
 - **check-generated-code** — regenerates bootstrap descriptor types and fails if the checked-in code is stale
 - **conformance** — builds the tools and conformance Docker images, runs the full protobuf conformance suite

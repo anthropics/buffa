@@ -9,27 +9,30 @@ Add buffa to your project:
 ```toml
 # Cargo.toml
 [dependencies]
-buffa = "0.6"
-buffa-types = "0.6"       # well-known types (Timestamp, Duration, Any, etc.)
+buffa = "0.7"
+buffa-types = "0.7"       # well-known types (Timestamp, Duration, Any, etc.)
 
 [build-dependencies]
-buffa-build = "0.6"
+buffa-build = "0.7"
 ```
 
 ### Feature flags
 
-Both `buffa` and `buffa-types` share the same feature flag names:
+`buffa` and `buffa-types` share the same names for the core feature flags, and each adds a few crate-specific ones:
 
 | Feature | Default | Enables |
 |---------|---------|---------|
 | `std` | Yes | `std::io::Read` decoders, `HashMap` for map fields, `JsonParseOptions` thread-local (`buffa`); `std::time::{SystemTime, Duration}` conversions (`buffa-types`) |
 | `json` | No | Proto-canonical JSON via serde (works with `no_std` + `alloc`) |
 | `arbitrary` | No | `arbitrary::Arbitrary` derive on generated types, for fuzzing |
+| `text` (`buffa` only) | No | Text format (`textproto`) encode/decode — see [Text format](#text-format-textproto) |
+| `smol_str`, `ecow`, `compact_str` (`buffa` only) | No | Alternative owned representations for `string` fields, selected with the `string_type` codegen option — see [String field representations](#string-field-representations) |
+| `reflect` (`buffa-types` only) | No | `ReflectMessage` impls for the well-known types, so messages that embed WKTs reflect end to end — see [Runtime reflection](#runtime-reflection) |
 
 ```toml
 # Enable JSON support
-buffa = { version = "0.6", features = ["json"] }
-buffa-types = { version = "0.6", features = ["json"] }
+buffa = { version = "0.7", features = ["json"] }
+buffa-types = { version = "0.7", features = ["json"] }
 ```
 
 ## Prerequisites
@@ -182,8 +185,15 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.gate_impls_on_crate_features(bool)` | `false` | Wrap json/views/text impls in `#[cfg(feature = ...)]` for library crates whose generated code is a public dependency surface |
 | `.strict_utf8_mapping(bool)` | `false` | Map `utf8_validation = NONE` string fields to `Vec<u8>` / `&[u8]` instead of `String` (see [Skipping UTF-8 validation](#skipping-utf-8-validation)) |
 | `.extern_path(proto, rust)` | — | Map a proto package or a single type to an external Rust path (see below) |
-| `.use_bytes_type()` | — | Use `bytes::Bytes` for all bytes fields |
-| `.use_bytes_type_in(&[...])` | — | Use `bytes::Bytes` for matching bytes fields |
+| `.use_bytes_type()` | — | Use `bytes::Bytes` for all bytes fields, including `map<K, bytes>` values |
+| `.use_bytes_type_in(&[...])` | — | Use `bytes::Bytes` for matching bytes fields (same `map<K, bytes>` rule) |
+| `.string_type(repr)` | `String` | Use an alternative owned representation (`SmolStr`, `EcoString`, `CompactString`) for all string fields (see [String field representations](#string-field-representations)) |
+| `.string_type_in(repr, &[...])` | — | Use an alternative string representation for matching string fields |
+| `.generate_reflection(bool)` | `false` | Emit reflection support (vtable mode) plus an embedded per-package descriptor pool (see [Runtime reflection](#runtime-reflection)) |
+| `.reflect_mode(mode)` | `Off` | Finer-grained reflection selector: `ReflectMode::{Off, Bridge, VTable}` |
+| `.idiomatic_enum_aliases(bool)` | `true` | Emit `UpperCamelCase` associated-const aliases for enum values (see the aliases note under `EnumValue<T>`) |
+| `.type_attribute(path, attr)` / `.message_attribute` / `.enum_attribute` | — | Attach a Rust attribute (e.g. an extra `#[derive(...)]`) to generated types matching a proto path prefix |
+| `.field_attribute(path, attr)` | — | Attach a Rust attribute to generated fields matching a proto path prefix |
 | `.use_buf()` | — | Use `buf build` instead of `protoc` for descriptor generation |
 | `.include_file(name)` | — | Generate a module tree file for `include!` (recommended) |
 | `.descriptor_set(path)` | — | Use a pre-compiled `FileDescriptorSet` file |
@@ -196,7 +206,7 @@ This requires `buffa-types` as a dependency in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-buffa-types = "0.6"
+buffa-types = "0.7"
 ```
 
 `buffa-types` is a pure source crate — it does **not** run `protoc` or any code generation at build time. If your protos use WKTs but you generate your own Rust code ahead-of-time (via `buf generate` or a `protoc` script), then `buffa` + `buffa-types` is your entire runtime dependency surface.
@@ -219,17 +229,17 @@ This disables the automatic mapping and routes all `google.protobuf.*` reference
 
 ```toml
 [dependencies]
-buffa-descriptor = "0.6"
+buffa-descriptor = "0.7"
 ```
 
 If your protos import `descriptor.proto` only to declare custom options (`extend google.protobuf.MessageOptions { ... }`) and never reference a descriptor type as a *field type*, no `buffa-descriptor` dependency is required — extension declarations don't generate field-type references.
 
-`buffa-descriptor` ships its view, JSON, text, and arbitrary impls behind crate features (`views`, `json`, `text`, `arbitrary`), all off by default. The codegen toolchain depends on it with `default-features = false`, so building `buffa-codegen` / `buffa-build` / `protoc-gen-buffa` doesn't pull in `serde` or `serde_json`. **If your protos reference a descriptor message type as a field type and you generate with `views=true`, `json=true`, or `text=true`, enable the matching `buffa-descriptor` features**:
+`buffa-descriptor` ships its view, JSON, text, and arbitrary impls behind crate features (`views`, `json`, `text`, `arbitrary`), all off by default; a separate `reflect` feature provides the runtime reflection API (`DescriptorPool`, `DynamicMessage` — see [Runtime reflection](#runtime-reflection)). The codegen toolchain depends on it with `default-features = false`, so building `buffa-codegen` / `buffa-build` / `protoc-gen-buffa` doesn't pull in `serde` or `serde_json`. **If your protos reference a descriptor message type as a field type and you generate with `views=true`, `json=true`, or `text=true`, enable the matching `buffa-descriptor` features**:
 
 ```toml
 [dependencies]
 # Codegen with .generate_views(true).generate_json(true)
-buffa-descriptor = { version = "0.6", features = ["views", "json"] }
+buffa-descriptor = { version = "0.7", features = ["views", "json"] }
 ```
 
 Descriptor **enum** types referenced as field types (the most common case — e.g. `google.protobuf.FieldDescriptorProto.Type` in protovalidate) work with the default feature set. The features are only needed for descriptor **message** types referenced as fields (e.g. `FileDescriptorSet`, `FileDescriptorProto`). If you hit a missing-impl error like `the trait bound FileDescriptorSet: serde::Deserialize is not satisfied`, add `buffa-descriptor` with the right features.
@@ -271,6 +281,41 @@ buffa_build::Config::new()
 When several entries could match a reference, the most specific one wins: an exact type FQN beats a covering package prefix, and a longer package prefix beats a shorter one. Nested types inherit an enclosing message's per-type override — `my.common.SharedMessage.Inner` resolves to `::shared_types::shared_message::Inner`, i.e. the override's parent module plus buffa's usual `snake_case(MessageName)` nested-types module. That layout matches another buffa-generated crate; if the target crate lays out nested types differently, add explicit per-type entries for the nested types as well.
 
 **View types:** When view generation is enabled (the default), the codegen also expects a `FooView<'a>` type at `<extern_crate>::__buffa::view::FooView` for each extern-mapped message `Foo`. If you're using extern_path to reference types from another buffa-generated crate, the views are already there. If you're mapping to [custom type implementations](#custom-type-implementations), see that section for how to provide the view type. This applies to per-type mappings too: a message referenced by generated views must map to a buffa-generated crate, or view generation must be disabled (`.generate_views(false)`).
+
+### String field representations
+
+By default every proto `string` field is generated as `String`. For schemas dominated by many short strings — log labels, identifiers, header-like maps — a small-string type can avoid most of those heap allocations. The `string_type` option selects an alternative owned representation, with the same path-prefix rules as `use_bytes_type_in`:
+
+```rust,ignore
+use buffa_build::StringRepr;
+
+buffa_build::Config::new()
+    // Broad default first: every string field becomes SmolStr…
+    .string_type(StringRepr::SmolStr)
+    // …then narrower overrides. Rules accumulate and the last match wins.
+    .string_type_in(StringRepr::CompactString, &[".my.pkg.LogRecord.message"])
+    .files(&["proto/my_service.proto"])
+    .includes(&["proto/"])
+    .compile()
+    .unwrap();
+```
+
+The available representations (`buffa_build::StringRepr`, sizes for 64-bit targets):
+
+| Representation | Size | Inline capacity | Mutability | Required `buffa` feature |
+|---|---|---|---|---|
+| `String` (default) | 24 bytes | — | Mutable, growable | none |
+| `SmolStr` | 24 bytes | 23 bytes | Immutable (assign a new value to mutate); `O(1)` clone | `smol_str` |
+| `EcoString` | 16 bytes | 15 bytes | Immutable (assign a new value to mutate); clone-on-write, `O(1)` clone | `ecow` |
+| `CompactString` | 24 bytes | 24 bytes | Mutable (drop-in `String` replacement) | `compact_str` |
+
+Three things to keep in mind:
+
+- **Only the owned struct field type changes.** The wire format is identical regardless of representation, view types still borrow `&str`, and `map<_, string>` keys and values always stay `String`.
+- **Rules accumulate and the last match wins**, so call the broad `string_type` before narrower `string_type_in` overrides — a `"."` rule added later shadows earlier specific rules.
+- **The consuming crate must enable the matching `buffa` feature** (`smol_str`, `ecow`, or `compact_str`). The feature re-exports the chosen crate so generated code can reference it without you adding the dependency yourself; without it, the generated `::buffa::smol_str::SmolStr` (and similar) paths fail to resolve.
+
+`string_type` is a `buffa-build` / `buffa-codegen` option only — there is no `protoc-gen-buffa` plugin equivalent yet.
 
 ### Multi-package projects
 
@@ -374,25 +419,25 @@ Download the binaries for your platform from the [releases page](https://github.
 
 ```sh
 # Download binaries + cosign signatures + certificates (both plugins match)
-gh release download v0.6.0 --repo anthropics/buffa \
+gh release download v0.7.0 --repo anthropics/buffa \
     --pattern 'protoc-gen-buffa*-linux-x86_64*'
 
 # Verify with GitHub attestations (requires gh CLI ≥ 2.49)
-gh attestation verify protoc-gen-buffa-v0.6.0-linux-x86_64 --repo anthropics/buffa
-gh attestation verify protoc-gen-buffa-packaging-v0.6.0-linux-x86_64 --repo anthropics/buffa
+gh attestation verify protoc-gen-buffa-v0.7.0-linux-x86_64 --repo anthropics/buffa
+gh attestation verify protoc-gen-buffa-packaging-v0.7.0-linux-x86_64 --repo anthropics/buffa
 
 # Or with cosign (standalone, no gh required) — shown for one binary
 cosign verify-blob \
-    --signature protoc-gen-buffa-v0.6.0-linux-x86_64.sig \
-    --certificate protoc-gen-buffa-v0.6.0-linux-x86_64.pem \
+    --signature protoc-gen-buffa-v0.7.0-linux-x86_64.sig \
+    --certificate protoc-gen-buffa-v0.7.0-linux-x86_64.pem \
     --certificate-identity-regexp "github.com/anthropics/buffa" \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    protoc-gen-buffa-v0.6.0-linux-x86_64
+    protoc-gen-buffa-v0.7.0-linux-x86_64
 
 # Install both
-chmod +x protoc-gen-buffa-v0.6.0-linux-x86_64 protoc-gen-buffa-packaging-v0.6.0-linux-x86_64
-mv protoc-gen-buffa-v0.6.0-linux-x86_64 ~/.local/bin/protoc-gen-buffa
-mv protoc-gen-buffa-packaging-v0.6.0-linux-x86_64 ~/.local/bin/protoc-gen-buffa-packaging
+chmod +x protoc-gen-buffa-v0.7.0-linux-x86_64 protoc-gen-buffa-packaging-v0.7.0-linux-x86_64
+mv protoc-gen-buffa-v0.7.0-linux-x86_64 ~/.local/bin/protoc-gen-buffa
+mv protoc-gen-buffa-packaging-v0.7.0-linux-x86_64 ~/.local/bin/protoc-gen-buffa-packaging
 ```
 
 Available platforms: `linux-x86_64`, `linux-aarch64`, `darwin-x86_64`, `darwin-aarch64`, `windows-x86_64` (`.exe`). All releases include SHA-256 checksums, Sigstore cosign signatures, and signed SLSA build provenance for supply chain verification.
@@ -433,7 +478,7 @@ pub mod example {
 mod gen;
 ```
 
-Pin the plugin version for reproducible builds: `remote: buf.build/anthropics/buffa:v0.6.0`. Match it to the `buffa` runtime crate version in your `Cargo.toml` — generated code from a newer plugin may reference items that don't exist in an older runtime.
+Pin the plugin version for reproducible builds: `remote: buf.build/anthropics/buffa:v0.7.0`. Match it to the `buffa` runtime crate version in your `Cargo.toml` — generated code from a newer plugin may reference items that don't exist in an older runtime.
 
 The complete, runnable [`examples/bsr-quickstart/`](../examples/bsr-quickstart/) project uses this layout.
 
@@ -486,10 +531,13 @@ Passed via `opt:` (works for `remote:` and `local:`):
 |--------|-------------|
 | `views=true` | Generate zero-copy view types (default: true) |
 | `json=true` | Generate serde Serialize/Deserialize for proto3 JSON |
+| `text=true` | Generate `impl buffa::text::TextFormat` for textproto encoding/decoding |
 | `unknown_fields=false` | Disable unknown field preservation |
 | `arbitrary=true` | Emit `#[derive(arbitrary::Arbitrary)]` for fuzzing |
 | `gate_impls=true` | Wrap json/views/text impls in `#[cfg(feature = ...)]` for library crates whose generated code is a public dependency surface (default: emitted unconditionally) |
 | `with_setters=false` | Disable `with_<name>()` builder-style setters for explicit-presence fields (default: emitted) |
+| `reflection=true` | Emit reflection support (vtable mode) plus an embedded per-package descriptor pool — see [Runtime reflection](#runtime-reflection) |
+| `reflect_mode=off\|bridge\|vtable` | Finer-grained reflection selector; `reflection=true` is shorthand for `vtable` |
 | `extern_path=.pkg=::rust` | Map a proto package — or a single type, e.g. `extern_path=.pkg.Type=::rust::Type` — to an external Rust path |
 | `file_per_package=true` | Emit one `<dotted.package>.rs` per package instead of per-proto-file content + a `<dotted.pkg>.mod.rs` stitcher. Use this with the remote plugin when you don't want to install `protoc-gen-buffa-packaging` — see [Remote plugin only](#remote-plugin-only-no-local-install). Under `strategy: directory`, requires the input module to be `PACKAGE_DIRECTORY_MATCH`-clean. |
 
@@ -575,7 +623,7 @@ Key design choices:
 
 ### Generated module layout
 
-Owned message structs and their nested-type modules sit at the package level, exactly as the proto package hierarchy implies. Everything else codegen emits — view structs, oneof enums, view-of-oneof enums, extension consts, and `register_types` — lives under a single reserved sentinel module `__buffa::` so it cannot collide with proto-derived names:
+Owned message structs and their nested-type modules sit at the package level, exactly as the proto package hierarchy implies. Everything else codegen emits — view structs, owned-view wrappers, oneof enums, view-of-oneof enums, extension consts, `register_types`, and the reflection descriptor pool — lives under a single reserved sentinel module `__buffa::` so it cannot collide with proto-derived names:
 
 | Item | Path |
 |---|---|
@@ -583,10 +631,12 @@ Owned message structs and their nested-type modules sit at the package level, ex
 | Nested owned | `pkg::foo::Bar` |
 | View struct | `pkg::__buffa::view::FooView<'a>` |
 | Nested view | `pkg::__buffa::view::foo::BarView<'a>` |
+| Owned-view wrapper | `pkg::__buffa::view::FooOwnedView` |
 | Oneof enum | `pkg::__buffa::oneof::foo::Kind` |
 | View-of-oneof | `pkg::__buffa::view::oneof::foo::Kind<'a>` |
 | Extension const | `pkg::__buffa::ext::MY_EXT` |
 | Registration fn | `pkg::__buffa::register_types` |
+| Descriptor pool (with reflection enabled) | `pkg::__buffa::reflect::descriptor_pool()` (re-exported as `pkg::descriptor_pool()`) |
 
 `__buffa` is the **only** name codegen reserves at user scope. It aligns with the `__buffa_` reserved field-name prefix (`__buffa_unknown_fields`, `__buffa_phantom`), so the rule is uniformly "anything starting `__buffa` is buffa-internal." A proto message, file-level enum, or package segment that snake-cases to `__buffa` is rejected at codegen time.
 
@@ -683,6 +733,8 @@ assert_eq!(Status::values().len(), 3);
 ```
 
 Aliases (additional names sharing an existing value, allowed by `option allow_alias = true`) are not enum variants in Rust — they're emitted as `pub const` aliases — so they don't appear in `values()`.
+
+**Idiomatic `UpperCamelCase` aliases.** Generated enums also carry one associated `const` per value with the enum-name prefix (if present) stripped and the rest converted to `UpperCamelCase` — for the `Status` example above, `Status::ACTIVE` is also reachable as `Status::Active`, and a prefixed value like `STATUS_ACTIVE` would produce the same alias. The aliases work in expressions and in `match` patterns, and like the `allow_alias` consts they don't appear in `values()` or in `Debug` output. If two values of an enum would collide after conversion, the aliases are suppressed for that enum as a whole, with a build warning. Disable per compilation unit with `.idiomatic_enum_aliases(false)`.
 
 ### Oneofs
 
@@ -1059,6 +1111,41 @@ nothing). The generated `FooOwnedView` wrapper does the same thing under the
 hood: each accessor method is `self.0.reborrow().field`, so `owned.name()`
 and `owned.reborrow().name` cost exactly the same.
 
+### Generic code over a message and its views (`HasMessageView`)
+
+Library code that wants to be generic over *any* generated message — an RPC
+framework decoding request bodies, an event-sourcing layer storing typed
+payloads — needs a way to go from the owned message type to its view family
+without naming the concrete types. `buffa::HasMessageView` provides that
+link. Generated code implements it for every message (when views are
+generated, the default), with two associated types and a provided decode
+helper:
+
+- `Foo::View<'a>` — the borrowed view type, `FooView<'a>`.
+- `Foo::ViewHandle` — the `'static` handle, the generated `FooOwnedView`
+  wrapper.
+- `Foo::decode_view_handle(bytes)` (and `decode_view_handle_with_options`) —
+  decode a `Bytes` buffer straight into the handle.
+
+```rust,ignore
+use buffa::HasMessageView;
+
+// Accept any generated message type and hand back its 'static view handle.
+fn decode_request<M: HasMessageView>(
+    body: bytes::Bytes,
+) -> Result<M::ViewHandle, buffa::DecodeError> {
+    M::decode_view_handle(body)
+}
+
+let person = decode_request::<Person>(body)?;   // person: PersonOwnedView
+println!("{}", person.name());
+```
+
+The handle additionally implements `From<OwnedView<Foo::View<'static>>>` and
+`AsRef<OwnedView<Foo::View<'static>>>`, so generic code can construct it from
+a raw `OwnedView` and reach `reborrow()` and the rest of the `OwnedView` API
+when it needs them.
+
 ### Encoding from views (`ViewEncode`)
 
 View types also implement `ViewEncode<'a>`, which provides the same
@@ -1107,7 +1194,7 @@ Enable the `json` feature and `generate_json(true)` in your build config:
 ```toml
 # Cargo.toml
 [dependencies]
-buffa = { version = "0.6", features = ["json"] }
+buffa = { version = "0.7", features = ["json"] }
 # Required: generated `#[derive(::serde::Serialize, ::serde::Deserialize)]`
 # expands to `extern crate serde as _serde;`, so the consumer crate must
 # depend on `serde` directly. `serde_json` is *not* required by generated
@@ -1178,7 +1265,7 @@ Enable the `text` feature and `generate_text(true)`:
 ```toml
 # Cargo.toml
 [dependencies]
-buffa = { version = "0.6", features = ["text"] }
+buffa = { version = "0.7", features = ["text"] }
 ```
 
 ```rust,ignore
@@ -1309,8 +1396,8 @@ let obj = Struct::from_fields([
 Buffa works without `std` (requires `alloc`):
 
 ```toml
-buffa = { version = "0.6", default-features = false }
-buffa-types = { version = "0.6", default-features = false }
+buffa = { version = "0.7", default-features = false }
+buffa-types = { version = "0.7", default-features = false }
 ```
 
 In `no_std` mode:
@@ -1500,6 +1587,150 @@ for constraint in &rules.as_ref().map(|r| &r.constraints).unwrap_or_default() {
     // ...
 }
 ```
+
+## Runtime reflection
+
+Reflection lets code work with messages it has no generated types for — a CEL
+evaluator, a transcoding gateway, a schema-registry tool, or a generic
+interceptor reading fields by descriptor. buffa's reflection support lives in
+`buffa-descriptor` behind the `reflect` feature and has two halves: a runtime
+half (`DescriptorPool` + `DynamicMessage`) that needs no generated code at
+all, and a generated-code half (`generate_reflection` / `reflect_mode`) that
+lets generated types hand out the same reflective interface.
+
+```toml
+[dependencies]
+buffa-descriptor = { version = "0.7", features = ["reflect"] }  # add "json" for JSON
+```
+
+### Loading descriptors: `DescriptorPool`
+
+A `DescriptorPool` is built from a compiled `FileDescriptorSet` — the output
+of `protoc --descriptor_set_out`, `buf build -o set.binpb`, a schema
+registry, or a gRPC server-reflection peer:
+
+```rust,ignore
+use std::sync::Arc;
+use buffa_descriptor::DescriptorPool;
+
+let pool = Arc::new(DescriptorPool::decode(&descriptor_set_bytes)?);
+
+let person = pool.message_by_name("my.pkg.Person").expect("registered");
+for field in person.fields() {
+    println!("{} = field {}", field.name(), field.number());
+}
+```
+
+The input is treated as untrusted: a malformed or inconsistent descriptor set
+returns a `PoolError` rather than panicking. The pool links and
+feature-resolves every descriptor up front (`MessageDescriptor`,
+`FieldDescriptor`, `EnumDescriptor`, `ServiceDescriptor`, …), exposes
+extensions (`extension_by_name`, `extensions_of`), and retains the raw
+`FileDescriptorProto`s with a symbol index (`file_by_name`,
+`file_containing_symbol`) — the two lookups gRPC server reflection needs.
+
+### Dynamic messages
+
+`DynamicMessage` encodes and decodes any message by descriptor, with the same
+unknown-field preservation as generated types:
+
+```rust,ignore
+use buffa_descriptor::DynamicMessage;
+
+let idx = pool.message_index("my.pkg.Person").expect("registered");
+
+// Binary, by descriptor
+let msg = DynamicMessage::decode(pool.clone(), idx, &wire_bytes)?;
+let name = msg.field_by_number(1);          // Option<&Value>
+let bytes = msg.encode_to_vec();
+
+// proto3 canonical JSON (requires the `json` feature)
+let from_json = DynamicMessage::from_json(pool.clone(), idx, r#"{"name":"alice"}"#)?;
+let json = msg.to_json()?;
+```
+
+Beyond plain encode/decode, `DynamicMessage` covers the rest of the
+reflection surface:
+
+- **In-place mutation** — `field_mut(&FieldDescriptor)` /
+  `field_by_number_mut(u32)` return `Option<&mut Value>`, so an interceptor
+  can redact or rewrite a field at any nesting depth without a
+  read-clone-set-back dance.
+- **Lenient JSON** — `from_json_ignoring_unknown` discards unknown JSON keys
+  (recursively, including inside `Any`); the strict form rejects them, and
+  both reject duplicate keys per the proto3 JSON spec.
+- **`Any`** — `pack_any()` / `unpack_any()` resolve `type_url`s against the
+  pool.
+- **Extensions** — extension fields are decoded, encoded, and carried in JSON
+  as `"[pkg.ext]"` keys.
+- **Custom options** — `options()` on every linked descriptor returns the raw
+  options message; `DynamicMessage::from_options(pool, opts)` re-reads it
+  reflectively so extension-defined custom options are reachable by
+  descriptor.
+- **Bridging** — `from_message` / `to_message` convert between a
+  `DynamicMessage` and any generated type with the same descriptor.
+
+### Reflecting generated types
+
+Generated types can hand out the same reflective interface. Enable it in
+`build.rs` with `generate_reflection(true)` (or the `reflection=true` plugin
+option), and pick the implementation strategy with `reflect_mode` if you need
+to:
+
+```rust,ignore
+buffa_build::Config::new()
+    .generate_reflection(true)   // ReflectMode::VTable
+    .files(&["proto/my_service.proto"])
+    .includes(&["proto/"])
+    .compile()?;
+```
+
+- **`ReflectMode::VTable`** (what `generate_reflection(true)` selects) —
+  codegen emits `impl ReflectMessage` for each owned struct and view type, so
+  `foo.reflect()` borrows `foo` in place: no encode/decode round-trip, no
+  per-field allocation. Reflecting a decoded view this way is several times
+  faster than the bridge — see the [README's reflection
+  benchmarks](../README.md#reflection). With views disabled, only the owned
+  impls are emitted.
+- **`ReflectMode::Bridge`** — `foo.reflect()` re-encodes the message and
+  decodes the bytes into a `DynamicMessage`. Smaller generated code, one
+  round-trip plus an allocation per call.
+- **`ReflectMode::Off`** — no reflection (the default).
+
+The call site is identical in either mode — `Reflectable::reflect()` returns
+a handle that dereferences to `&dyn ReflectMessage`:
+
+```rust,ignore
+use buffa_descriptor::{Reflectable, ReflectMessage};
+
+let person = Person { name: "alice".into(), id: 42, ..Default::default() };
+
+let handle = person.reflect();                 // borrows `person` in vtable mode
+let descriptor = handle.message_descriptor();
+handle.for_each_set(&mut |field, value| {
+    println!("{} = {value:?}", field.name());
+});
+let id = handle.get(descriptor.field_by_name("id").unwrap());
+```
+
+Either mode embeds the package's `FileDescriptorSet` in the generated code
+and exposes a lazily-built pool as `your_pkg::descriptor_pool()`, so the
+descriptors used by `reflect()` are always the ones the code was generated
+from.
+
+Two Cargo notes:
+
+- The consuming crate must depend on `buffa-descriptor` with the `reflect`
+  feature, and generated reflection requires `std` (the embedded pool sits
+  behind a `std::sync::OnceLock`).
+- Messages that embed well-known types reflect end to end when `buffa-types`
+  is built with its `reflect` feature; fields using an alternative
+  [string representation](#string-field-representations) need the matching
+  `buffa-descriptor` feature (`smol_str`, `ecow`, `compact_str`).
+
+For the cost of reflection relative to the generated codec — and when to
+prefer views instead — see the [README's reflection
+section](../README.md#reflection).
 
 ## Editions support
 

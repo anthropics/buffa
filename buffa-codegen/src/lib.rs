@@ -249,7 +249,8 @@ pub enum ReflectMode {
     Bridge,
     /// `impl ReflectMessage` directly on the owned and view types, and
     /// `Reflectable::reflect()` borrows `self` with no round-trip. Larger
-    /// generated code; near-free reflective access. Requires view generation.
+    /// generated code; near-free reflective access. Does not require view
+    /// generation — with views off, only the owned impls are emitted.
     VTable,
 }
 
@@ -522,17 +523,19 @@ pub struct CodeGenConfig {
     /// Defaults to `false`.
     pub generate_reflection: bool,
     /// Emit vtable-mode reflection: `impl ReflectMessage` / `impl
-    /// ReflectElement` on **both** the view types and the owned message
-    /// structs, and switch the owned `Reflectable::reflect()` body to borrow
-    /// `self` (`ReflectCow::Borrowed(self)`) instead of the bridge round-trip.
+    /// ReflectElement` on the owned message structs and (when views are
+    /// generated) the view types, and switch the owned
+    /// `Reflectable::reflect()` body to borrow `self`
+    /// (`ReflectCow::Borrowed(self)`) instead of the bridge round-trip.
     ///
     /// Reflective access then reads struct fields in place — no encode/decode
     /// round-trip and no per-field allocation — for both a decoded view and an
     /// in-memory owned message.
     ///
     /// Requires [`generate_reflection`](Self::generate_reflection) (the impls
-    /// resolve against the same embedded `DescriptorPool`) and
-    /// [`generate_views`](Self::generate_views). Set via [`ReflectMode::VTable`]
+    /// resolve against the same embedded `DescriptorPool`) but not
+    /// [`generate_views`](Self::generate_views) — with views off, only the
+    /// owned impls are emitted. Set via [`ReflectMode::VTable`]
     /// — front-ends expose it as `buffa_build::Config::reflect_mode` /
     /// `protoc-gen-buffa`'s `reflect_mode=vtable`.
     ///

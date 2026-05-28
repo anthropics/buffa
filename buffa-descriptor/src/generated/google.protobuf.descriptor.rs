@@ -3781,7 +3781,7 @@ pub mod extension_range_options {
         }
         #[must_use = "with_* setters return `self` by value; assign or chain the result"]
         #[inline]
-        ///Sets [`Self::r#type`] to `Some(value)`, consuming and returning `self`.
+        ///Sets `type` to `Some(value)`, consuming and returning `self`.
         pub fn with_type(
             mut self,
             value: impl Into<::buffa::alloc::string::String>,
@@ -4303,7 +4303,7 @@ impl FieldDescriptorProto {
     }
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
-    ///Sets [`Self::r#type`] to `Some(value)`, consuming and returning `self`.
+    ///Sets `type` to `Some(value)`, consuming and returning `self`.
     pub fn with_type(mut self, value: impl Into<field_descriptor_proto::Type>) -> Self {
         self.r#type = Some(value.into());
         self

@@ -736,10 +736,10 @@ where
 
 /// Returns `true` if `f` has no fractional part (i.e. it is an exact integer).
 ///
-/// Avoids `f64::trunc()` because it was only moved to `core` in Rust 1.86
-/// and we support MSRV 1.85.  Instead, casts to `i128` and back — if the
-/// round-trip preserves the value, `f` has no fractional part.  Values outside
-/// i128 range saturate, producing a mismatch that correctly returns `false`.
+/// Casts to `i128` and back — if the round-trip preserves the value, `f` has
+/// no fractional part.  Deliberately not `f64::trunc()`-based: values outside
+/// i128 range saturate, producing a mismatch that correctly returns `false`
+/// (such values cannot fit any protobuf integer type anyway).
 fn is_exact_integer(f: f64) -> bool {
     f.is_finite() && f == (f as i128 as f64)
 }

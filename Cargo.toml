@@ -25,9 +25,9 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.87"
 license = "Apache-2.0"
 repository = "https://github.com/anthropics/buffa"
 keywords = ["protobuf", "protocol-buffers", "serialization", "no-std", "editions"]
@@ -42,18 +42,18 @@ lto = true
 codegen-units = 1
 
 [workspace.dependencies]
-buffa = { path = "buffa", version = "0.6.0", default-features = false }
-buffa-types = { path = "buffa-types", version = "0.6.0" }
+buffa = { path = "buffa", version = "0.7.0", default-features = false }
+buffa-types = { path = "buffa-types", version = "0.7.0" }
 # `default-features = false` keeps the codegen toolchain (`buffa-codegen` /
 # `buffa-build` / `protoc-gen-buffa`) lean — descriptor types are read at
 # codegen time via the binary codec only, never serialised to JSON / text or
 # borrowed as views, so the codegen build graph carries no `serde` /
 # `serde_json` / `base64`. Downstream consumers whose protos reference
 # `descriptor.proto` types as fields enable the features they need.
-buffa-descriptor = { path = "buffa-descriptor", version = "0.6.0", default-features = false }
-buffa-codegen = { path = "buffa-codegen", version = "0.6.0" }
-buffa-build = { path = "buffa-build", version = "0.6.0" }
-buffa-test = { path = "buffa-test", version = "0.6.0" }
+buffa-descriptor = { path = "buffa-descriptor", version = "0.7.0", default-features = false }
+buffa-codegen = { path = "buffa-codegen", version = "0.7.0" }
+buffa-build = { path = "buffa-build", version = "0.7.0" }
+buffa-test = { path = "buffa-test", version = "0.7.0" }
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
 bytes = { version = "1", default-features = false }
 hashbrown = { version = "0.15", default-features = false, features = ["default-hasher"] }
@@ -69,7 +69,7 @@ thiserror = { version = "2", default-features = false }
 # feature (see buffa/Cargo.toml).
 #
 # `smol_str` is capped below 0.3.4: that release raised its MSRV to 1.89, above
-# buffa's 1.85. 0.3.2 (no declared MSRV) keeps the `serde`/`arbitrary` features
+# buffa's 1.87. 0.3.2 (no declared MSRV) keeps the `serde`/`arbitrary` features
 # we need. Relax the cap when buffa's MSRV reaches 1.89.
 smol_str = { version = ">=0.3, <0.3.4", default-features = false }
 ecow = { version = "0.2", default-features = false }

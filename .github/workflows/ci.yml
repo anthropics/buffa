@@ -79,7 +79,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: '1.85'
+          toolchain: '1.87'
 
       - name: Install protoc
         run: |
@@ -89,7 +89,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1 (sha-pinned)
 
-      - name: Check (MSRV 1.85)
+      - name: Check (MSRV 1.87)
         run: cargo check --workspace --all-targets
 
   # ── no_std and 32-bit compilation checks ─────────────────────────────────

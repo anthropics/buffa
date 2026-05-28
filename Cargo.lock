@@ -68,7 +68,7 @@ dependencies = [
 
 [[package]]
 name = "buffa"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "arbitrary",
  "base64",
@@ -85,7 +85,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-build"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "buffa",
  "buffa-codegen",
@@ -94,7 +94,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-codegen"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "buffa",
  "buffa-descriptor",
@@ -108,7 +108,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-descriptor"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "arbitrary",
  "buffa",
@@ -118,7 +118,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-test"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "arbitrary",
  "buffa",
@@ -132,7 +132,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-types"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "arbitrary",
  "buffa",
@@ -578,7 +578,7 @@ dependencies = [
 
 [[package]]
 name = "protoc-gen-buffa"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "buffa",
  "buffa-codegen",
@@ -586,7 +586,7 @@ dependencies = [
 
 [[package]]
 name = "protoc-gen-buffa-packaging"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "buffa",
  "buffa-codegen",

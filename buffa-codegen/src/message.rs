@@ -191,9 +191,15 @@ fn generate_message_with_nesting(
             let field_ident = &f.ident;
             let setter_ident = &s.ident;
             let field_name = field_ident.to_string();
-            let doc = format!(
-                "Sets [`Self::{field_name}`] to `Some(value)`, consuming and returning `self`."
-            );
+            // Raw identifiers (e.g. `r#type`) don't resolve as intra-doc
+            // links, so fall back to plain code formatting for those.
+            let doc = if let Some(stripped) = field_name.strip_prefix("r#") {
+                format!("Sets `{stripped}` to `Some(value)`, consuming and returning `self`.")
+            } else {
+                format!(
+                    "Sets [`Self::{field_name}`] to `Some(value)`, consuming and returning `self`."
+                )
+            };
             let body = if s.use_into {
                 quote! { Some(value.into()) }
             } else {
