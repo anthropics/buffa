@@ -217,6 +217,15 @@ impl ::core::convert::From<EmptyOwnedView> for ::buffa::OwnedView<EmptyView<'sta
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<EmptyView<'static>>> for EmptyOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<EmptyView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::Empty {
+    type View<'a> = EmptyView<'a>;
+    type ViewHandle = EmptyOwnedView;
+}
 #[cfg(feature = "reflect")]
 const _: () = {
     impl<'a> ::buffa_descriptor::reflect::ReflectMessage for EmptyView<'a> {

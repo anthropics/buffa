@@ -22,6 +22,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   name collides with one of the wrapper's reserved method names keeps working
   through `view()`; its accessor is skipped with a build warning
   (`CodeGenWarning::OwnedViewAccessorSuppressed`).
+- **`HasMessageView` view-family trait.** Generated code now implements
+  `buffa::HasMessageView` for every message (when views are generated),
+  linking the owned type to its view types: `Foo::View<'a>` = `FooView<'a>`
+  and `Foo::ViewHandle` = `FooOwnedView`, with a provided
+  `decode_view_handle()` helper. The generated wrapper additionally
+  implements `AsRef<OwnedView<FooView<'static>>>`, so code that is generic
+  over an owned message can decode, reborrow, and convert without naming the
+  concrete types — the hook an RPC framework needs to accept `M` and work
+  with `M::View<'_>` and `M::ViewHandle` generically.
 - **Vtable reflection mode.** Generated types now implement
   `buffa_descriptor::reflect::ReflectMessage` directly — on both the owned
   structs and the zero-copy view types — so `foo.reflect()` borrows `foo` in

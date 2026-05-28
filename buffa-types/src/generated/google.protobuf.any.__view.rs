@@ -425,6 +425,15 @@ impl ::core::convert::From<AnyOwnedView> for ::buffa::OwnedView<AnyView<'static>
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<AnyView<'static>>> for AnyOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<AnyView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::Any {
+    type View<'a> = AnyView<'a>;
+    type ViewHandle = AnyOwnedView;
+}
 #[cfg(feature = "reflect")]
 const _: () = {
     impl<'a> ::buffa_descriptor::reflect::ReflectMessage for AnyView<'a> {

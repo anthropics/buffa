@@ -63,6 +63,20 @@ fn test_owned_view_wrapper_struct_and_value_accessors() {
         content.contains("pub use self::__buffa::view::ItemOwnedView"),
         "missing natural-path re-export of the wrapper: {content}"
     );
+    // The view-family trait impl and the AsRef escape hatch ride along with
+    // the wrapper.
+    assert!(
+        content.contains("impl ::buffa::HasMessageView for"),
+        "missing HasMessageView impl: {content}"
+    );
+    assert!(
+        content.contains("type ViewHandle = ItemOwnedView"),
+        "HasMessageView::ViewHandle must name the wrapper: {content}"
+    );
+    assert!(
+        content.contains("AsRef<::buffa::OwnedView<ItemView<'static>>> for ItemOwnedView"),
+        "missing AsRef impl on the wrapper: {content}"
+    );
 }
 
 #[test]

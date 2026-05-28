@@ -470,6 +470,16 @@ for ::buffa::OwnedView<FieldMaskView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<FieldMaskView<'static>>>
+for FieldMaskOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<FieldMaskView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::FieldMask {
+    type View<'a> = FieldMaskView<'a>;
+    type ViewHandle = FieldMaskOwnedView;
+}
 #[cfg(feature = "reflect")]
 const _: () = {
     impl<'a> ::buffa_descriptor::reflect::ReflectMessage for FieldMaskView<'a> {

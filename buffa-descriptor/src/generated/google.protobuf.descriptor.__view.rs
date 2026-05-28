@@ -302,6 +302,16 @@ for ::buffa::OwnedView<FileDescriptorSetView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<FileDescriptorSetView<'static>>>
+for FileDescriptorSetOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<FileDescriptorSetView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::FileDescriptorSet {
+    type View<'a> = FileDescriptorSetView<'a>;
+    type ViewHandle = FileDescriptorSetOwnedView;
+}
 #[cfg(feature = "json")]
 impl ::serde::Serialize for FileDescriptorSetOwnedView {
     fn serialize<__S: ::serde::Serializer>(
@@ -1296,6 +1306,16 @@ for ::buffa::OwnedView<FileDescriptorProtoView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<FileDescriptorProtoView<'static>>>
+for FileDescriptorProtoOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<FileDescriptorProtoView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::FileDescriptorProto {
+    type View<'a> = FileDescriptorProtoView<'a>;
+    type ViewHandle = FileDescriptorProtoOwnedView;
+}
 #[cfg(feature = "json")]
 impl ::serde::Serialize for FileDescriptorProtoOwnedView {
     fn serialize<__S: ::serde::Serializer>(
@@ -2147,6 +2167,16 @@ for ::buffa::OwnedView<DescriptorProtoView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<DescriptorProtoView<'static>>>
+for DescriptorProtoOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<DescriptorProtoView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::DescriptorProto {
+    type View<'a> = DescriptorProtoView<'a>;
+    type ViewHandle = DescriptorProtoOwnedView;
+}
 #[cfg(feature = "json")]
 impl ::serde::Serialize for DescriptorProtoOwnedView {
     fn serialize<__S: ::serde::Serializer>(
@@ -2555,6 +2585,17 @@ pub mod descriptor_proto {
             wrapper.0
         }
     }
+    impl ::core::convert::AsRef<::buffa::OwnedView<ExtensionRangeView<'static>>>
+    for ExtensionRangeOwnedView {
+        fn as_ref(&self) -> &::buffa::OwnedView<ExtensionRangeView<'static>> {
+            &self.0
+        }
+    }
+    impl ::buffa::HasMessageView
+    for super::super::super::descriptor_proto::ExtensionRange {
+        type View<'a> = ExtensionRangeView<'a>;
+        type ViewHandle = ExtensionRangeOwnedView;
+    }
     #[cfg(feature = "json")]
     impl ::serde::Serialize for ExtensionRangeOwnedView {
         fn serialize<__S: ::serde::Serializer>(
@@ -2893,6 +2934,17 @@ pub mod descriptor_proto {
         fn from(wrapper: ReservedRangeOwnedView) -> Self {
             wrapper.0
         }
+    }
+    impl ::core::convert::AsRef<::buffa::OwnedView<ReservedRangeView<'static>>>
+    for ReservedRangeOwnedView {
+        fn as_ref(&self) -> &::buffa::OwnedView<ReservedRangeView<'static>> {
+            &self.0
+        }
+    }
+    impl ::buffa::HasMessageView
+    for super::super::super::descriptor_proto::ReservedRange {
+        type View<'a> = ReservedRangeView<'a>;
+        type ViewHandle = ReservedRangeOwnedView;
     }
     #[cfg(feature = "json")]
     impl ::serde::Serialize for ReservedRangeOwnedView {
@@ -3404,6 +3456,16 @@ for ::buffa::OwnedView<ExtensionRangeOptionsView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<ExtensionRangeOptionsView<'static>>>
+for ExtensionRangeOptionsOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<ExtensionRangeOptionsView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::ExtensionRangeOptions {
+    type View<'a> = ExtensionRangeOptionsView<'a>;
+    type ViewHandle = ExtensionRangeOptionsOwnedView;
+}
 #[cfg(feature = "json")]
 impl ::serde::Serialize for ExtensionRangeOptionsOwnedView {
     fn serialize<__S: ::serde::Serializer>(
@@ -3854,6 +3916,17 @@ pub mod extension_range_options {
         fn from(wrapper: DeclarationOwnedView) -> Self {
             wrapper.0
         }
+    }
+    impl ::core::convert::AsRef<::buffa::OwnedView<DeclarationView<'static>>>
+    for DeclarationOwnedView {
+        fn as_ref(&self) -> &::buffa::OwnedView<DeclarationView<'static>> {
+            &self.0
+        }
+    }
+    impl ::buffa::HasMessageView
+    for super::super::super::extension_range_options::Declaration {
+        type View<'a> = DeclarationView<'a>;
+        type ViewHandle = DeclarationOwnedView;
     }
     #[cfg(feature = "json")]
     impl ::serde::Serialize for DeclarationOwnedView {
@@ -4625,6 +4698,16 @@ for ::buffa::OwnedView<FieldDescriptorProtoView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<FieldDescriptorProtoView<'static>>>
+for FieldDescriptorProtoOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<FieldDescriptorProtoView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::FieldDescriptorProto {
+    type View<'a> = FieldDescriptorProtoView<'a>;
+    type ViewHandle = FieldDescriptorProtoOwnedView;
+}
 #[cfg(feature = "json")]
 impl ::serde::Serialize for FieldDescriptorProtoOwnedView {
     fn serialize<__S: ::serde::Serializer>(
@@ -4970,6 +5053,16 @@ for ::buffa::OwnedView<OneofDescriptorProtoView<'static>> {
     fn from(wrapper: OneofDescriptorProtoOwnedView) -> Self {
         wrapper.0
     }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<OneofDescriptorProtoView<'static>>>
+for OneofDescriptorProtoOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<OneofDescriptorProtoView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::OneofDescriptorProto {
+    type View<'a> = OneofDescriptorProtoView<'a>;
+    type ViewHandle = OneofDescriptorProtoOwnedView;
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for OneofDescriptorProtoOwnedView {
@@ -5533,6 +5626,16 @@ for ::buffa::OwnedView<EnumDescriptorProtoView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<EnumDescriptorProtoView<'static>>>
+for EnumDescriptorProtoOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<EnumDescriptorProtoView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::EnumDescriptorProto {
+    type View<'a> = EnumDescriptorProtoView<'a>;
+    type ViewHandle = EnumDescriptorProtoOwnedView;
+}
 #[cfg(feature = "json")]
 impl ::serde::Serialize for EnumDescriptorProtoOwnedView {
     fn serialize<__S: ::serde::Serializer>(
@@ -5879,6 +5982,17 @@ pub mod enum_descriptor_proto {
         fn from(wrapper: EnumReservedRangeOwnedView) -> Self {
             wrapper.0
         }
+    }
+    impl ::core::convert::AsRef<::buffa::OwnedView<EnumReservedRangeView<'static>>>
+    for EnumReservedRangeOwnedView {
+        fn as_ref(&self) -> &::buffa::OwnedView<EnumReservedRangeView<'static>> {
+            &self.0
+        }
+    }
+    impl ::buffa::HasMessageView
+    for super::super::super::enum_descriptor_proto::EnumReservedRange {
+        type View<'a> = EnumReservedRangeView<'a>;
+        type ViewHandle = EnumReservedRangeOwnedView;
     }
     #[cfg(feature = "json")]
     impl ::serde::Serialize for EnumReservedRangeOwnedView {
@@ -6268,6 +6382,16 @@ for ::buffa::OwnedView<EnumValueDescriptorProtoView<'static>> {
     fn from(wrapper: EnumValueDescriptorProtoOwnedView) -> Self {
         wrapper.0
     }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<EnumValueDescriptorProtoView<'static>>>
+for EnumValueDescriptorProtoOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<EnumValueDescriptorProtoView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::EnumValueDescriptorProto {
+    type View<'a> = EnumValueDescriptorProtoView<'a>;
+    type ViewHandle = EnumValueDescriptorProtoOwnedView;
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for EnumValueDescriptorProtoOwnedView {
@@ -6676,6 +6800,16 @@ for ::buffa::OwnedView<ServiceDescriptorProtoView<'static>> {
     fn from(wrapper: ServiceDescriptorProtoOwnedView) -> Self {
         wrapper.0
     }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<ServiceDescriptorProtoView<'static>>>
+for ServiceDescriptorProtoOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<ServiceDescriptorProtoView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::ServiceDescriptorProto {
+    type View<'a> = ServiceDescriptorProtoView<'a>;
+    type ViewHandle = ServiceDescriptorProtoOwnedView;
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for ServiceDescriptorProtoOwnedView {
@@ -7158,6 +7292,16 @@ for ::buffa::OwnedView<MethodDescriptorProtoView<'static>> {
     fn from(wrapper: MethodDescriptorProtoOwnedView) -> Self {
         wrapper.0
     }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<MethodDescriptorProtoView<'static>>>
+for MethodDescriptorProtoOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<MethodDescriptorProtoView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::MethodDescriptorProto {
+    type View<'a> = MethodDescriptorProtoView<'a>;
+    type ViewHandle = MethodDescriptorProtoOwnedView;
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for MethodDescriptorProtoOwnedView {
@@ -8353,6 +8497,16 @@ for ::buffa::OwnedView<FileOptionsView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<FileOptionsView<'static>>>
+for FileOptionsOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<FileOptionsView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::FileOptions {
+    type View<'a> = FileOptionsView<'a>;
+    type ViewHandle = FileOptionsOwnedView;
+}
 #[cfg(feature = "json")]
 impl ::serde::Serialize for FileOptionsOwnedView {
     fn serialize<__S: ::serde::Serializer>(
@@ -9027,6 +9181,16 @@ for ::buffa::OwnedView<MessageOptionsView<'static>> {
     fn from(wrapper: MessageOptionsOwnedView) -> Self {
         wrapper.0
     }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<MessageOptionsView<'static>>>
+for MessageOptionsOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<MessageOptionsView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::MessageOptions {
+    type View<'a> = MessageOptionsView<'a>;
+    type ViewHandle = MessageOptionsOwnedView;
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for MessageOptionsOwnedView {
@@ -10048,6 +10212,16 @@ for ::buffa::OwnedView<FieldOptionsView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<FieldOptionsView<'static>>>
+for FieldOptionsOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<FieldOptionsView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::FieldOptions {
+    type View<'a> = FieldOptionsView<'a>;
+    type ViewHandle = FieldOptionsOwnedView;
+}
 #[cfg(feature = "json")]
 impl ::serde::Serialize for FieldOptionsOwnedView {
     fn serialize<__S: ::serde::Serializer>(
@@ -10387,6 +10561,16 @@ pub mod field_options {
         fn from(wrapper: EditionDefaultOwnedView) -> Self {
             wrapper.0
         }
+    }
+    impl ::core::convert::AsRef<::buffa::OwnedView<EditionDefaultView<'static>>>
+    for EditionDefaultOwnedView {
+        fn as_ref(&self) -> &::buffa::OwnedView<EditionDefaultView<'static>> {
+            &self.0
+        }
+    }
+    impl ::buffa::HasMessageView for super::super::super::field_options::EditionDefault {
+        type View<'a> = EditionDefaultView<'a>;
+        type ViewHandle = EditionDefaultOwnedView;
     }
     #[cfg(feature = "json")]
     impl ::serde::Serialize for EditionDefaultOwnedView {
@@ -10852,6 +11036,16 @@ pub mod field_options {
             wrapper.0
         }
     }
+    impl ::core::convert::AsRef<::buffa::OwnedView<FeatureSupportView<'static>>>
+    for FeatureSupportOwnedView {
+        fn as_ref(&self) -> &::buffa::OwnedView<FeatureSupportView<'static>> {
+            &self.0
+        }
+    }
+    impl ::buffa::HasMessageView for super::super::super::field_options::FeatureSupport {
+        type View<'a> = FeatureSupportView<'a>;
+        type ViewHandle = FeatureSupportOwnedView;
+    }
     #[cfg(feature = "json")]
     impl ::serde::Serialize for FeatureSupportOwnedView {
         fn serialize<__S: ::serde::Serializer>(
@@ -11235,6 +11429,16 @@ for ::buffa::OwnedView<OneofOptionsView<'static>> {
     fn from(wrapper: OneofOptionsOwnedView) -> Self {
         wrapper.0
     }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<OneofOptionsView<'static>>>
+for OneofOptionsOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<OneofOptionsView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::OneofOptions {
+    type View<'a> = OneofOptionsView<'a>;
+    type ViewHandle = OneofOptionsOwnedView;
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for OneofOptionsOwnedView {
@@ -11742,6 +11946,16 @@ for ::buffa::OwnedView<EnumOptionsView<'static>> {
     fn from(wrapper: EnumOptionsOwnedView) -> Self {
         wrapper.0
     }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<EnumOptionsView<'static>>>
+for EnumOptionsOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<EnumOptionsView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::EnumOptions {
+    type View<'a> = EnumOptionsView<'a>;
+    type ViewHandle = EnumOptionsOwnedView;
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for EnumOptionsOwnedView {
@@ -12275,6 +12489,16 @@ for ::buffa::OwnedView<EnumValueOptionsView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<EnumValueOptionsView<'static>>>
+for EnumValueOptionsOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<EnumValueOptionsView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::EnumValueOptions {
+    type View<'a> = EnumValueOptionsView<'a>;
+    type ViewHandle = EnumValueOptionsOwnedView;
+}
 #[cfg(feature = "json")]
 impl ::serde::Serialize for EnumValueOptionsOwnedView {
     fn serialize<__S: ::serde::Serializer>(
@@ -12708,6 +12932,16 @@ for ::buffa::OwnedView<ServiceOptionsView<'static>> {
     fn from(wrapper: ServiceOptionsOwnedView) -> Self {
         wrapper.0
     }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<ServiceOptionsView<'static>>>
+for ServiceOptionsOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<ServiceOptionsView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::ServiceOptions {
+    type View<'a> = ServiceOptionsView<'a>;
+    type ViewHandle = ServiceOptionsOwnedView;
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for ServiceOptionsOwnedView {
@@ -13190,6 +13424,16 @@ for ::buffa::OwnedView<MethodOptionsView<'static>> {
     fn from(wrapper: MethodOptionsOwnedView) -> Self {
         wrapper.0
     }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<MethodOptionsView<'static>>>
+for MethodOptionsOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<MethodOptionsView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::MethodOptions {
+    type View<'a> = MethodOptionsView<'a>;
+    type ViewHandle = MethodOptionsOwnedView;
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for MethodOptionsOwnedView {
@@ -13734,6 +13978,16 @@ for ::buffa::OwnedView<UninterpretedOptionView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<UninterpretedOptionView<'static>>>
+for UninterpretedOptionOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<UninterpretedOptionView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::UninterpretedOption {
+    type View<'a> = UninterpretedOptionView<'a>;
+    type ViewHandle = UninterpretedOptionOwnedView;
+}
 #[cfg(feature = "json")]
 impl ::serde::Serialize for UninterpretedOptionOwnedView {
     fn serialize<__S: ::serde::Serializer>(
@@ -14046,6 +14300,17 @@ pub mod uninterpreted_option {
         fn from(wrapper: NamePartOwnedView) -> Self {
             wrapper.0
         }
+    }
+    impl ::core::convert::AsRef<::buffa::OwnedView<NamePartView<'static>>>
+    for NamePartOwnedView {
+        fn as_ref(&self) -> &::buffa::OwnedView<NamePartView<'static>> {
+            &self.0
+        }
+    }
+    impl ::buffa::HasMessageView
+    for super::super::super::uninterpreted_option::NamePart {
+        type View<'a> = NamePartView<'a>;
+        type ViewHandle = NamePartOwnedView;
     }
     #[cfg(feature = "json")]
     impl ::serde::Serialize for NamePartOwnedView {
@@ -14699,6 +14964,16 @@ for ::buffa::OwnedView<FeatureSetView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<FeatureSetView<'static>>>
+for FeatureSetOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<FeatureSetView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::FeatureSet {
+    type View<'a> = FeatureSetView<'a>;
+    type ViewHandle = FeatureSetOwnedView;
+}
 #[cfg(feature = "json")]
 impl ::serde::Serialize for FeatureSetOwnedView {
     fn serialize<__S: ::serde::Serializer>(
@@ -14955,6 +15230,17 @@ pub mod feature_set {
         fn from(wrapper: VisibilityFeatureOwnedView) -> Self {
             wrapper.0
         }
+    }
+    impl ::core::convert::AsRef<::buffa::OwnedView<VisibilityFeatureView<'static>>>
+    for VisibilityFeatureOwnedView {
+        fn as_ref(&self) -> &::buffa::OwnedView<VisibilityFeatureView<'static>> {
+            &self.0
+        }
+    }
+    impl ::buffa::HasMessageView
+    for super::super::super::feature_set::VisibilityFeature {
+        type View<'a> = VisibilityFeatureView<'a>;
+        type ViewHandle = VisibilityFeatureOwnedView;
     }
     #[cfg(feature = "json")]
     impl ::serde::Serialize for VisibilityFeatureOwnedView {
@@ -15376,6 +15662,16 @@ for ::buffa::OwnedView<FeatureSetDefaultsView<'static>> {
     fn from(wrapper: FeatureSetDefaultsOwnedView) -> Self {
         wrapper.0
     }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<FeatureSetDefaultsView<'static>>>
+for FeatureSetDefaultsOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<FeatureSetDefaultsView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::FeatureSetDefaults {
+    type View<'a> = FeatureSetDefaultsView<'a>;
+    type ViewHandle = FeatureSetDefaultsOwnedView;
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for FeatureSetDefaultsOwnedView {
@@ -15841,6 +16137,18 @@ pub mod feature_set_defaults {
             wrapper.0
         }
     }
+    impl ::core::convert::AsRef<
+        ::buffa::OwnedView<FeatureSetEditionDefaultView<'static>>,
+    > for FeatureSetEditionDefaultOwnedView {
+        fn as_ref(&self) -> &::buffa::OwnedView<FeatureSetEditionDefaultView<'static>> {
+            &self.0
+        }
+    }
+    impl ::buffa::HasMessageView
+    for super::super::super::feature_set_defaults::FeatureSetEditionDefault {
+        type View<'a> = FeatureSetEditionDefaultView<'a>;
+        type ViewHandle = FeatureSetEditionDefaultOwnedView;
+    }
     #[cfg(feature = "json")]
     impl ::serde::Serialize for FeatureSetEditionDefaultOwnedView {
         fn serialize<__S: ::serde::Serializer>(
@@ -16244,6 +16552,16 @@ for ::buffa::OwnedView<SourceCodeInfoView<'static>> {
     fn from(wrapper: SourceCodeInfoOwnedView) -> Self {
         wrapper.0
     }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<SourceCodeInfoView<'static>>>
+for SourceCodeInfoOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<SourceCodeInfoView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::SourceCodeInfo {
+    type View<'a> = SourceCodeInfoView<'a>;
+    type ViewHandle = SourceCodeInfoOwnedView;
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for SourceCodeInfoOwnedView {
@@ -16911,6 +17229,16 @@ pub mod source_code_info {
             wrapper.0
         }
     }
+    impl ::core::convert::AsRef<::buffa::OwnedView<LocationView<'static>>>
+    for LocationOwnedView {
+        fn as_ref(&self) -> &::buffa::OwnedView<LocationView<'static>> {
+            &self.0
+        }
+    }
+    impl ::buffa::HasMessageView for super::super::super::source_code_info::Location {
+        type View<'a> = LocationView<'a>;
+        type ViewHandle = LocationOwnedView;
+    }
     #[cfg(feature = "json")]
     impl ::serde::Serialize for LocationOwnedView {
         fn serialize<__S: ::serde::Serializer>(
@@ -17228,6 +17556,16 @@ for ::buffa::OwnedView<GeneratedCodeInfoView<'static>> {
     fn from(wrapper: GeneratedCodeInfoOwnedView) -> Self {
         wrapper.0
     }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<GeneratedCodeInfoView<'static>>>
+for GeneratedCodeInfoOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<GeneratedCodeInfoView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::GeneratedCodeInfo {
+    type View<'a> = GeneratedCodeInfoView<'a>;
+    type ViewHandle = GeneratedCodeInfoOwnedView;
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for GeneratedCodeInfoOwnedView {
@@ -17738,6 +18076,17 @@ pub mod generated_code_info {
         fn from(wrapper: AnnotationOwnedView) -> Self {
             wrapper.0
         }
+    }
+    impl ::core::convert::AsRef<::buffa::OwnedView<AnnotationView<'static>>>
+    for AnnotationOwnedView {
+        fn as_ref(&self) -> &::buffa::OwnedView<AnnotationView<'static>> {
+            &self.0
+        }
+    }
+    impl ::buffa::HasMessageView
+    for super::super::super::generated_code_info::Annotation {
+        type View<'a> = AnnotationView<'a>;
+        type ViewHandle = AnnotationOwnedView;
     }
     #[cfg(feature = "json")]
     impl ::serde::Serialize for AnnotationOwnedView {

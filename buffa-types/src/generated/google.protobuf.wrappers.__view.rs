@@ -247,6 +247,16 @@ for ::buffa::OwnedView<DoubleValueView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<DoubleValueView<'static>>>
+for DoubleValueOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<DoubleValueView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::DoubleValue {
+    type View<'a> = DoubleValueView<'a>;
+    type ViewHandle = DoubleValueOwnedView;
+}
 #[cfg(feature = "reflect")]
 const _: () = {
     impl<'a> ::buffa_descriptor::reflect::ReflectMessage for DoubleValueView<'a> {
@@ -582,6 +592,16 @@ for ::buffa::OwnedView<FloatValueView<'static>> {
     fn from(wrapper: FloatValueOwnedView) -> Self {
         wrapper.0
     }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<FloatValueView<'static>>>
+for FloatValueOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<FloatValueView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::FloatValue {
+    type View<'a> = FloatValueView<'a>;
+    type ViewHandle = FloatValueOwnedView;
 }
 #[cfg(feature = "reflect")]
 const _: () = {
@@ -919,6 +939,16 @@ for ::buffa::OwnedView<Int64ValueView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<Int64ValueView<'static>>>
+for Int64ValueOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<Int64ValueView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::Int64Value {
+    type View<'a> = Int64ValueView<'a>;
+    type ViewHandle = Int64ValueOwnedView;
+}
 #[cfg(feature = "reflect")]
 const _: () = {
     impl<'a> ::buffa_descriptor::reflect::ReflectMessage for Int64ValueView<'a> {
@@ -1254,6 +1284,16 @@ for ::buffa::OwnedView<UInt64ValueView<'static>> {
     fn from(wrapper: UInt64ValueOwnedView) -> Self {
         wrapper.0
     }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<UInt64ValueView<'static>>>
+for UInt64ValueOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<UInt64ValueView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::UInt64Value {
+    type View<'a> = UInt64ValueView<'a>;
+    type ViewHandle = UInt64ValueOwnedView;
 }
 #[cfg(feature = "reflect")]
 const _: () = {
@@ -1591,6 +1631,16 @@ for ::buffa::OwnedView<Int32ValueView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<Int32ValueView<'static>>>
+for Int32ValueOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<Int32ValueView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::Int32Value {
+    type View<'a> = Int32ValueView<'a>;
+    type ViewHandle = Int32ValueOwnedView;
+}
 #[cfg(feature = "reflect")]
 const _: () = {
     impl<'a> ::buffa_descriptor::reflect::ReflectMessage for Int32ValueView<'a> {
@@ -1927,6 +1977,16 @@ for ::buffa::OwnedView<UInt32ValueView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<UInt32ValueView<'static>>>
+for UInt32ValueOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<UInt32ValueView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::UInt32Value {
+    type View<'a> = UInt32ValueView<'a>;
+    type ViewHandle = UInt32ValueOwnedView;
+}
 #[cfg(feature = "reflect")]
 const _: () = {
     impl<'a> ::buffa_descriptor::reflect::ReflectMessage for UInt32ValueView<'a> {
@@ -2262,6 +2322,16 @@ for ::buffa::OwnedView<BoolValueView<'static>> {
     fn from(wrapper: BoolValueOwnedView) -> Self {
         wrapper.0
     }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<BoolValueView<'static>>>
+for BoolValueOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<BoolValueView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::BoolValue {
+    type View<'a> = BoolValueView<'a>;
+    type ViewHandle = BoolValueOwnedView;
 }
 #[cfg(feature = "reflect")]
 const _: () = {
@@ -2602,6 +2672,16 @@ for ::buffa::OwnedView<StringValueView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<StringValueView<'static>>>
+for StringValueOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<StringValueView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::StringValue {
+    type View<'a> = StringValueView<'a>;
+    type ViewHandle = StringValueOwnedView;
+}
 #[cfg(feature = "reflect")]
 const _: () = {
     impl<'a> ::buffa_descriptor::reflect::ReflectMessage for StringValueView<'a> {
@@ -2940,6 +3020,16 @@ for ::buffa::OwnedView<BytesValueView<'static>> {
     fn from(wrapper: BytesValueOwnedView) -> Self {
         wrapper.0
     }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<BytesValueView<'static>>>
+for BytesValueOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<BytesValueView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::BytesValue {
+    type View<'a> = BytesValueView<'a>;
+    type ViewHandle = BytesValueOwnedView;
 }
 #[cfg(feature = "reflect")]
 const _: () = {

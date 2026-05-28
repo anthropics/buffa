@@ -350,6 +350,16 @@ for ::buffa::OwnedView<DurationView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<DurationView<'static>>>
+for DurationOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<DurationView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::Duration {
+    type View<'a> = DurationView<'a>;
+    type ViewHandle = DurationOwnedView;
+}
 #[cfg(feature = "reflect")]
 const _: () = {
     impl<'a> ::buffa_descriptor::reflect::ReflectMessage for DurationView<'a> {

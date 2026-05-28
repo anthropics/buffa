@@ -207,6 +207,86 @@ pub trait ViewReborrow: MessageView<'static> {
     fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b>;
 }
 
+/// Links an owned message type to its generated zero-copy view types.
+///
+/// For a message `Foo`, generated code implements this trait as
+/// `View<'a> = FooView<'a>` (the borrowed view) and
+/// `ViewHandle = FooOwnedView` (the self-contained `'static` handle). The
+/// trait lets code that is generic over an owned message name those types —
+/// for example an RPC framework that decodes `M::View<'_>` from a request
+/// body it owns, or holds `M::ViewHandle` items in a stream — without
+/// per-message glue on the consumer's side.
+///
+/// The associated types intentionally carry only structural bounds:
+///
+/// - [`View<'a>`](Self::View) is the message's view, with
+///   [`Owned`](MessageView::Owned)` = Self`.
+/// - [`ViewHandle`](Self::ViewHandle) is convertible from, and exposes via
+///   [`AsRef`], the corresponding `OwnedView<Self::View<'static>>`, so
+///   generic code can reach [`reborrow`](OwnedView::reborrow),
+///   [`bytes`](OwnedView::bytes), and
+///   [`to_owned_message`](OwnedView::to_owned_message) without naming the
+///   concrete wrapper. The wrapper's per-field accessor methods remain
+///   inherent on the concrete type.
+///
+/// Generic code that wants to reborrow through the handle
+/// (`handle.as_ref().reborrow()`) adds `M::View<'static>: ViewReborrow` as a
+/// bound at the use site; every generated view satisfies it. (The bound
+/// cannot live on the trait itself: a `where Self::View<'static>:
+/// ViewReborrow` clause currently trips a GAT normalization error, E0308
+/// "expected `MessageView<'a>`, found `MessageView<'static>`".)
+///
+/// # Implementing
+///
+/// Implementations are generated alongside the view and owned-view wrapper
+/// (and are therefore gated with them). Hand-written implementations are only
+/// needed for hand-written view types and must follow the same shape.
+pub trait HasMessageView: crate::Message + Sized {
+    /// The zero-copy view of `Self`, borrowing from a buffer with lifetime
+    /// `'a`.
+    type View<'a>: MessageView<'a, Owned = Self> + Send + Sync;
+
+    /// The generated `'static` owned-view handle for `Self`
+    /// (`FooOwnedView`).
+    type ViewHandle: From<OwnedView<Self::View<'static>>>
+        + AsRef<OwnedView<Self::View<'static>>>
+        + Send
+        + Sync
+        + 'static;
+
+    /// Decode a [`ViewHandle`](Self::ViewHandle) from a [`Bytes`] buffer.
+    ///
+    /// Convenience for generic code; equivalent to decoding an
+    /// [`OwnedView<Self::View<'static>>`](OwnedView) and converting it with
+    /// `From`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeError`] if the buffer contains invalid protobuf data.
+    fn decode_view_handle(bytes: Bytes) -> Result<Self::ViewHandle, DecodeError> {
+        Ok(Self::ViewHandle::from(
+            OwnedView::<Self::View<'static>>::decode(bytes)?,
+        ))
+    }
+
+    /// Decode a [`ViewHandle`](Self::ViewHandle) with custom
+    /// [`DecodeOptions`](crate::DecodeOptions) (recursion limit, max message
+    /// size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeError`] if the buffer is invalid or exceeds the
+    /// configured limits.
+    fn decode_view_handle_with_options(
+        bytes: Bytes,
+        opts: &crate::DecodeOptions,
+    ) -> Result<Self::ViewHandle, DecodeError> {
+        Ok(Self::ViewHandle::from(
+            OwnedView::<Self::View<'static>>::decode_with_options(bytes, opts)?,
+        ))
+    }
+}
+
 /// Produce a [`Bytes`] for a borrowed slice, preferring a zero-copy
 /// [`Bytes::slice_ref`] into `source` when the slice lies within it.
 ///

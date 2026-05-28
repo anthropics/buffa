@@ -334,6 +334,16 @@ impl ::core::convert::From<StructOwnedView> for ::buffa::OwnedView<StructView<'s
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<StructView<'static>>>
+for StructOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<StructView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::Struct {
+    type View<'a> = StructView<'a>;
+    type ViewHandle = StructOwnedView;
+}
 #[cfg(feature = "reflect")]
 const _: () = {
     impl<'a> ::buffa_descriptor::reflect::ReflectMessage for StructView<'a> {
@@ -888,6 +898,15 @@ impl ::core::convert::From<ValueOwnedView> for ::buffa::OwnedView<ValueView<'sta
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<ValueView<'static>>> for ValueOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<ValueView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::Value {
+    type View<'a> = ValueView<'a>;
+    type ViewHandle = ValueOwnedView;
+}
 #[cfg(feature = "reflect")]
 const _: () = {
     impl<'a> ::buffa_descriptor::reflect::ReflectMessage for ValueView<'a> {
@@ -1362,6 +1381,16 @@ for ::buffa::OwnedView<ListValueView<'static>> {
     fn from(wrapper: ListValueOwnedView) -> Self {
         wrapper.0
     }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<ListValueView<'static>>>
+for ListValueOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<ListValueView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::ListValue {
+    type View<'a> = ListValueView<'a>;
+    type ViewHandle = ListValueOwnedView;
 }
 #[cfg(feature = "reflect")]
 const _: () = {

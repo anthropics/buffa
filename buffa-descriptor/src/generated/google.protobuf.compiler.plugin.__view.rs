@@ -387,6 +387,16 @@ for ::buffa::OwnedView<VersionView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<VersionView<'static>>>
+for VersionOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<VersionView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::Version {
+    type View<'a> = VersionView<'a>;
+    type ViewHandle = VersionOwnedView;
+}
 #[cfg(feature = "json")]
 impl ::serde::Serialize for VersionOwnedView {
     fn serialize<__S: ::serde::Serializer>(
@@ -958,6 +968,16 @@ for ::buffa::OwnedView<CodeGeneratorRequestView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<CodeGeneratorRequestView<'static>>>
+for CodeGeneratorRequestOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<CodeGeneratorRequestView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::CodeGeneratorRequest {
+    type View<'a> = CodeGeneratorRequestView<'a>;
+    type ViewHandle = CodeGeneratorRequestOwnedView;
+}
 #[cfg(feature = "json")]
 impl ::serde::Serialize for CodeGeneratorRequestOwnedView {
     fn serialize<__S: ::serde::Serializer>(
@@ -1458,6 +1478,16 @@ for ::buffa::OwnedView<CodeGeneratorResponseView<'static>> {
     fn from(wrapper: CodeGeneratorResponseOwnedView) -> Self {
         wrapper.0
     }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<CodeGeneratorResponseView<'static>>>
+for CodeGeneratorResponseOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<CodeGeneratorResponseView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::CodeGeneratorResponse {
+    type View<'a> = CodeGeneratorResponseView<'a>;
+    type ViewHandle = CodeGeneratorResponseOwnedView;
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for CodeGeneratorResponseOwnedView {
@@ -1996,6 +2026,16 @@ pub mod code_generator_response {
         fn from(wrapper: FileOwnedView) -> Self {
             wrapper.0
         }
+    }
+    impl ::core::convert::AsRef<::buffa::OwnedView<FileView<'static>>>
+    for FileOwnedView {
+        fn as_ref(&self) -> &::buffa::OwnedView<FileView<'static>> {
+            &self.0
+        }
+    }
+    impl ::buffa::HasMessageView for super::super::super::code_generator_response::File {
+        type View<'a> = FileView<'a>;
+        type ViewHandle = FileOwnedView;
     }
     #[cfg(feature = "json")]
     impl ::serde::Serialize for FileOwnedView {

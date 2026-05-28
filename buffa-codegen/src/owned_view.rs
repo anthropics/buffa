@@ -305,6 +305,22 @@ pub(crate) fn generate_owned_view_wrapper(
             }
         }
 
+        impl ::core::convert::AsRef<::buffa::OwnedView<#view_ident<'static>>> for #wrapper_ident {
+            fn as_ref(&self) -> &::buffa::OwnedView<#view_ident<'static>> {
+                &self.0
+            }
+        }
+
+        // NOTE: this is the one generated impl whose `Self` is the owned
+        // message path. Extern-mapped (`extern_path`) messages never reach
+        // this code (they are not in the generation set, so no view/wrapper
+        // is generated for them); if that invariant ever changes, this impl
+        // must be skipped for absolute `owned_path`s to avoid an orphan impl.
+        impl ::buffa::HasMessageView for #owned_path {
+            type View<'a> = #view_ident<'a>;
+            type ViewHandle = #wrapper_ident;
+        }
+
         #serialize_impl
     })
 }

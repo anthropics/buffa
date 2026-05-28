@@ -385,6 +385,16 @@ for ::buffa::OwnedView<TimestampView<'static>> {
         wrapper.0
     }
 }
+impl ::core::convert::AsRef<::buffa::OwnedView<TimestampView<'static>>>
+for TimestampOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<TimestampView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::Timestamp {
+    type View<'a> = TimestampView<'a>;
+    type ViewHandle = TimestampOwnedView;
+}
 #[cfg(feature = "reflect")]
 const _: () = {
     impl<'a> ::buffa_descriptor::reflect::ReflectMessage for TimestampView<'a> {

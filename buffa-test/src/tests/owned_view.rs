@@ -166,3 +166,65 @@ mod view_json_types {
         assert_eq!(json_wrapper, json_owned);
     }
 }
+
+mod view_family {
+    use super::*;
+
+    /// Generic over the owned message via `HasMessageView`: decode into the
+    /// handle, then reach the reborrowed view, the buffer, and the owned
+    /// message through the trait's structural bounds only — no concrete type
+    /// names beyond the call site's turbofish.
+    fn decode_via_family<M>(bytes: bytes::Bytes) -> (M, usize)
+    where
+        M: buffa::HasMessageView,
+        M::View<'static>: buffa::ViewReborrow,
+    {
+        let handle = M::decode_view_handle(bytes).expect("decode");
+        let raw = handle.as_ref();
+        let _view = raw.reborrow();
+        let len = raw.bytes().len();
+        (raw.to_owned_message(), len)
+    }
+
+    #[test]
+    fn test_has_message_view_generic_roundtrip() {
+        let msg = sample_person();
+        let encoded = msg.encode_to_vec();
+        let (decoded, len): (Person, usize) =
+            decode_via_family(bytes::Bytes::from(encoded.clone()));
+        assert_eq!(decoded, msg);
+        assert_eq!(len, encoded.len());
+    }
+
+    #[test]
+    fn test_has_message_view_generic_roundtrip_with_oneof() {
+        use crate::view_json::__buffa::oneof::with_oneof::Value as ValueOneof;
+        use crate::view_json::WithOneof;
+
+        let msg = WithOneof {
+            value: Some(ValueOneof::Text("family".into())),
+            ..Default::default()
+        };
+        let (decoded, _len): (WithOneof, usize) =
+            decode_via_family(bytes::Bytes::from(msg.encode_to_vec()));
+        assert_eq!(decoded, msg);
+    }
+
+    #[test]
+    fn test_has_message_view_names_the_generated_wrapper() {
+        // The `ViewHandle` associated type resolves to the generated wrapper.
+        fn assert_wrapper<M: buffa::HasMessageView<ViewHandle = W>, W>() {}
+        assert_wrapper::<Person, PersonOwnedView>();
+    }
+
+    #[test]
+    fn test_has_message_view_handle_and_view_are_send_sync() {
+        // The async-motivated thread-safety contract, asserted generically.
+        fn assert_send_sync<M: buffa::HasMessageView>() {
+            fn check<T: Send + Sync>() {}
+            check::<M::ViewHandle>();
+            check::<M::View<'static>>();
+        }
+        assert_send_sync::<Person>();
+    }
+}
