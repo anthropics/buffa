@@ -241,6 +241,15 @@ pub trait ViewReborrow: MessageView<'static> {
 /// Implementations are generated alongside the view and owned-view wrapper
 /// (and are therefore gated with them). Hand-written implementations are only
 /// needed for hand-written view types and must follow the same shape.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` does not implement `HasMessageView` — its message-view family was not generated or is not enabled",
+    note = "the `HasMessageView` impl is emitted next to each message's view types: \
+            regenerate the crate that defines `{Self}` with buffa 0.7.0 or newer and \
+            views enabled — `generate_views(true)` (on by default) in a buffa-build / \
+            buffa-codegen config, or `views=true` for protoc-gen-buffa",
+    note = "if the defining crate feature-gates its generated impls, enabling its views \
+            feature is enough — no regeneration needed"
+)]
 pub trait HasMessageView: crate::Message + Sized {
     /// The zero-copy view of `Self`, borrowing from a buffer with lifetime
     /// `'a`.
