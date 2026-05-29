@@ -56,8 +56,41 @@ impl core::fmt::Debug for DynamicMessage {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("DynamicMessage")
             .field("type", &self.message_descriptor().full_name)
-            .field("fields", &self.fields)
+            .field("fields", &RedactedFields(self))
             .finish_non_exhaustive()
+    }
+}
+
+/// `Debug` adapter for [`DynamicMessage`]'s field map: values whose field
+/// carries `[debug_redact = true]` print the `[REDACTED]` marker instead of
+/// their contents, mirroring the redaction in generated `Debug` impls.
+/// Unredacted entries print exactly as the underlying `BTreeMap` would.
+///
+/// The marker literal must stay in sync with `buffa-codegen`'s
+/// `DEBUG_REDACT_PLACEHOLDER` so generated and reflective output agree.
+struct RedactedFields<'a>(&'a DynamicMessage);
+
+impl core::fmt::Debug for RedactedFields<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let mut map = f.debug_map();
+        for (number, value) in &self.0.fields {
+            // Numbers with no resolvable descriptor print unredacted; `fields`
+            // never holds such entries today (unknown numbers are routed to
+            // `unknown` during decode, and `set` is descriptor-keyed), so this
+            // default only applies to genuinely-unannotated fields.
+            let redact = self
+                .0
+                .field_or_extension(*number)
+                .and_then(FieldDescriptor::options)
+                .and_then(|o| o.debug_redact)
+                .unwrap_or(false);
+            if redact {
+                map.entry(number, &core::format_args!("[REDACTED]"));
+            } else {
+                map.entry(number, value);
+            }
+        }
+        map.finish()
     }
 }
 

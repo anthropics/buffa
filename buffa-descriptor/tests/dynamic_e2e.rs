@@ -362,3 +362,73 @@ fn field_mut_redacts_strings_at_any_depth() {
         }
     }
 }
+
+#[test]
+fn debug_output_redacts_debug_redact_fields() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FieldOptions, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    // Hand-built descriptor (rather than the shared protoc-compiled .fds) so
+    // the `[debug_redact = true]` option is exercised without regenerating the
+    // checked-in descriptor set.
+    let file = FileDescriptorProto {
+        name: Some("redact.proto".into()),
+        package: Some("redact.test".into()),
+        syntax: Some("proto3".into()),
+        message_type: vec![DescriptorProto {
+            name: Some("Credentials".into()),
+            field: vec![
+                FieldDescriptorProto {
+                    name: Some("api_key".into()),
+                    number: Some(1),
+                    label: Some(Label::LABEL_OPTIONAL),
+                    r#type: Some(Type::TYPE_STRING),
+                    options: FieldOptions {
+                        debug_redact: Some(true),
+                        ..Default::default()
+                    }
+                    .into(),
+                    ..Default::default()
+                },
+                FieldDescriptorProto {
+                    name: Some("org_id".into()),
+                    number: Some(2),
+                    label: Some(Label::LABEL_OPTIONAL),
+                    r#type: Some(Type::TYPE_STRING),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let p = Arc::new(
+        DescriptorPool::new(FileDescriptorSet {
+            file: vec![file],
+            ..Default::default()
+        })
+        .expect("pool builds from hand-built descriptor"),
+    );
+
+    let idx = p.message_index("redact.test.Credentials").unwrap();
+    let md = p.message_by_name("redact.test.Credentials").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+    msg.set(
+        md.field(1).unwrap(),
+        Value::String("sk-super-secret".into()),
+    );
+    msg.set(md.field(2).unwrap(), Value::String("org_123".into()));
+
+    let out = format!("{msg:?}");
+    assert!(
+        !out.contains("sk-super-secret"),
+        "redacted field leaked: {out}"
+    );
+    assert!(out.contains("[REDACTED]"), "placeholder missing: {out}");
+    assert!(
+        out.contains("org_123"),
+        "unannotated field must still print: {out}"
+    );
+}
