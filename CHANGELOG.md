@@ -22,6 +22,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   printing `[REDACTED]` in place of the value of any field whose descriptor
   carries it.
 
+### Changed
+
+- **`HasMessageView` carries a `#[diagnostic::on_unimplemented]` hint.** When a
+  type is used where the generated view family is required but its crate was
+  generated without one (buffa older than 0.7.0, or views disabled) or has it
+  behind a disabled feature, the compile error now explains the cause and how
+  to fix it — regenerate the defining crate with buffa ≥ 0.7.0 and views
+  enabled (`generate_views(true)` / `views=true`), or enable the crate's views
+  feature — instead of only naming the missing trait bound. Downstream
+  consumers such as connect-rust rely on this trait for their request
+  wrappers, so the notes land directly in the consumer's build output.
+
 ### Fixed
 
 - The owned message `Debug` impl now labels keyword-named fields without the
