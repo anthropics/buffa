@@ -68,6 +68,14 @@ fn view_debug_redacts_annotated_fields() {
         !out.contains("oat-very-secret"),
         "view-oneof leaked payload: {out}"
     );
+    assert!(
+        !out.contains("222, 173, 190, 239"),
+        "view leaked seed bytes: {out}"
+    );
+    assert!(
+        !out.contains("scope-admin-org"),
+        "view leaked repeated scopes: {out}"
+    );
     assert!(out.contains("[REDACTED]"), "placeholder missing: {out}");
     assert!(
         out.contains("org_123"),
@@ -84,6 +92,21 @@ fn all_redacted_scalar_oneof_debug_prints_placeholder_only() {
     let secret = oneof::credentials::NumericSecret::Pin(43210099);
     let out = format!("{secret:?}");
     assert!(!out.contains("43210099"), "pin leaked: {out}");
+    assert!(out.contains("[REDACTED]"), "placeholder missing: {out}");
+}
+
+#[test]
+fn view_oneof_without_lifetime_debug_redacts_all_variants() {
+    // `numeric_secret` has only scalar payloads, so its view-oneof enum has no
+    // lifetime parameter — exercises the un-parameterized manual Debug impl.
+    let msg = Credentials {
+        numeric_secret: Some(oneof::credentials::NumericSecret::Pin(43210099)),
+        ..Default::default()
+    };
+    let bytes = msg.encode_to_vec();
+    let view = CredentialsView::decode_view(&bytes).expect("decode_view");
+    let out = format!("{view:?}");
+    assert!(!out.contains("43210099"), "view leaked pin: {out}");
     assert!(out.contains("[REDACTED]"), "placeholder missing: {out}");
 }
 

@@ -18,6 +18,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   intentionally unaffected. A view struct containing a redacted field now
   lists proto fields only in its `Debug` output (matching owned messages), so
   `__buffa_unknown_fields` / phantom internals no longer appear there.
+  The reflective `DynamicMessage` `Debug` impl honors the option as well,
+  printing `[REDACTED]` in place of the value of any field whose descriptor
+  carries it.
+
+### Fixed
+
+- The owned message `Debug` impl now labels keyword-named fields without the
+  raw-identifier prefix (`type` instead of `r#type`), matching what
+  `#[derive(Debug)]` prints and what the view `Debug` impl emits.
 
 ## [0.7.0] - 2026-05-28
 
