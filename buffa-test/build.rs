@@ -225,6 +225,16 @@ fn main() {
         .compile()
         .expect("buffa_build failed for edge_cases.proto");
 
+    // `[debug_redact = true]` — annotated fields must print a placeholder
+    // (never the value) in generated Debug output: owned message, oneof enum,
+    // view, and view-oneof. Views enabled so the view Debug paths compile.
+    buffa_build::Config::new()
+        .files(&["protos/debug_redact.proto"])
+        .includes(&["protos/"])
+        .generate_views(true)
+        .compile()
+        .expect("buffa_build failed for debug_redact.proto");
+
     // Regression: use_bytes_type() previously produced uncompilable decode
     // code (merge_bytes expects &mut Vec<u8>, struct field was bytes::Bytes).
     // basic.proto has bytes fields (Person.avatar singular; BytesContexts

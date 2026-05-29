@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **`[debug_redact = true]` is honored in generated `Debug` impls.** Fields
+  carrying the standard `debug_redact` field option print `[REDACTED]` instead
+  of their value in the owned message's `Debug` impl, and oneof enums, view
+  structs, and view-oneof enums containing such fields swap their
+  `#[derive(Debug)]` for a generated impl that redacts those fields/variants.
+  Output for messages without the annotation is unchanged. Note this covers
+  `Debug` formatting only — text-format and JSON serialization are
+  intentionally unaffected. A view struct containing a redacted field now
+  lists proto fields only in its `Debug` output (matching owned messages), so
+  `__buffa_unknown_fields` / phantom internals no longer appear there.
+
 ## [0.7.0] - 2026-05-28
 
 This release is a minor bump under the

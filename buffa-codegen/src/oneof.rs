@@ -68,6 +68,9 @@ struct VariantInfo {
     /// Owned string representation for a `string` variant (default `String`).
     /// Drives both the variant type and the EcoString arbitrary shim.
     string_repr: crate::StringRepr,
+    /// Variant's field carries `[debug_redact = true]`; the enum's `Debug`
+    /// impl prints a placeholder instead of the payload.
+    debug_redact: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -151,6 +154,7 @@ fn collect_variant_info(
                 custom_attrs,
                 use_bytes,
                 string_repr,
+                debug_redact: crate::message::is_debug_redacted(field),
             })
         })
         .collect()
@@ -303,14 +307,58 @@ pub fn generate_oneof_enum(
     let custom_type_attrs =
         CodeGenContext::matching_attributes(&ctx.config.type_attributes, &oneof_fqn)?;
 
+    // Variants whose field is `[debug_redact = true]` print a placeholder
+    // instead of their payload. The `Debug` derive is swapped for a manual
+    // impl only when at least one variant is redacted, so unaffected oneofs
+    // keep byte-identical output.
+    let any_redacted = variants_info.iter().any(|v| v.debug_redact);
+    let (debug_derive, debug_impl) = if any_redacted {
+        let placeholder = crate::message::DEBUG_REDACT_PLACEHOLDER;
+        let arms: Vec<TokenStream> = variants_info
+            .iter()
+            .map(|v| {
+                let ident = &v.variant_ident;
+                let name = ident.to_string();
+                if v.debug_redact {
+                    quote! {
+                        Self::#ident(_) => f
+                            .debug_tuple(#name)
+                            .field(&::core::format_args!(#placeholder))
+                            .finish(),
+                    }
+                } else {
+                    quote! {
+                        Self::#ident(value) => f.debug_tuple(#name).field(value).finish(),
+                    }
+                }
+            })
+            .collect();
+        (
+            quote! { #[derive(Clone, PartialEq)] },
+            quote! {
+                impl ::core::fmt::Debug for #rust_enum_ident {
+                    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                        match self {
+                            #(#arms)*
+                        }
+                    }
+                }
+            },
+        )
+    } else {
+        (quote! { #[derive(Clone, PartialEq, Debug)] }, quote! {})
+    };
+
     Ok(quote! {
         #oneof_doc
-        #[derive(Clone, PartialEq, Debug)]
+        #debug_derive
         #arbitrary_derive
         #custom_type_attrs
         pub enum #rust_enum_ident {
             #(#variants,)*
         }
+
+        #debug_impl
 
         impl ::buffa::Oneof for #rust_enum_ident {}
 
