@@ -787,6 +787,45 @@ fn test_message_named_type_with_nested() {
 }
 
 #[test]
+fn test_keyword_field_debug_label_drops_raw_prefix() {
+    // A field named after a Rust keyword becomes a raw ident (`r#type`), but
+    // the manual Debug impl must label it `type` — matching what
+    // `#[derive(Debug)]` would print and what the view Debug impl emits.
+    let mut file = proto3_file("keyword_field.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Item".to_string()),
+        field: vec![FieldDescriptorProto {
+            name: Some("type".to_string()),
+            number: Some(1),
+            label: Some(Label::LABEL_OPTIONAL),
+            r#type: Some(Type::TYPE_STRING),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+
+    let files = generate(
+        &[file],
+        &["keyword_field.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("keyword-named field should generate");
+    let content: String = joined(&files)
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    assert!(
+        content.contains(r#".field("type",&self.r#type)"#),
+        "Debug label must drop the r# prefix: {content}"
+    );
+    assert!(
+        !content.contains(r#".field("r#type""#),
+        "raw-ident prefix must not appear in Debug labels: {content}"
+    );
+}
+
+#[test]
 fn test_message_with_oneof_field_named_type() {
     // Reproduces the CEL checked.proto Type message which has:
     // - A oneof named `type_kind` with a field `Type type = 11`

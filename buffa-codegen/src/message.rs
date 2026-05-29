@@ -731,8 +731,12 @@ fn generate_message_with_nesting(
     // Fields marked `[debug_redact = true]` print DEBUG_REDACT_PLACEHOLDER
     // instead of their value, mirroring protobuf's DebugString redaction.
     let struct_name_str = name_ident.to_string();
-    let debug_field_names: Vec<String> =
-        debug_fields.iter().map(|(id, _)| id.to_string()).collect();
+    // Labels match what `#[derive(Debug)]` prints: raw-ident fields (`r#type`)
+    // show as `type`, consistent with the view struct's Debug impl.
+    let debug_field_names: Vec<String> = debug_fields
+        .iter()
+        .map(|(id, _)| id.to_string().trim_start_matches("r#").to_string())
+        .collect();
     let debug_field_values: Vec<TokenStream> = debug_fields
         .iter()
         .map(|(id, redacted)| {
