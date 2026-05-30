@@ -249,16 +249,21 @@ pub fn unescape_c_escape_string(s: &str) -> Result<Vec<u8>, CodeGenError> {
                     p += 1;
                 }
                 b'0'..=b'7' => {
-                    let mut octal = 0u8;
+                    let mut octal = 0u32;
                     for _ in 0..3 {
                         if p < len && src[p] >= b'0' && src[p] <= b'7' {
-                            octal = octal.wrapping_mul(8).wrapping_add(src[p] - b'0');
+                            octal = octal * 8 + (src[p] - b'0') as u32;
                             p += 1;
                         } else {
                             break;
                         }
                     }
-                    dst.push(octal);
+                    if octal > 255 {
+                        return Err(CodeGenError::Other(format!(
+                            "invalid c-escaped default binary value ({s}): octal escape \\{octal:o} out of range (max \\377)"
+                        )));
+                    }
+                    dst.push(octal as u8);
                 }
                 b'x' | b'X' => {
                     if p + 3 > len {
@@ -359,6 +364,16 @@ mod tests {
     #[test]
     fn unescape_empty_input() {
         assert_eq!(unescape_c_escape_string("").unwrap(), &[] as &[u8]);
+    }
+
+    #[test]
+    fn unescape_octal_overflow_rejected() {
+        // \400 = 256, which exceeds the single-byte range; must be an error.
+        assert!(unescape_c_escape_string(r"\400").is_err());
+        // \777 = 511; also out of range.
+        assert!(unescape_c_escape_string(r"\777").is_err());
+        // \377 = 255; boundary value, must still succeed.
+        assert_eq!(unescape_c_escape_string(r"\377").unwrap(), &[0xFF]);
     }
 
     #[test]
