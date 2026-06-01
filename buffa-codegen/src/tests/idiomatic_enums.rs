@@ -169,6 +169,7 @@ fn lossy_collision_suppresses_entire_enum() {
                 "{conflicts:?}"
             );
         }
+        other => panic!("expected IdiomaticAliasesSuppressed, got {other:?}"),
     }
 }
 

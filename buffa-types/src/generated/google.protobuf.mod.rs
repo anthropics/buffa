@@ -3066,34 +3066,68 @@ pub use __buffa::reflect::descriptor_pool;
 #[doc(inline)]
 pub use self::__buffa::view::AnyView;
 #[doc(inline)]
+pub use self::__buffa::view::AnyOwnedView;
+#[doc(inline)]
 pub use self::__buffa::view::DurationView;
+#[doc(inline)]
+pub use self::__buffa::view::DurationOwnedView;
 #[doc(inline)]
 pub use self::__buffa::view::EmptyView;
 #[doc(inline)]
+pub use self::__buffa::view::EmptyOwnedView;
+#[doc(inline)]
 pub use self::__buffa::view::FieldMaskView;
+#[doc(inline)]
+pub use self::__buffa::view::FieldMaskOwnedView;
 #[doc(inline)]
 pub use self::__buffa::view::StructView;
 #[doc(inline)]
+pub use self::__buffa::view::StructOwnedView;
+#[doc(inline)]
 pub use self::__buffa::view::ValueView;
+#[doc(inline)]
+pub use self::__buffa::view::ValueOwnedView;
 #[doc(inline)]
 pub use self::__buffa::view::ListValueView;
 #[doc(inline)]
+pub use self::__buffa::view::ListValueOwnedView;
+#[doc(inline)]
 pub use self::__buffa::view::TimestampView;
+#[doc(inline)]
+pub use self::__buffa::view::TimestampOwnedView;
 #[doc(inline)]
 pub use self::__buffa::view::DoubleValueView;
 #[doc(inline)]
+pub use self::__buffa::view::DoubleValueOwnedView;
+#[doc(inline)]
 pub use self::__buffa::view::FloatValueView;
+#[doc(inline)]
+pub use self::__buffa::view::FloatValueOwnedView;
 #[doc(inline)]
 pub use self::__buffa::view::Int64ValueView;
 #[doc(inline)]
+pub use self::__buffa::view::Int64ValueOwnedView;
+#[doc(inline)]
 pub use self::__buffa::view::UInt64ValueView;
+#[doc(inline)]
+pub use self::__buffa::view::UInt64ValueOwnedView;
 #[doc(inline)]
 pub use self::__buffa::view::Int32ValueView;
 #[doc(inline)]
+pub use self::__buffa::view::Int32ValueOwnedView;
+#[doc(inline)]
 pub use self::__buffa::view::UInt32ValueView;
+#[doc(inline)]
+pub use self::__buffa::view::UInt32ValueOwnedView;
 #[doc(inline)]
 pub use self::__buffa::view::BoolValueView;
 #[doc(inline)]
+pub use self::__buffa::view::BoolValueOwnedView;
+#[doc(inline)]
 pub use self::__buffa::view::StringValueView;
 #[doc(inline)]
+pub use self::__buffa::view::StringValueOwnedView;
+#[doc(inline)]
 pub use self::__buffa::view::BytesValueView;
+#[doc(inline)]
+pub use self::__buffa::view::BytesValueOwnedView;

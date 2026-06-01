@@ -35,6 +35,7 @@ pub(crate) mod impl_text;
 pub(crate) mod imports;
 pub(crate) mod message;
 pub(crate) mod oneof;
+pub(crate) mod owned_view;
 pub(crate) mod reflect;
 pub(crate) mod reflect_owned;
 pub(crate) mod reflect_view;
@@ -248,7 +249,8 @@ pub enum ReflectMode {
     Bridge,
     /// `impl ReflectMessage` directly on the owned and view types, and
     /// `Reflectable::reflect()` borrows `self` with no round-trip. Larger
-    /// generated code; near-free reflective access. Requires view generation.
+    /// generated code; near-free reflective access. Does not require view
+    /// generation — with views off, only the owned impls are emitted.
     VTable,
 }
 
@@ -521,17 +523,19 @@ pub struct CodeGenConfig {
     /// Defaults to `false`.
     pub generate_reflection: bool,
     /// Emit vtable-mode reflection: `impl ReflectMessage` / `impl
-    /// ReflectElement` on **both** the view types and the owned message
-    /// structs, and switch the owned `Reflectable::reflect()` body to borrow
-    /// `self` (`ReflectCow::Borrowed(self)`) instead of the bridge round-trip.
+    /// ReflectElement` on the owned message structs and (when views are
+    /// generated) the view types, and switch the owned
+    /// `Reflectable::reflect()` body to borrow `self`
+    /// (`ReflectCow::Borrowed(self)`) instead of the bridge round-trip.
     ///
     /// Reflective access then reads struct fields in place — no encode/decode
     /// round-trip and no per-field allocation — for both a decoded view and an
     /// in-memory owned message.
     ///
     /// Requires [`generate_reflection`](Self::generate_reflection) (the impls
-    /// resolve against the same embedded `DescriptorPool`) and
-    /// [`generate_views`](Self::generate_views). Set via [`ReflectMode::VTable`]
+    /// resolve against the same embedded `DescriptorPool`) but not
+    /// [`generate_views`](Self::generate_views) — with views off, only the
+    /// owned impls are emitted. Set via [`ReflectMode::VTable`]
     /// — front-ends expose it as `buffa_build::Config::reflect_mode` /
     /// `protoc-gen-buffa`'s `reflect_mode=vtable`.
     ///
@@ -790,6 +794,18 @@ pub enum CodeGenWarning {
         /// Proto values that would convert to an invalid Rust identifier.
         invalid: Vec<String>,
     },
+    /// A field or oneof accessor on a generated `FooOwnedView` wrapper was
+    /// suppressed because the proto name collides with one of the wrapper's
+    /// reserved method names (`decode`, `view`, `bytes`, …). The field stays
+    /// fully accessible through `view()` on the wrapper (or
+    /// `OwnedView::reborrow`).
+    #[non_exhaustive]
+    OwnedViewAccessorSuppressed {
+        /// The Rust name of the wrapper type (e.g. `FooOwnedView`).
+        wrapper_name: String,
+        /// The proto field or oneof name whose accessor was suppressed.
+        field_name: String,
+    },
 }
 
 impl core::fmt::Display for CodeGenWarning {
@@ -820,6 +836,16 @@ impl core::fmt::Display for CodeGenWarning {
                     write!(f, ": {}", parts.join("; "))?;
                 }
                 Ok(())
+            }
+            Self::OwnedViewAccessorSuppressed {
+                wrapper_name,
+                field_name,
+            } => {
+                write!(
+                    f,
+                    "`{wrapper_name}`: accessor for field `{field_name}` suppressed \
+                     (collides with a reserved wrapper method); use `.view().{field_name}` instead"
+                )
             }
         }
     }
@@ -1248,6 +1274,19 @@ fn generate_proto_content(
                     quote! {
                         #[doc(inline)]
                         pub use self :: #sentinel :: view :: #view_ident;
+                    },
+                    ctx.config.feature_gates().views,
+                ),
+            });
+            // The owned-view wrapper gets the same natural-path treatment as
+            // the view struct, so `pkg::FooOwnedView` works out of the box.
+            let owned_view_ident = format_ident!("{top_level_name}OwnedView");
+            root_reexports.push(message::ReexportCandidate {
+                name: owned_view_ident.to_string(),
+                tokens: feature_gates::cfg_block(
+                    quote! {
+                        #[doc(inline)]
+                        pub use self :: #sentinel :: view :: #owned_view_ident;
                     },
                     ctx.config.feature_gates().views,
                 ),

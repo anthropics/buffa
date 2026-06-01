@@ -214,14 +214,16 @@ let owned: Person = request.to_owned_message();
 
 **`OwnedView<V>` — views across async boundaries:**
 
-The scoped `'a` lifetime on `MyMessageView<'a>` prevents it from satisfying `'static` bounds, which tower services, `BoxFuture<'static, _>`, and `tokio::spawn` all require. `OwnedView<V>` solves this by storing the `bytes::Bytes` buffer alongside the decoded view in a self-referential struct. Internally it extends the view's lifetime to `'static` via `transmute`, which is sound because `Bytes` is reference-counted (its heap data pointer is stable across moves), immutable, and a manual `Drop` impl ensures the view is dropped before the buffer. `OwnedView` implements `Deref<Target = V>`, so field access is identical to using the raw view — no `.get()` calls required.
+The scoped `'a` lifetime on `MyMessageView<'a>` prevents it from satisfying `'static` bounds, which tower services, `BoxFuture<'static, _>`, and `tokio::spawn` all require. `OwnedView<V>` solves this by storing the `bytes::Bytes` buffer alongside the decoded view in a self-referential struct. Internally it extends the view's lifetime to `'static` via `transmute`, which is sound because `Bytes` is reference-counted (its heap data pointer is stable across moves), immutable, and a manual `Drop` impl ensures the view is dropped before the buffer. The synthetic `'static` is never exposed: there is no `Deref<Target = V>` impl (that would let field borrows escape the handle's scope), and access goes through `reborrow()`, which returns the view with its lifetime tied to the `OwnedView`. For ergonomics, codegen also emits a per-message `FooOwnedView` wrapper with one `&self`-tied accessor method per field.
 
 ```rust,ignore
-use buffa::view::OwnedView;
-
 // In an RPC handler — bytes arrives as Bytes from hyper
+let view = PersonOwnedView::decode(bytes)?;
+println!("name: {}", view.name());  // accessor, zero-copy, 'static + Send
+
+// Or, with the generic handle:
 let view = OwnedView::<PersonView>::decode(bytes)?;
-println!("name: {}", view.name);  // Deref, zero-copy, 'static + Send
+println!("name: {}", view.reborrow().name);
 ```
 
 **Generated code layout — the `__buffa::` sentinel tree:**
@@ -232,6 +234,7 @@ Ancillary generated items (views, oneof enums, file-level extensions, the per-pa
 <pkg>::Foo                                # owned struct (unchanged)
 <pkg>::foo::Bar                           # nested owned (unchanged)
 <pkg>::__buffa::view::FooView<'a>          # view struct
+<pkg>::__buffa::view::FooOwnedView         # 'static owned-view wrapper (accessor methods)
 <pkg>::__buffa::view::foo::BarView<'a>     # nested view (mirrors owned tree)
 <pkg>::__buffa::view::oneof::foo::Kind<'a> # view oneof enum (no suffix)
 <pkg>::__buffa::oneof::foo::Kind           # owned oneof enum (no suffix)

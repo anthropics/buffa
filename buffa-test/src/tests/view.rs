@@ -607,14 +607,16 @@ fn test_reborrow_fields_match_original() {
     assert_eq!(tags, vec!["x", "y"]);
     assert_eq!(view.address.as_option().unwrap().street, "1 Main St");
 
-    // reborrow() must return a pointer to the same struct as Deref — no copy.
+    // Two reborrows must return a pointer to the same struct — no copy.
+    let view2: &PersonView<'_> = owned.reborrow();
     assert_eq!(
         view as *const PersonView<'_> as *const u8,
-        &*owned as *const PersonView<'static> as *const u8,
+        view2 as *const PersonView<'_> as *const u8,
     );
-    // String and bytes slices must point into the same buffer, not a copy.
-    assert!(core::ptr::eq(view.name.as_ptr(), owned.name.as_ptr()));
-    assert!(core::ptr::eq(view.avatar.as_ptr(), owned.avatar.as_ptr()));
+    // String and bytes slices must point into the OwnedView's buffer, not a copy.
+    let buf_range = owned.bytes().as_ptr_range();
+    assert!(buf_range.contains(&view.name.as_ptr()));
+    assert!(buf_range.contains(&view.avatar.as_ptr()));
 }
 
 #[test]
@@ -635,9 +637,10 @@ fn test_reborrow_str_points_into_owned_buffer() {
         "reborrowed name must point into the OwnedView's Bytes buffer"
     );
     // reborrow() returns a pointer to the same struct, not a copy.
+    let view2: &PersonView<'_> = owned.reborrow();
     assert_eq!(
         view as *const PersonView<'_> as *const u8,
-        &*owned as *const PersonView<'static> as *const u8,
+        view2 as *const PersonView<'_> as *const u8,
     );
 }
 
@@ -648,12 +651,13 @@ fn test_reborrow_does_not_consume_owned_view() {
     let bytes = msg.encode_to_vec();
 
     let owned = OwnedView::<PersonView<'static>>::decode(bytes::Bytes::from(bytes)).unwrap();
-    // Two simultaneous reborrows plus a Deref access must all compile and agree.
+    // Two simultaneous reborrows must both compile and agree, and the
+    // OwnedView must remain usable afterwards.
     let r1: &PersonView<'_> = owned.reborrow();
     let r2: &PersonView<'_> = owned.reborrow();
     assert_eq!(r1.name, "Carol");
     assert_eq!(r2.name, "Carol");
-    assert_eq!(owned.name, "Carol");
+    assert_eq!(owned.reborrow().name, "Carol");
 }
 
 #[test]

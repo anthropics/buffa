@@ -447,10 +447,17 @@ fn idiomatic_aliases(
                 }
                 // A short doc instead of duplicating the variant's proto comment:
                 // links the reader to the canonical variant and warns that
-                // `Debug` prints the variant name, not this alias.
-                let alias_doc = format!(
-                    "Idiomatic alias for [`Self::{target}`]; `Debug` prints the variant name."
-                );
+                // `Debug` prints the variant name, not this alias. Raw
+                // identifiers (e.g. `r#type`) don't resolve as intra-doc
+                // links, so fall back to plain code formatting for those.
+                let target_name = target.to_string();
+                let alias_doc = if let Some(stripped) = target_name.strip_prefix("r#") {
+                    format!("Idiomatic alias for `{stripped}`; `Debug` prints the variant name.")
+                } else {
+                    format!(
+                        "Idiomatic alias for [`Self::{target_name}`]; `Debug` prints the variant name."
+                    )
+                };
                 Some(quote! {
                     #[doc = #alias_doc]
                     #[allow(non_upper_case_globals)]

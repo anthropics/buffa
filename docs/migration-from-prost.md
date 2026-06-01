@@ -9,12 +9,12 @@ A step-by-step guide for migrating an existing prost-based project to buffa.
  [dependencies]
 -prost = "0.13"
 -prost-types = "0.13"
-+buffa = "0.6"
-+buffa-types = "0.6"
++buffa = "0.7"
++buffa-types = "0.7"
 
  [build-dependencies]
 -prost-build = "0.13"
-+buffa-build = "0.6"
++buffa-build = "0.7"
 ```
 
 If you use JSON serialization via `pbjson`:
@@ -23,8 +23,8 @@ If you use JSON serialization via `pbjson`:
  [dependencies]
 -pbjson = "0.7"
 -pbjson-types = "0.7"
-+buffa = { version = "0.6", features = ["json"] }
-+buffa-types = { version = "0.6", features = ["json"] }
++buffa = { version = "0.7", features = ["json"] }
++buffa-types = { version = "0.7", features = ["json"] }
  serde_json = "1"
 -
 -[build-dependencies]
@@ -146,6 +146,8 @@ Prost represents all enum fields as `i32`. Buffa uses `EnumValue<E>` for open en
 +let raw: i32 = msg.status.to_i32();
 ```
 
+Buffa keeps the proto `SHOUTY_SNAKE_CASE` value names as the definitive Rust variants, but it also emits idiomatic `UpperCamelCase` associated-const aliases (prefix-stripped, the same names prost generates), so `Status::Active`-style spellings carried over from prost code resolve as-is — in expressions and in `match` patterns alike.
+
 ## 5. Encoding API
 
 ```diff
@@ -254,13 +256,11 @@ let owned: Person = view.to_owned_message();
 
 ### `OwnedView` for async/RPC use
 
-`OwnedView<V>` wraps a view with its backing `Bytes` buffer, producing a `'static + Send + Sync` type that works with tower, `tokio::spawn`, and RPC frameworks:
+`OwnedView<V>` wraps a view with its backing `Bytes` buffer, producing a `'static + Send + Sync` type that works with tower, `tokio::spawn`, and RPC frameworks. Codegen emits a per-message `PersonOwnedView` wrapper with field accessor methods:
 
 ```rust,ignore
-use buffa::view::OwnedView;
-
-let view = OwnedView::<PersonView>::decode(bytes)?;
-println!("name: {}", view.name);  // Deref, zero-copy, 'static
+let view = PersonOwnedView::decode(bytes)?;
+println!("name: {}", view.name());  // accessor, zero-copy, 'static
 ```
 
 ### Unknown field preservation
@@ -280,8 +280,8 @@ Features that prost supports but buffa does not (yet):
 | `btree_map(&[...])` | Not supported. Maps always use `HashMap`. |
 | `bytes(&[...])` | Supported. `.use_bytes_type()` for all, or `.use_bytes_type_in(&[...])` for specific fields. |
 | `extern_path(proto, rust)` | Supported. Same API, both package-level (`.extern_path(".pkg", "::crate")`) and per-type (`.extern_path(".google.protobuf.Timestamp", "::pbjson_types::Timestamp")`) mappings. A per-type mapping to a non-buffa crate requires `.generate_views(false)`, or map to a buffa-generated crate instead — see [External type paths](guide.md#external-type-paths). |
-| `type_attribute(path, attr)` | Not supported. Use `generate_json(true)` for serde. |
-| `field_attribute(path, attr)` | Not supported. |
+| `type_attribute(path, attr)` | Supported. Same API, plus `message_attribute` / `enum_attribute` for narrower targeting. (For serde, prefer `generate_json(true)`, which emits the proto3-canonical JSON impls.) |
+| `field_attribute(path, attr)` | Supported. Same API. |
 | `service_generator(...)` | Not supported. Services codegen is planned. |
 | `#[derive(prost::Message)]` | Not provided. Implement `Message` by hand and use `extern_path` (see [Custom types](guide.md#custom-type-implementations)). |
 | `prost::Name` trait | `buffa::MessageName` — same shape (`PACKAGE`, `NAME`, plus `FULL_NAME` and `TYPE_URL`), but all four are `&'static str` consts computed at codegen time rather than runtime `format!` calls. Replace `M::full_name()` with `M::FULL_NAME` and `M::type_url()` with `M::TYPE_URL`. Implemented for both owned messages and view types. |
@@ -298,3 +298,4 @@ Features that buffa has but prost does not:
 | Two-pass cached-size encoding | None (recomputes at each level) |
 | Proto2 closed enum support | Partial (no closed-enum routing to unknown fields) |
 | Protobuf editions support | None |
+| Runtime reflection — `DescriptorPool` / `DynamicMessage` in `buffa-descriptor`, plus `ReflectMessage` on generated types via `reflect_mode` (see [Runtime reflection](guide.md#runtime-reflection)) | Requires the separate `prost-reflect` crate; no reflection on prost-generated types themselves |

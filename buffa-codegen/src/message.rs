@@ -191,9 +191,15 @@ fn generate_message_with_nesting(
             let field_ident = &f.ident;
             let setter_ident = &s.ident;
             let field_name = field_ident.to_string();
-            let doc = format!(
-                "Sets [`Self::{field_name}`] to `Some(value)`, consuming and returning `self`."
-            );
+            // Raw identifiers (e.g. `r#type`) don't resolve as intra-doc
+            // links, so fall back to plain code formatting for those.
+            let doc = if let Some(stripped) = field_name.strip_prefix("r#") {
+                format!("Sets `{stripped}` to `Some(value)`, consuming and returning `self`.")
+            } else {
+                format!(
+                    "Sets [`Self::{field_name}`] to `Some(value)`, consuming and returning `self`."
+                )
+            };
             let body = if s.use_into {
                 quote! { Some(value.into()) }
             } else {
@@ -912,12 +918,22 @@ fn collect_natural_reexports(
     if ctx.config.generate_views {
         let views_gate = ctx.config.feature_gates().views;
         // Nested-message views: `__buffa::view::<msg>::BarView` → `BarView`.
+        // The owned-view wrapper rides along: `BarOwnedView` → `BarOwnedView`.
         for nested in non_map_nested {
             let view_ident = format_ident!("{}View", nested.name.as_deref().unwrap_or(""));
             candidates.push(ReexportCandidate {
                 name: view_ident.to_string(),
                 tokens: crate::feature_gates::cfg_block(
                     quote! { #inline pub use #view_prefix #view_ident; },
+                    views_gate,
+                ),
+            });
+            let owned_view_ident =
+                format_ident!("{}OwnedView", nested.name.as_deref().unwrap_or(""));
+            candidates.push(ReexportCandidate {
+                name: owned_view_ident.to_string(),
+                tokens: crate::feature_gates::cfg_block(
+                    quote! { #inline pub use #view_prefix #owned_view_ident; },
                     views_gate,
                 ),
             });

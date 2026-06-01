@@ -68,7 +68,8 @@ pub enum PoolError {
     /// Two messages or enums declared the same fully-qualified name.
     DuplicateName(String),
     /// A message has more than 65 535 fields, exceeding the `u16` index
-    /// limit documented on [`MessageDescriptor::field_by_number`].
+    /// limit of the internal field-number lookup table behind
+    /// [`MessageDescriptor::field`].
     TooManyFields { message: String, count: usize },
     /// A field number is outside the valid range
     /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`), or an extension range has

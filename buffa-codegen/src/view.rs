@@ -272,6 +272,22 @@ pub(crate) fn generate_view_with_nesting(
     let view_doc =
         crate::comments::doc_attrs_resolved(ctx.comment(proto_fqn), proto_fqn, &ctx.type_map);
 
+    // `FooOwnedView`: a `'static` OwnedView handle with per-field accessors.
+    // Skipped for map-entry synthetic messages (never decoded standalone).
+    let owned_view_wrapper = if is_map_entry {
+        quote! {}
+    } else {
+        crate::owned_view::generate_owned_view_wrapper(
+            view_scope,
+            msg,
+            rust_name,
+            &view_ident,
+            &owned_path,
+            &view_oneof_prefix,
+            &oneof_idents,
+        )?
+    };
+
     let top_level = quote! {
         #view_doc
         #[derive(Clone, Debug, Default)]
@@ -401,6 +417,8 @@ pub(crate) fn generate_view_with_nesting(
             }
         }
 
+        #owned_view_wrapper
+
         #reflect_view_impls
     };
 
@@ -441,7 +459,7 @@ fn view_struct_field(
             proto_fqn,
             &ctx.type_map,
         );
-        let map_ty = view_map_type(scope, msg, field)?;
+        let map_ty = view_map_type(scope, msg, field, &quote! { 'a })?;
         return Ok(Some(quote! {
             #doc
             pub #ident: #map_ty,
@@ -459,9 +477,9 @@ fn view_struct_field(
     );
 
     let rust_type = if is_repeated {
-        view_repeated_type(scope, field)?
+        view_repeated_type(scope, field, &quote! { 'a })?
     } else {
-        view_singular_type(scope, field)?
+        view_singular_type(scope, field, &quote! { 'a })?
     };
 
     // Self-referential view fields (e.g. HttpRuleView.additional_bindings)
@@ -486,9 +504,13 @@ fn view_struct_field(
     }))
 }
 
-fn view_singular_type(
+/// Field type for a singular (non-repeated, non-map) view field, with `lt` as
+/// the borrow lifetime (`'a` inside the view struct, `'_` in accessor return
+/// position on the generated owned-view wrapper).
+pub(crate) fn view_singular_type(
     scope: MessageScope<'_>,
     field: &FieldDescriptorProto,
+    lt: &TokenStream,
 ) -> Result<TokenStream, CodeGenError> {
     let MessageScope {
         ctx,
@@ -500,8 +522,8 @@ fn view_singular_type(
 
     if is_explicit_presence_scalar(field, ty, features) {
         return Ok(match ty {
-            Type::TYPE_STRING => quote! { ::core::option::Option<&'a str> },
-            Type::TYPE_BYTES => quote! { ::core::option::Option<&'a [u8]> },
+            Type::TYPE_STRING => quote! { ::core::option::Option<&#lt str> },
+            Type::TYPE_BYTES => quote! { ::core::option::Option<&#lt [u8]> },
             Type::TYPE_ENUM => {
                 let et = resolve_enum_ty(scope, field)?;
                 if is_closed_enum(features) {
@@ -518,10 +540,10 @@ fn view_singular_type(
     }
 
     match ty {
-        Type::TYPE_STRING => Ok(quote! { &'a str }),
-        Type::TYPE_BYTES => Ok(quote! { &'a [u8] }),
+        Type::TYPE_STRING => Ok(quote! { &#lt str }),
+        Type::TYPE_BYTES => Ok(quote! { &#lt [u8] }),
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
-            let view_ty = resolve_view_ty_tokens(scope, field)?;
+            let view_ty = resolve_view_ty_tokens(scope, field, lt)?;
             Ok(quote! { ::buffa::MessageFieldView<#view_ty> })
         }
         Type::TYPE_ENUM => {
@@ -536,9 +558,12 @@ fn view_singular_type(
     }
 }
 
-fn view_repeated_type(
+/// Field type for a repeated (non-map) view field, with `lt` as the borrow
+/// lifetime — see [`view_singular_type`].
+pub(crate) fn view_repeated_type(
     scope: MessageScope<'_>,
     field: &FieldDescriptorProto,
+    lt: &TokenStream,
 ) -> Result<TokenStream, CodeGenError> {
     let MessageScope {
         ctx,
@@ -548,48 +573,50 @@ fn view_repeated_type(
     let features = &crate::features::resolve_field(ctx, field, parent_features);
     let ty = effective_type(ctx, field, features);
     match ty {
-        Type::TYPE_STRING => Ok(quote! { ::buffa::RepeatedView<'a, &'a str> }),
-        Type::TYPE_BYTES => Ok(quote! { ::buffa::RepeatedView<'a, &'a [u8]> }),
+        Type::TYPE_STRING => Ok(quote! { ::buffa::RepeatedView<#lt, &#lt str> }),
+        Type::TYPE_BYTES => Ok(quote! { ::buffa::RepeatedView<#lt, &#lt [u8]> }),
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
-            let view_ty = resolve_view_ty_tokens(scope, field)?;
-            Ok(quote! { ::buffa::RepeatedView<'a, #view_ty> })
+            let view_ty = resolve_view_ty_tokens(scope, field, lt)?;
+            Ok(quote! { ::buffa::RepeatedView<#lt, #view_ty> })
         }
         Type::TYPE_ENUM => {
             let et = resolve_enum_ty(scope, field)?;
             if is_closed_enum(features) {
-                Ok(quote! { ::buffa::RepeatedView<'a, #et> })
+                Ok(quote! { ::buffa::RepeatedView<#lt, #et> })
             } else {
-                Ok(quote! { ::buffa::RepeatedView<'a, ::buffa::EnumValue<#et>> })
+                Ok(quote! { ::buffa::RepeatedView<#lt, ::buffa::EnumValue<#et>> })
             }
         }
         _ => {
             let st = scalar_ty(ty);
-            Ok(quote! { ::buffa::RepeatedView<'a, #st> })
+            Ok(quote! { ::buffa::RepeatedView<#lt, #st> })
         }
     }
 }
 
-/// Build the `::buffa::MapView<'a, K, V>` type for a map field.
-fn view_map_type(
+/// Build the `::buffa::MapView<K, V>` type for a map field, with `lt` as the
+/// borrow lifetime — see [`view_singular_type`].
+pub(crate) fn view_map_type(
     scope: MessageScope<'_>,
     msg: &DescriptorProto,
     field: &FieldDescriptorProto,
+    lt: &TokenStream,
 ) -> Result<TokenStream, CodeGenError> {
     let MessageScope { ctx, features, .. } = scope;
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
 
     let key_ty = match effective_type_in_map_entry(ctx, key_fd, features) {
-        Type::TYPE_STRING => quote! { &'a str },
+        Type::TYPE_STRING => quote! { &#lt str },
         // utf8_validation = NONE on a string map key → &'a [u8].
-        Type::TYPE_BYTES => quote! { &'a [u8] },
+        Type::TYPE_BYTES => quote! { &#lt [u8] },
         ty => scalar_ty(ty),
     };
 
     let val_ty = match effective_type_in_map_entry(ctx, val_fd, features) {
-        Type::TYPE_STRING => quote! { &'a str },
-        Type::TYPE_BYTES => quote! { &'a [u8] },
+        Type::TYPE_STRING => quote! { &#lt str },
+        Type::TYPE_BYTES => quote! { &#lt [u8] },
         Type::TYPE_MESSAGE => {
-            let view_ty = resolve_view_ty_tokens(scope, val_fd)?;
+            let view_ty = resolve_view_ty_tokens(scope, val_fd, lt)?;
             quote! { #view_ty }
         }
         Type::TYPE_ENUM => {
@@ -604,7 +631,7 @@ fn view_map_type(
         ty => scalar_ty(ty),
     };
 
-    Ok(quote! { ::buffa::MapView<'a, #key_ty, #val_ty> })
+    Ok(quote! { ::buffa::MapView<#lt, #key_ty, #val_ty> })
 }
 
 /// Does the oneof's view enum need a `'a` lifetime parameter?
@@ -612,7 +639,7 @@ fn view_map_type(
 /// String/bytes/message/group variants borrow from the input buffer;
 /// scalar and enum variants don't. An all-scalar oneof must not emit
 /// `<'a>` or the unused-lifetime check (E0392) fires.
-fn oneof_view_needs_lifetime(
+pub(crate) fn oneof_view_needs_lifetime(
     ctx: &CodeGenContext,
     fields: &[&FieldDescriptorProto],
     features: &ResolvedFeatures,
@@ -762,7 +789,7 @@ fn generate_oneof_view_enum(
                 Type::TYPE_STRING => quote! { &'a str },
                 Type::TYPE_BYTES => quote! { &'a [u8] },
                 Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
-                    let view_ty = resolve_view_ty_tokens(body_scope, f)?;
+                    let view_ty = resolve_view_ty_tokens(body_scope, f, &quote! { 'a })?;
                     quote! { ::buffa::alloc::boxed::Box<#view_ty> }
                 }
                 Type::TYPE_ENUM => {
@@ -2300,9 +2327,10 @@ fn resolve_enum_ty(
 pub(crate) fn resolve_view_ty_tokens(
     scope: MessageScope<'_>,
     field: &FieldDescriptorProto,
+    lt: &TokenStream,
 ) -> Result<TokenStream, CodeGenError> {
     let path = resolve_view_path(scope, field)?;
-    Ok(quote! { #path <'a> })
+    Ok(quote! { #path <#lt> })
 }
 
 /// Resolve the view type tokens used for `decode_view` calls (no lifetime).

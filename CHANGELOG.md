@@ -6,8 +6,54 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **`HasMessageView` carries a `#[diagnostic::on_unimplemented]` hint.** When a
+  type is used where the generated view family is required but its crate was
+  generated without one (buffa older than 0.7.0, or views disabled) or has it
+  behind a disabled feature, the compile error now explains the cause and how
+  to fix it — regenerate the defining crate with buffa ≥ 0.7.0 and views
+  enabled (`generate_views(true)` / `views=true`), or enable the crate's views
+  feature — instead of only naming the missing trait bound. Downstream
+  consumers such as connect-rust rely on this trait for their request
+  wrappers, so the notes land directly in the consumer's build output.
+
+## [0.7.0] - 2026-05-28
+
+This release is a minor bump under the
+[Rust 0.x convention](https://doc.rust-lang.org/cargo/reference/semver.html).
+The breaking changes are the removal of `OwnedView<V>`'s `Deref` impl and the
+extension of `use_bytes_type()` to `map<K, bytes>` values (both under
+*Changed* below), plus an MSRV raise from 1.85 to 1.87. Consumers with
+checked-in generated code should regenerate with the 0.7.0 toolchain to pick
+up the new `FooOwnedView` wrappers, `HasMessageView` impls, and
+`UpperCamelCase` enum aliases — all additive.
+
 ### Added
 
+- **Runtime reflection: `DescriptorPool` and `DynamicMessage`.**
+  `buffa-descriptor` gains a `reflect` feature with a descriptor-driven
+  reflection runtime. `DescriptorPool::decode` builds linked,
+  feature-resolved descriptors (`MessageDescriptor`, `FieldDescriptor`,
+  `EnumDescriptor`, `ServiceDescriptor`, …) from a `FileDescriptorSet`,
+  treating the input as untrusted (malformed sets return `PoolError` rather
+  than panicking) and retaining the raw `FileDescriptorProto`s plus a symbol
+  index (`file_by_name`, `file_containing_symbol`) for gRPC server
+  reflection. `DynamicMessage` decodes and encodes any message by descriptor
+  — no generated types required — with unknown-field preservation, in-place
+  mutation (`field_mut` / `field_by_number_mut`), `Any` pack/unpack,
+  extension fields, and custom-option access (`options()` on every linked
+  descriptor, `DynamicMessage::from_options`). With the `json` feature it
+  also speaks proto3 canonical JSON (`Serialize`, `DynamicMessage::from_json`,
+  lenient `from_json_ignoring_unknown`, duplicate-key rejection). The
+  dyn-safe `ReflectMessage` / `ReflectMessageMut` traits and the
+  `ReflectCow` / `Value` / `ValueRef` types are the surface generated types
+  plug into (see vtable mode below). Generated code opts in with
+  `buffa_build::Config::generate_reflection(true)` (plugin:
+  `reflection=true`), which embeds the package's `FileDescriptorSet` and
+  exposes a lazily-built pool as `pkg::descriptor_pool()`. The reflection
+  codec passes the protobuf conformance suite through a dedicated
+  `DynamicMessage`-only runner mode.
 - **Vtable reflection mode.** Generated types now implement
   `buffa_descriptor::reflect::ReflectMessage` directly — on both the owned
   structs and the zero-copy view types — so `foo.reflect()` borrows `foo` in
@@ -25,22 +71,86 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
   The `protoc-gen-buffa` equivalent is `reflect_mode=off|bridge|vtable`. Vtable
   mode does not require view generation: with views off, only the owned
-  `ReflectMessage` is emitted.
+  `ReflectMessage` is emitted. `generate_reflection(true)` selects vtable mode;
+  `reflect_mode(ReflectMode::Bridge)` opts into the smaller round-trip
+  implementation (one `DynamicMessage` encode/decode per `reflect()` call)
+  instead of one `impl ReflectMessage` per generated type.
 - **`buffa-types` `reflect` feature.** Well-known types (`Timestamp`,
   `Duration`, `Struct`/`Value`, `Any`, wrappers, …) now implement
   `ReflectMessage`, so messages that embed WKTs reflect end to end.
+- **Configurable string field representations (#127).**
+  `buffa_build::Config::string_type(StringRepr)` and
+  `string_type_in(StringRepr, &[paths])` map proto `string` fields to
+  `SmolStr`, `EcoString`, or `CompactString` instead of `String`
+  (`buffa_build::StringRepr`), mirroring `use_bytes_type_in`'s path rules —
+  rules accumulate and the last match wins, so call the broad `string_type`
+  before narrower `string_type_in` overrides. Only the owned struct field
+  type changes: the wire format is untouched, view types still borrow
+  `&str`, and `map<_, string>` keys and values stay `String`. The consuming
+  crate must enable the matching `buffa` feature (`smol_str`, `ecow`, or
+  `compact_str`), which re-exports the chosen crate so generated code can
+  name it without a direct dependency. The new `buffa::ProtoString` trait
+  (blanket-implemented — nothing to implement by hand) is what the decode
+  and JSON paths are generic over. Default output (`StringRepr::String`) is
+  byte-for-byte unchanged. `buffa-build` / `buffa-codegen` only — there is
+  no `protoc-gen-buffa` plugin option yet.
 - **`ReflectElement` for the configurable `string_type` representations**
   (`SmolStr`, `EcoString`, `CompactString`), gated behind the matching
   `buffa-descriptor` feature, so a `repeated <repr>` field reflects in vtable
   mode.
+- **Generated `FooOwnedView` wrapper types.** When views are generated, each
+  message now also gets a `FooOwnedView` — re-exported at the package root
+  next to `Foo` and `FooView` (canonical path `__buffa::view::FooOwnedView`):
+  a self-contained `'static` handle wrapping `OwnedView<FooView<'static>>`
+  with one accessor method per field (`owned.name()`, `owned.id()`, …). Every
+  accessor borrows from `&self`, so field data can never outlive the
+  underlying buffer, and the handle stays `Send + Sync` for async handlers and
+  spawned tasks. The wrapper forwards `decode` / `decode_with_options` /
+  `from_owned` / `to_owned_message` / `bytes` / `into_bytes`, exposes the full
+  view via `view()`, converts to and from the raw `OwnedView`, and serializes
+  to protobuf JSON when `generate_json` is enabled. A field or oneof whose
+  name collides with one of the wrapper's reserved method names keeps working
+  through `view()`; its accessor is skipped with a build warning
+  (`CodeGenWarning::OwnedViewAccessorSuppressed`).
+- **`HasMessageView` view-family trait.** Generated code now implements
+  `buffa::HasMessageView` for every message (when views are generated),
+  linking the owned type to its view types: `Foo::View<'a>` = `FooView<'a>`
+  and `Foo::ViewHandle` = `FooOwnedView`, with a provided
+  `decode_view_handle()` helper. The generated wrapper additionally
+  implements `From<OwnedView<FooView<'static>>>` and
+  `AsRef<OwnedView<FooView<'static>>>`, so code that is generic over an owned
+  message can decode, reborrow, and convert without naming the concrete
+  types — the hook an RPC framework needs to accept `M` and work with
+  `M::View<'_>` and `M::ViewHandle` generically.
+- **Idiomatic `UpperCamelCase` enum value aliases (#13).** Generated enums
+  now also carry associated `const` aliases with the enum-name prefix
+  stripped and the value converted to `UpperCamelCase` —
+  `RuleLevel::RULE_LEVEL_HIGH` is reachable as `RuleLevel::High` — usable in
+  expressions and in pattern position with exhaustiveness preserved. The
+  `SHOUTY_SNAKE_CASE` variants remain the definitive variants and `Debug`
+  output is unchanged, so the aliases are purely additive; consumers with
+  checked-in generated code will see new consts on regeneration. If two
+  values of an enum would collide after conversion, aliases are suppressed
+  for that enum as a whole and reported through the new `CodeGenWarning`
+  diagnostics (`buffa_codegen::generate_with_diagnostics`). Default on; opt
+  out per compilation unit with
+  `buffa_build::Config::idiomatic_enum_aliases(false)` /
+  `CodeGenConfig::idiomatic_enum_aliases = false`.
 
 ### Changed
 
-- **`generate_reflection(true)` now selects vtable mode** (previously bridge).
-  The reflective API is unchanged (`foo.reflect().get(fd)`), so call sites do not
-  change, but generated code grows by one `impl ReflectMessage` per type. Opt
-  back into the smaller round-trip implementation with
-  `reflect_mode(ReflectMode::Bridge)`.
+- **`OwnedView<V>` no longer implements `Deref<Target = V>`.** **Breaking.**
+  The `Deref` impl exposed the inner view as `FooView<'static>`, so borrowed
+  fields appeared `'static` to the compiler and could be held past the point
+  where the `OwnedView` (and the buffer they point into) was dropped — safe
+  code could end up reading freed memory. In practice this required the
+  calling application to deliberately store a field reference beyond the
+  handle's lifetime, so the practical exposure is limited, but the API should
+  not allow it at all. Field access now goes through `reborrow()` (one extra
+  call per scope: `let person = owned.reborrow(); person.name`) or, more
+  conveniently, the new generated `FooOwnedView` accessor methods, both of
+  which tie every borrow to the handle. Serializing the handle directly
+  (`serde_json::to_string(&owned_view)`) is unaffected.
 - **`use_bytes_type()` / `use_bytes_type_in(...)` now applies to `map<K, bytes>`
   values (#76).** Previously map values were always `Vec<u8>` regardless of
   config — the only `bytes`-context not covered. They now match the type used
@@ -62,6 +172,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `Bytes`). See the `use_bytes_type_in` docs. Under `generate_arbitrary`,
   affected map fields use the new `__private::arbitrary_bytes_map<K>` shim
   (`K: Arbitrary + Eq + Hash` — every proto map-key type satisfies this).
+- **MSRV raised from 1.85 to 1.87**, following the
+  [README's MSRV policy](README.md#minimum-supported-rust-version) of
+  tracking roughly twelve months behind the latest stable release,
+  re-evaluated each time a release is cut. While buffa is pre-1.0, an MSRV
+  bump rides a minor (0.x) release.
 
 ### Fixed
 
@@ -836,7 +951,8 @@ This release publishes:
 
 MSRV: Rust 1.85.
 
-[Unreleased]: https://github.com/anthropics/buffa/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/anthropics/buffa/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/anthropics/buffa/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/anthropics/buffa/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/anthropics/buffa/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/anthropics/buffa/compare/v0.5.0...v0.5.1

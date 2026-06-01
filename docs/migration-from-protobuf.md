@@ -12,13 +12,13 @@ This guide covers migration from both versions of the `protobuf` crate:
 ```diff
  [dependencies]
 -protobuf = "3"
-+buffa = "0.6"
-+buffa-types = "0.6"
++buffa = "0.7"
++buffa-types = "0.7"
 
  [build-dependencies]
 -protobuf-codegen = "3"
 -protoc-bin-vendored = "3"    # if using vendored protoc
-+buffa-build = "0.6"
++buffa-build = "0.7"
 ```
 
 ### From Google v4
@@ -26,12 +26,12 @@ This guide covers migration from both versions of the `protobuf` crate:
 ```diff
  [dependencies]
 -protobuf = "=4.33.1-release"
-+buffa = "0.6"
-+buffa-types = "0.6"
++buffa = "0.7"
++buffa-types = "0.7"
 
  [build-dependencies]
 -protobuf-codegen = "=4.33.1-release"
-+buffa-build = "0.6"
++buffa-build = "0.7"
 ```
 
 ## 2. Rewrite `build.rs`
@@ -356,7 +356,7 @@ Features in `protobuf` v3/v4 that buffa does not support:
 
 | Feature | buffa status |
 |---------|-------------|
-| Runtime reflection (`descriptor()`) | Not supported. Server reflection (raw descriptor bytes) is planned. |
+| Runtime reflection (`descriptor()`) | Supported. Generated types: enable `generate_reflection(true)` / `reflect_mode=vtable` and call `foo.reflect()`. Dynamic messages: `buffa-descriptor`'s `DescriptorPool` + `DynamicMessage` (binary and JSON) under the `reflect` feature, including `file_containing_symbol` for gRPC server reflection. See [Runtime reflection](guide.md#runtime-reflection). |
 | `protobuf::text_format` | Use `generate_text(true)` + `buffa::text::{encode_to_string, decode_from_str}` |
 | `protobuf::json` (v3) | Use `generate_json(true)` + `serde_json` instead |
 | Lite runtime | Not applicable (buffa is already lightweight) |
