@@ -30,6 +30,7 @@ mod bytes_type;
 mod closed_enum;
 mod collision;
 mod cross_ref;
+mod debug_redact;
 mod edge_cases;
 #[cfg(has_edition_2024)]
 mod editions_2024;

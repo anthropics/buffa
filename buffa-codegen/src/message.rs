@@ -181,8 +181,12 @@ fn generate_message_with_nesting(
         .collect();
     let direct_fields: Vec<&TokenStream> = generated_fields.iter().map(|f| &f.tokens).collect();
 
-    // Collect field identifiers for the manual Debug impl (excludes __buffa_ internals).
-    let mut debug_field_idents: Vec<&Ident> = generated_fields.iter().map(|f| &f.ident).collect();
+    // Collect (identifier, redacted) pairs for the manual Debug impl
+    // (excludes __buffa_ internals).
+    let mut debug_fields: Vec<(&Ident, bool)> = generated_fields
+        .iter()
+        .map(|f| (&f.ident, f.debug_redact))
+        .collect();
 
     let setter_methods: TokenStream = generated_fields
         .iter()
@@ -270,7 +274,8 @@ fn generate_message_with_nesting(
         })
         .collect();
     let oneof_struct_fields: Vec<&TokenStream> = oneof_generated.iter().map(|(t, _)| t).collect();
-    debug_field_idents.extend(oneof_generated.iter().map(|(_, id)| id));
+    // Redaction of oneof payloads is handled by the oneof enum's own Debug impl.
+    debug_fields.extend(oneof_generated.iter().map(|(_, id)| (id, false)));
 
     // When JSON is on, `__buffa_unknown_fields` becomes a `#[serde(flatten)]`
     // newtype wrapper whose Serialize/Deserialize route through the extension
@@ -723,14 +728,30 @@ fn generate_message_with_nesting(
     };
 
     // Generate a manual Debug impl that excludes internal __buffa_ fields.
+    // Fields marked `[debug_redact = true]` print DEBUG_REDACT_PLACEHOLDER
+    // instead of their value, mirroring protobuf's DebugString redaction.
     let struct_name_str = name_ident.to_string();
-    let debug_field_names: Vec<String> =
-        debug_field_idents.iter().map(|id| id.to_string()).collect();
+    // Labels match what `#[derive(Debug)]` prints: raw-ident fields (`r#type`)
+    // show as `type`, consistent with the view struct's Debug impl.
+    let debug_field_names: Vec<String> = debug_fields
+        .iter()
+        .map(|(id, _)| id.to_string().trim_start_matches("r#").to_string())
+        .collect();
+    let debug_field_values: Vec<TokenStream> = debug_fields
+        .iter()
+        .map(|(id, redacted)| {
+            if *redacted {
+                quote! { &::core::format_args!(#DEBUG_REDACT_PLACEHOLDER) }
+            } else {
+                quote! { &self.#id }
+            }
+        })
+        .collect();
     let debug_impl = quote! {
         impl ::core::fmt::Debug for #name_ident {
             fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                 f.debug_struct(#struct_name_str)
-                    #(.field(#debug_field_names, &self.#debug_field_idents))*
+                    #(.field(#debug_field_names, #debug_field_values))*
                     .finish()
             }
         }
@@ -1565,6 +1586,9 @@ struct GeneratedField {
     tokens: TokenStream,
     ident: Ident,
     setter: Option<SetterInfo>,
+    /// Field carries `[debug_redact = true]`; the generated `Debug` impl
+    /// prints [`DEBUG_REDACT_PLACEHOLDER`] instead of the value.
+    debug_redact: bool,
 }
 
 fn generate_field(
@@ -1677,6 +1701,7 @@ fn generate_field(
         tokens,
         ident: rust_name,
         setter,
+        debug_redact: is_debug_redacted(field),
     }))
 }
 
@@ -1685,6 +1710,23 @@ pub(crate) fn is_map_field(
     field: &crate::generated::descriptor::FieldDescriptorProto,
 ) -> bool {
     field.r#type.unwrap_or_default() == Type::TYPE_MESSAGE && find_map_entry(msg, field).is_some()
+}
+
+/// Marker emitted by generated `Debug` impls in place of values whose field is
+/// annotated `[debug_redact = true]`. Interpolated into `format_args!` as the
+/// format string, so it must not contain `{` or `}`.
+pub(crate) const DEBUG_REDACT_PLACEHOLDER: &str = "[REDACTED]";
+
+/// True when the field carries `[debug_redact = true]`, i.e. its value must
+/// not appear in generated `Debug` output.
+pub(crate) fn is_debug_redacted(
+    field: &crate::generated::descriptor::FieldDescriptorProto,
+) -> bool {
+    field
+        .options
+        .as_option()
+        .and_then(|o| o.debug_redact)
+        .unwrap_or(false)
 }
 
 /// Find the synthetic map-entry nested message for a map field.

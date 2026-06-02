@@ -9,6 +9,13 @@ pub mod basic {
     buffa::include_proto!("basic");
 }
 
+/// `[debug_redact = true]` — generated Debug impls print a placeholder
+/// instead of the annotated field's value.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod debug_redact {
+    buffa::include_proto!("debug_redact");
+}
+
 /// `string_type(SmolStr)` + vtable reflection — exercises `ReflectElement for
 /// SmolStr` on the repeated-string element path.
 #[allow(
