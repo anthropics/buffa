@@ -280,7 +280,7 @@ Features that prost supports but buffa does not (yet):
 | `btree_map(&[...])` | Not supported. Maps always use `HashMap`. |
 | `bytes(&[...])` | Supported. `.use_bytes_type()` for all, or `.use_bytes_type_in(&[...])` for specific fields. |
 | `extern_path(proto, rust)` | Supported. Same API, both package-level (`.extern_path(".pkg", "::crate")`) and per-type (`.extern_path(".google.protobuf.Timestamp", "::pbjson_types::Timestamp")`) mappings. A per-type mapping to a non-buffa crate requires `.generate_views(false)`, or map to a buffa-generated crate instead — see [External type paths](guide.md#external-type-paths). |
-| `type_attribute(path, attr)` | Supported. Same API, plus `message_attribute` / `enum_attribute` for narrower targeting. (For serde, prefer `generate_json(true)`, which emits the proto3-canonical JSON impls.) |
+| `type_attribute(path, attr)` | Supported. Same API, plus `message_attribute` / `enum_attribute` / `oneof_attribute` for narrower targeting. (For serde, prefer `generate_json(true)`, which emits the proto3-canonical JSON impls.) |
 | `field_attribute(path, attr)` | Supported. Same API. |
 | `service_generator(...)` | Not supported. Services codegen is planned. |
 | `#[derive(prost::Message)]` | Not provided. Implement `Message` by hand and use `extern_path` (see [Custom types](guide.md#custom-type-implementations)). |

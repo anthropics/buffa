@@ -794,7 +794,10 @@ impl Config {
     }
 
     /// Add a custom attribute to generated message structs only (not enums,
-    /// not oneof enums) matching a proto path prefix.
+    /// not oneof enums — those are reached by
+    /// [`enum_attribute`](Self::enum_attribute) and
+    /// [`oneof_attribute`](Self::oneof_attribute) respectively) matching a
+    /// proto path prefix.
     ///
     /// Same path-matching semantics as [`type_attribute`](Self::type_attribute) —
     /// leading `.` auto-prepended, trailing `.` trimmed, proto-segment-aware
@@ -825,7 +828,10 @@ impl Config {
     }
 
     /// Add a custom attribute to generated enum types only (not message
-    /// structs, not oneof enums) matching a proto path prefix.
+    /// structs, not oneof enums — those are reached by
+    /// [`type_attribute`](Self::type_attribute) on the oneof's path or by
+    /// [`oneof_attribute`](Self::oneof_attribute)) matching a proto path
+    /// prefix.
     ///
     /// Same path-matching semantics as [`type_attribute`](Self::type_attribute) —
     /// leading `.` auto-prepended, trailing `.` trimmed, proto-segment-aware
@@ -849,6 +855,40 @@ impl Config {
     pub fn enum_attribute(mut self, path: impl Into<String>, attribute: impl Into<String>) -> Self {
         self.codegen_config
             .enum_attributes
+            .push((normalize_attr_path(path.into()), attribute.into()));
+        self
+    }
+
+    /// Add a custom attribute to generated oneof enums only (not message
+    /// structs, not regular enums) matching a proto path prefix.
+    ///
+    /// Same path-matching semantics as [`type_attribute`](Self::type_attribute),
+    /// matched against the oneof's fully-qualified path
+    /// (`.my.pkg.MyMessage.my_oneof`). Useful when a oneof needs a different
+    /// attribute set than the surrounding types — for example to keep
+    /// `#[derive(serde::Serialize)]` on messages and oneofs while
+    /// [`enum_attribute`](Self::enum_attribute) gives the regular enums a
+    /// different serde derive.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// buffa_build::Config::new()
+    ///     // one specific oneof; ".my.pkg" would match every oneof in the package
+    ///     .oneof_attribute(".my.pkg.MyMessage.my_oneof", "#[derive(serde::Serialize)]")
+    ///     .files(&["proto/my_service.proto"])
+    ///     .includes(&["proto/"])
+    ///     .compile()
+    ///     .unwrap();
+    /// ```
+    #[must_use]
+    pub fn oneof_attribute(
+        mut self,
+        path: impl Into<String>,
+        attribute: impl Into<String>,
+    ) -> Self {
+        self.codegen_config
+            .oneof_attributes
             .push((normalize_attr_path(path.into()), attribute.into()));
         self
     }
@@ -1511,6 +1551,23 @@ mod tests {
         );
         // Other attribute lists must remain untouched.
         assert!(cfg.codegen_config.type_attributes.is_empty());
+        assert!(cfg.codegen_config.message_attributes.is_empty());
+        assert!(cfg.codegen_config.field_attributes.is_empty());
+    }
+
+    #[test]
+    fn oneof_attribute_forwards_normalized_path() {
+        let cfg = Config::new().oneof_attribute("my.pkg.Msg.payload.", "#[derive(Hash)]");
+        assert_eq!(
+            cfg.codegen_config.oneof_attributes,
+            vec![(
+                ".my.pkg.Msg.payload".to_string(),
+                "#[derive(Hash)]".to_string()
+            )]
+        );
+        // Other attribute lists must remain untouched.
+        assert!(cfg.codegen_config.type_attributes.is_empty());
+        assert!(cfg.codegen_config.enum_attributes.is_empty());
         assert!(cfg.codegen_config.message_attributes.is_empty());
         assert!(cfg.codegen_config.field_attributes.is_empty());
     }

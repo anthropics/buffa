@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **`buffa-build` / `buffa-codegen`: `oneof_attribute`** (#166) — attach Rust
+  attributes to generated oneof enums only (not message structs, not regular
+  enums), matched against the oneof's fully-qualified path
+  (`.pkg.Message.oneof_name`) with the same prefix rules as `type_attribute`.
+  Completes the `type` / `message` / `enum` / `field` attribute family for
+  the case where a oneof needs a different attribute set than the
+  surrounding types.
+
 ## [0.7.1] - 2026-06-10
 
 This release is a patch bump under the
