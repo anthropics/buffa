@@ -276,6 +276,18 @@ pub struct CodeGenConfig {
     /// Whether to generate borrowed view types (`MyMessageView<'a>`) in
     /// addition to owned types.
     pub generate_views: bool,
+    /// Whether generated views decode nested/repeated message fields lazily
+    /// (default: false).
+    ///
+    /// When enabled, a view's nested message fields become
+    /// [`LazyMessageFieldView`](buffa::view::LazyMessageFieldView) and repeated
+    /// message fields become [`LazyRepeatedView`](buffa::view::LazyRepeatedView):
+    /// `decode_view` records each sub-message's byte range instead of decoding
+    /// it, so reading a few top-level fields of many messages no longer
+    /// allocates/recurses into untouched sub-trees. Changes the accessor API
+    /// (decode-on-access, by value), hence opt-in. Scalars/strings/bytes stay
+    /// borrowed as in the eager mode.
+    pub lazy_views: bool,
     /// Whether to preserve unknown fields (default: true).
     pub preserve_unknown_fields: bool,
     /// Whether to derive `serde::Serialize` / `serde::Deserialize` on
@@ -610,6 +622,7 @@ impl Default for CodeGenConfig {
     fn default() -> Self {
         Self {
             generate_views: true,
+            lazy_views: false,
             preserve_unknown_fields: true,
             generate_json: false,
             generate_arbitrary: false,

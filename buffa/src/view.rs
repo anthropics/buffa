@@ -643,6 +643,159 @@ impl<V: PartialEq + DefaultViewInstance> PartialEq for MessageFieldView<V> {
 
 impl<V: Eq + DefaultViewInstance> Eq for MessageFieldView<V> {}
 
+/// A lazily-decoded view of an optional message field.
+///
+/// Unlike [`MessageFieldView`] — which eagerly decodes (and boxes) the
+/// sub-message during `decode_view` — this stores only the field's undecoded
+/// wire bytes and decodes a fresh `V` on each [`get`](Self::get). Generated
+/// under the `lazy_views` option so that decoding a message does not allocate
+/// or recurse into nested sub-messages the caller never reads.
+///
+/// `get` returns a freshly-decoded view each call (views are thin borrows, so
+/// this is cheap) and does not cache.
+pub struct LazyMessageFieldView<'a, V> {
+    raw: Option<&'a [u8]>,
+    _marker: core::marker::PhantomData<fn() -> V>,
+}
+
+impl<'a, V> LazyMessageFieldView<'a, V> {
+    /// An unset field (the default).
+    #[inline]
+    pub const fn unset() -> Self {
+        Self {
+            raw: None,
+            _marker: core::marker::PhantomData,
+        }
+    }
+
+    /// A set field carrying the sub-message's undecoded wire bytes.
+    #[inline]
+    pub const fn from_bytes(raw: &'a [u8]) -> Self {
+        Self {
+            raw: Some(raw),
+            _marker: core::marker::PhantomData,
+        }
+    }
+
+    /// Whether the field is present.
+    #[inline]
+    pub const fn is_set(&self) -> bool {
+        self.raw.is_some()
+    }
+
+    /// Whether the field has no value.
+    #[inline]
+    pub const fn is_unset(&self) -> bool {
+        self.raw.is_none()
+    }
+
+    /// The undecoded wire bytes, if set.
+    #[inline]
+    pub const fn raw_bytes(&self) -> Option<&'a [u8]> {
+        self.raw
+    }
+}
+
+impl<'a, V: MessageView<'a>> LazyMessageFieldView<'a, V> {
+    /// Decode and return the sub-message view, or `None` if unset.
+    #[inline]
+    pub fn get(&self) -> Result<Option<V>, crate::DecodeError> {
+        self.raw.map(V::decode_view).transpose()
+    }
+}
+
+impl<V> Clone for LazyMessageFieldView<'_, V> {
+    #[inline]
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<V> Copy for LazyMessageFieldView<'_, V> {}
+impl<V> Default for LazyMessageFieldView<'_, V> {
+    #[inline]
+    fn default() -> Self {
+        Self::unset()
+    }
+}
+impl<V> core::fmt::Debug for LazyMessageFieldView<'_, V> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("LazyMessageFieldView")
+            .field("is_set", &self.is_set())
+            .finish()
+    }
+}
+
+/// A lazily-decoded view of a repeated message field.
+///
+/// Holds the wire byte-slice of each element (cheap pointers) and decodes a
+/// fresh element view on iteration, instead of eagerly decoding every element
+/// into a `Vec` like [`RepeatedView`]. Generated under the `lazy_views` option.
+pub struct LazyRepeatedView<'a, V> {
+    elements: alloc::vec::Vec<&'a [u8]>,
+    _marker: core::marker::PhantomData<fn() -> V>,
+}
+
+impl<'a, V> LazyRepeatedView<'a, V> {
+    /// An empty repeated field.
+    #[inline]
+    pub fn new() -> Self {
+        Self {
+            elements: alloc::vec::Vec::new(),
+            _marker: core::marker::PhantomData,
+        }
+    }
+
+    /// Number of elements.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.elements.len()
+    }
+
+    /// Whether the field has no elements.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.elements.is_empty()
+    }
+
+    /// Append an element's undecoded bytes (used by generated `decode_view`).
+    #[doc(hidden)]
+    #[inline]
+    pub fn push_bytes(&mut self, raw: &'a [u8]) {
+        self.elements.push(raw);
+    }
+}
+
+impl<'a, V: MessageView<'a>> LazyRepeatedView<'a, V> {
+    /// Decode the element at `index`, or `None` if out of range.
+    #[inline]
+    pub fn get(&self, index: usize) -> Option<Result<V, crate::DecodeError>> {
+        self.elements.get(index).map(|b| V::decode_view(b))
+    }
+}
+
+impl<V> Clone for LazyRepeatedView<'_, V> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self {
+            elements: self.elements.clone(),
+            _marker: core::marker::PhantomData,
+        }
+    }
+}
+impl<V> Default for LazyRepeatedView<'_, V> {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl<V> core::fmt::Debug for LazyRepeatedView<'_, V> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("LazyRepeatedView")
+            .field("len", &self.len())
+            .finish()
+    }
+}
+
 /// A borrowed view of a repeated field.
 ///
 /// For scalar repeated fields, this is backed by a decoded `Vec` (scalars
@@ -2227,5 +2380,35 @@ mod tests {
         assert_eq!(r1.name, r2.name);
         // `owned` still usable here
         assert_eq!(owned.reborrow().name, "world");
+    }
+
+    #[test]
+    fn lazy_message_field_view_decodes_on_access() {
+        let bytes = encode_simple(42, "lazy");
+        let unset = LazyMessageFieldView::<SimpleMessageView<'_>>::unset();
+        assert!(unset.is_unset());
+        assert!(unset.get().unwrap().is_none());
+
+        let lazy = LazyMessageFieldView::<SimpleMessageView<'_>>::from_bytes(&bytes);
+        assert!(lazy.is_set());
+        assert_eq!(lazy.raw_bytes(), Some(&bytes[..]));
+        let v = lazy.get().unwrap().expect("set");
+        assert_eq!((v.id, v.name), (42, "lazy"));
+        // Re-decodes each call (no cache).
+        assert_eq!(lazy.get().unwrap().unwrap().id, 42);
+    }
+
+    #[test]
+    fn lazy_repeated_view_decodes_per_element() {
+        let b0 = encode_simple(1, "a");
+        let b1 = encode_simple(2, "b");
+        let mut rep = LazyRepeatedView::<SimpleMessageView<'_>>::new();
+        assert!(rep.is_empty());
+        rep.push_bytes(&b0);
+        rep.push_bytes(&b1);
+        assert_eq!(rep.len(), 2);
+        assert_eq!(rep.get(0).unwrap().unwrap().name, "a");
+        assert_eq!(rep.get(1).unwrap().unwrap().id, 2);
+        assert!(rep.get(2).is_none());
     }
 }

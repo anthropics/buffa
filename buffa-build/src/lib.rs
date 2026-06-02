@@ -108,6 +108,17 @@ impl Config {
         self
     }
 
+    /// Enable or disable lazy decoding of nested/repeated message fields in
+    /// generated views (default: false).
+    ///
+    /// See [`CodeGenConfig::lazy_views`]. Opt-in because it changes view
+    /// accessors to decode-on-access (by value).
+    #[must_use]
+    pub fn lazy_views(mut self, enabled: bool) -> Self {
+        self.codegen_config.lazy_views = enabled;
+        self
+    }
+
     /// Enable or disable serde JSON generation (default: false).
     ///
     /// When enabled:
