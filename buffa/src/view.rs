@@ -679,6 +679,12 @@ impl<'a, T> RepeatedView<'a, T> {
         self.elements.push(elem);
     }
 
+    /// Reserve capacity for at least `additional` more elements.
+    #[doc(hidden)]
+    pub fn reserve(&mut self, additional: usize) {
+        self.elements.reserve(additional);
+    }
+
     /// Returns an iterator over the elements.
     pub fn iter(&self) -> core::slice::Iter<'_, T> {
         self.elements.iter()

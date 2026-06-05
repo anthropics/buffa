@@ -1229,6 +1229,21 @@ fn repeated_decode_arm(
         let dfn = decode_fn_token(ty);
         quote! { view.#ident.push(#dfn(&mut pcur)?); }
     };
+
+    // Fixed-size types can reserve the exact element count. For varints and
+    // bools, every element occupies at least one byte, so the payload length
+    // is a safe upper bound.
+    let reserve_divisor: usize = match ty {
+        Type::TYPE_FIXED32 | Type::TYPE_SFIXED32 | Type::TYPE_FLOAT => 4,
+        Type::TYPE_FIXED64 | Type::TYPE_SFIXED64 | Type::TYPE_DOUBLE => 8,
+        _ => 1,
+    };
+    let reserve_stmt = if reserve_divisor > 1 {
+        quote! { view.#ident.reserve(payload.len() / #reserve_divisor); }
+    } else {
+        quote! { view.#ident.reserve(payload.len()); }
+    };
+
     let unpacked_elem = if ty == Type::TYPE_ENUM {
         if closed {
             // Unpacked: each element has its own tag, so `before_tag` captures
@@ -1249,6 +1264,7 @@ fn repeated_decode_arm(
             if tag.wire_type() == ::buffa::encoding::WireType::LengthDelimited {
                 // Packed: extract payload, decode elements via local cursor.
                 let payload = ::buffa::types::borrow_bytes(&mut cur)?;
+                #reserve_stmt
                 let mut pcur: &[u8] = payload;
                 while !pcur.is_empty() { #packed_elem }
             } else if tag.wire_type() == #elem_wire_type {

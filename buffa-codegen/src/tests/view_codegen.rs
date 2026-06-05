@@ -101,6 +101,34 @@ fn test_view_repeated_message_field() {
 }
 
 #[test]
+fn test_view_packed_scalar_reserves_capacity() {
+    let mut file = proto3_file("packed_view.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("PackedView".to_string()),
+        field: vec![
+            make_field("ids", 1, Label::LABEL_REPEATED, Type::TYPE_UINT32),
+            make_field("scores", 2, Label::LABEL_REPEATED, Type::TYPE_DOUBLE),
+        ],
+        ..Default::default()
+    });
+    let files = generate(
+        &[file],
+        &["packed_view.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let content = &joined(&files);
+    assert!(
+        content.contains("view.ids.reserve(payload.len());"),
+        "varint packed view must reserve using the payload length: {content}"
+    );
+    assert!(
+        content.contains("view.scores.reserve(payload.len() / 8usize);"),
+        "fixed-width packed view must reserve the exact element count: {content}"
+    );
+}
+
+#[test]
 fn test_view_oneof_with_message_variant() {
     let mut file = proto3_file("oneof_msg.proto");
     file.message_type.push(DescriptorProto {
