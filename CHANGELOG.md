@@ -22,6 +22,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   printing `[REDACTED]` in place of the value of any field whose descriptor
   carries it.
 
+- **Packed repeated view decoders pre-allocate `RepeatedView` capacity.**
+  Generated view decode arms for packed repeated scalar / enum fields now
+  call `RepeatedView::reserve(_)` before the decode loop, matching the
+  existing pre-allocation hint on the owned decode path. Fixed-width kinds
+  (`fixed32`, `sfixed32`, `float`, `fixed64`, `sfixed64`, `double`) reserve
+  the exact element count; varint kinds (`int32`/`64`, `uint32`/`64`,
+  `sint32`/`64`, `bool`, `enum`) reserve `payload.len()` as a safe upper
+  bound (every wire varint is ≥ 1 byte). The hidden `RepeatedView::reserve`
+  hook is also new but `#[doc(hidden)]`. This trims allocator pressure on
+  workloads that decode many small packed repeated fields (MVT-style
+  payloads), reported in #171.
+
 ### Changed
 
 - **`HasMessageView` carries a `#[diagnostic::on_unimplemented]` hint.** When a
