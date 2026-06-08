@@ -112,7 +112,7 @@ pub(crate) fn generate_view_with_nesting(
 
     // View struct fields (excludes real-oneof members, map fields, and
     // unsupported types like groups).
-    let direct_fields = msg
+    let view_fields = msg
         .field
         .iter()
         .filter(|f| is_supported_field_type(f.r#type.unwrap_or_default()))
@@ -121,10 +121,14 @@ pub(crate) fn generate_view_with_nesting(
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
+    let direct_fields: Vec<&TokenStream> =
+        view_fields.iter().map(|(tokens, _, _)| tokens).collect();
 
     // One `Option<Kind<'a>>` per non-synthetic oneof.
-    let oneof_struct_fields =
+    let oneof_view_fields =
         oneof_view_struct_fields(ctx, msg, &view_oneof_prefix, features, &oneof_idents)?;
+    let oneof_struct_fields: Vec<&TokenStream> =
+        oneof_view_fields.iter().map(|(tokens, _)| tokens).collect();
 
     // Oneof view enum definitions (go into `__buffa::view::oneof::<msg>::`).
     let oneof_view_enums = msg
@@ -288,15 +292,60 @@ pub(crate) fn generate_view_with_nesting(
         )?
     };
 
+    // Fields marked `[debug_redact = true]` print a placeholder instead of
+    // their value. The `Debug` derive is swapped for a manual impl only when
+    // at least one field is redacted, so unaffected views keep byte-identical
+    // output. Oneof payload redaction is handled by the view-oneof enum.
+    // Like the owned message's Debug impl, the manual impl lists proto fields
+    // only — `__buffa_unknown_fields` is deliberately excluded because unknown
+    // fields can carry redacted data from a newer schema version.
+    let any_redacted = view_fields.iter().any(|(_, _, redacted)| *redacted);
+    let (view_debug_derive, view_debug_impl) = if any_redacted {
+        let placeholder = crate::message::DEBUG_REDACT_PLACEHOLDER;
+        let view_name_str = view_ident.to_string();
+        let mut debug_field_names: Vec<String> = Vec::new();
+        let mut debug_field_values: Vec<TokenStream> = Vec::new();
+        for (_, ident, redacted) in &view_fields {
+            // Label matches what the derive prints: raw-ident fields
+            // (`r#type`) show as `type`.
+            debug_field_names.push(ident.to_string().trim_start_matches("r#").to_string());
+            debug_field_values.push(if *redacted {
+                quote! { &::core::format_args!(#placeholder) }
+            } else {
+                quote! { &self.#ident }
+            });
+        }
+        for (_, ident) in &oneof_view_fields {
+            debug_field_names.push(ident.to_string().trim_start_matches("r#").to_string());
+            debug_field_values.push(quote! { &self.#ident });
+        }
+        (
+            quote! { #[derive(Clone, Default)] },
+            quote! {
+                impl<'a> ::core::fmt::Debug for #view_ident<'a> {
+                    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                        f.debug_struct(#view_name_str)
+                            #(.field(#debug_field_names, #debug_field_values))*
+                            .finish()
+                    }
+                }
+            },
+        )
+    } else {
+        (quote! { #[derive(Clone, Debug, Default)] }, quote! {})
+    };
+
     let top_level = quote! {
         #view_doc
-        #[derive(Clone, Debug, Default)]
+        #view_debug_derive
         pub struct #view_ident<'a> {
             #(#direct_fields)*
             #(#oneof_struct_fields)*
             #unknown_fields_field
             #phantom_field
         }
+
+        #view_debug_impl
 
         impl<'a> #view_ident<'a> {
             /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
@@ -433,7 +482,7 @@ fn view_struct_field(
     scope: MessageScope<'_>,
     msg: &DescriptorProto,
     field: &FieldDescriptorProto,
-) -> Result<Option<TokenStream>, CodeGenError> {
+) -> Result<Option<(TokenStream, proc_macro2::Ident, bool)>, CodeGenError> {
     let MessageScope { ctx, proto_fqn, .. } = scope;
     // Real oneof members go into the oneof enum, not directly on the struct.
     if is_real_oneof_member(field) {
@@ -460,10 +509,15 @@ fn view_struct_field(
             &ctx.type_map,
         );
         let map_ty = view_map_type(scope, msg, field, &quote! { 'a })?;
-        return Ok(Some(quote! {
+        let tokens = quote! {
             #doc
             pub #ident: #map_ty,
-        }));
+        };
+        return Ok(Some((
+            tokens,
+            ident,
+            crate::message::is_debug_redacted(field),
+        )));
     }
 
     let ident = make_field_ident(field_name);
@@ -498,10 +552,15 @@ fn view_struct_field(
         rust_type
     };
 
-    Ok(Some(quote! {
+    let tokens = quote! {
         #doc
         pub #ident: #struct_ty,
-    }))
+    };
+    Ok(Some((
+        tokens,
+        ident,
+        crate::message::is_debug_redacted(field),
+    )))
 }
 
 /// Field type for a singular (non-repeated, non-map) view field, with `lt` as
@@ -707,7 +766,7 @@ fn oneof_view_struct_fields(
     view_oneof_prefix: &TokenStream,
     features: &ResolvedFeatures,
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
-) -> Result<Vec<TokenStream>, CodeGenError> {
+) -> Result<Vec<(TokenStream, proc_macro2::Ident)>, CodeGenError> {
     let mut out = Vec::new();
     for (idx, oneof) in msg.oneof_decl.iter().enumerate() {
         let enum_ident = match oneof_idents.get(&idx) {
@@ -732,9 +791,10 @@ fn oneof_view_struct_fields(
         } else {
             quote! {}
         };
-        out.push(quote! {
+        let tokens = quote! {
             pub #field_ident: ::core::option::Option<#view_oneof_prefix #enum_ident #generics>,
-        });
+        };
+        out.push((tokens, field_ident));
     }
     Ok(out)
 }
@@ -812,11 +872,57 @@ fn generate_oneof_view_enum(
         quote! {}
     };
 
+    // Variants whose field is `[debug_redact = true]` print a placeholder
+    // instead of their payload (same rule as the owned oneof enum).
+    let any_redacted = fields.iter().any(|f| crate::message::is_debug_redacted(f));
+    let (debug_derive, debug_impl) = if any_redacted {
+        let placeholder = crate::message::DEBUG_REDACT_PLACEHOLDER;
+        let arms = fields
+            .iter()
+            .map(|field| {
+                let name = field
+                    .name
+                    .as_deref()
+                    .ok_or(CodeGenError::MissingField("field.name"))?;
+                let ident = crate::oneof::oneof_variant_ident(name);
+                let label = ident.to_string();
+                Ok(if crate::message::is_debug_redacted(field) {
+                    quote! {
+                        Self::#ident(_) => f
+                            .debug_tuple(#label)
+                            .field(&::core::format_args!(#placeholder))
+                            .finish(),
+                    }
+                } else {
+                    quote! {
+                        Self::#ident(value) => f.debug_tuple(#label).field(value).finish(),
+                    }
+                })
+            })
+            .collect::<Result<Vec<_>, CodeGenError>>()?;
+        (
+            quote! { #[derive(Clone)] },
+            quote! {
+                impl #generics ::core::fmt::Debug for #base_ident #generics {
+                    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                        match self {
+                            #(#arms)*
+                        }
+                    }
+                }
+            },
+        )
+    } else {
+        (quote! { #[derive(Clone, Debug)] }, quote! {})
+    };
+
     Ok(quote! {
-        #[derive(Clone, Debug)]
+        #debug_derive
         pub enum #base_ident #generics {
             #(#variants,)*
         }
+
+        #debug_impl
     })
 }
 

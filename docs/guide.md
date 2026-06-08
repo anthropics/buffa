@@ -841,6 +841,18 @@ pub mod outer {
 }
 ```
 
+### `debug_redact` and `Debug` output
+
+Fields annotated with the standard `[debug_redact = true]` field option are
+redacted in generated `Debug` output: the owned message, the view struct, and
+oneof / view-oneof enums print the literal marker `[REDACTED]` (unquoted) in
+place of the field's value. A type containing such a field implements `Debug`
+via a generated impl rather than `#[derive(Debug)]`, and its Debug output
+lists proto fields only. The reflective `DynamicMessage` `Debug` impl honors
+the option too, so descriptor-driven decode paths redact the same fields.
+This affects `Debug` formatting only — binary, JSON, and text-format
+serialization are unchanged.
+
 ## Encoding and decoding
 
 ### The `Message` trait

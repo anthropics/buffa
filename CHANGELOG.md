@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **`[debug_redact = true]` is honored in generated `Debug` impls.** Fields
+  carrying the standard `debug_redact` field option print `[REDACTED]` instead
+  of their value in the owned message's `Debug` impl, and oneof enums, view
+  structs, and view-oneof enums containing such fields swap their
+  `#[derive(Debug)]` for a generated impl that redacts those fields/variants.
+  Output for messages without the annotation is unchanged. Note this covers
+  `Debug` formatting only — text-format and JSON serialization are
+  intentionally unaffected. A view struct containing a redacted field now
+  lists proto fields only in its `Debug` output (matching owned messages), so
+  `__buffa_unknown_fields` / phantom internals no longer appear there.
+  The reflective `DynamicMessage` `Debug` impl honors the option as well,
+  printing `[REDACTED]` in place of the value of any field whose descriptor
+  carries it.
+
 ### Changed
 
 - **`HasMessageView` carries a `#[diagnostic::on_unimplemented]` hint.** When a
@@ -17,6 +33,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   feature — instead of only naming the missing trait bound. Downstream
   consumers such as connect-rust rely on this trait for their request
   wrappers, so the notes land directly in the consumer's build output.
+
+### Fixed
+
+- The owned message `Debug` impl now labels keyword-named fields without the
+  raw-identifier prefix (`type` instead of `r#type`), matching what
+  `#[derive(Debug)]` prints and what the view `Debug` impl emits.
 
 ## [0.7.0] - 2026-05-28
 

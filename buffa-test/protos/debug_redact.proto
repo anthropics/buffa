@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package debug_redact;
+
+// Exercises `[debug_redact = true]`: the generated Debug impls (owned
+// message, oneof enum, view, view-oneof) must print a placeholder instead
+// of the annotated field's value.
+message Credentials {
+  string api_key = 1 [debug_redact = true];
+  string org_id = 2;
+  bytes seed = 3 [debug_redact = true];
+
+  oneof lookup {
+    string access_token = 4 [debug_redact = true];
+    string token_uuid = 5;
+  }
+
+  repeated string scopes = 6 [debug_redact = true];
+
+  // All variants redacted, all-scalar payloads (the view-oneof for this one
+  // has no lifetime parameter).
+  oneof numeric_secret {
+    int64 pin = 7 [debug_redact = true];
+    fixed32 code = 8 [debug_redact = true];
+  }
+}

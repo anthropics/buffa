@@ -657,9 +657,11 @@ impl Config {
     /// # Pitfalls
     ///
     /// buffa already emits `#[derive(Clone, PartialEq)]` on messages and
-    /// `#[derive(Clone, PartialEq, Debug)]` on oneofs; adding a duplicate
-    /// derive via `type_attribute(".", "#[derive(Clone)]")` produces a
-    /// compile error in the generated code.
+    /// `#[derive(Clone, PartialEq, Debug)]` on oneofs (oneofs with a
+    /// `[debug_redact = true]` variant get a generated `Debug` impl instead
+    /// of the `Debug` derive); adding a duplicate derive via
+    /// `type_attribute(".", "#[derive(Clone)]")` produces a compile error in
+    /// the generated code.
     ///
     /// # Example
     ///
