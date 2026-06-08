@@ -39,6 +39,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The owned message `Debug` impl now labels keyword-named fields without the
   raw-identifier prefix (`type` instead of `r#type`), matching what
   `#[derive(Debug)]` prints and what the view `Debug` impl emits.
+- Octal escapes above `\377` (255) in a proto2 bytes field's `default_value`
+  are now rejected with a codegen error instead of silently wrapping to a
+  wrong byte (`\400` previously decoded to `0x00`), matching protobuf C++'s
+  `UnescapeCEscapeString` behavior (#164). Such escapes never appear in
+  protoc-emitted descriptors, so this only affects hand-built or corrupted
+  `FileDescriptorSet` input.
 
 ## [0.7.0] - 2026-05-28
 
