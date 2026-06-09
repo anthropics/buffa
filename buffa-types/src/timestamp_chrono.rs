@@ -86,8 +86,7 @@ impl TryFrom<Timestamp> for chrono::DateTime<chrono::Utc> {
         if ts.nanos < 0 || ts.nanos > NANOS_MAX {
             return Err(TimestampError::InvalidNanos);
         }
-        chrono::DateTime::<chrono::Utc>::from_timestamp(ts.seconds, ts.nanos as u32)
-            .ok_or(TimestampError::Overflow)
+        Self::from_timestamp(ts.seconds, ts.nanos.cast_unsigned()).ok_or(TimestampError::Overflow)
     }
 }
 

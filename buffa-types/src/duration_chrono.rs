@@ -132,9 +132,8 @@ impl TryFrom<Duration> for chrono::TimeDelta {
         // the i64-millisecond boundary plus a `nanos_part` of up to ±999 ms
         // can still push the sum over i64::MAX. `nanoseconds(_)` itself can
         // never overflow because |nanos| < 1e9 always fits in `TimeDelta`.
-        let secs_part =
-            chrono::TimeDelta::try_seconds(d.seconds).ok_or(DurationChronoError::Overflow)?;
-        let nanos_part = chrono::TimeDelta::nanoseconds(d.nanos as i64);
+        let secs_part = Self::try_seconds(d.seconds).ok_or(DurationChronoError::Overflow)?;
+        let nanos_part = Self::nanoseconds(i64::from(d.nanos));
         secs_part
             .checked_add(&nanos_part)
             .ok_or(DurationChronoError::Overflow)
