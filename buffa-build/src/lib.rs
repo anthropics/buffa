@@ -451,18 +451,36 @@ impl Config {
     /// Each path is a fully-qualified proto variant path prefix, e.g.
     /// `".my.pkg.MyMessage.body.small"` for one variant or `".my.pkg"` for a
     /// package (same matching as [`use_bytes_type_in`](Self::use_bytes_type_in)).
-    /// Opting a *recursive* variant out is rejected at codegen time, since the
-    /// resulting type would be unsized.
+    /// A leading dot is added if missing, mirroring
+    /// [`extern_path`](Self::extern_path).
+    ///
+    /// Recursive variants cannot be stored inline (the type would be
+    /// unsized). A rule that names a recursive variant *exactly* is rejected
+    /// at codegen time; a broader prefix rule silently keeps recursive
+    /// variants boxed and inlines the rest. For example, with
+    /// `unbox_oneof_in(&[".my.pkg.Node"])`, a self-referential
+    /// `Node.kind.child` variant stays boxed while `Node`'s other message
+    /// variants become inline.
     #[must_use]
     pub fn unbox_oneof_in(mut self, paths: &[impl AsRef<str>]) -> Self {
         self.codegen_config
             .unboxed_oneof_fields
-            .extend(paths.iter().map(|p| p.as_ref().to_string()));
+            .extend(paths.iter().map(|p| {
+                let p = p.as_ref();
+                // Normalize to the leading-dot form: matching and the
+                // exact-path recursion error both depend on it.
+                if p.starts_with('.') {
+                    p.to_string()
+                } else {
+                    format!(".{p}")
+                }
+            }));
         self
     }
 
     /// Store every non-recursive message-typed oneof variant inline instead of
-    /// boxing it. Convenience for `.unbox_oneof_in(&["."])`.
+    /// boxing it. Convenience for `.unbox_oneof_in(&["."])`; recursive
+    /// variants stay boxed.
     #[must_use]
     pub fn unbox_oneof(mut self) -> Self {
         self.codegen_config
@@ -1089,6 +1107,22 @@ fn generate_include_file(entries: &[(String, String)], relative: bool) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unbox_oneof_in_normalizes_leading_dot() {
+        // Without normalization a dotless path would silently match nothing,
+        // and the exact-path recursion error would never fire for it.
+        let config = Config::new()
+            .unbox_oneof_in(&["my.pkg.Msg.body.small", ".my.pkg.Other"])
+            .codegen_config;
+        assert_eq!(
+            config.unboxed_oneof_fields,
+            vec![
+                ".my.pkg.Msg.body.small".to_string(),
+                ".my.pkg.Other".to_string()
+            ]
+        );
+    }
 
     #[test]
     fn proto_relative_name_strips_include() {

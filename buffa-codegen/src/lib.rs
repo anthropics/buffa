@@ -304,8 +304,10 @@ pub struct CodeGenConfig {
     ///
     /// Each entry is a proto path prefix matched with the same
     /// proto-segment-aware logic as [`bytes_fields`](Self::bytes_fields)
-    /// (`"."` matches every variant). Opting a *recursive* variant out is
-    /// rejected at codegen time, since the resulting type would be unsized.
+    /// (`"."` matches every variant). Recursive variants cannot be stored
+    /// inline (the type would be unsized): an entry naming one *exactly* is
+    /// rejected at codegen time, while a broader prefix entry silently keeps
+    /// recursive variants boxed and inlines the rest.
     pub unboxed_oneof_fields: Vec<String>,
     /// Honor `features.utf8_validation = NONE` by emitting `Vec<u8>` / `&[u8]`
     /// for such string fields instead of `String` / `&str`.

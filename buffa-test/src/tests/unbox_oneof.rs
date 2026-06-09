@@ -9,7 +9,7 @@
 use crate::unbox_oneof::__buffa::oneof::envelope::Body;
 use crate::unbox_oneof::{Envelope, Large, Small};
 use buffa::text::{decode_from_str, encode_to_string};
-use buffa::Message;
+use buffa::{Message, MessageView};
 
 fn small(value: i32) -> Small {
     Small {
@@ -93,6 +93,31 @@ fn inline_variant_text_roundtrip() {
     let decoded: Envelope = decode_from_str(&text).expect("decode_from_str");
     match decoded.body {
         Some(Body::Small(s)) => assert_eq!(s.value, 5),
+        other => panic!("expected Body::Small, got {other:?}"),
+    }
+}
+
+#[test]
+fn inline_variant_view_to_owned_roundtrip() {
+    // The view-to-owned conversion stores the inline variant without a Box
+    // (oneof_variant_to_owned in view.rs branches on variant_boxed).
+    let bytes = envelope_small(13).encode_to_vec();
+    let view = crate::unbox_oneof::EnvelopeView::decode_view(&bytes).expect("decode_view");
+    let owned = view.to_owned_message();
+    match owned.body {
+        Some(Body::Small(s)) => assert_eq!(s.value, 13),
+        other => panic!("expected Body::Small, got {other:?}"),
+    }
+}
+
+#[test]
+fn inline_variant_text_merge_into_existing() {
+    // Text-format merge takes the merge-into-existing arm when the same
+    // oneof variant is already set, mirroring binary merge semantics.
+    let mut msg = envelope_small(1);
+    buffa::text::merge_from_str(&mut msg, "small { value: 9 }").expect("merge_from_str");
+    match msg.body {
+        Some(Body::Small(s)) => assert_eq!(s.value, 9),
         other => panic!("expected Body::Small, got {other:?}"),
     }
 }

@@ -90,6 +90,11 @@ pub struct CodeGenContext<'a> {
     /// the scope's occupied set. Entries exist for every top-level message; the
     /// value equals `snake_case(Name)` when no deconfliction was needed.
     nested_module_names: HashMap<String, String>,
+    /// Variant paths (leading-dot form) resolved from
+    /// `config.unboxed_oneof_fields` whose oneof variants are stored inline.
+    /// Built once by [`resolve_unboxed_variants`](crate::oneof::resolve_unboxed_variants);
+    /// never contains recursive variants. See [`oneof_unboxed`](Self::oneof_unboxed).
+    unboxed_oneof_variants: HashSet<String>,
 }
 
 /// The immediate child-package segment names directly under `package`.
@@ -214,6 +219,8 @@ impl<'a> CodeGenContext<'a> {
         let mut enum_closedness = HashMap::new();
         let mut comment_map = HashMap::new();
         let mut nested_module_names = HashMap::new();
+        let unboxed_oneof_variants =
+            crate::oneof::resolve_unboxed_variants(files, &config.unboxed_oneof_fields);
 
         // Pre-pass: collect every locally-emitted package and its top-level
         // message names, so a message-nesting module can be deconflicted against
@@ -354,6 +361,7 @@ impl<'a> CodeGenContext<'a> {
             enum_closedness,
             comment_map,
             nested_module_names,
+            unboxed_oneof_variants,
         }
     }
 
@@ -699,17 +707,18 @@ impl<'a> CodeGenContext<'a> {
             .any(|prefix| matches_proto_prefix(prefix, field_fqn))
     }
 
-    /// Check whether a message-typed oneof variant at the given proto path was
-    /// opted out of `Box` wrapping via `config.unboxed_oneof_fields`.
+    /// Check whether a message-typed oneof variant at the given proto path is
+    /// stored inline (opted out of `Box` wrapping).
     ///
     /// `variant_fqn` is the fully-qualified variant path, e.g.
-    /// `".my.pkg.MyMessage.body.small"`. Matched with the same
-    /// proto-segment-aware prefix logic as [`use_bytes_type`](Self::use_bytes_type).
+    /// `".my.pkg.MyMessage.body.small"`. This consults the set resolved at
+    /// context construction by
+    /// [`resolve_unboxed_variants`](crate::oneof::resolve_unboxed_variants),
+    /// not the raw config rules: recursive variants matched only by a prefix
+    /// rule are excluded there (they stay boxed), so every codegen site that
+    /// asks agrees with the emitted enum declaration.
     pub fn oneof_unboxed(&self, variant_fqn: &str) -> bool {
-        self.config
-            .unboxed_oneof_fields
-            .iter()
-            .any(|prefix| matches_proto_prefix(prefix, variant_fqn))
+        self.unboxed_oneof_variants.contains(variant_fqn)
     }
 
     /// Resolve the [`StringRepr`](crate::StringRepr) for a `string` field at the
