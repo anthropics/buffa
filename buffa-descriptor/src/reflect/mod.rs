@@ -22,12 +22,14 @@
 //! also the natural home, since reflection consumers already declare
 //! `buffa-descriptor` for the descriptor types.
 
+mod containers;
 mod dynamic;
 #[cfg(feature = "json")]
 mod json;
 mod message;
 mod value;
 
+pub use containers::{ReflectElement, ReflectMapKey};
 pub use dynamic::{AnyError, DynamicMessage};
 #[cfg(feature = "json")]
 pub use json::DynamicMessageSeed;

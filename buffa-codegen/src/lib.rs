@@ -35,7 +35,10 @@ pub(crate) mod impl_text;
 pub(crate) mod imports;
 pub(crate) mod message;
 pub(crate) mod oneof;
+pub(crate) mod owned_view;
 pub(crate) mod reflect;
+pub(crate) mod reflect_owned;
+pub(crate) mod reflect_view;
 pub(crate) mod view;
 
 use crate::generated::descriptor::FileDescriptorProto;
@@ -228,6 +231,44 @@ impl StringRepr {
     }
 }
 
+/// How much reflection support generated types get.
+///
+/// Selected through `buffa_build`'s `reflect_mode` builder method (or the
+/// `protoc-gen-buffa` `reflect_mode=` option). All modes need the consuming
+/// crate to depend on `buffa-descriptor` with its `reflect` feature and on
+/// `std`; the call site is `foo.reflect().get(fd)` regardless of mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum ReflectMode {
+    /// No reflection impls.
+    #[default]
+    Off,
+    /// `Reflectable::reflect()` round-trips the message through a
+    /// `DynamicMessage` (encode → decode → boxed handle). Smaller generated
+    /// code; pays an allocation and a re-encode per `reflect()` call.
+    Bridge,
+    /// `impl ReflectMessage` directly on the owned and view types, and
+    /// `Reflectable::reflect()` borrows `self` with no round-trip. Larger
+    /// generated code; near-free reflective access. Does not require view
+    /// generation — with views off, only the owned impls are emitted.
+    VTable,
+}
+
+impl ReflectMode {
+    /// Apply this mode to a [`CodeGenConfig`] (sets `generate_reflection` /
+    /// `generate_reflection_vtable`). Used by the `buffa-build` and
+    /// `protoc-gen-buffa` front-ends.
+    pub fn apply(self, config: &mut CodeGenConfig) {
+        let (reflection, vtable) = match self {
+            ReflectMode::Off => (false, false),
+            ReflectMode::Bridge => (true, false),
+            ReflectMode::VTable => (true, true),
+        };
+        config.generate_reflection = reflection;
+        config.generate_reflection_vtable = vtable;
+    }
+}
+
 /// Configuration for code generation.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -268,11 +309,15 @@ pub struct CodeGenConfig {
     pub generate_arbitrary: bool,
     /// External type path mappings.
     ///
-    /// Each entry maps a fully-qualified protobuf path prefix (e.g.,
-    /// `".my.common"`) to a Rust module path (e.g., `"::common_protos"`).
-    /// Types under the proto prefix will reference the extern Rust path
-    /// instead of being generated, allowing shared proto packages to be
-    /// compiled once in a dedicated crate and referenced from others.
+    /// Each entry maps either a fully-qualified protobuf package prefix
+    /// (e.g., `".my.common"`) to a Rust module path (e.g.,
+    /// `"::common_protos"`), or a single type FQN (e.g.,
+    /// `".my.common.Shared"`) to a full Rust type path (e.g.,
+    /// `"::shared_types::Shared"`). Matched types reference the extern Rust
+    /// path instead of being generated, allowing shared proto packages to be
+    /// compiled once in a dedicated crate and referenced from others. An
+    /// exact type-FQN entry wins over a covering package prefix; otherwise
+    /// the longest matching prefix wins.
     ///
     /// Well-known types (`google.protobuf.*`) are automatically mapped to
     /// `::buffa_types::google::protobuf::*` without needing an explicit
@@ -416,6 +461,12 @@ pub struct CodeGenConfig {
     /// `feature = "arbitrary"` regardless of this flag, because `arbitrary`
     /// is an optional dependency by design.
     ///
+    /// When [`generate_reflection`](Self::generate_reflection) is also on, the
+    /// reflection impls are gated on `feature = "reflect"` alongside
+    /// json/views/text. To gate *only* reflection without gating json/views/text,
+    /// use [`gate_reflect_on_crate_feature`](Self::gate_reflect_on_crate_feature)
+    /// instead.
+    ///
     /// This is the mechanism that lets `buffa-descriptor` and `buffa-types`
     /// ship every impl while keeping the codegen toolchain
     /// (`buffa-codegen`/`buffa-build`/`protoc-gen-buffa`) lean: those crates
@@ -471,10 +522,9 @@ pub struct CodeGenConfig {
     ///
     /// **Performance** — `reflect()` is one full encode/decode round-trip
     /// plus a heap allocation. The first call also pays a one-time pool
-    /// build cost (linking the embedded `FileDescriptorSet`). The vtable
-    /// mode (zero-copy reflective access) is a deferred follow-up; the
-    /// call-site contract is the same either way, so flipping modes later
-    /// requires no consumer-code diff.
+    /// build cost (linking the embedded `FileDescriptorSet`). For zero-copy
+    /// reflective access over view types without the round-trip, additionally
+    /// enable [`generate_reflection_vtable`](Self::generate_reflection_vtable).
     ///
     /// **Binary size** — each package embeds its own copy of the full
     /// `FileDescriptorSet` (transitive closure). For a multi-package
@@ -484,6 +534,76 @@ pub struct CodeGenConfig {
     ///
     /// Defaults to `false`.
     pub generate_reflection: bool,
+    /// Emit vtable-mode reflection: `impl ReflectMessage` / `impl
+    /// ReflectElement` on the owned message structs and (when views are
+    /// generated) the view types, and switch the owned
+    /// `Reflectable::reflect()` body to borrow `self`
+    /// (`ReflectCow::Borrowed(self)`) instead of the bridge round-trip.
+    ///
+    /// Reflective access then reads struct fields in place — no encode/decode
+    /// round-trip and no per-field allocation — for both a decoded view and an
+    /// in-memory owned message.
+    ///
+    /// Requires [`generate_reflection`](Self::generate_reflection) (the impls
+    /// resolve against the same embedded `DescriptorPool`) but not
+    /// [`generate_views`](Self::generate_views) — with views off, only the
+    /// owned impls are emitted. Set via [`ReflectMode::VTable`]
+    /// — front-ends expose it as `buffa_build::Config::reflect_mode` /
+    /// `protoc-gen-buffa`'s `reflect_mode=vtable`.
+    ///
+    /// Defaults to `false`.
+    pub generate_reflection_vtable: bool,
+    /// Gate the reflection impls behind a `reflect` crate feature, *without*
+    /// gating json/views/text (unlike
+    /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features),
+    /// which gates them all together).
+    ///
+    /// Used by crates that ship view/text impls unconditionally but want the
+    /// reflection surface — which pulls a `buffa-descriptor` dependency and
+    /// `std` — to be opt-in. `buffa-types` is the motivating case: its WKT
+    /// views are always available, but `impl ReflectMessage` for them is gated
+    /// behind `buffa-types`'s `reflect` feature.
+    ///
+    /// When [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features)
+    /// is already on, reflection is gated regardless and this flag is ignored.
+    ///
+    /// A low-level knob for crates whose generated code is a public interface
+    /// (`buffa-types`, the conformance harness). Set directly by `gen_wkt_types`
+    /// and exposed through `buffa_build::Config::gate_reflect_on_crate_feature`
+    /// (currently `#[doc(hidden)]`, paired with the experimental vtable flag).
+    ///
+    /// Defaults to `false`.
+    pub gate_reflect_on_crate_feature: bool,
+    /// Emit idiomatic `UpperCamelCase` constant aliases alongside each enum
+    /// variant.
+    ///
+    /// Protobuf style names enum values in `SHOUTY_SNAKE_CASE`, conventionally
+    /// prefixed with the enum name (`RULE_LEVEL_HIGH`). Those names remain the
+    /// definitive Rust variants — they are guaranteed unique and valid by
+    /// protobuf, and existing references (including `Debug` output) are
+    /// unchanged. When this is enabled, codegen additionally emits associated
+    /// `const`s with the prefix stripped and the name converted to
+    /// `UpperCamelCase` (`RULE_LEVEL_HIGH` → `High`), so downstream code can
+    /// write `RuleLevel::High`.
+    ///
+    /// The conversion is lossy, so two values can collide (`FOO_BAR` and
+    /// `FOO__BAR` both map to `FooBar`). The rule is all-or-nothing per enum:
+    /// if any two values would collide after conversion, or a value would yield
+    /// an invalid identifier, **no** aliases are emitted for that enum (a
+    /// [`CodeGenWarning`] and an enum doc note explain why). This keeps every
+    /// match either fully `SHOUTY_SNAKE_CASE` or fully idiomatic, never a forced
+    /// mix.
+    ///
+    /// The aliases are associated `const`s, which work in pattern position too:
+    /// a `match` written entirely against aliases is still exhaustiveness-checked
+    /// (the "non-exhaustive" error names the underlying `SHOUTY_SNAKE_CASE`
+    /// variant, since that is the canonical name).
+    ///
+    /// Defaults to `true`: the aliases are purely additive (the proto names
+    /// remain the variants, and `Debug` is unchanged), so enabling by default is
+    /// backward-compatible, and the all-or-nothing rule guarantees correctness on
+    /// any enum.
+    pub idiomatic_enum_aliases: bool,
 }
 
 impl Default for CodeGenConfig {
@@ -509,6 +629,9 @@ impl Default for CodeGenConfig {
             gate_impls_on_crate_features: false,
             generate_with_setters: true,
             generate_reflection: false,
+            generate_reflection_vtable: false,
+            gate_reflect_on_crate_feature: false,
+            idiomatic_enum_aliases: true,
         }
     }
 }
@@ -602,9 +725,10 @@ pub(crate) fn effective_extern_paths(
 ///   must resolve to the local module, not externally.
 ///
 /// Currently internal-only — there is no `CodeGenConfig` field for
-/// user-provided file-level mappings. The user-facing `extern_path` API
-/// remains package-prefix keyed; per-file or per-type overrides may be added
-/// later as a public feature if a concrete need arises.
+/// user-provided *file-level* mappings. The user-facing `extern_path` API is
+/// keyed by proto package *or* type FQN (per-type overrides, issue #111);
+/// per-file overrides may be added later as a public feature if a concrete
+/// need arises.
 pub(crate) fn effective_file_extern_paths(
     files_to_generate: &[String],
     config: &CodeGenConfig,
@@ -645,6 +769,101 @@ pub(crate) fn effective_file_extern_paths(
         .collect()
 }
 
+/// One CamelCase collision: a target identifier and the proto value names that
+/// would all convert onto it.
+///
+/// Part of [`CodeGenWarning::IdiomaticAliasesSuppressed`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AliasConflict {
+    /// The `UpperCamelCase` identifier the colliding values map to.
+    pub camel_target: String,
+    /// The proto value names that convert onto `camel_target` (includes a
+    /// literal variant name when an alias would shadow it).
+    pub proto_values: Vec<String>,
+}
+
+/// A non-fatal diagnostic produced during code generation.
+///
+/// Returned by [`generate_with_diagnostics`]. Render the human-readable form via
+/// the [`Display`](core::fmt::Display) impl (e.g. `cargo:warning={warning}`), or
+/// match on the variant for programmatic handling. The enum and its variants are
+/// `#[non_exhaustive]` so new diagnostic kinds and fields can be added without a
+/// breaking change.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CodeGenWarning {
+    /// Idiomatic CamelCase aliases were suppressed for an enum because two or
+    /// more proto values collide after conversion, or a value would convert to
+    /// an invalid identifier. The enum's `SHOUTY_SNAKE_CASE` variants are
+    /// unaffected.
+    #[non_exhaustive]
+    IdiomaticAliasesSuppressed {
+        /// The Rust name of the affected enum.
+        enum_name: String,
+        /// Each collision, by target identifier. Empty if the only problem was
+        /// invalid identifiers.
+        conflicts: Vec<AliasConflict>,
+        /// Proto values that would convert to an invalid Rust identifier.
+        invalid: Vec<String>,
+    },
+    /// A field or oneof accessor on a generated `FooOwnedView` wrapper was
+    /// suppressed because the proto name collides with one of the wrapper's
+    /// reserved method names (`decode`, `view`, `bytes`, …). The field stays
+    /// fully accessible through `view()` on the wrapper (or
+    /// `OwnedView::reborrow`).
+    #[non_exhaustive]
+    OwnedViewAccessorSuppressed {
+        /// The Rust name of the wrapper type (e.g. `FooOwnedView`).
+        wrapper_name: String,
+        /// The proto field or oneof name whose accessor was suppressed.
+        field_name: String,
+    },
+}
+
+impl core::fmt::Display for CodeGenWarning {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::IdiomaticAliasesSuppressed {
+                enum_name,
+                conflicts,
+                invalid,
+            } => {
+                // Name the cause accurately: a collision, an invalid identifier,
+                // or both.
+                let cause = match (conflicts.is_empty(), invalid.is_empty()) {
+                    (false, true) => "naming conflict",
+                    (true, false) => "invalid identifier",
+                    _ => "naming conflict / invalid identifier",
+                };
+                write!(
+                    f,
+                    "enum `{enum_name}`: idiomatic CamelCase aliases suppressed ({cause})"
+                )?;
+                let mut parts: Vec<String> = conflicts
+                    .iter()
+                    .map(|c| format!("{} → {}", c.proto_values.join(", "), c.camel_target))
+                    .collect();
+                parts.extend(invalid.iter().map(|n| format!("{n} → invalid identifier")));
+                if !parts.is_empty() {
+                    write!(f, ": {}", parts.join("; "))?;
+                }
+                Ok(())
+            }
+            Self::OwnedViewAccessorSuppressed {
+                wrapper_name,
+                field_name,
+            } => {
+                write!(
+                    f,
+                    "`{wrapper_name}`: accessor for field `{field_name}` suppressed \
+                     (collides with a reserved wrapper method); use `.view().{field_name}` instead"
+                )
+            }
+        }
+    }
+}
+
 /// Generate Rust source files from a set of file descriptors.
 ///
 /// `files_to_generate` is the set of file names that were explicitly requested
@@ -656,11 +875,59 @@ pub(crate) fn effective_file_extern_paths(
 /// are omitted); each distinct package emits one `<pkg>.mod.rs`
 /// stitcher. Packages are processed in sorted order for deterministic
 /// output.
+///
+/// # Diagnostics
+///
+/// Non-fatal diagnostics produced during generation (e.g. an enum whose
+/// idiomatic CamelCase aliases were suppressed by a naming conflict) are
+/// **discarded** here. Use [`generate_with_diagnostics`] to receive them and
+/// surface them as build warnings.
 pub fn generate(
     file_descriptors: &[FileDescriptorProto],
     files_to_generate: &[String],
     config: &CodeGenConfig,
 ) -> Result<Vec<GeneratedFile>, CodeGenError> {
+    Ok(generate_with_diagnostics(file_descriptors, files_to_generate, config)?.0)
+}
+
+/// Like [`generate`], but also returns the non-fatal [`CodeGenWarning`]s
+/// collected during generation (e.g. enums whose idiomatic CamelCase aliases
+/// were suppressed by a naming conflict).
+///
+/// Surface each warning via its [`Display`](core::fmt::Display) impl — e.g. as a
+/// `cargo:warning=...` from a `build.rs`, or on stderr from a standalone
+/// generator — or match on it for programmatic handling. [`generate`] discards
+/// them, so existing callers are unaffected.
+///
+/// Warnings are returned only on success. On error, any warnings already
+/// collected are dropped along with the partial output — the [`CodeGenError`]
+/// is the actionable signal.
+///
+/// # Errors
+///
+/// Returns [`CodeGenError::FileNotFound`] if a name in `files_to_generate` has
+/// no matching descriptor, [`CodeGenError::Other`] if `generate_reflection_vtable`
+/// is set without `generate_reflection`, and other [`CodeGenError`] variants for
+/// malformed descriptors (e.g. a missing required field) encountered while
+/// generating.
+pub fn generate_with_diagnostics(
+    file_descriptors: &[FileDescriptorProto],
+    files_to_generate: &[String],
+    config: &CodeGenConfig,
+) -> Result<(Vec<GeneratedFile>, Vec<CodeGenWarning>), CodeGenError> {
+    // Vtable reflection resolves against the per-package descriptor pool, which
+    // is emitted by bridge-mode reflection — so it requires `generate_reflection`.
+    // It does NOT require views: the owned `impl ReflectMessage` is self-contained,
+    // so with views off, vtable mode still emits owned-message reflection (the
+    // view impls are simply skipped along with the views).
+    if config.generate_reflection_vtable && !config.generate_reflection {
+        return Err(CodeGenError::Other(
+            "generate_reflection_vtable requires generate_reflection to be enabled \
+             (it provides the descriptor pool the reflect impls resolve against)"
+                .into(),
+        ));
+    }
+
     let ctx = context::CodeGenContext::for_generate(file_descriptors, files_to_generate, config);
 
     // Group requested files by package. BTreeMap → deterministic output order.
@@ -690,7 +957,7 @@ pub fn generate(
         generate_package(&ctx, &package, &files, &fds_bytes, &mut output)?;
     }
 
-    Ok(output)
+    Ok((output, ctx.take_warnings()))
 }
 
 /// Generate a module tree that assembles per-package `.mod.rs` files into
@@ -1020,6 +1287,19 @@ fn generate_proto_content(
                     quote! {
                         #[doc(inline)]
                         pub use self :: #sentinel :: view :: #view_ident;
+                    },
+                    ctx.config.feature_gates().views,
+                ),
+            });
+            // The owned-view wrapper gets the same natural-path treatment as
+            // the view struct, so `pkg::FooOwnedView` works out of the box.
+            let owned_view_ident = format_ident!("{top_level_name}OwnedView");
+            root_reexports.push(message::ReexportCandidate {
+                name: owned_view_ident.to_string(),
+                tokens: feature_gates::cfg_block(
+                    quote! {
+                        #[doc(inline)]
+                        pub use self :: #sentinel :: view :: #owned_view_ident;
                     },
                     ctx.config.feature_gates().views,
                 ),

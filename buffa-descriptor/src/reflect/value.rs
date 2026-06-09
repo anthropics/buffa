@@ -169,10 +169,10 @@ impl<'a> ValueRef<'a> {
 
 /// A reflective view over a repeated field's elements.
 ///
-/// `DynamicMessage` (bridge mode) implements this for `[Value]`. Vtable-mode
-/// generated `impl ReflectMessage for FooView<'a>` (deferred — see the
-/// reflection design doc) will implement it per element type so a repeated
-/// field can be read without materializing a `Vec<Value>`.
+/// `DynamicMessage` (bridge mode) implements this for `Vec<Value>`. Vtable mode
+/// implements it generically for [`RepeatedView`](buffa::RepeatedView) over any
+/// [`ReflectElement`](super::ReflectElement), so a repeated field can be read
+/// without materializing a `Vec<Value>`.
 ///
 /// `for_each` is the dyn-safe non-allocating iteration form, mirroring
 /// [`ReflectMessage::for_each_set`]. There is no `iter()` because trait
@@ -197,8 +197,10 @@ pub trait ReflectList: core::fmt::Debug {
 
 /// A reflective view over a map field's entries.
 ///
-/// `DynamicMessage` (bridge mode) implements this for [`MapValue`]. Vtable
-/// mode (deferred) will implement it for `MapView<'a, K, V>`.
+/// `DynamicMessage` (bridge mode) implements this for [`MapValue`]. Vtable mode
+/// implements it generically for [`MapView`](buffa::MapView), deduplicating
+/// duplicate wire entries to distinct keys so both modes present the same
+/// logical map.
 ///
 /// Iteration order is unspecified — callers must not depend on it. The
 /// bridge-mode `MapValue` happens to iterate in `MapKey`-sorted order; vtable
@@ -270,22 +272,9 @@ impl MapKey {
     }
 }
 
-// `Vec<Value>` rather than `[Value]` so the `&Vec<Value> → &dyn ReflectList`
-// unsizing coercion is valid — Rust requires the source type of an unsizing
-// coercion to be `Sized`, and `[Value]` isn't.
-impl ReflectList for Vec<Value> {
-    fn len(&self) -> usize {
-        Self::len(self)
-    }
-    fn get(&self, idx: usize) -> Option<ValueRef<'_>> {
-        self.as_slice().get(idx).map(Value::as_ref)
-    }
-    fn for_each(&self, f: &mut dyn FnMut(ValueRef<'_>)) {
-        for v in self.as_slice() {
-            f(v.as_ref());
-        }
-    }
-}
+// `Vec<Value>` reflects through the generic `impl<T: ReflectElement>
+// ReflectList for Vec<T>` in `view.rs` (with `impl ReflectElement for Value`),
+// so there is no bespoke `ReflectList for Vec<Value>` here.
 
 impl ReflectMap for MapValue {
     fn len(&self) -> usize {

@@ -246,6 +246,194 @@ impl ::buffa::ViewReborrow for StructView<'static> {
         this
     }
 }
+/** Self-contained, `'static` owned view of a `Struct` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`StructView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`StructView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct StructOwnedView(::buffa::OwnedView<StructView<'static>>);
+impl StructOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(StructOwnedView(::buffa::OwnedView::decode(bytes)?))
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            StructOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::Struct,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(StructOwnedView(::buffa::OwnedView::from_owned(msg)?))
+    }
+    /// Borrow the full [`StructView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &StructView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::Struct {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Unordered map of dynamically typed values.
+    ///
+    /// Field 1: `fields` (map)
+    #[must_use]
+    pub fn fields(
+        &self,
+    ) -> &::buffa::MapView<'_, &'_ str, super::super::__buffa::view::ValueView<'_>> {
+        &self.0.reborrow().fields
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<StructView<'static>>> for StructOwnedView {
+    fn from(inner: ::buffa::OwnedView<StructView<'static>>) -> Self {
+        StructOwnedView(inner)
+    }
+}
+impl ::core::convert::From<StructOwnedView> for ::buffa::OwnedView<StructView<'static>> {
+    fn from(wrapper: StructOwnedView) -> Self {
+        wrapper.0
+    }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<StructView<'static>>>
+for StructOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<StructView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::Struct {
+    type View<'a> = StructView<'a>;
+    type ViewHandle = StructOwnedView;
+}
+#[cfg(feature = "reflect")]
+const _: () = {
+    impl<'a> ::buffa_descriptor::reflect::ReflectMessage for StructView<'a> {
+        fn message_descriptor(&self) -> &::buffa_descriptor::MessageDescriptor {
+            super::super::__buffa::reflect::descriptor_pool()
+                .message(Self::__buffa_reflect_message_index())
+        }
+        fn pool(
+            &self,
+        ) -> &::buffa::alloc::sync::Arc<::buffa_descriptor::DescriptorPool> {
+            super::super::__buffa::reflect::descriptor_pool()
+        }
+        fn get(
+            &self,
+            field: &::buffa_descriptor::FieldDescriptor,
+        ) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            match field.number() {
+                1u32 => ::buffa_descriptor::reflect::ValueRef::Map(&self.fields),
+                _ => {
+                    ::core::debug_assert!(
+                        false,
+                        "field number {} is not a member of this view's reflect get()",
+                        field.number(),
+                    );
+                    ::buffa_descriptor::reflect::ValueRef::Bool(false)
+                }
+            }
+        }
+        fn has(&self, field: &::buffa_descriptor::FieldDescriptor) -> bool {
+            match field.number() {
+                1u32 => !::buffa::MapView::is_empty(&self.fields),
+                _ => false,
+            }
+        }
+        fn for_each_set(
+            &self,
+            f: &mut dyn ::core::ops::FnMut(
+                &::buffa_descriptor::FieldDescriptor,
+                ::buffa_descriptor::reflect::ValueRef<'_>,
+            ),
+        ) {
+            let md = ::buffa_descriptor::reflect::ReflectMessage::message_descriptor(
+                self,
+            );
+            for fd in md.fields() {
+                if ::buffa_descriptor::reflect::ReflectMessage::has(self, fd) {
+                    f(fd, ::buffa_descriptor::reflect::ReflectMessage::get(self, fd));
+                }
+            }
+        }
+        fn to_dynamic(&self) -> ::buffa_descriptor::reflect::DynamicMessage {
+            let bytes = ::buffa::ViewEncode::encode_to_vec(self);
+            ::buffa_descriptor::reflect::DynamicMessage::decode(
+                    ::buffa::alloc::sync::Arc::clone(
+                        super::super::__buffa::reflect::descriptor_pool(),
+                    ),
+                    Self::__buffa_reflect_message_index(),
+                    &bytes,
+                )
+                .expect("view re-encodes to bytes decodable against its own descriptor")
+        }
+    }
+    impl<'a> ::buffa_descriptor::reflect::ReflectElement for StructView<'a> {
+        fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+            ::buffa_descriptor::reflect::ValueRef::Message(
+                ::buffa_descriptor::reflect::ReflectCow::Borrowed(self),
+            )
+        }
+    }
+    impl<'a> StructView<'a> {
+        /// Memoized `MessageIndex` for this view's message type, resolved
+        /// once against the package's embedded descriptor pool. An inherent
+        /// associated fn (not a free fn) so sibling views in the same module
+        /// do not collide.
+        #[doc(hidden)]
+        fn __buffa_reflect_message_index() -> ::buffa_descriptor::MessageIndex {
+            static IDX: ::std::sync::OnceLock<::buffa_descriptor::MessageIndex> = ::std::sync::OnceLock::new();
+            *IDX
+                .get_or_init(|| {
+                    super::super::__buffa::reflect::descriptor_pool()
+                        .message_index(<Self as ::buffa::MessageName>::FULL_NAME)
+                        .expect(
+                            "generated view type is registered in the embedded descriptor pool",
+                        )
+                })
+        }
+    }
+};
 /// `Value` represents a dynamically typed value which can be either
 /// null, a number, a string, a boolean, a recursive struct value, or a
 /// list of values. A producer of value is expected to set one of these
@@ -624,6 +812,305 @@ impl ::buffa::ViewReborrow for ValueView<'static> {
         this
     }
 }
+/** Self-contained, `'static` owned view of a `Value` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`ValueView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`ValueView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct ValueOwnedView(::buffa::OwnedView<ValueView<'static>>);
+impl ValueOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(ValueOwnedView(::buffa::OwnedView::decode(bytes)?))
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            ValueOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::Value,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(ValueOwnedView(::buffa::OwnedView::from_owned(msg)?))
+    }
+    /// Borrow the full [`ValueView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &ValueView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::Value {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Oneof `kind`.
+    #[must_use]
+    pub fn kind(
+        &self,
+    ) -> ::core::option::Option<&super::super::__buffa::view::oneof::value::Kind<'_>> {
+        self.0.reborrow().kind.as_ref()
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<ValueView<'static>>> for ValueOwnedView {
+    fn from(inner: ::buffa::OwnedView<ValueView<'static>>) -> Self {
+        ValueOwnedView(inner)
+    }
+}
+impl ::core::convert::From<ValueOwnedView> for ::buffa::OwnedView<ValueView<'static>> {
+    fn from(wrapper: ValueOwnedView) -> Self {
+        wrapper.0
+    }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<ValueView<'static>>> for ValueOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<ValueView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::Value {
+    type View<'a> = ValueView<'a>;
+    type ViewHandle = ValueOwnedView;
+}
+#[cfg(feature = "reflect")]
+const _: () = {
+    impl<'a> ::buffa_descriptor::reflect::ReflectMessage for ValueView<'a> {
+        fn message_descriptor(&self) -> &::buffa_descriptor::MessageDescriptor {
+            super::super::__buffa::reflect::descriptor_pool()
+                .message(Self::__buffa_reflect_message_index())
+        }
+        fn pool(
+            &self,
+        ) -> &::buffa::alloc::sync::Arc<::buffa_descriptor::DescriptorPool> {
+            super::super::__buffa::reflect::descriptor_pool()
+        }
+        fn get(
+            &self,
+            field: &::buffa_descriptor::FieldDescriptor,
+        ) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            match field.number() {
+                1u32 => {
+                    match &self.kind {
+                        ::core::option::Option::Some(
+                            super::super::__buffa::view::oneof::value::Kind::NullValue(v),
+                        ) => {
+                            ::buffa_descriptor::reflect::ValueRef::EnumNumber(v.to_i32())
+                        }
+                        _ => ::buffa_descriptor::reflect::ValueRef::EnumNumber(0),
+                    }
+                }
+                2u32 => {
+                    match &self.kind {
+                        ::core::option::Option::Some(
+                            super::super::__buffa::view::oneof::value::Kind::NumberValue(
+                                v,
+                            ),
+                        ) => ::buffa_descriptor::reflect::ValueRef::F64(*v),
+                        _ => ::buffa_descriptor::reflect::ValueRef::F64(0.0),
+                    }
+                }
+                3u32 => {
+                    match &self.kind {
+                        ::core::option::Option::Some(
+                            super::super::__buffa::view::oneof::value::Kind::StringValue(
+                                v,
+                            ),
+                        ) => ::buffa_descriptor::reflect::ValueRef::String(v),
+                        _ => ::buffa_descriptor::reflect::ValueRef::String(""),
+                    }
+                }
+                4u32 => {
+                    match &self.kind {
+                        ::core::option::Option::Some(
+                            super::super::__buffa::view::oneof::value::Kind::BoolValue(v),
+                        ) => ::buffa_descriptor::reflect::ValueRef::Bool(*v),
+                        _ => ::buffa_descriptor::reflect::ValueRef::Bool(false),
+                    }
+                }
+                5u32 => {
+                    match &self.kind {
+                        ::core::option::Option::Some(
+                            super::super::__buffa::view::oneof::value::Kind::StructValue(
+                                v,
+                            ),
+                        ) => {
+                            ::buffa_descriptor::reflect::ValueRef::Message(
+                                ::buffa_descriptor::reflect::ReflectCow::Borrowed(&**v),
+                            )
+                        }
+                        _ => {
+                            ::buffa_descriptor::reflect::ValueRef::Message(
+                                ::buffa_descriptor::reflect::ReflectCow::Borrowed(
+                                    <super::super::__buffa::view::StructView<
+                                        'a,
+                                    > as ::buffa::view::DefaultViewInstance>::default_view_instance(),
+                                ),
+                            )
+                        }
+                    }
+                }
+                6u32 => {
+                    match &self.kind {
+                        ::core::option::Option::Some(
+                            super::super::__buffa::view::oneof::value::Kind::ListValue(v),
+                        ) => {
+                            ::buffa_descriptor::reflect::ValueRef::Message(
+                                ::buffa_descriptor::reflect::ReflectCow::Borrowed(&**v),
+                            )
+                        }
+                        _ => {
+                            ::buffa_descriptor::reflect::ValueRef::Message(
+                                ::buffa_descriptor::reflect::ReflectCow::Borrowed(
+                                    <super::super::__buffa::view::ListValueView<
+                                        'a,
+                                    > as ::buffa::view::DefaultViewInstance>::default_view_instance(),
+                                ),
+                            )
+                        }
+                    }
+                }
+                _ => {
+                    ::core::debug_assert!(
+                        false,
+                        "field number {} is not a member of this view's reflect get()",
+                        field.number(),
+                    );
+                    ::buffa_descriptor::reflect::ValueRef::Bool(false)
+                }
+            }
+        }
+        fn has(&self, field: &::buffa_descriptor::FieldDescriptor) -> bool {
+            match field.number() {
+                1u32 => {
+                    ::core::matches!(
+                        & self.kind,
+                        ::core::option::Option::Some(super::super::__buffa::view::oneof::value::Kind::NullValue(_))
+                    )
+                }
+                2u32 => {
+                    ::core::matches!(
+                        & self.kind,
+                        ::core::option::Option::Some(super::super::__buffa::view::oneof::value::Kind::NumberValue(_))
+                    )
+                }
+                3u32 => {
+                    ::core::matches!(
+                        & self.kind,
+                        ::core::option::Option::Some(super::super::__buffa::view::oneof::value::Kind::StringValue(_))
+                    )
+                }
+                4u32 => {
+                    ::core::matches!(
+                        & self.kind,
+                        ::core::option::Option::Some(super::super::__buffa::view::oneof::value::Kind::BoolValue(_))
+                    )
+                }
+                5u32 => {
+                    ::core::matches!(
+                        & self.kind,
+                        ::core::option::Option::Some(super::super::__buffa::view::oneof::value::Kind::StructValue(_))
+                    )
+                }
+                6u32 => {
+                    ::core::matches!(
+                        & self.kind,
+                        ::core::option::Option::Some(super::super::__buffa::view::oneof::value::Kind::ListValue(_))
+                    )
+                }
+                _ => false,
+            }
+        }
+        fn for_each_set(
+            &self,
+            f: &mut dyn ::core::ops::FnMut(
+                &::buffa_descriptor::FieldDescriptor,
+                ::buffa_descriptor::reflect::ValueRef<'_>,
+            ),
+        ) {
+            let md = ::buffa_descriptor::reflect::ReflectMessage::message_descriptor(
+                self,
+            );
+            for fd in md.fields() {
+                if ::buffa_descriptor::reflect::ReflectMessage::has(self, fd) {
+                    f(fd, ::buffa_descriptor::reflect::ReflectMessage::get(self, fd));
+                }
+            }
+        }
+        fn to_dynamic(&self) -> ::buffa_descriptor::reflect::DynamicMessage {
+            let bytes = ::buffa::ViewEncode::encode_to_vec(self);
+            ::buffa_descriptor::reflect::DynamicMessage::decode(
+                    ::buffa::alloc::sync::Arc::clone(
+                        super::super::__buffa::reflect::descriptor_pool(),
+                    ),
+                    Self::__buffa_reflect_message_index(),
+                    &bytes,
+                )
+                .expect("view re-encodes to bytes decodable against its own descriptor")
+        }
+    }
+    impl<'a> ::buffa_descriptor::reflect::ReflectElement for ValueView<'a> {
+        fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+            ::buffa_descriptor::reflect::ValueRef::Message(
+                ::buffa_descriptor::reflect::ReflectCow::Borrowed(self),
+            )
+        }
+    }
+    impl<'a> ValueView<'a> {
+        /// Memoized `MessageIndex` for this view's message type, resolved
+        /// once against the package's embedded descriptor pool. An inherent
+        /// associated fn (not a free fn) so sibling views in the same module
+        /// do not collide.
+        #[doc(hidden)]
+        fn __buffa_reflect_message_index() -> ::buffa_descriptor::MessageIndex {
+            static IDX: ::std::sync::OnceLock<::buffa_descriptor::MessageIndex> = ::std::sync::OnceLock::new();
+            *IDX
+                .get_or_init(|| {
+                    super::super::__buffa::reflect::descriptor_pool()
+                        .message_index(<Self as ::buffa::MessageName>::FULL_NAME)
+                        .expect(
+                            "generated view type is registered in the embedded descriptor pool",
+                        )
+                })
+        }
+    }
+};
 /// `ListValue` is a wrapper around a repeated field of values.
 ///
 /// The JSON representation for `ListValue` is JSON array.
@@ -801,3 +1288,197 @@ impl ::buffa::ViewReborrow for ListValueView<'static> {
         this
     }
 }
+/** Self-contained, `'static` owned view of a `ListValue` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`ListValueView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`ListValueView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct ListValueOwnedView(::buffa::OwnedView<ListValueView<'static>>);
+impl ListValueOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            ListValueOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            ListValueOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::ListValue,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            ListValueOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`ListValueView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &ListValueView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::ListValue {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// Repeated field of dynamically typed values.
+    ///
+    /// Field 1: `values`
+    #[must_use]
+    pub fn values(
+        &self,
+    ) -> &::buffa::RepeatedView<'_, super::super::__buffa::view::ValueView<'_>> {
+        &self.0.reborrow().values
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<ListValueView<'static>>>
+for ListValueOwnedView {
+    fn from(inner: ::buffa::OwnedView<ListValueView<'static>>) -> Self {
+        ListValueOwnedView(inner)
+    }
+}
+impl ::core::convert::From<ListValueOwnedView>
+for ::buffa::OwnedView<ListValueView<'static>> {
+    fn from(wrapper: ListValueOwnedView) -> Self {
+        wrapper.0
+    }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<ListValueView<'static>>>
+for ListValueOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<ListValueView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::ListValue {
+    type View<'a> = ListValueView<'a>;
+    type ViewHandle = ListValueOwnedView;
+}
+#[cfg(feature = "reflect")]
+const _: () = {
+    impl<'a> ::buffa_descriptor::reflect::ReflectMessage for ListValueView<'a> {
+        fn message_descriptor(&self) -> &::buffa_descriptor::MessageDescriptor {
+            super::super::__buffa::reflect::descriptor_pool()
+                .message(Self::__buffa_reflect_message_index())
+        }
+        fn pool(
+            &self,
+        ) -> &::buffa::alloc::sync::Arc<::buffa_descriptor::DescriptorPool> {
+            super::super::__buffa::reflect::descriptor_pool()
+        }
+        fn get(
+            &self,
+            field: &::buffa_descriptor::FieldDescriptor,
+        ) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            match field.number() {
+                1u32 => ::buffa_descriptor::reflect::ValueRef::List(&self.values),
+                _ => {
+                    ::core::debug_assert!(
+                        false,
+                        "field number {} is not a member of this view's reflect get()",
+                        field.number(),
+                    );
+                    ::buffa_descriptor::reflect::ValueRef::Bool(false)
+                }
+            }
+        }
+        fn has(&self, field: &::buffa_descriptor::FieldDescriptor) -> bool {
+            match field.number() {
+                1u32 => !::buffa::RepeatedView::is_empty(&self.values),
+                _ => false,
+            }
+        }
+        fn for_each_set(
+            &self,
+            f: &mut dyn ::core::ops::FnMut(
+                &::buffa_descriptor::FieldDescriptor,
+                ::buffa_descriptor::reflect::ValueRef<'_>,
+            ),
+        ) {
+            let md = ::buffa_descriptor::reflect::ReflectMessage::message_descriptor(
+                self,
+            );
+            for fd in md.fields() {
+                if ::buffa_descriptor::reflect::ReflectMessage::has(self, fd) {
+                    f(fd, ::buffa_descriptor::reflect::ReflectMessage::get(self, fd));
+                }
+            }
+        }
+        fn to_dynamic(&self) -> ::buffa_descriptor::reflect::DynamicMessage {
+            let bytes = ::buffa::ViewEncode::encode_to_vec(self);
+            ::buffa_descriptor::reflect::DynamicMessage::decode(
+                    ::buffa::alloc::sync::Arc::clone(
+                        super::super::__buffa::reflect::descriptor_pool(),
+                    ),
+                    Self::__buffa_reflect_message_index(),
+                    &bytes,
+                )
+                .expect("view re-encodes to bytes decodable against its own descriptor")
+        }
+    }
+    impl<'a> ::buffa_descriptor::reflect::ReflectElement for ListValueView<'a> {
+        fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+            ::buffa_descriptor::reflect::ValueRef::Message(
+                ::buffa_descriptor::reflect::ReflectCow::Borrowed(self),
+            )
+        }
+    }
+    impl<'a> ListValueView<'a> {
+        /// Memoized `MessageIndex` for this view's message type, resolved
+        /// once against the package's embedded descriptor pool. An inherent
+        /// associated fn (not a free fn) so sibling views in the same module
+        /// do not collide.
+        #[doc(hidden)]
+        fn __buffa_reflect_message_index() -> ::buffa_descriptor::MessageIndex {
+            static IDX: ::std::sync::OnceLock<::buffa_descriptor::MessageIndex> = ::std::sync::OnceLock::new();
+            *IDX
+                .get_or_init(|| {
+                    super::super::__buffa::reflect::descriptor_pool()
+                        .message_index(<Self as ::buffa::MessageName>::FULL_NAME)
+                        .expect(
+                            "generated view type is registered in the embedded descriptor pool",
+                        )
+                })
+        }
+    }
+};

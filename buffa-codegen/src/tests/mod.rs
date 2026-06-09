@@ -51,10 +51,14 @@ pub(super) fn joined(files: &[GeneratedFile]) -> String {
 
 mod comments;
 mod custom_attributes;
+mod debug_redact;
 mod feature_gating;
 mod generation;
+mod idiomatic_enums;
 mod json_codegen;
 mod naming;
+mod owned_view_codegen;
 mod proto2;
 mod reexports;
+mod reflect_view;
 mod view_codegen;

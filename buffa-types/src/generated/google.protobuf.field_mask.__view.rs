@@ -378,3 +378,195 @@ impl ::buffa::ViewReborrow for FieldMaskView<'static> {
         this
     }
 }
+/** Self-contained, `'static` owned view of a `FieldMask` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`FieldMaskView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`FieldMaskView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+#[derive(Clone, Debug)]
+pub struct FieldMaskOwnedView(::buffa::OwnedView<FieldMaskView<'static>>);
+impl FieldMaskOwnedView {
+    /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+    ///
+    /// The view borrows directly from the buffer's data; the buffer is
+    /// retained inside the returned handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+    /// protobuf data.
+    pub fn decode(
+        bytes: ::buffa::bytes::Bytes,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FieldMaskOwnedView(::buffa::OwnedView::decode(bytes)?),
+        )
+    }
+    /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+    /// max message size).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+    /// exceeds the configured limits.
+    pub fn decode_with_options(
+        bytes: ::buffa::bytes::Bytes,
+        opts: &::buffa::DecodeOptions,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FieldMaskOwnedView(::buffa::OwnedView::decode_with_options(bytes, opts)?),
+        )
+    }
+    /// Build from an owned message via an encode → decode round-trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// somehow invalid (should not happen for well-formed messages).
+    pub fn from_owned(
+        msg: &super::super::FieldMask,
+    ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+        ::core::result::Result::Ok(
+            FieldMaskOwnedView(::buffa::OwnedView::from_owned(msg)?),
+        )
+    }
+    /// Borrow the full [`FieldMaskView`] with its lifetime tied to `&self`.
+    #[must_use]
+    pub fn view(&self) -> &FieldMaskView<'_> {
+        self.0.reborrow()
+    }
+    /// Convert to the owned message type.
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::FieldMask {
+        self.0.to_owned_message()
+    }
+    /// The underlying bytes buffer.
+    #[must_use]
+    pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+        self.0.bytes()
+    }
+    /// Consume the handle, returning the underlying bytes buffer.
+    #[must_use]
+    pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+        self.0.into_bytes()
+    }
+    /// The set of field mask paths.
+    ///
+    /// Field 1: `paths`
+    #[must_use]
+    pub fn paths(&self) -> &::buffa::RepeatedView<'_, &'_ str> {
+        &self.0.reborrow().paths
+    }
+}
+impl ::core::convert::From<::buffa::OwnedView<FieldMaskView<'static>>>
+for FieldMaskOwnedView {
+    fn from(inner: ::buffa::OwnedView<FieldMaskView<'static>>) -> Self {
+        FieldMaskOwnedView(inner)
+    }
+}
+impl ::core::convert::From<FieldMaskOwnedView>
+for ::buffa::OwnedView<FieldMaskView<'static>> {
+    fn from(wrapper: FieldMaskOwnedView) -> Self {
+        wrapper.0
+    }
+}
+impl ::core::convert::AsRef<::buffa::OwnedView<FieldMaskView<'static>>>
+for FieldMaskOwnedView {
+    fn as_ref(&self) -> &::buffa::OwnedView<FieldMaskView<'static>> {
+        &self.0
+    }
+}
+impl ::buffa::HasMessageView for super::super::FieldMask {
+    type View<'a> = FieldMaskView<'a>;
+    type ViewHandle = FieldMaskOwnedView;
+}
+#[cfg(feature = "reflect")]
+const _: () = {
+    impl<'a> ::buffa_descriptor::reflect::ReflectMessage for FieldMaskView<'a> {
+        fn message_descriptor(&self) -> &::buffa_descriptor::MessageDescriptor {
+            super::super::__buffa::reflect::descriptor_pool()
+                .message(Self::__buffa_reflect_message_index())
+        }
+        fn pool(
+            &self,
+        ) -> &::buffa::alloc::sync::Arc<::buffa_descriptor::DescriptorPool> {
+            super::super::__buffa::reflect::descriptor_pool()
+        }
+        fn get(
+            &self,
+            field: &::buffa_descriptor::FieldDescriptor,
+        ) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            match field.number() {
+                1u32 => ::buffa_descriptor::reflect::ValueRef::List(&self.paths),
+                _ => {
+                    ::core::debug_assert!(
+                        false,
+                        "field number {} is not a member of this view's reflect get()",
+                        field.number(),
+                    );
+                    ::buffa_descriptor::reflect::ValueRef::Bool(false)
+                }
+            }
+        }
+        fn has(&self, field: &::buffa_descriptor::FieldDescriptor) -> bool {
+            match field.number() {
+                1u32 => !::buffa::RepeatedView::is_empty(&self.paths),
+                _ => false,
+            }
+        }
+        fn for_each_set(
+            &self,
+            f: &mut dyn ::core::ops::FnMut(
+                &::buffa_descriptor::FieldDescriptor,
+                ::buffa_descriptor::reflect::ValueRef<'_>,
+            ),
+        ) {
+            let md = ::buffa_descriptor::reflect::ReflectMessage::message_descriptor(
+                self,
+            );
+            for fd in md.fields() {
+                if ::buffa_descriptor::reflect::ReflectMessage::has(self, fd) {
+                    f(fd, ::buffa_descriptor::reflect::ReflectMessage::get(self, fd));
+                }
+            }
+        }
+        fn to_dynamic(&self) -> ::buffa_descriptor::reflect::DynamicMessage {
+            let bytes = ::buffa::ViewEncode::encode_to_vec(self);
+            ::buffa_descriptor::reflect::DynamicMessage::decode(
+                    ::buffa::alloc::sync::Arc::clone(
+                        super::super::__buffa::reflect::descriptor_pool(),
+                    ),
+                    Self::__buffa_reflect_message_index(),
+                    &bytes,
+                )
+                .expect("view re-encodes to bytes decodable against its own descriptor")
+        }
+    }
+    impl<'a> ::buffa_descriptor::reflect::ReflectElement for FieldMaskView<'a> {
+        fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+            ::buffa_descriptor::reflect::ValueRef::Message(
+                ::buffa_descriptor::reflect::ReflectCow::Borrowed(self),
+            )
+        }
+    }
+    impl<'a> FieldMaskView<'a> {
+        /// Memoized `MessageIndex` for this view's message type, resolved
+        /// once against the package's embedded descriptor pool. An inherent
+        /// associated fn (not a free fn) so sibling views in the same module
+        /// do not collide.
+        #[doc(hidden)]
+        fn __buffa_reflect_message_index() -> ::buffa_descriptor::MessageIndex {
+            static IDX: ::std::sync::OnceLock<::buffa_descriptor::MessageIndex> = ::std::sync::OnceLock::new();
+            *IDX
+                .get_or_init(|| {
+                    super::super::__buffa::reflect::descriptor_pool()
+                        .message_index(<Self as ::buffa::MessageName>::FULL_NAME)
+                        .expect(
+                            "generated view type is registered in the embedded descriptor pool",
+                        )
+                })
+        }
+    }
+};

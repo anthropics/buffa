@@ -249,8 +249,8 @@ pub use unknown_fields::{UnknownField, UnknownFieldData, UnknownFields};
 #[cfg(feature = "text")]
 pub use text::TextFormat;
 pub use view::{
-    DefaultViewInstance, MapView, MessageFieldView, MessageView, OwnedView, RepeatedView,
-    UnknownFieldsView, ViewEncode, ViewReborrow,
+    DefaultViewInstance, HasMessageView, MapView, MessageFieldView, MessageView, OwnedView,
+    RepeatedView, UnknownFieldsView, ViewEncode, ViewReborrow,
 };
 
 /// Private re-exports used exclusively by generated code.
@@ -312,6 +312,26 @@ pub mod __private {
     ) -> ::arbitrary::Result<::alloc::vec::Vec<::bytes::Bytes>> {
         let vv: ::alloc::vec::Vec<::alloc::vec::Vec<u8>> = ::arbitrary::Arbitrary::arbitrary(u)?;
         Ok(vv.into_iter().map(::bytes::Bytes::from).collect())
+    }
+
+    /// `Arbitrary` shim for `map<K, bytes>` fields under
+    /// `bytes_fields`, where the value type is `bytes::Bytes`.
+    ///
+    /// Generic over the key type so the codegen call site doesn't need a
+    /// per-key-type shim; `K`'s own `Arbitrary` impl drives key generation.
+    /// The intermediate `HashMap<K, Vec<u8>>` keeps byte-consumption order
+    /// identical to the underlying impl.
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_bytes_map<'a, K>(
+        u: &mut ::arbitrary::Unstructured<'a>,
+    ) -> ::arbitrary::Result<HashMap<K, ::bytes::Bytes>>
+    where
+        K: ::arbitrary::Arbitrary<'a> + ::core::cmp::Eq + ::core::hash::Hash,
+    {
+        let m: HashMap<K, ::alloc::vec::Vec<u8>> = ::arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(m.into_iter()
+            .map(|(k, v)| (k, ::bytes::Bytes::from(v)))
+            .collect())
     }
 
     /// `arbitrary` helpers for `ecow::EcoString` string fields.

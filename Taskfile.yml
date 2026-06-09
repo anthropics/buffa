@@ -599,18 +599,18 @@ tasks:
 
   check-nostd:
     desc: >-
-      Check that buffa compiles in no_std + alloc configuration.
-      The first check uses the host target with no_std features disabled.
-      The second check targets a bare-metal ARM Cortex-M4 (thumbv7em)
-      to verify true no_std compatibility with no OS or libc.
-    preconditions:
-      - sh: rustup target list --installed | grep -q thumbv7em-none-eabihf
-        msg: >-
-          Target thumbv7em-none-eabihf is not installed.
-          Run 'task install-targets' to install it.
+      Check that buffa, buffa-types, and buffa-descriptor compile in
+      no_std + alloc configuration — the same crates the CI check-nostd job
+      covers. The host checks disable the std-only features; the bare-metal
+      ARM Cortex-M4 (thumbv7em) check verifies true no_std with no OS or libc.
+      The bare-metal target is added on demand (rustup target add is
+      idempotent), so this task needs no separate install-targets step.
     cmds:
+      - rustup target add thumbv7em-none-eabihf
       - cargo check -p buffa --no-default-features
       - cargo check -p buffa --no-default-features --target thumbv7em-none-eabihf
+      - cargo check -p buffa-types --no-default-features
+      - cargo check -p buffa-descriptor --no-default-features
   # ── Coverage ─────────────────────────────────────────────────────────
 
   coverage:

@@ -47,23 +47,29 @@ task tools-image-local   # builds for local platform only, ~5 min
 task conformance         # now uses the locally-built image
 ```
 
-**Understanding the output**: The conformance runner executes four runs
-(std, no_std, via-view, view-json), each producing two suites:
+**Understanding the output**: The conformance runner executes six runs
+(std, no_std, via-view, view-json, via-reflect, via-vtable), each producing two
+suites:
 
-1. Binary + JSON suite — expects thousands of successes (~5500 std, ~5500 no_std). The via-view run only handles binary→binary (~2800); the view-json run only handles binary→JSON (~1250).
-2. Text format suite — 883 successes for std and no_std (the full suite); via-view and view-json show `0 successes, 883 skipped` (views have no `TextFormat` — textproto goes through the owned type via `to_owned_message()`)
+1. Binary + JSON suite — expects thousands of successes (~5500 std, ~5500 no_std). The via-view run only handles binary→binary (~2800); the view-json, via-reflect, and via-vtable runs handle binary→JSON (and via-reflect also binary→binary).
+2. Text format suite — 883 successes for std and no_std (the full suite); via-view, view-json, via-reflect, and via-vtable show `0 successes, 883 skipped` (those modes have no `TextFormat` path).
 
-So a healthy run shows **8 `CONFORMANCE SUITE PASSED` lines**.
+So a healthy run shows **12 `CONFORMANCE SUITE PASSED` lines**.
 
-The Dockerfile builds **two binaries**: one with default features (std) and one with `--no-default-features` (no_std). The via-view run reuses the std binary with `BUFFA_VIA_VIEW=1` set, routing binary input through `decode_view → to_owned_message → encode` to verify owned/view decoder parity. The view-json run reuses the std binary with `BUFFA_VIEW_JSON=1` set, routing binary input through `decode_view → serde_json::to_string(&view)` to verify the generated view `Serialize` impls (and the hand-written WKT view `Serialize` impls in `buffa-types`) against the conformance JSON reference assertions, independently of the owned encoder.
+The Dockerfile builds **two binaries**: one with default features (std) and one with `--no-default-features` (no_std). The std binary is reused for the view/reflect runs by setting an env var:
 
-**Expected failures** are listed in `conformance/known_failures.txt` (std binary+JSON), `conformance/known_failures_nostd.txt` (no_std binary+JSON), `conformance/known_failures_view.txt` (via-view), `conformance/known_failures_view_json.txt` (view-json), and `conformance/known_failures_text.txt` (text format — shared between std and no_std; currently empty). The text list is passed via `--text_format_failure_list` since the runner validates each suite's list independently. When a previously-failing test starts passing, remove it from the relevant file; when a new test is expected to fail, add it.
+- **via-view** (`BUFFA_VIA_VIEW=1`) — binary input through `decode_view → to_owned_message → encode`, verifying owned/view decoder parity.
+- **view-json** (`BUFFA_VIEW_JSON=1`) — binary→JSON through `decode_view → serde_json::to_string(&view)`, verifying the generated view `Serialize` impls (and the hand-written WKT view `Serialize` impls in `buffa-types`).
+- **via-reflect** (`BUFFA_VIA_REFLECT=1`) — binary/JSON I/O through `DynamicMessage`'s descriptor-driven codec and reflective serde, verifying the runtime reflection codec independently of any generated type.
+- **via-vtable** (`BUFFA_VIA_VTABLE=1`) — binary→JSON: decode the view, walk its vtable `ReflectMessage` surface to rebuild a `DynamicMessage`, then serialize to JSON. Verifies the generated `impl ReflectMessage for FooView`. It reuses `DynamicMessage`'s JSON serializer (which passes the corpus cleanly under via-reflect), so any failure isolates a bug in the vtable `get`/`has`/`for_each_set` surface. Requires the conformance crate's `reflect` feature, so it is absent from the no_std binary.
+
+**Expected failures** are listed in `conformance/known_failures.txt` (std binary+JSON), `conformance/known_failures_nostd.txt` (no_std binary+JSON), `conformance/known_failures_view.txt` (via-view), `conformance/known_failures_view_json.txt` (view-json), `conformance/known_failures_reflect.txt` (via-reflect), `conformance/known_failures_view_vtable.txt` (via-vtable), and `conformance/known_failures_text.txt` (text format — shared between std and no_std; currently empty). The text list is passed via `--text_format_failure_list` since the runner validates each suite's list independently. When a previously-failing test starts passing, remove it from the relevant file; when a new test is expected to fail, add it.
 
 **Capturing output**: To save per-run logs for analysis, mount a directory and set `CONFORMANCE_OUT`:
 
 ```bash
 docker run --rm -v /tmp/conf:/out -e CONFORMANCE_OUT=/out buffa-conformance
-# logs: /tmp/conf/conformance-{std,nostd,view,view-json}.log
+# logs: /tmp/conf/conformance-{std,nostd,view,view-json,reflect,vtable}.log
 ```
 
 **Upgrading the protobuf version**: bump `TOOLS_IMAGE` in `Taskfile.yml` and `PROTOC_VERSION` in `.github/workflows/ci.yml`, then:
@@ -90,12 +96,13 @@ CI (`check-generated-code` job) will fail if checked-in generated code is stale.
 
 ## Cross-Target Checks
 
-Run `task install-targets` to install the additional rustup targets needed by cross-target tasks. The targets are:
+`task check-nostd` adds the bare-metal `thumbv7em-none-eabihf` target on demand (it runs `rustup target add` itself, which is idempotent), so it needs no separate setup.
+
+For the 32-bit tasks, run `task install-targets` first to install the additional rustup target:
 
 - `i686-unknown-linux-gnu` — 32-bit x86 Linux (for `task check-32bit` / `task test-32bit`; `test-32bit` also needs `gcc-multilib`)
-- `thumbv7em-none-eabihf` — bare-metal ARM Cortex-M4 (for the second step of `task check-nostd`)
 
-The tasks have preconditions that print a clear error if the targets are missing.
+`task install-targets` also installs `thumbv7em-none-eabihf` for convenience; the `check-32bit` / `test-32bit` tasks have preconditions that print a clear error if the 32-bit target is missing.
 
 ## Continuous Integration
 
@@ -103,7 +110,7 @@ GitHub Actions CI (`.github/workflows/ci.yml`) runs on every push to `main` and 
 
 - **lint-and-test** — clippy + `cargo test --workspace` on stable
 - **lint-markdown** — markdownlint over all `*.md` (config: `.markdownlint.json`)
-- **msrv-check** — `cargo check --workspace` on Rust 1.85
+- **msrv-check** — `cargo check --workspace` on Rust 1.87
 - **check-nostd** — no_std (host + bare-metal ARM) and 32-bit compilation checks
 - **check-generated-code** — regenerates bootstrap descriptor types and fails if the checked-in code is stale
 - **conformance** — builds the tools and conformance Docker images, runs the full protobuf conformance suite

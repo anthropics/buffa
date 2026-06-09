@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package vtable_no_views;
+
+// Built with generate_views(false) + reflect_mode(VTable): proves owned-message
+// vtable reflection is self-contained and does not require view generation. Only
+// the owned `impl ReflectMessage` is emitted; there are no view impls.
+message Simple {
+  int32 id = 1;
+  string name = 2;
+  repeated string tags = 3;
+}

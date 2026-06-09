@@ -20,8 +20,8 @@ use crate::impl_message::{
     closed_enum_decode, closed_enum_decode_with_unknown, decode_fn_token, effective_type,
     effective_type_in_map_entry, field_string_repr, field_uses_bytes, find_map_entry_fields,
     is_explicit_presence_scalar, is_packed_type, is_real_oneof_member, is_required_field,
-    is_supported_field_type, validated_field_number, wire_type_byte, wire_type_check,
-    wire_type_token,
+    is_supported_field_type, map_value_use_bytes, validated_field_number, wire_type_byte,
+    wire_type_check, wire_type_token,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident, rust_path_to_tokens};
 use crate::oneof::{is_null_value_field, serde_helper_path};
@@ -112,7 +112,7 @@ pub(crate) fn generate_view_with_nesting(
 
     // View struct fields (excludes real-oneof members, map fields, and
     // unsupported types like groups).
-    let direct_fields = msg
+    let view_fields = msg
         .field
         .iter()
         .filter(|f| is_supported_field_type(f.r#type.unwrap_or_default()))
@@ -121,10 +121,14 @@ pub(crate) fn generate_view_with_nesting(
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
+    let direct_fields: Vec<&TokenStream> =
+        view_fields.iter().map(|(tokens, _, _)| tokens).collect();
 
     // One `Option<Kind<'a>>` per non-synthetic oneof.
-    let oneof_struct_fields =
+    let oneof_view_fields =
         oneof_view_struct_fields(ctx, msg, &view_oneof_prefix, features, &oneof_idents)?;
+    let oneof_struct_fields: Vec<&TokenStream> =
+        oneof_view_fields.iter().map(|(tokens, _)| tokens).collect();
 
     // Oneof view enum definitions (go into `__buffa::view::oneof::<msg>::`).
     let oneof_view_enums = msg
@@ -192,6 +196,37 @@ pub(crate) fn generate_view_with_nesting(
         quote! {}
     };
 
+    // Vtable-mode reflection: `impl ReflectMessage` directly on the view.
+    // Skipped for map entry synthetic messages (not registered in the pool by
+    // name; consumers never reflect over them directly), matching the
+    // bridge-mode `Reflectable` skip.
+    let is_map_entry = msg
+        .options
+        .as_option()
+        .is_some_and(|o| o.map_entry.unwrap_or(false));
+    let reflect_view_impls =
+        if ctx.config.generate_reflection && ctx.config.generate_reflection_vtable && !is_map_entry
+        {
+            // `reflect_view_impls` emits three sibling items (the ReflectMessage
+            // impl, the ReflectElement impl, and an inherent impl for the
+            // memoized index). `cfg_const_block` wraps them in a single
+            // `#[cfg] const _` so one gate covers all three; a bare `cfg_block`
+            // would gate only the first and leak the rest.
+            crate::feature_gates::cfg_const_block(
+                crate::reflect_view::reflect_view_impls(
+                    view_scope,
+                    msg,
+                    &view_ident,
+                    view_depth,
+                    &view_oneof_prefix,
+                    &oneof_idents,
+                )?,
+                ctx.config.feature_gates().reflect,
+            )
+        } else {
+            quote! {}
+        };
+
     // When preserving unknowns we capture `before_tag` so we can compute the
     // raw byte span after `skip_field` advances the cursor.
     let before_tag_capture = if ctx.config.preserve_unknown_fields {
@@ -241,15 +276,76 @@ pub(crate) fn generate_view_with_nesting(
     let view_doc =
         crate::comments::doc_attrs_resolved(ctx.comment(proto_fqn), proto_fqn, &ctx.type_map);
 
+    // `FooOwnedView`: a `'static` OwnedView handle with per-field accessors.
+    // Skipped for map-entry synthetic messages (never decoded standalone).
+    let owned_view_wrapper = if is_map_entry {
+        quote! {}
+    } else {
+        crate::owned_view::generate_owned_view_wrapper(
+            view_scope,
+            msg,
+            rust_name,
+            &view_ident,
+            &owned_path,
+            &view_oneof_prefix,
+            &oneof_idents,
+        )?
+    };
+
+    // Fields marked `[debug_redact = true]` print a placeholder instead of
+    // their value. The `Debug` derive is swapped for a manual impl only when
+    // at least one field is redacted, so unaffected views keep byte-identical
+    // output. Oneof payload redaction is handled by the view-oneof enum.
+    // Like the owned message's Debug impl, the manual impl lists proto fields
+    // only — `__buffa_unknown_fields` is deliberately excluded because unknown
+    // fields can carry redacted data from a newer schema version.
+    let any_redacted = view_fields.iter().any(|(_, _, redacted)| *redacted);
+    let (view_debug_derive, view_debug_impl) = if any_redacted {
+        let placeholder = crate::message::DEBUG_REDACT_PLACEHOLDER;
+        let view_name_str = view_ident.to_string();
+        let mut debug_field_names: Vec<String> = Vec::new();
+        let mut debug_field_values: Vec<TokenStream> = Vec::new();
+        for (_, ident, redacted) in &view_fields {
+            // Label matches what the derive prints: raw-ident fields
+            // (`r#type`) show as `type`.
+            debug_field_names.push(ident.to_string().trim_start_matches("r#").to_string());
+            debug_field_values.push(if *redacted {
+                quote! { &::core::format_args!(#placeholder) }
+            } else {
+                quote! { &self.#ident }
+            });
+        }
+        for (_, ident) in &oneof_view_fields {
+            debug_field_names.push(ident.to_string().trim_start_matches("r#").to_string());
+            debug_field_values.push(quote! { &self.#ident });
+        }
+        (
+            quote! { #[derive(Clone, Default)] },
+            quote! {
+                impl<'a> ::core::fmt::Debug for #view_ident<'a> {
+                    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                        f.debug_struct(#view_name_str)
+                            #(.field(#debug_field_names, #debug_field_values))*
+                            .finish()
+                    }
+                }
+            },
+        )
+    } else {
+        (quote! { #[derive(Clone, Debug, Default)] }, quote! {})
+    };
+
     let top_level = quote! {
         #view_doc
-        #[derive(Clone, Debug, Default)]
+        #view_debug_derive
         pub struct #view_ident<'a> {
             #(#direct_fields)*
             #(#oneof_struct_fields)*
             #unknown_fields_field
             #phantom_field
         }
+
+        #view_debug_impl
 
         impl<'a> #view_ident<'a> {
             /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
@@ -369,6 +465,10 @@ pub(crate) fn generate_view_with_nesting(
                 this
             }
         }
+
+        #owned_view_wrapper
+
+        #reflect_view_impls
     };
 
     Ok((top_level, mod_items))
@@ -382,7 +482,7 @@ fn view_struct_field(
     scope: MessageScope<'_>,
     msg: &DescriptorProto,
     field: &FieldDescriptorProto,
-) -> Result<Option<TokenStream>, CodeGenError> {
+) -> Result<Option<(TokenStream, proc_macro2::Ident, bool)>, CodeGenError> {
     let MessageScope { ctx, proto_fqn, .. } = scope;
     // Real oneof members go into the oneof enum, not directly on the struct.
     if is_real_oneof_member(field) {
@@ -408,11 +508,16 @@ fn view_struct_field(
             proto_fqn,
             &ctx.type_map,
         );
-        let map_ty = view_map_type(scope, msg, field)?;
-        return Ok(Some(quote! {
+        let map_ty = view_map_type(scope, msg, field, &quote! { 'a })?;
+        let tokens = quote! {
             #doc
             pub #ident: #map_ty,
-        }));
+        };
+        return Ok(Some((
+            tokens,
+            ident,
+            crate::message::is_debug_redacted(field),
+        )));
     }
 
     let ident = make_field_ident(field_name);
@@ -426,9 +531,9 @@ fn view_struct_field(
     );
 
     let rust_type = if is_repeated {
-        view_repeated_type(scope, field)?
+        view_repeated_type(scope, field, &quote! { 'a })?
     } else {
-        view_singular_type(scope, field)?
+        view_singular_type(scope, field, &quote! { 'a })?
     };
 
     // Self-referential view fields (e.g. HttpRuleView.additional_bindings)
@@ -447,15 +552,24 @@ fn view_struct_field(
         rust_type
     };
 
-    Ok(Some(quote! {
+    let tokens = quote! {
         #doc
         pub #ident: #struct_ty,
-    }))
+    };
+    Ok(Some((
+        tokens,
+        ident,
+        crate::message::is_debug_redacted(field),
+    )))
 }
 
-fn view_singular_type(
+/// Field type for a singular (non-repeated, non-map) view field, with `lt` as
+/// the borrow lifetime (`'a` inside the view struct, `'_` in accessor return
+/// position on the generated owned-view wrapper).
+pub(crate) fn view_singular_type(
     scope: MessageScope<'_>,
     field: &FieldDescriptorProto,
+    lt: &TokenStream,
 ) -> Result<TokenStream, CodeGenError> {
     let MessageScope {
         ctx,
@@ -467,8 +581,8 @@ fn view_singular_type(
 
     if is_explicit_presence_scalar(field, ty, features) {
         return Ok(match ty {
-            Type::TYPE_STRING => quote! { ::core::option::Option<&'a str> },
-            Type::TYPE_BYTES => quote! { ::core::option::Option<&'a [u8]> },
+            Type::TYPE_STRING => quote! { ::core::option::Option<&#lt str> },
+            Type::TYPE_BYTES => quote! { ::core::option::Option<&#lt [u8]> },
             Type::TYPE_ENUM => {
                 let et = resolve_enum_ty(scope, field)?;
                 if is_closed_enum(features) {
@@ -485,10 +599,10 @@ fn view_singular_type(
     }
 
     match ty {
-        Type::TYPE_STRING => Ok(quote! { &'a str }),
-        Type::TYPE_BYTES => Ok(quote! { &'a [u8] }),
+        Type::TYPE_STRING => Ok(quote! { &#lt str }),
+        Type::TYPE_BYTES => Ok(quote! { &#lt [u8] }),
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
-            let view_ty = resolve_view_ty_tokens(scope, field)?;
+            let view_ty = resolve_view_ty_tokens(scope, field, lt)?;
             Ok(quote! { ::buffa::MessageFieldView<#view_ty> })
         }
         Type::TYPE_ENUM => {
@@ -503,9 +617,12 @@ fn view_singular_type(
     }
 }
 
-fn view_repeated_type(
+/// Field type for a repeated (non-map) view field, with `lt` as the borrow
+/// lifetime — see [`view_singular_type`].
+pub(crate) fn view_repeated_type(
     scope: MessageScope<'_>,
     field: &FieldDescriptorProto,
+    lt: &TokenStream,
 ) -> Result<TokenStream, CodeGenError> {
     let MessageScope {
         ctx,
@@ -515,48 +632,50 @@ fn view_repeated_type(
     let features = &crate::features::resolve_field(ctx, field, parent_features);
     let ty = effective_type(ctx, field, features);
     match ty {
-        Type::TYPE_STRING => Ok(quote! { ::buffa::RepeatedView<'a, &'a str> }),
-        Type::TYPE_BYTES => Ok(quote! { ::buffa::RepeatedView<'a, &'a [u8]> }),
+        Type::TYPE_STRING => Ok(quote! { ::buffa::RepeatedView<#lt, &#lt str> }),
+        Type::TYPE_BYTES => Ok(quote! { ::buffa::RepeatedView<#lt, &#lt [u8]> }),
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
-            let view_ty = resolve_view_ty_tokens(scope, field)?;
-            Ok(quote! { ::buffa::RepeatedView<'a, #view_ty> })
+            let view_ty = resolve_view_ty_tokens(scope, field, lt)?;
+            Ok(quote! { ::buffa::RepeatedView<#lt, #view_ty> })
         }
         Type::TYPE_ENUM => {
             let et = resolve_enum_ty(scope, field)?;
             if is_closed_enum(features) {
-                Ok(quote! { ::buffa::RepeatedView<'a, #et> })
+                Ok(quote! { ::buffa::RepeatedView<#lt, #et> })
             } else {
-                Ok(quote! { ::buffa::RepeatedView<'a, ::buffa::EnumValue<#et>> })
+                Ok(quote! { ::buffa::RepeatedView<#lt, ::buffa::EnumValue<#et>> })
             }
         }
         _ => {
             let st = scalar_ty(ty);
-            Ok(quote! { ::buffa::RepeatedView<'a, #st> })
+            Ok(quote! { ::buffa::RepeatedView<#lt, #st> })
         }
     }
 }
 
-/// Build the `::buffa::MapView<'a, K, V>` type for a map field.
-fn view_map_type(
+/// Build the `::buffa::MapView<K, V>` type for a map field, with `lt` as the
+/// borrow lifetime — see [`view_singular_type`].
+pub(crate) fn view_map_type(
     scope: MessageScope<'_>,
     msg: &DescriptorProto,
     field: &FieldDescriptorProto,
+    lt: &TokenStream,
 ) -> Result<TokenStream, CodeGenError> {
     let MessageScope { ctx, features, .. } = scope;
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
 
     let key_ty = match effective_type_in_map_entry(ctx, key_fd, features) {
-        Type::TYPE_STRING => quote! { &'a str },
+        Type::TYPE_STRING => quote! { &#lt str },
         // utf8_validation = NONE on a string map key → &'a [u8].
-        Type::TYPE_BYTES => quote! { &'a [u8] },
+        Type::TYPE_BYTES => quote! { &#lt [u8] },
         ty => scalar_ty(ty),
     };
 
     let val_ty = match effective_type_in_map_entry(ctx, val_fd, features) {
-        Type::TYPE_STRING => quote! { &'a str },
-        Type::TYPE_BYTES => quote! { &'a [u8] },
+        Type::TYPE_STRING => quote! { &#lt str },
+        Type::TYPE_BYTES => quote! { &#lt [u8] },
         Type::TYPE_MESSAGE => {
-            let view_ty = resolve_view_ty_tokens(scope, val_fd)?;
+            let view_ty = resolve_view_ty_tokens(scope, val_fd, lt)?;
             quote! { #view_ty }
         }
         Type::TYPE_ENUM => {
@@ -571,7 +690,7 @@ fn view_map_type(
         ty => scalar_ty(ty),
     };
 
-    Ok(quote! { ::buffa::MapView<'a, #key_ty, #val_ty> })
+    Ok(quote! { ::buffa::MapView<#lt, #key_ty, #val_ty> })
 }
 
 /// Does the oneof's view enum need a `'a` lifetime parameter?
@@ -579,7 +698,7 @@ fn view_map_type(
 /// String/bytes/message/group variants borrow from the input buffer;
 /// scalar and enum variants don't. An all-scalar oneof must not emit
 /// `<'a>` or the unused-lifetime check (E0392) fires.
-fn oneof_view_needs_lifetime(
+pub(crate) fn oneof_view_needs_lifetime(
     ctx: &CodeGenContext,
     fields: &[&FieldDescriptorProto],
     features: &ResolvedFeatures,
@@ -647,7 +766,7 @@ fn oneof_view_struct_fields(
     view_oneof_prefix: &TokenStream,
     features: &ResolvedFeatures,
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
-) -> Result<Vec<TokenStream>, CodeGenError> {
+) -> Result<Vec<(TokenStream, proc_macro2::Ident)>, CodeGenError> {
     let mut out = Vec::new();
     for (idx, oneof) in msg.oneof_decl.iter().enumerate() {
         let enum_ident = match oneof_idents.get(&idx) {
@@ -672,9 +791,10 @@ fn oneof_view_struct_fields(
         } else {
             quote! {}
         };
-        out.push(quote! {
+        let tokens = quote! {
             pub #field_ident: ::core::option::Option<#view_oneof_prefix #enum_ident #generics>,
-        });
+        };
+        out.push((tokens, field_ident));
     }
     Ok(out)
 }
@@ -729,7 +849,7 @@ fn generate_oneof_view_enum(
                 Type::TYPE_STRING => quote! { &'a str },
                 Type::TYPE_BYTES => quote! { &'a [u8] },
                 Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
-                    let view_ty = resolve_view_ty_tokens(body_scope, f)?;
+                    let view_ty = resolve_view_ty_tokens(body_scope, f, &quote! { 'a })?;
                     quote! { ::buffa::alloc::boxed::Box<#view_ty> }
                 }
                 Type::TYPE_ENUM => {
@@ -752,11 +872,57 @@ fn generate_oneof_view_enum(
         quote! {}
     };
 
+    // Variants whose field is `[debug_redact = true]` print a placeholder
+    // instead of their payload (same rule as the owned oneof enum).
+    let any_redacted = fields.iter().any(|f| crate::message::is_debug_redacted(f));
+    let (debug_derive, debug_impl) = if any_redacted {
+        let placeholder = crate::message::DEBUG_REDACT_PLACEHOLDER;
+        let arms = fields
+            .iter()
+            .map(|field| {
+                let name = field
+                    .name
+                    .as_deref()
+                    .ok_or(CodeGenError::MissingField("field.name"))?;
+                let ident = crate::oneof::oneof_variant_ident(name);
+                let label = ident.to_string();
+                Ok(if crate::message::is_debug_redacted(field) {
+                    quote! {
+                        Self::#ident(_) => f
+                            .debug_tuple(#label)
+                            .field(&::core::format_args!(#placeholder))
+                            .finish(),
+                    }
+                } else {
+                    quote! {
+                        Self::#ident(value) => f.debug_tuple(#label).field(value).finish(),
+                    }
+                })
+            })
+            .collect::<Result<Vec<_>, CodeGenError>>()?;
+        (
+            quote! { #[derive(Clone)] },
+            quote! {
+                impl #generics ::core::fmt::Debug for #base_ident #generics {
+                    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                        match self {
+                            #(#arms)*
+                        }
+                    }
+                }
+            },
+        )
+    } else {
+        (quote! { #[derive(Clone, Debug)] }, quote! {})
+    };
+
     Ok(quote! {
-        #[derive(Clone, Debug)]
+        #debug_derive
         pub enum #base_ident #generics {
             #(#variants,)*
         }
+
+        #debug_impl
     })
 }
 
@@ -1063,6 +1229,21 @@ fn repeated_decode_arm(
         let dfn = decode_fn_token(ty);
         quote! { view.#ident.push(#dfn(&mut pcur)?); }
     };
+
+    // Fixed-size types can reserve the exact element count. For varints and
+    // bools, every element occupies at least one byte, so the payload length
+    // is a safe upper bound.
+    let reserve_divisor: usize = match ty {
+        Type::TYPE_FIXED32 | Type::TYPE_SFIXED32 | Type::TYPE_FLOAT => 4,
+        Type::TYPE_FIXED64 | Type::TYPE_SFIXED64 | Type::TYPE_DOUBLE => 8,
+        _ => 1,
+    };
+    let reserve_stmt = if reserve_divisor > 1 {
+        quote! { view.#ident.reserve(payload.len() / #reserve_divisor); }
+    } else {
+        quote! { view.#ident.reserve(payload.len()); }
+    };
+
     let unpacked_elem = if ty == Type::TYPE_ENUM {
         if closed {
             // Unpacked: each element has its own tag, so `before_tag` captures
@@ -1083,6 +1264,7 @@ fn repeated_decode_arm(
             if tag.wire_type() == ::buffa::encoding::WireType::LengthDelimited {
                 // Packed: extract payload, decode elements via local cursor.
                 let payload = ::buffa::types::borrow_bytes(&mut cur)?;
+                #reserve_stmt
                 let mut pcur: &[u8] = payload;
                 while !pcur.is_empty() { #packed_elem }
             } else if tag.wire_type() == #elem_wire_type {
@@ -1536,18 +1718,39 @@ fn map_to_owned_expr(
     field: &FieldDescriptorProto,
     ident: &proc_macro2::Ident,
 ) -> Result<TokenStream, CodeGenError> {
-    let MessageScope { ctx, features, .. } = scope;
+    let MessageScope {
+        ctx,
+        proto_fqn,
+        features,
+        ..
+    } = scope;
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
+    let field_name = field
+        .name
+        .as_deref()
+        .ok_or(CodeGenError::MissingField("field.name"))?;
+    let key_ty = effective_type_in_map_entry(ctx, key_fd, features);
+    let val_ty = effective_type_in_map_entry(ctx, val_fd, features);
 
-    let key_conv = match effective_type_in_map_entry(ctx, key_fd, features) {
+    let key_conv = match key_ty {
         Type::TYPE_STRING => quote! { k.to_string() },
         // utf8_validation = NONE on a string map key: &[u8] → Vec<u8>.
         Type::TYPE_BYTES => quote! { k.to_vec() },
         _ => quote! { *k },
     };
 
-    let val_conv = match effective_type_in_map_entry(ctx, val_fd, features) {
+    // `bytes_fields` on the outer map field promotes `bytes` values to `Bytes`,
+    // matching the owned-side map type (shared carve-out in `map_value_use_bytes`).
+    // When it holds, emit `bytes_from_source` directly: the predicate already
+    // implies `field_uses_bytes`, so routing through `bytes_to_owned` (which
+    // re-checks it) would be redundant.
+    let value_use_bytes =
+        map_value_use_bytes(ctx, Some(key_ty), Some(val_ty), proto_fqn, field_name);
+    let val_conv = match val_ty {
         Type::TYPE_STRING => quote! { v.to_string() },
+        Type::TYPE_BYTES if value_use_bytes => {
+            quote! { ::buffa::view::bytes_from_source(__buffa_src, v) }
+        }
         Type::TYPE_BYTES => quote! { v.to_vec() },
         Type::TYPE_MESSAGE => {
             // Verify the owned path resolves (catches missing imports at codegen time).
@@ -2259,12 +2462,13 @@ fn resolve_enum_ty(
 /// `scope.nesting` must be the **total** depth of the caller below the
 /// package root (msg-nesting + kind-depth offset already applied by the
 /// caller — `+2` for view-struct bodies, `+4` for view-oneof-enum bodies).
-fn resolve_view_ty_tokens(
+pub(crate) fn resolve_view_ty_tokens(
     scope: MessageScope<'_>,
     field: &FieldDescriptorProto,
+    lt: &TokenStream,
 ) -> Result<TokenStream, CodeGenError> {
     let path = resolve_view_path(scope, field)?;
-    Ok(quote! { #path <'a> })
+    Ok(quote! { #path <#lt> })
 }
 
 /// Resolve the view type tokens used for `decode_view` calls (no lifetime).

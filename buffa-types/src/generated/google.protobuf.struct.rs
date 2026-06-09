@@ -12,6 +12,11 @@ pub enum NullValue {
     /// Null value.
     NULL_VALUE = 0i32,
 }
+impl NullValue {
+    ///Idiomatic alias for [`Self::NULL_VALUE`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const NullValue: Self = Self::NULL_VALUE;
+}
 impl ::core::default::Default for NullValue {
     fn default() -> Self {
         Self::NULL_VALUE
@@ -78,6 +83,101 @@ impl ::buffa::DefaultInstance for Struct {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+#[cfg(feature = "reflect")]
+const _: () = {
+    impl ::buffa_descriptor::reflect::ReflectMessage for Struct {
+        fn message_descriptor(&self) -> &::buffa_descriptor::MessageDescriptor {
+            __buffa::reflect::descriptor_pool()
+                .message(Self::__buffa_reflect_message_index())
+        }
+        fn pool(
+            &self,
+        ) -> &::buffa::alloc::sync::Arc<::buffa_descriptor::DescriptorPool> {
+            __buffa::reflect::descriptor_pool()
+        }
+        fn unknown_fields(&self) -> &::buffa::UnknownFields {
+            &self.__buffa_unknown_fields
+        }
+        fn get(
+            &self,
+            field: &::buffa_descriptor::FieldDescriptor,
+        ) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            match field.number() {
+                1u32 => ::buffa_descriptor::reflect::ValueRef::Map(&self.fields),
+                _ => {
+                    ::core::debug_assert!(
+                        false,
+                        "field number {} is not a member of this message's reflect get()",
+                        field.number(),
+                    );
+                    ::buffa_descriptor::reflect::ValueRef::Bool(false)
+                }
+            }
+        }
+        fn has(&self, field: &::buffa_descriptor::FieldDescriptor) -> bool {
+            match field.number() {
+                1u32 => !self.fields.is_empty(),
+                _ => false,
+            }
+        }
+        fn for_each_set(
+            &self,
+            f: &mut dyn ::core::ops::FnMut(
+                &::buffa_descriptor::FieldDescriptor,
+                ::buffa_descriptor::reflect::ValueRef<'_>,
+            ),
+        ) {
+            let md = ::buffa_descriptor::reflect::ReflectMessage::message_descriptor(
+                self,
+            );
+            for fd in md.fields() {
+                if ::buffa_descriptor::reflect::ReflectMessage::has(self, fd) {
+                    f(fd, ::buffa_descriptor::reflect::ReflectMessage::get(self, fd));
+                }
+            }
+        }
+        fn to_dynamic(&self) -> ::buffa_descriptor::reflect::DynamicMessage {
+            ::buffa_descriptor::reflect::DynamicMessage::from_message(
+                self,
+                ::buffa::alloc::sync::Arc::clone(__buffa::reflect::descriptor_pool()),
+                Self::__buffa_reflect_message_index(),
+            )
+        }
+    }
+    impl ::buffa_descriptor::reflect::ReflectElement for Struct {
+        fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+            ::buffa_descriptor::reflect::ValueRef::Message(
+                ::buffa_descriptor::reflect::ReflectCow::Borrowed(self),
+            )
+        }
+    }
+    impl Struct {
+        /// Memoized `MessageIndex` for this message type, resolved once
+        /// against the package's embedded descriptor pool.
+        #[doc(hidden)]
+        fn __buffa_reflect_message_index() -> ::buffa_descriptor::MessageIndex {
+            static IDX: ::std::sync::OnceLock<::buffa_descriptor::MessageIndex> = ::std::sync::OnceLock::new();
+            *IDX
+                .get_or_init(|| {
+                    __buffa::reflect::descriptor_pool()
+                        .message_index(<Self as ::buffa::MessageName>::FULL_NAME)
+                        .expect(
+                            "generated message is registered in the embedded descriptor pool",
+                        )
+                })
+        }
+    }
+    impl ::buffa_descriptor::reflect::Reflectable for Struct {
+        /// Vtable-mode reflective handle: borrows `self` directly. No
+        /// encode/decode round-trip and no allocation — the reflective
+        /// accessors read this message's fields in place.
+        fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
+            ::buffa_descriptor::reflect::ReflectCow::Borrowed(self)
+        }
+    }
+};
 impl ::buffa::MessageName for Struct {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "Struct";
@@ -355,6 +455,205 @@ impl ::buffa::DefaultInstance for Value {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+#[cfg(feature = "reflect")]
+const _: () = {
+    impl ::buffa_descriptor::reflect::ReflectMessage for Value {
+        fn message_descriptor(&self) -> &::buffa_descriptor::MessageDescriptor {
+            __buffa::reflect::descriptor_pool()
+                .message(Self::__buffa_reflect_message_index())
+        }
+        fn pool(
+            &self,
+        ) -> &::buffa::alloc::sync::Arc<::buffa_descriptor::DescriptorPool> {
+            __buffa::reflect::descriptor_pool()
+        }
+        fn unknown_fields(&self) -> &::buffa::UnknownFields {
+            &self.__buffa_unknown_fields
+        }
+        fn get(
+            &self,
+            field: &::buffa_descriptor::FieldDescriptor,
+        ) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            match field.number() {
+                1u32 => {
+                    match &self.kind {
+                        ::core::option::Option::Some(
+                            __buffa::oneof::value::Kind::NullValue(v),
+                        ) => {
+                            ::buffa_descriptor::reflect::ValueRef::EnumNumber(v.to_i32())
+                        }
+                        _ => ::buffa_descriptor::reflect::ValueRef::EnumNumber(0),
+                    }
+                }
+                2u32 => {
+                    match &self.kind {
+                        ::core::option::Option::Some(
+                            __buffa::oneof::value::Kind::NumberValue(v),
+                        ) => ::buffa_descriptor::reflect::ValueRef::F64(*v),
+                        _ => ::buffa_descriptor::reflect::ValueRef::F64(0.0),
+                    }
+                }
+                3u32 => {
+                    match &self.kind {
+                        ::core::option::Option::Some(
+                            __buffa::oneof::value::Kind::StringValue(v),
+                        ) => ::buffa_descriptor::reflect::ValueRef::String(v),
+                        _ => ::buffa_descriptor::reflect::ValueRef::String(""),
+                    }
+                }
+                4u32 => {
+                    match &self.kind {
+                        ::core::option::Option::Some(
+                            __buffa::oneof::value::Kind::BoolValue(v),
+                        ) => ::buffa_descriptor::reflect::ValueRef::Bool(*v),
+                        _ => ::buffa_descriptor::reflect::ValueRef::Bool(false),
+                    }
+                }
+                5u32 => {
+                    match &self.kind {
+                        ::core::option::Option::Some(
+                            __buffa::oneof::value::Kind::StructValue(v),
+                        ) => {
+                            ::buffa_descriptor::reflect::ValueRef::Message(
+                                ::buffa_descriptor::reflect::ReflectCow::Borrowed(&**v),
+                            )
+                        }
+                        _ => {
+                            ::buffa_descriptor::reflect::ValueRef::Message(
+                                ::buffa_descriptor::reflect::ReflectCow::Borrowed(
+                                    <Struct as ::buffa::DefaultInstance>::default_instance(),
+                                ),
+                            )
+                        }
+                    }
+                }
+                6u32 => {
+                    match &self.kind {
+                        ::core::option::Option::Some(
+                            __buffa::oneof::value::Kind::ListValue(v),
+                        ) => {
+                            ::buffa_descriptor::reflect::ValueRef::Message(
+                                ::buffa_descriptor::reflect::ReflectCow::Borrowed(&**v),
+                            )
+                        }
+                        _ => {
+                            ::buffa_descriptor::reflect::ValueRef::Message(
+                                ::buffa_descriptor::reflect::ReflectCow::Borrowed(
+                                    <ListValue as ::buffa::DefaultInstance>::default_instance(),
+                                ),
+                            )
+                        }
+                    }
+                }
+                _ => {
+                    ::core::debug_assert!(
+                        false,
+                        "field number {} is not a member of this message's reflect get()",
+                        field.number(),
+                    );
+                    ::buffa_descriptor::reflect::ValueRef::Bool(false)
+                }
+            }
+        }
+        fn has(&self, field: &::buffa_descriptor::FieldDescriptor) -> bool {
+            match field.number() {
+                1u32 => {
+                    ::core::matches!(
+                        & self.kind,
+                        ::core::option::Option::Some(__buffa::oneof::value::Kind::NullValue(_))
+                    )
+                }
+                2u32 => {
+                    ::core::matches!(
+                        & self.kind,
+                        ::core::option::Option::Some(__buffa::oneof::value::Kind::NumberValue(_))
+                    )
+                }
+                3u32 => {
+                    ::core::matches!(
+                        & self.kind,
+                        ::core::option::Option::Some(__buffa::oneof::value::Kind::StringValue(_))
+                    )
+                }
+                4u32 => {
+                    ::core::matches!(
+                        & self.kind,
+                        ::core::option::Option::Some(__buffa::oneof::value::Kind::BoolValue(_))
+                    )
+                }
+                5u32 => {
+                    ::core::matches!(
+                        & self.kind,
+                        ::core::option::Option::Some(__buffa::oneof::value::Kind::StructValue(_))
+                    )
+                }
+                6u32 => {
+                    ::core::matches!(
+                        & self.kind,
+                        ::core::option::Option::Some(__buffa::oneof::value::Kind::ListValue(_))
+                    )
+                }
+                _ => false,
+            }
+        }
+        fn for_each_set(
+            &self,
+            f: &mut dyn ::core::ops::FnMut(
+                &::buffa_descriptor::FieldDescriptor,
+                ::buffa_descriptor::reflect::ValueRef<'_>,
+            ),
+        ) {
+            let md = ::buffa_descriptor::reflect::ReflectMessage::message_descriptor(
+                self,
+            );
+            for fd in md.fields() {
+                if ::buffa_descriptor::reflect::ReflectMessage::has(self, fd) {
+                    f(fd, ::buffa_descriptor::reflect::ReflectMessage::get(self, fd));
+                }
+            }
+        }
+        fn to_dynamic(&self) -> ::buffa_descriptor::reflect::DynamicMessage {
+            ::buffa_descriptor::reflect::DynamicMessage::from_message(
+                self,
+                ::buffa::alloc::sync::Arc::clone(__buffa::reflect::descriptor_pool()),
+                Self::__buffa_reflect_message_index(),
+            )
+        }
+    }
+    impl ::buffa_descriptor::reflect::ReflectElement for Value {
+        fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+            ::buffa_descriptor::reflect::ValueRef::Message(
+                ::buffa_descriptor::reflect::ReflectCow::Borrowed(self),
+            )
+        }
+    }
+    impl Value {
+        /// Memoized `MessageIndex` for this message type, resolved once
+        /// against the package's embedded descriptor pool.
+        #[doc(hidden)]
+        fn __buffa_reflect_message_index() -> ::buffa_descriptor::MessageIndex {
+            static IDX: ::std::sync::OnceLock<::buffa_descriptor::MessageIndex> = ::std::sync::OnceLock::new();
+            *IDX
+                .get_or_init(|| {
+                    __buffa::reflect::descriptor_pool()
+                        .message_index(<Self as ::buffa::MessageName>::FULL_NAME)
+                        .expect(
+                            "generated message is registered in the embedded descriptor pool",
+                        )
+                })
+        }
+    }
+    impl ::buffa_descriptor::reflect::Reflectable for Value {
+        /// Vtable-mode reflective handle: borrows `self` directly. No
+        /// encode/decode round-trip and no allocation — the reflective
+        /// accessors read this message's fields in place.
+        fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
+            ::buffa_descriptor::reflect::ReflectCow::Borrowed(self)
+        }
+    }
+};
 impl ::buffa::MessageName for Value {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "Value";
@@ -772,6 +1071,101 @@ impl ::buffa::DefaultInstance for ListValue {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+#[cfg(feature = "reflect")]
+const _: () = {
+    impl ::buffa_descriptor::reflect::ReflectMessage for ListValue {
+        fn message_descriptor(&self) -> &::buffa_descriptor::MessageDescriptor {
+            __buffa::reflect::descriptor_pool()
+                .message(Self::__buffa_reflect_message_index())
+        }
+        fn pool(
+            &self,
+        ) -> &::buffa::alloc::sync::Arc<::buffa_descriptor::DescriptorPool> {
+            __buffa::reflect::descriptor_pool()
+        }
+        fn unknown_fields(&self) -> &::buffa::UnknownFields {
+            &self.__buffa_unknown_fields
+        }
+        fn get(
+            &self,
+            field: &::buffa_descriptor::FieldDescriptor,
+        ) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+            #[allow(unused_imports)]
+            use ::buffa::Enumeration as _;
+            match field.number() {
+                1u32 => ::buffa_descriptor::reflect::ValueRef::List(&self.values),
+                _ => {
+                    ::core::debug_assert!(
+                        false,
+                        "field number {} is not a member of this message's reflect get()",
+                        field.number(),
+                    );
+                    ::buffa_descriptor::reflect::ValueRef::Bool(false)
+                }
+            }
+        }
+        fn has(&self, field: &::buffa_descriptor::FieldDescriptor) -> bool {
+            match field.number() {
+                1u32 => !self.values.is_empty(),
+                _ => false,
+            }
+        }
+        fn for_each_set(
+            &self,
+            f: &mut dyn ::core::ops::FnMut(
+                &::buffa_descriptor::FieldDescriptor,
+                ::buffa_descriptor::reflect::ValueRef<'_>,
+            ),
+        ) {
+            let md = ::buffa_descriptor::reflect::ReflectMessage::message_descriptor(
+                self,
+            );
+            for fd in md.fields() {
+                if ::buffa_descriptor::reflect::ReflectMessage::has(self, fd) {
+                    f(fd, ::buffa_descriptor::reflect::ReflectMessage::get(self, fd));
+                }
+            }
+        }
+        fn to_dynamic(&self) -> ::buffa_descriptor::reflect::DynamicMessage {
+            ::buffa_descriptor::reflect::DynamicMessage::from_message(
+                self,
+                ::buffa::alloc::sync::Arc::clone(__buffa::reflect::descriptor_pool()),
+                Self::__buffa_reflect_message_index(),
+            )
+        }
+    }
+    impl ::buffa_descriptor::reflect::ReflectElement for ListValue {
+        fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+            ::buffa_descriptor::reflect::ValueRef::Message(
+                ::buffa_descriptor::reflect::ReflectCow::Borrowed(self),
+            )
+        }
+    }
+    impl ListValue {
+        /// Memoized `MessageIndex` for this message type, resolved once
+        /// against the package's embedded descriptor pool.
+        #[doc(hidden)]
+        fn __buffa_reflect_message_index() -> ::buffa_descriptor::MessageIndex {
+            static IDX: ::std::sync::OnceLock<::buffa_descriptor::MessageIndex> = ::std::sync::OnceLock::new();
+            *IDX
+                .get_or_init(|| {
+                    __buffa::reflect::descriptor_pool()
+                        .message_index(<Self as ::buffa::MessageName>::FULL_NAME)
+                        .expect(
+                            "generated message is registered in the embedded descriptor pool",
+                        )
+                })
+        }
+    }
+    impl ::buffa_descriptor::reflect::Reflectable for ListValue {
+        /// Vtable-mode reflective handle: borrows `self` directly. No
+        /// encode/decode round-trip and no allocation — the reflective
+        /// accessors read this message's fields in place.
+        fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
+            ::buffa_descriptor::reflect::ReflectCow::Borrowed(self)
+        }
+    }
+};
 impl ::buffa::MessageName for ListValue {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "ListValue";

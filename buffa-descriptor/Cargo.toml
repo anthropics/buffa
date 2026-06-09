@@ -43,3 +43,11 @@ text = ["buffa/text"]
 arbitrary = ["buffa/arbitrary", "dep:arbitrary"]
 ## Runtime reflection: `DescriptorPool`, edition feature resolution.
 reflect = []
+## `ReflectElement` impls for the configurable `string_type` representations,
+## needed to reflect a `repeated <repr>` field in vtable mode. Each forwards to
+## the matching `buffa` feature so `buffa::<crate>::<Type>` resolves. A consumer
+## building with `string_type(SmolStr)` + vtable reflection enables the matching
+## feature here (typically via its own `reflect` feature).
+smol_str = ["buffa/smol_str"]
+ecow = ["buffa/ecow"]
+compact_str = ["buffa/compact_str"]

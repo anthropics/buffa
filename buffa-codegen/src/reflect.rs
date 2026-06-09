@@ -1,17 +1,24 @@
-//! Code generation for `impl Reflectable` (bridge mode).
+//! Code generation for the owned message's `impl Reflectable` and the
+//! per-package descriptor pool.
 //!
-//! Wired through [`CodeGenConfig::generate_reflection`]. When enabled, each
-//! generated owned message gets an `impl ::buffa_descriptor::reflect::Reflectable`
-//! that round-trips through [`DynamicMessage`](buffa_descriptor::DynamicMessage)
-//! (encode → decode → reflective handle), plus a per-package
-//! `__buffa::reflect` submodule embedding the `FileDescriptorSet` bytes and
-//! a lazy [`DescriptorPool`](buffa_descriptor::DescriptorPool) accessor.
+//! Wired through [`CodeGenConfig::generate_reflection`]. Every generated owned
+//! message gets an `impl ::buffa_descriptor::reflect::Reflectable`, plus a
+//! per-package `__buffa::reflect` submodule embedding the `FileDescriptorSet`
+//! bytes and a lazy [`DescriptorPool`](buffa_descriptor::DescriptorPool)
+//! accessor that both modes resolve against.
 //!
-//! The bridge mode is the v1 reflection target. The vtable mode (zero-copy
-//! reflective access without the round-trip) is deferred — see
-//! `docs/investigations/reflection.md`. The call-site contract is the same
-//! either way (`foo.reflect().get(fd)`), so flipping modes later requires no
-//! diff in consumer code.
+//! Two `reflect()` bodies are emitted, selected by mode:
+//!
+//! - **Bridge** ([`reflectable_impl`]) — round-trips through
+//!   [`DynamicMessage`](buffa_descriptor::DynamicMessage) (encode → decode →
+//!   boxed handle).
+//! - **Vtable** ([`reflectable_impl_vtable`]) — returns
+//!   `ReflectCow::Borrowed(self)`, with no round-trip. Requires the owned
+//!   `impl ReflectMessage` emitted by [`reflect_owned`](crate::reflect_owned)
+//!   (and the view impls by [`reflect_view`](crate::reflect_view)).
+//!
+//! The call-site contract is identical (`foo.reflect().get(fd)`), so flipping a
+//! message between modes requires no diff in consumer code.
 //!
 //! ## Runtime requirements
 //!
@@ -82,6 +89,23 @@ pub(crate) fn reflectable_impl(ty: &TokenStream, buffa_path: &TokenStream) -> To
     }
 }
 
+/// Generate the vtable-mode `impl Reflectable for #ty`, whose `reflect()`
+/// borrows `self` directly as `ReflectCow::Borrowed(self)` — no encode/decode
+/// round-trip. Requires `#ty: ReflectMessage` (the owned vtable impl emitted by
+/// [`reflect_owned`](crate::reflect_owned)).
+pub(crate) fn reflectable_impl_vtable(ty: &TokenStream) -> TokenStream {
+    quote! {
+        impl ::buffa_descriptor::reflect::Reflectable for #ty {
+            /// Vtable-mode reflective handle: borrows `self` directly. No
+            /// encode/decode round-trip and no allocation — the reflective
+            /// accessors read this message's fields in place.
+            fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
+                ::buffa_descriptor::reflect::ReflectCow::Borrowed(self)
+            }
+        }
+    }
+}
+
 /// Serialize the full `FileDescriptorSet` once per codegen run.
 ///
 /// `reflect_pool_module` is invoked once per package, so without caching
@@ -109,8 +133,9 @@ pub(crate) fn encode_fds_once(file_descriptors: &[FileDescriptorProto]) -> Vec<u
 pub(crate) fn reflect_pool_module(fds_bytes: &[u8]) -> TokenStream {
     let byte_literals = fds_bytes.iter().map(|b| quote! { #b });
     quote! {
-        /// Reflection support: embedded descriptor pool for bridge-mode
-        /// [`Reflectable`](::buffa_descriptor::reflect::Reflectable) impls.
+        /// Reflection support: embedded descriptor pool shared by this
+        /// package's [`Reflectable`](::buffa_descriptor::reflect::Reflectable)
+        /// and `ReflectMessage` impls (bridge and vtable mode alike).
         pub mod reflect {
             /// The serialized `FileDescriptorSet` for this codegen run,
             /// including transitive dependencies. Used to build the

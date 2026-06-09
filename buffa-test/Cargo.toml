@@ -23,7 +23,16 @@ buffa = { workspace = true, features = [
 # embedded descriptor pool resolve. `json` because `basic.proto` is also
 # generated with `generate_text(true)` and the pool decodes the WKT
 # descriptors that need it.
-buffa-descriptor = { workspace = true, features = ["reflect", "json", "std"] }
+buffa-descriptor = { workspace = true, features = [
+    "reflect",
+    "json",
+    "std",
+    # `ReflectElement` impls for the configurable string reprs, so a
+    # `repeated <repr>` field reflects in vtable mode (vtable_string_repr test).
+    "smol_str",
+    "ecow",
+    "compact_str",
+] }
 buffa-types = { workspace = true, features = ["json"] }
 bytes = { workspace = true }
 serde = { workspace = true }

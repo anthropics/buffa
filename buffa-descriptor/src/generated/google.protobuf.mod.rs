@@ -164,70 +164,139 @@ pub mod __buffa {
 pub use self::__buffa::view::FileDescriptorSetView;
 #[cfg(feature = "views")]
 #[doc(inline)]
+pub use self::__buffa::view::FileDescriptorSetOwnedView;
+#[cfg(feature = "views")]
+#[doc(inline)]
 pub use self::__buffa::view::FileDescriptorProtoView;
+#[cfg(feature = "views")]
+#[doc(inline)]
+pub use self::__buffa::view::FileDescriptorProtoOwnedView;
 #[cfg(feature = "views")]
 #[doc(inline)]
 pub use self::__buffa::view::DescriptorProtoView;
 #[cfg(feature = "views")]
 #[doc(inline)]
+pub use self::__buffa::view::DescriptorProtoOwnedView;
+#[cfg(feature = "views")]
+#[doc(inline)]
 pub use self::__buffa::view::ExtensionRangeOptionsView;
+#[cfg(feature = "views")]
+#[doc(inline)]
+pub use self::__buffa::view::ExtensionRangeOptionsOwnedView;
 #[cfg(feature = "views")]
 #[doc(inline)]
 pub use self::__buffa::view::FieldDescriptorProtoView;
 #[cfg(feature = "views")]
 #[doc(inline)]
+pub use self::__buffa::view::FieldDescriptorProtoOwnedView;
+#[cfg(feature = "views")]
+#[doc(inline)]
 pub use self::__buffa::view::OneofDescriptorProtoView;
+#[cfg(feature = "views")]
+#[doc(inline)]
+pub use self::__buffa::view::OneofDescriptorProtoOwnedView;
 #[cfg(feature = "views")]
 #[doc(inline)]
 pub use self::__buffa::view::EnumDescriptorProtoView;
 #[cfg(feature = "views")]
 #[doc(inline)]
+pub use self::__buffa::view::EnumDescriptorProtoOwnedView;
+#[cfg(feature = "views")]
+#[doc(inline)]
 pub use self::__buffa::view::EnumValueDescriptorProtoView;
+#[cfg(feature = "views")]
+#[doc(inline)]
+pub use self::__buffa::view::EnumValueDescriptorProtoOwnedView;
 #[cfg(feature = "views")]
 #[doc(inline)]
 pub use self::__buffa::view::ServiceDescriptorProtoView;
 #[cfg(feature = "views")]
 #[doc(inline)]
+pub use self::__buffa::view::ServiceDescriptorProtoOwnedView;
+#[cfg(feature = "views")]
+#[doc(inline)]
 pub use self::__buffa::view::MethodDescriptorProtoView;
+#[cfg(feature = "views")]
+#[doc(inline)]
+pub use self::__buffa::view::MethodDescriptorProtoOwnedView;
 #[cfg(feature = "views")]
 #[doc(inline)]
 pub use self::__buffa::view::FileOptionsView;
 #[cfg(feature = "views")]
 #[doc(inline)]
+pub use self::__buffa::view::FileOptionsOwnedView;
+#[cfg(feature = "views")]
+#[doc(inline)]
 pub use self::__buffa::view::MessageOptionsView;
+#[cfg(feature = "views")]
+#[doc(inline)]
+pub use self::__buffa::view::MessageOptionsOwnedView;
 #[cfg(feature = "views")]
 #[doc(inline)]
 pub use self::__buffa::view::FieldOptionsView;
 #[cfg(feature = "views")]
 #[doc(inline)]
+pub use self::__buffa::view::FieldOptionsOwnedView;
+#[cfg(feature = "views")]
+#[doc(inline)]
 pub use self::__buffa::view::OneofOptionsView;
+#[cfg(feature = "views")]
+#[doc(inline)]
+pub use self::__buffa::view::OneofOptionsOwnedView;
 #[cfg(feature = "views")]
 #[doc(inline)]
 pub use self::__buffa::view::EnumOptionsView;
 #[cfg(feature = "views")]
 #[doc(inline)]
+pub use self::__buffa::view::EnumOptionsOwnedView;
+#[cfg(feature = "views")]
+#[doc(inline)]
 pub use self::__buffa::view::EnumValueOptionsView;
+#[cfg(feature = "views")]
+#[doc(inline)]
+pub use self::__buffa::view::EnumValueOptionsOwnedView;
 #[cfg(feature = "views")]
 #[doc(inline)]
 pub use self::__buffa::view::ServiceOptionsView;
 #[cfg(feature = "views")]
 #[doc(inline)]
+pub use self::__buffa::view::ServiceOptionsOwnedView;
+#[cfg(feature = "views")]
+#[doc(inline)]
 pub use self::__buffa::view::MethodOptionsView;
+#[cfg(feature = "views")]
+#[doc(inline)]
+pub use self::__buffa::view::MethodOptionsOwnedView;
 #[cfg(feature = "views")]
 #[doc(inline)]
 pub use self::__buffa::view::UninterpretedOptionView;
 #[cfg(feature = "views")]
 #[doc(inline)]
+pub use self::__buffa::view::UninterpretedOptionOwnedView;
+#[cfg(feature = "views")]
+#[doc(inline)]
 pub use self::__buffa::view::FeatureSetView;
+#[cfg(feature = "views")]
+#[doc(inline)]
+pub use self::__buffa::view::FeatureSetOwnedView;
 #[cfg(feature = "views")]
 #[doc(inline)]
 pub use self::__buffa::view::FeatureSetDefaultsView;
 #[cfg(feature = "views")]
 #[doc(inline)]
+pub use self::__buffa::view::FeatureSetDefaultsOwnedView;
+#[cfg(feature = "views")]
+#[doc(inline)]
 pub use self::__buffa::view::SourceCodeInfoView;
 #[cfg(feature = "views")]
 #[doc(inline)]
+pub use self::__buffa::view::SourceCodeInfoOwnedView;
+#[cfg(feature = "views")]
+#[doc(inline)]
 pub use self::__buffa::view::GeneratedCodeInfoView;
+#[cfg(feature = "views")]
+#[doc(inline)]
+pub use self::__buffa::view::GeneratedCodeInfoOwnedView;
 #[cfg(any(feature = "json", feature = "text"))]
 #[doc(inline)]
 pub use self::__buffa::register_types;

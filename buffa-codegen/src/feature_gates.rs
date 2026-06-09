@@ -48,15 +48,20 @@ pub(crate) struct FeatureGates {
 
 impl FeatureGates {
     /// Compute the active gates for a config.
+    ///
+    /// `gate_impls_on_crate_features` gates json/views/text/reflect together.
+    /// When it is off, `gate_reflect_on_crate_feature` turns on reflect-only
+    /// gating — for crates (notably `buffa-types`) that ship views/text
+    /// unconditionally but want the `buffa-descriptor`-dependent reflection
+    /// surface to be opt-in.
     pub(crate) fn for_config(config: &CodeGenConfig) -> Self {
-        if !config.gate_impls_on_crate_features {
-            return Self::default();
-        }
+        let gate_all = config.gate_impls_on_crate_features;
+        let gate_reflect = gate_all || config.gate_reflect_on_crate_feature;
         Self {
-            json: config.generate_json.then_some(JSON_FEATURE),
-            views: config.generate_views.then_some(VIEWS_FEATURE),
-            text: config.generate_text.then_some(TEXT_FEATURE),
-            reflect: config.generate_reflection.then_some(REFLECT_FEATURE),
+            json: (gate_all && config.generate_json).then_some(JSON_FEATURE),
+            views: (gate_all && config.generate_views).then_some(VIEWS_FEATURE),
+            text: (gate_all && config.generate_text).then_some(TEXT_FEATURE),
+            reflect: (gate_reflect && config.generate_reflection).then_some(REFLECT_FEATURE),
         }
     }
 
@@ -224,6 +229,50 @@ mod tests {
         assert_eq!(gates.views, Some(VIEWS_FEATURE));
         assert_eq!(gates.text, Some(TEXT_FEATURE));
         assert_eq!(gates.json_or_text(), vec![JSON_FEATURE, TEXT_FEATURE]);
+    }
+
+    #[test]
+    fn for_config_reflect_only_gate() {
+        // `gate_reflect_on_crate_feature` gates reflect without gating
+        // json/views/text — the `buffa-types` shape.
+        let config = CodeGenConfig {
+            generate_json: true,
+            generate_views: true,
+            generate_text: true,
+            generate_reflection: true,
+            gate_reflect_on_crate_feature: true,
+            ..CodeGenConfig::default()
+        };
+        let gates = FeatureGates::for_config(&config);
+        assert_eq!(gates.json, None);
+        assert_eq!(gates.views, None);
+        assert_eq!(gates.text, None);
+        assert_eq!(gates.reflect, Some(REFLECT_FEATURE));
+    }
+
+    #[test]
+    fn for_config_reflect_gate_requires_generate_reflection() {
+        // The gate flag is inert unless reflection is actually generated.
+        let config = CodeGenConfig {
+            generate_reflection: false,
+            gate_reflect_on_crate_feature: true,
+            ..CodeGenConfig::default()
+        };
+        assert_eq!(FeatureGates::for_config(&config).reflect, None);
+    }
+
+    #[test]
+    fn for_config_umbrella_gate_includes_reflect() {
+        // `gate_impls_on_crate_features` also gates reflect when reflection is on.
+        let config = CodeGenConfig {
+            generate_reflection: true,
+            gate_impls_on_crate_features: true,
+            ..CodeGenConfig::default()
+        };
+        assert_eq!(
+            FeatureGates::for_config(&config).reflect,
+            Some(REFLECT_FEATURE)
+        );
     }
 
     #[test]

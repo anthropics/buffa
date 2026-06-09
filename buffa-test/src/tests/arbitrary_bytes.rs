@@ -35,5 +35,10 @@ mod tests {
                 let _ = b.slice(..);
             }
         }
+        // `map<string, bytes>` values are `Bytes` too under the shim — `slice(..)`
+        // is `Bytes`-specific, so this pins that the value type isn't `Vec<u8>`.
+        for b in msg.by_key.values() {
+            let _ = b.slice(..);
+        }
     }
 }

@@ -101,6 +101,68 @@ fn test_view_repeated_message_field() {
 }
 
 #[test]
+fn test_view_packed_scalar_reserves_capacity() {
+    let mut file = proto3_file("packed_view.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("PackedView".to_string()),
+        field: vec![
+            // varint kinds: divisor = 1 (payload.len() is an upper bound)
+            make_field("ids", 1, Label::LABEL_REPEATED, Type::TYPE_UINT32),
+            make_field("flags", 2, Label::LABEL_REPEATED, Type::TYPE_BOOL),
+            // 4-byte fixed kinds: divisor = 4
+            make_field("ratios", 3, Label::LABEL_REPEATED, Type::TYPE_FLOAT),
+            make_field("hashes", 4, Label::LABEL_REPEATED, Type::TYPE_FIXED32),
+            // 8-byte fixed kinds: divisor = 8
+            make_field("scores", 5, Label::LABEL_REPEATED, Type::TYPE_DOUBLE),
+            make_field("offsets", 6, Label::LABEL_REPEATED, Type::TYPE_SFIXED64),
+            // Non-packable repeated: must NOT emit a packed reserve(...) call.
+            make_field("names", 7, Label::LABEL_REPEATED, Type::TYPE_STRING),
+        ],
+        ..Default::default()
+    });
+    let files = generate(
+        &[file],
+        &["packed_view.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let content = &joined(&files);
+    // Varint kinds reserve payload.len() (upper bound: ≥1 byte/element).
+    assert!(
+        content.contains("view.ids.reserve(payload.len());"),
+        "varint packed view must reserve using the payload length: {content}"
+    );
+    assert!(
+        content.contains("view.flags.reserve(payload.len());"),
+        "bool packed view must reserve using the payload length: {content}"
+    );
+    // 4-byte fixed kinds reserve payload.len() / 4.
+    assert!(
+        content.contains("view.ratios.reserve(payload.len() / 4usize);"),
+        "float packed view must reserve the exact element count: {content}"
+    );
+    assert!(
+        content.contains("view.hashes.reserve(payload.len() / 4usize);"),
+        "fixed32 packed view must reserve the exact element count: {content}"
+    );
+    // 8-byte fixed kinds reserve payload.len() / 8.
+    assert!(
+        content.contains("view.scores.reserve(payload.len() / 8usize);"),
+        "double packed view must reserve the exact element count: {content}"
+    );
+    assert!(
+        content.contains("view.offsets.reserve(payload.len() / 8usize);"),
+        "sfixed64 packed view must reserve the exact element count: {content}"
+    );
+    // Non-packable repeated types (string/bytes/message) must not emit
+    // a packed-reserve call — there is no packed wire payload for them.
+    assert!(
+        !content.contains("view.names.reserve("),
+        "string repeated view must not emit a packed-reserve call: {content}"
+    );
+}
+
+#[test]
 fn test_view_oneof_with_message_variant() {
     let mut file = proto3_file("oneof_msg.proto");
     file.message_type.push(DescriptorProto {

@@ -181,8 +181,12 @@ fn generate_message_with_nesting(
         .collect();
     let direct_fields: Vec<&TokenStream> = generated_fields.iter().map(|f| &f.tokens).collect();
 
-    // Collect field identifiers for the manual Debug impl (excludes __buffa_ internals).
-    let mut debug_field_idents: Vec<&Ident> = generated_fields.iter().map(|f| &f.ident).collect();
+    // Collect (identifier, redacted) pairs for the manual Debug impl
+    // (excludes __buffa_ internals).
+    let mut debug_fields: Vec<(&Ident, bool)> = generated_fields
+        .iter()
+        .map(|f| (&f.ident, f.debug_redact))
+        .collect();
 
     let setter_methods: TokenStream = generated_fields
         .iter()
@@ -191,9 +195,15 @@ fn generate_message_with_nesting(
             let field_ident = &f.ident;
             let setter_ident = &s.ident;
             let field_name = field_ident.to_string();
-            let doc = format!(
-                "Sets [`Self::{field_name}`] to `Some(value)`, consuming and returning `self`."
-            );
+            // Raw identifiers (e.g. `r#type`) don't resolve as intra-doc
+            // links, so fall back to plain code formatting for those.
+            let doc = if let Some(stripped) = field_name.strip_prefix("r#") {
+                format!("Sets `{stripped}` to `Some(value)`, consuming and returning `self`.")
+            } else {
+                format!(
+                    "Sets [`Self::{field_name}`] to `Some(value)`, consuming and returning `self`."
+                )
+            };
             let body = if s.use_into {
                 quote! { Some(value.into()) }
             } else {
@@ -264,7 +274,8 @@ fn generate_message_with_nesting(
         })
         .collect();
     let oneof_struct_fields: Vec<&TokenStream> = oneof_generated.iter().map(|(t, _)| t).collect();
-    debug_field_idents.extend(oneof_generated.iter().map(|(_, id)| id));
+    // Redaction of oneof payloads is handled by the oneof enum's own Debug impl.
+    debug_fields.extend(oneof_generated.iter().map(|(_, id)| (id, false)));
 
     // When JSON is on, `__buffa_unknown_fields` becomes a `#[serde(flatten)]`
     // newtype wrapper whose Serialize/Deserialize route through the extension
@@ -717,14 +728,30 @@ fn generate_message_with_nesting(
     };
 
     // Generate a manual Debug impl that excludes internal __buffa_ fields.
+    // Fields marked `[debug_redact = true]` print DEBUG_REDACT_PLACEHOLDER
+    // instead of their value, mirroring protobuf's DebugString redaction.
     let struct_name_str = name_ident.to_string();
-    let debug_field_names: Vec<String> =
-        debug_field_idents.iter().map(|id| id.to_string()).collect();
+    // Labels match what `#[derive(Debug)]` prints: raw-ident fields (`r#type`)
+    // show as `type`, consistent with the view struct's Debug impl.
+    let debug_field_names: Vec<String> = debug_fields
+        .iter()
+        .map(|(id, _)| id.to_string().trim_start_matches("r#").to_string())
+        .collect();
+    let debug_field_values: Vec<TokenStream> = debug_fields
+        .iter()
+        .map(|(id, redacted)| {
+            if *redacted {
+                quote! { &::core::format_args!(#DEBUG_REDACT_PLACEHOLDER) }
+            } else {
+                quote! { &self.#id }
+            }
+        })
+        .collect();
     let debug_impl = quote! {
         impl ::core::fmt::Debug for #name_ident {
             fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                 f.debug_struct(#struct_name_str)
-                    #(.field(#debug_field_names, &self.#debug_field_idents))*
+                    #(.field(#debug_field_names, #debug_field_values))*
                     .finish()
             }
         }
@@ -912,12 +939,22 @@ fn collect_natural_reexports(
     if ctx.config.generate_views {
         let views_gate = ctx.config.feature_gates().views;
         // Nested-message views: `__buffa::view::<msg>::BarView` → `BarView`.
+        // The owned-view wrapper rides along: `BarOwnedView` → `BarOwnedView`.
         for nested in non_map_nested {
             let view_ident = format_ident!("{}View", nested.name.as_deref().unwrap_or(""));
             candidates.push(ReexportCandidate {
                 name: view_ident.to_string(),
                 tokens: crate::feature_gates::cfg_block(
                     quote! { #inline pub use #view_prefix #view_ident; },
+                    views_gate,
+                ),
+            });
+            let owned_view_ident =
+                format_ident!("{}OwnedView", nested.name.as_deref().unwrap_or(""));
+            candidates.push(ReexportCandidate {
+                name: owned_view_ident.to_string(),
+                tokens: crate::feature_gates::cfg_block(
+                    quote! { #inline pub use #view_prefix #owned_view_ident; },
                     views_gate,
                 ),
             });
@@ -1329,6 +1366,11 @@ struct FieldInfo {
     /// True when the field is proto type `bytes` AND matches the `bytes_fields`
     /// config — i.e. the struct field type is `bytes::Bytes` not `Vec<u8>`.
     use_bytes: bool,
+    /// True when the field is `map<K, bytes>` AND the outer map field matches
+    /// the `bytes_fields` config — i.e. the map value type is `bytes::Bytes`
+    /// not `Vec<u8>`. Mutually exclusive with `use_bytes` (a map field's outer
+    /// type is `MESSAGE`, not `BYTES`).
+    map_value_use_bytes: bool,
     /// The owned Rust type used for this field when it is proto type `string`
     /// (singular, optional, or repeated; map keys/values are unaffected).
     /// [`StringRepr::String`] for non-string fields and for string fields with
@@ -1387,6 +1429,21 @@ fn classify_field(
     let field_fqn = format!(".{}.{}", proto_fqn, field_name);
     let use_bytes = field_type == Type::TYPE_BYTES && ctx.use_bytes_type(&field_fqn);
 
+    // For `map<K, bytes>`, the outer field type is MESSAGE (synthetic entry),
+    // so `use_bytes` is false; the value type is decided by the shared
+    // `map_value_use_bytes` predicate (also used by the binary/text decoders and
+    // the view→owned conversion, so all sites stay in agreement). The bytes-key
+    // carve-out is documented there.
+    let map_value_use_bytes = map_entry.is_some_and(|e| {
+        crate::impl_message::map_value_use_bytes(
+            ctx,
+            map_entry_key_type(ctx, e, features),
+            map_entry_value_type(ctx, e, features),
+            proto_fqn,
+            field_name,
+        )
+    });
+
     let bytes_type = if use_bytes {
         quote! { ::buffa::bytes::Bytes }
     } else {
@@ -1395,8 +1452,9 @@ fn classify_field(
     };
 
     // Configurable owned representation for `string` fields (default `String`).
-    // Map keys/values are unaffected — they always use `String`, mirroring the
-    // bytes path where map values always stay `Vec<u8>`.
+    // Map keys/values are unaffected — they always use `String`. (The bytes
+    // path now propagates `bytes_fields` to map values via
+    // `map_value_use_bytes`; the string path has no equivalent yet.)
     let string_repr = if field_type == Type::TYPE_STRING {
         ctx.string_repr(&field_fqn)
     } else {
@@ -1406,7 +1464,7 @@ fn classify_field(
 
     let mut inner_opt_type: Option<TokenStream> = None;
     let rust_type = if let Some(entry) = map_entry {
-        map_rust_type_from_entry(scope, entry, resolver)?
+        map_rust_type_from_entry(scope, entry, map_value_use_bytes, resolver)?
     } else if is_repeated {
         let elem = if field_type == Type::TYPE_BYTES {
             bytes_type
@@ -1497,6 +1555,7 @@ fn classify_field(
         is_optional,
         is_required,
         use_bytes,
+        map_value_use_bytes,
         string_repr,
         map_key_type,
         map_value_type,
@@ -1531,6 +1590,9 @@ struct GeneratedField {
     tokens: TokenStream,
     ident: Ident,
     setter: Option<SetterInfo>,
+    /// Field carries `[debug_redact = true]`; the generated `Debug` impl
+    /// prints [`DEBUG_REDACT_PLACEHOLDER`] instead of the value.
+    debug_redact: bool,
 }
 
 fn generate_field(
@@ -1574,7 +1636,6 @@ fn generate_field(
     };
     let custom_field_attrs =
         CodeGenContext::matching_attributes(&ctx.config.field_attributes, &field_fqn)?;
-    // bytes_fields map values are Vec<u8>, not Bytes — no shim needed there.
     let arbitrary_field_attr = if ctx.config.generate_arbitrary && info.use_bytes && !info.is_map {
         let helper = if info.is_optional {
             quote! { ::buffa::__private::arbitrary_bytes_opt }
@@ -1584,6 +1645,11 @@ fn generate_field(
             quote! { ::buffa::__private::arbitrary_bytes }
         };
         quote! { #[cfg_attr(feature = "arbitrary", arbitrary(with = #helper))] }
+    } else if ctx.config.generate_arbitrary && info.map_value_use_bytes {
+        // `HashMap<K, Bytes>` has no native `Arbitrary` impl (`Bytes` lacks
+        // one); generate a per-key-type shim that builds `HashMap<K, Vec<u8>>`
+        // first and maps values to `Bytes`. Wire-equivalent.
+        quote! { #[cfg_attr(feature = "arbitrary", arbitrary(with = ::buffa::__private::arbitrary_bytes_map))] }
     } else if ctx.config.generate_arbitrary
         && info.string_repr == crate::StringRepr::EcoString
         && !info.is_map
@@ -1639,6 +1705,7 @@ fn generate_field(
         tokens,
         ident: rust_name,
         setter,
+        debug_redact: is_debug_redacted(field),
     }))
 }
 
@@ -1647,6 +1714,23 @@ pub(crate) fn is_map_field(
     field: &crate::generated::descriptor::FieldDescriptorProto,
 ) -> bool {
     field.r#type.unwrap_or_default() == Type::TYPE_MESSAGE && find_map_entry(msg, field).is_some()
+}
+
+/// Marker emitted by generated `Debug` impls in place of values whose field is
+/// annotated `[debug_redact = true]`. Interpolated into `format_args!` as the
+/// format string, so it must not contain `{` or `}`.
+pub(crate) const DEBUG_REDACT_PLACEHOLDER: &str = "[REDACTED]";
+
+/// True when the field carries `[debug_redact = true]`, i.e. its value must
+/// not appear in generated `Debug` output.
+pub(crate) fn is_debug_redacted(
+    field: &crate::generated::descriptor::FieldDescriptorProto,
+) -> bool {
+    field
+        .options
+        .as_option()
+        .and_then(|o| o.debug_redact)
+        .unwrap_or(false)
 }
 
 /// Find the synthetic map-entry nested message for a map field.
@@ -1704,9 +1788,14 @@ fn map_entry_value_type(
 }
 
 /// Build the `HashMap<K, V>` Rust type from an already-resolved map entry descriptor.
+///
+/// `value_use_bytes` overrides the default `Vec<u8>` for a `bytes`-valued
+/// map when the outer map field matches `bytes_fields`. Computed by the
+/// caller (`classify_field`) so map and non-map paths share the same check.
 fn map_rust_type_from_entry(
     scope: MessageScope<'_>,
     entry: &DescriptorProto,
+    value_use_bytes: bool,
     resolver: &crate::imports::ImportResolver,
 ) -> Result<TokenStream, CodeGenError> {
     let MessageScope {
@@ -1735,14 +1824,21 @@ fn map_rust_type_from_entry(
         features,
         resolver,
     )?;
-    let value_type = scalar_or_message_type_nested(
-        ctx,
-        value_field,
-        current_package,
-        nesting,
-        features,
-        resolver,
-    )?;
+    let value_type = if value_use_bytes
+        && crate::impl_message::effective_type_in_map_entry(ctx, value_field, features)
+            == Type::TYPE_BYTES
+    {
+        quote! { ::buffa::bytes::Bytes }
+    } else {
+        scalar_or_message_type_nested(
+            ctx,
+            value_field,
+            current_package,
+            nesting,
+            features,
+            resolver,
+        )?
+    };
 
     let hm = resolver.hashmap();
     Ok(quote! { #hm<#key_type, #value_type> })

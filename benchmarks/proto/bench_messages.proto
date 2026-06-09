@@ -90,3 +90,21 @@ message MediaFrame {
   repeated bytes chunks = 5;          // 2-6 sub-chunks, ~200-2000 bytes each
   map<string, bytes> attachments = 6; // 0-4 named sub-blobs
 }
+
+// Many small sub-messages, each carrying short packed repeated scalar
+// fields (the map-tile / telemetry shape from issue #171). Per-payload
+// decode cost is dominated by many small vector allocations rather than a
+// few large ones, which pins the packed-decode pre-allocation path: varint
+// fields reserve from the payload byte length (upper bound), fixed-width
+// fields reserve the exact element count.
+// Target payload: ~5-8KB (64 cells, ~16 packed varints each).
+message PackedTile {
+  message Cell {
+    uint32 id = 1;
+    repeated uint32 geometry = 2;   // packed varints, 12-20 elems
+    repeated float samples = 3;     // packed fixed32-width, 4-8 elems
+    repeated double positions = 4;  // packed fixed64-width, 2-4 elems
+  }
+  repeated Cell cells = 1;          // 64 small cells per tile
+  repeated uint64 checksums = 2;    // one larger packed varint field
+}

@@ -6,6 +6,227 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **`[debug_redact = true]` is honored in generated `Debug` impls.** Fields
+  carrying the standard `debug_redact` field option print `[REDACTED]` instead
+  of their value in the owned message's `Debug` impl, and oneof enums, view
+  structs, and view-oneof enums containing such fields swap their
+  `#[derive(Debug)]` for a generated impl that redacts those fields/variants.
+  Output for messages without the annotation is unchanged. Note this covers
+  `Debug` formatting only — text-format and JSON serialization are
+  intentionally unaffected. A view struct containing a redacted field now
+  lists proto fields only in its `Debug` output (matching owned messages), so
+  `__buffa_unknown_fields` / phantom internals no longer appear there.
+  The reflective `DynamicMessage` `Debug` impl honors the option as well,
+  printing `[REDACTED]` in place of the value of any field whose descriptor
+  carries it.
+
+- **Packed repeated view decoders pre-allocate `RepeatedView` capacity.**
+  Generated view decode arms for packed repeated scalar / enum fields now
+  call `RepeatedView::reserve(_)` before the decode loop, matching the
+  existing pre-allocation hint on the owned decode path. Fixed-width kinds
+  (`fixed32`, `sfixed32`, `float`, `fixed64`, `sfixed64`, `double`) reserve
+  the exact element count; varint kinds (`int32`/`64`, `uint32`/`64`,
+  `sint32`/`64`, `bool`, `enum`) reserve `payload.len()` as a safe upper
+  bound (every wire varint is ≥ 1 byte). The hidden `RepeatedView::reserve`
+  hook is also new but `#[doc(hidden)]`. This trims allocator pressure on
+  workloads that decode many small packed repeated fields (MVT-style
+  payloads), reported in #171.
+
+### Changed
+
+- **`HasMessageView` carries a `#[diagnostic::on_unimplemented]` hint.** When a
+  type is used where the generated view family is required but its crate was
+  generated without one (buffa older than 0.7.0, or views disabled) or has it
+  behind a disabled feature, the compile error now explains the cause and how
+  to fix it — regenerate the defining crate with buffa ≥ 0.7.0 and views
+  enabled (`generate_views(true)` / `views=true`), or enable the crate's views
+  feature — instead of only naming the missing trait bound. Downstream
+  consumers such as connect-rust rely on this trait for their request
+  wrappers, so the notes land directly in the consumer's build output.
+
+### Fixed
+
+- The owned message `Debug` impl now labels keyword-named fields without the
+  raw-identifier prefix (`type` instead of `r#type`), matching what
+  `#[derive(Debug)]` prints and what the view `Debug` impl emits.
+- Octal escapes above `\377` (255) in a proto2 bytes field's `default_value`
+  are now rejected with a codegen error instead of silently wrapping to a
+  wrong byte (`\400` previously decoded to `0x00`), matching protobuf C++'s
+  `UnescapeCEscapeString` behavior (#164). Such escapes never appear in
+  protoc-emitted descriptors, so this only affects hand-built or corrupted
+  `FileDescriptorSet` input.
+- Hex escapes in a proto2 bytes field's `default_value` now consume the full
+  run of hex digits and reject accumulated values above `\xff` (255) with a
+  codegen error, matching protobuf C++'s `UnescapeCEscapeString` behavior
+  (#173). Previously exactly two digits were read, so `\xfff` decoded to the
+  byte `0xFF` followed by a literal `f` instead of erroring, and a
+  single-digit escape such as `\x1` at end of input was wrongly rejected. As
+  with the octal fix, such escapes never appear in protoc-emitted
+  descriptors, so this only affects hand-built or corrupted
+  `FileDescriptorSet` input.
+
+## [0.7.0] - 2026-05-28
+
+This release is a minor bump under the
+[Rust 0.x convention](https://doc.rust-lang.org/cargo/reference/semver.html).
+The breaking changes are the removal of `OwnedView<V>`'s `Deref` impl and the
+extension of `use_bytes_type()` to `map<K, bytes>` values (both under
+*Changed* below), plus an MSRV raise from 1.85 to 1.87. Consumers with
+checked-in generated code should regenerate with the 0.7.0 toolchain to pick
+up the new `FooOwnedView` wrappers, `HasMessageView` impls, and
+`UpperCamelCase` enum aliases — all additive.
+
+### Added
+
+- **Runtime reflection: `DescriptorPool` and `DynamicMessage`.**
+  `buffa-descriptor` gains a `reflect` feature with a descriptor-driven
+  reflection runtime. `DescriptorPool::decode` builds linked,
+  feature-resolved descriptors (`MessageDescriptor`, `FieldDescriptor`,
+  `EnumDescriptor`, `ServiceDescriptor`, …) from a `FileDescriptorSet`,
+  treating the input as untrusted (malformed sets return `PoolError` rather
+  than panicking) and retaining the raw `FileDescriptorProto`s plus a symbol
+  index (`file_by_name`, `file_containing_symbol`) for gRPC server
+  reflection. `DynamicMessage` decodes and encodes any message by descriptor
+  — no generated types required — with unknown-field preservation, in-place
+  mutation (`field_mut` / `field_by_number_mut`), `Any` pack/unpack,
+  extension fields, and custom-option access (`options()` on every linked
+  descriptor, `DynamicMessage::from_options`). With the `json` feature it
+  also speaks proto3 canonical JSON (`Serialize`, `DynamicMessage::from_json`,
+  lenient `from_json_ignoring_unknown`, duplicate-key rejection). The
+  dyn-safe `ReflectMessage` / `ReflectMessageMut` traits and the
+  `ReflectCow` / `Value` / `ValueRef` types are the surface generated types
+  plug into (see vtable mode below). Generated code opts in with
+  `buffa_build::Config::generate_reflection(true)` (plugin:
+  `reflection=true`), which embeds the package's `FileDescriptorSet` and
+  exposes a lazily-built pool as `pkg::descriptor_pool()`. The reflection
+  codec passes the protobuf conformance suite through a dedicated
+  `DynamicMessage`-only runner mode.
+- **Vtable reflection mode.** Generated types now implement
+  `buffa_descriptor::reflect::ReflectMessage` directly — on both the owned
+  structs and the zero-copy view types — so `foo.reflect()` borrows `foo` in
+  place (`ReflectCow::Borrowed`) with no encode/decode round-trip and no
+  per-field allocation. This is the path a CEL evaluator, transcoding gateway, or
+  generic interceptor takes to read fields by descriptor; reflecting a decoded
+  view runs several times faster than the previous bridge round-trip. Select the
+  mode with the new `buffa_build::ReflectMode` enum:
+
+  ```rust
+  buffa_build::Config::new()
+      .reflect_mode(buffa_build::ReflectMode::VTable) // or ::Bridge / ::Off
+      .compile()?;
+  ```
+
+  The `protoc-gen-buffa` equivalent is `reflect_mode=off|bridge|vtable`. Vtable
+  mode does not require view generation: with views off, only the owned
+  `ReflectMessage` is emitted. `generate_reflection(true)` selects vtable mode;
+  `reflect_mode(ReflectMode::Bridge)` opts into the smaller round-trip
+  implementation (one `DynamicMessage` encode/decode per `reflect()` call)
+  instead of one `impl ReflectMessage` per generated type.
+- **`buffa-types` `reflect` feature.** Well-known types (`Timestamp`,
+  `Duration`, `Struct`/`Value`, `Any`, wrappers, …) now implement
+  `ReflectMessage`, so messages that embed WKTs reflect end to end.
+- **Configurable string field representations (#127).**
+  `buffa_build::Config::string_type(StringRepr)` and
+  `string_type_in(StringRepr, &[paths])` map proto `string` fields to
+  `SmolStr`, `EcoString`, or `CompactString` instead of `String`
+  (`buffa_build::StringRepr`), mirroring `use_bytes_type_in`'s path rules —
+  rules accumulate and the last match wins, so call the broad `string_type`
+  before narrower `string_type_in` overrides. Only the owned struct field
+  type changes: the wire format is untouched, view types still borrow
+  `&str`, and `map<_, string>` keys and values stay `String`. The consuming
+  crate must enable the matching `buffa` feature (`smol_str`, `ecow`, or
+  `compact_str`), which re-exports the chosen crate so generated code can
+  name it without a direct dependency. The new `buffa::ProtoString` trait
+  (blanket-implemented — nothing to implement by hand) is what the decode
+  and JSON paths are generic over. Default output (`StringRepr::String`) is
+  byte-for-byte unchanged. `buffa-build` / `buffa-codegen` only — there is
+  no `protoc-gen-buffa` plugin option yet.
+- **`ReflectElement` for the configurable `string_type` representations**
+  (`SmolStr`, `EcoString`, `CompactString`), gated behind the matching
+  `buffa-descriptor` feature, so a `repeated <repr>` field reflects in vtable
+  mode.
+- **Generated `FooOwnedView` wrapper types.** When views are generated, each
+  message now also gets a `FooOwnedView` — re-exported at the package root
+  next to `Foo` and `FooView` (canonical path `__buffa::view::FooOwnedView`):
+  a self-contained `'static` handle wrapping `OwnedView<FooView<'static>>`
+  with one accessor method per field (`owned.name()`, `owned.id()`, …). Every
+  accessor borrows from `&self`, so field data can never outlive the
+  underlying buffer, and the handle stays `Send + Sync` for async handlers and
+  spawned tasks. The wrapper forwards `decode` / `decode_with_options` /
+  `from_owned` / `to_owned_message` / `bytes` / `into_bytes`, exposes the full
+  view via `view()`, converts to and from the raw `OwnedView`, and serializes
+  to protobuf JSON when `generate_json` is enabled. A field or oneof whose
+  name collides with one of the wrapper's reserved method names keeps working
+  through `view()`; its accessor is skipped with a build warning
+  (`CodeGenWarning::OwnedViewAccessorSuppressed`).
+- **`HasMessageView` view-family trait.** Generated code now implements
+  `buffa::HasMessageView` for every message (when views are generated),
+  linking the owned type to its view types: `Foo::View<'a>` = `FooView<'a>`
+  and `Foo::ViewHandle` = `FooOwnedView`, with a provided
+  `decode_view_handle()` helper. The generated wrapper additionally
+  implements `From<OwnedView<FooView<'static>>>` and
+  `AsRef<OwnedView<FooView<'static>>>`, so code that is generic over an owned
+  message can decode, reborrow, and convert without naming the concrete
+  types — the hook an RPC framework needs to accept `M` and work with
+  `M::View<'_>` and `M::ViewHandle` generically.
+- **Idiomatic `UpperCamelCase` enum value aliases (#13).** Generated enums
+  now also carry associated `const` aliases with the enum-name prefix
+  stripped and the value converted to `UpperCamelCase` —
+  `RuleLevel::RULE_LEVEL_HIGH` is reachable as `RuleLevel::High` — usable in
+  expressions and in pattern position with exhaustiveness preserved. The
+  `SHOUTY_SNAKE_CASE` variants remain the definitive variants and `Debug`
+  output is unchanged, so the aliases are purely additive; consumers with
+  checked-in generated code will see new consts on regeneration. If two
+  values of an enum would collide after conversion, aliases are suppressed
+  for that enum as a whole and reported through the new `CodeGenWarning`
+  diagnostics (`buffa_codegen::generate_with_diagnostics`). Default on; opt
+  out per compilation unit with
+  `buffa_build::Config::idiomatic_enum_aliases(false)` /
+  `CodeGenConfig::idiomatic_enum_aliases = false`.
+
+### Changed
+
+- **`OwnedView<V>` no longer implements `Deref<Target = V>`.** **Breaking.**
+  The `Deref` impl exposed the inner view as `FooView<'static>`, so borrowed
+  fields appeared `'static` to the compiler and could be held past the point
+  where the `OwnedView` (and the buffer they point into) was dropped — safe
+  code could end up reading freed memory. In practice this required the
+  calling application to deliberately store a field reference beyond the
+  handle's lifetime, so the practical exposure is limited, but the API should
+  not allow it at all. Field access now goes through `reborrow()` (one extra
+  call per scope: `let person = owned.reborrow(); person.name`) or, more
+  conveniently, the new generated `FooOwnedView` accessor methods, both of
+  which tie every borrow to the handle. Serializing the handle directly
+  (`serde_json::to_string(&owned_view)`) is unaffected.
+- **`use_bytes_type()` / `use_bytes_type_in(...)` now applies to `map<K, bytes>`
+  values (#76).** Previously map values were always `Vec<u8>` regardless of
+  config — the only `bytes`-context not covered. They now match the type used
+  for singular / optional / repeated / oneof bytes fields under the same rule
+  (`bytes::Bytes` when configured), so `view → owned` conversion of map values
+  participates in the `to_owned_from_source` zero-copy `slice_ref` path just
+  like the other shapes. **Breaking** for code that already enabled
+  `use_bytes_type()` on a proto containing `map<K, bytes>`: at construction
+  sites, rewrite map-value construction from `Vec<u8>` to `bytes::Bytes`
+  (`b"v".to_vec()` → `bytes::Bytes::from_static(b"v")` for literals,
+  `bytes::Bytes::from(v)` for an owned `Vec<u8>`, or
+  `bytes::Bytes::copy_from_slice(s)` for a non-`'static` borrow). At read sites,
+  `bytes::Bytes` has no inherent `as_slice`, so any `as_slice()` on the value
+  needs replacing — e.g. `map.get(k).map(Vec::as_slice)` becomes
+  `map.get(k).map(|b| &b[..])`. One carve-out: an effective `map<bytes, bytes>`
+  keeps `Vec<u8>` values; this requires `strict_utf8_mapping(true)` *and* a
+  `map<string, bytes>` whose key carries `[features.utf8_validation = NONE]`
+  (`strict_utf8_mapping` alone keeps a plain `map<string, bytes>` value as
+  `Bytes`). See the `use_bytes_type_in` docs. Under `generate_arbitrary`,
+  affected map fields use the new `__private::arbitrary_bytes_map<K>` shim
+  (`K: Arbitrary + Eq + Hash` — every proto map-key type satisfies this).
+- **MSRV raised from 1.85 to 1.87**, following the
+  [README's MSRV policy](README.md#minimum-supported-rust-version) of
+  tracking roughly twelve months behind the latest stable release,
+  re-evaluated each time a release is cut. While buffa is pre-1.0, an MSRV
+  bump rides a minor (0.x) release.
+
 ### Fixed
 
 - **Module redefinition error when a message and a sub-package share a name
@@ -23,6 +244,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `foo::oof_::…`; (2) both packages must be generated in the same
   `buffa_build::Config::compile()` call — deconfliction cannot span separate
   compilations, since each only sees its own descriptor set.
+
+- **Per-type `extern_path` mappings were silently ignored (#111).** An
+  `extern_path` entry naming a single type FQN (e.g.
+  `.extern_path(".google.protobuf.Timestamp", "::my_types::Timestamp")`, the
+  prost/tonic idiom) parsed but never matched, because resolution only
+  considered package prefixes. Type references now resolve per-type: an exact
+  type-FQN entry wins over the internal `descriptor.proto` routing, which wins
+  over the longest matching package prefix, which wins over local generation.
+  Nested types inherit an enclosing message's override, resolving to the
+  override's parent module plus the usual `snake_case(MessageName)`
+  nested-types module. Note that entries which previously had no effect now
+  take effect: a type-FQN entry (including a typo'd one) that was a silent
+  no-op before will now change the generated reference, and a wrong target
+  surfaces as a compile error in the generated code.
 
 ## [0.6.0] - 2026-05-15
 
@@ -765,7 +1000,8 @@ This release publishes:
 
 MSRV: Rust 1.85.
 
-[Unreleased]: https://github.com/anthropics/buffa/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/anthropics/buffa/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/anthropics/buffa/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/anthropics/buffa/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/anthropics/buffa/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/anthropics/buffa/compare/v0.5.0...v0.5.1

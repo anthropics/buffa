@@ -9,6 +9,34 @@ pub mod basic {
     buffa::include_proto!("basic");
 }
 
+/// `[debug_redact = true]` — generated Debug impls print a placeholder
+/// instead of the annotated field's value.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod debug_redact {
+    buffa::include_proto!("debug_redact");
+}
+
+/// `string_type(SmolStr)` + vtable reflection — exercises `ReflectElement for
+/// SmolStr` on the repeated-string element path.
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types
+)]
+pub mod vtable_string_repr {
+    buffa::include_proto!("vtable_string_repr");
+}
+
+/// `generate_views(false)` + vtable reflection — owned-only vtable, no views.
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types
+)]
+pub mod vtable_no_views {
+    buffa::include_proto!("vtable_no_views");
+}
+
 #[allow(
     clippy::derivable_impls,
     clippy::match_single_binding,
@@ -54,6 +82,11 @@ pub mod cross {
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod cross_syntax {
     buffa::include_proto!("test.cross_syntax");
+}
+
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod cross_pertype {
+    buffa::include_proto!("test.cross_pertype");
 }
 
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
@@ -271,6 +304,23 @@ pub mod ed2024 {
 )]
 pub mod basic_bytes {
     include!(concat!(env!("OUT_DIR"), "/bytes_variant/basic.mod.rs"));
+}
+
+// Carve-out (#76): utf8_validation.proto with a NONE-keyed `map<string, bytes>`,
+// compiled with strict_utf8_mapping() + use_bytes_type(). The effective
+// `map<bytes, bytes>` keeps `Vec<u8>` values; runtime checks live in
+// `tests/bytes_type.rs`.
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod utf8_bytes {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/utf8_bytes_variant/utf8test.mod.rs"
+    ));
 }
 
 // Regression #88: bytes_fields + generate_arbitrary(true). Compilation is the

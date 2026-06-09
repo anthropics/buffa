@@ -66,3 +66,15 @@ BUFFA_VIA_REFLECT=1 run_suite reflect \
     --failure_list /known_failures_reflect.txt \
     --maximum_edition 2024 \
     /usr/local/bin/buffa-conformance
+
+# Via-vtable mode: serves binary input + JSON output by decoding a view, walking
+# its vtable `ReflectMessage` surface (for_each_set/get) to rebuild a
+# DynamicMessage, and serializing that to JSON. Exercises the generated
+# `impl ReflectMessage for FooView` against the conformance JSON reference,
+# independently of the view's own Serialize impl. Binary and text output are
+# skipped (unknown-field preservation is out of scope for the reflect rebuild).
+BUFFA_VIA_VTABLE=1 run_suite vtable \
+    conformance_test_runner \
+    --failure_list /known_failures_view_vtable.txt \
+    --maximum_edition 2024 \
+    /usr/local/bin/buffa-conformance

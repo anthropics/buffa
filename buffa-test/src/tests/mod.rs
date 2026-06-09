@@ -30,6 +30,7 @@ mod bytes_type;
 mod closed_enum;
 mod collision;
 mod cross_ref;
+mod debug_redact;
 mod edge_cases;
 #[cfg(has_edition_2024)]
 mod editions_2024;
@@ -42,6 +43,7 @@ mod message_set;
 mod mod_collision;
 mod nesting;
 mod nestpkg;
+mod owned_view;
 mod proto2;
 mod proto3_semantics;
 mod string_type;
