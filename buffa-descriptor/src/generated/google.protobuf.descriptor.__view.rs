@@ -551,6 +551,7 @@ impl<'a> FileDescriptorProtoView<'a> {
                 10u32 => {
                     if tag.wire_type() == ::buffa::encoding::WireType::LengthDelimited {
                         let payload = ::buffa::types::borrow_bytes(&mut cur)?;
+                        view.public_dependency.reserve(payload.len());
                         let mut pcur: &[u8] = payload;
                         while !pcur.is_empty() {
                             view.public_dependency
@@ -570,6 +571,7 @@ impl<'a> FileDescriptorProtoView<'a> {
                 11u32 => {
                     if tag.wire_type() == ::buffa::encoding::WireType::LengthDelimited {
                         let payload = ::buffa::types::borrow_bytes(&mut cur)?;
+                        view.weak_dependency.reserve(payload.len());
                         let mut pcur: &[u8] = payload;
                         while !pcur.is_empty() {
                             view.weak_dependency
@@ -9522,6 +9524,7 @@ impl<'a> FieldOptionsView<'a> {
                 19u32 => {
                     if tag.wire_type() == ::buffa::encoding::WireType::LengthDelimited {
                         let payload = ::buffa::types::borrow_bytes(&mut cur)?;
+                        view.targets.reserve(payload.len());
                         let mut pcur: &[u8] = payload;
                         while !pcur.is_empty() {
                             let __raw = ::buffa::types::decode_int32(&mut pcur)?;
@@ -16744,6 +16747,7 @@ pub mod source_code_info {
                             == ::buffa::encoding::WireType::LengthDelimited
                         {
                             let payload = ::buffa::types::borrow_bytes(&mut cur)?;
+                            view.path.reserve(payload.len());
                             let mut pcur: &[u8] = payload;
                             while !pcur.is_empty() {
                                 view.path.push(::buffa::types::decode_int32(&mut pcur)?);
@@ -16764,6 +16768,7 @@ pub mod source_code_info {
                             == ::buffa::encoding::WireType::LengthDelimited
                         {
                             let payload = ::buffa::types::borrow_bytes(&mut cur)?;
+                            view.span.reserve(payload.len());
                             let mut pcur: &[u8] = payload;
                             while !pcur.is_empty() {
                                 view.span.push(::buffa::types::decode_int32(&mut pcur)?);
@@ -17701,6 +17706,7 @@ pub mod generated_code_info {
                             == ::buffa::encoding::WireType::LengthDelimited
                         {
                             let payload = ::buffa::types::borrow_bytes(&mut cur)?;
+                            view.path.reserve(payload.len());
                             let mut pcur: &[u8] = payload;
                             while !pcur.is_empty() {
                                 view.path.push(::buffa::types::decode_int32(&mut pcur)?);
