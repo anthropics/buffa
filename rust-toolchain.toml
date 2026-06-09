@@ -5,9 +5,15 @@
 # reformat code that CI then rejects — or vice versa. rustfmt's own
 # `required_version` knob is nightly-only, so the pin lives here instead.
 #
-# Keep in sync with the lint-and-test toolchain in .github/workflows/ci.yml;
-# bump both together. The MSRV check (rust-version in Cargo.toml, currently
-# 1.87) is enforced separately by the msrv-check CI job.
+# Keep in sync with the pinned dtolnay/rust-toolchain versions in
+# .github/workflows/ci.yml (lint-and-test, check-nostd); bump together. The
+# MSRV check (rust-version in Cargo.toml, currently 1.87) deliberately opts
+# out of this file via RUSTUP_TOOLCHAIN in its CI job.
+#
+# The channel must be the full X.Y.Z version: rustup treats "1.95" and
+# "1.95.0" as two distinct toolchain installations, so a bare "1.95" here
+# splits from the "1.95.0" the CI action installs its targets/components
+# onto, and cross-target jobs fail with E0463.
 [toolchain]
-channel = "1.95"
+channel = "1.95.0"
 components = ["rustfmt", "clippy"]
