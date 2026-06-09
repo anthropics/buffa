@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Run required checks on merge queue groups so queued PRs can land.
+  merge_group:
 
 permissions:
   contents: read

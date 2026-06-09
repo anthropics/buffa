@@ -4,9 +4,11 @@ on:
     types: [created]
   pull_request_target:
     types: [opened, closed, reopened, synchronize]
+  merge_group:
 
 permissions:
   actions: write
+  checks: read
   contents: write
   pull-requests: write
   statuses: write
@@ -36,3 +38,45 @@ jobs:
           # the synthetic co-author from the CLA check; the PR opener still
           # has to sign.
           allowlist: "iainmcgin,dependabot[bot],github-actions[bot],renovate[bot],noreply@anthropic.com"
+
+      # Merge queue support. The CLA action above only runs on
+      # pull_request_target, so without this step the required "CLAAssistant"
+      # check would never report on merge_group events and queued PRs would
+      # time out.
+      #
+      # SECURITY INVARIANT: real CLA enforcement happens at PR scope —
+      # "CLAAssistant" is a required status check in the main-branch ruleset,
+      # so a PR cannot enter the merge queue until its CLA check has passed.
+      # This step re-verifies that invariant instead of blindly passing: it
+      # resolves each PR in the merge group and confirms a successful
+      # CLAAssistant check run on that PR's head commit. Do not remove the
+      # PR-scoped required check from the ruleset without replacing this
+      # verification.
+      - name: "Verify CLA passed for queued PRs"
+        if: github.event_name == 'merge_group'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        run: |
+          set -euo pipefail
+          # Squash-commit subjects in the merge group end with "(#<pr>)".
+          # Subjects embed PR titles (untrusted), so extract only the
+          # trailing PR number and never eval/interpolate the rest.
+          prs=$(gh api "repos/$GITHUB_REPOSITORY/compare/$BASE_SHA...$HEAD_SHA" \
+            --jq '.commits[].commit.message | split("\n")[0]' \
+            | sed -n 's/^.*(#\([0-9][0-9]*\))$/\1/p' | sort -u)
+          if [ -z "$prs" ]; then
+            echo "::error::could not determine PR numbers from merge group commits"
+            exit 1
+          fi
+          for pr in $prs; do
+            sha=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" --jq .head.sha)
+            ok=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/check-runs?check_name=CLAAssistant" \
+              --jq '[.check_runs[] | select(.conclusion == "success")] | length')
+            if [ "$ok" -lt 1 ]; then
+              echo "::error::PR #$pr has no successful CLAAssistant check run on head $sha"
+              exit 1
+            fi
+            echo "PR #$pr: CLA verified (head $sha)"
+          done
