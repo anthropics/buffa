@@ -37,6 +37,15 @@ impl From<chrono::TimeDelta> for Duration {
     /// Both sides represent a signed duration as `seconds` + `subsec_nanos`
     /// with sign-consistent components, so this is a direct field copy.
     ///
+    /// # Warning: proto JSON spec range
+    ///
+    /// `chrono::TimeDelta` ranges to ±`i64::MAX` milliseconds (~9.2e15
+    /// seconds), while the proto spec restricts `Duration` to
+    /// ±315,576,000,000 seconds (~10,000 years). A `TimeDelta` beyond that
+    /// converts without error here — binary encoding round-trips it — but
+    /// the resulting `Duration` will fail JSON serialization (`json`
+    /// feature), which enforces the spec range.
+    ///
     /// # Examples
     ///
     /// ```
