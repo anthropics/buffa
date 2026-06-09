@@ -198,8 +198,8 @@ mod view_family {
 
     #[test]
     fn test_has_message_view_generic_roundtrip_with_oneof() {
-        use crate::view_json::WithOneof;
         use crate::view_json::__buffa::oneof::with_oneof::Value as ValueOneof;
+        use crate::view_json::WithOneof;
 
         let msg = WithOneof {
             value: Some(ValueOneof::Text("family".into())),
