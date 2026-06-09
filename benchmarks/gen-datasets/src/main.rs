@@ -33,8 +33,8 @@ mod dataset_proto {
     buffa::include_proto!("benchmarks");
 }
 
-use proto::analytics_event::{Nested, Property};
 use proto::__buffa::oneof::analytics_event::property::Value;
+use proto::analytics_event::{Nested, Property};
 use proto::log_record::Context;
 use proto::*;
 
@@ -186,6 +186,24 @@ fn gen_analytics_event(rng: &mut impl Rng) -> AnalyticsEvent {
     }
 }
 
+fn gen_packed_tile(rng: &mut impl Rng) -> PackedTile {
+    PackedTile {
+        cells: (0..64)
+            .map(|i| packed_tile::Cell {
+                id: i,
+                geometry: (0..rng.random_range(12..=20))
+                    .map(|_| rng.random_range(0..4096))
+                    .collect(),
+                samples: (0..rng.random_range(4..=8)).map(|_| rng.random()).collect(),
+                positions: (0..rng.random_range(2..=4)).map(|_| rng.random()).collect(),
+                ..Default::default()
+            })
+            .collect(),
+        checksums: (0..32).map(|_| rng.random()).collect(),
+        ..Default::default()
+    }
+}
+
 fn write_dataset<M: Message>(name: &str, message_name: &str, output_dir: &Path, payloads: Vec<M>) {
     let encoded_payloads: Vec<Vec<u8>> = payloads.iter().map(|m| m.encode_to_vec()).collect();
 
@@ -246,6 +264,15 @@ fn main() {
         output_dir,
         (0..NUM_PAYLOADS)
             .map(|_| gen_media_frame(&mut rng))
+            .collect(),
+    );
+
+    write_dataset(
+        "packed_tile",
+        "bench.PackedTile",
+        output_dir,
+        (0..NUM_PAYLOADS)
+            .map(|_| gen_packed_tile(&mut rng))
             .collect(),
     );
 
