@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **`chrono` interop for `buffa-types`.** A new off-by-default,
+  `no_std`-compatible `chrono` feature adds conversions between the
+  well-known `Timestamp` / `Duration` types and `chrono::DateTime` /
+  `chrono::TimeDelta`: `From<chrono::DateTime<Tz>> for Timestamp` (any time
+  zone; the instant is preserved), `TryFrom<Timestamp> for DateTime<Utc>`,
+  `From<TimeDelta> for Duration`, and `TryFrom<Duration> for TimeDelta`. The
+  last returns a new `DurationChronoError` because `TimeDelta`'s range
+  (±`i64::MAX` milliseconds) is narrower than proto `Duration`'s.
+
 - **`[debug_redact = true]` is honored in generated `Debug` impls.** Fields
   carrying the standard `debug_redact` field option print `[REDACTED]` instead
   of their value in the owned message's `Debug` impl, and oneof enums, view
@@ -35,6 +44,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   payloads), reported in #171.
 
 ### Changed
+
+- **`TimestampError::Overflow`'s `Display` message generalized.** It now
+  reads "timestamp is out of range for the target type" instead of naming
+  `SystemTime`, since the same error is returned by the new
+  `Timestamp` → `chrono::DateTime<Utc>` conversion. Code matching on the
+  enum variant is unaffected.
 
 - **`HasMessageView` carries a `#[diagnostic::on_unimplemented]` hint.** When a
   type is used where the generated view family is required but its crate was

@@ -56,6 +56,10 @@ buffa-build = { path = "buffa-build", version = "0.7.0" }
 buffa-test = { path = "buffa-test", version = "0.7.0" }
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
 bytes = { version = "1", default-features = false }
+# Minimum 0.4.31: `TimeDelta::try_seconds` (used by Duration → TimeDelta
+# overflow detection) and `DateTime::<Utc>::from_timestamp` (used by
+# Timestamp → DateTime<Utc>) were both stabilised in 0.4.31.
+chrono = { version = "0.4.31", default-features = false }
 hashbrown = { version = "0.15", default-features = false, features = ["default-hasher"] }
 once_cell = { version = "1", default-features = false }
 serde = { version = "1", default-features = false }

@@ -23,6 +23,9 @@ arbitrary = ["dep:arbitrary", "buffa/arbitrary"]
 # embedded descriptor pool uses `std::sync::OnceLock`). Off by default so
 # `no_std` consumers and those that don't reflect pay nothing.
 reflect = ["dep:buffa-descriptor", "buffa-descriptor/reflect", "buffa-descriptor/std", "std"]
+# Conversions between WKT `Timestamp` / `Duration` and `chrono::DateTime<Utc>` /
+# `chrono::TimeDelta`. `no_std`-compatible.
+chrono = ["dep:chrono"]
 
 [dependencies]
 arbitrary = { workspace = true, optional = true }
@@ -35,6 +38,7 @@ buffa-descriptor = { workspace = true, optional = true }
 # Generated `Any.value: Bytes` (via `bytes_fields` in gen_wkt_types) emits
 # `::bytes::Bytes` paths, so the crate is referenced directly.
 bytes = { workspace = true }
+chrono = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }

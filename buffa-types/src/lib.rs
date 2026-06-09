@@ -33,6 +33,9 @@
 //!
 //! - `Timestamp` ↔ [`std::time::SystemTime`] (requires `std` feature)
 //! - `Duration` ↔ [`std::time::Duration`] (requires `std` feature)
+//! - `Timestamp` ↔ [`chrono::DateTime`] (requires `chrono` feature; any time
+//!   zone in, `Utc` out)
+//! - `Duration` ↔ [`chrono::TimeDelta`] (requires `chrono` feature)
 //! - `Any::pack` / `Any::unpack` helpers
 //! - `Value` constructors: [`Value::null`](google::protobuf::Value::null), `From<f64>`, `From<String>`, `From<bool>`, etc.
 //! - Wrapper type `From`/`Into` impls
@@ -43,6 +46,9 @@
 //!   conversions, `std::error::Error`). Without it the crate is `no_std` + `alloc`.
 //! - **`json`** — proto3 canonical JSON serde for the WKTs.
 //! - **`arbitrary`** — `arbitrary::Arbitrary` derives for fuzzing.
+//! - **`chrono`** — `Timestamp` ↔ `chrono::DateTime` and `Duration` ↔
+//!   `chrono::TimeDelta` conversions. `no_std`-compatible (`chrono` is pulled
+//!   with `default-features = false`).
 //! - **`reflect`** — runtime reflection: the WKT view types implement
 //!   `buffa_descriptor::reflect::ReflectMessage`, so a message that has a WKT
 //!   field can reflect over it. This pulls a `buffa-descriptor` dependency and
@@ -51,6 +57,7 @@
 //!   compiler says `ReflectMessage` is not implemented, enable this feature.
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(rustdoc::broken_intra_doc_links)]
 extern crate alloc;
 
@@ -64,6 +71,11 @@ mod value_ext;
 #[cfg(feature = "json")]
 mod view_serde_ext;
 mod wrapper_ext;
+
+#[cfg(feature = "chrono")]
+mod duration_chrono;
+#[cfg(feature = "chrono")]
+mod timestamp_chrono;
 
 // Well-known type Rust structs — generated once by `gen_wkt_types`, checked
 // into src/generated/. These protos are Google-owned and frozen; regeneration
@@ -99,6 +111,10 @@ pub use google::protobuf::{
 // in private modules, so re-exporting is the only way to make them accessible).
 pub use duration_ext::DurationError;
 pub use timestamp_ext::TimestampError;
+
+#[cfg(feature = "chrono")]
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
+pub use duration_chrono::DurationChronoError;
 
 // Re-export the WKT registry function for `Any` JSON + text support.
 pub use any_ext::register_wkt_types;

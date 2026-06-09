@@ -82,9 +82,9 @@ fn test_bytes_type_view_to_owned() {
 // The bytes_variant build block compiles BytesContexts with use_bytes_type()
 // + generate_views=true; compilation alone is the primary assertion.
 
+use crate::basic_bytes::BytesContexts;
 use crate::basic_bytes::__buffa::oneof::bytes_contexts::Choice as ChoiceOneof;
 use crate::basic_bytes::__buffa::view::BytesContextsView;
-use crate::basic_bytes::BytesContexts;
 
 #[test]
 fn test_bytes_type_repeated_view_to_owned() {
@@ -253,8 +253,8 @@ fn test_bytes_type_owned_decode_zero_copy_from_bytes() {
 #[test]
 fn test_bytes_type_nested_to_owned_from_source_zero_copy() {
     // Issue #52: __buffa_src must thread through nested-message recursion.
-    use crate::basic_bytes::__buffa::view::BytesNestedView;
     use crate::basic_bytes::BytesNested;
+    use crate::basic_bytes::__buffa::view::BytesNestedView;
     use buffa::MessageView;
     let msg = BytesNested {
         inner: buffa::MessageField::some(BytesContexts {

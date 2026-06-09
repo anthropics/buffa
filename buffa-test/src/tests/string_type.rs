@@ -7,8 +7,8 @@
 //! would not build. The runtime checks below verify behavior and pin the field
 //! types to the configured representations.
 
-use crate::string_types::__buffa::oneof::string_contexts::Choice;
 use crate::string_types::StringContexts;
+use crate::string_types::__buffa::oneof::string_contexts::Choice;
 use buffa::Message;
 
 #[test]
