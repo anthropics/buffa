@@ -266,18 +266,34 @@ pub fn unescape_c_escape_string(s: &str) -> Result<Vec<u8>, CodeGenError> {
                     dst.push(octal as u8);
                 }
                 b'x' | b'X' => {
-                    if p + 3 > len {
+                    p += 1;
+                    if p == len {
                         return Err(CodeGenError::Other(format!(
                             "invalid c-escaped default binary value ({s}): incomplete hex value"
                         )));
                     }
-                    let b = u8::from_str_radix(&s[p + 1..p + 3], 16).map_err(|_| {
-                        CodeGenError::Other(format!(
+                    if !src[p].is_ascii_hexdigit() {
+                        return Err(CodeGenError::Other(format!(
                             "invalid c-escaped default binary value ({s}): invalid hex value"
-                        ))
-                    })?;
-                    dst.push(b);
-                    p += 3;
+                        )));
+                    }
+                    // C++ consumes an arbitrary run of hex digits and then
+                    // range-checks the accumulated value; saturate so absurdly
+                    // long runs cannot wrap (they still fail the range check).
+                    let mut hex = 0u32;
+                    while p < len {
+                        let Some(digit) = char::from(src[p]).to_digit(16) else {
+                            break;
+                        };
+                        hex = hex.saturating_mul(16).saturating_add(digit);
+                        p += 1;
+                    }
+                    if hex > 255 {
+                        return Err(CodeGenError::Other(format!(
+                            "invalid c-escaped default binary value ({s}): hex escape \\x{hex:x} out of range (max \\xff)"
+                        )));
+                    }
+                    dst.push(hex as u8);
                 }
                 _ => {
                     return Err(CodeGenError::Other(format!(
@@ -333,7 +349,15 @@ mod tests {
 
     #[test]
     fn unescape_incomplete_hex() {
-        assert!(unescape_c_escape_string(r"\x1").is_err());
+        // `\x` with no digits at all is incomplete.
+        assert!(unescape_c_escape_string(r"\x").is_err());
+    }
+
+    #[test]
+    fn unescape_hex_single_digit() {
+        // C++ accepts any run of one or more hex digits; a single digit at
+        // end of input is a complete escape.
+        assert_eq!(unescape_c_escape_string(r"\x1").unwrap(), &[0x01]);
     }
 
     #[test]
@@ -364,6 +388,39 @@ mod tests {
     #[test]
     fn unescape_empty_input() {
         assert_eq!(unescape_c_escape_string("").unwrap(), &[] as &[u8]);
+    }
+
+    #[test]
+    fn unescape_hex_overflow_rejected() {
+        // \xff = 255; boundary value, must succeed.
+        assert_eq!(unescape_c_escape_string(r"\xff").unwrap(), &[0xFF]);
+        // \xfff = 4095; C++ consumes all three digits and rejects the
+        // accumulated value as out of range (it does NOT decode \xff and
+        // leave a literal 'f').
+        assert!(unescape_c_escape_string(r"\xfff").is_err());
+    }
+
+    #[test]
+    fn unescape_hex_greedy_leading_zeros() {
+        // A long run of digits whose accumulated value fits in a byte is
+        // accepted: C++ range-checks the value, not the digit count.
+        assert_eq!(unescape_c_escape_string(r"\x000000ff").unwrap(), &[0xFF]);
+    }
+
+    #[test]
+    fn unescape_hex_long_run_no_overflow() {
+        // 10 'f's would wrap a u32 (0xffffffffff > u32::MAX); the
+        // accumulator must saturate and reject, not wrap or panic.
+        assert!(unescape_c_escape_string(r"\xffffffffff").is_err());
+    }
+
+    #[test]
+    fn unescape_hex_greedy_stops_at_non_hex_digit() {
+        // The digit run ends at the first non-hex character.
+        assert_eq!(
+            unescape_c_escape_string(r"\x41z").unwrap(),
+            &[0x41, b'z'] as &[u8]
+        );
     }
 
     #[test]

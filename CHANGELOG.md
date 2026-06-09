@@ -45,6 +45,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `UnescapeCEscapeString` behavior (#164). Such escapes never appear in
   protoc-emitted descriptors, so this only affects hand-built or corrupted
   `FileDescriptorSet` input.
+- Hex escapes in a proto2 bytes field's `default_value` now consume the full
+  run of hex digits and reject accumulated values above `\xff` (255) with a
+  codegen error, matching protobuf C++'s `UnescapeCEscapeString` behavior
+  (#173). Previously exactly two digits were read, so `\xfff` decoded to the
+  byte `0xFF` followed by a literal `f` instead of erroring, and a
+  single-digit escape such as `\x1` at end of input was wrongly rejected. As
+  with the octal fix, such escapes never appear in protoc-emitted
+  descriptors, so this only affects hand-built or corrupted
+  `FileDescriptorSet` input.
 
 ## [0.7.0] - 2026-05-28
 
