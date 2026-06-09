@@ -1,0 +1,13 @@
+# Pin the development toolchain so local builds and the CI lint job format
+# and lint identically. rustfmt output drifts across releases even with
+# default settings (e.g. import ordering of `__`-prefixed modules changed
+# between rustfmt 1.7 and 1.9), so an unpinned local rustfmt can silently
+# reformat code that CI then rejects — or vice versa. rustfmt's own
+# `required_version` knob is nightly-only, so the pin lives here instead.
+#
+# Keep in sync with the lint-and-test toolchain in .github/workflows/ci.yml;
+# bump both together. The MSRV check (rust-version in Cargo.toml, currently
+# 1.87) is enforced separately by the msrv-check CI job.
+[toolchain]
+channel = "1.95"
+components = ["rustfmt", "clippy"]

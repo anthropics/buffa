@@ -4,6 +4,7 @@ See [DESIGN.md](DESIGN.md) for the architectural overview and [README.md](README
 
 ## Prerequisites
 
+- **Rust toolchain** — pinned by `rust-toolchain.toml`; rustup installs it automatically on the first `cargo` invocation. This keeps local `cargo fmt`/`cargo clippy` output identical to the CI lint job (rustfmt formatting drifts across releases, so an unpinned toolchain can disagree with CI). Bump the pin together with the `lint-and-test` toolchain in `.github/workflows/ci.yml`.
 - **protoc v27+** — the test suite includes editions-syntax protos (`edition = "2023"`). The `editions_2024.proto` test requires protoc v30+ (where edition 2024 was stabilized) — it's skipped with a cargo warning on older versions. Ubuntu's apt `protobuf-compiler` (v21.12) is too old. Run `task install-protoc` to download the CI-matched version into `.local/` (requires `gh` authenticated), then use `task test-local`.
 
 ## Change Size

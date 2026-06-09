@@ -26,9 +26,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned (not @stable) so rustfmt/clippy match rust-toolchain.toml and
+      # local runs agree with CI. Bump together with that file. The action
+      # sets RUSTUP_TOOLCHAIN, so the explicit pin here is what the job uses.
+      - uses: dtolnay/rust-toolchain@1.95
         with:
-          components: clippy
+          components: clippy, rustfmt
 
       - name: Install protoc
         run: |
