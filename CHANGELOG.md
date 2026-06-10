@@ -6,26 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Fixed
-
-- **Mixed-mode reflection degrades at the boundary as designed** (#179). A
-  vtable-mode message embedding owned message types generated in bridge mode
-  (another crate or compilation) now reflects them as owned `DynamicMessage`
-  snapshots at the boundary instead of failing to compile: vtable accessors
-  for message-typed fields route through the field type's own
-  `Reflectable::reflect()`, and bridge mode now also emits `ReflectElement`
-  so `repeated` / `map` fields degrade too. View reflection still requires
-  vtable-grade types throughout — that limitation is now documented. (Code
-  matching exhaustively on `ReflectCow` may now observe `Owned` for
-  bridge-grade message fields; all-vtable builds are unchanged.)
-- **Missing-reflection compile errors point at the fix** (#179).
-  `ReflectMessage`, `Reflectable`, and `ReflectElement` carry
-  `#[diagnostic::on_unimplemented]` hints, so building vtable codegen against
-  an extern-path crate without its reflection feature (e.g. `buffa-types`
-  without `reflect`) names the missing cargo feature instead of emitting a
-  bare unsatisfied-trait error. The `reflect_mode` docs state the
-  requirement.
-
 ### Added
 
 - **`[debug_redact = true]` is honored in generated `Debug` impls.** Fields
@@ -68,6 +48,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **Mixed-mode reflection degrades at the boundary as designed** (#179). A
+  vtable-mode message embedding owned message types generated in bridge mode
+  (another crate or compilation) now reflects them as owned `DynamicMessage`
+  snapshots at the boundary instead of failing to compile: vtable accessors
+  for message-typed fields route through the field type's own
+  `Reflectable::reflect()`, and bridge mode now also emits `ReflectElement`
+  so `repeated` / `map` fields degrade too. View reflection still requires
+  vtable-grade types throughout — that limitation is now documented. (Code
+  matching exhaustively on `ReflectCow` may now observe `Owned` for
+  bridge-grade message fields; all-vtable builds are unchanged.)
+- **Missing-reflection compile errors point at the fix** (#179).
+  `ReflectMessage`, `Reflectable`, and `ReflectElement` carry
+  `#[diagnostic::on_unimplemented]` hints, so building vtable codegen against
+  an extern-path crate without its reflection feature (e.g. `buffa-types`
+  without `reflect`) names the missing cargo feature instead of emitting a
+  bare unsatisfied-trait error. The `reflect_mode` docs state the
+  requirement.
 - The owned message `Debug` impl now labels keyword-named fields without the
   raw-identifier prefix (`type` instead of `r#type`), matching what
   `#[derive(Debug)]` prints and what the view `Debug` impl emits.
