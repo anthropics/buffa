@@ -313,6 +313,12 @@ impl Config {
     /// implemented", which is a misleading diagnostic. Most consumers
     /// should leave `gate_impls_on_crate_features` off.
     ///
+    /// Reflecting message-typed fields also requires every crate that field
+    /// types resolve to via an extern path — notably `buffa-types` for
+    /// well-known types — to enable its own reflection feature; see
+    /// [`reflect_mode`](Self::reflect_mode#extern-path-types) for the
+    /// `Cargo.toml` requirement and mixed-mode behavior.
+    ///
     /// # Performance
     ///
     /// In the default vtable mode, `reflect()` borrows `self` — no round-trip,
@@ -362,6 +368,28 @@ impl Config {
     /// All non-`Off` modes require the consuming crate to depend on
     /// `buffa-descriptor` with its `reflect` feature and on `std`. The call
     /// site (`foo.reflect().get(fd)`) is identical across modes.
+    ///
+    /// # Extern-path types
+    ///
+    /// Reflection on a message reaches into its message-typed fields, so
+    /// every crate that field types resolve to via an extern path must have
+    /// its own reflection enabled. In particular, well-known types resolve
+    /// to `buffa-types` by default, and its impls are behind a cargo
+    /// feature: depend on `buffa-types = { ..., features = ["reflect"] }`
+    /// or the build fails with unsatisfied `Reflectable` /
+    /// `ReflectMessage` bounds on the WKT.
+    ///
+    /// # Mixed modes
+    ///
+    /// A vtable-mode message may embed owned message types generated in
+    /// bridge mode (e.g. a dependency crate that chose the smaller output):
+    /// reflective access degrades to an owned `DynamicMessage` snapshot at
+    /// that boundary instead of failing. For a bridge-grade `repeated` or
+    /// `map` field the snapshot is taken per element on every access, so
+    /// reflecting a large mixed-mode collection scales the encode/decode
+    /// cost by the element count. The *view* reflection surface cannot
+    /// degrade — every view type embedded in a vtable-mode view must itself
+    /// be vtable-grade, and a bridge-grade view field is a compile error.
     #[must_use]
     pub fn reflect_mode(mut self, mode: ReflectMode) -> Self {
         mode.apply(&mut self.codegen_config);
@@ -576,6 +604,56 @@ impl Config {
     #[must_use]
     pub fn use_bytes_type(mut self) -> Self {
         self.codegen_config.bytes_fields.push(".".to_string());
+        self
+    }
+
+    /// Store the matching message-typed oneof variants inline instead of
+    /// wrapping them in `Box<T>`.
+    ///
+    /// By default every message/group oneof variant is boxed so that recursive
+    /// types compile. For non-recursive variants the `Box` is pure overhead (an
+    /// allocation per construction); this opts the matching variants out.
+    /// This affects the owned message enum only — view oneof variants remain
+    /// boxed.
+    ///
+    /// Each path is a fully-qualified proto variant path prefix, e.g.
+    /// `".my.pkg.MyMessage.body.small"` for one variant or `".my.pkg"` for a
+    /// package (same matching as [`use_bytes_type_in`](Self::use_bytes_type_in)).
+    /// A leading dot is added if missing, mirroring
+    /// [`extern_path`](Self::extern_path).
+    ///
+    /// Recursive variants cannot be stored inline (the type would be
+    /// unsized). A rule that names a recursive variant *exactly* is rejected
+    /// at codegen time; a broader prefix rule silently keeps recursive
+    /// variants boxed and inlines the rest. For example, with
+    /// `unbox_oneof_in(&[".my.pkg.Node"])`, a self-referential
+    /// `Node.kind.child` variant stays boxed while `Node`'s other message
+    /// variants become inline.
+    #[must_use]
+    pub fn unbox_oneof_in(mut self, paths: &[impl AsRef<str>]) -> Self {
+        self.codegen_config
+            .unboxed_oneof_fields
+            .extend(paths.iter().map(|p| {
+                let p = p.as_ref();
+                // Normalize to the leading-dot form: matching and the
+                // exact-path recursion error both depend on it.
+                if p.starts_with('.') {
+                    p.to_string()
+                } else {
+                    format!(".{p}")
+                }
+            }));
+        self
+    }
+
+    /// Store every non-recursive message-typed oneof variant inline instead of
+    /// boxing it. Convenience for `.unbox_oneof_in(&["."])`; recursive
+    /// variants stay boxed.
+    #[must_use]
+    pub fn unbox_oneof(mut self) -> Self {
+        self.codegen_config
+            .unboxed_oneof_fields
+            .push(".".to_string());
         self
     }
 
@@ -1209,6 +1287,22 @@ fn generate_include_file(entries: &[(String, String)], relative: bool) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unbox_oneof_in_normalizes_leading_dot() {
+        // Without normalization a dotless path would silently match nothing,
+        // and the exact-path recursion error would never fire for it.
+        let config = Config::new()
+            .unbox_oneof_in(&["my.pkg.Msg.body.small", ".my.pkg.Other"])
+            .codegen_config;
+        assert_eq!(
+            config.unboxed_oneof_fields,
+            vec![
+                ".my.pkg.Msg.body.small".to_string(),
+                ".my.pkg.Other".to_string()
+            ]
+        );
+    }
 
     #[test]
     fn proto_relative_name_strips_include() {

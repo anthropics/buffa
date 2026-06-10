@@ -4,7 +4,7 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use bench_buffa::bench::__buffa::view::{
     analytics_event::PropertyView, AnalyticsEventView, ApiResponseView, LogRecordView,
-    MediaFrameView,
+    MediaFrameView, PackedTileView,
 };
 use bench_buffa::bench::__buffa::{oneof, view::oneof as view_oneof};
 use bench_buffa::bench::*;
@@ -207,6 +207,24 @@ fn bench_media_frame_view(c: &mut Criterion) {
         b.iter(|| {
             for payload in &dataset.payload {
                 let view = MediaFrameView::decode_view(payload).unwrap();
+                criterion::black_box(&view);
+            }
+        });
+    });
+
+    group.finish();
+}
+
+fn bench_packed_tile_view(c: &mut Criterion) {
+    let dataset = load_dataset(include_bytes!("../../datasets/packed_tile.pb"));
+    let bytes = total_payload_bytes(&dataset);
+    let mut group = c.benchmark_group("buffa/packed_tile");
+    group.throughput(Throughput::Bytes(bytes));
+
+    group.bench_function("decode_view", |b| {
+        b.iter(|| {
+            for payload in &dataset.payload {
+                let view = PackedTileView::decode_view(payload).unwrap();
                 criterion::black_box(&view);
             }
         });
@@ -550,6 +568,14 @@ fn bench_media_frame(c: &mut Criterion) {
     );
 }
 
+fn bench_packed_tile(c: &mut Criterion) {
+    benchmark_decode::<PackedTile>(
+        c,
+        "buffa/packed_tile",
+        include_bytes!("../../datasets/packed_tile.pb"),
+    );
+}
+
 fn bench_api_response_json(c: &mut Criterion) {
     benchmark_json::<ApiResponse>(
         c,
@@ -597,6 +623,7 @@ criterion_group!(
     bench_analytics_event,
     bench_google_message1,
     bench_media_frame,
+    bench_packed_tile,
 );
 
 criterion_group!(
@@ -606,6 +633,7 @@ criterion_group!(
     bench_analytics_event_view,
     bench_google_message1_view,
     bench_media_frame_view,
+    bench_packed_tile_view,
     bench_api_response_view_encode,
     bench_log_record_view_encode,
     bench_analytics_event_view_encode,

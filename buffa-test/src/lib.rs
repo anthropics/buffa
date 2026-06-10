@@ -66,6 +66,14 @@ pub mod wkt {
     buffa::include_proto!("test.wkt");
 }
 
+// unbox_oneof: `Envelope.body.small` is stored inline (opted out of Box),
+// `large` stays boxed. Compiling this module exercises every boxing site for
+// both shapes; runtime round-trips live in `tests/unbox_oneof.rs`.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod unbox_oneof {
+    buffa::include_proto!("unboxoneof");
+}
+
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod cross {
     buffa::include_proto!("test.cross");
@@ -154,6 +162,17 @@ pub mod modrace {
 )]
 pub mod proto2 {
     buffa::include_proto!("test.proto2");
+}
+
+// Mixed-mode reflection fixtures: bridge-mode dependency, vtable-mode parent
+// referencing it via extern_path. See tests/reflect_mixed_mode.rs.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod mixed_reflect_dep {
+    buffa::include_proto!("mixedref.dep");
+}
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod mixed_reflect_parent {
+    buffa::include_proto!("mixedref.parent");
 }
 
 #[allow(

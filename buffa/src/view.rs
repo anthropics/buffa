@@ -679,6 +679,16 @@ impl<'a, T> RepeatedView<'a, T> {
         self.elements.push(elem);
     }
 
+    /// Reserve capacity for at least `additional` more elements (used by
+    /// generated `decode_view` code as a pre-allocation hint for packed
+    /// repeated scalars). For varint elements the hint is an upper bound
+    /// (every element occupies at least one byte on the wire); for fixed-
+    /// size elements it is the exact remaining element count.
+    #[doc(hidden)]
+    pub fn reserve(&mut self, additional: usize) {
+        self.elements.reserve(additional);
+    }
+
     /// Returns an iterator over the elements.
     pub fn iter(&self) -> core::slice::Iter<'_, T> {
         self.elements.iter()
@@ -1528,6 +1538,26 @@ mod tests {
         let mut rv = RepeatedView::<i32>::default();
         rv.push(1);
         rv.push(2);
+        let collected: alloc::vec::Vec<_> = rv.iter().copied().collect();
+        assert_eq!(collected, alloc::vec![1, 2]);
+    }
+
+    #[test]
+    fn repeated_view_reserve_grows_capacity() {
+        let mut rv = RepeatedView::<u32>::default();
+        rv.reserve(64);
+        assert!(rv.elements.capacity() >= 64);
+        // Reserve must not produce visible elements.
+        assert!(rv.is_empty());
+        // reserve(0) is a no-op and must not panic.
+        rv.reserve(0);
+        // Reserve after pushes adds capacity above current len.
+        rv.push(1);
+        rv.push(2);
+        rv.reserve(100);
+        assert_eq!(rv.len(), 2);
+        assert!(rv.elements.capacity() >= 102);
+        // Subsequent reserve calls must not corrupt the existing elements.
         let collected: alloc::vec::Vec<_> = rv.iter().copied().collect();
         assert_eq!(collected, alloc::vec![1, 2]);
     }

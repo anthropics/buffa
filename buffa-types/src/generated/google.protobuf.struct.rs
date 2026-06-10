@@ -147,6 +147,7 @@ const _: () = {
         }
     }
     impl ::buffa_descriptor::reflect::ReflectElement for Struct {
+        #[inline]
         fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
             ::buffa_descriptor::reflect::ValueRef::Message(
                 ::buffa_descriptor::reflect::ReflectCow::Borrowed(self),
@@ -173,6 +174,7 @@ const _: () = {
         /// Vtable-mode reflective handle: borrows `self` directly. No
         /// encode/decode round-trip and no allocation — the reflective
         /// accessors read this message's fields in place.
+        #[inline]
         fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
             ::buffa_descriptor::reflect::ReflectCow::Borrowed(self)
         }
@@ -517,12 +519,12 @@ const _: () = {
                             __buffa::oneof::value::Kind::StructValue(v),
                         ) => {
                             ::buffa_descriptor::reflect::ValueRef::Message(
-                                ::buffa_descriptor::reflect::ReflectCow::Borrowed(&**v),
+                                ::buffa_descriptor::reflect::Reflectable::reflect(&**v),
                             )
                         }
                         _ => {
                             ::buffa_descriptor::reflect::ValueRef::Message(
-                                ::buffa_descriptor::reflect::ReflectCow::Borrowed(
+                                ::buffa_descriptor::reflect::Reflectable::reflect(
                                     <Struct as ::buffa::DefaultInstance>::default_instance(),
                                 ),
                             )
@@ -535,12 +537,12 @@ const _: () = {
                             __buffa::oneof::value::Kind::ListValue(v),
                         ) => {
                             ::buffa_descriptor::reflect::ValueRef::Message(
-                                ::buffa_descriptor::reflect::ReflectCow::Borrowed(&**v),
+                                ::buffa_descriptor::reflect::Reflectable::reflect(&**v),
                             )
                         }
                         _ => {
                             ::buffa_descriptor::reflect::ValueRef::Message(
-                                ::buffa_descriptor::reflect::ReflectCow::Borrowed(
+                                ::buffa_descriptor::reflect::Reflectable::reflect(
                                     <ListValue as ::buffa::DefaultInstance>::default_instance(),
                                 ),
                             )
@@ -623,6 +625,7 @@ const _: () = {
         }
     }
     impl ::buffa_descriptor::reflect::ReflectElement for Value {
+        #[inline]
         fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
             ::buffa_descriptor::reflect::ValueRef::Message(
                 ::buffa_descriptor::reflect::ReflectCow::Borrowed(self),
@@ -649,6 +652,7 @@ const _: () = {
         /// Vtable-mode reflective handle: borrows `self` directly. No
         /// encode/decode round-trip and no allocation — the reflective
         /// accessors read this message's fields in place.
+        #[inline]
         fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
             ::buffa_descriptor::reflect::ReflectCow::Borrowed(self)
         }
@@ -1135,6 +1139,7 @@ const _: () = {
         }
     }
     impl ::buffa_descriptor::reflect::ReflectElement for ListValue {
+        #[inline]
         fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
             ::buffa_descriptor::reflect::ValueRef::Message(
                 ::buffa_descriptor::reflect::ReflectCow::Borrowed(self),
@@ -1161,6 +1166,7 @@ const _: () = {
         /// Vtable-mode reflective handle: borrows `self` directly. No
         /// encode/decode round-trip and no allocation — the reflective
         /// accessors read this message's fields in place.
+        #[inline]
         fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
             ::buffa_descriptor::reflect::ReflectCow::Borrowed(self)
         }

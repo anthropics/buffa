@@ -342,6 +342,18 @@ pub struct CodeGenConfig {
     /// `string` variants. Map keys and values always stay `String`, mirroring
     /// the bytes path (where map values always stay `Vec<u8>`).
     pub string_fields: Vec<(String, StringRepr)>,
+    /// Fully-qualified proto paths whose message-typed oneof variants should
+    /// **not** be wrapped in `Box<T>`. By default every message/group oneof
+    /// variant is boxed (so recursive types compile); entries here opt matching
+    /// variants out, storing the message inline in the enum.
+    ///
+    /// Each entry is a proto path prefix matched with the same
+    /// proto-segment-aware logic as [`bytes_fields`](Self::bytes_fields)
+    /// (`"."` matches every variant). Recursive variants cannot be stored
+    /// inline (the type would be unsized): an entry naming one *exactly* is
+    /// rejected at codegen time, while a broader prefix entry silently keeps
+    /// recursive variants boxed and inlines the rest.
+    pub unboxed_oneof_fields: Vec<String>,
     /// Honor `features.utf8_validation = NONE` by emitting `Vec<u8>` / `&[u8]`
     /// for such string fields instead of `String` / `&str`.
     ///
@@ -604,6 +616,7 @@ impl Default for CodeGenConfig {
             extern_paths: Vec::new(),
             bytes_fields: Vec::new(),
             string_fields: Vec::new(),
+            unboxed_oneof_fields: Vec::new(),
             strict_utf8_mapping: false,
             allow_message_set: false,
             generate_text: false,

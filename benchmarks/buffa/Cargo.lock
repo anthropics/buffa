@@ -71,7 +71,7 @@ dependencies = [
 
 [[package]]
 name = "buffa"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "base64",
  "bytes",
@@ -87,7 +87,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-build"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "buffa",
  "buffa-codegen",
@@ -96,7 +96,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-codegen"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "buffa",
  "buffa-descriptor",
@@ -109,7 +109,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-descriptor"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "buffa",
  "serde",

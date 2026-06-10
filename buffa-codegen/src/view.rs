@@ -1229,6 +1229,21 @@ fn repeated_decode_arm(
         let dfn = decode_fn_token(ty);
         quote! { view.#ident.push(#dfn(&mut pcur)?); }
     };
+
+    // Fixed-size types can reserve the exact element count. For varints and
+    // bools, every element occupies at least one byte, so the payload length
+    // is a safe upper bound.
+    let reserve_divisor: usize = match ty {
+        Type::TYPE_FIXED32 | Type::TYPE_SFIXED32 | Type::TYPE_FLOAT => 4,
+        Type::TYPE_FIXED64 | Type::TYPE_SFIXED64 | Type::TYPE_DOUBLE => 8,
+        _ => 1,
+    };
+    let reserve_stmt = if reserve_divisor > 1 {
+        quote! { view.#ident.reserve(payload.len() / #reserve_divisor); }
+    } else {
+        quote! { view.#ident.reserve(payload.len()); }
+    };
+
     let unpacked_elem = if ty == Type::TYPE_ENUM {
         if closed {
             // Unpacked: each element has its own tag, so `before_tag` captures
@@ -1249,6 +1264,7 @@ fn repeated_decode_arm(
             if tag.wire_type() == ::buffa::encoding::WireType::LengthDelimited {
                 // Packed: extract payload, decode elements via local cursor.
                 let payload = ::buffa::types::borrow_bytes(&mut cur)?;
+                #reserve_stmt
                 let mut pcur: &[u8] = payload;
                 while !pcur.is_empty() { #packed_elem }
             } else if tag.wire_type() == #elem_wire_type {
@@ -1558,7 +1574,7 @@ fn build_to_owned_fields(
                     .ok_or(CodeGenError::MissingField("field.name"))?;
                 let variant = crate::oneof::oneof_variant_ident(fname);
                 let ty = effective_type(ctx, f, features);
-                let conv = oneof_variant_to_owned(scope, ty, fname);
+                let conv = oneof_variant_to_owned(scope, ty, oneof_name, fname);
                 Ok(quote! {
                     #view_enum::#variant(v) => #owned_enum::#variant(#conv),
                 })
@@ -1749,7 +1765,12 @@ fn map_to_owned_expr(
     })
 }
 
-fn oneof_variant_to_owned(scope: MessageScope<'_>, ty: Type, field_name: &str) -> TokenStream {
+fn oneof_variant_to_owned(
+    scope: MessageScope<'_>,
+    ty: Type,
+    oneof_name: &str,
+    field_name: &str,
+) -> TokenStream {
     let MessageScope { ctx, proto_fqn, .. } = scope;
     match ty {
         Type::TYPE_STRING => {
@@ -1763,7 +1784,18 @@ fn oneof_variant_to_owned(scope: MessageScope<'_>, ty: Type, field_name: &str) -
         // match-ergonomics on &ViewEnum → v: &&[u8]. bytes_to_owned handles it.
         Type::TYPE_BYTES => bytes_to_owned(ctx, proto_fqn, field_name, quote! { v }),
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
-            quote! { ::buffa::alloc::boxed::Box::new(v.to_owned_from_source(__buffa_src)) }
+            // The owned variant is boxed unless opted out; `v` derefs through
+            // the view's own `Box` either way, so only the wrapper differs.
+            let owned = quote! { v.to_owned_from_source(__buffa_src) };
+            if crate::oneof::variant_boxed(
+                ctx,
+                ty,
+                &format!(".{proto_fqn}.{oneof_name}.{field_name}"),
+            ) {
+                quote! { ::buffa::alloc::boxed::Box::new(#owned) }
+            } else {
+                owned
+            }
         }
         _ => quote! { *v },
     }

@@ -96,6 +96,7 @@ const _: () = {
         }
     }
     impl ::buffa_descriptor::reflect::ReflectElement for DoubleValue {
+        #[inline]
         fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
             ::buffa_descriptor::reflect::ValueRef::Message(
                 ::buffa_descriptor::reflect::ReflectCow::Borrowed(self),
@@ -122,6 +123,7 @@ const _: () = {
         /// Vtable-mode reflective handle: borrows `self` directly. No
         /// encode/decode round-trip and no allocation — the reflective
         /// accessors read this message's fields in place.
+        #[inline]
         fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
             ::buffa_descriptor::reflect::ReflectCow::Borrowed(self)
         }
@@ -336,6 +338,7 @@ const _: () = {
         }
     }
     impl ::buffa_descriptor::reflect::ReflectElement for FloatValue {
+        #[inline]
         fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
             ::buffa_descriptor::reflect::ValueRef::Message(
                 ::buffa_descriptor::reflect::ReflectCow::Borrowed(self),
@@ -362,6 +365,7 @@ const _: () = {
         /// Vtable-mode reflective handle: borrows `self` directly. No
         /// encode/decode round-trip and no allocation — the reflective
         /// accessors read this message's fields in place.
+        #[inline]
         fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
             ::buffa_descriptor::reflect::ReflectCow::Borrowed(self)
         }
@@ -576,6 +580,7 @@ const _: () = {
         }
     }
     impl ::buffa_descriptor::reflect::ReflectElement for Int64Value {
+        #[inline]
         fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
             ::buffa_descriptor::reflect::ValueRef::Message(
                 ::buffa_descriptor::reflect::ReflectCow::Borrowed(self),
@@ -602,6 +607,7 @@ const _: () = {
         /// Vtable-mode reflective handle: borrows `self` directly. No
         /// encode/decode round-trip and no allocation — the reflective
         /// accessors read this message's fields in place.
+        #[inline]
         fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
             ::buffa_descriptor::reflect::ReflectCow::Borrowed(self)
         }
@@ -816,6 +822,7 @@ const _: () = {
         }
     }
     impl ::buffa_descriptor::reflect::ReflectElement for UInt64Value {
+        #[inline]
         fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
             ::buffa_descriptor::reflect::ValueRef::Message(
                 ::buffa_descriptor::reflect::ReflectCow::Borrowed(self),
@@ -842,6 +849,7 @@ const _: () = {
         /// Vtable-mode reflective handle: borrows `self` directly. No
         /// encode/decode round-trip and no allocation — the reflective
         /// accessors read this message's fields in place.
+        #[inline]
         fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
             ::buffa_descriptor::reflect::ReflectCow::Borrowed(self)
         }
@@ -1056,6 +1064,7 @@ const _: () = {
         }
     }
     impl ::buffa_descriptor::reflect::ReflectElement for Int32Value {
+        #[inline]
         fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
             ::buffa_descriptor::reflect::ValueRef::Message(
                 ::buffa_descriptor::reflect::ReflectCow::Borrowed(self),
@@ -1082,6 +1091,7 @@ const _: () = {
         /// Vtable-mode reflective handle: borrows `self` directly. No
         /// encode/decode round-trip and no allocation — the reflective
         /// accessors read this message's fields in place.
+        #[inline]
         fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
             ::buffa_descriptor::reflect::ReflectCow::Borrowed(self)
         }
@@ -1296,6 +1306,7 @@ const _: () = {
         }
     }
     impl ::buffa_descriptor::reflect::ReflectElement for UInt32Value {
+        #[inline]
         fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
             ::buffa_descriptor::reflect::ValueRef::Message(
                 ::buffa_descriptor::reflect::ReflectCow::Borrowed(self),
@@ -1322,6 +1333,7 @@ const _: () = {
         /// Vtable-mode reflective handle: borrows `self` directly. No
         /// encode/decode round-trip and no allocation — the reflective
         /// accessors read this message's fields in place.
+        #[inline]
         fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
             ::buffa_descriptor::reflect::ReflectCow::Borrowed(self)
         }
@@ -1536,6 +1548,7 @@ const _: () = {
         }
     }
     impl ::buffa_descriptor::reflect::ReflectElement for BoolValue {
+        #[inline]
         fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
             ::buffa_descriptor::reflect::ValueRef::Message(
                 ::buffa_descriptor::reflect::ReflectCow::Borrowed(self),
@@ -1562,6 +1575,7 @@ const _: () = {
         /// Vtable-mode reflective handle: borrows `self` directly. No
         /// encode/decode round-trip and no allocation — the reflective
         /// accessors read this message's fields in place.
+        #[inline]
         fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
             ::buffa_descriptor::reflect::ReflectCow::Borrowed(self)
         }
@@ -1776,6 +1790,7 @@ const _: () = {
         }
     }
     impl ::buffa_descriptor::reflect::ReflectElement for StringValue {
+        #[inline]
         fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
             ::buffa_descriptor::reflect::ValueRef::Message(
                 ::buffa_descriptor::reflect::ReflectCow::Borrowed(self),
@@ -1802,6 +1817,7 @@ const _: () = {
         /// Vtable-mode reflective handle: borrows `self` directly. No
         /// encode/decode round-trip and no allocation — the reflective
         /// accessors read this message's fields in place.
+        #[inline]
         fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
             ::buffa_descriptor::reflect::ReflectCow::Borrowed(self)
         }
@@ -2019,6 +2035,7 @@ const _: () = {
         }
     }
     impl ::buffa_descriptor::reflect::ReflectElement for BytesValue {
+        #[inline]
         fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
             ::buffa_descriptor::reflect::ValueRef::Message(
                 ::buffa_descriptor::reflect::ReflectCow::Borrowed(self),
@@ -2045,6 +2062,7 @@ const _: () = {
         /// Vtable-mode reflective handle: borrows `self` directly. No
         /// encode/decode round-trip and no allocation — the reflective
         /// accessors read this message's fields in place.
+        #[inline]
         fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
             ::buffa_descriptor::reflect::ReflectCow::Borrowed(self)
         }

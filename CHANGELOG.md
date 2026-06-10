@@ -18,6 +18,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `to_writer_view` for zero-copy views, and an `Error` type exposing a
   carrier-agnostic `Location { line, column }`. Requires message types
   generated with `json = true`. Contributed by @rsd-darshan.
+
+- **`unbox_oneof` opt-out for `Box`ed message oneof variants** (#126).
+  `Config::unbox_oneof_in(&[paths])` stores the matching message-typed oneof
+  variants inline in the owned enum instead of behind `Box<T>`, removing an
+  allocation per construction; `Config::unbox_oneof()` is the blanket form.
+  Recursive variants cannot be inlined: a rule naming one *exactly* is
+  rejected at codegen time, while broader prefix rules (including the
+  blanket) silently keep recursive variants boxed and inline the rest. View
+  oneof variants are unaffected and stay boxed. Enums with an inline message
+  variant carry `#[allow(clippy::large_enum_variant)]`. Contributed by
+  @sam-shridhar1950f.
+
 - **`[debug_redact = true]` is honored in generated `Debug` impls.** Fields
   carrying the standard `debug_redact` field option print `[REDACTED]` instead
   of their value in the owned message's `Debug` impl, and oneof enums, view
@@ -31,6 +43,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   The reflective `DynamicMessage` `Debug` impl honors the option as well,
   printing `[REDACTED]` in place of the value of any field whose descriptor
   carries it.
+
+- **Packed repeated view decoders pre-allocate `RepeatedView` capacity.**
+  Generated view decode arms for packed repeated scalar / enum fields now
+  call `RepeatedView::reserve(_)` before the decode loop, matching the
+  existing pre-allocation hint on the owned decode path. Fixed-width kinds
+  (`fixed32`, `sfixed32`, `float`, `fixed64`, `sfixed64`, `double`) reserve
+  the exact element count; varint kinds (`int32`/`64`, `uint32`/`64`,
+  `sint32`/`64`, `bool`, `enum`) reserve `payload.len()` as a safe upper
+  bound (every wire varint is ≥ 1 byte). The hidden `RepeatedView::reserve`
+  hook is also new but `#[doc(hidden)]`. This trims allocator pressure on
+  workloads that decode many small packed repeated fields (MVT-style
+  payloads), reported in #171.
 
 ### Changed
 
@@ -46,9 +70,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **Mixed-mode reflection degrades at the boundary as designed** (#179). A
+  vtable-mode message embedding owned message types generated in bridge mode
+  (another crate or compilation) now reflects them as owned `DynamicMessage`
+  snapshots at the boundary instead of failing to compile: vtable accessors
+  for message-typed fields route through the field type's own
+  `Reflectable::reflect()`, and bridge mode now also emits `ReflectElement`
+  so `repeated` / `map` fields degrade too. View reflection still requires
+  vtable-grade types throughout — that limitation is now documented. (Code
+  matching exhaustively on `ReflectCow` may now observe `Owned` for
+  bridge-grade message fields; all-vtable builds are unchanged.)
+- **Missing-reflection compile errors point at the fix** (#179).
+  `ReflectMessage`, `Reflectable`, and `ReflectElement` carry
+  `#[diagnostic::on_unimplemented]` hints, so building vtable codegen against
+  an extern-path crate without its reflection feature (e.g. `buffa-types`
+  without `reflect`) names the missing cargo feature instead of emitting a
+  bare unsatisfied-trait error. The `reflect_mode` docs state the
+  requirement.
 - The owned message `Debug` impl now labels keyword-named fields without the
   raw-identifier prefix (`type` instead of `r#type`), matching what
   `#[derive(Debug)]` prints and what the view `Debug` impl emits.
+- Octal escapes above `\377` (255) in a proto2 bytes field's `default_value`
+  are now rejected with a codegen error instead of silently wrapping to a
+  wrong byte (`\400` previously decoded to `0x00`), matching protobuf C++'s
+  `UnescapeCEscapeString` behavior (#164). Such escapes never appear in
+  protoc-emitted descriptors, so this only affects hand-built or corrupted
+  `FileDescriptorSet` input.
+- Hex escapes in a proto2 bytes field's `default_value` now consume the full
+  run of hex digits and reject accumulated values above `\xff` (255) with a
+  codegen error, matching protobuf C++'s `UnescapeCEscapeString` behavior
+  (#173). Previously exactly two digits were read, so `\xfff` decoded to the
+  byte `0xFF` followed by a literal `f` instead of erroring, and a
+  single-digit escape such as `\x1` at end of input was wrongly rejected. As
+  with the octal fix, such escapes never appear in protoc-emitted
+  descriptors, so this only affects hand-built or corrupted
+  `FileDescriptorSet` input.
 
 ## [0.7.0] - 2026-05-28
 

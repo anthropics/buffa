@@ -1,7 +1,9 @@
 //! Oneof enum code generation.
 
 use crate::generated::descriptor::field_descriptor_proto::Type;
-use crate::generated::descriptor::{DescriptorProto, FieldDescriptorProto, OneofDescriptorProto};
+use crate::generated::descriptor::{
+    DescriptorProto, FieldDescriptorProto, FileDescriptorProto, OneofDescriptorProto,
+};
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
 
@@ -48,6 +50,172 @@ pub(crate) fn is_boxed_variant(ty: Type) -> bool {
     matches!(ty, Type::TYPE_MESSAGE | Type::TYPE_GROUP)
 }
 
+/// Returns `true` when a oneof variant is stored in a `Box`.
+///
+/// Message and group variants box by default (see [`is_boxed_variant`]); a
+/// matching `config.unboxed_oneof_fields` rule opts the variant out, storing
+/// it inline. `variant_fqn` is the leading-dot variant path, e.g.
+/// `".my.pkg.MyMessage.body.small"`. Lookups go through the resolved set
+/// built by [`resolve_unboxed_variants`], which never contains recursive
+/// variants, so callers can store the value inline without a further
+/// unsized-type check.
+pub(crate) fn variant_boxed(ctx: &CodeGenContext, ty: Type, variant_fqn: &str) -> bool {
+    is_boxed_variant(ty) && !ctx.oneof_unboxed(variant_fqn)
+}
+
+/// Resolve `config.unboxed_oneof_fields` rules into the concrete set of
+/// variant paths (leading-dot form) that are stored inline.
+///
+/// A variant lands in the set when a rule matches it AND inlining it would
+/// not create an unsized type. Recursive variants matched by a *prefix* rule
+/// (including the `"."` blanket from `Config::unbox_oneof()`) are silently
+/// kept boxed — the blanket is documented as "every non-recursive variant".
+/// A rule that names a recursive variant *exactly* still errors, in
+/// `collect_variant_info`, which detects "exact rule but not in this set".
+///
+/// Resolving once up front (at context construction) keeps every downstream
+/// boxing site consistent with the enum declaration and builds the message
+/// index a single time.
+pub(crate) fn resolve_unboxed_variants(
+    files: &[FileDescriptorProto],
+    rules: &[String],
+) -> std::collections::HashSet<String> {
+    let mut resolved = std::collections::HashSet::new();
+    if rules.is_empty() {
+        return resolved;
+    }
+    let index = message_index(files);
+    for (msg_fqn, msg) in &index {
+        for_each_message_variant(msg, msg_fqn, |variant_fqn, type_name| {
+            if rule_matches(rules, &variant_fqn)
+                && !unboxing_is_recursive(&index, rules, msg_fqn, type_name)
+            {
+                resolved.insert(variant_fqn);
+            }
+        });
+    }
+    resolved
+}
+
+/// Whether any `unboxed_oneof_fields` rule matches the variant path.
+fn rule_matches(rules: &[String], variant_fqn: &str) -> bool {
+    rules
+        .iter()
+        .any(|prefix| crate::context::matches_proto_prefix(prefix, variant_fqn))
+}
+
+/// Invoke `f` for every message/group-typed real oneof member of `msg`, with
+/// the variant's leading-dot path and its target message name (no leading
+/// dot). `msg_fqn` has no leading dot.
+///
+/// Fields with a missing name, oneof index, or type name are skipped rather
+/// than surfaced as errors: protoc always populates them for real oneof
+/// members, and `collect_variant_info` independently reports `MissingField`
+/// for any descriptor malformed enough to hit this in practice.
+fn for_each_message_variant(msg: &DescriptorProto, msg_fqn: &str, mut f: impl FnMut(String, &str)) {
+    for field in &msg.field {
+        if !crate::impl_message::is_real_oneof_member(field) {
+            continue;
+        }
+        if !is_boxed_variant(field.r#type.unwrap_or_default()) {
+            continue;
+        }
+        let (Some(oneof_idx), Some(field_name), Some(type_name)) = (
+            field.oneof_index,
+            field.name.as_deref(),
+            field.type_name.as_deref(),
+        ) else {
+            continue;
+        };
+        let Some(oneof_name) = usize::try_from(oneof_idx)
+            .ok()
+            .and_then(|i| msg.oneof_decl.get(i))
+            .and_then(|o| o.name.as_deref())
+        else {
+            continue;
+        };
+        f(
+            format!(".{msg_fqn}.{oneof_name}.{field_name}"),
+            type_name.trim_start_matches('.'),
+        );
+    }
+}
+
+/// Build a map from fully-qualified message name (no leading dot) to its
+/// descriptor, walking every file and its nested types.
+fn message_index(
+    files: &[FileDescriptorProto],
+) -> std::collections::HashMap<String, &DescriptorProto> {
+    fn walk<'a>(
+        map: &mut std::collections::HashMap<String, &'a DescriptorProto>,
+        prefix: &str,
+        msg: &'a DescriptorProto,
+    ) {
+        let Some(name) = msg.name.as_deref() else {
+            return;
+        };
+        let fqn = if prefix.is_empty() {
+            name.to_string()
+        } else {
+            format!("{prefix}.{name}")
+        };
+        for nested in &msg.nested_type {
+            walk(map, &fqn, nested);
+        }
+        map.insert(fqn, msg);
+    }
+
+    let mut map = std::collections::HashMap::new();
+    for file in files {
+        let package = file.package.as_deref().unwrap_or("");
+        for msg in &file.message_type {
+            walk(&mut map, package, msg);
+        }
+    }
+    map
+}
+
+/// Returns `true` when storing a variant of message type `target` inline
+/// inside `enclosing` would produce an unsized type.
+///
+/// `enclosing` and `target` are fully-qualified message names without a
+/// leading dot. A cycle is only reachable through message-typed oneof variants
+/// that are themselves stored inline (singular message fields are
+/// `Option<Box<_>>`, repeated fields are `Vec`, and maps are heap-backed, so
+/// none of those carry storage inline). The walk follows every *rule-matched*
+/// edge from `target`; if it reaches `enclosing`, the opt-out is recursive.
+///
+/// Following rule-matched (rather than finally-resolved) edges keeps the
+/// check order-independent and conservative: an edge that resolution later
+/// keeps boxed (because it is itself part of a cycle) can only cause a false
+/// `true` here, which keeps more variants boxed — never an unsized type.
+fn unboxing_is_recursive(
+    index: &std::collections::HashMap<String, &DescriptorProto>,
+    rules: &[String],
+    enclosing: &str,
+    target: &str,
+) -> bool {
+    let mut seen = std::collections::HashSet::new();
+    let mut stack = vec![target.to_string()];
+    while let Some(current) = stack.pop() {
+        if current == enclosing {
+            return true;
+        }
+        if !seen.insert(current.clone()) {
+            continue;
+        }
+        let Some(msg) = index.get(current.as_str()) else {
+            continue;
+        };
+        for_each_message_variant(msg, &current, |variant_fqn, type_name| {
+            if rule_matches(rules, &variant_fqn) {
+                stack.push(type_name.to_string());
+            }
+        });
+    }
+    false
+}
+
 /// Metadata for a single oneof variant.
 struct VariantInfo {
     variant_ident: proc_macro2::Ident,
@@ -58,7 +226,9 @@ struct VariantInfo {
     field_type: Type,
     /// See [`is_null_value_field`].
     is_null_value: bool,
-    /// True for message/group types (boxed in the owned enum).
+    /// Whether the variant is stored in a `Box` (see [`variant_boxed`]):
+    /// message/group types are boxed unless opted out via
+    /// `config.unboxed_oneof_fields`.
     is_boxed: bool,
     /// Custom attributes matched via `CodeGenConfig::field_attributes` on the
     /// variant's fully-qualified path (`{oneof_fqn}.{variant_proto_name}`).
@@ -144,12 +314,34 @@ fn collect_variant_info(
             let variant_fqn = format!("{proto_fqn}.{oneof_name}.{proto_name}");
             let custom_attrs =
                 CodeGenContext::matching_attributes(&ctx.config.field_attributes, &variant_fqn)?;
+            // Recursive variants never make it into the resolved unboxed set
+            // (see `resolve_unboxed_variants`), so a variant that an
+            // *exact-path* rule names but that is still boxed can only have
+            // been excluded for recursion — reject loudly, the user asked for
+            // something impossible. Prefix/blanket rules skip it silently.
+            let dotted_fqn = format!(".{variant_fqn}");
+            let is_boxed = variant_boxed(ctx, field_type, &dotted_fqn);
+            if is_boxed
+                && ctx
+                    .config
+                    .unboxed_oneof_fields
+                    .iter()
+                    .any(|r| r == &dotted_fqn)
+            {
+                return Err(CodeGenError::Other(format!(
+                    "oneof variant `{variant_fqn}` is recursive and cannot be \
+                     stored inline: it would make the generated enum unsized. \
+                     Remove `\"{dotted_fqn}\"` from unbox_oneof_in, or use a \
+                     broader prefix (or unbox_oneof()) to keep this variant \
+                     boxed while inlining the rest."
+                )));
+            }
             Ok(VariantInfo {
                 variant_ident,
                 rust_type,
                 json_name,
                 field_type,
-                is_boxed: is_boxed_variant(field_type),
+                is_boxed,
                 is_null_value: is_null_value_field(field),
                 custom_attrs,
                 use_bytes,
@@ -243,12 +435,15 @@ pub fn generate_oneof_enum(
     // proto type names (so their string representations match).
     let mut type_counts: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
-    for v in variants_info.iter().filter(|v| v.is_boxed) {
+    for v in variants_info
+        .iter()
+        .filter(|v| is_boxed_variant(v.field_type))
+    {
         *type_counts.entry(v.rust_type.to_string()).or_insert(0) += 1;
     }
     let from_impls: Vec<_> = variants_info
         .iter()
-        .filter(|v| v.is_boxed && type_counts[&v.rust_type.to_string()] == 1)
+        .filter(|v| is_boxed_variant(v.field_type) && type_counts[&v.rust_type.to_string()] == 1)
         .map(|v| {
             let ident = &v.variant_ident;
             let ty = &v.rust_type;
@@ -261,11 +456,17 @@ pub fn generate_oneof_enum(
             // type in the impl header. `crate::…` is treated as local for
             // orphan purposes (it IS the current crate) so only `::` gates.
             let ty_is_extern = ty_str.trim_start().starts_with("::");
+            // Unboxed variants store the value inline; boxed ones wrap it.
+            let wrapped = if v.is_boxed {
+                quote! { ::buffa::alloc::boxed::Box::new(v) }
+            } else {
+                quote! { v }
+            };
             // From<T> for Oneof — always legal (Oneof is local in T0 position).
             let from_oneof = quote! {
                 impl From<#ty> for #rust_enum_ident {
                     fn from(v: #ty) -> Self {
-                        Self::#ident(::buffa::alloc::boxed::Box::new(v))
+                        Self::#ident(#wrapped)
                     }
                 }
             };
@@ -306,6 +507,19 @@ pub fn generate_oneof_enum(
         crate::comments::doc_attrs_resolved(ctx.comment(&oneof_fqn), proto_fqn, &ctx.type_map);
     let custom_type_attrs =
         CodeGenContext::matching_attributes(&ctx.config.type_attributes, &oneof_fqn)?;
+    // An inline (unboxed) message variant can dwarf its siblings, which trips
+    // clippy::large_enum_variant in the consumer's crate on code they cannot
+    // edit. The user explicitly chose inline storage, so allow the lint —
+    // but only on enums that actually contain an unboxed message variant,
+    // keeping default codegen output untouched.
+    let large_variant_allow = if variants_info
+        .iter()
+        .any(|v| is_boxed_variant(v.field_type) && !v.is_boxed)
+    {
+        quote! { #[allow(clippy::large_enum_variant)] }
+    } else {
+        quote! {}
+    };
 
     // Variants whose field is `[debug_redact = true]` print a placeholder
     // instead of their payload. The `Debug` derive is swapped for a manual
@@ -353,6 +567,7 @@ pub fn generate_oneof_enum(
         #oneof_doc
         #debug_derive
         #arbitrary_derive
+        #large_variant_allow
         #custom_type_attrs
         pub enum #rust_enum_ident {
             #(#variants,)*
@@ -464,7 +679,9 @@ pub(crate) struct OneofVariantDeserInput<'a> {
     pub field_type: Type,
     /// See [`null_is_valid_value`] — includes both NullValue and Value types.
     pub null_forward: bool,
-    /// True for message/group types (boxed in the owned enum).
+    /// Whether the variant is stored in a `Box` in the owned enum (see
+    /// [`variant_boxed`]): message/group types are boxed unless opted out
+    /// via `config.unboxed_oneof_fields`.
     pub is_boxed: bool,
     pub enum_ident: &'a TokenStream,
     /// The identifier of the `Option<EnumIdent>` accumulator
