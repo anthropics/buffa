@@ -140,6 +140,28 @@ fn main() {
         .compile()
         .expect("buffa_build failed for proto2_defaults.proto");
 
+    // Mixed-mode reflection: a bridge-mode dependency embedded by a
+    // vtable-mode parent (via extern_path). Every message-typed position in
+    // Outer (singular, repeated, map value, oneof variant) holds the
+    // bridge-grade Inner, so the vtable accessors must degrade through
+    // Inner's own Reflectable::reflect() / ReflectElement impls. Runtime
+    // assertions live in `tests/reflect_mixed_mode.rs`.
+    buffa_build::Config::new()
+        .files(&["protos/mixed_reflect_dep.proto"])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .reflect_mode(buffa_build::ReflectMode::Bridge)
+        .compile()
+        .expect("buffa_build failed for mixed_reflect_dep.proto");
+    buffa_build::Config::new()
+        .files(&["protos/mixed_reflect.proto"])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .extern_path(".mixedref.dep", "crate::mixed_reflect_dep")
+        .compile()
+        .expect("buffa_build failed for mixed_reflect.proto");
+
     // JSON code generation — proto3 JSON serialization for all field types.
     buffa_build::Config::new()
         .files(&["protos/json_types.proto"])

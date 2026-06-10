@@ -65,6 +65,13 @@ pub(crate) fn reflect_owned_impls(
     let nesting = scope.nesting;
     let vr = quote! { ::buffa_descriptor::reflect::ValueRef };
     let cow = quote! { ::buffa_descriptor::reflect::ReflectCow };
+    // Message-typed fields route through the field type's own
+    // `Reflectable::reflect()` rather than `ReflectCow::Borrowed` directly:
+    // a vtable-grade field returns `Borrowed` (zero-cost, same as before),
+    // while a bridge-grade field from another compilation degrades to an
+    // owned `DynamicMessage` snapshot at the boundary — the mixed-mode
+    // behavior the reflection design promises.
+    let reflectable = quote! { ::buffa_descriptor::reflect::Reflectable };
 
     let mut get_arms: Vec<TokenStream> = Vec::new();
     let mut has_arms: Vec<TokenStream> = Vec::new();
@@ -139,7 +146,7 @@ pub(crate) fn reflect_owned_impls(
                 Type::TYPE_MESSAGE | Type::TYPE_GROUP => (
                     // `MessageField` derefs to the inner message, or the static
                     // default instance when unset, so the borrow is always valid.
-                    quote! { #vr::Message(#cow::Borrowed(&*self.#id)) },
+                    quote! { #vr::Message(#reflectable::reflect(&*self.#id)) },
                     quote! { self.#id.is_set() },
                 ),
                 Type::TYPE_ENUM => {
@@ -196,9 +203,9 @@ pub(crate) fn reflect_owned_impls(
                 Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
                     let owned_ty = resolve_owned_message_ty(ctx, field, current_package, nesting)?;
                     (
-                        quote! { #vr::Message(#cow::Borrowed(&**v)) },
+                        quote! { #vr::Message(#reflectable::reflect(&**v)) },
                         quote! {
-                            #vr::Message(#cow::Borrowed(
+                            #vr::Message(#reflectable::reflect(
                                 <#owned_ty as ::buffa::DefaultInstance>::default_instance(),
                             ))
                         },
@@ -309,7 +316,10 @@ pub(crate) fn reflect_owned_impls(
             }
         }
 
+        // `#[inline]` for the same cross-crate zero-cost reason as the
+        // vtable `Reflectable::reflect()` body (see reflect.rs).
         impl ::buffa_descriptor::reflect::ReflectElement for #name_ident {
+            #[inline]
             fn as_value_ref(&self) -> #vr<'_> {
                 #vr::Message(#cow::Borrowed(self))
             }
