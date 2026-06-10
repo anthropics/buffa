@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-06-10
+
+This release is a patch bump under the
+[Rust 0.x convention](https://doc.rust-lang.org/cargo/reference/semver.html):
+everything below is additive or a fix, with no breaking changes and no MSRV
+change. The new codegen capabilities are opt-in (`unbox_oneof`) or gated on a
+proto option (`debug_redact`); the packed view pre-allocation applies to all
+regenerated code but is behaviorally invisible — a pure performance hint. Code
+regenerated with 0.7.1 calls the new (hidden) `RepeatedView::reserve` hook, so
+pair regenerated code with a buffa 0.7.1 runtime — any caret `0.7` requirement
+resolves there automatically.
+
 ### Added
 
 - **`unbox_oneof` opt-out for `Box`ed message oneof variants** (#126).
@@ -1028,7 +1040,8 @@ This release publishes:
 
 MSRV: Rust 1.85.
 
-[Unreleased]: https://github.com/anthropics/buffa/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/anthropics/buffa/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/anthropics/buffa/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/anthropics/buffa/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/anthropics/buffa/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/anthropics/buffa/compare/v0.5.1...v0.5.2

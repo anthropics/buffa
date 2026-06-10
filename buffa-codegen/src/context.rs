@@ -769,8 +769,7 @@ impl<'a> CodeGenContext<'a> {
     ///
     /// `variant_fqn` is the fully-qualified variant path, e.g.
     /// `".my.pkg.MyMessage.body.small"`. This consults the set resolved at
-    /// context construction by
-    /// [`resolve_unboxed_variants`](crate::oneof::resolve_unboxed_variants),
+    /// context construction by the internal `resolve_unboxed_variants` pass,
     /// not the raw config rules: recursive variants matched only by a prefix
     /// rule are excluded there (they stay boxed), so every codegen site that
     /// asks agrees with the emitted enum declaration.
