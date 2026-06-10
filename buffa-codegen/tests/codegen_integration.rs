@@ -562,6 +562,111 @@ fn inline_oneof_duplicate_message_type_no_from_collision() {
 }
 
 #[test]
+fn inline_oneof_unbox_opt_out_drops_box() {
+    // unbox_oneof opts a non-recursive message variant out of Box wrapping.
+    // The opted-out variant stores its message inline; sibling message
+    // variants left alone stay boxed.
+    let mut config = no_views();
+    config
+        .unboxed_oneof_fields
+        .push(".test.Envelope.body.small".to_string());
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Small { int32 value = 1; }
+        message Large { string label = 1; }
+        message Envelope {
+          oneof body {
+            Small small = 1;
+            Large large = 2;
+          }
+        }
+        "#,
+        &config,
+    );
+    // `small` is stored inline, `large` stays boxed.
+    assert!(
+        content.contains("Small(super::super::super::Small)"),
+        "opted-out variant should be stored inline: {content}"
+    );
+    assert!(
+        content.contains("Large(::buffa::alloc::boxed::Box<super::super::super::Large>)"),
+        "unmatched variant should stay boxed: {content}"
+    );
+    // The From impl for the inline variant moves the value in without a Box.
+    assert!(
+        content.contains("Self::Small(v)"),
+        "From impl for the inline variant must not wrap in Box: {content}"
+    );
+    // An enum with an inline message variant allows large_enum_variant: the
+    // user chose inline storage and cannot edit generated code to silence it.
+    assert!(
+        content.contains("#[allow(clippy::large_enum_variant)]"),
+        "enum with an inline variant should allow large_enum_variant: {content}"
+    );
+}
+
+#[test]
+fn inline_oneof_no_unbox_rules_no_large_enum_allow() {
+    // Default codegen (no unbox rules) must not grow the new allow attribute —
+    // output stays byte-identical for existing users.
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Small { int32 value = 1; }
+        message Envelope {
+          oneof body {
+            Small small = 1;
+          }
+        }
+        "#,
+        &no_views(),
+    );
+    assert!(
+        !content.contains("large_enum_variant"),
+        "default output must not carry the allow: {content}"
+    );
+}
+
+#[test]
+fn inline_oneof_unbox_recursive_variant_is_rejected() {
+    // Opting a recursive variant out of boxing would make the enum unsized,
+    // so codegen must reject it rather than emit code that fails to compile.
+    let proto = dedent(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Node {
+          oneof kind {
+            Node child = 1;
+            int32 leaf = 2;
+          }
+        }
+        "#,
+    );
+    let dir = tempfile::tempdir().expect("temp dir");
+    let proto_path = dir.path().join("test.proto");
+    std::fs::write(&proto_path, &proto).expect("write proto");
+    let fds = compile_protos(
+        &[proto_path.to_str().unwrap()],
+        &[dir.path().to_str().unwrap()],
+    );
+
+    let mut config = no_views();
+    config
+        .unboxed_oneof_fields
+        .push(".test.Node.kind.child".to_string());
+    let result = buffa_codegen::generate(&fds.file, &["test.proto".into()], &config);
+    let err = result.expect_err("unboxing a recursive variant should error");
+    assert!(
+        err.to_string().contains("recursive"),
+        "error should explain the recursion: {err}"
+    );
+}
+
+#[test]
 fn inline_proto2_required_no_json_skip() {
     // Regression: proto2 required fields got skip_serializing_if, so a
     // required int32 with value 0 was omitted from JSON. The binary encoder
@@ -1372,5 +1477,130 @@ fn with_setters_proto2_repeated_no_setter() {
     assert!(
         !content.contains("with_items"),
         "proto2 repeated field should not get setter: {content}"
+    );
+}
+
+#[test]
+fn blanket_unbox_oneof_skips_recursive_variants() {
+    // Config::unbox_oneof() ("." blanket rule) stores every NON-recursive
+    // variant inline: recursive variants are silently kept boxed rather than
+    // rejected. Only an exact-path rule on a recursive variant errors (see
+    // inline_oneof_unbox_recursive_variant_is_rejected).
+    let proto = dedent(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Node {
+          oneof kind {
+            Node child = 1;
+            int32 leaf = 2;
+          }
+        }
+        message Small { int32 value = 1; }
+        message Envelope {
+          oneof body {
+            Small small = 1;
+          }
+        }
+        "#,
+    );
+    let dir = tempfile::tempdir().expect("temp dir");
+    let proto_path = dir.path().join("test.proto");
+    std::fs::write(&proto_path, &proto).expect("write proto");
+    let fds = compile_protos(
+        &[proto_path.to_str().unwrap()],
+        &[dir.path().to_str().unwrap()],
+    );
+
+    let mut config = no_views();
+    config.unboxed_oneof_fields.push(".".to_string()); // == Config::unbox_oneof()
+    let result = buffa_codegen::generate(&fds.file, &["test.proto".into()], &config);
+    let files = result.unwrap_or_else(|e| {
+        panic!("blanket unbox_oneof() should skip the recursive variant, but errored: {e}")
+    });
+    let content = files
+        .into_iter()
+        .map(|f| f.content)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        content.contains("Child(::buffa::alloc::boxed::Box<"),
+        "recursive variant must stay boxed under the blanket rule"
+    );
+    assert!(
+        content.contains("Small(super::super::super::Small)"),
+        "non-recursive variant should be inline under the blanket rule"
+    );
+}
+
+#[test]
+fn blanket_unbox_oneof_keeps_mutually_recursive_variants_boxed() {
+    // Mutual recursion: A.body.b -> B and B.body.a -> A form a cycle only
+    // when BOTH edges are inline. The blanket rule must keep both boxed
+    // (the walk is conservative and order-independent), while the
+    // non-recursive C variant inlines.
+    let mut config = no_views();
+    config.unboxed_oneof_fields.push(".".to_string());
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message A {
+          oneof body {
+            B b = 1;
+            C c = 2;
+          }
+        }
+        message B {
+          oneof body {
+            A a = 1;
+          }
+        }
+        message C { int32 value = 1; }
+        "#,
+        &config,
+    );
+    assert!(
+        content.contains("B(::buffa::alloc::boxed::Box<super::super::super::B>)"),
+        "mutually recursive variant A.body.b must stay boxed: {content}"
+    );
+    assert!(
+        content.contains("A(::buffa::alloc::boxed::Box<super::super::super::A>)"),
+        "mutually recursive variant B.body.a must stay boxed: {content}"
+    );
+    assert!(
+        content.contains("C(super::super::super::C)"),
+        "non-recursive variant should be inline under the blanket rule: {content}"
+    );
+}
+
+#[test]
+fn prefix_unbox_rule_on_recursive_variant_skips_without_error() {
+    // A non-blanket prefix rule (message scope, not exact variant path) that
+    // matches a recursive variant takes the silent-skip path, not the
+    // exact-rule error: the recursive variant stays boxed, siblings inline.
+    let mut config = no_views();
+    config.unboxed_oneof_fields.push(".test.Node".to_string());
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Leaf { int32 value = 1; }
+        message Node {
+          oneof kind {
+            Node child = 1;
+            Leaf leaf = 2;
+          }
+        }
+        "#,
+        &config,
+    );
+    assert!(
+        content.contains("Child(::buffa::alloc::boxed::Box<super::super::super::Node>)"),
+        "recursive variant must stay boxed under a prefix rule: {content}"
+    );
+    assert!(
+        content.contains("Leaf(super::super::super::Leaf)"),
+        "non-recursive sibling should be inline under the prefix rule: {content}"
     );
 }
