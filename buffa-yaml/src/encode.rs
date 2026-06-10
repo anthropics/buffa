@@ -4,7 +4,7 @@ use std::io;
 
 /// Serialize a protobuf message to a YAML string.
 ///
-/// Encoding follows the protobuf JSON mapping: field names are camelCase,
+/// Encoding follows the protobuf JSON mapping: field names are `camelCase`,
 /// `int64`/`uint64` values are quoted strings, bytes are base64, enums are
 /// string names, and well-known types use their canonical JSON encodings.
 ///
@@ -16,7 +16,7 @@ pub fn to_string<M>(msg: &M) -> Result<String, Error>
 where
     M: Message + serde::Serialize,
 {
-    serde_norway::to_string(msg).map_err(Error::from)
+    serde_norway::to_string(msg).map_err(Error::from_carrier)
 }
 
 /// Serialize a protobuf message to a YAML byte stream.
@@ -32,5 +32,5 @@ where
     W: io::Write,
     M: Message + serde::Serialize,
 {
-    serde_norway::to_writer(w, msg).map_err(Error::from)
+    serde_norway::to_writer(w, msg).map_err(Error::from_carrier)
 }

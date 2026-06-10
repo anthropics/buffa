@@ -2,15 +2,28 @@
 //!
 //! This crate provides a thin carrier layer that routes buffa's existing
 //! protobuf-JSON serde impls through [`serde_norway`] instead of
-//! [`serde_json`], giving you YAML I/O with the full protobuf JSON mapping —
-//! camelCase and snake_case field names, quoted `int64`/`uint64`, base64
+//! `serde_json`, giving you YAML I/O with the full protobuf JSON mapping —
+//! `camelCase` and `snake_case` field names, quoted `int64`/`uint64`, base64
 //! bytes, enum string names, and canonical well-known-type encodings.
+//!
+//! The serde impls these functions route through are the protobuf-JSON impls
+//! emitted by buffa codegen, so message types must be generated with JSON
+//! support enabled (`json = true`). Types generated without it do not
+//! implement `Serialize`/`Deserialize` and will fail the trait bounds here.
 //!
 //! # Quick start
 //!
-//! ```ignore
-//! let yaml = buffa_yaml::to_string(&msg)?;
-//! let decoded: MyMessage = buffa_yaml::from_str(&yaml)?;
+//! ```
+//! # fn main() -> Result<(), buffa_yaml::Error> {
+//! let ts = buffa_types::Timestamp {
+//!     seconds: 1_700_000_000,
+//!     ..Default::default()
+//! };
+//! let yaml = buffa_yaml::to_string(&ts)?;
+//! let decoded: buffa_types::Timestamp = buffa_yaml::from_str(&yaml)?;
+//! assert_eq!(decoded, ts);
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! # Behavioral notes vs protoyaml-go
@@ -18,12 +31,21 @@
 //! This is Phase 1: "protobuf-JSON semantics on a YAML carrier." It does not
 //! yet implement the lenience extensions (byte-size suffixes, Go durations,
 //! field-number addressing) or snippet diagnostics. See the tracking issue for
-//! the full delta table.
+//! the full delta table. Phase 1 covers owned messages only — zero-copy views
+//! (`FooView<'_>`, `OwnedView<V>`) are not accepted by the encode functions.
 //!
 //! The carrier (`serde_norway`) applies YAML 1.1 restricted scalar resolution
-//! with dtolnay's Norway-problem fix, so `name: no` arrives as a string. Float
-//! specials (`Infinity`, `.nan`) are delivered as `f64` values, which buffa's
-//! float helpers accept.
+//! with the Norway-problem fix, so an unquoted `name: no` arrives as the
+//! string `"no"`, not boolean `false`. Float specials follow the protobuf JSON
+//! mapping on output (`NaN`/`Infinity`/`-Infinity` as quoted strings); on
+//! input, both those strings and YAML-native `.nan`/`.inf` forms are accepted.
+//!
+//! # Security
+//!
+//! The YAML carrier expands anchors and aliases during parsing, so a small,
+//! deeply-aliased document can consume disproportionate memory and CPU
+//! ("billion laughs"). Bound the size of untrusted input before passing it to
+//! [`from_str`], [`from_slice`], or [`from_reader`].
 
 mod decode;
 mod encode;
@@ -347,11 +369,35 @@ mod tests {
         let decoded_null: Scalar = from_str(yaml_null).expect("null field");
         assert_eq!(decoded_null.int32_val, 0);
 
-        // "no" is a string, not bool false (Norway problem is fixed).
-        // We encode a string field as "no" and verify it round-trips as-is.
-        let yaml_no = "stringVal: \"no\"\n";
-        let decoded_no: Scalar = from_str(yaml_no).expect("string 'no'");
+        // The Norway problem: an *unquoted* `no` must arrive as the string
+        // "no", not be resolved to boolean false.
+        let yaml_no = "stringVal: no\n";
+        let decoded_no: Scalar = from_str(yaml_no).expect("unquoted 'no'");
         assert_eq!(decoded_no.string_val, "no");
+
+        // And the serializer must emit a form that survives the round trip
+        // (i.e. quote the string so a YAML 1.1 reader can't see a bool).
+        let msg = Scalar {
+            string_val: "no".into(),
+            ..Default::default()
+        };
+        let yaml_out = to_string(&msg).expect("to_string");
+        let round: Scalar = from_str(&yaml_out).expect("round trip");
+        assert_eq!(round.string_val, "no");
+    }
+
+    #[test]
+    fn yaml_native_float_specials_accepted() {
+        // The protobuf JSON mapping spells float specials as quoted strings,
+        // but the YAML carrier also resolves native `.nan` / `.inf` scalars to
+        // f64 values, which buffa's float deserialization accepts.
+        use buffa_test::json_types::Scalar;
+        let decoded: Scalar = from_str("doubleVal: .nan\n").expect(".nan");
+        assert!(decoded.double_val.is_nan());
+        let decoded: Scalar = from_str("doubleVal: .inf\n").expect(".inf");
+        assert_eq!(decoded.double_val, f64::INFINITY);
+        let decoded: Scalar = from_str("doubleVal: -.inf\n").expect("-.inf");
+        assert_eq!(decoded.double_val, f64::NEG_INFINITY);
     }
 
     // ── error location ────────────────────────────────────────────────────────
@@ -362,8 +408,10 @@ mod tests {
         // Feed deliberately malformed YAML (invalid indented mapping value).
         let bad_yaml = "int32Val: [\n  - broken";
         let err = from_str::<Scalar>(bad_yaml).expect_err("should fail");
-        // We can't assert exact line/col since the carrier may vary, but we
-        // verify the Error type exposes the location() method without panicking.
-        let _ = err.location();
+        // The exact line/col may vary with the carrier, but a parse error in
+        // the input must produce *a* location with 1-based coordinates.
+        let loc = err.location().expect("parse error should carry a location");
+        assert!(loc.line >= 1, "line is 1-based: {loc:?}");
+        assert!(loc.column >= 1, "column is 1-based: {loc:?}");
     }
 }

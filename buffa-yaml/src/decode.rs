@@ -4,7 +4,7 @@ use std::io;
 
 /// Deserialize a protobuf message from a YAML string.
 ///
-/// Parsing follows the protobuf JSON mapping: camelCase and snake_case field
+/// Parsing follows the protobuf JSON mapping: `camelCase` and `snake_case` field
 /// names are both accepted (via `#[serde(alias)]` on generated types), quoted
 /// and unquoted integers are handled, bytes are base64-decoded, and well-known
 /// types use their canonical JSON decodings.
@@ -18,7 +18,7 @@ pub fn from_str<M>(s: &str) -> Result<M, Error>
 where
     M: Message + serde::de::DeserializeOwned,
 {
-    serde_norway::from_str(s).map_err(Error::from)
+    serde_norway::from_str(s).map_err(Error::from_carrier)
 }
 
 /// Deserialize a protobuf message from a UTF-8 YAML byte slice.
@@ -31,7 +31,7 @@ pub fn from_slice<M>(b: &[u8]) -> Result<M, Error>
 where
     M: Message + serde::de::DeserializeOwned,
 {
-    serde_norway::from_slice(b).map_err(Error::from)
+    serde_norway::from_slice(b).map_err(Error::from_carrier)
 }
 
 /// Deserialize a protobuf message from a YAML byte stream.
@@ -45,5 +45,5 @@ where
     R: io::Read,
     M: Message + serde::de::DeserializeOwned,
 {
-    serde_norway::from_reader(r).map_err(Error::from)
+    serde_norway::from_reader(r).map_err(Error::from_carrier)
 }

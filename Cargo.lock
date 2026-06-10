@@ -146,13 +146,12 @@ dependencies = [
 
 [[package]]
 name = "buffa-yaml"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "buffa",
  "buffa-test",
  "buffa-types",
  "serde",
- "serde_json",
  "serde_norway",
  "thiserror",
 ]

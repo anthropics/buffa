@@ -4,7 +4,7 @@
 /// and column) so callers can render diagnostics without depending on
 /// `serde_norway` directly.
 #[derive(Debug, thiserror::Error)]
-#[error(transparent)]
+#[error("{inner}")]
 pub struct Error {
     inner: serde_norway::Error,
 }
@@ -12,16 +12,15 @@ pub struct Error {
 impl Error {
     /// Returns the line and column in the YAML input where the error occurred,
     /// if the carrier was able to determine one.
+    #[must_use]
     pub fn location(&self) -> Option<Location> {
         self.inner.location().map(|loc| Location {
             line: loc.line(),
             column: loc.column(),
         })
     }
-}
 
-impl From<serde_norway::Error> for Error {
-    fn from(inner: serde_norway::Error) -> Self {
+    pub(crate) fn from_carrier(inner: serde_norway::Error) -> Self {
         Self { inner }
     }
 }

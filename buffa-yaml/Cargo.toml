@@ -18,4 +18,3 @@ thiserror = { workspace = true, features = ["std"] }
 [dev-dependencies]
 buffa-test = { workspace = true }
 buffa-types = { workspace = true, features = ["json"] }
-serde_json = { workspace = true }

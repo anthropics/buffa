@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **New `buffa-yaml` crate: YAML serialization with protobuf-JSON semantics**
+  (Phase 1 of protoyaml support, #101). A thin carrier layer that routes
+  buffa's generated protobuf-JSON serde impls through `serde_norway`, so YAML
+  I/O gets the full protobuf JSON mapping: `camelCase`/`snake_case` field
+  names, quoted `int64`/`uint64`, base64 bytes, enum string names, and
+  canonical well-known-type encodings. Public API: `to_string`, `to_writer`,
+  `from_str`, `from_slice`, `from_reader`, and an `Error` type exposing a
+  carrier-agnostic `Location { line, column }`. Requires message types
+  generated with `json = true`. Contributed by @rsd-darshan.
 - **`[debug_redact = true]` is honored in generated `Debug` impls.** Fields
   carrying the standard `debug_redact` field option print `[REDACTED]` instead
   of their value in the owned message's `Debug` impl, and oneof enums, view
