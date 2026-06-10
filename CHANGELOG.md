@@ -14,7 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   I/O gets the full protobuf JSON mapping: `camelCase`/`snake_case` field
   names, quoted `int64`/`uint64`, base64 bytes, enum string names, and
   canonical well-known-type encodings. Public API: `to_string`, `to_writer`,
-  `from_str`, `from_slice`, `from_reader`, and an `Error` type exposing a
+  `from_str`, `from_slice`, `from_reader`, plus `to_string_view` /
+  `to_writer_view` for zero-copy views, and an `Error` type exposing a
   carrier-agnostic `Location { line, column }`. Requires message types
   generated with `json = true`. Contributed by @rsd-darshan.
 - **`[debug_redact = true]` is honored in generated `Debug` impls.** Fields

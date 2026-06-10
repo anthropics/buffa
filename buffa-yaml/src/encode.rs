@@ -1,5 +1,5 @@
 use crate::Error;
-use buffa::Message;
+use buffa::{Message, MessageView};
 use std::io;
 
 /// Serialize a protobuf message to a YAML string.
@@ -33,4 +33,43 @@ where
     M: Message + serde::Serialize,
 {
     serde_norway::to_writer(w, msg).map_err(Error::from_carrier)
+}
+
+/// Serialize a zero-copy message view to a YAML string.
+///
+/// Produces the same YAML as [`to_string`] does for the corresponding owned
+/// message: the generated view `Serialize` impls follow the protobuf JSON
+/// mapping, so field names, `int64`/`uint64` quoting, base64 bytes, enum
+/// names, and well-known-type encodings are identical. Views are encode-only —
+/// YAML input cannot be borrowed from, so deserialization always targets the
+/// owned message type via [`from_str`](crate::from_str) and friends.
+///
+/// To serialize an [`OwnedView`](buffa::OwnedView) handle, pass its reborrowed
+/// view: `to_string_view(handle.reborrow())`.
+///
+/// # Errors
+///
+/// Returns an [`Error`] if serialization fails (e.g. the view contains a
+/// value that cannot be represented in YAML).
+pub fn to_string_view<'a, V>(view: &V) -> Result<String, Error>
+where
+    V: MessageView<'a> + serde::Serialize,
+{
+    serde_norway::to_string(view).map_err(Error::from_carrier)
+}
+
+/// Serialize a zero-copy message view to a YAML byte stream.
+///
+/// Follows the same encoding rules as [`to_string_view`].
+///
+/// # Errors
+///
+/// Returns an [`Error`] if serialization fails or the writer returns an I/O
+/// error.
+pub fn to_writer_view<'a, W, V>(w: W, view: &V) -> Result<(), Error>
+where
+    W: io::Write,
+    V: MessageView<'a> + serde::Serialize,
+{
+    serde_norway::to_writer(w, view).map_err(Error::from_carrier)
 }

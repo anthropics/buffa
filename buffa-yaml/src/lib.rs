@@ -31,8 +31,13 @@
 //! This is Phase 1: "protobuf-JSON semantics on a YAML carrier." It does not
 //! yet implement the lenience extensions (byte-size suffixes, Go durations,
 //! field-number addressing) or snippet diagnostics. See the tracking issue for
-//! the full delta table. Phase 1 covers owned messages only — zero-copy views
-//! (`FooView<'_>`, `OwnedView<V>`) are not accepted by the encode functions.
+//! the full delta table.
+//!
+//! Zero-copy views are supported on the encode side: [`to_string_view`] and
+//! [`to_writer_view`] accept any generated `FooView<'_>` (and an
+//! `OwnedView<V>` handle via `handle.reborrow()`), producing the same YAML as
+//! the owned message. Decoding always targets owned message types — YAML
+//! input cannot be borrowed from.
 //!
 //! The carrier (`serde_norway`) applies YAML 1.1 restricted scalar resolution
 //! with the Norway-problem fix, so an unquoted `name: no` arrives as the
@@ -52,7 +57,7 @@ mod encode;
 mod error;
 
 pub use decode::{from_reader, from_slice, from_str};
-pub use encode::{to_string, to_writer};
+pub use encode::{to_string, to_string_view, to_writer, to_writer_view};
 pub use error::{Error, Location};
 
 #[cfg(test)]
@@ -345,6 +350,99 @@ mod tests {
         let yaml_str = to_string(&msg).expect("to_string");
         let decoded_reader: Scalar = from_reader(yaml_str.as_bytes()).expect("from_reader");
         assert_eq!(decoded_reader.int32_val, 42);
+    }
+
+    // ── zero-copy views ───────────────────────────────────────────────────────
+
+    #[test]
+    fn view_to_string_matches_owned() {
+        use buffa::{Message as _, MessageView as _};
+        use buffa_test::view_json::{Scalars, ScalarsView};
+        let msg = Scalars {
+            i32: -5,
+            i64: 1 << 40,
+            u64: u64::MAX,
+            f64: 2.5,
+            b: true,
+            s: "no".into(),
+            by: vec![0xDE, 0xAD],
+            ..Default::default()
+        };
+        let bytes = msg.encode_to_vec();
+        let view = ScalarsView::decode_view(&bytes).expect("decode_view");
+        let from_view = to_string_view(&view).expect("to_string_view");
+        let from_owned = to_string(&msg).expect("to_string");
+        assert_eq!(from_view, from_owned);
+        // And the view's YAML decodes back to the original owned message.
+        let decoded: Scalars = from_str(&from_view).expect("from_str");
+        assert_eq!(decoded, msg);
+    }
+
+    #[test]
+    fn view_to_string_wkt_fields() {
+        use buffa::{Message as _, MessageView as _};
+        use buffa_test::view_json::{WithWkt, WithWktView};
+        let msg = WithWkt {
+            ts: Some(buffa_types::Timestamp {
+                seconds: 1_700_000_000,
+                nanos: 5,
+                ..Default::default()
+            })
+            .into(),
+            dur: Some(buffa_types::Duration {
+                seconds: 90,
+                ..Default::default()
+            })
+            .into(),
+            count: Some(buffa_types::google::protobuf::Int64Value {
+                value: i64::MAX,
+                ..Default::default()
+            })
+            .into(),
+            label: Some(buffa_types::google::protobuf::StringValue {
+                value: "hello".into(),
+                ..Default::default()
+            })
+            .into(),
+            ..Default::default()
+        };
+        let bytes = msg.encode_to_vec();
+        let view = WithWktView::decode_view(&bytes).expect("decode_view");
+        let from_view = to_string_view(&view).expect("to_string_view");
+        assert_eq!(from_view, to_string(&msg).expect("to_string"));
+        let decoded: WithWkt = from_str(&from_view).expect("from_str");
+        assert_eq!(decoded, msg);
+    }
+
+    #[test]
+    fn owned_view_handle_via_reborrow() {
+        use buffa::OwnedView;
+        use buffa_test::view_json::{Scalars, ScalarsView};
+        let msg = Scalars {
+            i64: -1,
+            s: "owned view".into(),
+            ..Default::default()
+        };
+        let handle: OwnedView<ScalarsView<'static>> =
+            OwnedView::from_owned(&msg).expect("from_owned");
+        let yaml = to_string_view(handle.reborrow()).expect("to_string_view");
+        assert_eq!(yaml, to_string(&msg).expect("to_string"));
+    }
+
+    #[test]
+    fn to_writer_view_mirrors_to_string_view() {
+        use buffa::{Message as _, MessageView as _};
+        use buffa_test::view_json::{Scalars, ScalarsView};
+        let msg = Scalars {
+            u32: 7,
+            ..Default::default()
+        };
+        let bytes = msg.encode_to_vec();
+        let view = ScalarsView::decode_view(&bytes).expect("decode_view");
+        let expected = to_string_view(&view).expect("to_string_view");
+        let mut buf = Vec::new();
+        to_writer_view(&mut buf, &view).expect("to_writer_view");
+        assert_eq!(String::from_utf8(buf).expect("utf8"), expected);
     }
 
     // ── YAML-specific scalar resolution ──────────────────────────────────────
