@@ -313,6 +313,12 @@ impl Config {
     /// implemented", which is a misleading diagnostic. Most consumers
     /// should leave `gate_impls_on_crate_features` off.
     ///
+    /// Reflecting message-typed fields also requires every crate that field
+    /// types resolve to via an extern path — notably `buffa-types` for
+    /// well-known types — to enable its own reflection feature; see
+    /// [`reflect_mode`](Self::reflect_mode#extern-path-types) for the
+    /// `Cargo.toml` requirement and mixed-mode behavior.
+    ///
     /// # Performance
     ///
     /// In the default vtable mode, `reflect()` borrows `self` — no round-trip,
@@ -362,6 +368,28 @@ impl Config {
     /// All non-`Off` modes require the consuming crate to depend on
     /// `buffa-descriptor` with its `reflect` feature and on `std`. The call
     /// site (`foo.reflect().get(fd)`) is identical across modes.
+    ///
+    /// # Extern-path types
+    ///
+    /// Reflection on a message reaches into its message-typed fields, so
+    /// every crate that field types resolve to via an extern path must have
+    /// its own reflection enabled. In particular, well-known types resolve
+    /// to `buffa-types` by default, and its impls are behind a cargo
+    /// feature: depend on `buffa-types = { ..., features = ["reflect"] }`
+    /// or the build fails with unsatisfied `Reflectable` /
+    /// `ReflectMessage` bounds on the WKT.
+    ///
+    /// # Mixed modes
+    ///
+    /// A vtable-mode message may embed owned message types generated in
+    /// bridge mode (e.g. a dependency crate that chose the smaller output):
+    /// reflective access degrades to an owned `DynamicMessage` snapshot at
+    /// that boundary instead of failing. For a bridge-grade `repeated` or
+    /// `map` field the snapshot is taken per element on every access, so
+    /// reflecting a large mixed-mode collection scales the encode/decode
+    /// cost by the element count. The *view* reflection surface cannot
+    /// degrade — every view type embedded in a vtable-mode view must itself
+    /// be vtable-grade, and a bridge-grade view field is a compile error.
     #[must_use]
     pub fn reflect_mode(mut self, mode: ReflectMode) -> Self {
         mode.apply(&mut self.codegen_config);

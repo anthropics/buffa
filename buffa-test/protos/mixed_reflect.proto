@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package mixedref.parent;
+
+import "mixed_reflect_dep.proto";
+
+// Compiled with vtable-mode reflection in build.rs, with mixedref.dep
+// resolved via extern_path to the bridge-mode module. Every message-typed
+// position (singular, repeated, map value, oneof variant) holds a
+// bridge-grade type, so reflective access must degrade to an owned
+// DynamicMessage at each boundary instead of failing to compile.
+
+message Outer {
+  mixedref.dep.Inner single = 1;
+  repeated mixedref.dep.Inner many = 2;
+  map<string, mixedref.dep.Inner> by_name = 3;
+  oneof kind {
+    mixedref.dep.Inner alt = 4;
+    int32 num = 5;
+  }
+}

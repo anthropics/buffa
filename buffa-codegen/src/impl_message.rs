@@ -633,10 +633,13 @@ pub fn generate_message_impl(
             // inherent impl, Reflectable) — gate them together with one cfg.
             crate::feature_gates::cfg_const_block(quote! { #owned #reflect_body }, gate)
         } else {
-            crate::feature_gates::cfg_block(
-                crate::reflect::reflectable_impl(&quote! { #name_ident }, &quote! { __buffa }),
-                gate,
-            )
+            // ReflectElement alongside Reflectable so a vtable-mode message
+            // in another compilation can hold repeated/map fields of this
+            // bridge-mode type (mixed-mode degradation at the boundary).
+            let bridge =
+                crate::reflect::reflectable_impl(&quote! { #name_ident }, &quote! { __buffa });
+            let element = crate::reflect::reflect_element_impl_bridge(&quote! { #name_ident });
+            crate::feature_gates::cfg_block(quote! { #bridge #element }, gate)
         }
     } else {
         quote! {}

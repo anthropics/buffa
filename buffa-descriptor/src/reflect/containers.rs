@@ -66,6 +66,12 @@ use super::value::{MapKey, MapKeyRef, ReflectList, ReflectMap, Value, ValueRef};
 /// feature (`smol_str` / `ecow` / `compact_str`), for reflecting a `repeated`
 /// field of that type in vtable mode. A consumer building with both that
 /// `string_type` and vtable reflection must enable the corresponding feature.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` does not implement `ReflectElement`, which vtable-mode reflection requires on repeated-field and map-value element types",
+    note = "if `{Self}` comes from another buffa-generated crate via an extern path (well-known types resolve to `buffa-types` by default), enable that crate's reflection feature, e.g. `buffa-types = {{ version = \"...\", features = [\"reflect\"] }}`",
+    note = "if `{Self}` is a message generated in this crate, enable reflection in its `build.rs` config — either reflection mode emits this impl",
+    note = "for a non-default `string_type` element (`SmolStr` / `EcoString` / `CompactString`), enable the matching `buffa-descriptor` feature"
+)]
 pub trait ReflectElement: core::fmt::Debug {
     /// Borrow this element as a [`ValueRef`].
     #[must_use]

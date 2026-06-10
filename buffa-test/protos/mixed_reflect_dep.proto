@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package mixedref.dep;
+
+// Compiled with bridge-mode reflection in build.rs. Embedded by
+// mixed_reflect.proto's vtable-mode messages (via extern_path) to exercise
+// mixed-mode degradation at the reflection boundary.
+
+message Inner {
+  int32 value = 1;
+  string label = 2;
+}
