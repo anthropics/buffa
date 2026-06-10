@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **`unbox_oneof` opt-out for `Box`ed message oneof variants** (#126).
+  `Config::unbox_oneof_in(&[paths])` stores the matching message-typed oneof
+  variants inline in the owned enum instead of behind `Box<T>`, removing an
+  allocation per construction; `Config::unbox_oneof()` is the blanket form.
+  Recursive variants cannot be inlined: a rule naming one *exactly* is
+  rejected at codegen time, while broader prefix rules (including the
+  blanket) silently keep recursive variants boxed and inline the rest. View
+  oneof variants are unaffected and stay boxed. Enums with an inline message
+  variant carry `#[allow(clippy::large_enum_variant)]`. Contributed by
+  @sam-shridhar1950f.
+
 - **`[debug_redact = true]` is honored in generated `Debug` impls.** Fields
   carrying the standard `debug_redact` field option print `[REDACTED]` instead
   of their value in the owned message's `Debug` impl, and oneof enums, view

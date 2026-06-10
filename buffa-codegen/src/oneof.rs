@@ -679,7 +679,9 @@ pub(crate) struct OneofVariantDeserInput<'a> {
     pub field_type: Type,
     /// See [`null_is_valid_value`] — includes both NullValue and Value types.
     pub null_forward: bool,
-    /// True for message/group types (boxed in the owned enum).
+    /// Whether the variant is stored in a `Box` in the owned enum (see
+    /// [`variant_boxed`]): message/group types are boxed unless opted out
+    /// via `config.unboxed_oneof_fields`.
     pub is_boxed: bool,
     pub enum_ident: &'a TokenStream,
     /// The identifier of the `Option<EnumIdent>` accumulator

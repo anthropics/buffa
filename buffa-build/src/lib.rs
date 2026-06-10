@@ -585,6 +585,8 @@ impl Config {
     /// By default every message/group oneof variant is boxed so that recursive
     /// types compile. For non-recursive variants the `Box` is pure overhead (an
     /// allocation per construction); this opts the matching variants out.
+    /// This affects the owned message enum only — view oneof variants remain
+    /// boxed.
     ///
     /// Each path is a fully-qualified proto variant path prefix, e.g.
     /// `".my.pkg.MyMessage.body.small"` for one variant or `".my.pkg"` for a
