@@ -186,6 +186,30 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                 // generated code is itself a public dependency surface; most plugin
                 // invocations want the default (off).
                 "gate_impls" => codegen.gate_impls_on_crate_features = value.trim() == "true",
+                // `json_feature=serde` (etc.) renames the crate feature a
+                // gated impl kind is conditioned on. Inert without
+                // `gate_impls=true`. An empty value is rejected (the
+                // default is kept) — `#[cfg(feature = "")]` is permanently
+                // false and would silently drop the gated impls.
+                key @ ("json_feature" | "views_feature" | "text_feature" | "reflect_feature") => {
+                    let value = value.trim();
+                    if value.is_empty() {
+                        eprintln!(
+                            "protoc-gen-buffa: ignoring empty '{key}' \
+                             (would silently disable the gated impls); \
+                             keeping the default feature name"
+                        );
+                    } else {
+                        let names = &mut codegen.feature_gate_names;
+                        let slot = match key {
+                            "json_feature" => &mut names.json,
+                            "views_feature" => &mut names.views,
+                            "text_feature" => &mut names.text,
+                            _ => &mut names.reflect,
+                        };
+                        *slot = value.to_string();
+                    }
+                }
                 "allow_message_set" => codegen.allow_message_set = value.trim() == "true",
                 "strict_utf8" | "strict_utf8_mapping" => {
                     codegen.strict_utf8_mapping = value.trim() == "true"
@@ -395,6 +419,32 @@ mod tests {
     fn gate_impls_default_is_false() {
         let config = parse_config("").unwrap();
         assert!(!config.codegen.gate_impls_on_crate_features);
+    }
+
+    #[test]
+    fn feature_name_overrides() {
+        let config =
+            parse_config("json_feature=serde,views_feature=v,text_feature=t,reflect_feature=r")
+                .unwrap();
+        assert_eq!(config.codegen.feature_gate_names.json, "serde");
+        assert_eq!(config.codegen.feature_gate_names.views, "v");
+        assert_eq!(config.codegen.feature_gate_names.text, "t");
+        assert_eq!(config.codegen.feature_gate_names.reflect, "r");
+    }
+
+    #[test]
+    fn empty_feature_name_keeps_default() {
+        let config = parse_config("json_feature=").unwrap();
+        assert_eq!(config.codegen.feature_gate_names.json, "json");
+    }
+
+    #[test]
+    fn feature_names_default() {
+        let config = parse_config("").unwrap();
+        assert_eq!(config.codegen.feature_gate_names.json, "json");
+        assert_eq!(config.codegen.feature_gate_names.views, "views");
+        assert_eq!(config.codegen.feature_gate_names.text, "text");
+        assert_eq!(config.codegen.feature_gate_names.reflect, "reflect");
     }
 
     #[test]

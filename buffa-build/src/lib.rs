@@ -245,6 +245,85 @@ impl Config {
         self
     }
 
+    /// Set the crate feature name the gated JSON impls are conditioned on
+    /// (default: `"json"`).
+    ///
+    /// Only meaningful together with
+    /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features);
+    /// inert otherwise. Use when the consuming crate gates its JSON support
+    /// behind a differently-named feature:
+    ///
+    /// ```toml
+    /// [features]
+    /// serde = ["buffa/json", "dep:serde", "dep:serde_json"]
+    /// ```
+    ///
+    /// ```rust,ignore
+    /// buffa_build::Config::new()
+    ///     .generate_json(true)
+    ///     .gate_impls_on_crate_features(true)
+    ///     .json_feature_name("serde")
+    /// # ;
+    /// ```
+    ///
+    /// The name is emitted verbatim into `#[cfg(feature = "...")]`
+    /// attributes and must be a valid Cargo feature name **declared in the
+    /// consuming crate's `[features]` table**. A misspelled or undeclared
+    /// name fails open: the `#[cfg]` is permanently false, so the gated
+    /// impls silently compile away (on Rust ≥ 1.80 an undeclared name at
+    /// least triggers the `unexpected_cfgs` warning). Debug builds assert
+    /// the name is non-empty.
+    #[must_use]
+    pub fn json_feature_name(mut self, name: impl Into<String>) -> Self {
+        let name = name.into();
+        debug_assert!(!name.is_empty(), "feature name must not be empty");
+        self.codegen_config.feature_gate_names.json = name;
+        self
+    }
+
+    /// Set the crate feature name the gated view impls are conditioned on
+    /// (default: `"views"`).
+    ///
+    /// Only meaningful together with
+    /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features);
+    /// inert otherwise. See [`json_feature_name`](Self::json_feature_name).
+    #[must_use]
+    pub fn views_feature_name(mut self, name: impl Into<String>) -> Self {
+        let name = name.into();
+        debug_assert!(!name.is_empty(), "feature name must not be empty");
+        self.codegen_config.feature_gate_names.views = name;
+        self
+    }
+
+    /// Set the crate feature name the gated textproto impls are conditioned
+    /// on (default: `"text"`).
+    ///
+    /// Only meaningful together with
+    /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features);
+    /// inert otherwise. See [`json_feature_name`](Self::json_feature_name).
+    #[must_use]
+    pub fn text_feature_name(mut self, name: impl Into<String>) -> Self {
+        let name = name.into();
+        debug_assert!(!name.is_empty(), "feature name must not be empty");
+        self.codegen_config.feature_gate_names.text = name;
+        self
+    }
+
+    /// Set the crate feature name the gated reflection impls are conditioned
+    /// on (default: `"reflect"`).
+    ///
+    /// Only meaningful together with
+    /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features)
+    /// or [`gate_reflect_on_crate_feature`](Self::gate_reflect_on_crate_feature);
+    /// inert otherwise. See [`json_feature_name`](Self::json_feature_name).
+    #[must_use]
+    pub fn reflect_feature_name(mut self, name: impl Into<String>) -> Self {
+        let name = name.into();
+        debug_assert!(!name.is_empty(), "feature name must not be empty");
+        self.codegen_config.feature_gate_names.reflect = name;
+        self
+    }
+
     /// Enable or disable `with_*` builder-style setter methods for
     /// explicit-presence fields (default: true).
     ///

@@ -26,6 +26,7 @@ pub(crate) mod defaults;
 pub(crate) mod enumeration;
 pub(crate) mod extension;
 pub(crate) mod feature_gates;
+pub use feature_gates::FeatureGateNames;
 pub(crate) mod features;
 #[doc(hidden)]
 pub use buffa_descriptor::generated;
@@ -604,6 +605,17 @@ pub struct CodeGenConfig {
     /// backward-compatible, and the all-or-nothing rule guarantees correctness on
     /// any enum.
     pub idiomatic_enum_aliases: bool,
+    /// Crate feature names used by the `#[cfg(feature = "...")]` gates that
+    /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features)
+    /// and
+    /// [`gate_reflect_on_crate_feature`](Self::gate_reflect_on_crate_feature)
+    /// emit.
+    ///
+    /// Defaults to `"json"` / `"views"` / `"text"` / `"reflect"`. Override a
+    /// name when the consuming crate gates the same concern behind a
+    /// different feature name (e.g. its JSON support behind a `serde`
+    /// feature). Inert unless one of the gating flags is on.
+    pub feature_gate_names: FeatureGateNames,
 }
 
 impl Default for CodeGenConfig {
@@ -632,6 +644,7 @@ impl Default for CodeGenConfig {
             generate_reflection_vtable: false,
             gate_reflect_on_crate_feature: false,
             idiomatic_enum_aliases: true,
+            feature_gate_names: FeatureGateNames::default(),
         }
     }
 }
@@ -642,7 +655,7 @@ impl CodeGenConfig {
     /// Recomputed on each call (cheap — three boolean ANDs); call once at
     /// the top of a generation function and thread through, or call inline
     /// at each use site, whichever reads better.
-    pub(crate) fn feature_gates(&self) -> feature_gates::FeatureGates {
+    pub(crate) fn feature_gates(&self) -> feature_gates::FeatureGates<'_> {
         feature_gates::FeatureGates::for_config(self)
     }
 }

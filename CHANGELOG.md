@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Customizable feature-gate names** (#169). `CodeGenConfig::feature_gate_names`
+  (exposed as `buffa_build::Config::{json,views,text,reflect}_feature_name` and
+  `protoc-gen-buffa`'s `{json,views,text,reflect}_feature=` options) renames the
+  crate features that `gate_impls_on_crate_features` conditions the generated
+  impls on — e.g. gating the serde JSON impls behind a feature named `serde`
+  instead of `json`. Defaults are unchanged; the knob is inert unless gating is
+  enabled.
+
 ## [0.7.1] - 2026-06-10
 
 This release is a patch bump under the

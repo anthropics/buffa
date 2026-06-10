@@ -130,6 +130,53 @@ fn ungated_output_has_no_feature_cfgs() {
 }
 
 #[test]
+fn custom_feature_names_replace_defaults_in_output() {
+    let cfg = CodeGenConfig {
+        generate_json: true,
+        generate_views: true,
+        generate_text: true,
+        preserve_unknown_fields: true,
+        gate_impls_on_crate_features: true,
+        feature_gate_names: crate::FeatureGateNames {
+            json: "serde".to_string(),
+            views: "zero-copy".to_string(),
+            text: "textproto".to_string(),
+            ..crate::FeatureGateNames::default()
+        },
+        ..CodeGenConfig::default()
+    };
+    let files =
+        generate(&[fixture()], &["gated.proto".to_string()], &cfg).expect("should generate");
+    let content = joined(&files);
+    // Every gate uses the custom name...
+    assert!(
+        content.contains(r#"feature = "serde""#),
+        "json gates must use the custom name: {content}"
+    );
+    assert!(
+        content.contains(r#"feature = "zero-copy""#),
+        "views gates must use the custom name: {content}"
+    );
+    assert!(
+        content.contains(r#"feature = "textproto""#),
+        "text gates must use the custom name: {content}"
+    );
+    // ...and the default names are gone entirely.
+    assert!(
+        !content.contains(r#"feature = "json""#),
+        "no gate may use the default json name: {content}"
+    );
+    assert!(
+        !content.contains(r#"feature = "views""#),
+        "no gate may use the default views name: {content}"
+    );
+    assert!(
+        !content.contains(r#"feature = "text""#),
+        "no gate may use the default text name: {content}"
+    );
+}
+
+#[test]
 fn gated_message_serde_derive_is_cfg_attr() {
     let content = generate_gated(false);
     assert!(
