@@ -30,7 +30,6 @@ use crate::impl_message::{
     is_required_field, is_supported_field_type, map_value_use_bytes,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident};
-use crate::oneof::is_boxed_variant;
 use crate::CodeGenError;
 
 /// Wrap a text-decoded owned `String` expression in the conversion to the
@@ -181,7 +180,15 @@ pub(crate) fn generate_text_impl(
     let oneof_encode: Vec<_> = oneof_groups
         .iter()
         .map(|(name, enum_ident, fields)| {
-            oneof_encode_stmt(ctx, enum_ident, name, fields, oneof_prefix, features)
+            oneof_encode_stmt(
+                ctx,
+                enum_ident,
+                name,
+                fields,
+                oneof_prefix,
+                proto_fqn,
+                features,
+            )
         })
         .collect::<Result<_, _>>()?;
     let map_encode: Vec<_> = map_fields
@@ -762,6 +769,7 @@ fn oneof_encode_stmt(
     oneof_name: &str,
     fields: &[&FieldDescriptorProto],
     oneof_prefix: &TokenStream,
+    proto_fqn: &str,
     parent_features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
     let field_ident = make_field_ident(oneof_name);
@@ -777,7 +785,11 @@ fn oneof_encode_stmt(
         let variant = crate::oneof::oneof_variant_ident(proto_name);
         let ty = effective_type(ctx, field, &features);
         let (name_lit, _) = text_field_name(proto_name, field, ty);
-        let boxed = is_boxed_variant(ty);
+        let boxed = crate::oneof::variant_boxed(
+            ctx,
+            ty,
+            &format!(".{proto_fqn}.{oneof_name}.{proto_name}"),
+        );
 
         // Box<M> auto-derefs through `&**__v` → `&M`. For string/bytes,
         // `__v: &String` / `&Vec<u8>` / `&bytes::Bytes` deref-coerces.
@@ -841,20 +853,35 @@ fn oneof_merge_arms(
         let (_, name_pat) = text_field_name(proto_name, field, ty);
         let use_bytes = ty == Type::TYPE_BYTES && field_uses_bytes(ctx, proto_fqn, proto_name);
 
-        // Message/group variants are boxed. Merge-into-existing matches
-        // binary oneof semantics (oneof_merge_arm in impl_message.rs).
+        // Message/group variants are boxed unless opted out. Merge-into-existing
+        // matches binary oneof semantics (oneof_merge_arm in impl_message.rs).
+        let boxed = crate::oneof::variant_boxed(
+            ctx,
+            ty,
+            &format!(".{proto_fqn}.{oneof_name}.{proto_name}"),
+        );
         let assign = match ty {
             Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
+                let existing_ref = if boxed {
+                    quote! { &mut **__existing }
+                } else {
+                    quote! { __existing }
+                };
+                let wrapped = if boxed {
+                    quote! { ::buffa::alloc::boxed::Box::new(__m) }
+                } else {
+                    quote! { __m }
+                };
                 quote! {
                     if let ::core::option::Option::Some(
                         #qualified::#variant(ref mut __existing)
                     ) = self.#field_ident {
-                        dec.merge_message(&mut **__existing)?;
+                        dec.merge_message(#existing_ref)?;
                     } else {
                         let mut __m = ::core::default::Default::default();
                         dec.merge_message(&mut __m)?;
                         self.#field_ident = ::core::option::Option::Some(
-                            #qualified::#variant(::buffa::alloc::boxed::Box::new(__m))
+                            #qualified::#variant(#wrapped)
                         );
                     }
                 }

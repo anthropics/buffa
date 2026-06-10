@@ -66,6 +66,14 @@ pub mod wkt {
     buffa::include_proto!("test.wkt");
 }
 
+// unbox_oneof: `Envelope.body.small` is stored inline (opted out of Box),
+// `large` stays boxed. Compiling this module exercises every boxing site for
+// both shapes; runtime round-trips live in `tests/unbox_oneof.rs`.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod unbox_oneof {
+    buffa::include_proto!("unboxoneof");
+}
+
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod cross {
     buffa::include_proto!("test.cross");

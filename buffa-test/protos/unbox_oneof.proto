@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package unboxoneof;
+
+// Fixtures for unbox_oneof(): message-typed oneof variants stored inline
+// instead of behind a Box. `Envelope.body` mixes an opted-out message variant
+// (`small`), a still-boxed message variant (`large`), and a scalar (`number`)
+// so encode/decode/merge/JSON/text all exercise both storage shapes.
+
+message Small {
+  int32 value = 1;
+}
+
+message Large {
+  string label = 1;
+}
+
+message Envelope {
+  oneof body {
+    Small small = 1;
+    Large large = 2;
+    int32 number = 3;
+  }
+}

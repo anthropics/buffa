@@ -43,6 +43,9 @@ pub(crate) struct OwnedReflectScope<'a> {
     pub name_ident: &'a proc_macro2::Ident,
     pub buffa_path: &'a TokenStream,
     pub current_package: &'a str,
+    /// Message path without a leading dot (e.g. `pkg.Outer.Inner`), used to
+    /// build variant paths for `variant_boxed` lookups.
+    pub proto_fqn: &'a str,
     pub features: &'a ResolvedFeatures,
     pub oneof_idents: &'a HashMap<usize, proc_macro2::Ident>,
     pub oneof_prefix: &'a TokenStream,
@@ -59,6 +62,7 @@ pub(crate) fn reflect_owned_impls(
     let name_ident = scope.name_ident;
     let buffa_path = scope.buffa_path;
     let current_package = scope.current_package;
+    let proto_fqn = scope.proto_fqn;
     let features = scope.features;
     let oneof_idents = scope.oneof_idents;
     let oneof_prefix = scope.oneof_prefix;
@@ -195,8 +199,20 @@ pub(crate) fn reflect_owned_impls(
                 Type::TYPE_BYTES => (quote! { #vr::Bytes(&v[..]) }, quote! { #vr::Bytes(&[]) }),
                 Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
                     let owned_ty = resolve_owned_message_ty(ctx, field, current_package, nesting)?;
+                    // Boxed variants bind `v: &Box<M>` (deref twice to reach
+                    // `&M`); variants opted out via unbox_oneof store the
+                    // message inline and bind `v: &M` directly.
+                    let borrowed = if crate::oneof::variant_boxed(
+                        ctx,
+                        ty,
+                        &format!(".{proto_fqn}.{oneof_name}.{name}"),
+                    ) {
+                        quote! { &**v }
+                    } else {
+                        quote! { v }
+                    };
                     (
-                        quote! { #vr::Message(#cow::Borrowed(&**v)) },
+                        quote! { #vr::Message(#cow::Borrowed(#borrowed)) },
                         quote! {
                             #vr::Message(#cow::Borrowed(
                                 <#owned_ty as ::buffa::DefaultInstance>::default_instance(),
