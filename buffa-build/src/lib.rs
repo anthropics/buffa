@@ -35,6 +35,8 @@ use buffa_codegen::generated::descriptor::FileDescriptorSet;
 #[doc(inline)]
 pub use buffa_codegen::CodeGenConfig;
 #[doc(inline)]
+pub use buffa_codegen::FeatureGateNames;
+#[doc(inline)]
 pub use buffa_codegen::ReflectMode;
 #[doc(inline)]
 pub use buffa_codegen::StringRepr;
@@ -261,6 +263,80 @@ impl Config {
     #[must_use]
     pub fn gate_reflect_on_crate_feature(mut self, enabled: bool) -> Self {
         self.codegen_config.gate_reflect_on_crate_feature = enabled;
+        self
+    }
+
+    /// Set the crate feature name the gated JSON impls are conditioned on
+    /// (default: `"json"`).
+    ///
+    /// Only meaningful together with
+    /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features);
+    /// inert otherwise. Use when the consuming crate gates its JSON support
+    /// behind a differently-named feature:
+    ///
+    /// ```toml
+    /// [features]
+    /// serde = ["buffa/json", "dep:serde", "dep:serde_json"]
+    /// ```
+    ///
+    /// ```rust,ignore
+    /// buffa_build::Config::new()
+    ///     .generate_json(true)
+    ///     .gate_impls_on_crate_features(true)
+    ///     .json_feature_name("serde")
+    /// # ;
+    /// ```
+    ///
+    /// The name is emitted verbatim into `#[cfg(feature = "...")]`
+    /// attributes and must be a valid Cargo feature name **declared in the
+    /// consuming crate's `[features]` table**. A misspelled or undeclared
+    /// name fails open: the `#[cfg]` is permanently false, so the gated
+    /// impls silently compile away (on Rust ≥ 1.80 an undeclared name at
+    /// least triggers the `unexpected_cfgs` warning). A name that is not a
+    /// valid Cargo feature name at all (empty, or containing characters
+    /// outside alphanumerics and `_`/`-`/`+`/`.`) makes [`compile`](Self::compile)
+    /// fail with an error when the gate is active.
+    #[must_use]
+    pub fn json_feature_name(mut self, name: impl Into<String>) -> Self {
+        self.codegen_config.feature_gate_names.json = name.into();
+        self
+    }
+
+    /// Set the crate feature name the gated view impls are conditioned on
+    /// (default: `"views"`).
+    ///
+    /// Only meaningful together with
+    /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features);
+    /// inert otherwise. See [`json_feature_name`](Self::json_feature_name).
+    #[must_use]
+    pub fn views_feature_name(mut self, name: impl Into<String>) -> Self {
+        self.codegen_config.feature_gate_names.views = name.into();
+        self
+    }
+
+    /// Set the crate feature name the gated textproto impls are conditioned
+    /// on (default: `"text"`).
+    ///
+    /// Only meaningful together with
+    /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features);
+    /// inert otherwise. See [`json_feature_name`](Self::json_feature_name).
+    #[must_use]
+    pub fn text_feature_name(mut self, name: impl Into<String>) -> Self {
+        self.codegen_config.feature_gate_names.text = name.into();
+        self
+    }
+
+    /// Set the crate feature name the gated reflection impls are conditioned
+    /// on (default: `"reflect"`).
+    ///
+    /// Only meaningful together with
+    /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features)
+    /// (or the experimental, hidden `gate_reflect_on_crate_feature`, which
+    /// gates reflection alone); inert otherwise. See
+    /// [`json_feature_name`](Self::json_feature_name).
+    #[must_use]
+    pub fn reflect_feature_name(mut self, name: impl Into<String>) -> Self {
+        self.codegen_config.feature_gate_names.reflect = name.into();
         self
     }
 
@@ -1366,6 +1442,21 @@ fn generate_include_file(entries: &[(String, String)], relative: bool) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn feature_name_setters_reach_codegen_config() {
+        let config = Config::new()
+            .json_feature_name("serde")
+            .views_feature_name("zero-copy")
+            .text_feature_name(String::from("textproto"))
+            .reflect_feature_name("reflection")
+            .codegen_config;
+        let names = &config.feature_gate_names;
+        assert_eq!(names.json, "serde");
+        assert_eq!(names.views, "zero-copy");
+        assert_eq!(names.text, "textproto");
+        assert_eq!(names.reflect, "reflection");
+    }
 
     #[test]
     fn unbox_oneof_in_normalizes_leading_dot() {
