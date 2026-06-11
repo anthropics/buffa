@@ -108,7 +108,7 @@ fn singular_merge_across_fragments() {
     assert_eq!(p.data, owned.payload.data.as_slice());
 
     // Owned conversion and re-encode agree with the owned decoder too.
-    assert_eq!(view.to_owned_message(), owned);
+    assert_eq!(view.to_owned_message().unwrap(), owned);
 }
 
 #[test]
@@ -120,7 +120,7 @@ fn to_owned_round_trip_preserves_unknown_fields() {
     bytes.extend_from_slice(&crate::tests::varint_field(99, 6));
 
     let view = HolderView::decode_view(&bytes).unwrap();
-    let owned = view.to_owned_message();
+    let owned = view.to_owned_message().unwrap();
     assert_eq!(owned, Holder::decode(&mut bytes.as_slice()).unwrap());
 
     // Round-tripping the owned message keeps both unknown fields on the wire.
@@ -177,7 +177,7 @@ fn empty_fragment_merges_as_empty_message() {
     assert_eq!(view.payload.fragments().len(), 3);
     let p = view.payload.get().unwrap().expect("set");
     assert_eq!(p.name, "set");
-    assert_eq!(view.to_owned_message(), owned);
+    assert_eq!(view.to_owned_message().unwrap(), owned);
 }
 
 #[test]
@@ -262,16 +262,18 @@ fn deep_recursion_budget_flows_through_lazy_access() {
 }
 
 #[test]
-#[should_panic(expected = "recursion limit exceeded")]
-fn deep_recursion_to_owned_panics_catchably() {
-    // to_owned on over-deep lazy input must fail via the documented panic
-    // (catchable), not a stack overflow abort.
+fn deep_recursion_to_owned_errors() {
+    // to_owned on over-deep lazy input must fail with the recursion-limit
+    // error through the fallible conversion, not a stack overflow abort.
     let mut cur = ld_field(1, b"leaf");
     for _ in 0..300 {
         cur = ld_field(2, &cur);
     }
     let view = NodeView::decode_view(&cur).unwrap();
-    let _ = view.to_owned_message();
+    assert!(matches!(
+        view.to_owned_message(),
+        Err(buffa::DecodeError::RecursionLimitExceeded)
+    ));
 }
 
 #[test]
@@ -303,7 +305,7 @@ fn recursive_repeated_children() {
         .map(|c| c.unwrap().label.to_string())
         .collect();
     assert_eq!(labels, ["child-0", "child-1", "child-2"]);
-    assert_eq!(view.to_owned_message(), root);
+    assert_eq!(view.to_owned_message().unwrap(), root);
 }
 
 #[test]
@@ -321,11 +323,10 @@ fn malformed_deferred_bytes_error_on_access() {
 }
 
 #[test]
-#[should_panic(expected = "malformed deferred bytes in message field `payload`")]
-fn malformed_deferred_bytes_panic_in_to_owned() {
+fn malformed_deferred_bytes_error_in_to_owned() {
     let bytes = ld_field(1, &[0xFF, 0xFF, 0xFF]);
     let view = HolderView::decode_view(&bytes).unwrap();
-    let _ = view.to_owned_message();
+    assert!(view.to_owned_message().is_err());
 }
 
 #[test]

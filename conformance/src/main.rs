@@ -153,7 +153,7 @@ where
     V: buffa::MessageView<'a>,
 {
     let view = V::decode_view(bytes).map_err(|e| format!("{e}"))?;
-    Ok(view.to_owned_message())
+    view.to_owned_message().map_err(|e| format!("{e}"))
 }
 
 // ── View-JSON mode ───────────────────────────────────────────────────────

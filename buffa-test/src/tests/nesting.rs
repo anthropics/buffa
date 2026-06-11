@@ -281,7 +281,7 @@ fn test_view_oneof_boxed_message_variant() {
         other => panic!("expected Negated, got {other:?}"),
     }
     // to_owned_message round-trips through both Box levels.
-    let owned = view.to_owned_message();
+    let owned = view.to_owned_message().unwrap();
     assert_eq!(owned, outer);
 }
 
@@ -306,7 +306,7 @@ fn test_view_oneof_message_variant_to_owned() {
         Some(nested::__buffa::view::oneof::outer::Content::Structured(m)) => assert_eq!(m.value, 7),
         other => panic!("expected Structured, got {other:?}"),
     }
-    assert_eq!(view.to_owned_message(), msg);
+    assert_eq!(view.to_owned_message().unwrap(), msg);
 }
 
 #[test]
@@ -360,7 +360,7 @@ fn test_view_recursive_singular_message_field() {
     assert_eq!(view.nested.value, 42);
     assert_eq!(view.nested.back.name, "leaf");
     // Round-trip through to_owned_message.
-    assert_eq!(view.to_owned_message(), msg);
+    assert_eq!(view.to_owned_message().unwrap(), msg);
 }
 
 #[test]
@@ -403,7 +403,7 @@ fn test_view_message_field_merge_semantics() {
     // Parity: view and owned decode must produce identical output.
     let owned = Corecursive::decode(&mut wire.as_slice()).unwrap();
     assert_eq!(
-        view.to_owned_message().encode_to_vec(),
+        view.to_owned_message().unwrap().encode_to_vec(),
         owned.encode_to_vec()
     );
 }
@@ -454,7 +454,7 @@ fn test_view_oneof_message_variant_merge_semantics() {
     // Parity with owned decoder.
     let owned = Expr::decode(&mut wire.as_slice()).unwrap();
     assert_eq!(
-        view.to_owned_message().encode_to_vec(),
+        view.to_owned_message().unwrap().encode_to_vec(),
         owned.encode_to_vec()
     );
 }

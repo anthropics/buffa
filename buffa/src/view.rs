@@ -121,13 +121,20 @@ pub trait MessageView<'a>: Sized {
     /// must ensure the buffer is contiguous (e.g., `&[u8]` or `bytes::Bytes`).
     fn decode_view(buf: &'a [u8]) -> Result<Self, DecodeError>;
 
-    /// Decode a view with a custom recursion depth limit.
+    /// Decode a view under custom decode limits.
     ///
     /// Used by [`DecodeOptions::decode_view`](crate::DecodeOptions::decode_view)
-    /// to pass a non-default recursion budget. The default implementation
-    /// delegates to [`decode_view`](Self::decode_view) (ignoring the limit);
-    /// generated code overrides this to call `_decode_depth(buf, depth)`.
-    fn decode_view_with_limit(buf: &'a [u8], _depth: u32) -> Result<Self, DecodeError> {
+    /// to pass a non-default recursion depth and unknown-field allowance.
+    /// The default implementation delegates to
+    /// [`decode_view`](Self::decode_view) and **ignores the context** —
+    /// a hand-written `MessageView` that recurses or preserves unknown
+    /// fields must override this method to honor the limits configured on
+    /// `DecodeOptions`. Generated code always overrides it, calling
+    /// `_decode_ctx(buf, ctx)`.
+    fn decode_view_with_ctx(
+        buf: &'a [u8],
+        _ctx: crate::DecodeContext<'_>,
+    ) -> Result<Self, DecodeError> {
         Self::decode_view(buf)
     }
 
@@ -136,14 +143,18 @@ pub trait MessageView<'a>: Sized {
     /// This allocates and copies all borrowed fields. Equivalent to
     /// [`to_owned_from_source(None)`](Self::to_owned_from_source).
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Views generated with `lazy_views` panic here if a deferred
-    /// sub-message holds malformed bytes or exceeds the recursion budget —
-    /// validation is deferred to access (see
-    /// [`LazyMessageFieldView`]). Call `.get()` on the lazy fields first to
-    /// validate untrusted input fallibly.
-    fn to_owned_message(&self) -> Self::Owned;
+    /// Returns an error if re-materializing preserved unknown fields fails —
+    /// notably [`DecodeError::UnknownFieldLimitExceeded`] when the view
+    /// holds more unknown fields than the allowance it was decoded under
+    /// (each owned `UnknownField` counts, unlike the coalesced spans the
+    /// view itself stores). Views generated with `lazy_views` also surface
+    /// deferred-validation failures here: a deferred sub-message with
+    /// malformed bytes or an exhausted recursion budget yields the decode
+    /// error that `.get()` on the lazy field would have reported (see
+    /// [`LazyMessageFieldView`]).
+    fn to_owned_message(&self) -> Result<Self::Owned, DecodeError>;
 
     /// Convert this view to the owned message type, optionally slicing
     /// `bytes::Bytes`-typed fields from `source` instead of copying.
@@ -158,7 +169,11 @@ pub trait MessageView<'a>: Sized {
     /// Generated view types override this; the default delegates to
     /// [`to_owned_message`](Self::to_owned_message) so hand-written impls
     /// need only provide that method.
-    fn to_owned_from_source(&self, source: Option<&Bytes>) -> Self::Owned {
+    ///
+    /// # Errors
+    ///
+    /// Same contract as [`to_owned_message`](Self::to_owned_message).
+    fn to_owned_from_source(&self, source: Option<&Bytes>) -> Result<Self::Owned, DecodeError> {
         let _ = source;
         self.to_owned_message()
     }
@@ -662,16 +677,23 @@ impl<V: Eq + DefaultViewInstance> Eq for MessageFieldView<V> {}
 /// Used by [`LazyMessageFieldView::get`] to reassemble a deferred field whose
 /// value was split across multiple wire fragments.
 pub trait ViewMerge<'a>: MessageView<'a> {
-    /// Merge fields decoded from `buf` into this view, with `depth` as the
-    /// remaining recursion budget (decremented per nested message level, as
-    /// in [`MessageView::decode_view_with_limit`]).
+    /// Merge fields decoded from `buf` into this view, with `ctx` carrying
+    /// the remaining recursion budget and unknown-field allowance
+    /// (decremented per nested message level, as in
+    /// [`MessageView::decode_view_with_ctx`]).
     ///
     /// # Errors
     ///
     /// Returns [`DecodeError`] if `buf` is not a valid encoding of this
-    /// message type, or [`DecodeError::RecursionLimitExceeded`] when the
-    /// budget runs out.
-    fn merge_view(&mut self, buf: &'a [u8], depth: u32) -> Result<(), DecodeError>;
+    /// message type, [`DecodeError::RecursionLimitExceeded`] when the
+    /// recursion budget runs out, or
+    /// [`DecodeError::UnknownFieldLimitExceeded`] when the unknown-field
+    /// allowance is exhausted.
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        ctx: crate::DecodeContext<'_>,
+    ) -> Result<(), DecodeError>;
 }
 
 /// Fragments of one singular message field. `Many` only arises when an
@@ -707,16 +729,18 @@ enum LazyFragments<'a> {
 ///
 /// The fragment bytes are *not* validated when the enclosing view is decoded;
 /// a malformed sub-message surfaces as a [`DecodeError`] from
-/// [`get`](Self::get). The recursion budget remaining when the field was
-/// recorded is stored alongside the fragments and charged on access, so a
-/// chain of lazy `get` calls is depth-bounded exactly like the eager and
-/// owned decoders (deeper nesting fails with
-/// [`DecodeError::RecursionLimitExceeded`]); a custom limit passed to the
-/// enclosing [`decode_view_with_limit`](MessageView::decode_view_with_limit)
-/// flows through.
+/// [`get`](Self::get). The recursion budget and unknown-field allowance
+/// remaining when the field was recorded are stored alongside the fragments
+/// and charged on access, so a chain of lazy `get` calls is depth- and
+/// allowance-bounded exactly like the eager and owned decoders (deeper
+/// nesting fails with [`DecodeError::RecursionLimitExceeded`], an
+/// unknown-field flood with [`DecodeError::UnknownFieldLimitExceeded`]);
+/// custom limits passed to the enclosing
+/// [`decode_view_with_ctx`](MessageView::decode_view_with_ctx) flow through.
 pub struct LazyMessageFieldView<'a, V> {
     raw: LazyFragments<'a>,
     depth: u32,
+    allowance: usize,
     _marker: core::marker::PhantomData<fn() -> V>,
 }
 
@@ -726,32 +750,37 @@ impl<'a, V> LazyMessageFieldView<'a, V> {
     pub const fn unset() -> Self {
         Self {
             raw: LazyFragments::None,
-            // Sentinel: the first `push_fragment` lowers this to its recorded
-            // budget, so custom limits above RECURSION_LIMIT aren't clamped.
+            // Sentinels: the first `push_fragment` lowers these to its
+            // recorded budgets, so custom limits above the defaults aren't
+            // clamped.
             depth: u32::MAX,
+            allowance: usize::MAX,
             _marker: core::marker::PhantomData,
         }
     }
 
     /// A set field carrying the sub-message's undecoded wire bytes, with the
-    /// default recursion budget for access.
+    /// default recursion and unknown-field budgets for access.
     #[inline]
     pub const fn from_bytes(raw: &'a [u8]) -> Self {
         Self {
             raw: LazyFragments::One(raw),
             depth: crate::RECURSION_LIMIT,
+            allowance: crate::DEFAULT_UNKNOWN_FIELD_LIMIT,
             _marker: core::marker::PhantomData,
         }
     }
 
     /// Append one wire occurrence of the field (used by generated
     /// `decode_view`). Fragments accumulate in wire order; [`get`](Self::get)
-    /// merges them. `depth` is the recursion budget remaining at the record
-    /// site; the smallest pushed budget is charged on access.
+    /// merges them. `ctx` carries the recursion budget and unknown-field
+    /// allowance remaining at the record site; the smallest pushed budgets
+    /// are charged on access.
     #[doc(hidden)]
     #[inline]
-    pub fn push_fragment(&mut self, raw: &'a [u8], depth: u32) {
-        self.depth = self.depth.min(depth);
+    pub fn push_fragment(&mut self, raw: &'a [u8], ctx: crate::DecodeContext<'_>) {
+        self.depth = self.depth.min(ctx.depth());
+        self.allowance = self.allowance.min(ctx.remaining_unknown_fields());
         self.raw = match core::mem::replace(&mut self.raw, LazyFragments::None) {
             LazyFragments::None => LazyFragments::One(raw),
             LazyFragments::One(first) => LazyFragments::Many(alloc::vec![first, raw]),
@@ -802,13 +831,17 @@ impl<'a, V: ViewMerge<'a>> LazyMessageFieldView<'a, V> {
     ///
     /// Returns [`DecodeError`] if the deferred bytes are not a valid
     /// encoding of `V` — validation happens here, not when the enclosing
-    /// view was decoded — or [`DecodeError::RecursionLimitExceeded`] when
-    /// the recursion budget recorded at decode time is exhausted.
+    /// view was decoded — [`DecodeError::RecursionLimitExceeded`] when the
+    /// recursion budget recorded at decode time is exhausted, or
+    /// [`DecodeError::UnknownFieldLimitExceeded`] when the unknown-field
+    /// allowance recorded at decode time is exhausted.
     #[inline]
     pub fn get(&self) -> Result<Option<V>, DecodeError> {
+        let allowance = core::cell::Cell::new(self.allowance);
+        let ctx = crate::DecodeContext::new(self.depth, &allowance);
         match &self.raw {
             LazyFragments::None => Ok(None),
-            LazyFragments::One(raw) => V::decode_view_with_limit(raw, self.depth).map(Some),
+            LazyFragments::One(raw) => V::decode_view_with_ctx(raw, ctx).map(Some),
             LazyFragments::Many(frags) => {
                 // `Many` always holds ≥ 2 fragments (see `push_fragment`);
                 // the guard is belt-and-suspenders.
@@ -816,9 +849,9 @@ impl<'a, V: ViewMerge<'a>> LazyMessageFieldView<'a, V> {
                 let Some(first) = iter.next() else {
                     return Ok(None);
                 };
-                let mut view = V::decode_view_with_limit(first, self.depth)?;
+                let mut view = V::decode_view_with_ctx(first, ctx)?;
                 for frag in iter {
-                    view.merge_view(frag, self.depth)?;
+                    view.merge_view(frag, ctx)?;
                 }
                 Ok(Some(view))
             }
@@ -851,6 +884,7 @@ impl<V> Clone for LazyMessageFieldView<'_, V> {
         Self {
             raw: self.raw.clone(),
             depth: self.depth,
+            allowance: self.allowance,
             _marker: core::marker::PhantomData,
         }
     }
@@ -882,6 +916,7 @@ impl<V> core::fmt::Debug for LazyMessageFieldView<'_, V> {
 pub struct LazyRepeatedView<'a, V> {
     elements: alloc::vec::Vec<&'a [u8]>,
     depth: u32,
+    allowance: usize,
     _marker: core::marker::PhantomData<fn() -> V>,
 }
 
@@ -891,8 +926,9 @@ impl<'a, V> LazyRepeatedView<'a, V> {
     pub fn new() -> Self {
         Self {
             elements: alloc::vec::Vec::new(),
-            // Sentinel — see `LazyMessageFieldView::unset`.
+            // Sentinels — see `LazyMessageFieldView::unset`.
             depth: u32::MAX,
+            allowance: usize::MAX,
             _marker: core::marker::PhantomData,
         }
     }
@@ -916,14 +952,30 @@ impl<'a, V> LazyRepeatedView<'a, V> {
     }
 
     /// Append an element's undecoded bytes (used by generated `decode_view`).
-    /// `depth` is the recursion budget remaining at the record site; the
-    /// smallest pushed budget is charged on access.
+    /// `ctx` carries the recursion budget and unknown-field allowance
+    /// remaining at the record site; the smallest pushed budgets are charged
+    /// on access.
     #[doc(hidden)]
     #[inline]
-    pub fn push_bytes(&mut self, raw: &'a [u8], depth: u32) {
-        self.depth = self.depth.min(depth);
+    pub fn push_bytes(&mut self, raw: &'a [u8], ctx: crate::DecodeContext<'_>) {
+        self.depth = self.depth.min(ctx.depth());
+        self.allowance = self.allowance.min(ctx.remaining_unknown_fields());
         self.elements.push(raw);
     }
+}
+
+/// Decode one deferred element under a fresh context carrying the budgets
+/// recorded at decode time. Each access decodes independently, so each gets
+/// the full recorded allowance — the same capture-then-replay approximation
+/// `UnknownFieldsView::to_owned` uses.
+#[inline]
+fn decode_deferred<'a, V: MessageView<'a>>(
+    raw: &'a [u8],
+    depth: u32,
+    allowance: usize,
+) -> Result<V, DecodeError> {
+    let cell = core::cell::Cell::new(allowance);
+    V::decode_view_with_ctx(raw, crate::DecodeContext::new(depth, &cell))
 }
 
 impl<'a, V: MessageView<'a>> LazyRepeatedView<'a, V> {
@@ -937,7 +989,7 @@ impl<'a, V: MessageView<'a>> LazyRepeatedView<'a, V> {
     pub fn get(&self, index: usize) -> Option<Result<V, DecodeError>> {
         self.elements
             .get(index)
-            .map(|b| V::decode_view_with_limit(b, self.depth))
+            .map(|b| decode_deferred(b, self.depth, self.allowance))
     }
 
     /// Iterate the elements, decoding each on the fly.
@@ -950,6 +1002,7 @@ impl<'a, V: MessageView<'a>> LazyRepeatedView<'a, V> {
         LazyRepeatedIter {
             inner: self.elements.iter(),
             depth: self.depth,
+            allowance: self.allowance,
             _marker: core::marker::PhantomData,
         }
     }
@@ -970,6 +1023,7 @@ impl<'s, 'a, V: MessageView<'a>> IntoIterator for &'s LazyRepeatedView<'a, V> {
 pub struct LazyRepeatedIter<'s, 'a, V> {
     inner: core::slice::Iter<'s, &'a [u8]>,
     depth: u32,
+    allowance: usize,
     _marker: core::marker::PhantomData<fn() -> V>,
 }
 
@@ -980,7 +1034,7 @@ impl<'a, V: MessageView<'a>> Iterator for LazyRepeatedIter<'_, 'a, V> {
     fn next(&mut self) -> Option<Self::Item> {
         self.inner
             .next()
-            .map(|b| V::decode_view_with_limit(b, self.depth))
+            .map(|b| decode_deferred(b, self.depth, self.allowance))
     }
 
     #[inline]
@@ -994,7 +1048,7 @@ impl<'a, V: MessageView<'a>> DoubleEndedIterator for LazyRepeatedIter<'_, 'a, V>
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner
             .next_back()
-            .map(|b| V::decode_view_with_limit(b, self.depth))
+            .map(|b| decode_deferred(b, self.depth, self.allowance))
     }
 }
 
@@ -1006,6 +1060,7 @@ impl<V> Clone for LazyRepeatedView<'_, V> {
         Self {
             elements: self.elements.clone(),
             depth: self.depth,
+            allowance: self.allowance,
             _marker: core::marker::PhantomData,
         }
     }
@@ -1311,11 +1366,35 @@ impl<'a, K, V> IntoIterator for MapView<'a, K, V> {
 /// A borrowed view of unknown fields.
 ///
 /// Stores raw byte slices from the input buffer rather than decoded values,
-/// enabling zero-copy round-tripping of unknown fields.
-#[derive(Clone, Debug, Default)]
+/// enabling zero-copy round-tripping of unknown fields. Each stored span
+/// holds **one or more consecutive** complete `(tag, value)` records:
+/// adjacent unknown fields are coalesced into a single span, so a long run
+/// of unknown fields costs one `Vec` slot rather than one per field.
+#[derive(Clone, Default)]
 pub struct UnknownFieldsView<'a> {
-    /// Raw (tag, value) byte spans from the input buffer.
+    /// Raw byte spans from the input buffer, each one or more complete
+    /// `(tag, value)` records.
     raw_spans: alloc::vec::Vec<&'a [u8]>,
+    /// The input-buffer tail starting at the first byte of the last span,
+    /// kept so [`push_record`](Self::push_record) can extend that span over
+    /// an adjacent record by re-slicing `last_tail` — never by widening the
+    /// narrowed span reference, which would be provenance-unsound.
+    last_tail: Option<&'a [u8]>,
+    /// The unknown-field allowance remaining when this view's first record
+    /// was pushed — the budget [`to_owned`](Self::to_owned) re-materializes
+    /// under, so a tight decode-time limit carries through conversion.
+    to_owned_allowance: Option<usize>,
+}
+
+// Manual impl: `last_tail` is an internal coalescing cursor that extends to
+// the end of the input buffer — deriving Debug would dump the remaining
+// message bytes on every `{:?}` print.
+impl core::fmt::Debug for UnknownFieldsView<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("UnknownFieldsView")
+            .field("raw_spans", &self.raw_spans)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<'a> UnknownFieldsView<'a> {
@@ -1327,6 +1406,55 @@ impl<'a> UnknownFieldsView<'a> {
     #[doc(hidden)]
     pub fn push_raw(&mut self, span: &'a [u8]) {
         self.raw_spans.push(span);
+        // A manually pushed span has no known position in the input buffer,
+        // so coalescing must not extend it.
+        self.last_tail = None;
+    }
+
+    /// Record one unknown wire record of `span_len` bytes starting at the
+    /// head of `tail`, where `tail` extends from the record's first byte to
+    /// the end of the input buffer.
+    ///
+    /// If the record starts exactly where the previous one ended, the
+    /// previous span is extended in place (no allocation, no slot consumed);
+    /// otherwise a new span is pushed and one slot of `ctx`'s unknown-field
+    /// allowance is consumed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeError::UnknownFieldLimitExceeded`] when a new span is
+    /// needed but the allowance is exhausted, or
+    /// [`DecodeError::UnexpectedEof`] if `span_len` exceeds `tail`.
+    #[doc(hidden)]
+    pub fn push_record(
+        &mut self,
+        tail: &'a [u8],
+        span_len: usize,
+        ctx: crate::DecodeContext<'_>,
+    ) -> Result<(), crate::DecodeError> {
+        if span_len > tail.len() {
+            return Err(crate::DecodeError::UnexpectedEof);
+        }
+        if self.to_owned_allowance.is_none() {
+            self.to_owned_allowance = Some(ctx.remaining_unknown_fields());
+        }
+        if let (Some(last), Some(prev_tail)) = (self.raw_spans.last_mut(), self.last_tail) {
+            let prev_len = last.len();
+            // Contiguous if the new record begins exactly one past the end
+            // of the previous span. Both checks are plain pointer/length
+            // comparisons; the extension below re-slices `prev_tail`, whose
+            // provenance covers the combined range.
+            if prev_tail.len() >= prev_len + span_len
+                && core::ptr::eq(prev_tail[prev_len..].as_ptr(), tail.as_ptr())
+            {
+                *last = &prev_tail[..prev_len + span_len];
+                return Ok(());
+            }
+        }
+        ctx.register_unknown_field()?;
+        self.raw_spans.push(&tail[..span_len]);
+        self.last_tail = Some(tail);
+        Ok(())
     }
 
     /// Returns `true` if no unknown fields were recorded.
@@ -1339,9 +1467,9 @@ impl<'a> UnknownFieldsView<'a> {
         self.raw_spans.iter().map(|s| s.len()).sum()
     }
 
-    /// Write all unknown-field bytes verbatim. Each span is a complete
-    /// `(tag, value)` record as it appeared on the wire, so concatenating
-    /// them produces a valid encoding.
+    /// Write all unknown-field bytes verbatim. Each span holds one or more
+    /// complete `(tag, value)` records as they appeared on the wire, so
+    /// concatenating the spans produces a valid encoding.
     pub fn write_to(&self, buf: &mut impl BufMut) {
         for span in &self.raw_spans {
             buf.put_slice(span);
@@ -1350,9 +1478,18 @@ impl<'a> UnknownFieldsView<'a> {
 
     /// Convert to an owned [`UnknownFields`](crate::UnknownFields) by parsing all stored raw byte spans.
     ///
-    /// Each span is a complete (tag + value) record as it appeared on the wire.
-    /// Parsing uses [`crate::encoding::decode_unknown_field`] with the full
-    /// recursion limit so deeply nested group fields are handled correctly.
+    /// Each span holds one or more consecutive (tag + value) records as they
+    /// appeared on the wire. Parsing uses
+    /// [`crate::encoding::decode_unknown_field`] with the full recursion
+    /// limit so deeply nested group fields are handled correctly, and the
+    /// unknown-field allowance that remained when this view recorded its
+    /// first unknown field — so a tight decode-time limit carries through
+    /// conversion. Views built manually (via [`push_raw`](Self::push_raw))
+    /// fall back to
+    /// [`DEFAULT_UNKNOWN_FIELD_LIMIT`](crate::DEFAULT_UNKNOWN_FIELD_LIMIT).
+    /// A coalesced span re-materializes one owned `UnknownField` per
+    /// record, so this conversion is where a long run of unknown fields
+    /// actually allocates — and where the limit is enforced per field.
     ///
     /// # Errors
     ///
@@ -1361,12 +1498,19 @@ impl<'a> UnknownFieldsView<'a> {
     pub fn to_owned(&self) -> Result<crate::UnknownFields, crate::DecodeError> {
         use crate::encoding::{decode_unknown_field, Tag};
 
+        let limit = core::cell::Cell::new(
+            self.to_owned_allowance
+                .unwrap_or(crate::DEFAULT_UNKNOWN_FIELD_LIMIT),
+        );
+        let ctx = crate::DecodeContext::new(crate::RECURSION_LIMIT, &limit);
         let mut out = crate::UnknownFields::new();
         for span in &self.raw_spans {
             let mut cur: &[u8] = span;
-            let tag = Tag::decode(&mut cur)?;
-            let field = decode_unknown_field(tag, &mut cur, crate::RECURSION_LIMIT)?;
-            out.push(field);
+            while !cur.is_empty() {
+                let tag = Tag::decode(&mut cur)?;
+                let field = decode_unknown_field(tag, &mut cur, ctx)?;
+                out.push(field);
+            }
         }
         Ok(out)
     }
@@ -1570,7 +1714,12 @@ where
     /// `bytes::Bytes`-typed fields are produced via [`Bytes::slice_ref`]
     /// into the retained buffer (zero-copy); other borrowed fields are
     /// allocated and copied.
-    pub fn to_owned_message(&self) -> V::Owned {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields fails
+    /// (see [`MessageView::to_owned_message`]).
+    pub fn to_owned_message(&self) -> Result<V::Owned, DecodeError> {
         self.view.to_owned_from_source(Some(&self.bytes))
     }
 
@@ -1923,6 +2072,122 @@ mod tests {
         assert_eq!(collected, alloc::vec![1, 2]);
     }
 
+    // ── UnknownFieldsView::push_record (coalescing + limit) ────────────
+
+    /// A test context at full depth with `n` unknown-field slots, leaking
+    /// the cell so the context can outlive this helper.
+    fn record_ctx(n: usize) -> crate::DecodeContext<'static> {
+        let limit = alloc::boxed::Box::leak(alloc::boxed::Box::new(core::cell::Cell::new(n)));
+        crate::DecodeContext::new(crate::RECURSION_LIMIT, limit)
+    }
+
+    #[test]
+    fn push_record_coalesces_adjacent_records() {
+        // Buffer holds three consecutive 2-byte records.
+        let buf: &[u8] = &[0x08, 0x00, 0x08, 0x01, 0x08, 0x02];
+        let ctx = record_ctx(1); // one slot is enough for a contiguous run
+        let mut ufv = UnknownFieldsView::new();
+        ufv.push_record(&buf[0..], 2, ctx).unwrap();
+        ufv.push_record(&buf[2..], 2, ctx).unwrap();
+        ufv.push_record(&buf[4..], 2, ctx).unwrap();
+        assert_eq!(ufv.encoded_len(), 6);
+        let mut out = alloc::vec::Vec::new();
+        ufv.write_to(&mut out);
+        assert_eq!(out, buf);
+        assert_eq!(ctx.remaining_unknown_fields(), 0, "single slot consumed");
+    }
+
+    #[test]
+    fn push_record_non_adjacent_records_use_separate_slots() {
+        let buf: &[u8] = &[0x08, 0x00, 0xFF, 0x08, 0x01];
+        let ctx = record_ctx(2);
+        let mut ufv = UnknownFieldsView::new();
+        ufv.push_record(&buf[0..], 2, ctx).unwrap();
+        // Skip buf[2] — the next record is not adjacent to the previous one.
+        ufv.push_record(&buf[3..], 2, ctx).unwrap();
+        assert_eq!(ufv.encoded_len(), 4);
+        assert_eq!(ctx.remaining_unknown_fields(), 0, "two slots consumed");
+    }
+
+    #[test]
+    fn push_record_enforces_limit_for_new_spans() {
+        let buf: &[u8] = &[0x08, 0x00, 0xFF, 0x08, 0x01];
+        let ctx = record_ctx(1);
+        let mut ufv = UnknownFieldsView::new();
+        ufv.push_record(&buf[0..], 2, ctx).unwrap();
+        assert_eq!(
+            ufv.push_record(&buf[3..], 2, ctx),
+            Err(crate::DecodeError::UnknownFieldLimitExceeded)
+        );
+        // Extending the existing span never needs a slot — even at zero
+        // remaining, an adjacent record still coalesces.
+        ufv.push_record(&buf[2..], 1, ctx)
+            .expect("adjacent record coalesces without a slot");
+    }
+
+    #[test]
+    fn push_raw_disables_coalescing_for_next_record() {
+        let buf: &[u8] = &[0x08, 0x00, 0x08, 0x01];
+        let ctx = record_ctx(2);
+        let mut ufv = UnknownFieldsView::new();
+        ufv.push_raw(&buf[0..2]);
+        // Adjacent on the wire, but push_raw cleared the tail, so this must
+        // open a fresh span (a manual span has no trusted buffer position).
+        ufv.push_record(&buf[2..], 2, ctx).unwrap();
+        assert_eq!(ctx.remaining_unknown_fields(), 1);
+        assert_eq!(ufv.encoded_len(), 4);
+    }
+
+    #[test]
+    fn push_record_rejects_span_past_tail_end() {
+        let buf: &[u8] = &[0x08, 0x00];
+        let ctx = record_ctx(1);
+        let mut ufv = UnknownFieldsView::new();
+        assert_eq!(
+            ufv.push_record(buf, 3, ctx),
+            Err(crate::DecodeError::UnexpectedEof)
+        );
+    }
+
+    #[test]
+    fn coalesced_span_to_owned_parses_every_record() {
+        let buf: &[u8] = &[0x08, 0x00, 0x08, 0x01, 0x08, 0x02];
+        let ctx = record_ctx(3);
+        let mut ufv = UnknownFieldsView::new();
+        for i in 0..3 {
+            ufv.push_record(&buf[2 * i..], 2, ctx).unwrap();
+        }
+        let owned = ufv.to_owned().unwrap();
+        assert_eq!(owned.iter().count(), 3, "all records parsed");
+    }
+
+    #[test]
+    fn to_owned_enforces_decode_time_allowance() {
+        // Decoded under an allowance of 1: the coalesced span holds three
+        // records, so materializing them as owned fields must fail — the
+        // decode-time limit carries through conversion.
+        let buf: &[u8] = &[0x08, 0x00, 0x08, 0x01, 0x08, 0x02];
+        let ctx = record_ctx(1);
+        let mut ufv = UnknownFieldsView::new();
+        for i in 0..3 {
+            ufv.push_record(&buf[2 * i..], 2, ctx).unwrap();
+        }
+        assert_eq!(
+            ufv.to_owned(),
+            Err(crate::DecodeError::UnknownFieldLimitExceeded)
+        );
+    }
+
+    #[test]
+    fn to_owned_of_manual_view_uses_default_allowance() {
+        // push_raw leaves no captured allowance; to_owned falls back to the
+        // default limit.
+        let mut ufv = UnknownFieldsView::new();
+        ufv.push_raw(&[0x08, 0x00]);
+        let owned = ufv.to_owned().unwrap();
+        assert_eq!(owned.iter().count(), 1);
+    }
+
     #[test]
     fn repeated_view_reserve_grows_capacity() {
         let mut rv = RepeatedView::<u32>::default();
@@ -2253,7 +2518,7 @@ mod tests {
             &mut self,
             tag: crate::encoding::Tag,
             buf: &mut impl bytes::Buf,
-            _depth: u32,
+            _ctx: crate::DecodeContext<'_>,
         ) -> Result<(), DecodeError> {
             match tag.field_number() {
                 1 => self.id = crate::types::decode_int32(buf)?,
@@ -2288,27 +2553,35 @@ mod tests {
 
         fn decode_view(buf: &'a [u8]) -> Result<Self, DecodeError> {
             let mut view = SimpleMessageView::default();
-            view.merge_view(buf, crate::RECURSION_LIMIT)?;
+            let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
+            view.merge_view(
+                buf,
+                crate::DecodeContext::new(crate::RECURSION_LIMIT, &limit),
+            )?;
             Ok(view)
         }
 
-        fn to_owned_message(&self) -> SimpleMessage {
-            SimpleMessage {
+        fn to_owned_message(&self) -> Result<SimpleMessage, DecodeError> {
+            Ok(SimpleMessage {
                 id: self.id,
                 name: self.name.into(),
-            }
+            })
         }
     }
 
     impl<'a> ViewMerge<'a> for SimpleMessageView<'a> {
-        fn merge_view(&mut self, buf: &'a [u8], depth: u32) -> Result<(), DecodeError> {
+        fn merge_view(
+            &mut self,
+            buf: &'a [u8],
+            ctx: crate::DecodeContext<'_>,
+        ) -> Result<(), DecodeError> {
             let mut cursor: &'a [u8] = buf;
             while !cursor.is_empty() {
                 let tag = crate::encoding::Tag::decode(&mut cursor)?;
                 match tag.field_number() {
                     1 => self.id = crate::types::decode_int32(&mut cursor)?,
                     2 => self.name = crate::types::borrow_str(&mut cursor)?,
-                    _ => crate::encoding::skip_field_depth(tag, &mut cursor, depth)?,
+                    _ => crate::encoding::skip_field_depth(tag, &mut cursor, ctx.depth())?,
                 }
             }
             Ok(())
@@ -2363,7 +2636,7 @@ mod tests {
     fn owned_view_to_owned_message() {
         let bytes = encode_simple(7, "world");
         let view = OwnedView::<SimpleMessageView<'static>>::decode(bytes).unwrap();
-        let owned = view.to_owned_message();
+        let owned = view.to_owned_message().unwrap();
 
         assert_eq!(owned.id, 7);
         assert_eq!(owned.name, "world");
@@ -2429,7 +2702,7 @@ mod tests {
         assert_eq!(view.reborrow().id, 99);
         assert_eq!(view.reborrow().name, "roundtrip");
 
-        let back = view.to_owned_message();
+        let back = view.to_owned_message().unwrap();
         assert_eq!(back, msg);
     }
 
@@ -2520,7 +2793,7 @@ mod tests {
                 })
             }
 
-            fn to_owned_message(&self) -> SimpleMessage {
+            fn to_owned_message(&self) -> Result<SimpleMessage, DecodeError> {
                 self.inner.to_owned_message()
             }
         }
@@ -2634,8 +2907,15 @@ mod tests {
         assert_eq!(lazy.get().unwrap().unwrap().id, 42);
     }
 
+    /// Test helper: a fresh `DecodeContext` with full default budgets,
+    /// borrowing `cell` as the unknown-field allowance.
+    fn test_push_ctx(cell: &core::cell::Cell<usize>) -> crate::DecodeContext<'_> {
+        crate::DecodeContext::new(crate::RECURSION_LIMIT, cell)
+    }
+
     #[test]
     fn lazy_message_field_view_merges_fragments() {
+        let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
         // A singular message field split across wire occurrences must merge:
         // fragment 1 sets `name`, fragment 2 sets `id`; the merged view has
         // both, matching the eager/owned decoders.
@@ -2643,9 +2923,9 @@ mod tests {
         let frag2 = encode_simple(7, "");
 
         let mut lazy = LazyMessageFieldView::<SimpleMessageView<'_>>::unset();
-        lazy.push_fragment(&frag1, crate::RECURSION_LIMIT);
+        lazy.push_fragment(&frag1, test_push_ctx(&limit));
         assert_eq!(lazy.fragments().len(), 1);
-        lazy.push_fragment(&frag2, crate::RECURSION_LIMIT);
+        lazy.push_fragment(&frag2, test_push_ctx(&limit));
         assert_eq!(lazy.fragments(), &[&frag1[..], &frag2[..]]);
 
         let v = lazy.get().unwrap().expect("set");
@@ -2653,7 +2933,7 @@ mod tests {
 
         // Later fragments overwrite singular scalars (last-wins).
         let frag3 = encode_simple(9, "final");
-        lazy.push_fragment(&frag3, crate::RECURSION_LIMIT);
+        lazy.push_fragment(&frag3, test_push_ctx(&limit));
         assert_eq!(lazy.fragments().len(), 3);
         let v = lazy.get().unwrap().expect("set");
         assert_eq!((v.id, v.name), (9, "final"));
@@ -2661,11 +2941,12 @@ mod tests {
 
     #[test]
     fn lazy_message_field_view_clone_default_debug() {
+        let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
         let bytes = encode_simple(1, "x");
         let mut lazy = LazyMessageFieldView::<SimpleMessageView<'_>>::default();
         assert!(lazy.is_unset());
-        lazy.push_fragment(&bytes, crate::RECURSION_LIMIT);
-        lazy.push_fragment(&bytes, crate::RECURSION_LIMIT);
+        lazy.push_fragment(&bytes, test_push_ctx(&limit));
+        lazy.push_fragment(&bytes, test_push_ctx(&limit));
         let cloned = lazy.clone();
         assert_eq!(cloned.fragments(), lazy.fragments());
         let dbg = alloc::format!("{lazy:?}");
@@ -2685,12 +2966,13 @@ mod tests {
 
     #[test]
     fn lazy_repeated_view_decodes_per_element() {
+        let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
         let b0 = encode_simple(1, "a");
         let b1 = encode_simple(2, "b");
         let mut rep = LazyRepeatedView::<SimpleMessageView<'_>>::new();
         assert!(rep.is_empty());
-        rep.push_bytes(&b0, crate::RECURSION_LIMIT);
-        rep.push_bytes(&b1, crate::RECURSION_LIMIT);
+        rep.push_bytes(&b0, test_push_ctx(&limit));
+        rep.push_bytes(&b1, test_push_ctx(&limit));
         assert_eq!(rep.len(), 2);
         assert_eq!(rep.raw_elements(), &[&b0[..], &b1[..]]);
         assert_eq!(rep.get(0).unwrap().unwrap().name, "a");
@@ -2700,12 +2982,13 @@ mod tests {
 
     #[test]
     fn lazy_repeated_view_iter() {
+        let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
         let bufs: alloc::vec::Vec<Bytes> = (1..=3)
             .map(|i| encode_simple(i, core::str::from_utf8(&[b'a' + i as u8]).unwrap()))
             .collect();
         let mut rep = LazyRepeatedView::<SimpleMessageView<'_>>::new();
         for b in &bufs {
-            rep.push_bytes(b, crate::RECURSION_LIMIT);
+            rep.push_bytes(b, test_push_ctx(&limit));
         }
 
         let iter = rep.iter();
@@ -2724,11 +3007,12 @@ mod tests {
 
     #[test]
     fn lazy_repeated_view_iter_surfaces_element_errors() {
+        let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
         let good = encode_simple(1, "ok");
         let malformed = [0xFFu8; 3];
         let mut rep = LazyRepeatedView::<SimpleMessageView<'_>>::new();
-        rep.push_bytes(&good, crate::RECURSION_LIMIT);
-        rep.push_bytes(&malformed, crate::RECURSION_LIMIT);
+        rep.push_bytes(&good, test_push_ctx(&limit));
+        rep.push_bytes(&malformed, test_push_ctx(&limit));
         let results: alloc::vec::Vec<_> = rep.iter().collect();
         assert!(results[0].is_ok());
         assert!(results[1].is_err());

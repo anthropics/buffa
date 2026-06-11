@@ -44,7 +44,9 @@ macro_rules! wkt_view_serialize {
                 /// its proto3-JSON `Serialize` impl.  Allocates the owned form
                 /// for this field only; the parent message stays zero-copy.
                 fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-                    self.to_owned_message().serialize(s)
+                    self.to_owned_message()
+                        .map_err(serde::ser::Error::custom)?
+                        .serialize(s)
                 }
             }
         )+

@@ -41,16 +41,27 @@ pub const MESSAGE_TAG: u64 = (3 << 3) | 2;
 /// Returns `(type_id, message_bytes)`. `message_bytes` is empty if no
 /// `message` field was present (valid: an empty sub-message).
 ///
-/// `depth` is the remaining recursion budget for skipping unknown group fields
-/// **inside** the Item group. The caller should pass `caller_depth - 1` (the
-/// Item group itself consumes one level).
+/// `ctx` carries the remaining recursion depth for skipping unknown group
+/// fields **inside** the Item group, plus the shared unknown-field
+/// allowance. The caller should pass `caller_ctx.descend()?` (the Item
+/// group itself consumes one level). The item consumes one slot of the
+/// unknown-field allowance — the caller stores it as one
+/// [`UnknownField`](crate::UnknownField).
 ///
 /// # Errors
 ///
 /// Returns [`DecodeError::InvalidMessageSet`] if `type_id` is missing or out
 /// of the valid range `[1, i32::MAX]`. Returns other decode errors on
-/// malformed input (truncated varint, buffer underrun, mismatched end-group).
-pub fn merge_item(buf: &mut impl Buf, depth: u32) -> Result<(u32, Vec<u8>), DecodeError> {
+/// malformed input (truncated varint, buffer underrun, mismatched end-group)
+/// or when the unknown-field limit is exceeded.
+pub fn merge_item(
+    buf: &mut impl Buf,
+    ctx: crate::DecodeContext<'_>,
+) -> Result<(u32, Vec<u8>), DecodeError> {
+    // The caller stores the result as one UnknownField slot — consume an
+    // allowance slot here so MessageSet items draw from the same limit as
+    // regular unknowns.
+    ctx.register_unknown_field()?;
     let mut type_id: Option<u32> = None;
     let mut message: Vec<u8> = Vec::new();
 
@@ -90,9 +101,9 @@ pub fn merge_item(buf: &mut impl Buf, depth: u32) -> Result<(u32, Vec<u8>), Deco
             }
             _ => {
                 // Unknown field inside the Item group: skip. Generated code
-                // passes `depth - 1` into `merge_item`, so nested groups here
-                // share the caller's recursion budget.
-                skip_field_depth(tag, buf, depth)?;
+                // passes `ctx.descend()?` into `merge_item`, so nested groups
+                // here share the caller's recursion budget.
+                skip_field_depth(tag, buf, ctx.depth())?;
             }
         }
     }
@@ -117,6 +128,12 @@ pub const fn item_encoded_len(number: u32, payload_len: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Call `merge_item` with a fresh default-limit context at `depth`.
+    fn merge_item_d(buf: &mut impl Buf, depth: u32) -> Result<(u32, Vec<u8>), DecodeError> {
+        let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
+        merge_item(buf, crate::DecodeContext::new(depth, &limit))
+    }
     use crate::encoding::encode_varint;
 
     /// Build a MessageSet Item group body (no SGROUP tag — `merge_item`
@@ -162,7 +179,7 @@ mod tests {
     #[test]
     fn merge_item_type_id_then_message() {
         let body = item_body(&[&type_id_field(1000), &message_field(b"hello"), &end_group()]);
-        let (tid, msg) = merge_item(&mut body.as_slice(), 50).expect("merge");
+        let (tid, msg) = merge_item_d(&mut body.as_slice(), 50).expect("merge");
         assert_eq!(tid, 1000);
         assert_eq!(msg, b"hello");
     }
@@ -170,7 +187,7 @@ mod tests {
     #[test]
     fn merge_item_message_then_type_id() {
         let body = item_body(&[&message_field(b"world"), &type_id_field(42), &end_group()]);
-        let (tid, msg) = merge_item(&mut body.as_slice(), 50).expect("merge");
+        let (tid, msg) = merge_item_d(&mut body.as_slice(), 50).expect("merge");
         assert_eq!(tid, 42);
         assert_eq!(msg, b"world");
     }
@@ -188,7 +205,7 @@ mod tests {
             &message_field(b"ok"),
             &end_group(),
         ]);
-        let (tid, msg) = merge_item(&mut body.as_slice(), 50).expect("merge");
+        let (tid, msg) = merge_item_d(&mut body.as_slice(), 50).expect("merge");
         assert_eq!(tid, 7);
         assert_eq!(msg, b"ok");
     }
@@ -206,19 +223,19 @@ mod tests {
         let body = item_body(&[&type_id_field(5), &junk, &message_field(b"x"), &end_group()]);
 
         // With depth budget: succeeds.
-        let (tid, msg) = merge_item(&mut body.as_slice(), 10).expect("merge");
+        let (tid, msg) = merge_item_d(&mut body.as_slice(), 10).expect("merge");
         assert_eq!(tid, 5);
         assert_eq!(msg, b"x");
 
         // With depth exhausted: fails.
-        let err = merge_item(&mut body.as_slice(), 0).unwrap_err();
+        let err = merge_item_d(&mut body.as_slice(), 0).unwrap_err();
         assert_eq!(err, DecodeError::RecursionLimitExceeded);
     }
 
     #[test]
     fn merge_item_missing_type_id_errors() {
         let body = item_body(&[&message_field(b"orphan"), &end_group()]);
-        let err = merge_item(&mut body.as_slice(), 50).unwrap_err();
+        let err = merge_item_d(&mut body.as_slice(), 50).unwrap_err();
         assert_eq!(err, DecodeError::InvalidMessageSet("missing type_id"));
     }
 
@@ -226,7 +243,7 @@ mod tests {
     fn merge_item_missing_message_yields_empty() {
         // Missing `message` is valid — it's an empty sub-message.
         let body = item_body(&[&type_id_field(3), &end_group()]);
-        let (tid, msg) = merge_item(&mut body.as_slice(), 50).expect("merge");
+        let (tid, msg) = merge_item_d(&mut body.as_slice(), 50).expect("merge");
         assert_eq!(tid, 3);
         assert_eq!(msg, b"");
     }
@@ -239,7 +256,7 @@ mod tests {
             &message_field(b"cd"),
             &end_group(),
         ]);
-        let (tid, msg) = merge_item(&mut body.as_slice(), 50).expect("merge");
+        let (tid, msg) = merge_item_d(&mut body.as_slice(), 50).expect("merge");
         assert_eq!(tid, 9);
         assert_eq!(msg, b"abcd");
     }
@@ -253,7 +270,7 @@ mod tests {
             &message_field(b"x"),
             &end_group(),
         ]);
-        let (tid, msg) = merge_item(&mut body.as_slice(), 50).expect("merge");
+        let (tid, msg) = merge_item_d(&mut body.as_slice(), 50).expect("merge");
         assert_eq!(tid, 99);
         assert_eq!(msg, b"x");
     }
@@ -269,7 +286,7 @@ mod tests {
         ];
         for &(id, ok) in cases {
             let body = item_body(&[&type_id_field(id), &message_field(b""), &end_group()]);
-            let result = merge_item(&mut body.as_slice(), 50);
+            let result = merge_item_d(&mut body.as_slice(), 50);
             assert_eq!(result.is_ok(), ok, "type_id = {id}");
         }
     }
@@ -280,7 +297,7 @@ mod tests {
         let mut bad_end = Vec::new();
         encode_varint((7 << 3) | 4, &mut bad_end);
         let body = item_body(&[&type_id_field(1), &bad_end]);
-        let err = merge_item(&mut body.as_slice(), 50).unwrap_err();
+        let err = merge_item_d(&mut body.as_slice(), 50).unwrap_err();
         assert_eq!(err, DecodeError::InvalidEndGroup(7));
     }
 
@@ -293,7 +310,7 @@ mod tests {
         encode_varint(MESSAGE_TAG, &mut body);
         encode_varint(100, &mut body);
         body.extend_from_slice(b"xy");
-        let err = merge_item(&mut body.as_slice(), 50).unwrap_err();
+        let err = merge_item_d(&mut body.as_slice(), 50).unwrap_err();
         assert_eq!(err, DecodeError::UnexpectedEof);
     }
 

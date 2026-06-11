@@ -18,11 +18,122 @@ use crate::message_field::DefaultInstance;
 /// This value (100) matches the limit used by the official protobuf
 /// implementations and the protobuf conformance suite.
 ///
-/// Pass this constant as the `depth` argument when calling [`Message::merge`]
-/// at a top-level decode site.  The provided convenience methods ([`Message::decode`],
-/// [`Message::decode_from_slice`], [`Message::merge_from_slice`]) use this
-/// limit automatically.
+/// Pass this constant as the depth when constructing a [`DecodeContext`] for
+/// a top-level [`Message::merge`] call.  The provided convenience methods
+/// ([`Message::decode`], [`Message::decode_from_slice`],
+/// [`Message::merge_from_slice`]) use this limit automatically.
 pub const RECURSION_LIMIT: u32 = 100;
+
+/// Default limit on unknown fields decoded per top-level decode: 1,000,000.
+///
+/// Bounds the number of [`UnknownField`](crate::UnknownField) values the
+/// decoder will materialize in a single top-level decode, independent of
+/// the input size. Without this bound, wire data can force allocation far
+/// in excess of its own size: every 2-byte unknown varint field
+/// materialises a ~40-byte `UnknownField`, a ~20× amplification, so a
+/// 64 MiB payload of unknown fields would otherwise force over 1 GiB of
+/// heap. The count limit caps that overhead at roughly `limit × 40` bytes
+/// (~40 MB at the default); unknown length-delimited *payload* bytes are
+/// not counted against the limit because they are already bounded by the
+/// input size, which [`DecodeOptions::with_max_message_size`] governs.
+///
+/// A million unknown fields is far more than any realistic
+/// forward-compatibility scenario needs. Raise the limit with
+/// [`DecodeOptions::with_unknown_field_limit`] if you decode trusted
+/// messages that legitimately carry more (e.g. a proxy forwarding messages
+/// with a huge unpacked repeated field from a much newer schema).
+pub const DEFAULT_UNKNOWN_FIELD_LIMIT: usize = 1_000_000;
+
+/// Per-decode limits threaded through every merge call.
+///
+/// Carries the remaining recursion depth and a shared unknown-field
+/// allowance. The context is `Copy` — passing it to a callee hands over the
+/// current depth by value, while the unknown-field allowance lives in a
+/// [`Cell`](core::cell::Cell) owned by the top-level decode entry point, so
+/// every field decoded under one entry point draws from the same
+/// allowance.
+///
+/// Constructed automatically by the [`Message`] convenience methods
+/// ([`decode`](Message::decode), [`decode_from_slice`](Message::decode_from_slice),
+/// [`merge_from_slice`](Message::merge_from_slice)) and by [`DecodeOptions`].
+/// Construct one manually only when calling [`Message::merge`] or the other
+/// depth-threading methods directly — and construct a **fresh limit cell
+/// per top-level decode**. Reusing one cell across decode calls makes the
+/// limit cumulative: each call drains it further until every decode fails
+/// with [`DecodeError::UnknownFieldLimitExceeded`].
+///
+/// ```rust
+/// # use buffa::__doctest_fixtures::Person;
+/// use core::cell::Cell;
+/// use buffa::{DecodeContext, Message, DEFAULT_UNKNOWN_FIELD_LIMIT, RECURSION_LIMIT};
+///
+/// # fn example(mut bytes: &[u8]) -> Result<(), buffa::DecodeError> {
+/// let limit = Cell::new(DEFAULT_UNKNOWN_FIELD_LIMIT);
+/// let mut msg = Person::default();
+/// msg.merge(&mut bytes, DecodeContext::new(RECURSION_LIMIT, &limit))?;
+/// # Ok(())
+/// # }
+/// ```
+#[derive(Clone, Copy, Debug)]
+pub struct DecodeContext<'a> {
+    depth: u32,
+    unknown_fields_remaining: &'a core::cell::Cell<usize>,
+}
+
+impl<'a> DecodeContext<'a> {
+    /// Create a context with `depth` remaining recursion levels and the
+    /// remaining unknown-field allowance stored in `unknown_field_limit`.
+    #[must_use]
+    pub fn new(depth: u32, unknown_field_limit: &'a core::cell::Cell<usize>) -> Self {
+        Self {
+            depth,
+            unknown_fields_remaining: unknown_field_limit,
+        }
+    }
+
+    /// The remaining recursion depth.
+    #[must_use]
+    pub fn depth(&self) -> u32 {
+        self.depth
+    }
+
+    /// The number of additional unknown fields this decode may materialize.
+    #[must_use]
+    pub fn remaining_unknown_fields(&self) -> usize {
+        self.unknown_fields_remaining.get()
+    }
+
+    /// Consume one level of recursion depth.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeError::RecursionLimitExceeded`] when the depth budget
+    /// is exhausted.
+    pub fn descend(self) -> Result<Self, DecodeError> {
+        let depth = self
+            .depth
+            .checked_sub(1)
+            .ok_or(DecodeError::RecursionLimitExceeded)?;
+        Ok(Self { depth, ..self })
+    }
+
+    /// Consume one slot of the shared unknown-field allowance.
+    ///
+    /// Call **before** materializing an [`UnknownField`](crate::UnknownField).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeError::UnknownFieldLimitExceeded`] (leaving the
+    /// allowance unchanged) when no slots remain.
+    pub fn register_unknown_field(&self) -> Result<(), DecodeError> {
+        let remaining = self.unknown_fields_remaining.get();
+        if remaining == 0 {
+            return Err(DecodeError::UnknownFieldLimitExceeded);
+        }
+        self.unknown_fields_remaining.set(remaining - 1);
+        Ok(())
+    }
+}
 
 /// The core trait implemented by all protobuf message types.
 ///
@@ -171,8 +282,9 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     where
         Self: Sized,
     {
+        let limit = core::cell::Cell::new(DEFAULT_UNKNOWN_FIELD_LIMIT);
         let mut msg = Self::default();
-        msg.merge(buf, RECURSION_LIMIT)?;
+        msg.merge(buf, DecodeContext::new(RECURSION_LIMIT, &limit))?;
         Ok(msg)
     }
 
@@ -224,8 +336,13 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
         // through every recursion level, avoiding E0275 for recursive
         // message types like `google.protobuf.Struct ↔ Value`.
         let limit = buf.remaining() - len;
+        let field_limit = core::cell::Cell::new(DEFAULT_UNKNOWN_FIELD_LIMIT);
         let mut msg = Self::default();
-        msg.merge_to_limit(buf, RECURSION_LIMIT, limit)?;
+        msg.merge_to_limit(
+            buf,
+            DecodeContext::new(RECURSION_LIMIT, &field_limit),
+            limit,
+        )?;
         if buf.remaining() != limit {
             let remaining = buf.remaining();
             if remaining > limit {
@@ -244,19 +361,21 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// Both [`merge_to_limit`](Self::merge_to_limit) and
     /// [`merge_group`](Self::merge_group) call this in their respective loops.
     ///
-    /// `depth` is the remaining nesting budget.
+    /// `ctx` carries the remaining nesting depth and the shared allocation
+    /// budget.
     ///
     /// # Errors
     ///
     /// Returns a [`DecodeError`] if:
     /// - the buffer is truncated or malformed,
-    /// - a wire-type mismatch is detected for a known field, or
-    /// - the recursion limit is exceeded.
+    /// - a wire-type mismatch is detected for a known field,
+    /// - the recursion limit is exceeded, or
+    /// - the allocation budget is exhausted.
     fn merge_field(
         &mut self,
         tag: crate::encoding::Tag,
         buf: &mut impl Buf,
-        depth: u32,
+        ctx: DecodeContext<'_>,
     ) -> Result<(), DecodeError>;
 
     /// Merge fields from a buffer until `buf.remaining()` reaches `limit`.
@@ -271,19 +390,20 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// [`merge_length_delimited`](Self::merge_length_delimited) uphold this
     /// invariant.
     ///
-    /// `depth` is the remaining nesting budget.  Each call to
-    /// [`merge_length_delimited`](Self::merge_length_delimited) decrements it
-    /// by one before recursing; when it reaches zero the call returns
-    /// [`DecodeError::RecursionLimitExceeded`].
+    /// `ctx` carries the remaining nesting depth and the shared allocation
+    /// budget.  Each call to
+    /// [`merge_length_delimited`](Self::merge_length_delimited) consumes one
+    /// depth level before recursing; when the depth reaches zero the call
+    /// returns [`DecodeError::RecursionLimitExceeded`].
     fn merge_to_limit(
         &mut self,
         buf: &mut impl Buf,
-        depth: u32,
+        ctx: DecodeContext<'_>,
         limit: usize,
     ) -> Result<(), DecodeError> {
         while buf.remaining() > limit {
             let tag = crate::encoding::Tag::decode(buf)?;
-            self.merge_field(tag, buf, depth)?;
+            self.merge_field(tag, buf, ctx)?;
         }
         Ok(())
     }
@@ -306,12 +426,10 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     fn merge_group(
         &mut self,
         buf: &mut impl Buf,
-        depth: u32,
+        ctx: DecodeContext<'_>,
         field_number: u32,
     ) -> Result<(), DecodeError> {
-        let depth = depth
-            .checked_sub(1)
-            .ok_or(DecodeError::RecursionLimitExceeded)?;
+        let ctx = ctx.descend()?;
         loop {
             if !buf.has_remaining() {
                 return Err(DecodeError::UnexpectedEof);
@@ -324,7 +442,7 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
                     Err(DecodeError::InvalidEndGroup(tag.field_number()))
                 };
             }
-            self.merge_field(tag, buf, depth)?;
+            self.merge_field(tag, buf, ctx)?;
         }
     }
 
@@ -334,15 +452,17 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// or appended for repeated fields, following standard protobuf merge
     /// semantics.
     ///
-    /// `depth` is the remaining nesting budget.  Each call to
-    /// [`merge_length_delimited`](Self::merge_length_delimited) decrements it
-    /// by one before recursing; when it reaches zero the call returns
-    /// [`DecodeError::RecursionLimitExceeded`].  Pass [`RECURSION_LIMIT`] at
-    /// the outermost call site, or use the convenience methods
-    /// ([`decode`](Self::decode), [`merge_from_slice`](Self::merge_from_slice))
-    /// which do this automatically.
-    fn merge(&mut self, buf: &mut impl Buf, depth: u32) -> Result<(), DecodeError> {
-        self.merge_to_limit(buf, depth, 0)
+    /// `ctx` carries the remaining nesting depth and the shared allocation
+    /// budget.  Each call to
+    /// [`merge_length_delimited`](Self::merge_length_delimited) consumes one
+    /// depth level before recursing; when the depth reaches zero the call
+    /// returns [`DecodeError::RecursionLimitExceeded`].  Construct a fresh
+    /// [`DecodeContext`] at the outermost call site, or use the convenience
+    /// methods ([`decode`](Self::decode),
+    /// [`merge_from_slice`](Self::merge_from_slice)) which do this
+    /// automatically.
+    fn merge(&mut self, buf: &mut impl Buf, ctx: DecodeContext<'_>) -> Result<(), DecodeError> {
+        self.merge_to_limit(buf, ctx, 0)
     }
 
     /// Merge fields from a byte slice into this message.
@@ -350,7 +470,8 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// Convenience wrapper around [`merge`](Self::merge) that avoids the
     /// `&mut bytes.as_slice()` incantation.
     fn merge_from_slice(&mut self, mut data: &[u8]) -> Result<(), DecodeError> {
-        self.merge(&mut data, RECURSION_LIMIT)
+        let limit = core::cell::Cell::new(DEFAULT_UNKNOWN_FIELD_LIMIT);
+        self.merge(&mut data, DecodeContext::new(RECURSION_LIMIT, &limit))
     }
 
     /// Merge fields from a length-delimited sub-message payload into this message.
@@ -365,10 +486,12 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// — the sub-message is merged into the existing value rather than
     /// replaced, per protobuf merge semantics.
     ///
-    /// `depth` is the remaining nesting budget passed down from the enclosing
-    /// [`merge_to_limit`](Self::merge_to_limit) call.  This method decrements
-    /// it by one before calling the inner `merge_to_limit`; when it reaches
-    /// zero it returns [`DecodeError::RecursionLimitExceeded`].
+    /// `ctx` carries the remaining nesting depth and the shared allocation
+    /// budget passed down from the enclosing
+    /// [`merge_to_limit`](Self::merge_to_limit) call.  This method consumes
+    /// one depth level before calling the inner `merge_to_limit`; when the
+    /// depth reaches zero it returns
+    /// [`DecodeError::RecursionLimitExceeded`].
     ///
     /// Enforces the same 2 GiB safety limit as [`decode_length_delimited`](Self::decode_length_delimited).
     ///
@@ -380,11 +503,9 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     fn merge_length_delimited(
         &mut self,
         buf: &mut impl Buf,
-        depth: u32,
+        ctx: DecodeContext<'_>,
     ) -> Result<(), DecodeError> {
-        let depth = depth
-            .checked_sub(1)
-            .ok_or(DecodeError::RecursionLimitExceeded)?;
+        let ctx = ctx.descend()?;
         const MAX_SUB_MESSAGE_BYTES: u64 = 0x7FFF_FFFF;
         let len_u64 = crate::encoding::decode_varint(buf)?;
         if len_u64 > MAX_SUB_MESSAGE_BYTES {
@@ -400,7 +521,7 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
         // which would grow the type at each recursion level and trigger
         // E0275 for recursive message types like `Struct ↔ Value`.
         let limit = buf.remaining() - len;
-        self.merge_to_limit(buf, depth, limit)?;
+        self.merge_to_limit(buf, ctx, limit)?;
         if buf.remaining() != limit {
             let remaining = buf.remaining();
             if remaining > limit {
@@ -534,6 +655,7 @@ pub trait MessageName {
 pub struct DecodeOptions {
     recursion_limit: u32,
     max_message_size: usize,
+    unknown_field_limit: usize,
 }
 
 /// Default maximum message size: 2 GiB - 1 (matches the internal sub-message
@@ -552,10 +674,12 @@ impl DecodeOptions {
     /// Defaults:
     /// - `recursion_limit`: 100 (same as [`RECURSION_LIMIT`])
     /// - `max_message_size`: 2 GiB - 1
+    /// - `unknown_field_limit`: 1,000,000 (same as [`DEFAULT_UNKNOWN_FIELD_LIMIT`])
     pub fn new() -> Self {
         Self {
             recursion_limit: RECURSION_LIMIT,
             max_message_size: DEFAULT_MAX_MESSAGE_SIZE,
+            unknown_field_limit: DEFAULT_UNKNOWN_FIELD_LIMIT,
         }
     }
 
@@ -588,9 +712,41 @@ impl DecodeOptions {
         self
     }
 
+    /// Set the maximum number of unknown fields decoded per decode call.
+    ///
+    /// Each decoded unknown field occupies a ~40-byte
+    /// [`UnknownField`](crate::UnknownField) slot regardless of its wire
+    /// size (a minimal field is 2 wire bytes — a ~20× amplification), so an
+    /// input-size cap alone does not bound decoder memory; this limit does,
+    /// at roughly `limit × 40` bytes of slot overhead. Unknown
+    /// length-delimited *payload* bytes are not counted — they are bounded
+    /// by the input size, which
+    /// [`with_max_message_size`](Self::with_max_message_size) governs. When
+    /// the limit is exceeded, decoding returns
+    /// [`DecodeError::UnknownFieldLimitExceeded`].
+    ///
+    /// Zero-copy view decoding ([`decode_view`](Self::decode_view)) counts
+    /// **coalesced spans** — one per contiguous run of unknown fields, at
+    /// ~16 bytes each — rather than individual fields, so the same value is
+    /// more permissive for views (a single contiguous run of any length
+    /// costs one slot). Converting a view to an owned message re-materializes
+    /// unknown fields under the *default* limit, not this one.
+    ///
+    /// Default: 1,000,000 ([`DEFAULT_UNKNOWN_FIELD_LIMIT`]).
+    #[must_use]
+    pub fn with_unknown_field_limit(mut self, count: usize) -> Self {
+        self.unknown_field_limit = count;
+        self
+    }
+
     /// Returns the configured recursion depth limit.
     pub fn recursion_limit(&self) -> u32 {
         self.recursion_limit
+    }
+
+    /// Returns the configured unknown-field limit.
+    pub fn unknown_field_limit(&self) -> usize {
+        self.unknown_field_limit
     }
 
     /// Returns the configured maximum message size in bytes.
@@ -603,8 +759,9 @@ impl DecodeOptions {
         if buf.remaining() > self.max_message_size {
             return Err(DecodeError::MessageTooLarge);
         }
+        let limit = core::cell::Cell::new(self.unknown_field_limit);
         let mut msg = M::default();
-        msg.merge(buf, self.recursion_limit)?;
+        msg.merge(buf, DecodeContext::new(self.recursion_limit, &limit))?;
         Ok(msg)
     }
 
@@ -613,8 +770,12 @@ impl DecodeOptions {
         if data.len() > self.max_message_size {
             return Err(DecodeError::MessageTooLarge);
         }
+        let limit = core::cell::Cell::new(self.unknown_field_limit);
         let mut msg = M::default();
-        msg.merge(&mut &*data, self.recursion_limit)?;
+        msg.merge(
+            &mut &*data,
+            DecodeContext::new(self.recursion_limit, &limit),
+        )?;
         Ok(msg)
     }
 
@@ -639,8 +800,13 @@ impl DecodeOptions {
             return Err(DecodeError::UnexpectedEof);
         }
         let limit = buf.remaining() - len;
+        let field_limit = core::cell::Cell::new(self.unknown_field_limit);
         let mut msg = M::default();
-        msg.merge_to_limit(buf, self.recursion_limit, limit)?;
+        msg.merge_to_limit(
+            buf,
+            DecodeContext::new(self.recursion_limit, &field_limit),
+            limit,
+        )?;
         if buf.remaining() != limit {
             let remaining = buf.remaining();
             if remaining > limit {
@@ -657,7 +823,8 @@ impl DecodeOptions {
         if buf.remaining() > self.max_message_size {
             return Err(DecodeError::MessageTooLarge);
         }
-        msg.merge(buf, self.recursion_limit)
+        let limit = core::cell::Cell::new(self.unknown_field_limit);
+        msg.merge(buf, DecodeContext::new(self.recursion_limit, &limit))
     }
 
     /// Merge fields from a byte slice into an existing message.
@@ -669,10 +836,25 @@ impl DecodeOptions {
         if data.len() > self.max_message_size {
             return Err(DecodeError::MessageTooLarge);
         }
-        msg.merge(&mut &*data, self.recursion_limit)
+        let limit = core::cell::Cell::new(self.unknown_field_limit);
+        msg.merge(
+            &mut &*data,
+            DecodeContext::new(self.recursion_limit, &limit),
+        )
     }
 
     /// Decode a zero-copy view from a byte slice.
+    ///
+    /// Enforces `max_message_size` on the input, and passes the recursion
+    /// limit and unknown-field limit to the view decoder (views count
+    /// coalesced unknown-field spans against the limit — see
+    /// [`with_unknown_field_limit`](Self::with_unknown_field_limit)).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeError::MessageTooLarge`] for oversized input, or any
+    /// error from the view decoder (malformed wire data, recursion limit,
+    /// unknown-field limit).
     pub fn decode_view<'a, V: crate::view::MessageView<'a>>(
         &self,
         buf: &'a [u8],
@@ -680,7 +862,8 @@ impl DecodeOptions {
         if buf.len() > self.max_message_size {
             return Err(DecodeError::MessageTooLarge);
         }
-        V::decode_view_with_limit(buf, self.recursion_limit)
+        let limit = core::cell::Cell::new(self.unknown_field_limit);
+        V::decode_view_with_ctx(buf, DecodeContext::new(self.recursion_limit, &limit))
     }
 
     /// Decode a message by reading all bytes from a [`std::io::Read`] source.
@@ -703,11 +886,17 @@ impl DecodeOptions {
     /// Reads a varint length prefix, enforces `max_message_size`, reads
     /// exactly that many bytes, then decodes. Useful for reading sequential
     /// length-delimited messages from a file or stream.
+    ///
+    /// The declared length is treated as untrusted: the read buffer grows
+    /// as bytes actually arrive rather than being allocated up front, so a
+    /// source that declares a large length but never delivers the bytes
+    /// cannot force a large allocation.
     #[cfg(feature = "std")]
     pub fn decode_length_delimited_reader<M: Message>(
         &self,
         reader: &mut impl std::io::Read,
     ) -> Result<M, std::io::Error> {
+        use std::io::Read as _;
         let len = read_varint(reader)?;
         let max = core::cmp::min(
             self.max_message_size as u64,
@@ -719,9 +908,24 @@ impl DecodeOptions {
                 DecodeError::MessageTooLarge,
             ));
         }
-        let len = len as usize;
-        let mut buf = alloc::vec![0u8; len];
-        reader.read_exact(&mut buf)?;
+        let len = usize::try_from(len).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                DecodeError::MessageTooLarge,
+            )
+        })?;
+        // Pre-size only up to a small bound; `read_to_end` grows the buffer
+        // geometrically as data is actually delivered, so peak allocation
+        // tracks delivered bytes, not the wire-declared length.
+        const INITIAL_CAPACITY_CAP: usize = 64 * 1024;
+        let mut buf = alloc::vec::Vec::with_capacity(len.min(INITIAL_CAPACITY_CAP));
+        reader.take(len as u64).read_to_end(&mut buf)?;
+        if buf.len() < len {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                DecodeError::UnexpectedEof,
+            ));
+        }
         self.decode_from_slice::<M>(&buf)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
@@ -823,7 +1027,7 @@ mod tests {
             &mut self,
             tag: crate::encoding::Tag,
             buf: &mut impl Buf,
-            _depth: u32,
+            _ctx: DecodeContext<'_>,
         ) -> Result<(), DecodeError> {
             match tag.field_number() {
                 1 => {
@@ -851,8 +1055,11 @@ mod tests {
     fn test_merge_length_delimited_basic() {
         let src = FlatMsg { value: 42 };
         let mut dst = FlatMsg::default();
-        dst.merge_length_delimited(&mut wire_bytes(&src).as_slice(), RECURSION_LIMIT)
-            .unwrap();
+        dst.merge_length_delimited(
+            &mut wire_bytes(&src).as_slice(),
+            crate::test_ctx(RECURSION_LIMIT),
+        )
+        .unwrap();
         assert_eq!(dst.value, 42);
     }
 
@@ -862,13 +1069,13 @@ mod tests {
         let mut dst = FlatMsg::default();
         dst.merge_length_delimited(
             &mut wire_bytes(&FlatMsg { value: 1 }).as_slice(),
-            RECURSION_LIMIT,
+            crate::test_ctx(RECURSION_LIMIT),
         )
         .unwrap();
         assert_eq!(dst.value, 1);
         dst.merge_length_delimited(
             &mut wire_bytes(&FlatMsg { value: 2 }).as_slice(),
-            RECURSION_LIMIT,
+            crate::test_ctx(RECURSION_LIMIT),
         )
         .unwrap();
         assert_eq!(dst.value, 2);
@@ -882,7 +1089,7 @@ mod tests {
         buf.extend_from_slice(&[0x01, 0x01]);
         let mut dst = FlatMsg::default();
         assert_eq!(
-            dst.merge_length_delimited(&mut buf.as_slice(), RECURSION_LIMIT),
+            dst.merge_length_delimited(&mut buf.as_slice(), crate::test_ctx(RECURSION_LIMIT)),
             Err(DecodeError::UnexpectedEof)
         );
     }
@@ -894,7 +1101,7 @@ mod tests {
         encode_varint(0x8000_0000u64, &mut buf); // 2 GiB + 1
         let mut dst = FlatMsg::default();
         assert_eq!(
-            dst.merge_length_delimited(&mut buf.as_slice(), RECURSION_LIMIT),
+            dst.merge_length_delimited(&mut buf.as_slice(), crate::test_ctx(RECURSION_LIMIT)),
             Err(DecodeError::MessageTooLarge)
         );
     }
@@ -909,11 +1116,11 @@ mod tests {
         let src = FlatMsg { value: 7 };
         let mut dst = FlatMsg::default();
         assert_eq!(
-            dst.merge_length_delimited(&mut wire_bytes(&src).as_slice(), 0),
+            dst.merge_length_delimited(&mut wire_bytes(&src).as_slice(), crate::test_ctx(0)),
             Err(DecodeError::RecursionLimitExceeded)
         );
         // depth=1 succeeds: exactly one level is consumed.
-        dst.merge_length_delimited(&mut wire_bytes(&src).as_slice(), 1)
+        dst.merge_length_delimited(&mut wire_bytes(&src).as_slice(), crate::test_ctx(1))
             .unwrap();
         assert_eq!(dst.value, 7);
     }
@@ -1072,15 +1279,18 @@ mod tests {
         let opts = DecodeOptions::new();
         assert_eq!(opts.recursion_limit(), RECURSION_LIMIT);
         assert_eq!(opts.max_message_size(), 0x7FFF_FFFF);
+        assert_eq!(opts.unknown_field_limit(), DEFAULT_UNKNOWN_FIELD_LIMIT);
     }
 
     #[test]
     fn decode_options_getters_return_custom_values() {
         let opts = DecodeOptions::new()
             .with_recursion_limit(42)
-            .with_max_message_size(1024);
+            .with_max_message_size(1024)
+            .with_unknown_field_limit(2048);
         assert_eq!(opts.recursion_limit(), 42);
         assert_eq!(opts.max_message_size(), 1024);
+        assert_eq!(opts.unknown_field_limit(), 2048);
     }
 
     #[test]
@@ -1089,6 +1299,7 @@ mod tests {
         let opts = DecodeOptions::default();
         assert_eq!(opts.recursion_limit(), RECURSION_LIMIT);
         assert_eq!(opts.max_message_size(), 0x7FFF_FFFF);
+        assert_eq!(opts.unknown_field_limit(), DEFAULT_UNKNOWN_FIELD_LIMIT);
     }
 
     #[test]
@@ -1203,7 +1414,7 @@ mod tests {
     fn test_merge_group_basic() {
         let data = group_bytes(42, 5);
         let mut dst = FlatMsg::default();
-        dst.merge_group(&mut data.as_slice(), RECURSION_LIMIT, 5)
+        dst.merge_group(&mut data.as_slice(), crate::test_ctx(RECURSION_LIMIT), 5)
             .unwrap();
         assert_eq!(dst.value, 42);
     }
@@ -1213,7 +1424,7 @@ mod tests {
         // Group with no fields — just EndGroup.
         let data = group_bytes(0, 3);
         let mut dst = FlatMsg::default();
-        dst.merge_group(&mut data.as_slice(), RECURSION_LIMIT, 3)
+        dst.merge_group(&mut data.as_slice(), crate::test_ctx(RECURSION_LIMIT), 3)
             .unwrap();
         assert_eq!(dst.value, 0);
     }
@@ -1223,10 +1434,10 @@ mod tests {
         let data1 = group_bytes(1, 5);
         let data2 = group_bytes(2, 5);
         let mut dst = FlatMsg::default();
-        dst.merge_group(&mut data1.as_slice(), RECURSION_LIMIT, 5)
+        dst.merge_group(&mut data1.as_slice(), crate::test_ctx(RECURSION_LIMIT), 5)
             .unwrap();
         assert_eq!(dst.value, 1);
-        dst.merge_group(&mut data2.as_slice(), RECURSION_LIMIT, 5)
+        dst.merge_group(&mut data2.as_slice(), crate::test_ctx(RECURSION_LIMIT), 5)
             .unwrap();
         assert_eq!(dst.value, 2);
     }
@@ -1238,7 +1449,7 @@ mod tests {
         let data = group_bytes(42, 5);
         let mut dst = FlatMsg::default();
         assert_eq!(
-            dst.merge_group(&mut data.as_slice(), 0, 5),
+            dst.merge_group(&mut data.as_slice(), crate::test_ctx(0), 5),
             Err(DecodeError::RecursionLimitExceeded)
         );
     }
@@ -1249,7 +1460,8 @@ mod tests {
         // merge_field doesn't recurse further.
         let data = group_bytes(7, 5);
         let mut dst = FlatMsg::default();
-        dst.merge_group(&mut data.as_slice(), 1, 5).unwrap();
+        dst.merge_group(&mut data.as_slice(), crate::test_ctx(1), 5)
+            .unwrap();
         assert_eq!(dst.value, 7);
     }
 
@@ -1262,7 +1474,7 @@ mod tests {
 
         let mut dst = FlatMsg::default();
         assert_eq!(
-            dst.merge_group(&mut data.as_slice(), RECURSION_LIMIT, 5),
+            dst.merge_group(&mut data.as_slice(), crate::test_ctx(RECURSION_LIMIT), 5),
             Err(DecodeError::InvalidEndGroup(99))
         );
     }
@@ -1278,7 +1490,7 @@ mod tests {
 
         let mut dst = FlatMsg::default();
         assert_eq!(
-            dst.merge_group(&mut data.as_slice(), RECURSION_LIMIT, 5),
+            dst.merge_group(&mut data.as_slice(), crate::test_ctx(RECURSION_LIMIT), 5),
             Err(DecodeError::UnexpectedEof)
         );
     }
@@ -1287,7 +1499,7 @@ mod tests {
     fn test_merge_group_empty_buffer() {
         let mut dst = FlatMsg::default();
         assert_eq!(
-            dst.merge_group(&mut [].as_slice(), RECURSION_LIMIT, 5),
+            dst.merge_group(&mut [].as_slice(), crate::test_ctx(RECURSION_LIMIT), 5),
             Err(DecodeError::UnexpectedEof)
         );
     }
@@ -1309,7 +1521,7 @@ mod tests {
         Tag::new(5, WireType::EndGroup).encode(&mut data);
 
         let mut dst = FlatMsg::default();
-        dst.merge_group(&mut data.as_slice(), RECURSION_LIMIT, 5)
+        dst.merge_group(&mut data.as_slice(), crate::test_ctx(RECURSION_LIMIT), 5)
             .unwrap();
         assert_eq!(dst.value, 99);
     }
@@ -1322,7 +1534,8 @@ mod tests {
 
         let mut cur = data.as_slice();
         let mut dst = FlatMsg::default();
-        dst.merge_group(&mut cur, RECURSION_LIMIT, 5).unwrap();
+        dst.merge_group(&mut cur, crate::test_ctx(RECURSION_LIMIT), 5)
+            .unwrap();
         assert_eq!(dst.value, 42);
         assert_eq!(cur, &[0xDE, 0xAD]);
     }
@@ -1465,6 +1678,47 @@ mod tests {
                 .decode_length_delimited_reader::<FlatMsg>(&mut ld.as_slice())
                 .unwrap_err();
             assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        }
+
+        #[test]
+        fn decode_length_delimited_reader_zero_length() {
+            // A zero length prefix decodes to the default message and
+            // consumes only the prefix byte.
+            let stream = [0x00u8, 0xFF]; // len=0, then unrelated trailing byte
+            let mut cursor = std::io::Cursor::new(stream);
+            let msg: FlatMsg = DecodeOptions::new()
+                .decode_length_delimited_reader(&mut cursor)
+                .unwrap();
+            assert_eq!(msg, FlatMsg::default());
+            assert_eq!(cursor.position(), 1);
+        }
+
+        #[test]
+        fn decode_length_delimited_reader_truncated_reports_eof() {
+            // Length prefix declares more bytes than the stream delivers.
+            let src = FlatMsg { value: 99 };
+            let mut ld = Vec::new();
+            src.encode_length_delimited(&mut ld);
+            ld.truncate(ld.len() - 1);
+            let err = DecodeOptions::new()
+                .decode_length_delimited_reader::<FlatMsg>(&mut ld.as_slice())
+                .unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+        }
+
+        #[test]
+        fn decode_length_delimited_reader_huge_claim_without_delivery() {
+            // A 5-byte prefix declaring ~2 GiB followed by EOF must fail with
+            // UnexpectedEof without allocating the declared length up front —
+            // the buffer only grows as bytes are actually delivered. (This
+            // test completes instantly; before the incremental-read fix it
+            // zero-filled a ~2 GiB buffer first.)
+            let mut stream = Vec::new();
+            encode_varint(0x7FFF_FFF0, &mut stream); // just under the cap
+            let err = DecodeOptions::new()
+                .decode_length_delimited_reader::<FlatMsg>(&mut stream.as_slice())
+                .unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
         }
 
         #[test]

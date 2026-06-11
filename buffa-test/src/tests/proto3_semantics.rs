@@ -578,7 +578,7 @@ fn view_implicit_presence_matches_owned() {
     assert_eq!(view.i64, 0);
     assert!(!view.b);
 
-    let owned = view.to_owned_message();
+    let owned = view.to_owned_message().unwrap();
     assert_eq!(owned, msg);
 }
 
@@ -597,7 +597,7 @@ fn view_optional_some_zero_matches_owned() {
     assert_eq!(view.b, Some(false));
 
     // View → owned → encode must match original bytes.
-    assert_eq!(view.to_owned_message().encode_to_vec(), bytes);
+    assert_eq!(view.to_owned_message().unwrap().encode_to_vec(), bytes);
 }
 
 #[test]
@@ -616,5 +616,5 @@ fn view_open_enum_unknown_preserved() {
         vec![EnumValue::Known(Color::RED), EnumValue::Unknown(99)]
     );
 
-    assert_eq!(view.to_owned_message(), msg);
+    assert_eq!(view.to_owned_message().unwrap(), msg);
 }

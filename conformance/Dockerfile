@@ -12,7 +12,7 @@ ARG TOOLS_IMAGE=ghcr.io/anthropics/buffa/tools:v33.5
 FROM ${TOOLS_IMAGE} AS tools
 
 # ── Stage 2: build our conformance binary ─────────────────────────────────
-FROM rust:1.85-slim AS rust-builder
+FROM rust:1.87-slim AS rust-builder
 
 # System deps for linking.
 RUN apt-get update && apt-get install -y pkg-config \

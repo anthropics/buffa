@@ -189,7 +189,7 @@ fn test_view_closed_enum_optional_unknown_to_unknown_fields() {
     assert_eq!(view.opt, None, "field must stay unset");
     assert!(!view.__buffa_unknown_fields.is_empty());
     // View → owned → encode must match original.
-    let owned = view.to_owned_message();
+    let owned = view.to_owned_message().unwrap();
     assert_eq!(owned.encode_to_vec(), wire);
 }
 
@@ -210,7 +210,7 @@ fn test_view_closed_enum_repeated_unpacked_unknown_preserved() {
     // Unknown value span in unknown_fields.
     assert!(!view.__buffa_unknown_fields.is_empty());
     // View → owned → decode again: same state.
-    let owned = view.to_owned_message();
+    let owned = view.to_owned_message().unwrap();
     let re = owned.encode_to_vec();
     let view2 = ClosedEnumContextsView::decode_view(&re).unwrap();
     let vals2: Vec<_> = view2.rep.iter().copied().collect();
@@ -226,7 +226,7 @@ fn test_view_closed_enum_oneof_unknown_to_unknown_fields() {
     let view = ClosedEnumContextsView::decode_view(&wire).unwrap();
     assert!(view.choice.is_none(), "oneof must stay unset");
     assert!(!view.__buffa_unknown_fields.is_empty());
-    let owned = view.to_owned_message();
+    let owned = view.to_owned_message().unwrap();
     assert_eq!(owned.encode_to_vec(), wire);
 }
 
@@ -256,7 +256,8 @@ fn test_view_owned_parity_for_closed_enum_unknowns() {
     let owned_direct = ClosedEnumContexts::decode(&mut wire.as_slice()).unwrap();
     let via_view = ClosedEnumContextsView::decode_view(&wire)
         .unwrap()
-        .to_owned_message();
+        .to_owned_message()
+        .unwrap();
     assert_eq!(
         owned_direct.encode_to_vec(),
         via_view.encode_to_vec(),

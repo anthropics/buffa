@@ -215,11 +215,11 @@ if let Some(addr) = person.address.get()? {               // decoded here, by va
 Design points:
 
 - **Merge semantics preserved.** A singular message field may legally appear multiple times on the wire and decoders must merge the occurrences. `LazyMessageFieldView` stores each occurrence as a fragment and `.get()` replays them in order (decode the first, `ViewMerge::merge_view` the rest), matching the eager and owned decoders. Every generated view implements the `ViewMerge` trait, which exposes the existing merge machinery generically.
-- **Deferred validation.** Sub-message bytes are not validated at `decode_view`; errors surface from `.get()`/iteration. `to_owned_message` (infallible by signature) panics on malformed deferred bytes; the view `Serialize` impl reports them as a serde error. Don't feed lazy `to_owned_message` untrusted input without accessing fields first.
+- **Deferred validation.** Sub-message bytes are not validated at `decode_view`; errors surface from `.get()`/iteration, propagate as `DecodeError` through the fallible `to_owned_message`, and are reported as a serde error by the view `Serialize` impl.
 - **Eager carve-outs.** Groups / editions `DELIMITED` fields (no length prefix to defer), oneof message variants, and map message values keep their eager representation.
 - **Re-encoding replays fragments.** `ViewEncode` re-emits the recorded byte ranges verbatim — wire-equivalent to the merged value and cheaper than re-encoding a decoded tree.
 - **Vtable reflection is skipped for lazy views** (`ReflectMessage` requires synchronous, infallible access); owned-message reflection is unaffected and codegen warns once per run.
-- **Recursion budget flows through.** Lazy decode never recurses; instead, each deferred field records the recursion budget remaining at its position, and `.get()` charges it. A chain of lazy accesses (including the recursive `to_owned_message`/`Serialize` consumers) is therefore depth-bounded exactly like the eager and owned decoders — over-deep adversarial input fails with `RecursionLimitExceeded` instead of overflowing the stack — and a custom `DecodeOptions::with_recursion_limit` set at the outer decode extends navigation correspondingly.
+- **Recursion budget flows through.** Lazy decode never recurses; instead, each deferred field records the recursion budget remaining at its position, and `.get()` charges it. A chain of lazy accesses (including the recursive `to_owned_message`/`Serialize` consumers) is therefore depth-bounded exactly like the eager and owned decoders — over-deep adversarial input fails with `RecursionLimitExceeded` instead of overflowing the stack — and a custom `DecodeOptions::with_recursion_limit` set at the outer decode extends navigation correspondingly. The unknown-field allowance is recorded and charged the same way, so `with_unknown_field_limit` also flows through deferred decoding.
 
 **Conversions:**
 
@@ -392,7 +392,7 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     // Required methods (implemented by codegen per message type):
     fn compute_size(&self, cache: &mut SizeCache) -> u32;  // Pass 1
     fn write_to(&self, cache: &mut SizeCache, buf: &mut impl BufMut);  // Pass 2
-    fn merge_field(&mut self, tag: Tag, buf: &mut impl Buf, depth: u32)
+    fn merge_field(&mut self, tag: Tag, buf: &mut impl Buf, ctx: DecodeContext<'_>)
         -> Result<(), DecodeError>;     // Per-field decode dispatch
     fn clear(&mut self);
 
@@ -401,7 +401,7 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     fn encode_to_vec(&self) -> Vec<u8>;
     fn encode_to_bytes(&self) -> Bytes;
     fn decode_from_slice(data: &[u8]) -> Result<Self, DecodeError>;
-    fn merge(&mut self, buf: &mut impl Buf, depth: u32) -> Result<(), DecodeError>;
+    fn merge(&mut self, buf: &mut impl Buf, ctx: DecodeContext<'_>) -> Result<(), DecodeError>;
     fn merge_from_slice(&mut self, data: &[u8]) -> Result<(), DecodeError>;
     // ... + length-delimited and io::Read variants
 }

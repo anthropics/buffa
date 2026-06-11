@@ -93,10 +93,10 @@ fn test_view_repeated_message_field() {
         content.contains("RepeatedView") && content.contains("ItemView"),
         "ContainerView.items must be RepeatedView<ItemView>: {content}"
     );
-    // _decode_depth must be generated for both view types.
+    // _decode_ctx must be generated for both view types.
     assert!(
-        content.contains("fn _decode_depth"),
-        "missing _decode_depth impl: {content}"
+        content.contains("fn _decode_ctx"),
+        "missing _decode_ctx impl: {content}"
     );
 }
 
@@ -225,9 +225,9 @@ fn test_view_oneof_with_message_variant() {
         content.contains("BodyView") && content.contains("::buffa::alloc::boxed::Box<"),
         "Payload view must have boxed BodyView variant: {content}"
     );
-    // Decode arm for the message variant must check recursion depth.
+    // Decode arm for the message variant must consume one recursion level.
     assert!(
-        content.contains("RecursionLimitExceeded"),
+        content.contains("ctx.descend()?"),
         "message-type oneof variant must check recursion depth: {content}"
     );
 }

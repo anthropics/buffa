@@ -497,7 +497,7 @@ impl ::buffa::Message for FileDescriptorSet {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -513,12 +513,12 @@ impl ::buffa::Message for FileDescriptorSet {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.file.push(elem);
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -1209,7 +1209,7 @@ impl ::buffa::Message for FileDescriptorProto {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -1261,7 +1261,7 @@ impl ::buffa::Message for FileDescriptorProto {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.message_type.push(elem);
             }
             5u32 => {
@@ -1273,7 +1273,7 @@ impl ::buffa::Message for FileDescriptorProto {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.enum_type.push(elem);
             }
             6u32 => {
@@ -1285,7 +1285,7 @@ impl ::buffa::Message for FileDescriptorProto {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.service.push(elem);
             }
             7u32 => {
@@ -1297,7 +1297,7 @@ impl ::buffa::Message for FileDescriptorProto {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.extension.push(elem);
             }
             8u32 => {
@@ -1311,7 +1311,7 @@ impl ::buffa::Message for FileDescriptorProto {
                 ::buffa::Message::merge_length_delimited(
                     self.options.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             9u32 => {
@@ -1325,7 +1325,7 @@ impl ::buffa::Message for FileDescriptorProto {
                 ::buffa::Message::merge_length_delimited(
                     self.source_code_info.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             10u32 => {
@@ -1434,7 +1434,7 @@ impl ::buffa::Message for FileDescriptorProto {
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -2038,7 +2038,7 @@ impl ::buffa::Message for DescriptorProto {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -2067,7 +2067,7 @@ impl ::buffa::Message for DescriptorProto {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.field.push(elem);
             }
             3u32 => {
@@ -2079,7 +2079,7 @@ impl ::buffa::Message for DescriptorProto {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.nested_type.push(elem);
             }
             4u32 => {
@@ -2091,7 +2091,7 @@ impl ::buffa::Message for DescriptorProto {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.enum_type.push(elem);
             }
             5u32 => {
@@ -2103,7 +2103,7 @@ impl ::buffa::Message for DescriptorProto {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.extension_range.push(elem);
             }
             6u32 => {
@@ -2115,7 +2115,7 @@ impl ::buffa::Message for DescriptorProto {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.extension.push(elem);
             }
             7u32 => {
@@ -2129,7 +2129,7 @@ impl ::buffa::Message for DescriptorProto {
                 ::buffa::Message::merge_length_delimited(
                     self.options.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             8u32 => {
@@ -2141,7 +2141,7 @@ impl ::buffa::Message for DescriptorProto {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.oneof_decl.push(elem);
             }
             9u32 => {
@@ -2153,7 +2153,7 @@ impl ::buffa::Message for DescriptorProto {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.reserved_range.push(elem);
             }
             10u32 => {
@@ -2189,7 +2189,7 @@ impl ::buffa::Message for DescriptorProto {
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -2552,7 +2552,7 @@ pub mod descriptor_proto {
             &mut self,
             tag: ::buffa::encoding::Tag,
             buf: &mut impl ::buffa::bytes::Buf,
-            depth: u32,
+            ctx: ::buffa::DecodeContext<'_>,
         ) -> ::core::result::Result<(), ::buffa::DecodeError> {
             #[allow(unused_imports)]
             use ::buffa::bytes::Buf as _;
@@ -2594,12 +2594,12 @@ pub mod descriptor_proto {
                     ::buffa::Message::merge_length_delimited(
                         self.options.get_or_insert_default(),
                         buf,
-                        depth,
+                        ctx,
                     )?;
                 }
                 _ => {
                     self.__buffa_unknown_fields
-                        .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                        .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
                 }
             }
             ::core::result::Result::Ok(())
@@ -2811,7 +2811,7 @@ pub mod descriptor_proto {
             &mut self,
             tag: ::buffa::encoding::Tag,
             buf: &mut impl ::buffa::bytes::Buf,
-            depth: u32,
+            ctx: ::buffa::DecodeContext<'_>,
         ) -> ::core::result::Result<(), ::buffa::DecodeError> {
             #[allow(unused_imports)]
             use ::buffa::bytes::Buf as _;
@@ -2844,7 +2844,7 @@ pub mod descriptor_proto {
                 }
                 _ => {
                     self.__buffa_unknown_fields
-                        .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                        .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
                 }
             }
             ::core::result::Result::Ok(())
@@ -3129,7 +3129,7 @@ impl ::buffa::Message for ExtensionRangeOptions {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -3145,7 +3145,7 @@ impl ::buffa::Message for ExtensionRangeOptions {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.declaration.push(elem);
             }
             3u32 => {
@@ -3180,7 +3180,7 @@ impl ::buffa::Message for ExtensionRangeOptions {
                 ::buffa::Message::merge_length_delimited(
                     self.features.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             999u32 => {
@@ -3192,12 +3192,12 @@ impl ::buffa::Message for ExtensionRangeOptions {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -3889,7 +3889,7 @@ pub mod extension_range_options {
             &mut self,
             tag: ::buffa::encoding::Tag,
             buf: &mut impl ::buffa::bytes::Buf,
-            depth: u32,
+            ctx: ::buffa::DecodeContext<'_>,
         ) -> ::core::result::Result<(), ::buffa::DecodeError> {
             #[allow(unused_imports)]
             use ::buffa::bytes::Buf as _;
@@ -3964,7 +3964,7 @@ pub mod extension_range_options {
                 }
                 _ => {
                     self.__buffa_unknown_fields
-                        .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                        .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
                 }
             }
             ::core::result::Result::Ok(())
@@ -4514,7 +4514,7 @@ impl ::buffa::Message for FieldDescriptorProto {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -4644,7 +4644,7 @@ impl ::buffa::Message for FieldDescriptorProto {
                 ::buffa::Message::merge_length_delimited(
                     self.options.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             9u32 => {
@@ -4688,7 +4688,7 @@ impl ::buffa::Message for FieldDescriptorProto {
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -5416,7 +5416,7 @@ impl ::buffa::Message for OneofDescriptorProto {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -5447,12 +5447,12 @@ impl ::buffa::Message for OneofDescriptorProto {
                 ::buffa::Message::merge_length_delimited(
                     self.options.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -5776,7 +5776,7 @@ impl ::buffa::Message for EnumDescriptorProto {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -5805,7 +5805,7 @@ impl ::buffa::Message for EnumDescriptorProto {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.value.push(elem);
             }
             3u32 => {
@@ -5819,7 +5819,7 @@ impl ::buffa::Message for EnumDescriptorProto {
                 ::buffa::Message::merge_length_delimited(
                     self.options.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             4u32 => {
@@ -5831,7 +5831,7 @@ impl ::buffa::Message for EnumDescriptorProto {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.reserved_range.push(elem);
             }
             5u32 => {
@@ -5867,7 +5867,7 @@ impl ::buffa::Message for EnumDescriptorProto {
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -6134,7 +6134,7 @@ pub mod enum_descriptor_proto {
             &mut self,
             tag: ::buffa::encoding::Tag,
             buf: &mut impl ::buffa::bytes::Buf,
-            depth: u32,
+            ctx: ::buffa::DecodeContext<'_>,
         ) -> ::core::result::Result<(), ::buffa::DecodeError> {
             #[allow(unused_imports)]
             use ::buffa::bytes::Buf as _;
@@ -6167,7 +6167,7 @@ pub mod enum_descriptor_proto {
                 }
                 _ => {
                     self.__buffa_unknown_fields
-                        .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                        .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
                 }
             }
             ::core::result::Result::Ok(())
@@ -6403,7 +6403,7 @@ impl ::buffa::Message for EnumValueDescriptorProto {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -6446,12 +6446,12 @@ impl ::buffa::Message for EnumValueDescriptorProto {
                 ::buffa::Message::merge_length_delimited(
                     self.options.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -6692,7 +6692,7 @@ impl ::buffa::Message for ServiceDescriptorProto {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -6721,7 +6721,7 @@ impl ::buffa::Message for ServiceDescriptorProto {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.method.push(elem);
             }
             3u32 => {
@@ -6735,12 +6735,12 @@ impl ::buffa::Message for ServiceDescriptorProto {
                 ::buffa::Message::merge_length_delimited(
                     self.options.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -7085,7 +7085,7 @@ impl ::buffa::Message for MethodDescriptorProto {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -7146,7 +7146,7 @@ impl ::buffa::Message for MethodDescriptorProto {
                 ::buffa::Message::merge_length_delimited(
                     self.options.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             5u32 => {
@@ -7175,7 +7175,7 @@ impl ::buffa::Message for MethodDescriptorProto {
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -8099,7 +8099,7 @@ impl ::buffa::Message for FileOptions {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -8384,7 +8384,7 @@ impl ::buffa::Message for FileOptions {
                 ::buffa::Message::merge_length_delimited(
                     self.features.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             999u32 => {
@@ -8396,12 +8396,12 @@ impl ::buffa::Message for FileOptions {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -9573,7 +9573,7 @@ impl ::buffa::Message for MessageOptions {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -9651,7 +9651,7 @@ impl ::buffa::Message for MessageOptions {
                 ::buffa::Message::merge_length_delimited(
                     self.features.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             999u32 => {
@@ -9663,12 +9663,12 @@ impl ::buffa::Message for MessageOptions {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -10510,7 +10510,7 @@ impl ::buffa::Message for FieldOptions {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -10712,7 +10712,7 @@ impl ::buffa::Message for FieldOptions {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.edition_defaults.push(elem);
             }
             21u32 => {
@@ -10726,7 +10726,7 @@ impl ::buffa::Message for FieldOptions {
                 ::buffa::Message::merge_length_delimited(
                     self.features.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             22u32 => {
@@ -10740,7 +10740,7 @@ impl ::buffa::Message for FieldOptions {
                 ::buffa::Message::merge_length_delimited(
                     self.feature_support.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             999u32 => {
@@ -10752,12 +10752,12 @@ impl ::buffa::Message for FieldOptions {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -12130,7 +12130,7 @@ pub mod field_options {
             &mut self,
             tag: ::buffa::encoding::Tag,
             buf: &mut impl ::buffa::bytes::Buf,
-            depth: u32,
+            ctx: ::buffa::DecodeContext<'_>,
         ) -> ::core::result::Result<(), ::buffa::DecodeError> {
             #[allow(unused_imports)]
             use ::buffa::bytes::Buf as _;
@@ -12175,7 +12175,7 @@ pub mod field_options {
                 }
                 _ => {
                     self.__buffa_unknown_fields
-                        .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                        .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
                 }
             }
             ::core::result::Result::Ok(())
@@ -12464,7 +12464,7 @@ pub mod field_options {
             &mut self,
             tag: ::buffa::encoding::Tag,
             buf: &mut impl ::buffa::bytes::Buf,
-            depth: u32,
+            ctx: ::buffa::DecodeContext<'_>,
         ) -> ::core::result::Result<(), ::buffa::DecodeError> {
             #[allow(unused_imports)]
             use ::buffa::bytes::Buf as _;
@@ -12551,7 +12551,7 @@ pub mod field_options {
                 }
                 _ => {
                     self.__buffa_unknown_fields
-                        .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                        .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
                 }
             }
             ::core::result::Result::Ok(())
@@ -12800,7 +12800,7 @@ impl ::buffa::Message for OneofOptions {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -12818,7 +12818,7 @@ impl ::buffa::Message for OneofOptions {
                 ::buffa::Message::merge_length_delimited(
                     self.features.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             999u32 => {
@@ -12830,12 +12830,12 @@ impl ::buffa::Message for OneofOptions {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -13299,7 +13299,7 @@ impl ::buffa::Message for EnumOptions {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -13353,7 +13353,7 @@ impl ::buffa::Message for EnumOptions {
                 ::buffa::Message::merge_length_delimited(
                     self.features.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             999u32 => {
@@ -13365,12 +13365,12 @@ impl ::buffa::Message for EnumOptions {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -13890,7 +13890,7 @@ impl ::buffa::Message for EnumValueOptions {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -13920,7 +13920,7 @@ impl ::buffa::Message for EnumValueOptions {
                 ::buffa::Message::merge_length_delimited(
                     self.features.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             3u32 => {
@@ -13946,7 +13946,7 @@ impl ::buffa::Message for EnumValueOptions {
                 ::buffa::Message::merge_length_delimited(
                     self.feature_support.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             999u32 => {
@@ -13958,12 +13958,12 @@ impl ::buffa::Message for EnumValueOptions {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -14427,7 +14427,7 @@ impl ::buffa::Message for ServiceOptions {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -14457,7 +14457,7 @@ impl ::buffa::Message for ServiceOptions {
                 ::buffa::Message::merge_length_delimited(
                     self.features.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             999u32 => {
@@ -14469,12 +14469,12 @@ impl ::buffa::Message for ServiceOptions {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -14927,7 +14927,7 @@ impl ::buffa::Message for MethodOptions {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -14978,7 +14978,7 @@ impl ::buffa::Message for MethodOptions {
                 ::buffa::Message::merge_length_delimited(
                     self.features.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             999u32 => {
@@ -14990,12 +14990,12 @@ impl ::buffa::Message for MethodOptions {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -15734,7 +15734,7 @@ impl ::buffa::Message for UninterpretedOption {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -15750,7 +15750,7 @@ impl ::buffa::Message for UninterpretedOption {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.name.push(elem);
             }
             3u32 => {
@@ -15834,7 +15834,7 @@ impl ::buffa::Message for UninterpretedOption {
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -16079,7 +16079,7 @@ pub mod uninterpreted_option {
             &mut self,
             tag: ::buffa::encoding::Tag,
             buf: &mut impl ::buffa::bytes::Buf,
-            depth: u32,
+            ctx: ::buffa::DecodeContext<'_>,
         ) -> ::core::result::Result<(), ::buffa::DecodeError> {
             #[allow(unused_imports)]
             use ::buffa::bytes::Buf as _;
@@ -16108,7 +16108,7 @@ pub mod uninterpreted_option {
                 }
                 _ => {
                     self.__buffa_unknown_fields
-                        .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                        .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
                 }
             }
             ::core::result::Result::Ok(())
@@ -16508,7 +16508,7 @@ impl ::buffa::Message for FeatureSet {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -16685,7 +16685,7 @@ impl ::buffa::Message for FeatureSet {
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -18307,7 +18307,7 @@ pub mod feature_set {
             &mut self,
             tag: ::buffa::encoding::Tag,
             buf: &mut impl ::buffa::bytes::Buf,
-            depth: u32,
+            ctx: ::buffa::DecodeContext<'_>,
         ) -> ::core::result::Result<(), ::buffa::DecodeError> {
             #[allow(unused_imports)]
             use ::buffa::bytes::Buf as _;
@@ -18316,7 +18316,7 @@ pub mod feature_set {
             match tag.field_number() {
                 _ => {
                     self.__buffa_unknown_fields
-                        .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                        .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
                 }
             }
             ::core::result::Result::Ok(())
@@ -18751,7 +18751,7 @@ impl ::buffa::Message for FeatureSetDefaults {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -18767,7 +18767,7 @@ impl ::buffa::Message for FeatureSetDefaults {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.defaults.push(elem);
             }
             4u32 => {
@@ -18814,7 +18814,7 @@ impl ::buffa::Message for FeatureSetDefaults {
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -19077,7 +19077,7 @@ pub mod feature_set_defaults {
             &mut self,
             tag: ::buffa::encoding::Tag,
             buf: &mut impl ::buffa::bytes::Buf,
-            depth: u32,
+            ctx: ::buffa::DecodeContext<'_>,
         ) -> ::core::result::Result<(), ::buffa::DecodeError> {
             #[allow(unused_imports)]
             use ::buffa::bytes::Buf as _;
@@ -19116,7 +19116,7 @@ pub mod feature_set_defaults {
                     ::buffa::Message::merge_length_delimited(
                         self.overridable_features.get_or_insert_default(),
                         buf,
-                        depth,
+                        ctx,
                     )?;
                 }
                 5u32 => {
@@ -19130,12 +19130,12 @@ pub mod feature_set_defaults {
                     ::buffa::Message::merge_length_delimited(
                         self.fixed_features.get_or_insert_default(),
                         buf,
-                        depth,
+                        ctx,
                     )?;
                 }
                 _ => {
                     self.__buffa_unknown_fields
-                        .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                        .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
                 }
             }
             ::core::result::Result::Ok(())
@@ -19380,7 +19380,7 @@ impl ::buffa::Message for SourceCodeInfo {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -19396,12 +19396,12 @@ impl ::buffa::Message for SourceCodeInfo {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.location.push(elem);
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -19942,7 +19942,7 @@ pub mod source_code_info {
             &mut self,
             tag: ::buffa::encoding::Tag,
             buf: &mut impl ::buffa::bytes::Buf,
-            depth: u32,
+            ctx: ::buffa::DecodeContext<'_>,
         ) -> ::core::result::Result<(), ::buffa::DecodeError> {
             #[allow(unused_imports)]
             use ::buffa::bytes::Buf as _;
@@ -20050,7 +20050,7 @@ pub mod source_code_info {
                 }
                 _ => {
                     self.__buffa_unknown_fields
-                        .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                        .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
                 }
             }
             ::core::result::Result::Ok(())
@@ -20273,7 +20273,7 @@ impl ::buffa::Message for GeneratedCodeInfo {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -20289,12 +20289,12 @@ impl ::buffa::Message for GeneratedCodeInfo {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.annotation.push(elem);
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -20611,7 +20611,7 @@ pub mod generated_code_info {
             &mut self,
             tag: ::buffa::encoding::Tag,
             buf: &mut impl ::buffa::bytes::Buf,
-            depth: u32,
+            ctx: ::buffa::DecodeContext<'_>,
         ) -> ::core::result::Result<(), ::buffa::DecodeError> {
             #[allow(unused_imports)]
             use ::buffa::bytes::Buf as _;
@@ -20709,7 +20709,7 @@ pub mod generated_code_info {
                 }
                 _ => {
                     self.__buffa_unknown_fields
-                        .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                        .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
                 }
             }
             ::core::result::Result::Ok(())
