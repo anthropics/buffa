@@ -37,7 +37,7 @@ fn closed_enum_view_unknown_route(preserve_unknown_fields: bool) -> TokenStream 
     if preserve_unknown_fields {
         quote! {
             let __span_len = before_tag.len() - cur.len();
-            view.__buffa_unknown_fields.push_raw(&before_tag[..__span_len]);
+            view.__buffa_unknown_fields.push_record(before_tag, __span_len, ctx)?;
         }
     } else {
         quote! {}
@@ -237,7 +237,7 @@ pub(crate) fn generate_view_with_nesting(
     let unknown_field_handling = if ctx.config.preserve_unknown_fields {
         quote! {
             let span_len = before_tag.len() - cur.len();
-            view.__buffa_unknown_fields.push_raw(&before_tag[..span_len]);
+            view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
         }
     } else {
         quote! {}
@@ -245,7 +245,7 @@ pub(crate) fn generate_view_with_nesting(
 
     // If no field borrows from 'a (all-scalar message with unknown-fields
     // preservation disabled), inject PhantomData<&'a ()> so the struct's
-    // lifetime param is used. _decode_depth(buf: &'a [u8]) requires 'a.
+    // lifetime param is used. _decode_ctx(buf: &'a [u8]) requires 'a.
     let phantom_field =
         if message_view_has_borrowing_field(ctx, msg, features, ctx.config.preserve_unknown_fields)
         {
@@ -348,20 +348,22 @@ pub(crate) fn generate_view_with_nesting(
         #view_debug_impl
 
         impl<'a> #view_ident<'a> {
-            /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
+            /// Decode from `buf` under the limits carried by `ctx` (recursion
+            /// depth and the shared unknown-field allowance).
             ///
-            /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
-            /// and by generated sub-message decode arms with `depth - 1`.
+            /// Called by [`::buffa::MessageView::decode_view`] with a fresh
+            /// default context and by generated sub-message decode arms with
+            /// `ctx.descend()?`.
             ///
             /// **Not part of the public API.** Named with a leading underscore to
             /// signal that it is for generated-code use only.
             #[doc(hidden)]
-            pub fn _decode_depth(
+            pub fn _decode_ctx(
                 buf: &'a [u8],
-                depth: u32,
+                ctx: ::buffa::DecodeContext<'_>,
             ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
                 let mut view = Self::default();
-                view._merge_into_view(buf, depth)?;
+                view._merge_into_view(buf, ctx)?;
                 ::core::result::Result::Ok(view)
             }
 
@@ -376,10 +378,11 @@ pub(crate) fn generate_view_with_nesting(
             pub fn _merge_into_view(
                 &mut self,
                 buf: &'a [u8],
-                depth: u32,
+                ctx: ::buffa::DecodeContext<'_>,
             ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-                // `depth` may be unused for messages with no nested sub-message fields.
-                let _ = depth;
+                // `ctx` may be unused for messages with no nested sub-message
+                // fields and no unknown-field preservation.
+                let _ = ctx;
                 // Rebind as `view` so the arm-generating functions (which emit
                 // `view.#ident`) work unchanged.
                 #[allow(unused_variables)]
@@ -393,7 +396,7 @@ pub(crate) fn generate_view_with_nesting(
                         #(#repeated_arms)*
                         #(#oneof_arms)*
                         _ => {
-                            ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
+                            ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
                             #unknown_field_handling
                         }
                     }
@@ -408,14 +411,18 @@ pub(crate) fn generate_view_with_nesting(
             fn decode_view(
                 buf: &'a [u8],
             ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-                Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
+                let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
+                Self::_decode_ctx(
+                    buf,
+                    ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit),
+                )
             }
 
-            fn decode_view_with_limit(
+            fn decode_view_with_ctx(
                 buf: &'a [u8],
-                depth: u32,
+                ctx: ::buffa::DecodeContext<'_>,
             ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-                Self::_decode_depth(buf, depth)
+                Self::_decode_ctx(buf, ctx)
             }
 
             fn to_owned_message(&self) -> #owned_path {
@@ -716,7 +723,7 @@ pub(crate) fn oneof_view_needs_lifetime(
 /// Repeated, map, string, bytes, message, group fields all use `'a`.
 /// Only an all-scalar/enum message with `preserve_unknown_fields=false`
 /// has no borrowing fields — in that case a PhantomData marker is needed
-/// to keep the `<'a>` lifetime valid for `_decode_depth(buf: &'a [u8])`.
+/// to keep the `<'a>` lifetime valid for `_decode_ctx(buf: &'a [u8])`.
 fn message_view_has_borrowing_field(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -1077,16 +1084,14 @@ fn scalar_decode_arm(
         Type::TYPE_MESSAGE => {
             let vt = resolve_view_decode_tokens(scope, field)?;
             quote! {
-                if depth == 0 {
-                    return Err(::buffa::DecodeError::RecursionLimitExceeded);
-                }
+                let __sub_ctx = ctx.descend()?;
                 let sub = ::buffa::types::borrow_bytes(&mut cur)?;
                 // Proto merge semantics: if this field appeared before,
                 // merge the new bytes into the existing view.
                 match view.#ident.as_mut() {
-                    Some(existing) => existing._merge_into_view(sub, depth - 1)?,
+                    Some(existing) => existing._merge_into_view(sub, __sub_ctx)?,
                     None => view.#ident = ::buffa::MessageFieldView::set(
-                        #vt::_decode_depth(sub, depth - 1)?
+                        #vt::_decode_ctx(sub, __sub_ctx)?
                     ),
                 }
             }
@@ -1094,14 +1099,12 @@ fn scalar_decode_arm(
         Type::TYPE_GROUP => {
             let vt = resolve_view_decode_tokens(scope, field)?;
             quote! {
-                if depth == 0 {
-                    return Err(::buffa::DecodeError::RecursionLimitExceeded);
-                }
-                let sub = ::buffa::types::borrow_group(&mut cur, #field_number, depth - 1)?;
+                let __sub_ctx = ctx.descend()?;
+                let sub = ::buffa::types::borrow_group(&mut cur, #field_number, __sub_ctx.depth())?;
                 match view.#ident.as_mut() {
-                    Some(existing) => existing._merge_into_view(sub, depth - 1)?,
+                    Some(existing) => existing._merge_into_view(sub, __sub_ctx)?,
                     None => view.#ident = ::buffa::MessageFieldView::set(
-                        #vt::_decode_depth(sub, depth - 1)?
+                        #vt::_decode_ctx(sub, __sub_ctx)?
                     ),
                 }
             }
@@ -1145,11 +1148,9 @@ fn repeated_decode_arm(
         return Ok(quote! {
             #field_number => {
                 #ld_check
-                if depth == 0 {
-                    return Err(::buffa::DecodeError::RecursionLimitExceeded);
-                }
+                let __sub_ctx = ctx.descend()?;
                 let sub = ::buffa::types::borrow_bytes(&mut cur)?;
-                view.#ident.push(#vt::_decode_depth(sub, depth - 1)?);
+                view.#ident.push(#vt::_decode_ctx(sub, __sub_ctx)?);
             }
         });
     }
@@ -1165,11 +1166,9 @@ fn repeated_decode_arm(
         return Ok(quote! {
             #field_number => {
                 #sg_check
-                if depth == 0 {
-                    return Err(::buffa::DecodeError::RecursionLimitExceeded);
-                }
-                let sub = ::buffa::types::borrow_group(&mut cur, #field_number, depth - 1)?;
-                view.#ident.push(#vt::_decode_depth(sub, depth - 1)?);
+                let __sub_ctx = ctx.descend()?;
+                let sub = ::buffa::types::borrow_group(&mut cur, #field_number, __sub_ctx.depth())?;
+                view.#ident.push(#vt::_decode_ctx(sub, __sub_ctx)?);
             }
         });
     }
@@ -1328,7 +1327,7 @@ fn map_decode_arm(
                 match entry_tag.field_number() {
                     1 => { #decode_key }
                     2 => { #decode_val }
-                    _ => { ::buffa::encoding::skip_field_depth(entry_tag, &mut entry_cur, depth)?; }
+                    _ => { ::buffa::encoding::skip_field_depth(entry_tag, &mut entry_cur, ctx.depth())?; }
                 }
             }
             view.#ident.push(key, val);
@@ -1377,11 +1376,9 @@ fn map_view_entry_decode(
         Type::TYPE_MESSAGE => {
             let vt = resolve_view_decode_tokens(scope, fd)?;
             quote! {
-                if depth == 0 {
-                    return Err(::buffa::DecodeError::RecursionLimitExceeded);
-                }
+                let __sub_ctx = ctx.descend()?;
                 let sub = ::buffa::types::borrow_bytes(&mut entry_cur)?;
-                #var = #vt::_decode_depth(sub, depth - 1)?;
+                #var = #vt::_decode_ctx(sub, __sub_ctx)?;
             }
         }
         _ => {
@@ -1432,16 +1429,14 @@ fn oneof_decode_arms(
                     return Ok(quote! {
                         #field_number => {
                             #wire_check
-                            if depth == 0 {
-                                return Err(::buffa::DecodeError::RecursionLimitExceeded);
-                            }
+                            let __sub_ctx = ctx.descend()?;
                             let sub = ::buffa::types::borrow_bytes(&mut cur)?;
                             if let Some(#view_enum::#variant(ref mut existing)) = view.#field_ident {
-                                existing._merge_into_view(sub, depth - 1)?;
+                                existing._merge_into_view(sub, __sub_ctx)?;
                             } else {
                                 view.#field_ident = Some(#view_enum::#variant(
                                     ::buffa::alloc::boxed::Box::new(
-                                        #vt::_decode_depth(sub, depth - 1)?
+                                        #vt::_decode_ctx(sub, __sub_ctx)?
                                     )
                                 ));
                             }
@@ -1453,16 +1448,14 @@ fn oneof_decode_arms(
                     return Ok(quote! {
                         #field_number => {
                             #wire_check
-                            if depth == 0 {
-                                return Err(::buffa::DecodeError::RecursionLimitExceeded);
-                            }
-                            let sub = ::buffa::types::borrow_group(&mut cur, #field_number, depth - 1)?;
+                            let __sub_ctx = ctx.descend()?;
+                            let sub = ::buffa::types::borrow_group(&mut cur, #field_number, __sub_ctx.depth())?;
                             if let Some(#view_enum::#variant(ref mut existing)) = view.#field_ident {
-                                existing._merge_into_view(sub, depth - 1)?;
+                                existing._merge_into_view(sub, __sub_ctx)?;
                             } else {
                                 view.#field_ident = Some(#view_enum::#variant(
                                     ::buffa::alloc::boxed::Box::new(
-                                        #vt::_decode_depth(sub, depth - 1)?
+                                        #vt::_decode_ctx(sub, __sub_ctx)?
                                     )
                                 ));
                             }

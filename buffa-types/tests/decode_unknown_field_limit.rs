@@ -139,3 +139,72 @@ fn limit_spans_nested_groups() {
         Err(DecodeError::UnknownFieldLimitExceeded)
     );
 }
+
+// ── Zero-copy view path ────────────────────────────────────────────────────
+//
+// Views store unknown fields as borrowed spans rather than decoded values,
+// and adjacent unknown records coalesce into a single span — so a contiguous
+// flood costs one slot regardless of field count, while interleaved runs
+// are counted per span against the same unknown-field limit.
+
+mod view_path {
+    use super::*;
+    use buffa::view::MessageView;
+    use buffa_types::google::protobuf::__buffa::view::{DurationView, EmptyView};
+
+    #[test]
+    fn contiguous_unknown_flood_coalesces_to_one_span() {
+        // 100k unknown varint fields, fully contiguous: one span, one slot.
+        let payload = flat_varint_flood(100_000);
+        let view: EmptyView = DecodeOptions::new()
+            .with_unknown_field_limit(1)
+            .decode_view(&payload)
+            .expect("a contiguous flood coalesces into a single span");
+        // Round-trip fidelity: the coalesced spans re-encode verbatim.
+        let owned = view.to_owned_message();
+        assert_eq!(owned.encode_to_vec(), payload);
+    }
+
+    #[test]
+    fn interleaved_unknown_runs_counted_against_limit() {
+        // Alternate a known Duration field (seconds = field 1) with an
+        // unknown field (field 99): every unknown run needs its own span.
+        let mut payload = Vec::new();
+        for _ in 0..10 {
+            payload.extend_from_slice(&[0x08, 0x01]); // seconds = 1 (known)
+            payload.extend_from_slice(&[0x98, 0x06, 0x00]); // field 99 varint (unknown)
+        }
+        DecodeOptions::new()
+            .with_unknown_field_limit(10)
+            .decode_view::<DurationView>(&payload)
+            .expect("10 spans fit a limit of 10");
+        assert_eq!(
+            DecodeOptions::new()
+                .with_unknown_field_limit(9)
+                .decode_view::<DurationView>(&payload)
+                .map(|v| v.to_owned_message()),
+            Err(DecodeError::UnknownFieldLimitExceeded)
+        );
+    }
+
+    #[test]
+    fn coalesced_spans_convert_to_owned() {
+        // to_owned parses every record inside a coalesced span.
+        let payload = flat_varint_flood(50);
+        let view = EmptyView::decode_view(&payload).expect("decodes");
+        let owned = view.to_owned_message();
+        assert_eq!(owned.encode_to_vec(), payload);
+    }
+
+    #[test]
+    fn group_flood_through_views_is_bounded() {
+        // The reported group payload through the view path: the group is
+        // skipped (not recursed into) and captured as one contiguous span.
+        let payload = group_amp(100_000);
+        let view: EmptyView = DecodeOptions::new()
+            .with_unknown_field_limit(1)
+            .decode_view(&payload)
+            .expect("one span for the whole group record");
+        assert_eq!(view.to_owned_message().encode_to_vec(), payload);
+    }
+}

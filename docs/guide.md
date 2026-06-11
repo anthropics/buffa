@@ -949,6 +949,8 @@ Raise the limit if you decode trusted messages that legitimately carry more
 unknown fields (e.g. a proxy forwarding messages with a huge unpacked
 repeated field from a much newer schema).
 
+Zero-copy view decoding (`decode_view`) honors the same limit, but counts **coalesced spans** — one per contiguous run of unknown fields (~16 bytes each) — rather than individual fields, since views store unknown fields as borrowed byte ranges instead of materializing them. The same numeric limit is therefore more permissive for views; the per-field cost is only paid (under the default limit) when converting a view to an owned message.
+
 The default `Message::decode` / `decode_from_slice` methods use the defaults (100 depth, 2 GiB max input, 1M unknown fields). `DecodeOptions` is only needed when you want different limits.
 
 ## Zero-copy views

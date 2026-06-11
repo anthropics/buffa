@@ -725,6 +725,13 @@ impl DecodeOptions {
     /// the limit is exceeded, decoding returns
     /// [`DecodeError::UnknownFieldLimitExceeded`].
     ///
+    /// Zero-copy view decoding ([`decode_view`](Self::decode_view)) counts
+    /// **coalesced spans** — one per contiguous run of unknown fields, at
+    /// ~16 bytes each — rather than individual fields, so the same value is
+    /// more permissive for views (a single contiguous run of any length
+    /// costs one slot). Converting a view to an owned message re-materializes
+    /// unknown fields under the *default* limit, not this one.
+    ///
     /// Default: 1,000,000 ([`DEFAULT_UNKNOWN_FIELD_LIMIT`]).
     #[must_use]
     pub fn with_unknown_field_limit(mut self, count: usize) -> Self {
@@ -837,6 +844,17 @@ impl DecodeOptions {
     }
 
     /// Decode a zero-copy view from a byte slice.
+    ///
+    /// Enforces `max_message_size` on the input, and passes the recursion
+    /// limit and unknown-field limit to the view decoder (views count
+    /// coalesced unknown-field spans against the limit — see
+    /// [`with_unknown_field_limit`](Self::with_unknown_field_limit)).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeError::MessageTooLarge`] for oversized input, or any
+    /// error from the view decoder (malformed wire data, recursion limit,
+    /// unknown-field limit).
     pub fn decode_view<'a, V: crate::view::MessageView<'a>>(
         &self,
         buf: &'a [u8],
@@ -844,7 +862,8 @@ impl DecodeOptions {
         if buf.len() > self.max_message_size {
             return Err(DecodeError::MessageTooLarge);
         }
-        V::decode_view_with_limit(buf, self.recursion_limit)
+        let limit = core::cell::Cell::new(self.unknown_field_limit);
+        V::decode_view_with_ctx(buf, DecodeContext::new(self.recursion_limit, &limit))
     }
 
     /// Decode a message by reading all bytes from a [`std::io::Read`] source.
