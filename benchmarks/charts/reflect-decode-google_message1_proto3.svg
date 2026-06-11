@@ -30,10 +30,10 @@
   <text x="720.0" y="169" text-anchor="middle" class="axis-label">2,000</text>
   <text x="430.0" y="184" text-anchor="middle" class="axis-label">MiB/s</text>
   <text x="130" y="121.0" text-anchor="end" class="label">GoogleMessage1</text>
-  <rect x="140" y="80.0" width="295.7" height="22" rx="2" fill="#4C78A8"/>
-  <text x="439.7" y="95.0" class="value">1,019</text>
-  <rect x="140" y="106.0" width="57.5" height="22" rx="2" fill="#B279A2"/>
-  <text x="201.5" y="121.0" class="value">198</text>
-  <rect x="140" y="132.0" width="369.4" height="22" rx="2" fill="#72B7B2"/>
-  <text x="513.4" y="147.0" class="value">1,273</text>
+  <rect x="140" y="80.0" width="282.4" height="22" rx="2" fill="#4C78A8"/>
+  <text x="426.4" y="95.0" class="value">973</text>
+  <rect x="140" y="106.0" width="60.8" height="22" rx="2" fill="#B279A2"/>
+  <text x="204.8" y="121.0" class="value">209</text>
+  <rect x="140" y="132.0" width="338.5" height="22" rx="2" fill="#72B7B2"/>
+  <text x="482.5" y="147.0" class="value">1,167</text>
 </svg>
