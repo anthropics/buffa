@@ -1,0 +1,39 @@
+// Exercises the `lazy_views` codegen flag: singular/repeated message fields
+// become lazy (decode-on-access); oneof message variants, map message values,
+// and scalars keep their eager representation.
+syntax = "proto3";
+
+package test.lazyviews;
+
+import "google/protobuf/timestamp.proto";
+
+message Pair {
+  string k = 1;
+  string v = 2;
+}
+
+message Payload {
+  string name = 1;
+  bytes data = 2;
+  Pair pair = 3;
+  repeated Pair pairs = 4;
+  map<string, Pair> by_key = 5;
+  oneof kind {
+    Pair pair_kind = 6;
+    string str_kind = 7;
+  }
+  repeated string tags = 8;
+}
+
+message Holder {
+  Payload payload = 1;
+  repeated Payload items = 2;
+  google.protobuf.Timestamp stamped_at = 3;
+}
+
+// Self-referential: lazy fields must support recursion without Box.
+message Node {
+  string label = 1;
+  Node child = 2;
+  repeated Node children = 3;
+}

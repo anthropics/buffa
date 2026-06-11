@@ -66,6 +66,12 @@ pub mod wkt {
     buffa::include_proto!("test.wkt");
 }
 
+/// `lazy_views(true)` — the additive `FooLazyView` decode-on-access family.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod lazyviews {
+    buffa::include_proto!("test.lazyviews");
+}
+
 // unbox_oneof: `Envelope.body.small` is stored inline (opted out of Box),
 // `large` stays boxed. Compiling this module exercises every boxing site for
 // both shapes; runtime round-trips live in `tests/unbox_oneof.rs`.

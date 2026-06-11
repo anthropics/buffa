@@ -447,6 +447,16 @@ fn main() {
         .compile()
         .expect("buffa_build failed for with_setters.proto");
 
+    // lazy_views — additive FooLazyView family beside the unchanged eager
+    // views. JSON on to exercise the lazy Serialize path.
+    buffa_build::Config::new()
+        .files(&["protos/lazy_views.proto"])
+        .includes(&["protos/"])
+        .lazy_views(true)
+        .generate_json(true)
+        .compile()
+        .expect("buffa_build failed for lazy_views.proto");
+
     // Edition 2024 — requires protoc v30+ (stabilized edition 2024).
     // Older protoc rejects it with "later than the maximum supported edition".
     // Skip gracefully on older protoc so the crate still builds; tests are
