@@ -8,6 +8,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **Opt-in lazy views: the additive `FooLazyView` family** (#165). With
+  `Config::lazy_views(true)` (plugin: `lazy_views=true`), each message
+  additionally generates a `FooLazyView<'a>` implementing the new
+  `buffa::LazyMessageView` trait — the eager `FooView` family is unchanged
+  and output is byte-identical with or without the flag. `decode_lazy`
+  performs one non-recursive scan, recording singular/repeated message
+  fields as undecoded byte ranges (`LazyMessageFieldView` /
+  `LazyRepeatedView`) that decode on access via fallible by-value accessors
+  (`.get()`, `.get_or_default()`, iteration), so reading a few fields of
+  many large sub-messages no longer allocates or recurses into untouched
+  sub-trees (~12× less allocation churn on the issue's workload; ~200×
+  faster when only 1% of items are read). Proto merge semantics are
+  preserved via per-occurrence fragments merged on access; the recursion
+  depth and unknown-field allowance recorded at each deferred field are
+  replayed per access (per-subtree capture of the shared pool), so
+  `DecodeOptions` limits flow through `decode_lazy_view`. Conversions are
+  fallible (`to_owned_message() -> Result`), the lazy `Serialize` impl
+  surfaces deferred errors as serde errors, and re-encoding replays
+  recorded fragments verbatim without validating them. Groups, oneof
+  message variants, map message values, and extern-typed fields (WKTs,
+  `extern_path`) stay eager inside the lazy view; the lazy family has no
+  reflection/`OwnedView`/text surface. A dedicated `BUFFA_VIA_LAZY`
+  conformance runner mode covers the lazy decoder against the full corpus.
 - **`buffa-build` / `buffa-codegen`: `oneof_attribute`** (#166) — attach Rust
   attributes to generated oneof enums only (not message structs, not regular
   enums), matched against the oneof's fully-qualified path

@@ -987,6 +987,59 @@ Repeated fields use `RepeatedView<T>` (a `Vec`-backed sequence); map fields use
 appropriate for typical small protobuf maps but not for large in-memory indices.
 For larger maps, collect into a `HashMap`: `let m: HashMap<_,_> = view.labels.into_iter().collect();`
 
+### Lazy views — `lazy_views(true)`
+
+Eager views decode every nested message during `decode_view`. When you read
+only a few fields out of many large sub-messages, opt into the additive lazy
+family:
+
+```rust,ignore
+buffa_build::Config::new()
+    .files(&["protos/person.proto"])
+    .lazy_views(true)
+    .compile()?;
+```
+
+Each message additionally gets a `PersonLazyView<'a>` (the eager `PersonView`
+is unchanged) implementing `buffa::LazyMessageView`: `decode_lazy` records
+singular/repeated message fields as undecoded byte ranges and decodes them
+on access — by value, fallibly:
+
+```rust,ignore
+use buffa::LazyMessageView;
+
+let view = PersonLazyView::decode_lazy(&bytes)?;    // one non-recursive scan
+if let Some(addr) = view.address.get()? {           // decoded here
+    println!("city: {}", addr.city);
+}
+for item in view.friends.iter() {                   // decoded per element
+    let friend = item?;
+    println!("{}", friend.name);
+}
+let owned: Person = view.to_owned_message()?;       // deferred errors surface here
+```
+
+For the common "read one nested field" path, `get_or_default()` mirrors the
+eager deref-to-default behavior: `view.address.get_or_default()?.city`.
+Note the `get` shapes differ between the two lazy field types — singular
+`get()` returns `Result<Option<V>, _>` ("present, then valid"), repeated
+`get(i)` returns `Option<Result<V, _>>` ("in range, then valid");
+`try_get(i)` offers the singular-shaped spelling on repeated fields.
+
+Trade-offs to know about: sub-message bytes are validated on *access*, not at
+`decode_lazy` (so `to_owned_message` is fallible and the lazy `Serialize`
+impl reports deferred errors as serde errors); repeated access re-decodes (no
+caching — bind the result when reading several fields); lazy repeated fields
+are not slice-backed (`.get(i)`/`.iter()`/`.len()` instead of indexing);
+groups, oneof message variants, map message values, and extern-typed fields
+(WKTs, `extern_path`) stay eagerly decoded inside the lazy view; re-encoding
+replays the recorded bytes verbatim without validating them; and the lazy
+family has no reflection, `OwnedView`, or text-format surface — use the
+eager `PersonView` for those. The recursion and unknown-field budgets
+recorded at decode time are charged on access (per deferred subtree), so
+deep navigation fails with `RecursionLimitExceeded` at the same boundary as
+the eager decoder; raise limits via `DecodeOptions::decode_lazy_view`.
+
 ### `OwnedView<V>` — views with `'static` lifetime
 
 The `'a` lifetime on `PersonView<'a>` ties the view to the input buffer, preventing it from being used across async boundaries, in tower services, or anywhere a `'static` bound is required. `OwnedView<V>` solves this by storing the `bytes::Bytes` buffer alongside the decoded view, producing a `'static + Send + Sync` type:

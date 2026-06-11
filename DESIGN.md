@@ -201,6 +201,28 @@ The view type borrows directly from the input buffer. String fields become `&'a 
 
 This is analogous to Cap'n Proto's Rust implementation and how Go achieves zero-copy string deserialization. In a typical RPC handler, the request is parsed and consumed without needing to outlive the input buffer — the view type makes this allocation-free.
 
+**Lazy views (`lazy_views(true)`)** — an additive decode-on-access family:
+
+Eager views materialize the whole sub-message tree during `decode_view`: every present nested message is boxed and decoded recursively, every repeated message field pre-decodes into a `Vec`. For workloads that read a few fields out of many large sub-messages, that work dominates. `Config::lazy_views(true)` additionally generates a `FooLazyView<'a>` per message — the eager family is unchanged (output is byte-identical with or without the flag) — implementing the separate `buffa::LazyMessageView` trait:
+
+```rust,ignore
+let person = PersonLazyView::decode_lazy(&wire_bytes)?;   // one non-recursive scan
+if let Some(addr) = person.address.get()? {               // decoded here, by value
+    println!("city: {}", addr.city);
+}
+```
+
+`decode_lazy` records each singular/repeated message field's byte range (`LazyMessageFieldView` / `LazyRepeatedView`) and decodes a fresh sub-view only on access, so untouched sub-trees cost nothing. Design points:
+
+- **The type system owns the weaker contract.** `MessageView` keeps "decode succeeded ⇒ whole tree validated"; deferred validation is visible in the `LazyMessageView` bound, so generic view consumers never silently inherit it, and a crate's public API doesn't change meaning under a codegen flag.
+- **Merge semantics preserved.** A singular message field split across wire occurrences is recorded as fragments and merged on access (`merge_lazy`), matching the eager and owned decoders.
+- **Decode budgets flow through.** The recursion depth and unknown-field allowance remaining at each deferred field are recorded and replayed per access, so deep adversarial input fails with `RecursionLimitExceeded` at the same boundary as the eager decoder, and `DecodeOptions` limits extend navigation correspondingly. The replay is per-subtree: each deferred access independently gets the full recorded allowance rather than sharing one pool with its siblings — a capture-then-replay approximation (the original decode call's shared allowance is gone by access time), the same one `UnknownFieldsView::to_owned` uses.
+- **Deferred validation surfaces fallibly.** Malformed deferred bytes error from `.get()`/iteration, from the fallible `to_owned_message`, and as a serde error from the lazy `Serialize` impl.
+- **Eager carve-outs.** Groups / editions `DELIMITED` fields (no length prefix to defer), oneof message variants, map message values, and fields resolving to extern types (WKTs via `buffa-types`, `extern_path` crates — their crates may not ship a lazy family) use the eager view types inside the lazy struct.
+- **Re-encoding replays fragments** byte-for-byte **without validating them** — wire-equivalent to the merged value and cheaper than re-encoding a decoded tree, but a never-accessed malformed field round-trips its bytes silently. Encode methods are inherent on the lazy struct (not `ViewEncode`, whose `MessageView` supertrait carries the eager contract).
+- **No reflection / `OwnedView` / text surface** on the lazy family — use the eager views for those.
+- The lazy decoder runs against the protobuf conformance corpus in a dedicated `BUFFA_VIA_LAZY` runner mode (`decode_lazy → to_owned_message → encode`).
+
 **Conversions:**
 
 ```rust,ignore
