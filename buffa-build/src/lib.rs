@@ -414,6 +414,45 @@ impl Config {
         self
     }
 
+    /// Emit one `<dotted.package>.rs` file per proto package instead of the
+    /// per-proto-file content set plus `<pkg>.mod.rs` stitcher. Default:
+    /// `false`.
+    ///
+    /// The single file inlines what the stitcher would otherwise `include!`,
+    /// producing the same module structure. Required by
+    /// [`idiomatic_imports`](Self::idiomatic_imports). See
+    /// [`CodeGenConfig::file_per_package`] for caveats about packages that
+    /// span multiple directories.
+    #[must_use]
+    pub fn file_per_package(mut self, enabled: bool) -> Self {
+        self.codegen_config.file_per_package = enabled;
+        self
+    }
+
+    /// **Experimental.** Emit `use`-backed short type names at the package
+    /// root instead of fully-qualified paths, so struct fields read
+    /// `MessageField<Timestamp>` instead of
+    /// `::buffa::MessageField<::buffa_types::google::protobuf::Timestamp>`.
+    /// Default: `false` (output is byte-for-byte identical to previous
+    /// releases).
+    ///
+    /// Requires [`file_per_package`](Self::file_per_package) — the build
+    /// fails otherwise. Short names that would collide with another item at
+    /// the package root (or a name referenced bare by sibling emissions)
+    /// fall back to parent-module qualification, then to the
+    /// fully-qualified path.
+    ///
+    /// Only package-root type *declarations* are shortened; impl bodies,
+    /// nested-message modules, and `__buffa` internals keep fully-qualified
+    /// paths. "Experimental" means the output shape may change between
+    /// releases and the option may be renamed or removed outside semver
+    /// guarantees. See [`CodeGenConfig::idiomatic_imports`] for details.
+    #[must_use]
+    pub fn idiomatic_imports(mut self, enabled: bool) -> Self {
+        self.codegen_config.idiomatic_imports = enabled;
+        self
+    }
+
     /// Enable or disable unknown field preservation (default: true).
     ///
     /// When enabled (the default), unrecognized fields encountered during

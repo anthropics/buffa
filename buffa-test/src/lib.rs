@@ -304,6 +304,22 @@ pub mod ed2024 {
     buffa::include_proto!("test.ed2024");
 }
 
+// Idiomatic imports (file_per_package): package-root references emitted as
+// `use`-backed short names. Compiling this module IS the primary test — the
+// `use` directives must resolve, every import must be referenced, and no
+// short name may shadow what sibling emissions reference bare. The index
+// file reproduces the test::idiomatic / test::idiomatic_other sibling
+// nesting the generated `super::` chains assume.
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod idiomatic {
+    include!(concat!(env!("OUT_DIR"), "/idiomatic_variant/_include.rs"));
+}
+
 // Regression: use_bytes_type() previously produced uncompilable decode code.
 // Compiling this module IS the test — if merge_bytes/decode_bytes mismatch
 // the bytes::Bytes field type, the build fails.

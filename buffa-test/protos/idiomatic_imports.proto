@@ -1,0 +1,57 @@
+// Exercises CodeGenConfig::idiomatic_imports (file_per_package mode):
+// message/enum and runtime types referenced at the package root are emitted
+// as `use`-backed short names. Compiling this file with the flag on IS the
+// primary test — the `use` directives must be valid, every import must be
+// referenced (unused_imports is deny-able in consumer crates), and no short
+// name may shadow anything sibling emissions reference bare. Runtime tests
+// verify wire-format equivalence with default codegen.
+
+syntax = "proto3";
+
+package test.idiomatic;
+
+import "google/protobuf/timestamp.proto";
+import "idiomatic_imports_dep.proto";
+
+// Defined locally AND in test.idiomatic_other: the local message occupies
+// the root name, so the cross-package reference is parent-qualified.
+message Clash {
+  int32 m = 1;
+}
+
+message Holder {
+  // Cross-package: `use super::idiomatic_other::Dep;` → MessageField<Dep>.
+  test.idiomatic_other.Dep dep = 1;
+  // Collided leaf: `use super::idiomatic_other;` → idiomatic_other::Clash.
+  test.idiomatic_other.Clash other_clash = 2;
+  // Local type: already bare, no import needed.
+  Clash local_clash = 3;
+  // Extern (WKT): `use ::buffa_types::google::protobuf::Timestamp;`.
+  google.protobuf.Timestamp at = 4;
+  // Runtime types: String / Vec<u8> / Option<i32> / HashMap / EnumValue.
+  string name = 5;
+  bytes data = 6;
+  optional int32 maybe = 7;
+  map<string, int64> attrs = 8;
+  test.idiomatic_other.DepKind kind = 9;
+  repeated test.idiomatic_other.Dep more_deps = 10;
+  // Oneof: the struct field is Option<__buffa::oneof::…>; the variant
+  // types inside the oneof module stay fully qualified.
+  oneof choice {
+    test.idiomatic_other.Dep pick_dep = 11;
+    google.protobuf.Timestamp pick_at = 12;
+    string pick_name = 13;
+  }
+}
+
+// Nested-message structs sit one module below the package root, where the
+// `use` block is not visible — their fields keep qualified paths and must
+// still compile alongside the shortened root.
+message Outer {
+  message Inner {
+    test.idiomatic_other.Dep d = 1;
+    google.protobuf.Timestamp t = 2;
+    string s = 3;
+  }
+  Inner inner = 1;
+}

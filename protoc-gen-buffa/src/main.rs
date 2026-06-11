@@ -222,6 +222,10 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                     }
                 },
                 "file_per_package" => codegen.file_per_package = value.trim() == "true",
+                // Experimental: `use`-backed short type names at the package
+                // root. Requires file_per_package=true (rejected by codegen
+                // otherwise).
+                "idiomatic_imports" => codegen.idiomatic_imports = value.trim() == "true",
                 "extern_path" => {
                     // value is "<proto_path>=<rust_path>"
                     if let Some((proto, rust)) = value.split_once('=') {
@@ -313,6 +317,18 @@ mod tests {
     fn file_per_package_default_is_false() {
         let config = parse_config("").unwrap();
         assert!(!config.codegen.file_per_package);
+    }
+
+    #[test]
+    fn idiomatic_imports_true() {
+        let config = parse_config("file_per_package=true,idiomatic_imports=true").unwrap();
+        assert!(config.codegen.idiomatic_imports);
+    }
+
+    #[test]
+    fn idiomatic_imports_defaults_off() {
+        let config = parse_config("").unwrap();
+        assert!(!config.codegen.idiomatic_imports);
     }
 
     #[test]

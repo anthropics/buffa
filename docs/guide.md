@@ -192,6 +192,8 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.generate_reflection(bool)` | `false` | Emit reflection support (vtable mode) plus an embedded per-package descriptor pool (see [Runtime reflection](#runtime-reflection)) |
 | `.reflect_mode(mode)` | `Off` | Finer-grained reflection selector: `ReflectMode::{Off, Bridge, VTable}` |
 | `.idiomatic_enum_aliases(bool)` | `true` | Emit `UpperCamelCase` associated-const aliases for enum values (see the aliases note under `EnumValue<T>`) |
+| `.file_per_package(bool)` | `false` | Emit one `<dotted.package>.rs` per package instead of per-proto-file content + a stitcher |
+| `.idiomatic_imports(bool)` | `false` | **Experimental.** Emit `use`-backed short type names at the package root (struct fields read `MessageField<Timestamp>` instead of fully-qualified paths). Requires `.file_per_package(true)`. Only type declarations are shortened — impl bodies and nested modules stay fully qualified — and the generated file must keep its `#[allow]` wrapper (the short names coexist with qualified impl-body paths, which `unused_qualifications` would otherwise flag) |
 | `.type_attribute(path, attr)` / `.message_attribute` / `.enum_attribute` / `.oneof_attribute` | — | Attach a Rust attribute (e.g. an extra `#[derive(...)]`) to generated types matching a proto path prefix (`oneof_attribute` matches the oneof's own path, `.pkg.Msg.oneof_name`) |
 | `.field_attribute(path, attr)` | — | Attach a Rust attribute to generated fields matching a proto path prefix |
 | `.use_buf()` | — | Use `buf build` instead of `protoc` for descriptor generation |
@@ -540,6 +542,7 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `reflect_mode=off\|bridge\|vtable` | Finer-grained reflection selector; `reflection=true` is shorthand for `vtable` |
 | `extern_path=.pkg=::rust` | Map a proto package — or a single type, e.g. `extern_path=.pkg.Type=::rust::Type` — to an external Rust path |
 | `file_per_package=true` | Emit one `<dotted.package>.rs` per package instead of per-proto-file content + a `<dotted.pkg>.mod.rs` stitcher. Use this with the remote plugin when you don't want to install `protoc-gen-buffa-packaging` — see [Remote plugin only](#remote-plugin-only-no-local-install). Under `strategy: directory`, requires the input module to be `PACKAGE_DIRECTORY_MATCH`-clean. |
+| `idiomatic_imports=true` | **Experimental.** Emit `use`-backed short type names at the package root. Requires `file_per_package=true`. Only type declarations are shortened; the generated file must keep its `#[allow]` wrapper. |
 
 #### BSR-generated SDKs
 

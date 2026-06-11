@@ -213,10 +213,19 @@ pub enum StringRepr {
 impl StringRepr {
     /// The owned Rust type path emitted for a `string` field with this
     /// representation.
-    pub(crate) fn type_path(self, resolver: &imports::ImportResolver) -> proc_macro2::TokenStream {
+    ///
+    /// `ctx` and `nesting` route the default `String` through the
+    /// package-root import registry (`idiomatic_imports`); the non-default
+    /// representations stay fully qualified.
+    pub(crate) fn type_path(
+        self,
+        resolver: &imports::ImportResolver,
+        ctx: &context::CodeGenContext,
+        nesting: usize,
+    ) -> proc_macro2::TokenStream {
         use quote::quote;
         match self {
-            StringRepr::String => resolver.string(),
+            StringRepr::String => resolver.string_at(ctx, nesting),
             StringRepr::SmolStr => quote! { ::buffa::smol_str::SmolStr },
             StringRepr::EcoString => quote! { ::buffa::ecow::EcoString },
             StringRepr::CompactString => quote! { ::buffa::compact_str::CompactString },
@@ -616,6 +625,41 @@ pub struct CodeGenConfig {
     /// backward-compatible, and the all-or-nothing rule guarantees correctness on
     /// any enum.
     pub idiomatic_enum_aliases: bool,
+    /// Emit `use`-backed short type names at the package root instead of
+    /// fully-qualified paths, so generated code reads like hand-written
+    /// Rust (`pub at: MessageField<Timestamp>` instead of
+    /// `pub at: ::buffa::MessageField<::buffa_types::google::protobuf::Timestamp>`).
+    ///
+    /// Requires [`file_per_package`](Self::file_per_package): only there is
+    /// the package-root scope a single-writer file whose complete name set
+    /// is known at generation time. In the multi-file layout the stitcher
+    /// `include!`-merges every proto's content files into the shared root
+    /// scope, where emitted `use` directives could collide across files —
+    /// [`generate`] returns an error for that combination rather than
+    /// silently ignoring the flag.
+    ///
+    /// Off by default; default output is byte-for-byte unchanged. Short
+    /// names are always backed by an explicit `use` (never glob reliance),
+    /// are refused when they would collide with the package's own items or
+    /// names referenced bare by sibling emissions, and fall back to
+    /// parent-module qualification and then the fully-qualified path. The
+    /// short-name *assignment* (use block and per-path choices) is computed
+    /// from a collection pre-pass and is stable under `.proto` file
+    /// reordering; item order within the file still follows input order,
+    /// so whole-file output is not reorder-invariant. The pre-pass
+    /// generates the package twice, roughly doubling codegen time for it.
+    ///
+    /// Scope: only package-root *type declarations* (struct fields, oneof
+    /// `Option` wrappers) are shortened. Impl bodies, nested-message
+    /// modules, and `__buffa` internals keep fully-qualified paths — the
+    /// readability payoff lands where consumers look (struct definitions
+    /// and rustdoc), not in the codec internals.
+    ///
+    /// **Experimental** means: the generated-output shape may change
+    /// between releases (requiring regeneration of checked-in code), and
+    /// the option itself may be renamed or removed outside semver
+    /// guarantees.
+    pub idiomatic_imports: bool,
 }
 
 impl Default for CodeGenConfig {
@@ -645,6 +689,7 @@ impl Default for CodeGenConfig {
             generate_reflection_vtable: false,
             gate_reflect_on_crate_feature: false,
             idiomatic_enum_aliases: true,
+            idiomatic_imports: false,
         }
     }
 }
@@ -937,6 +982,18 @@ pub fn generate_with_diagnostics(
         return Err(CodeGenError::Other(
             "generate_reflection_vtable requires generate_reflection to be enabled \
              (it provides the descriptor pool the reflect impls resolve against)"
+                .into(),
+        ));
+    }
+
+    // Idiomatic imports place `use` directives in the package-root scope,
+    // which is only single-writer (collision-free by construction) when the
+    // whole package is one generated file.
+    if config.idiomatic_imports && !config.file_per_package {
+        return Err(CodeGenError::Other(
+            "idiomatic_imports requires file_per_package to be enabled (the multi-file \
+             layout include!-merges every proto's content into the shared package root, \
+             where emitted `use` directives could collide across files)"
                 .into(),
         ));
     }
@@ -1410,6 +1467,37 @@ fn generate_package(
     let mut reg = message::RegistryPaths::default();
     let mut root_reexports: Vec<message::ReexportCandidate> = Vec::new();
 
+    // Idiomatic imports: dry-run the package's generation once with the
+    // registry collecting, so the set of package-root path references is
+    // known — by construction, exactly the set the real pass will emit —
+    // then assign short names and generate for real with the registry
+    // resolving. Generation is deterministic, so the two passes see the
+    // same references; assignment sorts the collected set, so the result
+    // is also stable under `.proto` file reordering. The dry run's other
+    // outputs (tokens, registry paths, re-export candidates, warnings) are
+    // discarded; only the candidate *names* feed the occupied set, since a
+    // surviving re-export occupies a root name a `use` must not claim.
+    if ctx.config.idiomatic_imports && ctx.config.file_per_package {
+        ctx.imports_begin_collecting();
+        let warn_mark = ctx.warnings_len();
+        let mut scratch_reg = message::RegistryPaths::default();
+        let mut occupied = root_occupied_names(ctx, files);
+        for file in files {
+            let pc = generate_proto_content(ctx, current_package, file, &mut scratch_reg)?;
+            occupied.extend(pc.root_reexports.into_iter().map(|c| c.name));
+        }
+        ctx.truncate_warnings(warn_mark);
+        occupied.insert("register_types".to_string());
+        // The reflection pool accessor is re-exported at the package root
+        // directly by `generate_package_mod` (not via a ReexportCandidate),
+        // so the dry run doesn't capture it — reserve it explicitly.
+        if ctx.config.generate_reflection {
+            occupied.insert("descriptor_pool".to_string());
+        }
+        let collected = ctx.imports_take_collected();
+        ctx.imports_set_resolving(imports::RootImports::assign(&collected, &occupied));
+    }
+
     let sections = if ctx.config.file_per_package {
         let mut sections = PackageSections::default();
         for file in files {
@@ -1499,7 +1587,42 @@ fn generate_package(
         content: generate_package_mod(ctx, &sections, &reg, &reexport_block, fds_bytes)?,
     });
 
+    // Drop the import registry so its bindings can't leak into the next
+    // package's generation.
+    ctx.imports_reset();
+
     Ok(())
+}
+
+/// Names occupied at a package's root by real items: top-level messages,
+/// enums, message nested-types modules (deconflicted name, #135), and the
+/// `__buffa` sentinel itself.
+///
+/// The package root is shared across every `.proto` file in the package, so
+/// the set is built from *all* of them. File-level extension consts live in
+/// `__buffa::ext::`, not at the root, so they are re-export *candidates*
+/// (added by `generate_proto_content`) rather than occupants. Used both to
+/// filter root re-exports and as the base reserved set for
+/// `idiomatic_imports` short-name assignment.
+fn root_occupied_names(
+    ctx: &context::CodeGenContext,
+    files: &[&FileDescriptorProto],
+) -> std::collections::BTreeSet<String> {
+    let mut occupied = std::collections::BTreeSet::new();
+    occupied.insert(context::SENTINEL_MOD.to_string());
+    for file in files {
+        let package = file.package.as_deref().unwrap_or("");
+        for m in &file.message_type {
+            let name = m.name.as_deref().unwrap_or("");
+            occupied.insert(name.to_string());
+            // The actual module name (deconflicted from sub-packages, #135).
+            occupied.insert(ctx.nested_module_name(package, name));
+        }
+        for e in &file.enum_type {
+            occupied.insert(e.name.as_deref().unwrap_or("").to_string());
+        }
+    }
+    occupied
 }
 
 /// Filter the candidate package-root re-exports against the package's
@@ -1517,27 +1640,8 @@ fn surviving_root_reexports(
     mut candidates: Vec<message::ReexportCandidate>,
 ) -> TokenStream {
     use crate::idents::make_field_ident;
-    use std::collections::BTreeSet;
 
-    // Names already occupied at package root by real items: top-level
-    // messages, enums, message nested-types modules (deconflicted name, #135),
-    // and the `__buffa` sentinel itself. File-level extension consts live in
-    // `__buffa::ext::`, not at the root, so they are *candidates* (added
-    // by `generate_proto_content`) rather than occupants.
-    let mut occupied: BTreeSet<String> = BTreeSet::new();
-    occupied.insert(context::SENTINEL_MOD.to_string());
-    for file in files {
-        let package = file.package.as_deref().unwrap_or("");
-        for m in &file.message_type {
-            let name = m.name.as_deref().unwrap_or("");
-            occupied.insert(name.to_string());
-            // The actual module name (deconflicted from sub-packages, #135).
-            occupied.insert(ctx.nested_module_name(package, name));
-        }
-        for e in &file.enum_type {
-            occupied.insert(e.name.as_deref().unwrap_or("").to_string());
-        }
-    }
+    let occupied = root_occupied_names(ctx, files);
 
     // `register_types`, when emitted, lives at `__buffa::register_types`.
     // `self::` and `#[doc(inline)]` for the same reasons as the view
@@ -1738,7 +1842,20 @@ fn generate_package_mod(
         }
     };
 
+    // Idiomatic imports: the `use` block backing the package-root short
+    // names (empty unless the registry is in its resolution phase). Only
+    // ever non-empty in file_per_package mode, where this output is the
+    // whole single-writer package file.
+    //
+    // Load-bearing lint coupling: impl bodies still write fully-qualified
+    // paths (e.g. `::buffa::MessageField<…>`) for types this block also
+    // imports — exactly what `unused_qualifications` flags. That lint is
+    // suppressed by the `ALLOW_LINTS` attr the module-tree wrapper carries,
+    // so generated files must keep their `#[allow]` wrapper when consumed.
+    let use_block = ctx.imports_use_block();
+
     let tokens = quote! {
+        #use_block
         #(#owned)*
         #buffa_mod
         #reflect_reexport

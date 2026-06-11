@@ -265,7 +265,7 @@ fn generate_message_with_nesting(
             let enum_ident = oneof_idents.get(&idx)?;
             let oneof_name = oneof.name.as_deref()?;
             let field_ident = make_field_ident(oneof_name);
-            let opt = resolver.option();
+            let opt = resolver.option_at(ctx, nesting);
             let tokens = quote! {
                 #oneof_serde_attr
                 pub #field_ident: #opt<#oneof_prefix #enum_ident>,
@@ -1302,7 +1302,7 @@ fn custom_deser_oneof_group(
         {
             quote! { ::buffa::bytes::Bytes }
         } else if field_type == Type::TYPE_STRING && !variant_string_repr.is_default() {
-            variant_string_repr.type_path(resolver)
+            variant_string_repr.type_path(resolver, ctx, nesting)
         } else {
             scalar_or_message_type_nested(ctx, field, current_package, nesting, features, resolver)?
         };
@@ -1444,11 +1444,17 @@ fn classify_field(
         )
     });
 
-    let bytes_type = if use_bytes {
-        quote! { ::buffa::bytes::Bytes }
-    } else {
-        let vec = resolver.vec();
-        quote! { #vec<u8> }
+    // Lazy: the import-collection pass records every requested path, so
+    // computing these eagerly for non-bytes/non-string fields would record
+    // `Vec`/`String` requests with no use site — and the emitted `use`
+    // block would trip `unused_imports` in the consumer crate.
+    let bytes_type = || {
+        if use_bytes {
+            quote! { ::buffa::bytes::Bytes }
+        } else {
+            let vec = resolver.vec_at(ctx, nesting);
+            quote! { #vec<u8> }
+        }
     };
 
     // Configurable owned representation for `string` fields (default `String`).
@@ -1460,52 +1466,52 @@ fn classify_field(
     } else {
         crate::StringRepr::String
     };
-    let string_type = string_repr.type_path(resolver);
+    let string_type = || string_repr.type_path(resolver, ctx, nesting);
 
     let mut inner_opt_type: Option<TokenStream> = None;
     let rust_type = if let Some(entry) = map_entry {
         map_rust_type_from_entry(scope, entry, map_value_use_bytes, resolver)?
     } else if is_repeated {
         let elem = if field_type == Type::TYPE_BYTES {
-            bytes_type
+            bytes_type()
         } else if field_type == Type::TYPE_STRING {
-            string_type
+            string_type()
         } else {
             scalar_or_message_type_nested(ctx, field, current_package, nesting, features, resolver)?
         };
         {
-            let vec = resolver.vec();
+            let vec = resolver.vec_at(ctx, nesting);
             quote! { #vec<#elem> }
         }
     } else if field_type == Type::TYPE_MESSAGE || field_type == Type::TYPE_GROUP {
         let inner = resolve_message_type(scope, field)?;
         {
-            let mf = resolver.message_field();
+            let mf = resolver.message_field_at(ctx, nesting);
             quote! { #mf<#inner> }
         }
     } else if is_optional {
         let inner = if field_type == Type::TYPE_ENUM {
             resolve_enum_type(scope, field, resolver)?
         } else if field_type == Type::TYPE_BYTES {
-            bytes_type
+            bytes_type()
         } else if field_type == Type::TYPE_STRING {
-            string_type
+            string_type()
         } else {
-            scalar_rust_type(field_type, resolver)?
+            scalar_rust_type(field_type, resolver, ctx, nesting)?
         };
         inner_opt_type = Some(inner.clone());
         {
-            let opt = resolver.option();
+            let opt = resolver.option_at(ctx, nesting);
             quote! { #opt<#inner> }
         }
     } else if field_type == Type::TYPE_ENUM {
         resolve_enum_type(scope, field, resolver)?
     } else if field_type == Type::TYPE_BYTES {
-        bytes_type
+        bytes_type()
     } else if field_type == Type::TYPE_STRING {
-        string_type
+        string_type()
     } else {
-        scalar_rust_type(field_type, resolver)?
+        scalar_rust_type(field_type, resolver, ctx, nesting)?
     };
 
     // Self-referential struct fields (e.g. DescriptorProto.nested_type) can
@@ -1517,10 +1523,10 @@ fn classify_field(
     let is_self_ref = field.type_name.as_deref() == Some(self_fqn.as_str()) && !is_map;
     let struct_field_type = if is_self_ref {
         if is_repeated {
-            let vec = resolver.vec();
+            let vec = resolver.vec_at(ctx, nesting);
             quote! { #vec<Self> }
         } else {
-            let mf = resolver.message_field();
+            let mf = resolver.message_field_at(ctx, nesting);
             quote! { #mf<Self> }
         }
     } else {
@@ -1840,7 +1846,7 @@ fn map_rust_type_from_entry(
         )?
     };
 
-    let hm = resolver.hashmap();
+    let hm = resolver.hashmap_at(ctx, nesting);
     Ok(quote! { #hm<#key_type, #value_type> })
 }
 
@@ -1869,7 +1875,7 @@ pub(crate) fn scalar_or_message_type_nested(
     match crate::impl_message::effective_type(ctx, field, features) {
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => resolve_message_type(scope, field),
         Type::TYPE_ENUM => resolve_enum_type(scope, field, resolver),
-        other => scalar_rust_type(other, resolver),
+        other => scalar_rust_type(other, resolver, ctx, nesting),
     }
 }
 
@@ -1917,7 +1923,7 @@ fn resolve_enum_type(
     if is_closed_enum(&field_features) {
         Ok(quote! { #ty })
     } else {
-        let ev = resolver.enum_value();
+        let ev = resolver.enum_value_at(scope.ctx, scope.nesting);
         Ok(quote! { #ev<#ty> })
     }
 }
@@ -1936,6 +1942,8 @@ pub(crate) fn is_closed_enum(features: &ResolvedFeatures) -> bool {
 fn scalar_rust_type(
     t: Type,
     resolver: &crate::imports::ImportResolver,
+    ctx: &CodeGenContext,
+    nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
     match t {
         Type::TYPE_DOUBLE => Ok(quote! { f64 }),
@@ -1945,9 +1953,9 @@ fn scalar_rust_type(
         Type::TYPE_INT32 | Type::TYPE_SINT32 | Type::TYPE_SFIXED32 => Ok(quote! { i32 }),
         Type::TYPE_UINT32 | Type::TYPE_FIXED32 => Ok(quote! { u32 }),
         Type::TYPE_BOOL => Ok(quote! { bool }),
-        Type::TYPE_STRING => Ok(resolver.string()),
+        Type::TYPE_STRING => Ok(resolver.string_at(ctx, nesting)),
         Type::TYPE_BYTES => {
-            let vec = resolver.vec();
+            let vec = resolver.vec_at(ctx, nesting);
             Ok(quote! { #vec<u8> })
         }
         Type::TYPE_GROUP | Type::TYPE_MESSAGE | Type::TYPE_ENUM => Err(CodeGenError::Other(

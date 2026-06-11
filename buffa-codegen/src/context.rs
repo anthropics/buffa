@@ -107,6 +107,18 @@ pub struct CodeGenContext<'a> {
     ///
     /// [`generate_with_diagnostics`]: crate::generate_with_diagnostics
     warnings: std::cell::RefCell<Vec<crate::CodeGenWarning>>,
+    /// Package-root import phase for `CodeGenConfig::idiomatic_imports`
+    /// (file_per_package mode only). [`ImportsPhase::Off`] outside the
+    /// two-pass window, so every path resolver below is a no-op by default.
+    ///
+    /// Interior-mutable for the same reason as `warnings`: the leaf path
+    /// resolvers ([`rust_type_relative`](Self::rust_type_relative),
+    /// [`root_runtime_path`](Self::root_runtime_path)) participate through
+    /// the shared `&CodeGenContext` without threading a registry through
+    /// every emission signature.
+    ///
+    /// [`ImportsPhase::Off`]: crate::imports::ImportsPhase::Off
+    imports: std::cell::RefCell<crate::imports::ImportsPhase>,
 }
 
 /// The immediate child-package segment names directly under `package`.
@@ -404,6 +416,7 @@ impl<'a> CodeGenContext<'a> {
             nested_module_names,
             unboxed_oneof_variants,
             warnings: std::cell::RefCell::new(Vec::new()),
+            imports: std::cell::RefCell::new(crate::imports::ImportsPhase::Off),
         }
     }
 
@@ -419,6 +432,97 @@ impl<'a> CodeGenContext<'a> {
     /// diagnostic stream.
     pub(crate) fn take_warnings(&self) -> Vec<crate::CodeGenWarning> {
         self.warnings.take()
+    }
+
+    /// Truncate the warning sink back to `len` entries.
+    ///
+    /// Used by the `idiomatic_imports` collection pass, whose dry-run
+    /// generation would otherwise record every diagnostic twice.
+    pub(crate) fn truncate_warnings(&self, len: usize) {
+        self.warnings.borrow_mut().truncate(len);
+    }
+
+    /// The number of warnings recorded so far (a mark for
+    /// [`truncate_warnings`](Self::truncate_warnings)).
+    pub(crate) fn warnings_len(&self) -> usize {
+        self.warnings.borrow().len()
+    }
+
+    // ── Package-root import registry (idiomatic_imports) ────────────────
+
+    /// Enter the collection phase: subsequent package-root path
+    /// resolutions are recorded instead of shortened.
+    pub(crate) fn imports_begin_collecting(&self) {
+        *self.imports.borrow_mut() =
+            crate::imports::ImportsPhase::Collecting(std::collections::BTreeSet::new());
+    }
+
+    /// Leave the collection phase, returning the recorded paths.
+    pub(crate) fn imports_take_collected(&self) -> std::collections::BTreeSet<String> {
+        match self.imports.replace(crate::imports::ImportsPhase::Off) {
+            crate::imports::ImportsPhase::Collecting(set) => set,
+            _ => std::collections::BTreeSet::new(),
+        }
+    }
+
+    /// Enter the resolution phase with assigned bindings.
+    pub(crate) fn imports_set_resolving(&self, imports: crate::imports::RootImports) {
+        *self.imports.borrow_mut() = crate::imports::ImportsPhase::Resolving(imports);
+    }
+
+    /// Reset to [`ImportsPhase::Off`] after a package is generated, so
+    /// state never leaks into the next package.
+    ///
+    /// [`ImportsPhase::Off`]: crate::imports::ImportsPhase::Off
+    pub(crate) fn imports_reset(&self) {
+        *self.imports.borrow_mut() = crate::imports::ImportsPhase::Off;
+    }
+
+    /// The `use` block backing the current package's assigned short names
+    /// (empty unless in the resolution phase).
+    pub(crate) fn imports_use_block(&self) -> proc_macro2::TokenStream {
+        match &*self.imports.borrow() {
+            crate::imports::ImportsPhase::Resolving(imports) => imports.use_items(),
+            _ => proc_macro2::TokenStream::new(),
+        }
+    }
+
+    /// Route a package-root type path through the import registry.
+    ///
+    /// `nesting` is the emitting scope's module depth below the package
+    /// root; only depth-0 emissions land in the package-root scope where
+    /// the `use` block is visible, so anything deeper passes through
+    /// unchanged — as does everything when the registry is off.
+    fn root_path(&self, path: String, nesting: usize) -> String {
+        if nesting != 0 {
+            return path;
+        }
+        match &mut *self.imports.borrow_mut() {
+            crate::imports::ImportsPhase::Off => path,
+            crate::imports::ImportsPhase::Collecting(set) => {
+                if crate::imports::shortenable(&path) {
+                    set.insert(path.clone());
+                }
+                path
+            }
+            crate::imports::ImportsPhase::Resolving(imports) => match imports.resolve(&path) {
+                Some(short) => short.to_string(),
+                None => path,
+            },
+        }
+    }
+
+    /// Route a runtime/prelude type's canonical qualified path through the
+    /// import registry, returning the tokens to emit.
+    ///
+    /// Same depth-0 gating as [`root_path`](Self::root_path); `canonical`
+    /// must be one of the `RUNTIME_IMPORTS` paths in `imports.rs`.
+    pub(crate) fn root_runtime_path(
+        &self,
+        canonical: &str,
+        nesting: usize,
+    ) -> proc_macro2::TokenStream {
+        crate::idents::rust_path_to_tokens(&self.root_path(canonical.to_string(), nesting))
     }
 
     /// The nested-types module name for a top-level message, deconflicted
@@ -516,7 +620,7 @@ impl<'a> CodeGenContext<'a> {
         // Extern types use absolute paths (starting with `::` or `crate::`)
         // and need no relative resolution — they work from any module position.
         if full_path.starts_with("::") || full_path.starts_with("crate::") {
-            return Some(full_path.clone());
+            return Some(self.root_path(full_path.clone(), nesting));
         }
 
         let target_package = self
@@ -581,7 +685,7 @@ impl<'a> CodeGenContext<'a> {
         }
         result.push_str(type_suffix);
 
-        Some(result)
+        Some(self.root_path(result, nesting))
     }
 
     /// Like [`rust_type_relative`](Self::rust_type_relative) but returns the

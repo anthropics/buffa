@@ -419,6 +419,30 @@ fn main() {
         .compile()
         .expect("buffa_build failed for ext_json.proto");
 
+    // Idiomatic imports (experimental, requires file_per_package) —
+    // package-root type references emitted as `use`-backed short names.
+    // Compiling the output (cross-package use, extern use, parent-module
+    // rung after a local collision, runtime-type claims, qualified nested
+    // and oneof scopes) IS the main test; runtime tests verify wire-format
+    // equivalence with default codegen. json=true hardens the serde-shadow
+    // reservation at the package root.
+    let idiomatic_out =
+        std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("idiomatic_variant");
+    std::fs::create_dir_all(&idiomatic_out).expect("create idiomatic_variant dir");
+    buffa_build::Config::new()
+        .files(&[
+            "protos/idiomatic_imports.proto",
+            "protos/idiomatic_imports_dep.proto",
+        ])
+        .includes(&["protos/"])
+        .file_per_package(true)
+        .idiomatic_imports(true)
+        .generate_json(true)
+        .include_file("_include.rs")
+        .out_dir(idiomatic_out)
+        .compile()
+        .expect("buffa_build failed for idiomatic_imports.proto");
+
     // Group-encoded extensions — editions `features.message_encoding = DELIMITED`
     // makes message-typed extensions emit `GroupCodec<M>` instead of
     // `MessageCodec<M>` (wire types 3/4 instead of 2).

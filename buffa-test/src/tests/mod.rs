@@ -37,6 +37,7 @@ mod editions_2024;
 mod editions_enum_json;
 mod extensions;
 mod extensions_json;
+mod idiomatic_imports;
 mod json;
 mod keyword;
 mod message_set;

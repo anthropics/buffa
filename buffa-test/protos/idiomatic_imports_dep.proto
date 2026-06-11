@@ -1,0 +1,23 @@
+// Companion package for idiomatic_imports.proto: referenced cross-package,
+// so its types arrive at test.idiomatic's package root as super::-rooted
+// paths eligible for `use`-backed shortening.
+
+syntax = "proto3";
+
+package test.idiomatic_other;
+
+message Dep {
+  string label = 1;
+}
+
+// Shares its leaf name with a message defined in test.idiomatic, so the
+// reference from there falls down the alias ladder to parent-module
+// qualification (`idiomatic_other::Clash`).
+message Clash {
+  int32 n = 1;
+}
+
+enum DepKind {
+  DEP_KIND_UNSPECIFIED = 0;
+  DEP_KIND_PRIMARY = 1;
+}

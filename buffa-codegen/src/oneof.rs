@@ -300,7 +300,7 @@ fn collect_variant_info(
             let rust_type = if use_bytes {
                 quote! { ::buffa::bytes::Bytes }
             } else if field_type == Type::TYPE_STRING && !string_repr.is_default() {
-                string_repr.type_path(resolver)
+                string_repr.type_path(resolver, ctx, nesting + 3)
             } else {
                 scalar_or_message_type_nested(
                     ctx,
