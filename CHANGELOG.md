@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **New `buffa-yaml` crate: YAML serialization with protobuf-JSON semantics**
+  (Phase 1 of protoyaml support, #101). A thin carrier layer that routes
+  buffa's generated protobuf-JSON serde impls through `serde_norway`, so YAML
+  I/O gets the full protobuf JSON mapping: `camelCase`/`snake_case` field
+  names, quoted `int64`/`uint64`, base64 bytes, enum string names, and
+  canonical well-known-type encodings. Public API: `to_string`, `to_writer`,
+  `from_str`, `from_slice`, `from_reader`, plus `to_string_view` /
+  `to_writer_view` for zero-copy views, and an `Error` type exposing a
+  carrier-agnostic `Location { line, column }`. Requires message types
+  generated with `json = true`. Contributed by @rsd-darshan.
+
 ### Fixed
 
 - **`DecodeOptions::decode_length_delimited_reader` no longer allocates the
