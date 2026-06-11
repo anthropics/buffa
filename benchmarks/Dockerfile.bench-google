@@ -8,7 +8,7 @@
 #   docker build -t buffa-bench-google -f benchmarks/Dockerfile.bench-google .
 #   docker run --rm buffa-bench-google
 
-FROM rust:1.85-slim AS builder
+FROM rust:1.87-slim AS builder
 
 # Install build tools: cmake and g++ for upb, curl/unzip for protoc download.
 RUN apt-get update && apt-get install -y \
