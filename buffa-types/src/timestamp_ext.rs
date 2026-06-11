@@ -418,7 +418,7 @@ mod tests {
         assert_eq!(view.seconds, ts.seconds);
         assert_eq!(view.nanos, ts.nanos);
 
-        let owned = view.to_owned_message();
+        let owned = view.to_owned_message().unwrap();
         assert_eq!(owned, ts);
     }
 

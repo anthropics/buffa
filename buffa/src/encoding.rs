@@ -379,12 +379,15 @@ pub fn skip_field(tag: Tag, buf: &mut impl Buf) -> Result<(), DecodeError> {
 
 /// Skip a field's payload, with an explicit recursion depth budget for groups.
 ///
-/// Generated code must call this (not [`skip_field`]) when a `depth` parameter
-/// is in scope, to prevent unknown group fields from resetting the recursion
-/// budget and allowing depth-doubling attacks.
+/// Generated code must call this (not [`skip_field`]) when a decode context
+/// is in scope (passing `ctx.depth()`), to prevent unknown group fields from
+/// resetting the recursion budget and allowing depth-doubling attacks.
 ///
 /// `depth` is the remaining nesting budget. For group fields this function
 /// calls itself recursively, decrementing `depth` by one each level.
+/// Unlike [`decode_unknown_field`], skipping materializes nothing, so this
+/// function deliberately takes only the depth — it never consumes the
+/// unknown-field allowance.
 ///
 /// # Errors
 ///
@@ -448,31 +451,43 @@ pub fn skip_field_depth(tag: Tag, buf: &mut impl Buf, depth: u32) -> Result<(), 
 /// payload that follows it on the wire. Groups are decoded recursively until
 /// their matching `EndGroup` tag.
 ///
-/// `depth` is the remaining nesting budget.  For group fields this function
-/// calls itself recursively, decrementing `depth` by one each time.  When it
-/// reaches zero [`DecodeError::RecursionLimitExceeded`] is returned.  Pass
-/// [`crate::message::RECURSION_LIMIT`] at the outermost call site; generated
-/// code passes the `depth` value received by the enclosing `merge`.
+/// `ctx` carries the remaining nesting depth and the shared unknown-field
+/// allowance.  For group fields this function calls itself recursively,
+/// consuming one depth level each time.  When the depth reaches zero
+/// [`DecodeError::RecursionLimitExceeded`] is returned.  Construct a fresh
+/// [`DecodeContext`](crate::DecodeContext) at the outermost call site;
+/// generated code passes the `ctx` value received by the enclosing `merge`.
 ///
 /// # Errors
 ///
 /// Returns an error if the buffer is truncated, the wire type is
 /// `EndGroup` (which indicates a structural mismatch in the wire data),
-/// or the recursion limit is exceeded.
+/// the recursion limit is exceeded, or the unknown-field limit is
+/// exceeded.
 ///
 /// # Allocation
 ///
-/// Length-delimited unknown fields allocate `vec![0u8; len]` where `len`
-/// comes from wire data. The `buf.remaining() < len` check prevents
-/// reading past the buffer, but callers processing untrusted input should
-/// limit the input buffer size to bound maximum allocation.
+/// Unknown fields can occupy far more memory decoded than encoded: a
+/// 2-byte varint field becomes a ~40-byte
+/// [`UnknownField`](crate::UnknownField), so an input-size cap alone does
+/// **not** bound decoder memory. Every decoded field consumes one slot of
+/// the context's shared unknown-field allowance **before** it is
+/// materialized; when the allowance is exhausted decoding fails with
+/// [`DecodeError::UnknownFieldLimitExceeded`]. Length-delimited payload
+/// bytes are bounded by the input itself (the `buf.remaining() < len`
+/// check forces the sender to actually deliver them), so they are not
+/// counted against the limit — cap the input size to bound them.
 pub fn decode_unknown_field(
     tag: Tag,
     buf: &mut impl Buf,
-    depth: u32,
+    ctx: crate::DecodeContext<'_>,
 ) -> Result<crate::unknown_fields::UnknownField, DecodeError> {
     use crate::unknown_fields::{UnknownField, UnknownFieldData, UnknownFields};
 
+    // Every decoded field occupies one `UnknownField` slot in its parent's
+    // vector — consume an allowance slot up front so runs of tiny fields
+    // (2 wire bytes each) cannot amplify into unbounded heap growth.
+    ctx.register_unknown_field()?;
     let data = match tag.wire_type() {
         WireType::Varint => UnknownFieldData::Varint(decode_varint(buf)?),
         WireType::Fixed64 => {
@@ -498,9 +513,7 @@ pub fn decode_unknown_field(
             UnknownFieldData::LengthDelimited(data)
         }
         WireType::StartGroup => {
-            let depth = depth
-                .checked_sub(1)
-                .ok_or(DecodeError::RecursionLimitExceeded)?;
+            let ctx = ctx.descend()?;
             let group_field_number = tag.field_number();
             // Read nested fields until the matching EndGroup tag.
             let mut nested = UnknownFields::new();
@@ -514,7 +527,7 @@ pub fn decode_unknown_field(
                     }
                     break;
                 }
-                nested.push(decode_unknown_field(nested_tag, buf, depth)?);
+                nested.push(decode_unknown_field(nested_tag, buf, ctx)?);
             }
             UnknownFieldData::Group(nested)
         }
@@ -787,7 +800,7 @@ mod tests {
         // depth = 1: checked_sub(1) = 0, which is the floor but still Ok.
         let payload = encode_group_payload(1, &[]);
         let tag = Tag::new(1, WireType::StartGroup);
-        let result = decode_unknown_field(tag, &mut payload.as_slice(), 1);
+        let result = decode_unknown_field(tag, &mut payload.as_slice(), crate::test_ctx(1));
         assert!(result.is_ok());
     }
 
@@ -797,8 +810,109 @@ mod tests {
         let payload = encode_group_payload(1, &[]);
         let tag = Tag::new(1, WireType::StartGroup);
         assert_eq!(
-            decode_unknown_field(tag, &mut payload.as_slice(), 0),
+            decode_unknown_field(tag, &mut payload.as_slice(), crate::test_ctx(0)),
             Err(DecodeError::RecursionLimitExceeded)
+        );
+    }
+
+    // ---- decode_unknown_field: unknown-field limit -------------------------
+
+    /// Group-amplification payload: the body of a group containing `n`
+    /// minimal (2-byte) varint fields. Each inflates to a ~40-byte
+    /// `UnknownField`, so wire size amplifies ~20× in memory.
+    fn group_amp_body(n: usize) -> Vec<u8> {
+        let mut inner = Vec::with_capacity(2 * n);
+        for _ in 0..n {
+            inner.push(0x08); // field 1, Varint
+            inner.push(0x00); // value 0
+        }
+        encode_group_payload(1, &inner)
+    }
+
+    #[test]
+    fn test_group_amplification_exhausts_limit() {
+        // 1000 nested 2-byte varints, but only 100 unknown-field slots:
+        // the decoder must refuse long before materializing them all.
+        let payload = group_amp_body(1000);
+        let limit = core::cell::Cell::new(100);
+        let ctx = crate::DecodeContext::new(crate::RECURSION_LIMIT, &limit);
+        let tag = Tag::new(1, WireType::StartGroup);
+        assert_eq!(
+            decode_unknown_field(tag, &mut payload.as_slice(), ctx),
+            Err(DecodeError::UnknownFieldLimitExceeded)
+        );
+    }
+
+    #[test]
+    fn test_group_amplification_within_limit_succeeds() {
+        // The same payload decodes fine when the limit covers it.
+        let payload = group_amp_body(1000);
+        let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
+        let ctx = crate::DecodeContext::new(crate::RECURSION_LIMIT, &limit);
+        let tag = Tag::new(1, WireType::StartGroup);
+        let field = decode_unknown_field(tag, &mut payload.as_slice(), ctx).unwrap();
+        let crate::unknown_fields::UnknownFieldData::Group(nested) = field.data else {
+            panic!("expected group");
+        };
+        assert_eq!(nested.iter().count(), 1000);
+        // The allowance recorded all 1001 UnknownField slots (1000 nested +
+        // the group itself).
+        assert_eq!(
+            limit.get(),
+            crate::DEFAULT_UNKNOWN_FIELD_LIMIT - 1001,
+            "every decoded field must consume one slot"
+        );
+    }
+
+    #[test]
+    fn test_limit_shared_across_sibling_fields() {
+        // Two sibling unknown fields decoded under one context draw from the
+        // same allowance: one slot admits the first field but not the second.
+        let limit = core::cell::Cell::new(1);
+        let ctx = crate::DecodeContext::new(crate::RECURSION_LIMIT, &limit);
+        let tag = Tag::new(1, WireType::Varint);
+        let mut payload: &[u8] = &[0x00];
+        decode_unknown_field(tag, &mut payload, ctx).expect("first field fits");
+        let mut payload: &[u8] = &[0x00];
+        assert_eq!(
+            decode_unknown_field(tag, &mut payload, ctx),
+            Err(DecodeError::UnknownFieldLimitExceeded)
+        );
+    }
+
+    #[test]
+    fn test_length_delimited_payload_counts_as_one_field() {
+        // A large length-delimited payload consumes exactly one slot — its
+        // bytes are bounded by the input, not by the field limit.
+        let mut payload = Vec::new();
+        encode_varint(4096, &mut payload);
+        payload.extend_from_slice(&[0u8; 4096]);
+        let limit = core::cell::Cell::new(1);
+        let ctx = crate::DecodeContext::new(crate::RECURSION_LIMIT, &limit);
+        let tag = Tag::new(1, WireType::LengthDelimited);
+        decode_unknown_field(tag, &mut payload.as_slice(), ctx).expect("one slot suffices");
+        assert_eq!(limit.get(), 0);
+        // With no slots left, even a minimal field is refused.
+        let mut tiny: &[u8] = &[0x00];
+        assert_eq!(
+            decode_unknown_field(Tag::new(1, WireType::Varint), &mut tiny, ctx),
+            Err(DecodeError::UnknownFieldLimitExceeded)
+        );
+    }
+
+    #[test]
+    fn test_length_delimited_truncated_still_reports_eof() {
+        // A truncated payload reports UnexpectedEof: the declared length is
+        // never allocated unless the sender actually delivers the bytes.
+        let mut payload = Vec::new();
+        encode_varint(4096, &mut payload);
+        payload.extend_from_slice(&[0u8; 16]); // 16 of 4096 bytes
+        let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
+        let ctx = crate::DecodeContext::new(crate::RECURSION_LIMIT, &limit);
+        let tag = Tag::new(1, WireType::LengthDelimited);
+        assert_eq!(
+            decode_unknown_field(tag, &mut payload.as_slice(), ctx),
+            Err(DecodeError::UnexpectedEof)
         );
     }
 
@@ -809,7 +923,7 @@ mod tests {
         Tag::new(2, WireType::EndGroup).encode(&mut payload); // wrong field number
         let tag = Tag::new(1, WireType::StartGroup);
         assert_eq!(
-            decode_unknown_field(tag, &mut payload.as_slice(), 1),
+            decode_unknown_field(tag, &mut payload.as_slice(), crate::test_ctx(1)),
             Err(DecodeError::InvalidEndGroup(2))
         );
     }
@@ -884,7 +998,7 @@ mod tests {
             let got = decode_unknown_field(
                 case.tag,
                 &mut case.payload.as_slice(),
-                crate::RECURSION_LIMIT,
+                crate::test_ctx(crate::RECURSION_LIMIT),
             )
             .unwrap_or_else(|e| panic!("decode failed for tag {:?}: {e}", case.tag));
             assert_eq!(got.number, case.tag.field_number());
@@ -906,7 +1020,11 @@ mod tests {
         ];
         for &(tag, payload) in cases {
             assert_eq!(
-                decode_unknown_field(tag, &mut &payload[..], crate::RECURSION_LIMIT),
+                decode_unknown_field(
+                    tag,
+                    &mut &payload[..],
+                    crate::test_ctx(crate::RECURSION_LIMIT)
+                ),
                 Err(DecodeError::UnexpectedEof),
                 "tag {tag:?}"
             );
@@ -918,7 +1036,7 @@ mod tests {
         // EndGroup as a top-level tag is invalid (only valid inside a group).
         let tag = Tag::new(1, WireType::EndGroup);
         assert_eq!(
-            decode_unknown_field(tag, &mut &[][..], crate::RECURSION_LIMIT),
+            decode_unknown_field(tag, &mut &[][..], crate::test_ctx(crate::RECURSION_LIMIT)),
             Err(DecodeError::InvalidWireType(4))
         );
     }
@@ -961,7 +1079,10 @@ mod tests {
         let mut cur = buf.as_slice();
         while !cur.is_empty() {
             let tag = Tag::decode(&mut cur).unwrap();
-            decoded.push(decode_unknown_field(tag, &mut cur, crate::RECURSION_LIMIT).unwrap());
+            decoded.push(
+                decode_unknown_field(tag, &mut cur, crate::test_ctx(crate::RECURSION_LIMIT))
+                    .unwrap(),
+            );
         }
         assert_eq!(decoded, original);
     }
@@ -1108,7 +1229,7 @@ mod tests {
         let tag = Tag::new(1, WireType::LengthDelimited);
         let mut buf: &[u8] = OVERSIZED_VARINT;
         assert_eq!(
-            decode_unknown_field(tag, &mut buf, crate::RECURSION_LIMIT),
+            decode_unknown_field(tag, &mut buf, crate::test_ctx(crate::RECURSION_LIMIT)),
             Err(DecodeError::MessageTooLarge)
         );
     }

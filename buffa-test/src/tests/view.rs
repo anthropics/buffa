@@ -8,6 +8,15 @@ use crate::basic::*;
 use buffa::view::OwnedView;
 use buffa::{Message, MessageView, ViewEncode};
 
+/// Build a `DecodeContext` at `depth` with a fresh default unknown-field
+/// allowance, leaking the cell (tests only).
+fn view_ctx(depth: u32) -> buffa::DecodeContext<'static> {
+    let limit = Box::leak(Box::new(core::cell::Cell::new(
+        buffa::DEFAULT_UNKNOWN_FIELD_LIMIT,
+    )));
+    buffa::DecodeContext::new(depth, limit)
+}
+
 #[test]
 fn test_view_decodes_scalar_fields() {
     let mut msg = Person::default();
@@ -121,7 +130,7 @@ fn test_view_to_owned_roundtrip() {
     msg.contact = Some(oneof::person::Contact::Phone("+1-555-0000".into()));
     let bytes = msg.encode_to_vec();
     let view = PersonView::decode_view(&bytes).expect("decode_view");
-    let owned = view.to_owned_message();
+    let owned = view.to_owned_message().unwrap();
     assert_eq!(owned.id, 42);
     assert_eq!(owned.name, "Carol");
     assert_eq!(owned.tags, vec!["x", "y"]);
@@ -161,7 +170,7 @@ fn test_view_recursion_limit_exceeded() {
     let mut msg = Person::default();
     msg.address.get_or_insert_default().street = "1 Main St".into();
     let bytes = msg.encode_to_vec();
-    let result = PersonView::_decode_depth(&bytes, 0);
+    let result = PersonView::_decode_ctx(&bytes, view_ctx(0));
     assert!(
         matches!(result, Err(buffa::DecodeError::RecursionLimitExceeded)),
         "expected RecursionLimitExceeded, got {result:?}"
@@ -187,14 +196,14 @@ fn test_unknown_group_respects_depth_budget() {
     // Via Person merge (owned path, preserve_unknown_fields=true by default
     // — decode_unknown_field is used there, which was already correct).
     // The view path is what was broken.
-    let result = PersonView::_decode_depth(&wire, 1);
+    let result = PersonView::_decode_ctx(&wire, view_ctx(1));
     assert!(
         matches!(result, Err(buffa::DecodeError::RecursionLimitExceeded)),
         "unknown nested group must respect depth budget, got {result:?}"
     );
 
     // With depth=2, should succeed (one level per group).
-    let result = PersonView::_decode_depth(&wire, 2);
+    let result = PersonView::_decode_ctx(&wire, view_ctx(2));
     assert!(result.is_ok(), "depth=2 should suffice, got {result:?}");
 }
 
@@ -233,7 +242,7 @@ fn test_view_map_to_owned_roundtrip() {
     inv.stock.insert("y".into(), 7);
     let bytes = inv.encode_to_vec();
     let view = InventoryView::decode_view(&bytes).expect("decode_view");
-    let owned = view.to_owned_message();
+    let owned = view.to_owned_message().unwrap();
     assert_eq!(owned.stock.get("x"), Some(&42));
     assert_eq!(owned.stock.get("y"), Some(&7));
 }
@@ -247,7 +256,7 @@ fn test_view_map_message_to_owned_roundtrip() {
     inv.locations.insert("hq".into(), addr.clone());
     let bytes = inv.encode_to_vec();
     let view = InventoryView::decode_view(&bytes).expect("decode_view");
-    let owned = view.to_owned_message();
+    let owned = view.to_owned_message().unwrap();
     assert_eq!(owned.locations.get("hq"), Some(&addr));
 }
 
@@ -330,7 +339,7 @@ fn test_view_map_with_open_enum_value() {
     // Unknown value survives view decode + to_owned.
     assert_eq!(collected.get("svc3"), Some(&buffa::EnumValue::Unknown(99)));
 
-    let owned = view.to_owned_message();
+    let owned = view.to_owned_message().unwrap();
     assert_eq!(
         owned.statuses.get("svc1"),
         Some(&buffa::EnumValue::Known(Status::ACTIVE))
@@ -356,7 +365,7 @@ fn test_view_no_unknown_fields_all_scalar_compiles() {
     let e = Empty::default();
     let bytes = e.encode_to_vec();
     let view = EmptyView::decode_view(&bytes).unwrap();
-    let _owned = view.to_owned_message();
+    let _owned = view.to_owned_message().unwrap();
 
     let mut s = AllScalars::default();
     s.f_int32 = 42;
@@ -365,7 +374,7 @@ fn test_view_no_unknown_fields_all_scalar_compiles() {
     let view = AllScalarsView::decode_view(&bytes).unwrap();
     assert_eq!(view.f_int32, 42);
     assert!(view.f_bool);
-    let owned = view.to_owned_message();
+    let owned = view.to_owned_message().unwrap();
     assert_eq!(owned.f_int32, 42);
 }
 

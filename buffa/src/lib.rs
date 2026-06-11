@@ -37,17 +37,20 @@
 //! # fn example(bytes: &[u8]) -> Result<(), buffa::DecodeError> {
 //! let msg: Person = DecodeOptions::new()
 //!     .with_recursion_limit(50)
-//!     .with_max_message_size(1024 * 1024)  // 1 MiB
+//!     .with_max_message_size(1024 * 1024)     // 1 MiB
+//!     .with_unknown_field_limit(10_000)        // unknown fields per decode
 //!     .decode_from_slice(&bytes)?;
 //! # Ok(())
 //! # }
 //! ```
 //!
 //! The trait-level convenience methods (`decode_from_slice`, `merge_from_slice`)
-//! use a fixed recursion limit of [`RECURSION_LIMIT`] (100) and no explicit size
-//! cap — a `&[u8]` is already bounded by whatever allocated it. Use `DecodeOptions`
-//! when you want to reject oversized inputs at the decode entry point rather than
-//! at the allocator.
+//! use a fixed recursion limit of [`RECURSION_LIMIT`] (100), a fixed
+//! [`DEFAULT_UNKNOWN_FIELD_LIMIT`] (1,000,000) bounding how many unknown
+//! fields the decoder will materialize, and no explicit size cap — a
+//! `&[u8]` is already bounded by whatever allocated it. Use `DecodeOptions`
+//! to tune these, e.g. to reject oversized inputs at the decode entry point
+//! rather than at the allocator.
 //!
 //! # Zero-copy views
 //!
@@ -206,6 +209,17 @@ macro_rules! include_proto_relative {
     };
 }
 
+/// Test helper: a [`DecodeContext`] at `depth` with a fresh default-size
+/// unknown-field allowance. Leaks the limit cell (tests only) so the
+/// context can be passed around without scope gymnastics.
+#[cfg(test)]
+pub(crate) fn test_ctx(depth: u32) -> DecodeContext<'static> {
+    let limit = alloc::boxed::Box::leak(alloc::boxed::Box::new(core::cell::Cell::new(
+        DEFAULT_UNKNOWN_FIELD_LIMIT,
+    )));
+    DecodeContext::new(depth, limit)
+}
+
 #[cfg(feature = "json")]
 pub mod any_registry;
 pub mod editions;
@@ -239,7 +253,10 @@ pub mod view;
 pub use enumeration::{EnumValue, Enumeration};
 pub use error::{DecodeError, EncodeError};
 pub use extension::{Extension, ExtensionCodec, ExtensionSet};
-pub use message::{DecodeOptions, Message, MessageName, RECURSION_LIMIT};
+pub use message::{
+    DecodeContext, DecodeOptions, Message, MessageName, DEFAULT_UNKNOWN_FIELD_LIMIT,
+    RECURSION_LIMIT,
+};
 pub use message_field::{DefaultInstance, MessageField};
 pub use oneof::Oneof;
 pub use size_cache::SizeCache;
@@ -489,7 +506,7 @@ pub mod __doctest_fixtures {
             &mut self,
             tag: crate::encoding::Tag,
             buf: &mut impl bytes::Buf,
-            _depth: u32,
+            _ctx: DecodeContext<'_>,
         ) -> Result<(), DecodeError> {
             crate::encoding::skip_field(tag, buf)
         }
@@ -510,11 +527,11 @@ pub mod __doctest_fixtures {
             // Stub: examples are `no_run`, so this never executes.
             Ok(PersonView::default())
         }
-        fn to_owned_message(&self) -> Person {
-            Person {
+        fn to_owned_message(&self) -> Result<Person, DecodeError> {
+            Ok(Person {
                 name: self.name.into(),
                 id: self.id,
-            }
+            })
         }
     }
 

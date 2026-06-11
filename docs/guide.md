@@ -904,6 +904,9 @@ for the full list of variants (the enum is `#[non_exhaustive]`). Common cases:
 - `WireTypeMismatch` — field on wire has a different type than schema expects
 - `RecursionLimitExceeded` — too-deeply-nested message (attack or bug)
 - `MessageTooLarge` — exceeds configured size limit
+- `UnknownFieldLimitExceeded` — the message contains more unknown fields
+  than the configured limit (default 1,000,000); raise with
+  `.with_unknown_field_limit(n)` if your messages legitimately carry more
 
 ### Decode options
 
@@ -932,8 +935,23 @@ let view = DecodeOptions::new()
 |--------|---------|-------------|
 | `.with_recursion_limit(n)` | 100 | Max nesting depth for sub-messages |
 | `.with_max_message_size(n)` | 2 GiB - 1 | Max total input size in bytes |
+| `.with_unknown_field_limit(n)` | 1,000,000 | Max unknown fields materialized per decode |
 
-The default `Message::decode` / `decode_from_slice` methods use the defaults (100 depth, 2 GiB max). `DecodeOptions` is only needed when you want tighter limits.
+The unknown-field limit exists because unknown fields can occupy far more
+memory decoded than encoded — each one costs a ~40-byte in-memory slot, so a
+run of minimal 2-byte varint fields amplifies ~20× and an input-size cap
+alone does not bound decoder memory. The limit caps that overhead at roughly
+`n × 40` bytes per decode call and is enforced by default — a flood of
+unknown fields fails with `UnknownFieldLimitExceeded` instead of exhausting
+the heap. (Unknown length-delimited *payload* bytes are not counted: they
+are bounded by the input size, which `.with_max_message_size(n)` governs.)
+Raise the limit if you decode trusted messages that legitimately carry more
+unknown fields (e.g. a proxy forwarding messages with a huge unpacked
+repeated field from a much newer schema).
+
+Zero-copy view decoding (`decode_view`) honors the same limit, but counts **coalesced spans** — one per contiguous run of unknown fields (~16 bytes each) — rather than individual fields, since views store unknown fields as borrowed byte ranges instead of materializing them. The same numeric limit is therefore more permissive for views; the per-field cost is only paid (under the default limit) when converting a view to an owned message.
+
+The default `Message::decode` / `decode_from_slice` methods use the defaults (100 depth, 2 GiB max input, 1M unknown fields). `DecodeOptions` is only needed when you want different limits.
 
 ## Zero-copy views
 
@@ -1927,7 +1945,7 @@ impl Message for Int64Range {
         &mut self,
         tag: buffa::encoding::Tag,
         buf: &mut impl bytes::Buf,
-        _depth: u32,
+        _ctx: buffa::DecodeContext<'_>,
     ) -> Result<(), DecodeError> {
         match tag.field_number() {
             1 => self.inner.start = buffa::types::decode_int64(buf)?,

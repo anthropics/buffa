@@ -524,19 +524,15 @@ pub fn generate_message_impl(
                 if tag.field_number() == 1
                     && tag.wire_type() == ::buffa::encoding::WireType::StartGroup
                 {
-                    if depth == 0 {
-                        return ::core::result::Result::Err(
-                            ::buffa::DecodeError::RecursionLimitExceeded,
-                        );
-                    }
-                    let (type_id, bytes) = ::buffa::message_set::merge_item(buf, depth - 1)?;
+                    let (type_id, bytes) =
+                        ::buffa::message_set::merge_item(buf, ctx.descend()?)?;
                     self.__buffa_unknown_fields.push(::buffa::UnknownField {
                         number: type_id,
                         data: ::buffa::UnknownFieldData::LengthDelimited(bytes),
                     });
                 } else {
                     self.__buffa_unknown_fields.push(
-                        ::buffa::encoding::decode_unknown_field(tag, buf, depth)?
+                        ::buffa::encoding::decode_unknown_field(tag, buf, ctx)?
                     );
                 }
             }
@@ -545,13 +541,13 @@ pub fn generate_message_impl(
         quote! {
             _ => {
                 self.__buffa_unknown_fields.push(
-                    ::buffa::encoding::decode_unknown_field(tag, buf, depth)?
+                    ::buffa::encoding::decode_unknown_field(tag, buf, ctx)?
                 );
             }
         }
     } else {
         quote! {
-            _ => { ::buffa::encoding::skip_field_depth(tag, buf, depth)?; }
+            _ => { ::buffa::encoding::skip_field_depth(tag, buf, ctx.depth())?; }
         }
     };
 
@@ -689,7 +685,7 @@ pub fn generate_message_impl(
                 &mut self,
                 tag: ::buffa::encoding::Tag,
                 buf: &mut impl ::buffa::bytes::Buf,
-                depth: u32,
+                ctx: ::buffa::DecodeContext<'_>,
             ) -> ::core::result::Result<(), ::buffa::DecodeError> {
                 #[allow(unused_imports)]
                 use ::buffa::bytes::Buf as _;
@@ -1754,7 +1750,7 @@ fn scalar_merge_arm(
                     ::buffa::Message::merge_length_delimited(
                         self.#ident.get_or_insert_default(),
                         buf,
-                        depth,
+                        ctx,
                     )?;
                 }
             });
@@ -1767,7 +1763,7 @@ fn scalar_merge_arm(
                     ::buffa::Message::merge_group(
                         self.#ident.get_or_insert_default(),
                         buf,
-                        depth,
+                        ctx,
                         #field_number,
                     )?;
                 }
@@ -2071,7 +2067,7 @@ fn repeated_merge_arm(
             #field_number => {
                 #wire_check
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.#ident.push(elem);
             }
         });
@@ -2086,7 +2082,7 @@ fn repeated_merge_arm(
             #field_number => {
                 #wire_check
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_group(&mut elem, buf, depth, #field_number)?;
+                ::buffa::Message::merge_group(&mut elem, buf, ctx, #field_number)?;
                 self.#ident.push(elem);
             }
         });
@@ -2478,10 +2474,10 @@ fn oneof_merge_arm(
                 if let ::core::option::Option::Some(
                     #enum_ident::#variant_ident(ref mut existing)
                 ) = self.#field_ident {
-                    ::buffa::Message::merge_length_delimited(#existing_ref, buf, depth)?;
+                    ::buffa::Message::merge_length_delimited(#existing_ref, buf, ctx)?;
                 } else {
                     let mut val = ::core::default::Default::default();
-                    ::buffa::Message::merge_length_delimited(&mut val, buf, depth)?;
+                    ::buffa::Message::merge_length_delimited(&mut val, buf, ctx)?;
                     self.#field_ident = ::core::option::Option::Some(
                         #enum_ident::#variant_ident(#wrapped_val)
                     );
@@ -2494,10 +2490,10 @@ fn oneof_merge_arm(
                 if let ::core::option::Option::Some(
                     #enum_ident::#variant_ident(ref mut existing)
                 ) = self.#field_ident {
-                    ::buffa::Message::merge_group(#existing_ref, buf, depth, #field_number)?;
+                    ::buffa::Message::merge_group(#existing_ref, buf, ctx, #field_number)?;
                 } else {
                     let mut val = ::core::default::Default::default();
-                    ::buffa::Message::merge_group(&mut val, buf, depth, #field_number)?;
+                    ::buffa::Message::merge_group(&mut val, buf, ctx, #field_number)?;
                     self.#field_ident = ::core::option::Option::Some(
                         #enum_ident::#variant_ident(#wrapped_val)
                     );
@@ -2733,7 +2729,7 @@ fn map_element_decode_stmt(
             }
         }
         Type::TYPE_MESSAGE => {
-            quote! { ::buffa::Message::merge_length_delimited(&mut #var, #buf_expr, depth)?; }
+            quote! { ::buffa::Message::merge_length_delimited(&mut #var, #buf_expr, ctx)?; }
         }
         _ => {
             let decode_fn = decode_fn_token(ty);
@@ -2907,7 +2903,7 @@ fn map_merge_arm(
                 match entry_tag.field_number() {
                     1 => { #decode_key }
                     2 => { #decode_val }
-                    _ => { ::buffa::encoding::skip_field_depth(entry_tag, buf, depth)?; }
+                    _ => { ::buffa::encoding::skip_field_depth(entry_tag, buf, ctx.depth())?; }
                 }
             }
             // Correct the buffer position if the entry was not fully consumed.

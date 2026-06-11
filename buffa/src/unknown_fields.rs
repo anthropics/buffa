@@ -74,8 +74,11 @@ impl UnknownFields {
     /// Decode a concatenation of wire-format fields into [`UnknownFields`].
     ///
     /// Reads tag/data pairs until `data` is exhausted. Each field is decoded
-    /// via [`decode_unknown_field`](crate::encoding::decode_unknown_field) with
-    /// the full [`RECURSION_LIMIT`](crate::message::RECURSION_LIMIT) budget.
+    /// via [`decode_unknown_field`](crate::encoding::decode_unknown_field)
+    /// with the full [`RECURSION_LIMIT`](crate::message::RECURSION_LIMIT)
+    /// depth budget and a fresh
+    /// [`DEFAULT_UNKNOWN_FIELD_LIMIT`](crate::DEFAULT_UNKNOWN_FIELD_LIMIT)
+    /// unknown-field allowance.
     ///
     /// Used by [`GroupCodec`](crate::extension::codecs::GroupCodec) to turn a
     /// message's encoded bytes back into the inner-field representation that
@@ -84,14 +87,17 @@ impl UnknownFields {
     /// # Errors
     ///
     /// Returns [`DecodeError`](crate::DecodeError) if `data` contains a
-    /// malformed tag, truncated field, or exceeds the recursion limit.
+    /// malformed tag, truncated field, or exceeds the recursion limit or
+    /// unknown-field limit.
     pub fn decode_from_slice(mut data: &[u8]) -> Result<Self, crate::DecodeError> {
         use crate::encoding::{decode_unknown_field, Tag};
-        use crate::message::RECURSION_LIMIT;
+        use crate::message::{DecodeContext, DEFAULT_UNKNOWN_FIELD_LIMIT, RECURSION_LIMIT};
+        let limit = core::cell::Cell::new(DEFAULT_UNKNOWN_FIELD_LIMIT);
+        let ctx = DecodeContext::new(RECURSION_LIMIT, &limit);
         let mut out = Self::new();
         while !data.is_empty() {
             let tag = Tag::decode(&mut data)?;
-            out.push(decode_unknown_field(tag, &mut data, RECURSION_LIMIT)?);
+            out.push(decode_unknown_field(tag, &mut data, ctx)?);
         }
         Ok(out)
     }

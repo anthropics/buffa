@@ -60,6 +60,21 @@ pub enum DecodeError {
     /// `option message_set_wire_format = true`.
     #[error("invalid MessageSet item: {0}")]
     InvalidMessageSet(&'static str),
+
+    /// Decoding encountered more unknown fields than the configured limit.
+    ///
+    /// Unknown fields can be far smaller on the wire than in memory (a
+    /// 2-byte varint field occupies ~40 bytes as an
+    /// [`UnknownField`](crate::UnknownField)), so the decoder bounds how
+    /// many it will materialize rather than trusting the input size. By
+    /// default the limit is
+    /// [`DEFAULT_UNKNOWN_FIELD_LIMIT`](crate::DEFAULT_UNKNOWN_FIELD_LIMIT)
+    /// (1,000,000 fields per decode); use
+    /// [`DecodeOptions::with_unknown_field_limit`](crate::DecodeOptions::with_unknown_field_limit)
+    /// to raise it for trusted inputs that legitimately carry very many
+    /// unknown fields.
+    #[error("unknown field limit exceeded")]
+    UnknownFieldLimitExceeded,
 }
 
 /// An error that occurred while encoding a protobuf message.

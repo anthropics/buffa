@@ -252,7 +252,7 @@ impl ::buffa::Message for Struct {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -306,11 +306,15 @@ impl ::buffa::Message for Struct {
                             ::buffa::Message::merge_length_delimited(
                                 &mut val,
                                 buf,
-                                depth,
+                                ctx,
                             )?;
                         }
                         _ => {
-                            ::buffa::encoding::skip_field_depth(entry_tag, buf, depth)?;
+                            ::buffa::encoding::skip_field_depth(
+                                entry_tag,
+                                buf,
+                                ctx.depth(),
+                            )?;
                         }
                     }
                 }
@@ -328,7 +332,7 @@ impl ::buffa::Message for Struct {
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -777,7 +781,7 @@ impl ::buffa::Message for Value {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -852,14 +856,10 @@ impl ::buffa::Message for Value {
                     __buffa::oneof::value::Kind::StructValue(ref mut existing),
                 ) = self.kind
                 {
-                    ::buffa::Message::merge_length_delimited(
-                        &mut **existing,
-                        buf,
-                        depth,
-                    )?;
+                    ::buffa::Message::merge_length_delimited(&mut **existing, buf, ctx)?;
                 } else {
                     let mut val = ::core::default::Default::default();
-                    ::buffa::Message::merge_length_delimited(&mut val, buf, depth)?;
+                    ::buffa::Message::merge_length_delimited(&mut val, buf, ctx)?;
                     self.kind = ::core::option::Option::Some(
                         __buffa::oneof::value::Kind::StructValue(
                             ::buffa::alloc::boxed::Box::new(val),
@@ -879,14 +879,10 @@ impl ::buffa::Message for Value {
                     __buffa::oneof::value::Kind::ListValue(ref mut existing),
                 ) = self.kind
                 {
-                    ::buffa::Message::merge_length_delimited(
-                        &mut **existing,
-                        buf,
-                        depth,
-                    )?;
+                    ::buffa::Message::merge_length_delimited(&mut **existing, buf, ctx)?;
                 } else {
                     let mut val = ::core::default::Default::default();
-                    ::buffa::Message::merge_length_delimited(&mut val, buf, depth)?;
+                    ::buffa::Message::merge_length_delimited(&mut val, buf, ctx)?;
                     self.kind = ::core::option::Option::Some(
                         __buffa::oneof::value::Kind::ListValue(
                             ::buffa::alloc::boxed::Box::new(val),
@@ -896,7 +892,7 @@ impl ::buffa::Message for Value {
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -1222,7 +1218,7 @@ impl ::buffa::Message for ListValue {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -1238,12 +1234,12 @@ impl ::buffa::Message for ListValue {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.values.push(elem);
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
