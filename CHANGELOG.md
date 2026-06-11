@@ -16,6 +16,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   the case where a oneof needs a different attribute set than the
   surrounding types.
 
+- **`chrono` interop for `buffa-types`** (#163). A new off-by-default,
+  `no_std`-compatible `chrono` feature adds conversions between the
+  well-known `Timestamp` / `Duration` types and `chrono::DateTime` /
+  `chrono::TimeDelta`: `From<chrono::DateTime<Tz>> for Timestamp` (any time
+  zone; the instant is preserved), `TryFrom<Timestamp> for DateTime<Utc>`,
+  `From<TimeDelta> for Duration`, and `TryFrom<Duration> for TimeDelta`. The
+  last returns a new `DurationChronoError` because `TimeDelta`'s range
+  (±`i64::MAX` milliseconds) is narrower than proto `Duration`'s.
+  Contributed by @yordis.
+
 - **New `buffa-yaml` crate: YAML serialization with protobuf-JSON semantics**
   (Phase 1 of protoyaml support, #101). A thin carrier layer that routes
   buffa's generated protobuf-JSON serde impls through `serde_norway`, so YAML
@@ -79,6 +89,12 @@ resolves there automatically.
   payloads), reported in #171.
 
 ### Changed
+
+- **`TimestampError::Overflow`'s `Display` message generalized.** It now
+  reads "timestamp is out of range for the target type" instead of naming
+  `SystemTime`, since the same error is returned by the new
+  `Timestamp` → `chrono::DateTime<Utc>` conversion. Code matching on the
+  enum variant is unaffected.
 
 - **`HasMessageView` carries a `#[diagnostic::on_unimplemented]` hint.** When a
   type is used where the generated view family is required but its crate was

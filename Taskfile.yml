@@ -610,6 +610,7 @@ tasks:
       - cargo check -p buffa --no-default-features
       - cargo check -p buffa --no-default-features --target thumbv7em-none-eabihf
       - cargo check -p buffa-types --no-default-features
+      - cargo check -p buffa-types --no-default-features --features chrono
       - cargo check -p buffa-descriptor --no-default-features
   # ── Coverage ─────────────────────────────────────────────────────────
 

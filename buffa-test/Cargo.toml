@@ -33,7 +33,7 @@ buffa-descriptor = { workspace = true, features = [
     "ecow",
     "compact_str",
 ] }
-buffa-types = { workspace = true, features = ["json"] }
+buffa-types = { workspace = true, features = ["json", "chrono"] }
 bytes = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
