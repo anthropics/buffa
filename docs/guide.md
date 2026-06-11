@@ -969,6 +969,50 @@ Repeated fields use `RepeatedView<T>` (a `Vec`-backed sequence); map fields use
 appropriate for typical small protobuf maps but not for large in-memory indices.
 For larger maps, collect into a `HashMap`: `let m: HashMap<_,_> = view.labels.into_iter().collect();`
 
+### Lazy views — `lazy_views(true)`
+
+Eager views still decode every nested message during `decode_view`. When you
+read only a few fields out of many large sub-messages, opt into lazy views:
+
+```rust,ignore
+buffa_build::Config::new()
+    .files(&["protos/person.proto"])
+    .lazy_views(true)
+    .compile()?;
+```
+
+Singular message fields become `LazyMessageFieldView<'a, V>` and repeated
+message fields `LazyRepeatedView<'a, V>`: `decode_view` records each
+sub-message's byte range in one non-recursive pass, and the sub-view is decoded
+only when accessed — by value, fallibly:
+
+```rust,ignore
+let view = PersonView::decode_view(&bytes)?;        // O(top-level scan)
+if let Some(addr) = view.address.get()? {           // decoded here
+    println!("city: {}", addr.city);
+}
+for item in view.friends.iter() {                   // decoded per element
+    let friend = item?;
+    println!("{}", friend.name);
+}
+```
+
+For the common "read one nested field" path, `get_or_default()` mirrors the
+eager deref-to-default behavior: `view.address.get_or_default()?.city`.
+
+Trade-offs to know about: sub-message bytes are validated on *access*, not at
+`decode_view` (so `to_owned_message`, which can't return an error, panics on
+malformed deferred bytes — call `.get()` first when handling untrusted input);
+repeated access re-decodes (no caching — bind the result when reading several
+fields); lazy repeated fields are not slice-backed, so `Deref`/indexing from
+`RepeatedView` are replaced by `.get(i)`/`.iter()`/`.len()`; groups, oneof
+message variants, and map message values stay eager; and view-side vtable
+reflection is skipped under the flag. Scalars, strings, and bytes stay borrowed
+exactly as in eager views. The recursion budget recorded at decode time is
+charged on access, so deep navigation fails with `RecursionLimitExceeded` at
+the same boundary as the eager decoder (raise it via
+`DecodeOptions::with_recursion_limit` on the outer decode if needed).
+
 ### `OwnedView<V>` — views with `'static` lifetime
 
 The `'a` lifetime on `PersonView<'a>` ties the view to the input buffer, preventing it from being used across async boundaries, in tower services, or anywhere a `'static` bound is required. `OwnedView<V>` solves this by storing the `bytes::Bytes` buffer alongside the decoded view, producing a `'static + Send + Sync` type:

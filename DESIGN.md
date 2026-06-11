@@ -201,6 +201,26 @@ The view type borrows directly from the input buffer. String fields become `&'a 
 
 This is analogous to Cap'n Proto's Rust implementation and how Go achieves zero-copy string deserialization. In a typical RPC handler, the request is parsed and consumed without needing to outlive the input buffer — the view type makes this allocation-free.
 
+**Lazy views (`lazy_views(true)`)** — opt-in decode-on-access for message fields:
+
+Eager views still materialize the whole sub-message tree during `decode_view`: every present nested message is boxed and decoded recursively, every repeated message field pre-decodes into a `Vec`. For workloads that read a few fields out of many large sub-messages, that work dominates. With `Config::lazy_views(true)`, singular message fields become `LazyMessageFieldView<'a, V>` and repeated message fields `LazyRepeatedView<'a, V>`: `decode_view` records each sub-message's byte range in a single non-recursive pass, and a fresh sub-view is decoded only when `.get()` (or iteration) is called — untouched sub-trees cost nothing.
+
+```rust,ignore
+let person = PersonView::decode_view(&wire_bytes)?;       // O(top-level scan)
+if let Some(addr) = person.address.get()? {               // decoded here, by value
+    println!("city: {}", addr.city);
+}
+```
+
+Design points:
+
+- **Merge semantics preserved.** A singular message field may legally appear multiple times on the wire and decoders must merge the occurrences. `LazyMessageFieldView` stores each occurrence as a fragment and `.get()` replays them in order (decode the first, `ViewMerge::merge_view` the rest), matching the eager and owned decoders. Every generated view implements the `ViewMerge` trait, which exposes the existing merge machinery generically.
+- **Deferred validation.** Sub-message bytes are not validated at `decode_view`; errors surface from `.get()`/iteration. `to_owned_message` (infallible by signature) panics on malformed deferred bytes; the view `Serialize` impl reports them as a serde error. Don't feed lazy `to_owned_message` untrusted input without accessing fields first.
+- **Eager carve-outs.** Groups / editions `DELIMITED` fields (no length prefix to defer), oneof message variants, and map message values keep their eager representation.
+- **Re-encoding replays fragments.** `ViewEncode` re-emits the recorded byte ranges verbatim — wire-equivalent to the merged value and cheaper than re-encoding a decoded tree.
+- **Vtable reflection is skipped for lazy views** (`ReflectMessage` requires synchronous, infallible access); owned-message reflection is unaffected and codegen warns once per run.
+- **Recursion budget flows through.** Lazy decode never recurses; instead, each deferred field records the recursion budget remaining at its position, and `.get()` charges it. A chain of lazy accesses (including the recursive `to_owned_message`/`Serialize` consumers) is therefore depth-bounded exactly like the eager and owned decoders — over-deep adversarial input fails with `RecursionLimitExceeded` instead of overflowing the stack — and a custom `DecodeOptions::with_recursion_limit` set at the outer decode extends navigation correspondingly.
+
 **Conversions:**
 
 ```rust,ignore

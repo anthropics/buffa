@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Opt-in lazy views** (#165). `Config::lazy_views(true)` makes generated
+  views defer nested-message decoding: singular message fields become
+  `LazyMessageFieldView<'a, V>` and repeated message fields
+  `LazyRepeatedView<'a, V>`, which record each sub-message's byte range during
+  a single non-recursive `decode_view` pass and decode a fresh sub-view only
+  on access (`.get()` / iteration, by value, fallible). Reading a few fields
+  out of many large sub-messages no longer allocates or recurses into
+  untouched sub-trees (~12× less allocation churn on the issue's workload;
+  ~200× faster when only 1% of items are read). Proto merge semantics are
+  preserved via per-occurrence fragments merged on access; the recursion
+  budget recorded at decode time is charged on access, so lazy chains stay
+  depth-bounded exactly like the eager decoder (and `DecodeOptions`
+  recursion limits flow through); re-encoding replays the recorded fragments
+  verbatim. Malformed deferred bytes surface on access (and panic in the
+  infallible `to_owned_message`). `get_or_default()` mirrors the eager
+  deref-to-default read path. Groups, oneof message variants, and map message
+  values stay eager; view-side vtable reflection is skipped under the flag
+  (owned reflection unaffected).
+- **`ViewMerge` trait**: every generated view now exposes its proto merge
+  machinery generically (`merge_view(&mut self, buf, depth)`), used by lazy
+  views to reassemble fields split across wire occurrences. Additive for
+  existing code.
+
 ## [0.7.1] - 2026-06-10
 
 This release is a patch bump under the
