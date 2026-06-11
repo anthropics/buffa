@@ -186,6 +186,15 @@ impl<'a> ::buffa::MessageView<'a> for DurationView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewMerge<'a> for DurationView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
+    }
+}
 impl<'a> ::buffa::ViewEncode<'a> for DurationView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {

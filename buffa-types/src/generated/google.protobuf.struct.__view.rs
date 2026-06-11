@@ -163,6 +163,15 @@ impl<'a> ::buffa::MessageView<'a> for StructView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewMerge<'a> for StructView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
+    }
+}
 impl<'a> ::buffa::ViewEncode<'a> for StructView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
@@ -680,6 +689,15 @@ impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewMerge<'a> for ValueView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for ValueView<'a> {
@@ -1225,6 +1243,15 @@ impl<'a> ::buffa::MessageView<'a> for ListValueView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewMerge<'a> for ListValueView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for ListValueView<'a> {

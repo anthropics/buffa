@@ -204,28 +204,32 @@ pub(crate) fn generate_view_with_nesting(
         .options
         .as_option()
         .is_some_and(|o| o.map_entry.unwrap_or(false));
-    let reflect_view_impls =
-        if ctx.config.generate_reflection && ctx.config.generate_reflection_vtable && !is_map_entry
-        {
-            // `reflect_view_impls` emits three sibling items (the ReflectMessage
-            // impl, the ReflectElement impl, and an inherent impl for the
-            // memoized index). `cfg_const_block` wraps them in a single
-            // `#[cfg] const _` so one gate covers all three; a bare `cfg_block`
-            // would gate only the first and leak the rest.
-            crate::feature_gates::cfg_const_block(
-                crate::reflect_view::reflect_view_impls(
-                    view_scope,
-                    msg,
-                    &view_ident,
-                    view_depth,
-                    &view_oneof_prefix,
-                    &oneof_idents,
-                )?,
-                ctx.config.feature_gates().reflect,
-            )
-        } else {
-            quote! {}
-        };
+    // Lazy views skip the view-side vtable impl (lazy fields decode on access
+    // and can fail; ReflectMessage needs synchronous infallible access).
+    let reflect_view_impls = if ctx.config.generate_reflection
+        && ctx.config.generate_reflection_vtable
+        && !is_map_entry
+        && !ctx.config.lazy_views
+    {
+        // `reflect_view_impls` emits three sibling items (the ReflectMessage
+        // impl, the ReflectElement impl, and an inherent impl for the
+        // memoized index). `cfg_const_block` wraps them in a single
+        // `#[cfg] const _` so one gate covers all three; a bare `cfg_block`
+        // would gate only the first and leak the rest.
+        crate::feature_gates::cfg_const_block(
+            crate::reflect_view::reflect_view_impls(
+                view_scope,
+                msg,
+                &view_ident,
+                view_depth,
+                &view_oneof_prefix,
+                &oneof_idents,
+            )?,
+            ctx.config.feature_gates().reflect,
+        )
+    } else {
+        quote! {}
+    };
 
     // When preserving unknowns we capture `before_tag` so we can compute the
     // raw byte span after `skip_field` advances the cursor.
@@ -440,6 +444,16 @@ pub(crate) fn generate_view_with_nesting(
             }
         }
 
+        impl<'a> ::buffa::ViewMerge<'a> for #view_ident<'a> {
+            fn merge_view(
+                &mut self,
+                buf: &'a [u8],
+                depth: u32,
+            ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+                self._merge_into_view(buf, depth)
+            }
+        }
+
         #view_encode_impl
 
         #serialize_impl
@@ -543,10 +557,16 @@ fn view_struct_field(
     // via the helper functions so no conflict there.
     let self_fqn = format!(".{proto_fqn}");
     let struct_ty = if field.type_name.as_deref() == Some(self_fqn.as_str()) {
-        if is_repeated {
-            quote! { ::buffa::RepeatedView<'a, Self> }
-        } else {
-            quote! { ::buffa::MessageFieldView<Self> }
+        // Lazy only applies to TYPE_MESSAGE; a self-referential DELIMITED
+        // field resolves to TYPE_GROUP via `effective_type` and stays eager.
+        let field_features = crate::features::resolve_field(scope.ctx, field, scope.features);
+        let lazy = scope.ctx.config.lazy_views
+            && effective_type(scope.ctx, field, &field_features) == Type::TYPE_MESSAGE;
+        match (is_repeated, lazy) {
+            (true, true) => quote! { ::buffa::LazyRepeatedView<'a, Self> },
+            (true, false) => quote! { ::buffa::RepeatedView<'a, Self> },
+            (false, true) => quote! { ::buffa::LazyMessageFieldView<'a, Self> },
+            (false, false) => quote! { ::buffa::MessageFieldView<Self> },
         }
     } else {
         rust_type
@@ -601,6 +621,12 @@ pub(crate) fn view_singular_type(
     match ty {
         Type::TYPE_STRING => Ok(quote! { &#lt str }),
         Type::TYPE_BYTES => Ok(quote! { &#lt [u8] }),
+        // Groups/DELIMITED (TYPE_GROUP after `effective_type`) stay eager:
+        // no length prefix to defer.
+        Type::TYPE_MESSAGE if ctx.config.lazy_views => {
+            let view_ty = resolve_view_ty_tokens(scope, field, lt)?;
+            Ok(quote! { ::buffa::LazyMessageFieldView<#lt, #view_ty> })
+        }
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
             let view_ty = resolve_view_ty_tokens(scope, field, lt)?;
             Ok(quote! { ::buffa::MessageFieldView<#view_ty> })
@@ -634,6 +660,11 @@ pub(crate) fn view_repeated_type(
     match ty {
         Type::TYPE_STRING => Ok(quote! { ::buffa::RepeatedView<#lt, &#lt str> }),
         Type::TYPE_BYTES => Ok(quote! { ::buffa::RepeatedView<#lt, &#lt [u8]> }),
+        // Groups stay eager under `lazy_views` — see `view_singular_type`.
+        Type::TYPE_MESSAGE if ctx.config.lazy_views => {
+            let view_ty = resolve_view_ty_tokens(scope, field, lt)?;
+            Ok(quote! { ::buffa::LazyRepeatedView<#lt, #view_ty> })
+        }
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
             let view_ty = resolve_view_ty_tokens(scope, field, lt)?;
             Ok(quote! { ::buffa::RepeatedView<#lt, #view_ty> })
@@ -1074,6 +1105,17 @@ fn scalar_decode_arm(
                 quote! { view.#ident = ::buffa::EnumValue::from(::buffa::types::decode_int32(&mut cur)?); }
             }
         }
+        // Lazy: record the byte range and remaining budget; `get()` merges
+        // multiple occurrences and charges the budget on access.
+        Type::TYPE_MESSAGE if ctx.config.lazy_views => {
+            quote! {
+                if depth == 0 {
+                    return Err(::buffa::DecodeError::RecursionLimitExceeded);
+                }
+                let sub = ::buffa::types::borrow_bytes(&mut cur)?;
+                view.#ident.push_fragment(sub, depth - 1);
+            }
+        }
         Type::TYPE_MESSAGE => {
             let vt = resolve_view_decode_tokens(scope, field)?;
             quote! {
@@ -1141,6 +1183,19 @@ fn repeated_decode_arm(
             &quote! { ::buffa::encoding::WireType::LengthDelimited },
             2u8,
         );
+        // Lazy: record each element's byte range; decode happens on access.
+        if ctx.config.lazy_views {
+            return Ok(quote! {
+                #field_number => {
+                    #ld_check
+                    if depth == 0 {
+                        return Err(::buffa::DecodeError::RecursionLimitExceeded);
+                    }
+                    let sub = ::buffa::types::borrow_bytes(&mut cur)?;
+                    view.#ident.push_bytes(sub, depth - 1);
+                }
+            });
+        }
         let vt = resolve_view_decode_tokens(scope, field)?;
         return Ok(quote! {
             #field_number => {
@@ -1665,6 +1720,28 @@ fn singular_to_owned(
             false,
         ),
         Type::TYPE_BYTES => bytes_to_owned(ctx, proto_fqn, field_name, quote! { self.#ident }),
+        // Lazy: to_owned_* is infallible by signature, so malformed deferred
+        // bytes panic.
+        Type::TYPE_MESSAGE if ctx.config.lazy_views => {
+            let owned_path = resolve_owned_path(scope, field)?;
+            let owned_ty = crate::message::rust_path_to_tokens(&owned_path);
+            let panic_msg = format!(
+                "to_owned on lazy view: malformed deferred bytes in message field `{field_name}`: {{}}"
+            );
+            quote! {
+                match self.#ident.get() {
+                    ::core::result::Result::Ok(::core::option::Option::Some(v)) => {
+                        ::buffa::MessageField::<#owned_ty>::some(
+                            v.to_owned_from_source(__buffa_src),
+                        )
+                    }
+                    ::core::result::Result::Ok(::core::option::Option::None) => {
+                        ::buffa::MessageField::none()
+                    }
+                    ::core::result::Result::Err(e) => ::core::panic!(#panic_msg, e),
+                }
+            }
+        }
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
             let owned_path = resolve_owned_path(scope, field)?;
             // Use rust_path_to_tokens, not syn::parse_str: the latter chokes
@@ -1704,6 +1781,21 @@ fn repeated_to_owned(
             // Vec<&[u8]>::iter() → b: &&[u8]. bytes_to_owned handles double-ref.
             let conv = bytes_to_owned(ctx, proto_fqn, field_name, quote! { b });
             quote! { self.#ident.iter().map(|b| #conv).collect() }
+        }
+        // Lazy: malformed deferred bytes panic — see `singular_to_owned`.
+        Type::TYPE_MESSAGE if ctx.config.lazy_views => {
+            let panic_msg = format!(
+                "to_owned on lazy view: malformed deferred bytes in repeated message field `{field_name}`: {{}}"
+            );
+            quote! {
+                self.#ident
+                    .iter()
+                    .map(|r| match r {
+                        ::core::result::Result::Ok(v) => v.to_owned_from_source(__buffa_src),
+                        ::core::result::Result::Err(e) => ::core::panic!(#panic_msg, e),
+                    })
+                    .collect()
+            }
         }
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
             quote! { self.#ident.iter().map(|v| v.to_owned_from_source(__buffa_src)).collect() }
@@ -2069,6 +2161,36 @@ fn view_field_serialize_stmt(
 
     // ── Repeated field ────────────────────────────────────────────────────────
     if is_repeated {
+        // Lazy: decode-on-serialize; malformed bytes become a serde error.
+        if ty == Type::TYPE_MESSAGE && ctx.config.lazy_views {
+            let path = resolve_view_path(scope, field)?;
+            let elem_ty = quote! { #path <'__a> };
+            return Ok(quote! {
+                if !self.#ident.is_empty() {
+                    struct _WSeq<'__x, '__a>(
+                        &'__x ::buffa::LazyRepeatedView<'__a, #elem_ty>,
+                    );
+                    impl<'__a> ::serde::Serialize for _WSeq<'_, '__a> {
+                        fn serialize<__S: ::serde::Serializer>(&self, __s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
+                            use ::serde::ser::SerializeSeq as _;
+                            let mut __seq = __s.serialize_seq(::core::option::Option::Some(self.0.len()))?;
+                            for __r in self.0.iter() {
+                                match __r {
+                                    ::core::result::Result::Ok(__v) => __seq.serialize_element(&__v)?,
+                                    ::core::result::Result::Err(__e) => {
+                                        return ::core::result::Result::Err(
+                                            <__S::Error as ::serde::ser::Error>::custom(__e),
+                                        );
+                                    }
+                                }
+                            }
+                            __seq.end()
+                        }
+                    }
+                    __map.serialize_entry(#json_name, &_WSeq(&self.#ident))?;
+                }
+            });
+        }
         let seq_wrapper = match ty {
             Type::TYPE_BYTES => quote! {
                 struct _WSeq<'__x>(&'__x [&'__x [u8]]);
@@ -2221,6 +2343,23 @@ fn view_field_serialize_stmt(
                     }
                 }
                 __map.serialize_entry(#json_name, &_W(self.#ident))?;
+            },
+        ),
+        // Lazy: decode-on-serialize; malformed bytes become a serde error.
+        Type::TYPE_MESSAGE if ctx.config.lazy_views => (
+            quote! { self.#ident.is_set() },
+            quote! {
+                match self.#ident.get() {
+                    ::core::result::Result::Ok(::core::option::Option::Some(__v)) => {
+                        __map.serialize_entry(#json_name, &__v)?;
+                    }
+                    ::core::result::Result::Ok(::core::option::Option::None) => {}
+                    ::core::result::Result::Err(__e) => {
+                        return ::core::result::Result::Err(
+                            <__S::Error as ::serde::ser::Error>::custom(__e),
+                        );
+                    }
+                }
             },
         ),
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => (

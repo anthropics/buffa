@@ -111,8 +111,14 @@ impl Config {
     /// Enable or disable lazy decoding of nested/repeated message fields in
     /// generated views (default: false).
     ///
-    /// See [`CodeGenConfig::lazy_views`]. Opt-in because it changes view
-    /// accessors to decode-on-access (by value).
+    /// `decode_view` records each sub-message's byte range instead of decoding
+    /// it; sub-views decode on access via fallible, by-value accessors
+    /// (`.get()` / iteration), so untouched sub-trees cost nothing. Malformed
+    /// sub-message bytes therefore surface on *access*, not decode — and
+    /// `to_owned_message` (infallible by signature) panics on them. Groups,
+    /// oneof message variants, and map message values stay eager; view-side
+    /// vtable reflection impls are skipped. See [`CodeGenConfig::lazy_views`]
+    /// for the full semantics.
     #[must_use]
     pub fn lazy_views(mut self, enabled: bool) -> Self {
         self.codegen_config.lazy_views = enabled;

@@ -279,14 +279,37 @@ pub struct CodeGenConfig {
     /// Whether generated views decode nested/repeated message fields lazily
     /// (default: false).
     ///
-    /// When enabled, a view's nested message fields become
+    /// When enabled, a view's singular message fields become
     /// [`LazyMessageFieldView`](buffa::view::LazyMessageFieldView) and repeated
     /// message fields become [`LazyRepeatedView`](buffa::view::LazyRepeatedView):
     /// `decode_view` records each sub-message's byte range instead of decoding
     /// it, so reading a few top-level fields of many messages no longer
     /// allocates/recurses into untouched sub-trees. Changes the accessor API
-    /// (decode-on-access, by value), hence opt-in. Scalars/strings/bytes stay
-    /// borrowed as in the eager mode.
+    /// (decode-on-access, by value, fallible), hence opt-in.
+    /// Scalars/strings/bytes stay borrowed as in the eager mode.
+    ///
+    /// Scope and semantics:
+    ///
+    /// - **Eager carve-outs**: groups / editions `DELIMITED` fields (no length
+    ///   prefix to defer), oneof message variants, and map message values stay
+    ///   eagerly decoded.
+    /// - **Merge semantics preserved**: a singular message field split across
+    ///   multiple wire occurrences is recorded as fragments and merged on
+    ///   access, matching the eager and owned decoders.
+    /// - **Deferred validation**: malformed sub-message bytes surface as a
+    ///   `DecodeError` from `.get()`/iteration (not from the enclosing
+    ///   `decode_view`); `to_owned_message` (infallible by signature)
+    ///   **panics** on them, and the view `Serialize` impl reports them as a
+    ///   serde error.
+    /// - **Recursion budget flows through**: each deferred field records the
+    ///   budget remaining at its position and access charges it, so lazy
+    ///   chains are depth-bounded like the eager decoder and custom
+    ///   `DecodeOptions` limits extend navigation correspondingly.
+    /// - **Re-encoding** replays the recorded fragments byte-for-byte
+    ///   (wire-equivalent, cheaper than re-encoding the decoded tree).
+    /// - **Vtable reflection**: view-side `ReflectMessage` impls are skipped
+    ///   (see [`CodeGenWarning::LazyViewsVTableReflectSkipped`]); owned-message
+    ///   reflection is unaffected.
     pub lazy_views: bool,
     /// Whether to preserve unknown fields (default: true).
     pub preserve_unknown_fields: bool,
@@ -832,6 +855,13 @@ pub enum CodeGenWarning {
         /// The proto field or oneof name whose accessor was suppressed.
         field_name: String,
     },
+    /// View-side vtable reflection impls (`impl ReflectMessage for FooView`)
+    /// were skipped because `lazy_views` is enabled: `ReflectMessage` requires
+    /// synchronous, infallible field access, but lazy fields decode on access
+    /// and can fail. Owned-message reflection is unaffected. Emitted once per
+    /// generation run.
+    #[non_exhaustive]
+    LazyViewsVTableReflectSkipped,
 }
 
 impl core::fmt::Display for CodeGenWarning {
@@ -871,6 +901,15 @@ impl core::fmt::Display for CodeGenWarning {
                     f,
                     "`{wrapper_name}`: accessor for field `{field_name}` suppressed \
                      (collides with a reserved wrapper method); use `.view().{field_name}` instead"
+                )
+            }
+            Self::LazyViewsVTableReflectSkipped => {
+                write!(
+                    f,
+                    "lazy_views: view-side vtable reflection impls skipped \
+                     (lazy fields decode on access and can fail, but ReflectMessage \
+                     requires synchronous infallible access); owned-message \
+                     reflection is unaffected"
                 )
             }
         }
@@ -942,6 +981,15 @@ pub fn generate_with_diagnostics(
     }
 
     let ctx = context::CodeGenContext::for_generate(file_descriptors, files_to_generate, config);
+
+    // Lazy views skip view-side vtable reflect impls; warn once per run.
+    if config.lazy_views
+        && config.generate_views
+        && config.generate_reflection
+        && config.generate_reflection_vtable
+    {
+        ctx.warn(CodeGenWarning::LazyViewsVTableReflectSkipped);
+    }
 
     // Group requested files by package. BTreeMap → deterministic output order.
     let mut by_package: std::collections::BTreeMap<String, Vec<&FileDescriptorProto>> =

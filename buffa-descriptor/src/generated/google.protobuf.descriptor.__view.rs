@@ -117,6 +117,15 @@ impl<'a> ::buffa::MessageView<'a> for FileDescriptorSetView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewMerge<'a> for FileDescriptorSetView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
+    }
+}
 impl<'a> ::buffa::ViewEncode<'a> for FileDescriptorSetView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
@@ -766,6 +775,15 @@ impl<'a> ::buffa::MessageView<'a> for FileDescriptorProtoView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewMerge<'a> for FileDescriptorProtoView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for FileDescriptorProtoView<'a> {
@@ -1707,6 +1725,15 @@ impl<'a> ::buffa::MessageView<'a> for DescriptorProtoView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewMerge<'a> for DescriptorProtoView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
+    }
+}
 impl<'a> ::buffa::ViewEncode<'a> for DescriptorProtoView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
@@ -2347,6 +2374,15 @@ pub mod descriptor_proto {
             }
         }
     }
+    impl<'a> ::buffa::ViewMerge<'a> for ExtensionRangeView<'a> {
+        fn merge_view(
+            &mut self,
+            buf: &'a [u8],
+            depth: u32,
+        ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+            self._merge_into_view(buf, depth)
+        }
+    }
     impl<'a> ::buffa::ViewEncode<'a> for ExtensionRangeView<'a> {
         #[allow(clippy::needless_borrow, clippy::let_and_return)]
         fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
@@ -2726,6 +2762,15 @@ pub mod descriptor_proto {
                     .into(),
                 ..::core::default::Default::default()
             }
+        }
+    }
+    impl<'a> ::buffa::ViewMerge<'a> for ReservedRangeView<'a> {
+        fn merge_view(
+            &mut self,
+            buf: &'a [u8],
+            depth: u32,
+        ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+            self._merge_into_view(buf, depth)
         }
     }
     impl<'a> ::buffa::ViewEncode<'a> for ReservedRangeView<'a> {
@@ -3171,6 +3216,15 @@ impl<'a> ::buffa::MessageView<'a> for ExtensionRangeOptionsView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewMerge<'a> for ExtensionRangeOptionsView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for ExtensionRangeOptionsView<'a> {
@@ -3651,6 +3705,15 @@ pub mod extension_range_options {
                     .into(),
                 ..::core::default::Default::default()
             }
+        }
+    }
+    impl<'a> ::buffa::ViewMerge<'a> for DeclarationView<'a> {
+        fn merge_view(
+            &mut self,
+            buf: &'a [u8],
+            depth: u32,
+        ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+            self._merge_into_view(buf, depth)
         }
     }
     impl<'a> ::buffa::ViewEncode<'a> for DeclarationView<'a> {
@@ -4254,6 +4317,15 @@ impl<'a> ::buffa::MessageView<'a> for FieldDescriptorProtoView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewMerge<'a> for FieldDescriptorProtoView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
+    }
+}
 impl<'a> ::buffa::ViewEncode<'a> for FieldDescriptorProtoView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
@@ -4853,6 +4925,15 @@ impl<'a> ::buffa::MessageView<'a> for OneofDescriptorProtoView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewMerge<'a> for OneofDescriptorProtoView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
+    }
+}
 impl<'a> ::buffa::ViewEncode<'a> for OneofDescriptorProtoView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
@@ -5310,6 +5391,15 @@ impl<'a> ::buffa::MessageView<'a> for EnumDescriptorProtoView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewMerge<'a> for EnumDescriptorProtoView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for EnumDescriptorProtoView<'a> {
@@ -5774,6 +5864,15 @@ pub mod enum_descriptor_proto {
             }
         }
     }
+    impl<'a> ::buffa::ViewMerge<'a> for EnumReservedRangeView<'a> {
+        fn merge_view(
+            &mut self,
+            buf: &'a [u8],
+            depth: u32,
+        ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+            self._merge_into_view(buf, depth)
+        }
+    }
     impl<'a> ::buffa::ViewEncode<'a> for EnumReservedRangeView<'a> {
         #[allow(clippy::needless_borrow, clippy::let_and_return)]
         fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
@@ -6151,6 +6250,15 @@ impl<'a> ::buffa::MessageView<'a> for EnumValueDescriptorProtoView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewMerge<'a> for EnumValueDescriptorProtoView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for EnumValueDescriptorProtoView<'a> {
@@ -6566,6 +6674,15 @@ impl<'a> ::buffa::MessageView<'a> for ServiceDescriptorProtoView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewMerge<'a> for ServiceDescriptorProtoView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for ServiceDescriptorProtoView<'a> {
@@ -7013,6 +7130,15 @@ impl<'a> ::buffa::MessageView<'a> for MethodDescriptorProtoView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewMerge<'a> for MethodDescriptorProtoView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for MethodDescriptorProtoView<'a> {
@@ -7853,6 +7979,15 @@ impl<'a> ::buffa::MessageView<'a> for FileOptionsView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewMerge<'a> for FileOptionsView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for FileOptionsView<'a> {
@@ -8814,6 +8949,15 @@ impl<'a> ::buffa::MessageView<'a> for MessageOptionsView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewMerge<'a> for MessageOptionsView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
+    }
+}
 impl<'a> ::buffa::ViewEncode<'a> for MessageOptionsView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
@@ -9671,6 +9815,15 @@ impl<'a> ::buffa::MessageView<'a> for FieldOptionsView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewMerge<'a> for FieldOptionsView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
+    }
+}
 impl<'a> ::buffa::ViewEncode<'a> for FieldOptionsView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
@@ -10364,6 +10517,15 @@ pub mod field_options {
             }
         }
     }
+    impl<'a> ::buffa::ViewMerge<'a> for EditionDefaultView<'a> {
+        fn merge_view(
+            &mut self,
+            buf: &'a [u8],
+            depth: u32,
+        ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+            self._merge_into_view(buf, depth)
+        }
+    }
     impl<'a> ::buffa::ViewEncode<'a> for EditionDefaultView<'a> {
         #[allow(clippy::needless_borrow, clippy::let_and_return)]
         fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
@@ -10768,6 +10930,15 @@ pub mod field_options {
                     .into(),
                 ..::core::default::Default::default()
             }
+        }
+    }
+    impl<'a> ::buffa::ViewMerge<'a> for FeatureSupportView<'a> {
+        fn merge_view(
+            &mut self,
+            buf: &'a [u8],
+            depth: u32,
+        ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+            self._merge_into_view(buf, depth)
         }
     }
     impl<'a> ::buffa::ViewEncode<'a> for FeatureSupportView<'a> {
@@ -11214,6 +11385,15 @@ impl<'a> ::buffa::MessageView<'a> for OneofOptionsView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewMerge<'a> for OneofOptionsView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for OneofOptionsView<'a> {
@@ -11664,6 +11844,15 @@ impl<'a> ::buffa::MessageView<'a> for EnumOptionsView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewMerge<'a> for EnumOptionsView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for EnumOptionsView<'a> {
@@ -12199,6 +12388,15 @@ impl<'a> ::buffa::MessageView<'a> for EnumValueOptionsView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewMerge<'a> for EnumValueOptionsView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
+    }
+}
 impl<'a> ::buffa::ViewEncode<'a> for EnumValueOptionsView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
@@ -12691,6 +12889,15 @@ impl<'a> ::buffa::MessageView<'a> for ServiceOptionsView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewMerge<'a> for ServiceOptionsView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
+    }
+}
 impl<'a> ::buffa::ViewEncode<'a> for ServiceOptionsView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
@@ -13156,6 +13363,15 @@ impl<'a> ::buffa::MessageView<'a> for MethodOptionsView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewMerge<'a> for MethodOptionsView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for MethodOptionsView<'a> {
@@ -13652,6 +13868,15 @@ impl<'a> ::buffa::MessageView<'a> for UninterpretedOptionView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewMerge<'a> for UninterpretedOptionView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
+    }
+}
 impl<'a> ::buffa::ViewEncode<'a> for UninterpretedOptionView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
@@ -14124,6 +14349,15 @@ pub mod uninterpreted_option {
             }
         }
     }
+    impl<'a> ::buffa::ViewMerge<'a> for NamePartView<'a> {
+        fn merge_view(
+            &mut self,
+            buf: &'a [u8],
+            depth: u32,
+        ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+            self._merge_into_view(buf, depth)
+        }
+    }
     impl<'a> ::buffa::ViewEncode<'a> for NamePartView<'a> {
         #[allow(clippy::needless_borrow, clippy::let_and_return)]
         fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
@@ -14594,6 +14828,15 @@ impl<'a> ::buffa::MessageView<'a> for FeatureSetView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewMerge<'a> for FeatureSetView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for FeatureSetView<'a> {
@@ -15077,6 +15320,15 @@ pub mod feature_set {
             }
         }
     }
+    impl<'a> ::buffa::ViewMerge<'a> for VisibilityFeatureView<'a> {
+        fn merge_view(
+            &mut self,
+            buf: &'a [u8],
+            depth: u32,
+        ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+            self._merge_into_view(buf, depth)
+        }
+    }
     impl<'a> ::buffa::ViewEncode<'a> for VisibilityFeatureView<'a> {
         #[allow(clippy::needless_borrow, clippy::let_and_return)]
         fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
@@ -15421,6 +15673,15 @@ impl<'a> ::buffa::MessageView<'a> for FeatureSetDefaultsView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewMerge<'a> for FeatureSetDefaultsView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for FeatureSetDefaultsView<'a> {
@@ -15882,6 +16143,15 @@ pub mod feature_set_defaults {
             }
         }
     }
+    impl<'a> ::buffa::ViewMerge<'a> for FeatureSetEditionDefaultView<'a> {
+        fn merge_view(
+            &mut self,
+            buf: &'a [u8],
+            depth: u32,
+        ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+            self._merge_into_view(buf, depth)
+        }
+    }
     impl<'a> ::buffa::ViewEncode<'a> for FeatureSetEditionDefaultView<'a> {
         #[allow(clippy::needless_borrow, clippy::let_and_return)]
         fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
@@ -16325,6 +16595,15 @@ impl<'a> ::buffa::MessageView<'a> for SourceCodeInfoView<'a> {
                 .into(),
             ..::core::default::Default::default()
         }
+    }
+}
+impl<'a> ::buffa::ViewMerge<'a> for SourceCodeInfoView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for SourceCodeInfoView<'a> {
@@ -16848,6 +17127,15 @@ pub mod source_code_info {
                     .into(),
                 ..::core::default::Default::default()
             }
+        }
+    }
+    impl<'a> ::buffa::ViewMerge<'a> for LocationView<'a> {
+        fn merge_view(
+            &mut self,
+            buf: &'a [u8],
+            depth: u32,
+        ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+            self._merge_into_view(buf, depth)
         }
     }
     impl<'a> ::buffa::ViewEncode<'a> for LocationView<'a> {
@@ -17374,6 +17662,15 @@ impl<'a> ::buffa::MessageView<'a> for GeneratedCodeInfoView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewMerge<'a> for GeneratedCodeInfoView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
+    }
+}
 impl<'a> ::buffa::ViewEncode<'a> for GeneratedCodeInfoView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
@@ -17771,6 +18068,15 @@ pub mod generated_code_info {
                     .into(),
                 ..::core::default::Default::default()
             }
+        }
+    }
+    impl<'a> ::buffa::ViewMerge<'a> for AnnotationView<'a> {
+        fn merge_view(
+            &mut self,
+            buf: &'a [u8],
+            depth: u32,
+        ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+            self._merge_into_view(buf, depth)
         }
     }
     impl<'a> ::buffa::ViewEncode<'a> for AnnotationView<'a> {

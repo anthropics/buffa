@@ -94,6 +94,15 @@ impl<'a> ::buffa::MessageView<'a> for EmptyView<'a> {
         }
     }
 }
+impl<'a> ::buffa::ViewMerge<'a> for EmptyView<'a> {
+    fn merge_view(
+        &mut self,
+        buf: &'a [u8],
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        self._merge_into_view(buf, depth)
+    }
+}
 impl<'a> ::buffa::ViewEncode<'a> for EmptyView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
