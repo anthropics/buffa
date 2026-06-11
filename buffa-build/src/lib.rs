@@ -108,6 +108,25 @@ impl Config {
         self
     }
 
+    /// Additionally generate the lazy view family (`FooLazyView<'a>`)
+    /// alongside the unchanged eager views (default: false).
+    ///
+    /// Lazy views decode in a single non-recursive pass, recording nested and
+    /// repeated message fields as undecoded byte ranges that decode on access
+    /// via fallible, by-value accessors (`.get()` / iteration) — untouched
+    /// sub-trees cost nothing. Validation of deferred bytes happens on
+    /// *access* (and in the fallible `to_owned_message`), not at decode.
+    /// Groups, oneof message variants, and map message values stay eager;
+    /// lazy views have no `ReflectMessage`/`OwnedView`/text surface. Eager
+    /// codegen output is byte-identical with or without the flag. Requires
+    /// [`generate_views`](Self::generate_views). See
+    /// [`CodeGenConfig::lazy_views`] for full semantics.
+    #[must_use]
+    pub fn lazy_views(mut self, enabled: bool) -> Self {
+        self.codegen_config.lazy_views = enabled;
+        self
+    }
+
     /// Enable or disable serde JSON generation (default: false).
     ///
     /// When enabled:

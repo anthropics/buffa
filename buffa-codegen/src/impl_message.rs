@@ -297,13 +297,21 @@ fn classify_fields_ordered<'a>(
 /// threaded `SizeCache` — i.e. it has any sub-message-typed (LEN-delimited
 /// or group) field, oneof variant, or map value. Leaf messages (scalars
 /// only) take the cache as `_cache` to make the dead parameter explicit.
+/// With `lazy_views` (lazy view family only), lazy message fields re-emit raw
+/// fragments without a cache slot, so they don't count as cache users.
 fn message_uses_size_cache(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
     fields: &[FieldKind<'_>],
     features: &ResolvedFeatures,
+    is_lazy: Option<&dyn Fn(&FieldDescriptorProto) -> bool>,
 ) -> bool {
-    let is_nested = |f: &FieldDescriptorProto| {
+    let is_nested = |f: &FieldDescriptorProto| match effective_type(ctx, f, features) {
+        Type::TYPE_MESSAGE => !is_lazy.is_some_and(|p| p(f)),
+        Type::TYPE_GROUP => true,
+        _ => false,
+    };
+    let oneof_nested = |f: &FieldDescriptorProto| {
         matches!(
             effective_type(ctx, f, features),
             Type::TYPE_MESSAGE | Type::TYPE_GROUP
@@ -311,7 +319,7 @@ fn message_uses_size_cache(
     };
     fields.iter().any(|kind| match kind {
         FieldKind::Scalar(f) | FieldKind::Repeated(f) => is_nested(f),
-        FieldKind::Oneof { fields, .. } => fields.iter().copied().any(is_nested),
+        FieldKind::Oneof { fields, .. } => fields.iter().copied().any(oneof_nested),
         FieldKind::Map(f) => find_map_entry_fields(msg, f)
             .map(|(_, val_fd)| {
                 effective_type_in_map_entry(ctx, val_fd, features) == Type::TYPE_MESSAGE
@@ -389,7 +397,8 @@ pub fn generate_message_impl(
     let name_ident = format_ident!("{}", rust_name);
 
     let fields = classify_fields_ordered(msg, oneof_idents)?;
-    let cache_ident = if message_uses_size_cache(ctx, msg, &fields, features) {
+    // The lazy predicate applies to the lazy view family only; owned is eager.
+    let cache_ident = if message_uses_size_cache(ctx, msg, &fields, features, None) {
         format_ident!("__cache")
     } else {
         format_ident!("_cache")
@@ -713,6 +722,46 @@ pub fn generate_message_impl(
 /// [`generate_message_impl`] — they emit `&self.field`-relative code that is
 /// duck-type-compatible with view field types (`&'a str`, `RepeatedView`,
 /// `MapView`, `MessageFieldView`).
+/// Compute-size / write-to pair for a lazy message field: each recorded
+/// fragment is re-emitted as one LengthDelimited occurrence, byte-for-byte
+/// and **without validation**. `accessor` is `fragments` (singular) or
+/// `raw_elements` (repeated).
+fn lazy_fragment_encode_stmts(
+    field: &FieldDescriptorProto,
+    accessor: TokenStream,
+) -> Result<(TokenStream, TokenStream), CodeGenError> {
+    let field_name = field
+        .name
+        .as_deref()
+        .ok_or(CodeGenError::MissingField("field.name"))?;
+    let field_number = validated_field_number(field)?;
+    let ident = make_field_ident(field_name);
+    let ld_tag_len = tag_encoded_len(field_number, 2);
+    let compute = quote! {
+        for __frag in self.#ident.#accessor() {
+            size += #ld_tag_len
+                + ::buffa::encoding::varint_len(__frag.len() as u64) as u32
+                + __frag.len() as u32;
+        }
+    };
+    let write = quote! {
+        for __frag in self.#ident.#accessor() {
+            ::buffa::encoding::Tag::new(
+                #field_number,
+                ::buffa::encoding::WireType::LengthDelimited,
+            ).encode(buf);
+            ::buffa::encoding::encode_varint(__frag.len() as u64, buf);
+            buf.put_slice(__frag);
+        }
+    };
+    Ok((compute, write))
+}
+
+/// `is_lazy`: when building for the lazy view family, the per-field
+/// deferral predicate — matching fields re-emit recorded fragments verbatim
+/// (wire-equivalent to the merged value); all other field kinds share the
+/// eager stmt builders. `None` builds the eager impl.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_view_encode_methods(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -720,18 +769,32 @@ pub(crate) fn build_view_encode_methods(
     features: &ResolvedFeatures,
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
     view_oneof_prefix: &TokenStream,
+    is_lazy: Option<&dyn Fn(&FieldDescriptorProto) -> bool>,
+    vis: &TokenStream,
 ) -> Result<TokenStream, CodeGenError> {
     let fields = classify_fields_ordered(msg, oneof_idents)?;
-    let cache_ident = if message_uses_size_cache(ctx, msg, &fields, features) {
+    let cache_ident = if message_uses_size_cache(ctx, msg, &fields, features, is_lazy) {
         format_ident!("__cache")
     } else {
         format_ident!("_cache")
     };
 
+    let lazy_message = |f: &FieldDescriptorProto| is_lazy.is_some_and(|p| p(f));
+
     let mut compute_stmts: Vec<TokenStream> = Vec::with_capacity(fields.len());
     let mut write_stmts: Vec<TokenStream> = Vec::with_capacity(fields.len());
     for kind in &fields {
         match kind {
+            FieldKind::Scalar(f) if lazy_message(f) => {
+                let (compute, write) = lazy_fragment_encode_stmts(f, quote! { fragments })?;
+                compute_stmts.push(compute);
+                write_stmts.push(write);
+            }
+            FieldKind::Repeated(f) if lazy_message(f) => {
+                let (compute, write) = lazy_fragment_encode_stmts(f, quote! { raw_elements })?;
+                compute_stmts.push(compute);
+                write_stmts.push(write);
+            }
             FieldKind::Scalar(f) => {
                 compute_stmts.push(scalar_compute_size_stmt(ctx, f, features)?);
                 write_stmts.push(scalar_write_to_stmt(ctx, f, features)?);
@@ -813,6 +876,17 @@ pub(crate) fn build_view_encode_methods(
         quote! {}
     };
 
+    // Lazy bodies call ViewEncode methods on *eager* sub-views (groups, map
+    // values, oneof variants); the eager bodies live inside the ViewEncode
+    // impl itself where the trait is implicitly in scope.
+    let lazy_use = if is_lazy.is_some() {
+        quote! {
+            #[allow(unused_imports)]
+            use ::buffa::ViewEncode as _;
+        }
+    } else {
+        quote! {}
+    };
     let has_body = !fields.is_empty() || preserve_unknown_fields;
     let size_decl = if has_body {
         quote! { let mut size = 0u32; }
@@ -830,9 +904,10 @@ pub(crate) fn build_view_encode_methods(
         // owned `String`/`Vec<u8>`; on view fields (`&'a str`/`&'a [u8]`)
         // the borrow is redundant but harmless.
         #[allow(clippy::needless_borrow, clippy::let_and_return)]
-        fn compute_size(&self, #cache_ident: &mut ::buffa::SizeCache) -> u32 {
+        #vis fn compute_size(&self, #cache_ident: &mut ::buffa::SizeCache) -> u32 {
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
+            #lazy_use
             #size_decl
             #(#compute_stmts)*
             #unknown_fields_size_stmt
@@ -840,9 +915,10 @@ pub(crate) fn build_view_encode_methods(
         }
 
         #[allow(clippy::needless_borrow)]
-        fn write_to(&self, #cache_ident: &mut ::buffa::SizeCache, #buf_param) {
+        #vis fn write_to(&self, #cache_ident: &mut ::buffa::SizeCache, #buf_param) {
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
+            #lazy_use
             #(#write_stmts)*
             #unknown_fields_write_stmt
         }

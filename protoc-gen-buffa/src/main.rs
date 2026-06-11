@@ -103,12 +103,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Parse plugin parameters (e.g., "views=true,unknown_fields=false").
     let config = parse_config(request.parameter.as_deref().unwrap_or(""))?;
 
-    // Run code generation.
-    let generated = buffa_codegen::generate(
+    // Run code generation, forwarding non-fatal warnings to stderr (protoc
+    // surfaces plugin stderr to the user).
+    let (generated, warnings) = buffa_codegen::generate_with_diagnostics(
         &request.proto_file,
         &request.file_to_generate,
         &config.codegen,
     )?;
+    for warning in &warnings {
+        eprintln!("protoc-gen-buffa: warning: {warning}");
+    }
 
     // Build the response. `generated` is consumed here so the names and
     // contents move directly into the response rather than being cloned.
@@ -177,6 +181,7 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
         if let Some((key, value)) = param.split_once('=') {
             match key.trim() {
                 "views" => codegen.generate_views = value.trim() == "true",
+                "lazy_views" => codegen.lazy_views = value.trim() == "true",
                 "unknown_fields" => codegen.preserve_unknown_fields = value.trim() != "false",
                 "json" => codegen.generate_json = value.trim() == "true",
                 "text" => codegen.generate_text = value.trim() == "true",
@@ -283,6 +288,13 @@ mod tests {
     fn views_false() {
         let config = parse_config("views=false").unwrap();
         assert!(!config.codegen.generate_views);
+    }
+
+    #[test]
+    fn lazy_views_true() {
+        let config = parse_config("lazy_views=true").unwrap();
+        assert!(config.codegen.lazy_views);
+        assert!(!parse_config("").unwrap().codegen.lazy_views);
     }
 
     #[test]

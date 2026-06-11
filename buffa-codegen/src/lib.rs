@@ -33,6 +33,7 @@ pub mod idents;
 pub(crate) mod impl_message;
 pub(crate) mod impl_text;
 pub(crate) mod imports;
+pub(crate) mod lazy_view;
 pub(crate) mod message;
 pub(crate) mod oneof;
 pub(crate) mod owned_view;
@@ -144,6 +145,8 @@ pub enum GeneratedFileKind {
     Owned,
     /// View structs (`<stem>.__view.rs`).
     View,
+    /// Lazy view structs (`<stem>.__lazy_view.rs`).
+    LazyView,
     /// Owned oneof enums (`<stem>.__oneof.rs`).
     Oneof,
     /// View oneof enums (`<stem>.__view_oneof.rs`).
@@ -276,6 +279,40 @@ pub struct CodeGenConfig {
     /// Whether to generate borrowed view types (`MyMessageView<'a>`) in
     /// addition to owned types.
     pub generate_views: bool,
+    /// Whether to additionally generate the lazy view family
+    /// (`MyMessageLazyView<'a>`) alongside the eager views (default: false).
+    ///
+    /// Lazy views implement `buffa::LazyMessageView`: `decode_lazy` performs
+    /// a single non-recursive scan, recording singular/repeated message
+    /// fields as undecoded byte ranges (`LazyMessageFieldView` /
+    /// `LazyRepeatedView`) that decode on access — reading a few fields of
+    /// many sub-messages no longer allocates or recurses into untouched
+    /// sub-trees. The eager `MyMessageView` family is unchanged (output is
+    /// byte-identical with or without this flag), so eager and lazy views
+    /// coexist and generic `MessageView` consumers never silently inherit
+    /// deferred validation.
+    ///
+    /// Semantics of the lazy family:
+    ///
+    /// - **Eager carve-outs**: groups / editions `DELIMITED` fields (no
+    ///   length prefix to defer), oneof message variants, and map message
+    ///   values use the eager view types.
+    /// - **Merge preserved**: a singular message field split across wire
+    ///   occurrences is recorded as fragments and merged on access.
+    /// - **Budgets flow**: the recursion depth and unknown-field allowance
+    ///   remaining at each deferred field are recorded and replayed per
+    ///   access (a per-subtree approximation of the shared allowance).
+    /// - **Deferred validation**: malformed deferred bytes error on access,
+    ///   from the fallible `to_owned_message`, and as a serde error from the
+    ///   view `Serialize` impl. `ViewEncode` replays recorded fragments
+    ///   **without validating them**.
+    /// - No `ReflectMessage`, `OwnedView`, or text-format surface — use the
+    ///   eager family for those.
+    ///
+    /// Requires [`generate_views`](Self::generate_views) (the lazy family
+    /// reuses the eager view-oneof enums and eager sub-view types); with
+    /// views disabled the flag is ignored with a warning.
+    pub lazy_views: bool,
     /// Whether to preserve unknown fields (default: true).
     pub preserve_unknown_fields: bool,
     /// Whether to derive `serde::Serialize` / `serde::Deserialize` on
@@ -622,6 +659,7 @@ impl Default for CodeGenConfig {
     fn default() -> Self {
         Self {
             generate_views: true,
+            lazy_views: false,
             preserve_unknown_fields: true,
             generate_json: false,
             generate_arbitrary: false,
@@ -832,6 +870,11 @@ pub enum CodeGenWarning {
         /// The proto field or oneof name whose accessor was suppressed.
         field_name: String,
     },
+    /// `lazy_views` was requested with `generate_views` disabled; the lazy
+    /// family reuses the eager view-oneof enums and eager sub-view types, so
+    /// no lazy views were generated. Emitted once per generation run.
+    #[non_exhaustive]
+    LazyViewsRequireViews,
 }
 
 impl core::fmt::Display for CodeGenWarning {
@@ -871,6 +914,15 @@ impl core::fmt::Display for CodeGenWarning {
                     f,
                     "`{wrapper_name}`: accessor for field `{field_name}` suppressed \
                      (collides with a reserved wrapper method); use `.view().{field_name}` instead"
+                )
+            }
+            Self::LazyViewsRequireViews => {
+                write!(
+                    f,
+                    "lazy_views requires generate_views (the lazy family reuses the \
+                     eager view-oneof enums and sub-view types); no lazy views were \
+                     generated — enable generate_views (buffa-build: \
+                     `.generate_views(true)`, the default; plugin: `views=true`)"
                 )
             }
         }
@@ -942,6 +994,11 @@ pub fn generate_with_diagnostics(
     }
 
     let ctx = context::CodeGenContext::for_generate(file_descriptors, files_to_generate, config);
+
+    // Lazy views need the eager view machinery; warn once per run.
+    if config.lazy_views && !config.generate_views {
+        ctx.warn(CodeGenWarning::LazyViewsRequireViews);
+    }
 
     // Group requested files by package. BTreeMap → deterministic output order.
     let mut by_package: std::collections::BTreeMap<String, Vec<&FileDescriptorProto>> =
@@ -1166,6 +1223,7 @@ struct ProtoContent {
     stem: String,
     owned: TokenStream,
     view: TokenStream,
+    lazy_view: TokenStream,
     oneof: TokenStream,
     view_oneof: TokenStream,
     ext: TokenStream,
@@ -1196,6 +1254,7 @@ fn generate_proto_content(
 
     let mut owned = TokenStream::new();
     let mut view = TokenStream::new();
+    let mut lazy_view = TokenStream::new();
     let mut oneof = TokenStream::new();
     let mut view_oneof = TokenStream::new();
     let mut ext = TokenStream::new();
@@ -1231,6 +1290,7 @@ fn generate_proto_content(
             owned_mod,
             oneof_tree: msg_oneof,
             view_tree: msg_view,
+            lazy_view_tree: msg_lazy_view,
             view_oneof_tree: msg_view_oneof,
             reg: msg_reg,
         } = message::generate_message(
@@ -1279,6 +1339,7 @@ fn generate_proto_content(
         }
         oneof.extend(msg_oneof);
         view.extend(msg_view);
+        lazy_view.extend(msg_lazy_view);
         view_oneof.extend(msg_view_oneof);
 
         // Top-level message view → re-export at package root. The leading
@@ -1317,6 +1378,19 @@ fn generate_proto_content(
                     ctx.config.feature_gates().views,
                 ),
             });
+            if ctx.config.lazy_views {
+                let lazy_ident = format_ident!("{top_level_name}LazyView");
+                root_reexports.push(message::ReexportCandidate {
+                    name: lazy_ident.to_string(),
+                    tokens: feature_gates::cfg_block(
+                        quote! {
+                            #[doc(inline)]
+                            pub use self :: #sentinel :: lazy_view :: #lazy_ident;
+                        },
+                        ctx.config.feature_gates().views,
+                    ),
+                });
+            }
         }
     }
 
@@ -1353,6 +1427,7 @@ fn generate_proto_content(
         stem: proto_path_to_stem(file.name.as_deref().unwrap_or("")),
         owned,
         view,
+        lazy_view,
         oneof,
         view_oneof,
         ext,
@@ -1368,6 +1443,7 @@ fn generate_proto_content(
 struct PackageSections {
     owned: Vec<TokenStream>,
     view: Vec<TokenStream>,
+    lazy_view: Vec<TokenStream>,
     oneof: Vec<TokenStream>,
     view_oneof: Vec<TokenStream>,
     ext: Vec<TokenStream>,
@@ -1387,6 +1463,7 @@ impl PackageSections {
         };
         push_if_nonempty(&mut self.owned, pc.owned);
         push_if_nonempty(&mut self.view, pc.view);
+        push_if_nonempty(&mut self.lazy_view, pc.lazy_view);
         push_if_nonempty(&mut self.oneof, pc.oneof);
         push_if_nonempty(&mut self.view_oneof, pc.view_oneof);
         push_if_nonempty(&mut self.ext, pc.ext);
@@ -1459,6 +1536,13 @@ fn generate_package(
                 GeneratedFileKind::View,
                 pc.view,
                 &mut sections.view,
+                out,
+            )?;
+            emit(
+                ".__lazy_view",
+                GeneratedFileKind::LazyView,
+                pc.lazy_view,
+                &mut sections.lazy_view,
                 out,
             )?;
             emit(
@@ -1574,6 +1658,7 @@ fn generate_package_mod(
 
     let owned = &sections.owned;
     let view = &sections.view;
+    let lazy_view = &sections.lazy_view;
     let view_oneof = &sections.view_oneof;
     let oneof = &sections.oneof;
     let ext = &sections.ext;
@@ -1607,6 +1692,24 @@ fn generate_package_mod(
                     use super::*;
                     #(#view)*
                     #view_oneof_mod
+                }
+            },
+            ctx.config.feature_gates().views,
+        )
+    } else {
+        TokenStream::new()
+    };
+
+    // `lazy_view` is only populated when `view` is (the lazy family is
+    // generated per-message alongside the eager view).
+    debug_assert!(lazy_view.is_empty() || !view.is_empty());
+    let lazy_view_mod = if !lazy_view.is_empty() {
+        feature_gates::cfg_block(
+            quote! {
+                pub mod lazy_view {
+                    #[allow(unused_imports)]
+                    use super::*;
+                    #(#lazy_view)*
                 }
             },
             ctx.config.feature_gates().views,
@@ -1716,6 +1819,7 @@ fn generate_package_mod(
     // The whole `pub mod __buffa { ... }` wrapper is itself omitted
     // when none of its inner modules or `register_types` exist.
     let buffa_mod = if view_mod.is_empty()
+        && lazy_view_mod.is_empty()
         && oneof_mod.is_empty()
         && ext_mod.is_empty()
         && register_fn.is_empty()
@@ -1730,6 +1834,7 @@ fn generate_package_mod(
                 #[allow(unused_imports)]
                 use super::*;
                 #view_mod
+                #lazy_view_mod
                 #oneof_mod
                 #ext_mod
                 #register_fn

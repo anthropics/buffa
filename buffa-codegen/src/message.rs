@@ -59,6 +59,10 @@ pub(crate) struct MessageOutput {
     /// View struct + impls, wrapped per-message-level. Destined for
     /// `__buffa::view::`.
     pub view_tree: TokenStream,
+    /// Lazy view struct + impls (`lazy_views` option), wrapped
+    /// per-message-level. Destined for `__buffa::view::`, beside the eager
+    /// views.
+    pub lazy_view_tree: TokenStream,
     /// Oneof view enum definitions, wrapped per-message-level. Destined
     /// for `__buffa::view::oneof::`.
     pub view_oneof_tree: TokenStream,
@@ -593,6 +597,7 @@ fn generate_message_with_nesting(
     let mut nested_items = TokenStream::new();
     let mut nested_oneof_tree = TokenStream::new();
     let mut nested_view_tree = TokenStream::new();
+    let mut nested_lazy_view_tree = TokenStream::new();
     let mut nested_view_oneof_tree = TokenStream::new();
     // Any-entry paths are relative to THIS struct's scope (top_level).
     // Our own consts land alongside our struct; nested messages' consts land
@@ -651,6 +656,7 @@ fn generate_message_with_nesting(
         // its own `pub mod {nested_name}`; we collect them as siblings.
         nested_oneof_tree.extend(nested_out.oneof_tree);
         nested_view_tree.extend(nested_out.view_tree);
+        nested_lazy_view_tree.extend(nested_out.lazy_view_tree);
         nested_view_oneof_tree.extend(nested_out.view_oneof_tree);
     }
 
@@ -702,6 +708,11 @@ fn generate_message_with_nesting(
     } else {
         (TokenStream::new(), TokenStream::new())
     };
+    let own_lazy_top = if ctx.config.generate_views && ctx.config.lazy_views {
+        crate::lazy_view::generate_lazy_view_with_nesting(scope, msg, rust_name)?
+    } else {
+        TokenStream::new()
+    };
 
     // Wrap ancillary streams in this message's `pub mod {snake_name}`.
     // View structs sit *beside* their message's module (so `Foo`'s view is
@@ -725,6 +736,10 @@ fn generate_message_with_nesting(
     let view_tree = {
         let nested_wrapped = wrap(nested_view_tree);
         quote! { #own_view_top #nested_wrapped }
+    };
+    let lazy_view_tree = {
+        let nested_wrapped = wrap(nested_lazy_view_tree);
+        quote! { #own_lazy_top #nested_wrapped }
     };
 
     // Generate a manual Debug impl that excludes internal __buffa_ fields.
@@ -816,6 +831,7 @@ fn generate_message_with_nesting(
         owned_mod,
         oneof_tree,
         view_tree,
+        lazy_view_tree,
         view_oneof_tree,
         reg: reg_paths,
     })
@@ -917,6 +933,12 @@ fn collect_natural_reexports(
         proto_fqn,
         from_nesting,
     );
+    let lazy_view_prefix = ancillary_prefix(
+        AncillaryKind::LazyView,
+        current_package,
+        proto_fqn,
+        from_nesting,
+    );
 
     let mut candidates: Vec<ReexportCandidate> = Vec::new();
 
@@ -958,6 +980,16 @@ fn collect_natural_reexports(
                     views_gate,
                 ),
             });
+            if ctx.config.lazy_views {
+                let lazy_ident = format_ident!("{}LazyView", nested.name.as_deref().unwrap_or(""));
+                candidates.push(ReexportCandidate {
+                    name: lazy_ident.to_string(),
+                    tokens: crate::feature_gates::cfg_block(
+                        quote! { #inline pub use #lazy_view_prefix #lazy_ident; },
+                        views_gate,
+                    ),
+                });
+            }
         }
         // View oneof enums: `__buffa::view::oneof::<msg>::Kind` → `KindView`.
         for (_, enum_ident) in &oneof_pairs {

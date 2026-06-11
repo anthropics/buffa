@@ -163,6 +163,8 @@ pub(crate) fn generate_view_with_nesting(
         features,
         &oneof_idents,
         &view_oneof_prefix,
+        None,
+        &quote! {},
     )?;
     let view_encode_impl = quote! {
         impl<'a> ::buffa::ViewEncode<'a> for #view_ident<'a> {
@@ -726,7 +728,7 @@ pub(crate) fn oneof_view_needs_lifetime(
 /// Only an all-scalar/enum message with `preserve_unknown_fields=false`
 /// has no borrowing fields — in that case a PhantomData marker is needed
 /// to keep the `<'a>` lifetime valid for `_decode_ctx(buf: &'a [u8])`.
-fn message_view_has_borrowing_field(
+pub(crate) fn message_view_has_borrowing_field(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
     features: &ResolvedFeatures,
@@ -769,7 +771,7 @@ fn message_view_has_borrowing_field(
     false
 }
 
-fn oneof_view_struct_fields(
+pub(crate) fn oneof_view_struct_fields(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
     view_oneof_prefix: &TokenStream,
@@ -1015,7 +1017,7 @@ fn build_decode_arms(
     Ok((scalar_arms, repeated_arms, oneof_arms))
 }
 
-fn scalar_decode_arm(
+pub(crate) fn scalar_decode_arm(
     scope: MessageScope<'_>,
     field: &FieldDescriptorProto,
 ) -> Result<TokenStream, CodeGenError> {
@@ -1120,7 +1122,7 @@ fn scalar_decode_arm(
     Ok(quote! { #field_number => { #wire_check #assign } })
 }
 
-fn repeated_decode_arm(
+pub(crate) fn repeated_decode_arm(
     scope: MessageScope<'_>,
     field: &FieldDescriptorProto,
 ) -> Result<TokenStream, CodeGenError> {
@@ -1282,7 +1284,7 @@ fn repeated_decode_arm(
     })
 }
 
-fn map_decode_arm(
+pub(crate) fn map_decode_arm(
     scope: MessageScope<'_>,
     msg: &DescriptorProto,
     field: &FieldDescriptorProto,
@@ -1392,7 +1394,7 @@ fn map_view_entry_decode(
     Ok(quote! { #tag_check #assign })
 }
 
-fn oneof_decode_arms(
+pub(crate) fn oneof_decode_arms(
     scope: MessageScope<'_>,
     base_ident: &proc_macro2::Ident,
     oneof_name: &str,
@@ -1637,7 +1639,7 @@ fn str_view_to_owned(
     }
 }
 
-fn singular_to_owned(
+pub(crate) fn singular_to_owned(
     scope: MessageScope<'_>,
     field: &FieldDescriptorProto,
     ty: Type,
@@ -1695,7 +1697,7 @@ fn singular_to_owned(
     })
 }
 
-fn repeated_to_owned(
+pub(crate) fn repeated_to_owned(
     scope: MessageScope<'_>,
     ty: Type,
     ident: &proc_macro2::Ident,
@@ -1729,7 +1731,7 @@ fn repeated_to_owned(
     }
 }
 
-fn map_to_owned_expr(
+pub(crate) fn map_to_owned_expr(
     scope: MessageScope<'_>,
     msg: &DescriptorProto,
     field: &FieldDescriptorProto,
@@ -1794,7 +1796,7 @@ fn map_to_owned_expr(
     })
 }
 
-fn oneof_variant_to_owned(
+pub(crate) fn oneof_variant_to_owned(
     scope: MessageScope<'_>,
     ty: Type,
     oneof_name: &str,
@@ -1911,7 +1913,7 @@ fn generate_view_serialize(
 }
 
 /// Generate a single serialize statement for one direct (non-oneof) view field.
-fn view_field_serialize_stmt(
+pub(crate) fn view_field_serialize_stmt(
     scope: MessageScope<'_>,
     msg: &DescriptorProto,
     field: &FieldDescriptorProto,
@@ -2359,7 +2361,7 @@ fn scalar_skip_predicate(ty: Type) -> TokenStream {
 /// ```text
 /// if let Some(ref __ov) = self.field { match __ov { <arm>, ... } }
 /// ```
-fn view_oneof_serialize_arm(
+pub(crate) fn view_oneof_serialize_arm(
     scope: MessageScope<'_>,
     field: &FieldDescriptorProto,
     view_enum: &TokenStream,
@@ -2501,7 +2503,7 @@ pub(crate) fn resolve_view_ty_tokens(
 }
 
 /// Resolve the view type tokens used for `decode_view` calls (no lifetime).
-fn resolve_view_decode_tokens(
+pub(crate) fn resolve_view_decode_tokens(
     scope: MessageScope<'_>,
     field: &FieldDescriptorProto,
 ) -> Result<TokenStream, CodeGenError> {
@@ -2517,6 +2519,37 @@ fn resolve_view_path(
     scope: MessageScope<'_>,
     field: &FieldDescriptorProto,
 ) -> Result<TokenStream, CodeGenError> {
+    resolve_view_family_path(scope, field, "View")
+}
+
+/// Like [`resolve_view_path`] but for the lazy family (`FooLazyView`).
+pub(crate) fn resolve_lazy_view_path(
+    scope: MessageScope<'_>,
+    field: &FieldDescriptorProto,
+) -> Result<TokenStream, CodeGenError> {
+    resolve_view_family_path(scope, field, "LazyView")
+}
+
+/// Resolve the type tokens for a lazy sub-view, with `lt` applied.
+pub(crate) fn resolve_lazy_view_ty_tokens(
+    scope: MessageScope<'_>,
+    field: &FieldDescriptorProto,
+    lt: &TokenStream,
+) -> Result<TokenStream, CodeGenError> {
+    let path = resolve_lazy_view_path(scope, field)?;
+    Ok(quote! { #path <#lt> })
+}
+
+fn resolve_view_family_path(
+    scope: MessageScope<'_>,
+    field: &FieldDescriptorProto,
+    suffix: &str,
+) -> Result<TokenStream, CodeGenError> {
+    let tree = if suffix == "LazyView" {
+        make_field_ident("lazy_view")
+    } else {
+        make_field_ident("view")
+    };
     let type_name = field
         .type_name
         .as_deref()
@@ -2540,11 +2573,11 @@ fn resolve_view_path(
         }
         None => (TokenStream::new(), split.within_package.clone()),
     };
-    let view_ident = make_field_ident(&format!("{last}View"));
-    Ok(quote! { #to_pkg #sentinel :: view :: #within_prefix #view_ident })
+    let view_ident = make_field_ident(&format!("{last}{suffix}"));
+    Ok(quote! { #to_pkg #sentinel :: #tree :: #within_prefix #view_ident })
 }
 
-fn resolve_owned_path(
+pub(crate) fn resolve_owned_path(
     scope: MessageScope<'_>,
     field: &FieldDescriptorProto,
 ) -> Result<String, CodeGenError> {
