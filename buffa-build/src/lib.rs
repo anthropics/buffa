@@ -316,7 +316,7 @@ impl Config {
     /// Reflecting message-typed fields also requires every crate that field
     /// types resolve to via an extern path — notably `buffa-types` for
     /// well-known types — to enable its own reflection feature; see
-    /// [`reflect_mode`](Self::reflect_mode#extern-path-types) for the
+    /// [`reflect_mode`](Self::reflect_mode) ("Extern-path types") for the
     /// `Cargo.toml` requirement and mixed-mode behavior.
     ///
     /// # Performance

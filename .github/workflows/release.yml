@@ -9,6 +9,16 @@ name: Release protoc plugins
 on:
   push:
     tags: ['v*']
+  # Re-release an existing tag when the tag-triggered run failed for a
+  # workflow-definition reason: a dispatch from main uses main's (fixed)
+  # workflow file while building the tag's source, which a re-run of the
+  # failed tag run cannot do (re-runs reuse the workflow file at the tag).
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing v* tag to build and release (e.g. v0.7.1)"
+        required: true
+        type: string
 
 permissions:
   contents: write      # create releases and upload assets
@@ -20,6 +30,8 @@ env:
   # in the release/sign/attest steps that matches one matches both.
   BINARY_PREFIX: protoc-gen-buffa
   BINARIES: protoc-gen-buffa protoc-gen-buffa-packaging
+  # The tag being released: the pushed tag, or the dispatch input.
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   build:
@@ -54,9 +66,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
 
+      # Must name the same toolchain version as rust-toolchain.toml: that
+      # file overrides the action-installed default when cargo runs, so a
+      # cross-compile target installed on @stable is bypassed and the build
+      # fails with E0463 (this bit the v0.7.1 darwin-x86_64 job). Keep in
+      # sync with rust-toolchain.toml and ci.yml; bump together.
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95
         with:
           targets: ${{ matrix.target }}
 
@@ -84,14 +103,13 @@ jobs:
 
       - name: Package
         env:
-          REF_NAME: ${{ github.ref_name }}
           TARGET: ${{ matrix.target }}
           PLATFORM_NAME: ${{ matrix.name }}
           EXT: ${{ matrix.ext }}
         run: |
           mkdir -p dist
           for bin in $BINARIES; do
-            asset="${bin}-${REF_NAME}-${PLATFORM_NAME}${EXT}"
+            asset="${bin}-${RELEASE_TAG}-${PLATFORM_NAME}${EXT}"
             cp "target/${TARGET}/release/${bin}${EXT}" "dist/${asset}"
           done
 
@@ -148,6 +166,7 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2 (sha-pinned)
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           generate_release_notes: true
           files: |
             artifacts/${{ env.BINARY_PREFIX }}-*
