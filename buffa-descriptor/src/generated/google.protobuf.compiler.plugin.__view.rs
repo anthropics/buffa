@@ -122,29 +122,27 @@ impl<'a> ::buffa::MessageView<'a> for VersionView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::Version {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::Version, ::buffa::DecodeError> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::Version {
+    ) -> ::core::result::Result<super::super::Version, ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::Version {
+        ::core::result::Result::Ok(super::super::Version {
             major: self.major,
             minor: self.minor,
             patch: self.patch,
             suffix: self.suffix.map(|s| s.to_string()),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for VersionView<'a> {
@@ -343,8 +341,14 @@ impl VersionOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::Version {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::Version, ::buffa::DecodeError> {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -610,18 +614,26 @@ impl<'a> ::buffa::MessageView<'a> for CodeGeneratorRequestView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::CodeGeneratorRequest {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::CodeGeneratorRequest,
+        ::buffa::DecodeError,
+    > {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::CodeGeneratorRequest {
+    ) -> ::core::result::Result<
+        super::super::CodeGeneratorRequest,
+        ::buffa::DecodeError,
+    > {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::CodeGeneratorRequest {
+        ::core::result::Result::Ok(super::super::CodeGeneratorRequest {
             file_to_generate: self
                 .file_to_generate
                 .iter()
@@ -632,27 +644,23 @@ impl<'a> ::buffa::MessageView<'a> for CodeGeneratorRequestView<'a> {
                 .proto_file
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             source_file_descriptors: self
                 .source_file_descriptors
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             compiler_version: match self.compiler_version.as_option() {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::Version,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for CodeGeneratorRequestView<'a> {
@@ -878,8 +886,17 @@ impl CodeGeneratorRequestOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::CodeGeneratorRequest {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::CodeGeneratorRequest,
+        ::buffa::DecodeError,
+    > {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -1158,18 +1175,26 @@ impl<'a> ::buffa::MessageView<'a> for CodeGeneratorResponseView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::CodeGeneratorResponse {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::CodeGeneratorResponse,
+        ::buffa::DecodeError,
+    > {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::CodeGeneratorResponse {
+    ) -> ::core::result::Result<
+        super::super::CodeGeneratorResponse,
+        ::buffa::DecodeError,
+    > {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::CodeGeneratorResponse {
+        ::core::result::Result::Ok(super::super::CodeGeneratorResponse {
             error: self.error.map(|s| s.to_string()),
             supported_features: self.supported_features,
             minimum_edition: self.minimum_edition,
@@ -1178,14 +1203,10 @@ impl<'a> ::buffa::MessageView<'a> for CodeGeneratorResponseView<'a> {
                 .file
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for CodeGeneratorResponseView<'a> {
@@ -1410,8 +1431,17 @@ impl CodeGeneratorResponseOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::CodeGeneratorResponse {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::CodeGeneratorResponse,
+        ::buffa::DecodeError,
+    > {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -1714,18 +1744,24 @@ pub mod code_generator_response {
         }
         fn to_owned_message(
             &self,
-        ) -> super::super::super::code_generator_response::File {
+        ) -> ::core::result::Result<
+            super::super::super::code_generator_response::File,
+            ::buffa::DecodeError,
+        > {
             self.to_owned_from_source(None)
         }
         #[allow(clippy::useless_conversion, clippy::needless_update)]
         fn to_owned_from_source(
             &self,
             __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-        ) -> super::super::super::code_generator_response::File {
+        ) -> ::core::result::Result<
+            super::super::super::code_generator_response::File,
+            ::buffa::DecodeError,
+        > {
             #[allow(unused_imports)]
             use ::buffa::alloc::string::ToString as _;
             let _ = __buffa_src;
-            super::super::super::code_generator_response::File {
+            ::core::result::Result::Ok(super::super::super::code_generator_response::File {
                 name: self.name.map(|s| s.to_string()),
                 insertion_point: self.insertion_point.map(|s| s.to_string()),
                 content: self.content.map(|s| s.to_string()),
@@ -1733,17 +1769,13 @@ pub mod code_generator_response {
                     Some(v) => {
                         ::buffa::MessageField::<
                             super::super::super::super::GeneratedCodeInfo,
-                        >::some(v.to_owned_from_source(__buffa_src))
+                        >::some(v.to_owned_from_source(__buffa_src)?)
                     }
                     None => ::buffa::MessageField::none(),
                 },
-                __buffa_unknown_fields: self
-                    .__buffa_unknown_fields
-                    .to_owned()
-                    .unwrap_or_default()
-                    .into(),
+                __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
                 ..::core::default::Default::default()
-            }
+            })
         }
     }
     impl<'a> ::buffa::ViewEncode<'a> for FileView<'a> {
@@ -1935,10 +1967,17 @@ pub mod code_generator_response {
             self.0.reborrow()
         }
         /// Convert to the owned message type.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if re-materializing preserved unknown fields
+        /// fails (e.g. the unknown-field limit is exceeded).
         pub fn to_owned_message(
             &self,
-        ) -> super::super::super::code_generator_response::File {
+        ) -> ::core::result::Result<
+            super::super::super::code_generator_response::File,
+            ::buffa::DecodeError,
+        > {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.

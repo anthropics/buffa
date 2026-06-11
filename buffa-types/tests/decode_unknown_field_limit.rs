@@ -160,8 +160,15 @@ mod view_path {
             .with_unknown_field_limit(1)
             .decode_view(&payload)
             .expect("a contiguous flood coalesces into a single span");
-        // Round-trip fidelity: the coalesced spans re-encode verbatim.
-        let owned = view.to_owned_message();
+        // Converting to owned materializes one UnknownField per record, so
+        // the decode-time allowance (1) carries through and is enforced.
+        assert_eq!(
+            view.to_owned_message(),
+            Err(DecodeError::UnknownFieldLimitExceeded)
+        );
+        // With an adequate allowance the round-trip is byte-identical.
+        let view: EmptyView = EmptyView::decode_view(&payload).expect("default limit");
+        let owned = view.to_owned_message().expect("within default allowance");
         assert_eq!(owned.encode_to_vec(), payload);
     }
 
@@ -174,17 +181,18 @@ mod view_path {
             payload.extend_from_slice(&[0x08, 0x01]); // seconds = 1 (known)
             payload.extend_from_slice(&[0x98, 0x06, 0x00]); // field 99 varint (unknown)
         }
-        DecodeOptions::new()
+        let view = DecodeOptions::new()
             .with_unknown_field_limit(10)
             .decode_view::<DurationView>(&payload)
             .expect("10 spans fit a limit of 10");
-        assert_eq!(
+        view.to_owned_message()
+            .expect("10 fields fit the same allowance");
+        assert!(matches!(
             DecodeOptions::new()
                 .with_unknown_field_limit(9)
-                .decode_view::<DurationView>(&payload)
-                .map(|v| v.to_owned_message()),
+                .decode_view::<DurationView>(&payload),
             Err(DecodeError::UnknownFieldLimitExceeded)
-        );
+        ));
     }
 
     #[test]
@@ -192,19 +200,31 @@ mod view_path {
         // to_owned parses every record inside a coalesced span.
         let payload = flat_varint_flood(50);
         let view = EmptyView::decode_view(&payload).expect("decodes");
-        let owned = view.to_owned_message();
+        let owned = view.to_owned_message().expect("within allowance");
         assert_eq!(owned.encode_to_vec(), payload);
     }
 
     #[test]
     fn group_flood_through_views_is_bounded() {
-        // The reported group payload through the view path: the group is
-        // skipped (not recursed into) and captured as one contiguous span.
+        // The group payload through the view path: the group is skipped
+        // (not recursed into) and captured as one contiguous span. The
+        // decode-time allowance carries into conversion, where each nested
+        // record materializes as an owned field.
         let payload = group_amp(100_000);
         let view: EmptyView = DecodeOptions::new()
             .with_unknown_field_limit(1)
             .decode_view(&payload)
             .expect("one span for the whole group record");
-        assert_eq!(view.to_owned_message().encode_to_vec(), payload);
+        assert_eq!(
+            view.to_owned_message(),
+            Err(DecodeError::UnknownFieldLimitExceeded)
+        );
+        let view: EmptyView = EmptyView::decode_view(&payload).expect("default limit");
+        assert_eq!(
+            view.to_owned_message()
+                .expect("default allowance")
+                .encode_to_vec(),
+            payload
+        );
     }
 }

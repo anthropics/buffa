@@ -60,7 +60,7 @@ fn test_bytes_type_view_to_owned() {
     let view = PersonView::decode_view(&wire).expect("decode_view");
     assert_eq!(view.avatar, &[0xCA, 0xFE][..]);
     // to_owned_message produces Bytes.
-    let owned: Person = view.to_owned_message();
+    let owned: Person = view.to_owned_message().unwrap();
     assert_eq!(&owned.avatar[..], &[0xCA, 0xFE]);
     assert_eq!(owned.encode_to_vec(), wire);
 }
@@ -105,7 +105,7 @@ fn test_bytes_type_repeated_view_to_owned() {
     // to_owned_message: Vec<&[u8]> → Vec<bytes::Bytes>.
     // Generated: self.many.iter().map(|b| bytes_from_source(__buffa_src, b)).collect()
     // where b: &&[u8]; the &[u8] arg auto-derefs.
-    let owned: BytesContexts = view.to_owned_message();
+    let owned: BytesContexts = view.to_owned_message().unwrap();
     assert_eq!(owned.many.len(), 3);
     assert_eq!(&owned.many[0][..], b"a");
     assert_eq!(&owned.many[1][..], b"bc");
@@ -129,7 +129,7 @@ fn test_bytes_type_oneof_view_to_owned() {
     // Generated: self.choice.as_ref().map(|v| match v {
     //     ChoiceView::Raw(v) => Choice::Raw(bytes_from_source(__buffa_src, v)), ... })
     // Match ergonomics: v in the arm is &&[u8]; the &[u8] arg auto-derefs.
-    let owned: BytesContexts = view.to_owned_message();
+    let owned: BytesContexts = view.to_owned_message().unwrap();
     match &owned.choice {
         Some(ChoiceOneof::Raw(b)) => assert_eq!(&b[..], &[0x00, 0xFF, 0x7F]),
         other => panic!("expected Choice::Raw, got {other:?}"),
@@ -153,7 +153,7 @@ fn test_bytes_type_optional_view_to_owned() {
         };
         let wire = msg.encode_to_vec();
         let view = BytesContextsView::decode_view(&wire).expect("decode_view");
-        let owned: BytesContexts = view.to_owned_message();
+        let owned: BytesContexts = view.to_owned_message().unwrap();
         assert_eq!(
             owned.maybe.as_deref(),
             input,
@@ -180,7 +180,7 @@ fn test_bytes_type_view_to_owned_from_source_zero_copy() {
     };
 
     let view = BytesContextsView::decode_view(&buf).expect("decode_view");
-    let owned = view.to_owned_from_source(Some(&buf));
+    let owned = view.to_owned_from_source(Some(&buf)).unwrap();
 
     assert_eq!(&owned.many[0][..], b"aaaa");
     assert!(
@@ -265,7 +265,7 @@ fn test_bytes_type_nested_to_owned_from_source_zero_copy() {
     };
     let buf = bytes::Bytes::from(msg.encode_to_vec());
     let view = BytesNestedView::decode_view(&buf).expect("decode_view");
-    let owned = view.to_owned_from_source(Some(&buf));
+    let owned = view.to_owned_from_source(Some(&buf)).unwrap();
     let inner_bytes = &owned.inner.singular;
     assert_eq!(&inner_bytes[..], b"nested-payload");
     let r = buf.as_ptr() as usize..buf.as_ptr() as usize + buf.len();
@@ -383,7 +383,7 @@ fn test_bytes_type_map_value_uses_bytes() {
 
     let wire = msg.encode_to_vec();
     let view = BytesContextsView::decode_view(&wire).expect("decode_view");
-    let owned: BytesContexts = view.to_owned_message();
+    let owned: BytesContexts = view.to_owned_message().unwrap();
     assert_eq!(owned.by_key.get("k").map(|b| &b[..]), Some(&b"v"[..]));
 
     // Owned binary decode (impl_message::map_merge_arm's decode_bytes_to_bytes
@@ -413,7 +413,7 @@ fn test_bytes_type_map_value_to_owned_from_source_zero_copy() {
     };
 
     let view = BytesContextsView::decode_view(&buf).expect("decode_view");
-    let owned = view.to_owned_from_source(Some(&buf));
+    let owned = view.to_owned_from_source(Some(&buf)).unwrap();
 
     let value = owned.by_key.get("k").expect("map value");
     assert_eq!(&value[..], b"map-val");

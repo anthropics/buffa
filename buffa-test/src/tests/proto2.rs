@@ -342,7 +342,7 @@ fn test_view_coverage_via_view() {
     assert_eq!((*k, *v), ("med", Priority::MEDIUM));
 
     // to_owned_message parity.
-    let owned = view.to_owned_message();
+    let owned = view.to_owned_message().unwrap();
     assert_eq!(owned.level, Priority::HIGH);
     assert_eq!(owned.by_id.get(&7).map(String::as_str), Some("seven"));
     assert_eq!(owned.priorities.get("med"), Some(&Priority::MEDIUM));
@@ -407,7 +407,7 @@ fn test_view_coverage_group_in_oneof_merge() {
     wire.extend_from_slice(&second.encode_to_vec());
 
     let view = ViewCoverageView::decode_view(&wire).unwrap();
-    let owned = view.to_owned_message();
+    let owned = view.to_owned_message().unwrap();
     match owned.choice {
         Some(ChoiceOneof::Payload(p)) => {
             // Both x (from first) and y (from second) should be present.

@@ -130,7 +130,7 @@ fn test_view_to_owned_roundtrip() {
     msg.contact = Some(oneof::person::Contact::Phone("+1-555-0000".into()));
     let bytes = msg.encode_to_vec();
     let view = PersonView::decode_view(&bytes).expect("decode_view");
-    let owned = view.to_owned_message();
+    let owned = view.to_owned_message().unwrap();
     assert_eq!(owned.id, 42);
     assert_eq!(owned.name, "Carol");
     assert_eq!(owned.tags, vec!["x", "y"]);
@@ -242,7 +242,7 @@ fn test_view_map_to_owned_roundtrip() {
     inv.stock.insert("y".into(), 7);
     let bytes = inv.encode_to_vec();
     let view = InventoryView::decode_view(&bytes).expect("decode_view");
-    let owned = view.to_owned_message();
+    let owned = view.to_owned_message().unwrap();
     assert_eq!(owned.stock.get("x"), Some(&42));
     assert_eq!(owned.stock.get("y"), Some(&7));
 }
@@ -256,7 +256,7 @@ fn test_view_map_message_to_owned_roundtrip() {
     inv.locations.insert("hq".into(), addr.clone());
     let bytes = inv.encode_to_vec();
     let view = InventoryView::decode_view(&bytes).expect("decode_view");
-    let owned = view.to_owned_message();
+    let owned = view.to_owned_message().unwrap();
     assert_eq!(owned.locations.get("hq"), Some(&addr));
 }
 
@@ -339,7 +339,7 @@ fn test_view_map_with_open_enum_value() {
     // Unknown value survives view decode + to_owned.
     assert_eq!(collected.get("svc3"), Some(&buffa::EnumValue::Unknown(99)));
 
-    let owned = view.to_owned_message();
+    let owned = view.to_owned_message().unwrap();
     assert_eq!(
         owned.statuses.get("svc1"),
         Some(&buffa::EnumValue::Known(Status::ACTIVE))
@@ -365,7 +365,7 @@ fn test_view_no_unknown_fields_all_scalar_compiles() {
     let e = Empty::default();
     let bytes = e.encode_to_vec();
     let view = EmptyView::decode_view(&bytes).unwrap();
-    let _owned = view.to_owned_message();
+    let _owned = view.to_owned_message().unwrap();
 
     let mut s = AllScalars::default();
     s.f_int32 = 42;
@@ -374,7 +374,7 @@ fn test_view_no_unknown_fields_all_scalar_compiles() {
     let view = AllScalarsView::decode_view(&bytes).unwrap();
     assert_eq!(view.f_int32, 42);
     assert!(view.f_bool);
-    let owned = view.to_owned_message();
+    let owned = view.to_owned_message().unwrap();
     assert_eq!(owned.f_int32, 42);
 }
 

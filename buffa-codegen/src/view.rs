@@ -425,7 +425,9 @@ pub(crate) fn generate_view_with_nesting(
                 Self::_decode_ctx(buf, ctx)
             }
 
-            fn to_owned_message(&self) -> #owned_path {
+            fn to_owned_message(
+                &self,
+            ) -> ::core::result::Result<#owned_path, ::buffa::DecodeError> {
                 self.to_owned_from_source(None)
             }
 
@@ -436,14 +438,14 @@ pub(crate) fn generate_view_with_nesting(
             fn to_owned_from_source(
                 &self,
                 __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-            ) -> #owned_path {
+            ) -> ::core::result::Result<#owned_path, ::buffa::DecodeError> {
                 #[allow(unused_imports)]
                 use ::buffa::alloc::string::ToString as _;
                 let _ = __buffa_src;
-                #owned_path {
+                ::core::result::Result::Ok(#owned_path {
                     #(#owned_fields)*
                     ..::core::default::Default::default()
-                }
+                })
             }
         }
 
@@ -1574,22 +1576,39 @@ fn build_to_owned_fields(
             })
             .collect::<Result<Vec<_>, CodeGenError>>()?;
 
-        out.push(quote! {
-            #field_ident: self.#field_ident.as_ref().map(|v| match v { #(#match_arms)* }),
+        // Message-typed variants convert fallibly (`?` inside the arm), which
+        // a closure-based `Option::map` cannot propagate — use a `match` for
+        // those groups. Scalar-only groups keep `map` (clippy::manual_map
+        // fires on the match form when no `?` is present).
+        let has_fallible_variant = group.iter().any(|f| {
+            let t = effective_type(ctx, f, features);
+            t == Type::TYPE_MESSAGE || t == Type::TYPE_GROUP
         });
+        if has_fallible_variant {
+            out.push(quote! {
+                #field_ident: match self.#field_ident.as_ref() {
+                    ::core::option::Option::Some(v) => {
+                        ::core::option::Option::Some(match v { #(#match_arms)* })
+                    }
+                    ::core::option::Option::None => ::core::option::Option::None,
+                },
+            });
+        } else {
+            out.push(quote! {
+                #field_ident: self.#field_ident.as_ref().map(|v| match v { #(#match_arms)* }),
+            });
+        }
     }
 
     // Emit `unknown_fields` conversion so round-trip via decode_view +
     // to_owned_message preserves unknown fields. `.into()` is a no-op when
     // the owned field is `UnknownFields`; when generate_json is on it wraps
     // in the per-message `__<Name>ExtJson` newtype (which has `From<UnknownFields>`).
+    // Errors (e.g. the unknown-field limit during re-materialization)
+    // propagate instead of silently dropping the fields.
     if preserve_unknown_fields {
         out.push(quote! {
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
         });
     }
 
@@ -1666,7 +1685,7 @@ fn singular_to_owned(
             quote! {
                 match self.#ident.as_option() {
                     Some(v) => ::buffa::MessageField::<#owned_ty>::some(
-                        v.to_owned_from_source(__buffa_src),
+                        v.to_owned_from_source(__buffa_src)?,
                     ),
                     None => ::buffa::MessageField::none(),
                 }
@@ -1699,7 +1718,12 @@ fn repeated_to_owned(
             quote! { self.#ident.iter().map(|b| #conv).collect() }
         }
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
-            quote! { self.#ident.iter().map(|v| v.to_owned_from_source(__buffa_src)).collect() }
+            quote! {
+                self.#ident
+                    .iter()
+                    .map(|v| v.to_owned_from_source(__buffa_src))
+                    .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?
+            }
         }
         _ => quote! { self.#ident.to_vec() },
     }
@@ -1748,11 +1772,23 @@ fn map_to_owned_expr(
         Type::TYPE_MESSAGE => {
             // Verify the owned path resolves (catches missing imports at codegen time).
             let _owned_path = resolve_owned_path(scope, val_fd)?;
-            quote! { v.to_owned_from_source(__buffa_src) }
+            quote! { v.to_owned_from_source(__buffa_src)? }
         }
         _ => quote! { *v },
     };
 
+    // Message values convert fallibly; collect through Result so the `?`
+    // inside the closure has a Result-typed closure return to operate on.
+    if val_ty == Type::TYPE_MESSAGE {
+        return Ok(quote! {
+            self.#ident
+                .iter()
+                .map(|(k, v)| {
+                    ::core::result::Result::<_, ::buffa::DecodeError>::Ok((#key_conv, #val_conv))
+                })
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?
+        });
+    }
     Ok(quote! {
         self.#ident.iter().map(|(k, v)| (#key_conv, #val_conv)).collect()
     })
@@ -1779,7 +1815,7 @@ fn oneof_variant_to_owned(
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
             // The owned variant is boxed unless opted out; `v` derefs through
             // the view's own `Box` either way, so only the wrapper differs.
-            let owned = quote! { v.to_owned_from_source(__buffa_src) };
+            let owned = quote! { v.to_owned_from_source(__buffa_src)? };
             if crate::oneof::variant_boxed(
                 ctx,
                 ty,

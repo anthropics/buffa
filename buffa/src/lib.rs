@@ -527,11 +527,11 @@ pub mod __doctest_fixtures {
             // Stub: examples are `no_run`, so this never executes.
             Ok(PersonView::default())
         }
-        fn to_owned_message(&self) -> Person {
-            Person {
+        fn to_owned_message(&self) -> Result<Person, DecodeError> {
+            Ok(Person {
                 name: self.name.into(),
                 id: self.id,
-            }
+            })
         }
     }
 

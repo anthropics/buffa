@@ -95,30 +95,28 @@ impl<'a> ::buffa::MessageView<'a> for FileDescriptorSetView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::FileDescriptorSet {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::FileDescriptorSet, ::buffa::DecodeError> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::FileDescriptorSet {
+    ) -> ::core::result::Result<super::super::FileDescriptorSet, ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::FileDescriptorSet {
+        ::core::result::Result::Ok(super::super::FileDescriptorSet {
             file: self
                 .file
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for FileDescriptorSetView<'a> {
@@ -269,8 +267,14 @@ impl FileDescriptorSetOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::FileDescriptorSet {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::FileDescriptorSet, ::buffa::DecodeError> {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -698,18 +702,26 @@ impl<'a> ::buffa::MessageView<'a> for FileDescriptorProtoView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::FileDescriptorProto {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::FileDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::FileDescriptorProto {
+    ) -> ::core::result::Result<
+        super::super::FileDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::FileDescriptorProto {
+        ::core::result::Result::Ok(super::super::FileDescriptorProto {
             name: self.name.map(|s| s.to_string()),
             package: self.package.map(|s| s.to_string()),
             dependency: self.dependency.iter().map(|s| s.to_string()).collect(),
@@ -724,27 +736,27 @@ impl<'a> ::buffa::MessageView<'a> for FileDescriptorProtoView<'a> {
                 .message_type
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             enum_type: self
                 .enum_type
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             service: self
                 .service
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             extension: self
                 .extension
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             options: match self.options.as_option() {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FileOptions,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
@@ -752,19 +764,15 @@ impl<'a> ::buffa::MessageView<'a> for FileDescriptorProtoView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::SourceCodeInfo,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
             syntax: self.syntax.map(|s| s.to_string()),
             edition: self.edition,
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for FileDescriptorProtoView<'a> {
@@ -1150,8 +1158,17 @@ impl FileDescriptorProtoOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::FileDescriptorProto {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::FileDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -1630,54 +1647,56 @@ impl<'a> ::buffa::MessageView<'a> for DescriptorProtoView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::DescriptorProto {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::DescriptorProto, ::buffa::DecodeError> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::DescriptorProto {
+    ) -> ::core::result::Result<super::super::DescriptorProto, ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::DescriptorProto {
+        ::core::result::Result::Ok(super::super::DescriptorProto {
             name: self.name.map(|s| s.to_string()),
             field: self
                 .field
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             extension: self
                 .extension
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             nested_type: self
                 .nested_type
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             enum_type: self
                 .enum_type
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             extension_range: self
                 .extension_range
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             oneof_decl: self
                 .oneof_decl
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             options: match self.options.as_option() {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::MessageOptions,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
@@ -1685,16 +1704,12 @@ impl<'a> ::buffa::MessageView<'a> for DescriptorProtoView<'a> {
                 .reserved_range
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             reserved_name: self.reserved_name.iter().map(|s| s.to_string()).collect(),
             visibility: self.visibility,
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for DescriptorProtoView<'a> {
@@ -2033,8 +2048,14 @@ impl DescriptorProtoOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::DescriptorProto {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::DescriptorProto, ::buffa::DecodeError> {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -2311,35 +2332,37 @@ pub mod descriptor_proto {
         }
         fn to_owned_message(
             &self,
-        ) -> super::super::super::descriptor_proto::ExtensionRange {
+        ) -> ::core::result::Result<
+            super::super::super::descriptor_proto::ExtensionRange,
+            ::buffa::DecodeError,
+        > {
             self.to_owned_from_source(None)
         }
         #[allow(clippy::useless_conversion, clippy::needless_update)]
         fn to_owned_from_source(
             &self,
             __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-        ) -> super::super::super::descriptor_proto::ExtensionRange {
+        ) -> ::core::result::Result<
+            super::super::super::descriptor_proto::ExtensionRange,
+            ::buffa::DecodeError,
+        > {
             #[allow(unused_imports)]
             use ::buffa::alloc::string::ToString as _;
             let _ = __buffa_src;
-            super::super::super::descriptor_proto::ExtensionRange {
+            ::core::result::Result::Ok(super::super::super::descriptor_proto::ExtensionRange {
                 start: self.start,
                 end: self.end,
                 options: match self.options.as_option() {
                     Some(v) => {
                         ::buffa::MessageField::<
                             super::super::super::ExtensionRangeOptions,
-                        >::some(v.to_owned_from_source(__buffa_src))
+                        >::some(v.to_owned_from_source(__buffa_src)?)
                     }
                     None => ::buffa::MessageField::none(),
                 },
-                __buffa_unknown_fields: self
-                    .__buffa_unknown_fields
-                    .to_owned()
-                    .unwrap_or_default()
-                    .into(),
+                __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
                 ..::core::default::Default::default()
-            }
+            })
         }
     }
     impl<'a> ::buffa::ViewEncode<'a> for ExtensionRangeView<'a> {
@@ -2530,10 +2553,17 @@ pub mod descriptor_proto {
             self.0.reborrow()
         }
         /// Convert to the owned message type.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if re-materializing preserved unknown fields
+        /// fails (e.g. the unknown-field limit is exceeded).
         pub fn to_owned_message(
             &self,
-        ) -> super::super::super::descriptor_proto::ExtensionRange {
+        ) -> ::core::result::Result<
+            super::super::super::descriptor_proto::ExtensionRange,
+            ::buffa::DecodeError,
+        > {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -2707,27 +2737,29 @@ pub mod descriptor_proto {
         }
         fn to_owned_message(
             &self,
-        ) -> super::super::super::descriptor_proto::ReservedRange {
+        ) -> ::core::result::Result<
+            super::super::super::descriptor_proto::ReservedRange,
+            ::buffa::DecodeError,
+        > {
             self.to_owned_from_source(None)
         }
         #[allow(clippy::useless_conversion, clippy::needless_update)]
         fn to_owned_from_source(
             &self,
             __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-        ) -> super::super::super::descriptor_proto::ReservedRange {
+        ) -> ::core::result::Result<
+            super::super::super::descriptor_proto::ReservedRange,
+            ::buffa::DecodeError,
+        > {
             #[allow(unused_imports)]
             use ::buffa::alloc::string::ToString as _;
             let _ = __buffa_src;
-            super::super::super::descriptor_proto::ReservedRange {
+            ::core::result::Result::Ok(super::super::super::descriptor_proto::ReservedRange {
                 start: self.start,
                 end: self.end,
-                __buffa_unknown_fields: self
-                    .__buffa_unknown_fields
-                    .to_owned()
-                    .unwrap_or_default()
-                    .into(),
+                __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
                 ..::core::default::Default::default()
-            }
+            })
         }
     }
     impl<'a> ::buffa::ViewEncode<'a> for ReservedRangeView<'a> {
@@ -2896,10 +2928,17 @@ pub mod descriptor_proto {
             self.0.reborrow()
         }
         /// Convert to the owned message type.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if re-materializing preserved unknown fields
+        /// fails (e.g. the unknown-field limit is exceeded).
         pub fn to_owned_message(
             &self,
-        ) -> super::super::super::descriptor_proto::ReservedRange {
+        ) -> ::core::result::Result<
+            super::super::super::descriptor_proto::ReservedRange,
+            ::buffa::DecodeError,
+        > {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -3136,44 +3175,48 @@ impl<'a> ::buffa::MessageView<'a> for ExtensionRangeOptionsView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::ExtensionRangeOptions {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::ExtensionRangeOptions,
+        ::buffa::DecodeError,
+    > {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::ExtensionRangeOptions {
+    ) -> ::core::result::Result<
+        super::super::ExtensionRangeOptions,
+        ::buffa::DecodeError,
+    > {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::ExtensionRangeOptions {
+        ::core::result::Result::Ok(super::super::ExtensionRangeOptions {
             uninterpreted_option: self
                 .uninterpreted_option
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             declaration: self
                 .declaration
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             features: match self.features.as_option() {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FeatureSet,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
             verification: self.verification,
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for ExtensionRangeOptionsView<'a> {
@@ -3386,8 +3429,17 @@ impl ExtensionRangeOptionsOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::ExtensionRangeOptions {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::ExtensionRangeOptions,
+        ::buffa::DecodeError,
+    > {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -3637,30 +3689,32 @@ pub mod extension_range_options {
         }
         fn to_owned_message(
             &self,
-        ) -> super::super::super::extension_range_options::Declaration {
+        ) -> ::core::result::Result<
+            super::super::super::extension_range_options::Declaration,
+            ::buffa::DecodeError,
+        > {
             self.to_owned_from_source(None)
         }
         #[allow(clippy::useless_conversion, clippy::needless_update)]
         fn to_owned_from_source(
             &self,
             __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-        ) -> super::super::super::extension_range_options::Declaration {
+        ) -> ::core::result::Result<
+            super::super::super::extension_range_options::Declaration,
+            ::buffa::DecodeError,
+        > {
             #[allow(unused_imports)]
             use ::buffa::alloc::string::ToString as _;
             let _ = __buffa_src;
-            super::super::super::extension_range_options::Declaration {
+            ::core::result::Result::Ok(super::super::super::extension_range_options::Declaration {
                 number: self.number,
                 full_name: self.full_name.map(|s| s.to_string()),
                 r#type: self.r#type.map(|s| s.to_string()),
                 reserved: self.reserved,
                 repeated: self.repeated,
-                __buffa_unknown_fields: self
-                    .__buffa_unknown_fields
-                    .to_owned()
-                    .unwrap_or_default()
-                    .into(),
+                __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
                 ..::core::default::Default::default()
-            }
+            })
         }
     }
     impl<'a> ::buffa::ViewEncode<'a> for DeclarationView<'a> {
@@ -3859,10 +3913,17 @@ pub mod extension_range_options {
             self.0.reborrow()
         }
         /// Convert to the owned message type.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if re-materializing preserved unknown fields
+        /// fails (e.g. the unknown-field limit is exceeded).
         pub fn to_owned_message(
             &self,
-        ) -> super::super::super::extension_range_options::Declaration {
+        ) -> ::core::result::Result<
+            super::super::super::extension_range_options::Declaration,
+            ::buffa::DecodeError,
+        > {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -4231,18 +4292,26 @@ impl<'a> ::buffa::MessageView<'a> for FieldDescriptorProtoView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::FieldDescriptorProto {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::FieldDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::FieldDescriptorProto {
+    ) -> ::core::result::Result<
+        super::super::FieldDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::FieldDescriptorProto {
+        ::core::result::Result::Ok(super::super::FieldDescriptorProto {
             name: self.name.map(|s| s.to_string()),
             number: self.number,
             label: self.label,
@@ -4256,18 +4325,14 @@ impl<'a> ::buffa::MessageView<'a> for FieldDescriptorProtoView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FieldOptions,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
             proto3_optional: self.proto3_optional,
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for FieldDescriptorProtoView<'a> {
@@ -4581,8 +4646,17 @@ impl FieldDescriptorProtoOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::FieldDescriptorProto {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::FieldDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -4843,34 +4917,38 @@ impl<'a> ::buffa::MessageView<'a> for OneofDescriptorProtoView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::OneofDescriptorProto {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::OneofDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::OneofDescriptorProto {
+    ) -> ::core::result::Result<
+        super::super::OneofDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::OneofDescriptorProto {
+        ::core::result::Result::Ok(super::super::OneofDescriptorProto {
             name: self.name.map(|s| s.to_string()),
             options: match self.options.as_option() {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::OneofOptions,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for OneofDescriptorProtoView<'a> {
@@ -5037,8 +5115,17 @@ impl OneofDescriptorProtoOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::OneofDescriptorProto {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::OneofDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -5291,29 +5378,37 @@ impl<'a> ::buffa::MessageView<'a> for EnumDescriptorProtoView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::EnumDescriptorProto {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::EnumDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::EnumDescriptorProto {
+    ) -> ::core::result::Result<
+        super::super::EnumDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::EnumDescriptorProto {
+        ::core::result::Result::Ok(super::super::EnumDescriptorProto {
             name: self.name.map(|s| s.to_string()),
             value: self
                 .value
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             options: match self.options.as_option() {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::EnumOptions,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
@@ -5321,16 +5416,12 @@ impl<'a> ::buffa::MessageView<'a> for EnumDescriptorProtoView<'a> {
                 .reserved_range
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             reserved_name: self.reserved_name.iter().map(|s| s.to_string()).collect(),
             visibility: self.visibility,
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for EnumDescriptorProtoView<'a> {
@@ -5571,8 +5662,17 @@ impl EnumDescriptorProtoOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::EnumDescriptorProto {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::EnumDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -5779,27 +5879,29 @@ pub mod enum_descriptor_proto {
         }
         fn to_owned_message(
             &self,
-        ) -> super::super::super::enum_descriptor_proto::EnumReservedRange {
+        ) -> ::core::result::Result<
+            super::super::super::enum_descriptor_proto::EnumReservedRange,
+            ::buffa::DecodeError,
+        > {
             self.to_owned_from_source(None)
         }
         #[allow(clippy::useless_conversion, clippy::needless_update)]
         fn to_owned_from_source(
             &self,
             __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-        ) -> super::super::super::enum_descriptor_proto::EnumReservedRange {
+        ) -> ::core::result::Result<
+            super::super::super::enum_descriptor_proto::EnumReservedRange,
+            ::buffa::DecodeError,
+        > {
             #[allow(unused_imports)]
             use ::buffa::alloc::string::ToString as _;
             let _ = __buffa_src;
-            super::super::super::enum_descriptor_proto::EnumReservedRange {
+            ::core::result::Result::Ok(super::super::super::enum_descriptor_proto::EnumReservedRange {
                 start: self.start,
                 end: self.end,
-                __buffa_unknown_fields: self
-                    .__buffa_unknown_fields
-                    .to_owned()
-                    .unwrap_or_default()
-                    .into(),
+                __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
                 ..::core::default::Default::default()
-            }
+            })
         }
     }
     impl<'a> ::buffa::ViewEncode<'a> for EnumReservedRangeView<'a> {
@@ -5970,10 +6072,17 @@ pub mod enum_descriptor_proto {
             self.0.reborrow()
         }
         /// Convert to the owned message type.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if re-materializing preserved unknown fields
+        /// fails (e.g. the unknown-field limit is exceeded).
         pub fn to_owned_message(
             &self,
-        ) -> super::super::super::enum_descriptor_proto::EnumReservedRange {
+        ) -> ::core::result::Result<
+            super::super::super::enum_descriptor_proto::EnumReservedRange,
+            ::buffa::DecodeError,
+        > {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -6154,35 +6263,39 @@ impl<'a> ::buffa::MessageView<'a> for EnumValueDescriptorProtoView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::EnumValueDescriptorProto {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::EnumValueDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::EnumValueDescriptorProto {
+    ) -> ::core::result::Result<
+        super::super::EnumValueDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::EnumValueDescriptorProto {
+        ::core::result::Result::Ok(super::super::EnumValueDescriptorProto {
             name: self.name.map(|s| s.to_string()),
             number: self.number,
             options: match self.options.as_option() {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::EnumValueOptions,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for EnumValueDescriptorProtoView<'a> {
@@ -6371,8 +6484,17 @@ impl EnumValueDescriptorProtoOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::EnumValueDescriptorProto {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::EnumValueDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -6567,39 +6689,43 @@ impl<'a> ::buffa::MessageView<'a> for ServiceDescriptorProtoView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::ServiceDescriptorProto {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::ServiceDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::ServiceDescriptorProto {
+    ) -> ::core::result::Result<
+        super::super::ServiceDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::ServiceDescriptorProto {
+        ::core::result::Result::Ok(super::super::ServiceDescriptorProto {
             name: self.name.map(|s| s.to_string()),
             method: self
                 .method
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             options: match self.options.as_option() {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::ServiceOptions,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for ServiceDescriptorProtoView<'a> {
@@ -6786,8 +6912,17 @@ impl ServiceDescriptorProtoOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::ServiceDescriptorProto {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::ServiceDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -7019,18 +7154,26 @@ impl<'a> ::buffa::MessageView<'a> for MethodDescriptorProtoView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::MethodDescriptorProto {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::MethodDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::MethodDescriptorProto {
+    ) -> ::core::result::Result<
+        super::super::MethodDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::MethodDescriptorProto {
+        ::core::result::Result::Ok(super::super::MethodDescriptorProto {
             name: self.name.map(|s| s.to_string()),
             input_type: self.input_type.map(|s| s.to_string()),
             output_type: self.output_type.map(|s| s.to_string()),
@@ -7038,19 +7181,15 @@ impl<'a> ::buffa::MessageView<'a> for MethodDescriptorProtoView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::MethodOptions,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
             client_streaming: self.client_streaming,
             server_streaming: self.server_streaming,
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for MethodDescriptorProtoView<'a> {
@@ -7267,8 +7406,17 @@ impl MethodDescriptorProtoOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::MethodDescriptorProto {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::MethodDescriptorProto,
+        ::buffa::DecodeError,
+    > {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -7843,18 +7991,20 @@ impl<'a> ::buffa::MessageView<'a> for FileOptionsView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::FileOptions {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::FileOptions, ::buffa::DecodeError> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::FileOptions {
+    ) -> ::core::result::Result<super::super::FileOptions, ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::FileOptions {
+        ::core::result::Result::Ok(super::super::FileOptions {
             java_package: self.java_package.map(|s| s.to_string()),
             java_outer_classname: self.java_outer_classname.map(|s| s.to_string()),
             java_multiple_files: self.java_multiple_files,
@@ -7878,7 +8028,7 @@ impl<'a> ::buffa::MessageView<'a> for FileOptionsView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FeatureSet,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
@@ -7886,14 +8036,10 @@ impl<'a> ::buffa::MessageView<'a> for FileOptionsView<'a> {
                 .uninterpreted_option
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for FileOptionsView<'a> {
@@ -8310,8 +8456,14 @@ impl FileOptionsOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::FileOptions {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::FileOptions, ::buffa::DecodeError> {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -8817,18 +8969,20 @@ impl<'a> ::buffa::MessageView<'a> for MessageOptionsView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::MessageOptions {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::MessageOptions, ::buffa::DecodeError> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::MessageOptions {
+    ) -> ::core::result::Result<super::super::MessageOptions, ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::MessageOptions {
+        ::core::result::Result::Ok(super::super::MessageOptions {
             message_set_wire_format: self.message_set_wire_format,
             no_standard_descriptor_accessor: self.no_standard_descriptor_accessor,
             deprecated: self.deprecated,
@@ -8839,7 +8993,7 @@ impl<'a> ::buffa::MessageView<'a> for MessageOptionsView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FeatureSet,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
@@ -8847,14 +9001,10 @@ impl<'a> ::buffa::MessageView<'a> for MessageOptionsView<'a> {
                 .uninterpreted_option
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for MessageOptionsView<'a> {
@@ -9082,8 +9232,14 @@ impl MessageOptionsOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::MessageOptions {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::MessageOptions, ::buffa::DecodeError> {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -9658,18 +9814,20 @@ impl<'a> ::buffa::MessageView<'a> for FieldOptionsView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::FieldOptions {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::FieldOptions, ::buffa::DecodeError> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::FieldOptions {
+    ) -> ::core::result::Result<super::super::FieldOptions, ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::FieldOptions {
+        ::core::result::Result::Ok(super::super::FieldOptions {
             ctype: self.ctype,
             packed: self.packed,
             jstype: self.jstype,
@@ -9684,12 +9842,12 @@ impl<'a> ::buffa::MessageView<'a> for FieldOptionsView<'a> {
                 .edition_defaults
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             features: match self.features.as_option() {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FeatureSet,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
@@ -9697,7 +9855,7 @@ impl<'a> ::buffa::MessageView<'a> for FieldOptionsView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::field_options::FeatureSupport,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
@@ -9705,14 +9863,10 @@ impl<'a> ::buffa::MessageView<'a> for FieldOptionsView<'a> {
                 .uninterpreted_option
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for FieldOptionsView<'a> {
@@ -10069,8 +10223,14 @@ impl FieldOptionsOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::FieldOptions {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::FieldOptions, ::buffa::DecodeError> {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -10392,27 +10552,29 @@ pub mod field_options {
         }
         fn to_owned_message(
             &self,
-        ) -> super::super::super::field_options::EditionDefault {
+        ) -> ::core::result::Result<
+            super::super::super::field_options::EditionDefault,
+            ::buffa::DecodeError,
+        > {
             self.to_owned_from_source(None)
         }
         #[allow(clippy::useless_conversion, clippy::needless_update)]
         fn to_owned_from_source(
             &self,
             __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-        ) -> super::super::super::field_options::EditionDefault {
+        ) -> ::core::result::Result<
+            super::super::super::field_options::EditionDefault,
+            ::buffa::DecodeError,
+        > {
             #[allow(unused_imports)]
             use ::buffa::alloc::string::ToString as _;
             let _ = __buffa_src;
-            super::super::super::field_options::EditionDefault {
+            ::core::result::Result::Ok(super::super::super::field_options::EditionDefault {
                 edition: self.edition,
                 value: self.value.map(|s| s.to_string()),
-                __buffa_unknown_fields: self
-                    .__buffa_unknown_fields
-                    .to_owned()
-                    .unwrap_or_default()
-                    .into(),
+                __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
                 ..::core::default::Default::default()
-            }
+            })
         }
     }
     impl<'a> ::buffa::ViewEncode<'a> for EditionDefaultView<'a> {
@@ -10575,10 +10737,17 @@ pub mod field_options {
             self.0.reborrow()
         }
         /// Convert to the owned message type.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if re-materializing preserved unknown fields
+        /// fails (e.g. the unknown-field limit is exceeded).
         pub fn to_owned_message(
             &self,
-        ) -> super::super::super::field_options::EditionDefault {
+        ) -> ::core::result::Result<
+            super::super::super::field_options::EditionDefault,
+            ::buffa::DecodeError,
+        > {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -10803,29 +10972,31 @@ pub mod field_options {
         }
         fn to_owned_message(
             &self,
-        ) -> super::super::super::field_options::FeatureSupport {
+        ) -> ::core::result::Result<
+            super::super::super::field_options::FeatureSupport,
+            ::buffa::DecodeError,
+        > {
             self.to_owned_from_source(None)
         }
         #[allow(clippy::useless_conversion, clippy::needless_update)]
         fn to_owned_from_source(
             &self,
             __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-        ) -> super::super::super::field_options::FeatureSupport {
+        ) -> ::core::result::Result<
+            super::super::super::field_options::FeatureSupport,
+            ::buffa::DecodeError,
+        > {
             #[allow(unused_imports)]
             use ::buffa::alloc::string::ToString as _;
             let _ = __buffa_src;
-            super::super::super::field_options::FeatureSupport {
+            ::core::result::Result::Ok(super::super::super::field_options::FeatureSupport {
                 edition_introduced: self.edition_introduced,
                 edition_deprecated: self.edition_deprecated,
                 deprecation_warning: self.deprecation_warning.map(|s| s.to_string()),
                 edition_removed: self.edition_removed,
-                __buffa_unknown_fields: self
-                    .__buffa_unknown_fields
-                    .to_owned()
-                    .unwrap_or_default()
-                    .into(),
+                __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
                 ..::core::default::Default::default()
-            }
+            })
         }
     }
     impl<'a> ::buffa::ViewEncode<'a> for FeatureSupportView<'a> {
@@ -11028,10 +11199,17 @@ pub mod field_options {
             self.0.reborrow()
         }
         /// Convert to the owned message type.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if re-materializing preserved unknown fields
+        /// fails (e.g. the unknown-field limit is exceeded).
         pub fn to_owned_message(
             &self,
-        ) -> super::super::super::field_options::FeatureSupport {
+        ) -> ::core::result::Result<
+            super::super::super::field_options::FeatureSupport,
+            ::buffa::DecodeError,
+        > {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -11242,23 +11420,25 @@ impl<'a> ::buffa::MessageView<'a> for OneofOptionsView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::OneofOptions {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::OneofOptions, ::buffa::DecodeError> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::OneofOptions {
+    ) -> ::core::result::Result<super::super::OneofOptions, ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::OneofOptions {
+        ::core::result::Result::Ok(super::super::OneofOptions {
             features: match self.features.as_option() {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FeatureSet,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
@@ -11266,14 +11446,10 @@ impl<'a> ::buffa::MessageView<'a> for OneofOptionsView<'a> {
                 .uninterpreted_option
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for OneofOptionsView<'a> {
@@ -11442,8 +11618,14 @@ impl OneofOptionsOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::OneofOptions {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::OneofOptions, ::buffa::DecodeError> {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -11690,18 +11872,20 @@ impl<'a> ::buffa::MessageView<'a> for EnumOptionsView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::EnumOptions {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::EnumOptions, ::buffa::DecodeError> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::EnumOptions {
+    ) -> ::core::result::Result<super::super::EnumOptions, ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::EnumOptions {
+        ::core::result::Result::Ok(super::super::EnumOptions {
             allow_alias: self.allow_alias,
             deprecated: self.deprecated,
             deprecated_legacy_json_field_conflicts: self
@@ -11710,7 +11894,7 @@ impl<'a> ::buffa::MessageView<'a> for EnumOptionsView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FeatureSet,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
@@ -11718,14 +11902,10 @@ impl<'a> ::buffa::MessageView<'a> for EnumOptionsView<'a> {
                 .uninterpreted_option
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for EnumOptionsView<'a> {
@@ -11929,8 +12109,14 @@ impl EnumOptionsOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::EnumOptions {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::EnumOptions, ::buffa::DecodeError> {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -12217,24 +12403,26 @@ impl<'a> ::buffa::MessageView<'a> for EnumValueOptionsView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::EnumValueOptions {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::EnumValueOptions, ::buffa::DecodeError> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::EnumValueOptions {
+    ) -> ::core::result::Result<super::super::EnumValueOptions, ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::EnumValueOptions {
+        ::core::result::Result::Ok(super::super::EnumValueOptions {
             deprecated: self.deprecated,
             features: match self.features.as_option() {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FeatureSet,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
@@ -12243,7 +12431,7 @@ impl<'a> ::buffa::MessageView<'a> for EnumValueOptionsView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::field_options::FeatureSupport,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
@@ -12251,14 +12439,10 @@ impl<'a> ::buffa::MessageView<'a> for EnumValueOptionsView<'a> {
                 .uninterpreted_option
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for EnumValueOptionsView<'a> {
@@ -12473,8 +12657,14 @@ impl EnumValueOptionsOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::EnumValueOptions {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::EnumValueOptions, ::buffa::DecodeError> {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -12720,23 +12910,25 @@ impl<'a> ::buffa::MessageView<'a> for ServiceOptionsView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::ServiceOptions {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::ServiceOptions, ::buffa::DecodeError> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::ServiceOptions {
+    ) -> ::core::result::Result<super::super::ServiceOptions, ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::ServiceOptions {
+        ::core::result::Result::Ok(super::super::ServiceOptions {
             features: match self.features.as_option() {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FeatureSet,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
@@ -12745,14 +12937,10 @@ impl<'a> ::buffa::MessageView<'a> for ServiceOptionsView<'a> {
                 .uninterpreted_option
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for ServiceOptionsView<'a> {
@@ -12934,8 +13122,14 @@ impl ServiceOptionsOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::ServiceOptions {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::ServiceOptions, ::buffa::DecodeError> {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -13189,25 +13383,27 @@ impl<'a> ::buffa::MessageView<'a> for MethodOptionsView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::MethodOptions {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::MethodOptions, ::buffa::DecodeError> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::MethodOptions {
+    ) -> ::core::result::Result<super::super::MethodOptions, ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::MethodOptions {
+        ::core::result::Result::Ok(super::super::MethodOptions {
             deprecated: self.deprecated,
             idempotency_level: self.idempotency_level,
             features: match self.features.as_option() {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FeatureSet,
-                    >::some(v.to_owned_from_source(__buffa_src))
+                    >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
             },
@@ -13215,14 +13411,10 @@ impl<'a> ::buffa::MessageView<'a> for MethodOptionsView<'a> {
                 .uninterpreted_option
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for MethodOptionsView<'a> {
@@ -13422,8 +13614,14 @@ impl MethodOptionsOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::MethodOptions {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::MethodOptions, ::buffa::DecodeError> {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -13691,36 +13889,40 @@ impl<'a> ::buffa::MessageView<'a> for UninterpretedOptionView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::UninterpretedOption {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::UninterpretedOption,
+        ::buffa::DecodeError,
+    > {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::UninterpretedOption {
+    ) -> ::core::result::Result<
+        super::super::UninterpretedOption,
+        ::buffa::DecodeError,
+    > {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::UninterpretedOption {
+        ::core::result::Result::Ok(super::super::UninterpretedOption {
             name: self
                 .name
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             identifier_value: self.identifier_value.map(|s| s.to_string()),
             positive_int_value: self.positive_int_value,
             negative_int_value: self.negative_int_value,
             double_value: self.double_value,
             string_value: self.string_value.map(|b| (b).to_vec()),
             aggregate_value: self.aggregate_value.map(|s| s.to_string()),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for UninterpretedOptionView<'a> {
@@ -13982,8 +14184,17 @@ impl UninterpretedOptionOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::UninterpretedOption {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<
+        super::super::UninterpretedOption,
+        ::buffa::DecodeError,
+    > {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -14179,27 +14390,29 @@ pub mod uninterpreted_option {
         }
         fn to_owned_message(
             &self,
-        ) -> super::super::super::uninterpreted_option::NamePart {
+        ) -> ::core::result::Result<
+            super::super::super::uninterpreted_option::NamePart,
+            ::buffa::DecodeError,
+        > {
             self.to_owned_from_source(None)
         }
         #[allow(clippy::useless_conversion, clippy::needless_update)]
         fn to_owned_from_source(
             &self,
             __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-        ) -> super::super::super::uninterpreted_option::NamePart {
+        ) -> ::core::result::Result<
+            super::super::super::uninterpreted_option::NamePart,
+            ::buffa::DecodeError,
+        > {
             #[allow(unused_imports)]
             use ::buffa::alloc::string::ToString as _;
             let _ = __buffa_src;
-            super::super::super::uninterpreted_option::NamePart {
+            ::core::result::Result::Ok(super::super::super::uninterpreted_option::NamePart {
                 name_part: self.name_part.to_string(),
                 is_extension: self.is_extension,
-                __buffa_unknown_fields: self
-                    .__buffa_unknown_fields
-                    .to_owned()
-                    .unwrap_or_default()
-                    .into(),
+                __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
                 ..::core::default::Default::default()
-            }
+            })
         }
     }
     impl<'a> ::buffa::ViewEncode<'a> for NamePartView<'a> {
@@ -14343,10 +14556,17 @@ pub mod uninterpreted_option {
             self.0.reborrow()
         }
         /// Convert to the owned message type.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if re-materializing preserved unknown fields
+        /// fails (e.g. the unknown-field limit is exceeded).
         pub fn to_owned_message(
             &self,
-        ) -> super::super::super::uninterpreted_option::NamePart {
+        ) -> ::core::result::Result<
+            super::super::super::uninterpreted_option::NamePart,
+            ::buffa::DecodeError,
+        > {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -14659,18 +14879,20 @@ impl<'a> ::buffa::MessageView<'a> for FeatureSetView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::FeatureSet {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::FeatureSet, ::buffa::DecodeError> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::FeatureSet {
+    ) -> ::core::result::Result<super::super::FeatureSet, ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::FeatureSet {
+        ::core::result::Result::Ok(super::super::FeatureSet {
             field_presence: self.field_presence,
             enum_type: self.enum_type,
             repeated_field_encoding: self.repeated_field_encoding,
@@ -14679,13 +14901,9 @@ impl<'a> ::buffa::MessageView<'a> for FeatureSetView<'a> {
             json_format: self.json_format,
             enforce_naming_style: self.enforce_naming_style,
             default_symbol_visibility: self.default_symbol_visibility,
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for FeatureSetView<'a> {
@@ -14974,8 +15192,14 @@ impl FeatureSetOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::FeatureSet {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::FeatureSet, ::buffa::DecodeError> {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -15155,25 +15379,27 @@ pub mod feature_set {
         }
         fn to_owned_message(
             &self,
-        ) -> super::super::super::feature_set::VisibilityFeature {
+        ) -> ::core::result::Result<
+            super::super::super::feature_set::VisibilityFeature,
+            ::buffa::DecodeError,
+        > {
             self.to_owned_from_source(None)
         }
         #[allow(clippy::useless_conversion, clippy::needless_update)]
         fn to_owned_from_source(
             &self,
             __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-        ) -> super::super::super::feature_set::VisibilityFeature {
+        ) -> ::core::result::Result<
+            super::super::super::feature_set::VisibilityFeature,
+            ::buffa::DecodeError,
+        > {
             #[allow(unused_imports)]
             use ::buffa::alloc::string::ToString as _;
             let _ = __buffa_src;
-            super::super::super::feature_set::VisibilityFeature {
-                __buffa_unknown_fields: self
-                    .__buffa_unknown_fields
-                    .to_owned()
-                    .unwrap_or_default()
-                    .into(),
+            ::core::result::Result::Ok(super::super::super::feature_set::VisibilityFeature {
+                __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
                 ..::core::default::Default::default()
-            }
+            })
         }
     }
     impl<'a> ::buffa::ViewEncode<'a> for VisibilityFeatureView<'a> {
@@ -15304,10 +15530,17 @@ pub mod feature_set {
             self.0.reborrow()
         }
         /// Convert to the owned message type.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if re-materializing preserved unknown fields
+        /// fails (e.g. the unknown-field limit is exceeded).
         pub fn to_owned_message(
             &self,
-        ) -> super::super::super::feature_set::VisibilityFeature {
+        ) -> ::core::result::Result<
+            super::super::super::feature_set::VisibilityFeature,
+            ::buffa::DecodeError,
+        > {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -15500,32 +15733,30 @@ impl<'a> ::buffa::MessageView<'a> for FeatureSetDefaultsView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::FeatureSetDefaults {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::FeatureSetDefaults, ::buffa::DecodeError> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::FeatureSetDefaults {
+    ) -> ::core::result::Result<super::super::FeatureSetDefaults, ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::FeatureSetDefaults {
+        ::core::result::Result::Ok(super::super::FeatureSetDefaults {
             defaults: self
                 .defaults
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
             minimum_edition: self.minimum_edition,
             maximum_edition: self.maximum_edition,
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for FeatureSetDefaultsView<'a> {
@@ -15716,8 +15947,14 @@ impl FeatureSetDefaultsOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::FeatureSetDefaults {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::FeatureSetDefaults, ::buffa::DecodeError> {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -15952,24 +16189,30 @@ pub mod feature_set_defaults {
         }
         fn to_owned_message(
             &self,
-        ) -> super::super::super::feature_set_defaults::FeatureSetEditionDefault {
+        ) -> ::core::result::Result<
+            super::super::super::feature_set_defaults::FeatureSetEditionDefault,
+            ::buffa::DecodeError,
+        > {
             self.to_owned_from_source(None)
         }
         #[allow(clippy::useless_conversion, clippy::needless_update)]
         fn to_owned_from_source(
             &self,
             __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-        ) -> super::super::super::feature_set_defaults::FeatureSetEditionDefault {
+        ) -> ::core::result::Result<
+            super::super::super::feature_set_defaults::FeatureSetEditionDefault,
+            ::buffa::DecodeError,
+        > {
             #[allow(unused_imports)]
             use ::buffa::alloc::string::ToString as _;
             let _ = __buffa_src;
-            super::super::super::feature_set_defaults::FeatureSetEditionDefault {
+            ::core::result::Result::Ok(super::super::super::feature_set_defaults::FeatureSetEditionDefault {
                 edition: self.edition,
                 overridable_features: match self.overridable_features.as_option() {
                     Some(v) => {
                         ::buffa::MessageField::<
                             super::super::super::FeatureSet,
-                        >::some(v.to_owned_from_source(__buffa_src))
+                        >::some(v.to_owned_from_source(__buffa_src)?)
                     }
                     None => ::buffa::MessageField::none(),
                 },
@@ -15977,17 +16220,13 @@ pub mod feature_set_defaults {
                     Some(v) => {
                         ::buffa::MessageField::<
                             super::super::super::FeatureSet,
-                        >::some(v.to_owned_from_source(__buffa_src))
+                        >::some(v.to_owned_from_source(__buffa_src)?)
                     }
                     None => ::buffa::MessageField::none(),
                 },
-                __buffa_unknown_fields: self
-                    .__buffa_unknown_fields
-                    .to_owned()
-                    .unwrap_or_default()
-                    .into(),
+                __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
                 ..::core::default::Default::default()
-            }
+            })
         }
     }
     impl<'a> ::buffa::ViewEncode<'a> for FeatureSetEditionDefaultView<'a> {
@@ -16190,10 +16429,17 @@ pub mod feature_set_defaults {
             self.0.reborrow()
         }
         /// Convert to the owned message type.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if re-materializing preserved unknown fields
+        /// fails (e.g. the unknown-field limit is exceeded).
         pub fn to_owned_message(
             &self,
-        ) -> super::super::super::feature_set_defaults::FeatureSetEditionDefault {
+        ) -> ::core::result::Result<
+            super::super::super::feature_set_defaults::FeatureSetEditionDefault,
+            ::buffa::DecodeError,
+        > {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -16413,30 +16659,28 @@ impl<'a> ::buffa::MessageView<'a> for SourceCodeInfoView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::SourceCodeInfo {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::SourceCodeInfo, ::buffa::DecodeError> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::SourceCodeInfo {
+    ) -> ::core::result::Result<super::super::SourceCodeInfo, ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::SourceCodeInfo {
+        ::core::result::Result::Ok(super::super::SourceCodeInfo {
             location: self
                 .location
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for SourceCodeInfoView<'a> {
@@ -16585,8 +16829,14 @@ impl SourceCodeInfoOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::SourceCodeInfo {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::SourceCodeInfo, ::buffa::DecodeError> {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -16939,18 +17189,26 @@ pub mod source_code_info {
         ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
             Self::_decode_ctx(buf, ctx)
         }
-        fn to_owned_message(&self) -> super::super::super::source_code_info::Location {
+        fn to_owned_message(
+            &self,
+        ) -> ::core::result::Result<
+            super::super::super::source_code_info::Location,
+            ::buffa::DecodeError,
+        > {
             self.to_owned_from_source(None)
         }
         #[allow(clippy::useless_conversion, clippy::needless_update)]
         fn to_owned_from_source(
             &self,
             __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-        ) -> super::super::super::source_code_info::Location {
+        ) -> ::core::result::Result<
+            super::super::super::source_code_info::Location,
+            ::buffa::DecodeError,
+        > {
             #[allow(unused_imports)]
             use ::buffa::alloc::string::ToString as _;
             let _ = __buffa_src;
-            super::super::super::source_code_info::Location {
+            ::core::result::Result::Ok(super::super::super::source_code_info::Location {
                 path: self.path.to_vec(),
                 span: self.span.to_vec(),
                 leading_comments: self.leading_comments.map(|s| s.to_string()),
@@ -16960,13 +17218,9 @@ pub mod source_code_info {
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
-                __buffa_unknown_fields: self
-                    .__buffa_unknown_fields
-                    .to_owned()
-                    .unwrap_or_default()
-                    .into(),
+                __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
                 ..::core::default::Default::default()
-            }
+            })
         }
     }
     impl<'a> ::buffa::ViewEncode<'a> for LocationView<'a> {
@@ -17215,10 +17469,17 @@ pub mod source_code_info {
             self.0.reborrow()
         }
         /// Convert to the owned message type.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if re-materializing preserved unknown fields
+        /// fails (e.g. the unknown-field limit is exceeded).
         pub fn to_owned_message(
             &self,
-        ) -> super::super::super::source_code_info::Location {
+        ) -> ::core::result::Result<
+            super::super::super::source_code_info::Location,
+            ::buffa::DecodeError,
+        > {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -17471,30 +17732,28 @@ impl<'a> ::buffa::MessageView<'a> for GeneratedCodeInfoView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::GeneratedCodeInfo {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::GeneratedCodeInfo, ::buffa::DecodeError> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::GeneratedCodeInfo {
+    ) -> ::core::result::Result<super::super::GeneratedCodeInfo, ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::GeneratedCodeInfo {
+        ::core::result::Result::Ok(super::super::GeneratedCodeInfo {
             annotation: self
                 .annotation
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for GeneratedCodeInfoView<'a> {
@@ -17645,8 +17904,14 @@ impl GeneratedCodeInfoOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::GeneratedCodeInfo {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::GeneratedCodeInfo, ::buffa::DecodeError> {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -17877,30 +18142,32 @@ pub mod generated_code_info {
         }
         fn to_owned_message(
             &self,
-        ) -> super::super::super::generated_code_info::Annotation {
+        ) -> ::core::result::Result<
+            super::super::super::generated_code_info::Annotation,
+            ::buffa::DecodeError,
+        > {
             self.to_owned_from_source(None)
         }
         #[allow(clippy::useless_conversion, clippy::needless_update)]
         fn to_owned_from_source(
             &self,
             __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-        ) -> super::super::super::generated_code_info::Annotation {
+        ) -> ::core::result::Result<
+            super::super::super::generated_code_info::Annotation,
+            ::buffa::DecodeError,
+        > {
             #[allow(unused_imports)]
             use ::buffa::alloc::string::ToString as _;
             let _ = __buffa_src;
-            super::super::super::generated_code_info::Annotation {
+            ::core::result::Result::Ok(super::super::super::generated_code_info::Annotation {
                 path: self.path.to_vec(),
                 source_file: self.source_file.map(|s| s.to_string()),
                 begin: self.begin,
                 end: self.end,
                 semantic: self.semantic,
-                __buffa_unknown_fields: self
-                    .__buffa_unknown_fields
-                    .to_owned()
-                    .unwrap_or_default()
-                    .into(),
+                __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
                 ..::core::default::Default::default()
-            }
+            })
         }
     }
     impl<'a> ::buffa::ViewEncode<'a> for AnnotationView<'a> {
@@ -18143,10 +18410,17 @@ pub mod generated_code_info {
             self.0.reborrow()
         }
         /// Convert to the owned message type.
-        #[must_use]
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if re-materializing preserved unknown fields
+        /// fails (e.g. the unknown-field limit is exceeded).
         pub fn to_owned_message(
             &self,
-        ) -> super::super::super::generated_code_info::Annotation {
+        ) -> ::core::result::Result<
+            super::super::super::generated_code_info::Annotation,
+            ::buffa::DecodeError,
+        > {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.

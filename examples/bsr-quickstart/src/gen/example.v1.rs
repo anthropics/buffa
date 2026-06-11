@@ -829,24 +829,26 @@ pub mod __buffa {
             ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
                 Self::_decode_ctx(buf, ctx)
             }
-            fn to_owned_message(&self) -> super::super::Greeting {
+            fn to_owned_message(
+                &self,
+            ) -> ::core::result::Result<super::super::Greeting, ::buffa::DecodeError> {
                 self.to_owned_from_source(None)
             }
             #[allow(clippy::useless_conversion, clippy::needless_update)]
             fn to_owned_from_source(
                 &self,
                 __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-            ) -> super::super::Greeting {
+            ) -> ::core::result::Result<super::super::Greeting, ::buffa::DecodeError> {
                 #[allow(unused_imports)]
                 use ::buffa::alloc::string::ToString as _;
                 let _ = __buffa_src;
-                super::super::Greeting {
+                ::core::result::Result::Ok(super::super::Greeting {
                     text: self.text.to_string(),
                     at: match self.at.as_option() {
                         Some(v) => {
                             ::buffa::MessageField::<
                                 ::buffa_types::google::protobuf::Timestamp,
-                            >::some(v.to_owned_from_source(__buffa_src))
+                            >::some(v.to_owned_from_source(__buffa_src)?)
                         }
                         None => ::buffa::MessageField::none(),
                     },
@@ -873,11 +875,10 @@ pub mod __buffa {
                         }),
                     __buffa_unknown_fields: self
                         .__buffa_unknown_fields
-                        .to_owned()
-                        .unwrap_or_default()
+                        .to_owned()?
                         .into(),
                     ..::core::default::Default::default()
-                }
+                })
             }
         }
         impl<'a> ::buffa::ViewEncode<'a> for GreetingView<'a> {
@@ -1127,8 +1128,14 @@ pub mod __buffa {
                 self.0.reborrow()
             }
             /// Convert to the owned message type.
-            #[must_use]
-            pub fn to_owned_message(&self) -> super::super::Greeting {
+            ///
+            /// # Errors
+            ///
+            /// Returns an error if re-materializing preserved unknown fields
+            /// fails (e.g. the unknown-field limit is exceeded).
+            pub fn to_owned_message(
+                &self,
+            ) -> ::core::result::Result<super::super::Greeting, ::buffa::DecodeError> {
                 self.0.to_owned_message()
             }
             /// The underlying bytes buffer.

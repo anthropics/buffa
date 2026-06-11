@@ -141,30 +141,33 @@ impl<'a> ::buffa::MessageView<'a> for StructView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::Struct {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::Struct, ::buffa::DecodeError> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::Struct {
+    ) -> ::core::result::Result<super::super::Struct, ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::Struct {
+        ::core::result::Result::Ok(super::super::Struct {
             fields: self
                 .fields
                 .iter()
-                .map(|(k, v)| (k.to_string(), v.to_owned_from_source(__buffa_src)))
-                .collect(),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+                .map(|(k, v)| {
+                    ::core::result::Result::<
+                        _,
+                        ::buffa::DecodeError,
+                    >::Ok((k.to_string(), v.to_owned_from_source(__buffa_src)?))
+                })
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for StructView<'a> {
@@ -304,8 +307,14 @@ impl StructOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::Struct {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::Struct, ::buffa::DecodeError> {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -634,58 +643,68 @@ impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::Value {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::Value, ::buffa::DecodeError> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::Value {
+    ) -> ::core::result::Result<super::super::Value, ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::Value {
-            kind: self
-                .kind
-                .as_ref()
-                .map(|v| match v {
-                    super::super::__buffa::view::oneof::value::Kind::NullValue(v) => {
-                        super::super::__buffa::oneof::value::Kind::NullValue(*v)
-                    }
-                    super::super::__buffa::view::oneof::value::Kind::NumberValue(v) => {
-                        super::super::__buffa::oneof::value::Kind::NumberValue(*v)
-                    }
-                    super::super::__buffa::view::oneof::value::Kind::StringValue(v) => {
-                        super::super::__buffa::oneof::value::Kind::StringValue(
-                            v.to_string(),
-                        )
-                    }
-                    super::super::__buffa::view::oneof::value::Kind::BoolValue(v) => {
-                        super::super::__buffa::oneof::value::Kind::BoolValue(*v)
-                    }
-                    super::super::__buffa::view::oneof::value::Kind::StructValue(v) => {
-                        super::super::__buffa::oneof::value::Kind::StructValue(
-                            ::buffa::alloc::boxed::Box::new(
-                                v.to_owned_from_source(__buffa_src),
-                            ),
-                        )
-                    }
-                    super::super::__buffa::view::oneof::value::Kind::ListValue(v) => {
-                        super::super::__buffa::oneof::value::Kind::ListValue(
-                            ::buffa::alloc::boxed::Box::new(
-                                v.to_owned_from_source(__buffa_src),
-                            ),
-                        )
-                    }
-                }),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+        ::core::result::Result::Ok(super::super::Value {
+            kind: match self.kind.as_ref() {
+                ::core::option::Option::Some(v) => {
+                    ::core::option::Option::Some(
+                        match v {
+                            super::super::__buffa::view::oneof::value::Kind::NullValue(
+                                v,
+                            ) => super::super::__buffa::oneof::value::Kind::NullValue(*v),
+                            super::super::__buffa::view::oneof::value::Kind::NumberValue(
+                                v,
+                            ) => {
+                                super::super::__buffa::oneof::value::Kind::NumberValue(*v)
+                            }
+                            super::super::__buffa::view::oneof::value::Kind::StringValue(
+                                v,
+                            ) => {
+                                super::super::__buffa::oneof::value::Kind::StringValue(
+                                    v.to_string(),
+                                )
+                            }
+                            super::super::__buffa::view::oneof::value::Kind::BoolValue(
+                                v,
+                            ) => super::super::__buffa::oneof::value::Kind::BoolValue(*v),
+                            super::super::__buffa::view::oneof::value::Kind::StructValue(
+                                v,
+                            ) => {
+                                super::super::__buffa::oneof::value::Kind::StructValue(
+                                    ::buffa::alloc::boxed::Box::new(
+                                        v.to_owned_from_source(__buffa_src)?,
+                                    ),
+                                )
+                            }
+                            super::super::__buffa::view::oneof::value::Kind::ListValue(
+                                v,
+                            ) => {
+                                super::super::__buffa::oneof::value::Kind::ListValue(
+                                    ::buffa::alloc::boxed::Box::new(
+                                        v.to_owned_from_source(__buffa_src)?,
+                                    ),
+                                )
+                            }
+                        },
+                    )
+                }
+                ::core::option::Option::None => ::core::option::Option::None,
+            },
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for ValueView<'a> {
@@ -872,8 +891,14 @@ impl ValueOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::Value {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::Value, ::buffa::DecodeError> {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -1211,30 +1236,28 @@ impl<'a> ::buffa::MessageView<'a> for ListValueView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         Self::_decode_ctx(buf, ctx)
     }
-    fn to_owned_message(&self) -> super::super::ListValue {
+    fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::ListValue, ::buffa::DecodeError> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> super::super::ListValue {
+    ) -> ::core::result::Result<super::super::ListValue, ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        super::super::ListValue {
+        ::core::result::Result::Ok(super::super::ListValue {
             values: self
                 .values
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect(),
-            __buffa_unknown_fields: self
-                .__buffa_unknown_fields
-                .to_owned()
-                .unwrap_or_default()
-                .into(),
+                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
+            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
-        }
+        })
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for ListValueView<'a> {
@@ -1356,8 +1379,14 @@ impl ListValueOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    #[must_use]
-    pub fn to_owned_message(&self) -> super::super::ListValue {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields
+    /// fails (e.g. the unknown-field limit is exceeded).
+    pub fn to_owned_message(
+        &self,
+    ) -> ::core::result::Result<super::super::ListValue, ::buffa::DecodeError> {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.

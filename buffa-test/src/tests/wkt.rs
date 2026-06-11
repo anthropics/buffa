@@ -103,5 +103,5 @@ fn test_wkt_view_with_extern_path() {
     assert_eq!(view.created_at.seconds, 42);
     assert_eq!(view.created_at.nanos, 999);
     // Full round-trip.
-    assert_eq!(view.to_owned_message().encode_to_vec(), wire);
+    assert_eq!(view.to_owned_message().unwrap().encode_to_vec(), wire);
 }

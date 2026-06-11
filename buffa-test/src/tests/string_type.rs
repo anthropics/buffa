@@ -95,7 +95,7 @@ fn test_string_type_view_to_owned() {
     // Views always borrow &str regardless of the owned representation.
     assert_eq!(view.singular, "hello");
     assert_eq!(view.compact, "compact-value");
-    let owned: StringContexts = view.to_owned_message();
+    let owned: StringContexts = view.to_owned_message().unwrap();
     assert_eq!(owned, msg);
     // to_owned built the configured types, not String.
     let _: ::buffa::smol_str::SmolStr = owned.singular.clone();

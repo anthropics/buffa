@@ -142,7 +142,15 @@ pub trait MessageView<'a>: Sized {
     ///
     /// This allocates and copies all borrowed fields. Equivalent to
     /// [`to_owned_from_source(None)`](Self::to_owned_from_source).
-    fn to_owned_message(&self) -> Self::Owned;
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields fails —
+    /// notably [`DecodeError::UnknownFieldLimitExceeded`] when the view
+    /// holds more unknown fields than the allowance it was decoded under
+    /// (each owned `UnknownField` counts, unlike the coalesced spans the
+    /// view itself stores).
+    fn to_owned_message(&self) -> Result<Self::Owned, DecodeError>;
 
     /// Convert this view to the owned message type, optionally slicing
     /// `bytes::Bytes`-typed fields from `source` instead of copying.
@@ -157,7 +165,11 @@ pub trait MessageView<'a>: Sized {
     /// Generated view types override this; the default delegates to
     /// [`to_owned_message`](Self::to_owned_message) so hand-written impls
     /// need only provide that method.
-    fn to_owned_from_source(&self, source: Option<&Bytes>) -> Self::Owned {
+    ///
+    /// # Errors
+    ///
+    /// Same contract as [`to_owned_message`](Self::to_owned_message).
+    fn to_owned_from_source(&self, source: Option<&Bytes>) -> Result<Self::Owned, DecodeError> {
         let _ = source;
         self.to_owned_message()
     }
@@ -951,6 +963,10 @@ pub struct UnknownFieldsView<'a> {
     /// an adjacent record by re-slicing `last_tail` — never by widening the
     /// narrowed span reference, which would be provenance-unsound.
     last_tail: Option<&'a [u8]>,
+    /// The unknown-field allowance remaining when this view's first record
+    /// was pushed — the budget [`to_owned`](Self::to_owned) re-materializes
+    /// under, so a tight decode-time limit carries through conversion.
+    to_owned_allowance: Option<usize>,
 }
 
 // Manual impl: `last_tail` is an internal coalescing cursor that extends to
@@ -1002,6 +1018,9 @@ impl<'a> UnknownFieldsView<'a> {
         if span_len > tail.len() {
             return Err(crate::DecodeError::UnexpectedEof);
         }
+        if self.to_owned_allowance.is_none() {
+            self.to_owned_allowance = Some(ctx.remaining_unknown_fields());
+        }
         if let (Some(last), Some(prev_tail)) = (self.raw_spans.last_mut(), self.last_tail) {
             let prev_len = last.len();
             // Contiguous if the new record begins exactly one past the end
@@ -1045,11 +1064,15 @@ impl<'a> UnknownFieldsView<'a> {
     /// Each span holds one or more consecutive (tag + value) records as they
     /// appeared on the wire. Parsing uses
     /// [`crate::encoding::decode_unknown_field`] with the full recursion
-    /// limit so deeply nested group fields are handled correctly, and a
-    /// fresh [`DEFAULT_UNKNOWN_FIELD_LIMIT`](crate::DEFAULT_UNKNOWN_FIELD_LIMIT)
-    /// allowance — **not** the limit the view was decoded under. A coalesced
-    /// span re-materializes one owned `UnknownField` per record, so this
-    /// conversion is where a long run of unknown fields actually allocates.
+    /// limit so deeply nested group fields are handled correctly, and the
+    /// unknown-field allowance that remained when this view recorded its
+    /// first unknown field — so a tight decode-time limit carries through
+    /// conversion. Views built manually (via [`push_raw`](Self::push_raw))
+    /// fall back to
+    /// [`DEFAULT_UNKNOWN_FIELD_LIMIT`](crate::DEFAULT_UNKNOWN_FIELD_LIMIT).
+    /// A coalesced span re-materializes one owned `UnknownField` per
+    /// record, so this conversion is where a long run of unknown fields
+    /// actually allocates — and where the limit is enforced per field.
     ///
     /// # Errors
     ///
@@ -1058,7 +1081,10 @@ impl<'a> UnknownFieldsView<'a> {
     pub fn to_owned(&self) -> Result<crate::UnknownFields, crate::DecodeError> {
         use crate::encoding::{decode_unknown_field, Tag};
 
-        let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
+        let limit = core::cell::Cell::new(
+            self.to_owned_allowance
+                .unwrap_or(crate::DEFAULT_UNKNOWN_FIELD_LIMIT),
+        );
         let ctx = crate::DecodeContext::new(crate::RECURSION_LIMIT, &limit);
         let mut out = crate::UnknownFields::new();
         for span in &self.raw_spans {
@@ -1271,7 +1297,12 @@ where
     /// `bytes::Bytes`-typed fields are produced via [`Bytes::slice_ref`]
     /// into the retained buffer (zero-copy); other borrowed fields are
     /// allocated and copied.
-    pub fn to_owned_message(&self) -> V::Owned {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if re-materializing preserved unknown fields fails
+    /// (see [`MessageView::to_owned_message`]).
+    pub fn to_owned_message(&self) -> Result<V::Owned, DecodeError> {
         self.view.to_owned_from_source(Some(&self.bytes))
     }
 
@@ -1704,13 +1735,40 @@ mod tests {
     #[test]
     fn coalesced_span_to_owned_parses_every_record() {
         let buf: &[u8] = &[0x08, 0x00, 0x08, 0x01, 0x08, 0x02];
-        let ctx = record_ctx(1);
+        let ctx = record_ctx(3);
         let mut ufv = UnknownFieldsView::new();
         for i in 0..3 {
             ufv.push_record(&buf[2 * i..], 2, ctx).unwrap();
         }
         let owned = ufv.to_owned().unwrap();
         assert_eq!(owned.iter().count(), 3, "all records parsed");
+    }
+
+    #[test]
+    fn to_owned_enforces_decode_time_allowance() {
+        // Decoded under an allowance of 1: the coalesced span holds three
+        // records, so materializing them as owned fields must fail — the
+        // decode-time limit carries through conversion.
+        let buf: &[u8] = &[0x08, 0x00, 0x08, 0x01, 0x08, 0x02];
+        let ctx = record_ctx(1);
+        let mut ufv = UnknownFieldsView::new();
+        for i in 0..3 {
+            ufv.push_record(&buf[2 * i..], 2, ctx).unwrap();
+        }
+        assert_eq!(
+            ufv.to_owned(),
+            Err(crate::DecodeError::UnknownFieldLimitExceeded)
+        );
+    }
+
+    #[test]
+    fn to_owned_of_manual_view_uses_default_allowance() {
+        // push_raw leaves no captured allowance; to_owned falls back to the
+        // default limit.
+        let mut ufv = UnknownFieldsView::new();
+        ufv.push_raw(&[0x08, 0x00]);
+        let owned = ufv.to_owned().unwrap();
+        assert_eq!(owned.iter().count(), 1);
     }
 
     #[test]
@@ -2090,11 +2148,11 @@ mod tests {
             Ok(view)
         }
 
-        fn to_owned_message(&self) -> SimpleMessage {
-            SimpleMessage {
+        fn to_owned_message(&self) -> Result<SimpleMessage, DecodeError> {
+            Ok(SimpleMessage {
                 id: self.id,
                 name: self.name.into(),
-            }
+            })
         }
     }
 
@@ -2146,7 +2204,7 @@ mod tests {
     fn owned_view_to_owned_message() {
         let bytes = encode_simple(7, "world");
         let view = OwnedView::<SimpleMessageView<'static>>::decode(bytes).unwrap();
-        let owned = view.to_owned_message();
+        let owned = view.to_owned_message().unwrap();
 
         assert_eq!(owned.id, 7);
         assert_eq!(owned.name, "world");
@@ -2212,7 +2270,7 @@ mod tests {
         assert_eq!(view.reborrow().id, 99);
         assert_eq!(view.reborrow().name, "roundtrip");
 
-        let back = view.to_owned_message();
+        let back = view.to_owned_message().unwrap();
         assert_eq!(back, msg);
     }
 
@@ -2303,7 +2361,7 @@ mod tests {
                 })
             }
 
-            fn to_owned_message(&self) -> SimpleMessage {
+            fn to_owned_message(&self) -> Result<SimpleMessage, DecodeError> {
                 self.inner.to_owned_message()
             }
         }
