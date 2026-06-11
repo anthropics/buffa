@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **Customizable feature-gate names** (#169). `CodeGenConfig::feature_gate_names`
+  (exposed as `buffa_build::Config::{json,views,text,reflect}_feature_name` and
+  `protoc-gen-buffa`'s `{json,views,text,reflect}_feature=` options) renames the
+  crate features that `gate_impls_on_crate_features` conditions the generated
+  impls on — e.g. gating the serde JSON impls behind a feature named `serde`
+  instead of `json`. Defaults are unchanged; the knob is inert unless gating is
+  enabled. A name that is not a valid Cargo feature name fails generation with
+  an error when its gate is active — the alternative is a permanently-false
+  `#[cfg]` that silently compiles the gated impls away.
+
 - **`buffa-build` / `buffa-codegen`: `oneof_attribute`** (#166) — attach Rust
   attributes to generated oneof enums only (not message structs, not regular
   enums), matched against the oneof's fully-qualified path

@@ -186,6 +186,30 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                 // generated code is itself a public dependency surface; most plugin
                 // invocations want the default (off).
                 "gate_impls" => codegen.gate_impls_on_crate_features = value.trim() == "true",
+                // `json_feature=serde` (etc.) renames the crate feature a
+                // gated impl kind is conditioned on. Inert without
+                // `gate_impls=true`. An empty value is a hard error —
+                // `#[cfg(feature = "")]` is permanently false and would
+                // silently drop the gated impls. (A non-empty value that is
+                // not a valid Cargo feature name is rejected by `generate`
+                // when the gate is active.)
+                key @ ("json_feature" | "views_feature" | "text_feature" | "reflect_feature") => {
+                    let value = value.trim();
+                    if value.is_empty() {
+                        return Err(format!(
+                            "'{key}' requires a non-empty feature name \
+                             (an empty name would silently disable the gated impls)"
+                        ));
+                    }
+                    let names = &mut codegen.feature_gate_names;
+                    let slot = match key {
+                        "json_feature" => &mut names.json,
+                        "views_feature" => &mut names.views,
+                        "text_feature" => &mut names.text,
+                        _ => &mut names.reflect,
+                    };
+                    *slot = value.to_string();
+                }
                 "allow_message_set" => codegen.allow_message_set = value.trim() == "true",
                 "strict_utf8" | "strict_utf8_mapping" => {
                     codegen.strict_utf8_mapping = value.trim() == "true"
@@ -411,6 +435,38 @@ mod tests {
     fn gate_impls_default_is_false() {
         let config = parse_config("").unwrap();
         assert!(!config.codegen.gate_impls_on_crate_features);
+    }
+
+    #[test]
+    fn feature_name_overrides() {
+        let config =
+            parse_config("json_feature=serde,views_feature=v,text_feature=t,reflect_feature=r")
+                .unwrap();
+        assert_eq!(config.codegen.feature_gate_names.json, "serde");
+        assert_eq!(config.codegen.feature_gate_names.views, "v");
+        assert_eq!(config.codegen.feature_gate_names.text, "t");
+        assert_eq!(config.codegen.feature_gate_names.reflect, "r");
+    }
+
+    #[test]
+    fn empty_feature_name_is_rejected() {
+        let err = match parse_config("json_feature=") {
+            Err(err) => err,
+            Ok(_) => panic!("empty feature name must be a parse error"),
+        };
+        assert!(
+            err.contains("json_feature"),
+            "error names the option: {err}"
+        );
+    }
+
+    #[test]
+    fn feature_names_default() {
+        let config = parse_config("").unwrap();
+        assert_eq!(config.codegen.feature_gate_names.json, "json");
+        assert_eq!(config.codegen.feature_gate_names.views, "views");
+        assert_eq!(config.codegen.feature_gate_names.text, "text");
+        assert_eq!(config.codegen.feature_gate_names.reflect, "reflect");
     }
 
     #[test]

@@ -26,6 +26,7 @@ pub(crate) mod defaults;
 pub(crate) mod enumeration;
 pub(crate) mod extension;
 pub(crate) mod feature_gates;
+pub use feature_gates::FeatureGateNames;
 pub(crate) mod features;
 #[doc(hidden)]
 pub use buffa_descriptor::generated;
@@ -660,6 +661,17 @@ pub struct CodeGenConfig {
     /// the option itself may be renamed or removed outside semver
     /// guarantees.
     pub idiomatic_imports: bool,
+    /// Crate feature names used by the `#[cfg(feature = "...")]` gates that
+    /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features)
+    /// and
+    /// [`gate_reflect_on_crate_feature`](Self::gate_reflect_on_crate_feature)
+    /// emit.
+    ///
+    /// Defaults to `"json"` / `"views"` / `"text"` / `"reflect"`. Override a
+    /// name when the consuming crate gates the same concern behind a
+    /// different feature name (e.g. its JSON support behind a `serde`
+    /// feature). Inert unless one of the gating flags is on.
+    pub feature_gate_names: FeatureGateNames,
 }
 
 impl Default for CodeGenConfig {
@@ -690,6 +702,7 @@ impl Default for CodeGenConfig {
             gate_reflect_on_crate_feature: false,
             idiomatic_enum_aliases: true,
             idiomatic_imports: false,
+            feature_gate_names: FeatureGateNames::default(),
         }
     }
 }
@@ -700,7 +713,7 @@ impl CodeGenConfig {
     /// Recomputed on each call (cheap — three boolean ANDs); call once at
     /// the top of a generation function and thread through, or call inline
     /// at each use site, whichever reads better.
-    pub(crate) fn feature_gates(&self) -> feature_gates::FeatureGates {
+    pub(crate) fn feature_gates(&self) -> feature_gates::FeatureGates<'_> {
         feature_gates::FeatureGates::for_config(self)
     }
 }
@@ -965,9 +978,10 @@ pub fn generate(
 ///
 /// Returns [`CodeGenError::FileNotFound`] if a name in `files_to_generate` has
 /// no matching descriptor, [`CodeGenError::Other`] if `generate_reflection_vtable`
-/// is set without `generate_reflection`, and other [`CodeGenError`] variants for
-/// malformed descriptors (e.g. a missing required field) encountered while
-/// generating.
+/// is set without `generate_reflection` or if an active feature-gate name in
+/// [`CodeGenConfig::feature_gate_names`] is not a valid Cargo feature name,
+/// and other [`CodeGenError`] variants for malformed descriptors (e.g. a
+/// missing required field) encountered while generating.
 pub fn generate_with_diagnostics(
     file_descriptors: &[FileDescriptorProto],
     files_to_generate: &[String],
@@ -996,6 +1010,21 @@ pub fn generate_with_diagnostics(
              where emitted `use` directives could collide across files)"
                 .into(),
         ));
+    }
+
+    // Active feature-gate names are emitted verbatim into
+    // `#[cfg(feature = "...")]`; an invalid name fails open (the cfg is
+    // permanently false and the gated impls silently compile away), so it
+    // must be a hard error here rather than a debug assertion — build
+    // scripts and protoc plugins typically run as release builds.
+    if let Err((kind, name)) = config.feature_gates().validate() {
+        return Err(CodeGenError::Other(format!(
+            "invalid {kind} feature-gate name {name:?}: a Cargo feature name starts \
+             with an ASCII alphanumeric or '_' and contains only alphanumerics, \
+             '_', '-', '+', or '.'; an invalid name would leave the emitted \
+             #[cfg(feature = ...)] permanently false, silently compiling the \
+             gated impls away"
+        )));
     }
 
     let ctx = context::CodeGenContext::for_generate(file_descriptors, files_to_generate, config);

@@ -20,33 +20,109 @@ use quote::quote;
 
 use crate::CodeGenConfig;
 
-/// Crate feature names the gated impls are conditioned on.
-///
-/// Fixed for v1; the consuming crate must define matching features in its
-/// `Cargo.toml`. Customisable names can be added later as a separate config
-/// field if a concrete need arises.
+/// Default crate feature names the gated impls are conditioned on.
 pub(crate) const JSON_FEATURE: &str = "json";
 pub(crate) const VIEWS_FEATURE: &str = "views";
 pub(crate) const TEXT_FEATURE: &str = "text";
 pub(crate) const REFLECT_FEATURE: &str = "reflect";
+
+/// Crate feature names used by the gated impls, customizable per impl kind.
+///
+/// Used by [`CodeGenConfig::feature_gate_names`]. The defaults are `"json"`,
+/// `"views"`, `"text"`, and `"reflect"`; the consuming crate must define
+/// matching features in its `Cargo.toml`. Override a name when the consuming
+/// crate already uses a different feature name for the same concern (e.g. a
+/// crate whose JSON support is gated behind a `serde` feature).
+///
+/// Names are emitted verbatim into `#[cfg(feature = "...")]` /
+/// `#[cfg_attr(feature = "...", ...)]` attributes; they must be valid Cargo
+/// feature names. **An empty, misspelled, or undeclared name fails open**:
+/// the emitted `#[cfg]` is permanently false in the consuming crate, so the
+/// gated impls silently compile away. To catch the cases that are
+/// detectable at generation time, [`generate`](crate::generate) returns an
+/// error when an *active* gate name is empty or not a valid Cargo feature
+/// name; an undeclared (but valid) name can only be diagnosed in the
+/// consuming crate, via the `unexpected_cfgs` lint on Rust ≥ 1.80.
+///
+/// The struct is `#[non_exhaustive]`; construct it by mutating
+/// [`FeatureGateNames::default()`] (or use the `buffa_build::Config`
+/// setters).
+///
+/// [`CodeGenConfig::feature_gate_names`]: crate::CodeGenConfig::feature_gate_names
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct FeatureGateNames {
+    /// Feature gating the serde JSON impls (default `"json"`).
+    pub json: String,
+    /// Feature gating the view types and impls (default `"views"`).
+    pub views: String,
+    /// Feature gating the textproto impls (default `"text"`).
+    pub text: String,
+    /// Feature gating the reflection impls (default `"reflect"`).
+    pub reflect: String,
+}
+
+impl FeatureGateNames {
+    /// Whether `name` is a valid Cargo feature name: starts with an ASCII
+    /// alphanumeric or `_`, with the remainder drawn from alphanumerics,
+    /// `_`, `-`, `+`, and `.`.
+    ///
+    /// This is the rule [`generate`](crate::generate) enforces on every
+    /// *active* gate name. It is public so toolchains layered on
+    /// buffa-codegen (e.g. service generators with their own feature-gate
+    /// knobs) can validate user-supplied names against the same rule
+    /// instead of re-deriving it.
+    #[must_use]
+    pub fn is_valid_name(name: &str) -> bool {
+        is_valid_feature_name(name)
+    }
+}
+
+impl Default for FeatureGateNames {
+    fn default() -> Self {
+        Self {
+            json: JSON_FEATURE.to_string(),
+            views: VIEWS_FEATURE.to_string(),
+            text: TEXT_FEATURE.to_string(),
+            reflect: REFLECT_FEATURE.to_string(),
+        }
+    }
+}
+
+/// Whether `name` is a valid Cargo feature name: starts with an ASCII
+/// alphanumeric or `_`, with the remainder drawn from Cargo's feature
+/// alphabet (alphanumerics, `_`, `-`, `+`, `.`).
+///
+/// Enforced at the [`generate`](crate::generate) entry point for every
+/// *active* gate name — the failure mode of an invalid name is silent
+/// (`#[cfg(feature = "")]` is permanently false, so the gated impls just
+/// disappear), so it must be a hard error in every build profile.
+pub(crate) fn is_valid_feature_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '+' | '.'))
+}
 
 /// Resolved feature-gate names for the current codegen run, computed once
 /// from [`CodeGenConfig`] and threaded through codegen call-sites.
 ///
 /// Each field is `Some("name")` when the corresponding impl kind is both
 /// enabled (`generate_*` is true) and gated
-/// (`gate_impls_on_crate_features` is true), and `None` otherwise. Pass the
-/// field to [`cfg_block`] / [`cfg_attr`] to wrap a token stream — they're
-/// no-ops on `None`.
+/// (`gate_impls_on_crate_features` is true), and `None` otherwise. The names
+/// borrow from the config's [`FeatureGateNames`]. Pass the field to
+/// [`cfg_block`] / [`cfg_attr`] to wrap a token stream — they're no-ops on
+/// `None`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) struct FeatureGates {
-    pub(crate) json: Option<&'static str>,
-    pub(crate) views: Option<&'static str>,
-    pub(crate) text: Option<&'static str>,
-    pub(crate) reflect: Option<&'static str>,
+pub(crate) struct FeatureGates<'a> {
+    pub(crate) json: Option<&'a str>,
+    pub(crate) views: Option<&'a str>,
+    pub(crate) text: Option<&'a str>,
+    pub(crate) reflect: Option<&'a str>,
 }
 
-impl FeatureGates {
+impl<'a> FeatureGates<'a> {
     /// Compute the active gates for a config.
     ///
     /// `gate_impls_on_crate_features` gates json/views/text/reflect together.
@@ -54,30 +130,62 @@ impl FeatureGates {
     /// gating — for crates (notably `buffa-types`) that ship views/text
     /// unconditionally but want the `buffa-descriptor`-dependent reflection
     /// surface to be opt-in.
-    pub(crate) fn for_config(config: &CodeGenConfig) -> Self {
+    pub(crate) fn for_config(config: &'a CodeGenConfig) -> Self {
         let gate_all = config.gate_impls_on_crate_features;
         let gate_reflect = gate_all || config.gate_reflect_on_crate_feature;
+        let names = &config.feature_gate_names;
         Self {
-            json: (gate_all && config.generate_json).then_some(JSON_FEATURE),
-            views: (gate_all && config.generate_views).then_some(VIEWS_FEATURE),
-            text: (gate_all && config.generate_text).then_some(TEXT_FEATURE),
-            reflect: (gate_reflect && config.generate_reflection).then_some(REFLECT_FEATURE),
+            json: (gate_all && config.generate_json).then_some(names.json.as_str()),
+            views: (gate_all && config.generate_views).then_some(names.views.as_str()),
+            text: (gate_all && config.generate_text).then_some(names.text.as_str()),
+            reflect: (gate_reflect && config.generate_reflection).then_some(names.reflect.as_str()),
         }
+    }
+
+    /// Check every *active* gate name against [`is_valid_feature_name`],
+    /// returning the first offender as `Err((kind, name))`.
+    ///
+    /// Called from [`generate`](crate::generate) so an invalid name is a
+    /// hard error in every build profile — the failure mode otherwise is
+    /// silent (the emitted `#[cfg]` is permanently false and the gated
+    /// impls compile away). Inactive names are not checked: they are inert
+    /// and never reach the output.
+    pub(crate) fn validate(&self) -> Result<(), (&'static str, &'a str)> {
+        [
+            ("json", self.json),
+            ("views", self.views),
+            ("text", self.text),
+            ("reflect", self.reflect),
+        ]
+        .into_iter()
+        .filter_map(|(kind, name)| Some((kind, name?)))
+        .try_for_each(|(kind, name)| {
+            if is_valid_feature_name(name) {
+                Ok(())
+            } else {
+                Err((kind, name))
+            }
+        })
     }
 
     /// `Some("json")`, `Some("text")`, or — when both are active — the
     /// composite gate for items that exist iff *either* json or text is on
     /// (e.g. `register_types`, whose body registers both kinds of entry).
     ///
-    /// Returns `None` when neither is gated. The caller should pass this to
-    /// [`cfg_block_any`] to handle the two-feature case.
-    pub(crate) fn json_or_text(&self) -> Vec<&'static str> {
+    /// Returns `None` when neither is gated. When both kinds are gated on
+    /// the *same* custom name, the duplicate collapses to a single entry so
+    /// the emitted attribute is a plain `#[cfg(feature = "...")]` rather
+    /// than `#[cfg(any(feature = "x", feature = "x"))]`. The caller should
+    /// pass this to [`cfg_block_any`] to handle the two-feature case.
+    pub(crate) fn json_or_text(&self) -> Vec<&'a str> {
         let mut v = Vec::with_capacity(2);
         if let Some(f) = self.json {
             v.push(f);
         }
         if let Some(f) = self.text {
-            v.push(f);
+            if self.json != Some(f) {
+                v.push(f);
+            }
         }
         v
     }
@@ -224,7 +332,8 @@ mod tests {
 
     #[test]
     fn for_config_all_gated() {
-        let gates = FeatureGates::for_config(&gated_config());
+        let config = gated_config();
+        let gates = FeatureGates::for_config(&config);
         assert_eq!(gates.json, Some(JSON_FEATURE));
         assert_eq!(gates.views, Some(VIEWS_FEATURE));
         assert_eq!(gates.text, Some(TEXT_FEATURE));
@@ -273,6 +382,122 @@ mod tests {
             FeatureGates::for_config(&config).reflect,
             Some(REFLECT_FEATURE)
         );
+    }
+
+    #[test]
+    fn for_config_custom_names() {
+        let config = CodeGenConfig {
+            feature_gate_names: FeatureGateNames {
+                json: "serde".to_string(),
+                views: "zero-copy".to_string(),
+                text: "textproto".to_string(),
+                reflect: "reflection".to_string(),
+            },
+            generate_reflection: true,
+            ..gated_config()
+        };
+        let gates = FeatureGates::for_config(&config);
+        assert_eq!(gates.json, Some("serde"));
+        assert_eq!(gates.views, Some("zero-copy"));
+        assert_eq!(gates.text, Some("textproto"));
+        assert_eq!(gates.reflect, Some("reflection"));
+        assert_eq!(gates.json_or_text(), vec!["serde", "textproto"]);
+    }
+
+    #[test]
+    fn custom_names_inert_without_gating() {
+        // Renaming a gate without enabling gating changes nothing — the
+        // names only matter once `gate_impls_on_crate_features` (or the
+        // reflect-only flag) turns the gates on.
+        let config = CodeGenConfig {
+            generate_json: true,
+            feature_gate_names: FeatureGateNames {
+                json: "serde".to_string(),
+                ..FeatureGateNames::default()
+            },
+            ..CodeGenConfig::default()
+        };
+        assert_eq!(FeatureGates::for_config(&config), FeatureGates::default());
+    }
+
+    #[test]
+    fn json_or_text_dedups_shared_name() {
+        // Gating both kinds behind one feature must emit a single
+        // `#[cfg(feature = "serde")]`, not `#[cfg(any(.., ..))]` with a
+        // duplicated predicate.
+        let shared = FeatureGates {
+            json: Some("serde"),
+            text: Some("serde"),
+            ..Default::default()
+        };
+        assert_eq!(shared.json_or_text(), vec!["serde"]);
+    }
+
+    #[test]
+    fn public_validator_matches_internal_rule() {
+        // The public surface for layered toolchains must agree with what
+        // `generate` enforces.
+        for name in ["json", "zero-copy", "", "-leading", "with space"] {
+            assert_eq!(
+                FeatureGateNames::is_valid_name(name),
+                is_valid_feature_name(name)
+            );
+        }
+    }
+
+    #[test]
+    fn feature_name_validity() {
+        assert!(is_valid_feature_name("json"));
+        assert!(is_valid_feature_name("zero-copy"));
+        assert!(is_valid_feature_name("a_b.c+d2"));
+        assert!(is_valid_feature_name("_private"));
+        assert!(!is_valid_feature_name(""));
+        assert!(!is_valid_feature_name("with space"));
+        assert!(!is_valid_feature_name("quo\"te"));
+        // Cargo requires the first character to be alphanumeric or `_`.
+        assert!(!is_valid_feature_name("-leading"));
+        assert!(!is_valid_feature_name(".leading"));
+        assert!(!is_valid_feature_name("+leading"));
+    }
+
+    #[test]
+    fn validate_reports_first_invalid_active_name() {
+        let config = CodeGenConfig {
+            feature_gate_names: FeatureGateNames {
+                views: String::new(),
+                ..FeatureGateNames::default()
+            },
+            ..gated_config()
+        };
+        assert_eq!(
+            FeatureGates::for_config(&config).validate(),
+            Err(("views", ""))
+        );
+    }
+
+    #[test]
+    fn validate_ignores_inactive_invalid_names() {
+        // An invalid name on a kind that isn't gated never reaches the
+        // output, so it must not fail validation.
+        let config = CodeGenConfig {
+            feature_gate_names: FeatureGateNames {
+                reflect: "not valid".to_string(),
+                ..FeatureGateNames::default()
+            },
+            ..gated_config() // generate_reflection is off in gated_config
+        };
+        let gates = FeatureGates::for_config(&config);
+        assert_eq!(gates.reflect, None);
+        assert_eq!(gates.validate(), Ok(()));
+    }
+
+    #[test]
+    fn default_names_match_constants() {
+        let names = FeatureGateNames::default();
+        assert_eq!(names.json, JSON_FEATURE);
+        assert_eq!(names.views, VIEWS_FEATURE);
+        assert_eq!(names.text, TEXT_FEATURE);
+        assert_eq!(names.reflect, REFLECT_FEATURE);
     }
 
     #[test]
