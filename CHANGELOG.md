@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **`DecodeOptions::decode_length_delimited_reader` no longer allocates the
+  wire-declared length up front.** The method previously allocated a zeroed
+  buffer of the declared length before reading, so a source that declared a
+  large length (up to `max_message_size`, 2 GiB by default) but delivered
+  few or no bytes still forced the full allocation. The buffer now grows
+  incrementally as bytes are actually delivered (initial capacity capped at
+  64 KiB), so peak allocation tracks delivered data. Truncated streams
+  report `UnexpectedEof` exactly as before; behavior for well-formed
+  streams is unchanged.
+
 ## [0.7.1] - 2026-06-10
 
 This release is a patch bump under the

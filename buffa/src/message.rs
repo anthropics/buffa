@@ -703,11 +703,17 @@ impl DecodeOptions {
     /// Reads a varint length prefix, enforces `max_message_size`, reads
     /// exactly that many bytes, then decodes. Useful for reading sequential
     /// length-delimited messages from a file or stream.
+    ///
+    /// The declared length is treated as untrusted: the read buffer grows
+    /// as bytes actually arrive rather than being allocated up front, so a
+    /// source that declares a large length but never delivers the bytes
+    /// cannot force a large allocation.
     #[cfg(feature = "std")]
     pub fn decode_length_delimited_reader<M: Message>(
         &self,
         reader: &mut impl std::io::Read,
     ) -> Result<M, std::io::Error> {
+        use std::io::Read as _;
         let len = read_varint(reader)?;
         let max = core::cmp::min(
             self.max_message_size as u64,
@@ -719,9 +725,24 @@ impl DecodeOptions {
                 DecodeError::MessageTooLarge,
             ));
         }
-        let len = len as usize;
-        let mut buf = alloc::vec![0u8; len];
-        reader.read_exact(&mut buf)?;
+        let len = usize::try_from(len).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                DecodeError::MessageTooLarge,
+            )
+        })?;
+        // Pre-size only up to a small bound; `read_to_end` grows the buffer
+        // geometrically as data is actually delivered, so peak allocation
+        // tracks delivered bytes, not the wire-declared length.
+        const INITIAL_CAPACITY_CAP: usize = 64 * 1024;
+        let mut buf = alloc::vec::Vec::with_capacity(len.min(INITIAL_CAPACITY_CAP));
+        reader.take(len as u64).read_to_end(&mut buf)?;
+        if buf.len() < len {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                DecodeError::UnexpectedEof,
+            ));
+        }
         self.decode_from_slice::<M>(&buf)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
@@ -1465,6 +1486,47 @@ mod tests {
                 .decode_length_delimited_reader::<FlatMsg>(&mut ld.as_slice())
                 .unwrap_err();
             assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        }
+
+        #[test]
+        fn decode_length_delimited_reader_zero_length() {
+            // A zero length prefix decodes to the default message and
+            // consumes only the prefix byte.
+            let stream = [0x00u8, 0xFF]; // len=0, then unrelated trailing byte
+            let mut cursor = std::io::Cursor::new(stream);
+            let msg: FlatMsg = DecodeOptions::new()
+                .decode_length_delimited_reader(&mut cursor)
+                .unwrap();
+            assert_eq!(msg, FlatMsg::default());
+            assert_eq!(cursor.position(), 1);
+        }
+
+        #[test]
+        fn decode_length_delimited_reader_truncated_reports_eof() {
+            // Length prefix declares more bytes than the stream delivers.
+            let src = FlatMsg { value: 99 };
+            let mut ld = Vec::new();
+            src.encode_length_delimited(&mut ld);
+            ld.truncate(ld.len() - 1);
+            let err = DecodeOptions::new()
+                .decode_length_delimited_reader::<FlatMsg>(&mut ld.as_slice())
+                .unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+        }
+
+        #[test]
+        fn decode_length_delimited_reader_huge_claim_without_delivery() {
+            // A 5-byte prefix declaring ~2 GiB followed by EOF must fail with
+            // UnexpectedEof without allocating the declared length up front —
+            // the buffer only grows as bytes are actually delivered. (This
+            // test completes instantly; before the incremental-read fix it
+            // zero-filled a ~2 GiB buffer first.)
+            let mut stream = Vec::new();
+            encode_varint(0x7FFF_FFF0, &mut stream); // just under the cap
+            let err = DecodeOptions::new()
+                .decode_length_delimited_reader::<FlatMsg>(&mut stream.as_slice())
+                .unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
         }
 
         #[test]
