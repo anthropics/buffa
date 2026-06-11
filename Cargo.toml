@@ -57,6 +57,12 @@ buffa-build = { path = "buffa-build", version = "0.7.1" }
 buffa-test = { path = "buffa-test", version = "0.7.1" }
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
 bytes = { version = "1", default-features = false }
+# Minimum 0.4.34: the `chrono::TimeDelta` name (used throughout
+# duration_chrono.rs) was introduced in 0.4.34 as the rename of
+# `chrono::Duration`; `TimeDelta::try_seconds` arrived in 0.4.32 and
+# `DateTime::<Utc>::from_timestamp` in 0.4.31. Verified mechanically:
+# 0.4.31 fails to compile this crate's `chrono` feature, 0.4.34 succeeds.
+chrono = { version = "0.4.34", default-features = false }
 hashbrown = { version = "0.15", default-features = false, features = ["default-hasher"] }
 once_cell = { version = "1", default-features = false }
 serde = { version = "1", default-features = false }
