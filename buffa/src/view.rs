@@ -135,6 +135,14 @@ pub trait MessageView<'a>: Sized {
     ///
     /// This allocates and copies all borrowed fields. Equivalent to
     /// [`to_owned_from_source(None)`](Self::to_owned_from_source).
+    ///
+    /// # Panics
+    ///
+    /// Views generated with `lazy_views` panic here if a deferred
+    /// sub-message holds malformed bytes or exceeds the recursion budget —
+    /// validation is deferred to access (see
+    /// [`LazyMessageFieldView`]). Call `.get()` on the lazy fields first to
+    /// validate untrusted input fallibly.
     fn to_owned_message(&self) -> Self::Owned;
 
     /// Convert this view to the owned message type, optionally slicing
@@ -643,6 +651,39 @@ impl<V: PartialEq + DefaultViewInstance> PartialEq for MessageFieldView<V> {
 
 impl<V: Eq + DefaultViewInstance> Eq for MessageFieldView<V> {}
 
+/// Merge capability for message views (proto merge semantics).
+///
+/// A protobuf decoder must *merge* repeated occurrences of the same singular
+/// message field: later occurrences overwrite singular scalar fields, append
+/// to repeated fields, and merge recursively into nested message fields.
+/// Generated view types implement this by re-running their decode loop over
+/// `buf` on top of the existing field state.
+///
+/// Used by [`LazyMessageFieldView::get`] to reassemble a deferred field whose
+/// value was split across multiple wire fragments.
+pub trait ViewMerge<'a>: MessageView<'a> {
+    /// Merge fields decoded from `buf` into this view, with `depth` as the
+    /// remaining recursion budget (decremented per nested message level, as
+    /// in [`MessageView::decode_view_with_limit`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeError`] if `buf` is not a valid encoding of this
+    /// message type, or [`DecodeError::RecursionLimitExceeded`] when the
+    /// budget runs out.
+    fn merge_view(&mut self, buf: &'a [u8], depth: u32) -> Result<(), DecodeError>;
+}
+
+/// Fragments of one singular message field. `Many` only arises when an
+/// encoder split the field across occurrences, keeping the common
+/// single-occurrence path allocation-free.
+#[derive(Clone)]
+enum LazyFragments<'a> {
+    None,
+    One(&'a [u8]),
+    Many(alloc::vec::Vec<&'a [u8]>),
+}
+
 /// A lazily-decoded view of an optional message field.
 ///
 /// Unlike [`MessageFieldView`] — which eagerly decodes (and boxes) the
@@ -653,8 +694,29 @@ impl<V: Eq + DefaultViewInstance> Eq for MessageFieldView<V> {}
 ///
 /// `get` returns a freshly-decoded view each call (views are thin borrows, so
 /// this is cheap) and does not cache.
+///
+/// # Merge semantics
+///
+/// A singular message field may legally appear more than once on the wire;
+/// decoders must merge the occurrences. This type stores each occurrence's
+/// bytes as a separate fragment and [`get`](Self::get) replays them in order
+/// (decode the first, [`ViewMerge::merge_view`] the rest), so the result
+/// matches the eager and owned decoders.
+///
+/// # Deferred validation
+///
+/// The fragment bytes are *not* validated when the enclosing view is decoded;
+/// a malformed sub-message surfaces as a [`DecodeError`] from
+/// [`get`](Self::get). The recursion budget remaining when the field was
+/// recorded is stored alongside the fragments and charged on access, so a
+/// chain of lazy `get` calls is depth-bounded exactly like the eager and
+/// owned decoders (deeper nesting fails with
+/// [`DecodeError::RecursionLimitExceeded`]); a custom limit passed to the
+/// enclosing [`decode_view_with_limit`](MessageView::decode_view_with_limit)
+/// flows through.
 pub struct LazyMessageFieldView<'a, V> {
-    raw: Option<&'a [u8]>,
+    raw: LazyFragments<'a>,
+    depth: u32,
     _marker: core::marker::PhantomData<fn() -> V>,
 }
 
@@ -663,54 +725,136 @@ impl<'a, V> LazyMessageFieldView<'a, V> {
     #[inline]
     pub const fn unset() -> Self {
         Self {
-            raw: None,
+            raw: LazyFragments::None,
+            // Sentinel: the first `push_fragment` lowers this to its recorded
+            // budget, so custom limits above RECURSION_LIMIT aren't clamped.
+            depth: u32::MAX,
             _marker: core::marker::PhantomData,
         }
     }
 
-    /// A set field carrying the sub-message's undecoded wire bytes.
+    /// A set field carrying the sub-message's undecoded wire bytes, with the
+    /// default recursion budget for access.
     #[inline]
     pub const fn from_bytes(raw: &'a [u8]) -> Self {
         Self {
-            raw: Some(raw),
+            raw: LazyFragments::One(raw),
+            depth: crate::RECURSION_LIMIT,
             _marker: core::marker::PhantomData,
         }
+    }
+
+    /// Append one wire occurrence of the field (used by generated
+    /// `decode_view`). Fragments accumulate in wire order; [`get`](Self::get)
+    /// merges them. `depth` is the recursion budget remaining at the record
+    /// site; the smallest pushed budget is charged on access.
+    #[doc(hidden)]
+    #[inline]
+    pub fn push_fragment(&mut self, raw: &'a [u8], depth: u32) {
+        self.depth = self.depth.min(depth);
+        self.raw = match core::mem::replace(&mut self.raw, LazyFragments::None) {
+            LazyFragments::None => LazyFragments::One(raw),
+            LazyFragments::One(first) => LazyFragments::Many(alloc::vec![first, raw]),
+            LazyFragments::Many(mut frags) => {
+                frags.push(raw);
+                LazyFragments::Many(frags)
+            }
+        };
     }
 
     /// Whether the field is present.
     #[inline]
     pub const fn is_set(&self) -> bool {
-        self.raw.is_some()
+        !matches!(self.raw, LazyFragments::None)
     }
 
     /// Whether the field has no value.
     #[inline]
     pub const fn is_unset(&self) -> bool {
-        self.raw.is_none()
+        matches!(self.raw, LazyFragments::None)
     }
 
-    /// The undecoded wire bytes, if set.
+    /// The undecoded wire fragments, in wire order (empty if unset).
+    ///
+    /// A singular message field that appeared exactly once on the wire — the
+    /// common case — yields one fragment. Encoders that split the field
+    /// across multiple occurrences yield one fragment per occurrence;
+    /// [`get`](Self::get) merges them per proto semantics.
     #[inline]
-    pub const fn raw_bytes(&self) -> Option<&'a [u8]> {
-        self.raw
+    pub fn fragments(&self) -> &[&'a [u8]] {
+        match &self.raw {
+            LazyFragments::None => &[],
+            LazyFragments::One(raw) => core::slice::from_ref(raw),
+            LazyFragments::Many(frags) => frags,
+        }
     }
 }
 
-impl<'a, V: MessageView<'a>> LazyMessageFieldView<'a, V> {
+impl<'a, V: ViewMerge<'a>> LazyMessageFieldView<'a, V> {
     /// Decode and return the sub-message view, or `None` if unset.
+    ///
+    /// Multiple wire fragments are merged per proto semantics (see the type
+    /// docs). The view is re-decoded on every call; there is no cache — bind
+    /// the result when reading several fields. Note the shape difference from
+    /// [`LazyRepeatedView::get`], which returns `Option<Result<V, _>>`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeError`] if the deferred bytes are not a valid
+    /// encoding of `V` — validation happens here, not when the enclosing
+    /// view was decoded — or [`DecodeError::RecursionLimitExceeded`] when
+    /// the recursion budget recorded at decode time is exhausted.
     #[inline]
-    pub fn get(&self) -> Result<Option<V>, crate::DecodeError> {
-        self.raw.map(V::decode_view).transpose()
+    pub fn get(&self) -> Result<Option<V>, DecodeError> {
+        match &self.raw {
+            LazyFragments::None => Ok(None),
+            LazyFragments::One(raw) => V::decode_view_with_limit(raw, self.depth).map(Some),
+            LazyFragments::Many(frags) => {
+                // `Many` always holds ≥ 2 fragments (see `push_fragment`);
+                // the guard is belt-and-suspenders.
+                let mut iter = frags.iter();
+                let Some(first) = iter.next() else {
+                    return Ok(None);
+                };
+                let mut view = V::decode_view_with_limit(first, self.depth)?;
+                for frag in iter {
+                    view.merge_view(frag, self.depth)?;
+                }
+                Ok(Some(view))
+            }
+        }
+    }
+
+    /// Like [`get`](Self::get), but an unset field decodes to the default
+    /// view — the lazy analogue of [`MessageFieldView`]'s deref-to-default,
+    /// for the common read path:
+    ///
+    /// ```rust,ignore
+    /// let city = view.address.get_or_default()?.city;
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Same as [`get`](Self::get).
+    #[inline]
+    pub fn get_or_default(&self) -> Result<V, DecodeError>
+    where
+        V: Default,
+    {
+        Ok(self.get()?.unwrap_or_default())
     }
 }
 
 impl<V> Clone for LazyMessageFieldView<'_, V> {
     #[inline]
     fn clone(&self) -> Self {
-        *self
+        Self {
+            raw: self.raw.clone(),
+            depth: self.depth,
+            _marker: core::marker::PhantomData,
+        }
     }
 }
-impl<V> Copy for LazyMessageFieldView<'_, V> {}
 impl<V> Default for LazyMessageFieldView<'_, V> {
     #[inline]
     fn default() -> Self {
@@ -721,6 +865,7 @@ impl<V> core::fmt::Debug for LazyMessageFieldView<'_, V> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("LazyMessageFieldView")
             .field("is_set", &self.is_set())
+            .field("fragments", &self.fragments().len())
             .finish()
     }
 }
@@ -728,10 +873,15 @@ impl<V> core::fmt::Debug for LazyMessageFieldView<'_, V> {
 /// A lazily-decoded view of a repeated message field.
 ///
 /// Holds the wire byte-slice of each element (cheap pointers) and decodes a
-/// fresh element view on iteration, instead of eagerly decoding every element
-/// into a `Vec` like [`RepeatedView`]. Generated under the `lazy_views` option.
+/// fresh element view on access ([`get`](Self::get)) or iteration
+/// ([`iter`](Self::iter)), instead of eagerly decoding every element into a
+/// `Vec` like [`RepeatedView`]. Generated under the `lazy_views` option.
+///
+/// Element bytes are *not* validated when the enclosing view is decoded; a
+/// malformed element surfaces as a [`DecodeError`] from `get`/`iter`.
 pub struct LazyRepeatedView<'a, V> {
     elements: alloc::vec::Vec<&'a [u8]>,
+    depth: u32,
     _marker: core::marker::PhantomData<fn() -> V>,
 }
 
@@ -741,6 +891,8 @@ impl<'a, V> LazyRepeatedView<'a, V> {
     pub fn new() -> Self {
         Self {
             elements: alloc::vec::Vec::new(),
+            // Sentinel — see `LazyMessageFieldView::unset`.
+            depth: u32::MAX,
             _marker: core::marker::PhantomData,
         }
     }
@@ -757,27 +909,103 @@ impl<'a, V> LazyRepeatedView<'a, V> {
         self.elements.is_empty()
     }
 
+    /// The undecoded wire bytes of each element, in wire order.
+    #[inline]
+    pub fn raw_elements(&self) -> &[&'a [u8]] {
+        &self.elements
+    }
+
     /// Append an element's undecoded bytes (used by generated `decode_view`).
+    /// `depth` is the recursion budget remaining at the record site; the
+    /// smallest pushed budget is charged on access.
     #[doc(hidden)]
     #[inline]
-    pub fn push_bytes(&mut self, raw: &'a [u8]) {
+    pub fn push_bytes(&mut self, raw: &'a [u8], depth: u32) {
+        self.depth = self.depth.min(depth);
         self.elements.push(raw);
     }
 }
 
 impl<'a, V: MessageView<'a>> LazyRepeatedView<'a, V> {
     /// Decode the element at `index`, or `None` if out of range.
+    ///
+    /// Re-decodes on every call (no cache) — bind the result when reading
+    /// multiple fields, and avoid calling it inside a tight loop over the
+    /// same index. Note the shape difference from
+    /// [`LazyMessageFieldView::get`], which returns `Result<Option<V>, _>`.
     #[inline]
-    pub fn get(&self, index: usize) -> Option<Result<V, crate::DecodeError>> {
-        self.elements.get(index).map(|b| V::decode_view(b))
+    pub fn get(&self, index: usize) -> Option<Result<V, DecodeError>> {
+        self.elements
+            .get(index)
+            .map(|b| V::decode_view_with_limit(b, self.depth))
+    }
+
+    /// Iterate the elements, decoding each on the fly.
+    ///
+    /// Yields `Result<V, DecodeError>` — element bytes are validated here,
+    /// not when the enclosing view was decoded. Each pass over the iterator
+    /// re-decodes the elements (no cache).
+    #[inline]
+    pub fn iter(&self) -> LazyRepeatedIter<'_, 'a, V> {
+        LazyRepeatedIter {
+            inner: self.elements.iter(),
+            depth: self.depth,
+            _marker: core::marker::PhantomData,
+        }
     }
 }
+
+impl<'s, 'a, V: MessageView<'a>> IntoIterator for &'s LazyRepeatedView<'a, V> {
+    type Item = Result<V, DecodeError>;
+    type IntoIter = LazyRepeatedIter<'s, 'a, V>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+/// Iterator over a [`LazyRepeatedView`], decoding each element on `next`.
+#[derive(Clone, Debug)]
+pub struct LazyRepeatedIter<'s, 'a, V> {
+    inner: core::slice::Iter<'s, &'a [u8]>,
+    depth: u32,
+    _marker: core::marker::PhantomData<fn() -> V>,
+}
+
+impl<'a, V: MessageView<'a>> Iterator for LazyRepeatedIter<'_, 'a, V> {
+    type Item = Result<V, DecodeError>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner
+            .next()
+            .map(|b| V::decode_view_with_limit(b, self.depth))
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl<'a, V: MessageView<'a>> DoubleEndedIterator for LazyRepeatedIter<'_, 'a, V> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner
+            .next_back()
+            .map(|b| V::decode_view_with_limit(b, self.depth))
+    }
+}
+
+impl<'a, V: MessageView<'a>> ExactSizeIterator for LazyRepeatedIter<'_, 'a, V> {}
 
 impl<V> Clone for LazyRepeatedView<'_, V> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
             elements: self.elements.clone(),
+            depth: self.depth,
             _marker: core::marker::PhantomData,
         }
     }
@@ -2060,15 +2288,7 @@ mod tests {
 
         fn decode_view(buf: &'a [u8]) -> Result<Self, DecodeError> {
             let mut view = SimpleMessageView::default();
-            let mut cursor: &'a [u8] = buf;
-            while !cursor.is_empty() {
-                let tag = crate::encoding::Tag::decode(&mut cursor)?;
-                match tag.field_number() {
-                    1 => view.id = crate::types::decode_int32(&mut cursor)?,
-                    2 => view.name = crate::types::borrow_str(&mut cursor)?,
-                    _ => crate::encoding::skip_field(tag, &mut cursor)?,
-                }
-            }
+            view.merge_view(buf, crate::RECURSION_LIMIT)?;
             Ok(view)
         }
 
@@ -2077,6 +2297,21 @@ mod tests {
                 id: self.id,
                 name: self.name.into(),
             }
+        }
+    }
+
+    impl<'a> ViewMerge<'a> for SimpleMessageView<'a> {
+        fn merge_view(&mut self, buf: &'a [u8], depth: u32) -> Result<(), DecodeError> {
+            let mut cursor: &'a [u8] = buf;
+            while !cursor.is_empty() {
+                let tag = crate::encoding::Tag::decode(&mut cursor)?;
+                match tag.field_number() {
+                    1 => self.id = crate::types::decode_int32(&mut cursor)?,
+                    2 => self.name = crate::types::borrow_str(&mut cursor)?,
+                    _ => crate::encoding::skip_field_depth(tag, &mut cursor, depth)?,
+                }
+            }
+            Ok(())
         }
     }
 
@@ -2387,15 +2622,65 @@ mod tests {
         let bytes = encode_simple(42, "lazy");
         let unset = LazyMessageFieldView::<SimpleMessageView<'_>>::unset();
         assert!(unset.is_unset());
+        assert!(unset.fragments().is_empty());
         assert!(unset.get().unwrap().is_none());
 
         let lazy = LazyMessageFieldView::<SimpleMessageView<'_>>::from_bytes(&bytes);
         assert!(lazy.is_set());
-        assert_eq!(lazy.raw_bytes(), Some(&bytes[..]));
+        assert_eq!(lazy.fragments(), &[&bytes[..]]);
         let v = lazy.get().unwrap().expect("set");
         assert_eq!((v.id, v.name), (42, "lazy"));
         // Re-decodes each call (no cache).
         assert_eq!(lazy.get().unwrap().unwrap().id, 42);
+    }
+
+    #[test]
+    fn lazy_message_field_view_merges_fragments() {
+        // A singular message field split across wire occurrences must merge:
+        // fragment 1 sets `name`, fragment 2 sets `id`; the merged view has
+        // both, matching the eager/owned decoders.
+        let frag1 = encode_simple(0, "from-frag-1");
+        let frag2 = encode_simple(7, "");
+
+        let mut lazy = LazyMessageFieldView::<SimpleMessageView<'_>>::unset();
+        lazy.push_fragment(&frag1, crate::RECURSION_LIMIT);
+        assert_eq!(lazy.fragments().len(), 1);
+        lazy.push_fragment(&frag2, crate::RECURSION_LIMIT);
+        assert_eq!(lazy.fragments(), &[&frag1[..], &frag2[..]]);
+
+        let v = lazy.get().unwrap().expect("set");
+        assert_eq!((v.id, v.name), (7, "from-frag-1"));
+
+        // Later fragments overwrite singular scalars (last-wins).
+        let frag3 = encode_simple(9, "final");
+        lazy.push_fragment(&frag3, crate::RECURSION_LIMIT);
+        assert_eq!(lazy.fragments().len(), 3);
+        let v = lazy.get().unwrap().expect("set");
+        assert_eq!((v.id, v.name), (9, "final"));
+    }
+
+    #[test]
+    fn lazy_message_field_view_clone_default_debug() {
+        let bytes = encode_simple(1, "x");
+        let mut lazy = LazyMessageFieldView::<SimpleMessageView<'_>>::default();
+        assert!(lazy.is_unset());
+        lazy.push_fragment(&bytes, crate::RECURSION_LIMIT);
+        lazy.push_fragment(&bytes, crate::RECURSION_LIMIT);
+        let cloned = lazy.clone();
+        assert_eq!(cloned.fragments(), lazy.fragments());
+        let dbg = alloc::format!("{lazy:?}");
+        assert!(dbg.contains("is_set: true"), "{dbg}");
+        assert!(dbg.contains("fragments: 2"), "{dbg}");
+    }
+
+    #[test]
+    fn lazy_message_field_view_malformed_errors_on_access() {
+        // 0xFF starts a tag whose varint never terminates — invalid.
+        let malformed = [0xFFu8; 3];
+        let lazy = LazyMessageFieldView::<SimpleMessageView<'_>>::from_bytes(&malformed);
+        // Deferred validation: construction succeeds, access fails.
+        assert!(lazy.is_set());
+        assert!(lazy.get().is_err());
     }
 
     #[test]
@@ -2404,11 +2689,50 @@ mod tests {
         let b1 = encode_simple(2, "b");
         let mut rep = LazyRepeatedView::<SimpleMessageView<'_>>::new();
         assert!(rep.is_empty());
-        rep.push_bytes(&b0);
-        rep.push_bytes(&b1);
+        rep.push_bytes(&b0, crate::RECURSION_LIMIT);
+        rep.push_bytes(&b1, crate::RECURSION_LIMIT);
         assert_eq!(rep.len(), 2);
+        assert_eq!(rep.raw_elements(), &[&b0[..], &b1[..]]);
         assert_eq!(rep.get(0).unwrap().unwrap().name, "a");
         assert_eq!(rep.get(1).unwrap().unwrap().id, 2);
         assert!(rep.get(2).is_none());
+    }
+
+    #[test]
+    fn lazy_repeated_view_iter() {
+        let bufs: alloc::vec::Vec<Bytes> = (1..=3)
+            .map(|i| encode_simple(i, core::str::from_utf8(&[b'a' + i as u8]).unwrap()))
+            .collect();
+        let mut rep = LazyRepeatedView::<SimpleMessageView<'_>>::new();
+        for b in &bufs {
+            rep.push_bytes(b, crate::RECURSION_LIMIT);
+        }
+
+        let iter = rep.iter();
+        assert_eq!(iter.len(), 3);
+        let ids: alloc::vec::Vec<i32> = iter.map(|r| r.unwrap().id).collect();
+        assert_eq!(ids, [1, 2, 3]);
+
+        // IntoIterator for &LazyRepeatedView.
+        let names: alloc::vec::Vec<&str> = (&rep).into_iter().map(|r| r.unwrap().name).collect();
+        assert_eq!(names, ["b", "c", "d"]);
+
+        // DoubleEndedIterator.
+        let rev_ids: alloc::vec::Vec<i32> = rep.iter().rev().map(|r| r.unwrap().id).collect();
+        assert_eq!(rev_ids, [3, 2, 1]);
+    }
+
+    #[test]
+    fn lazy_repeated_view_iter_surfaces_element_errors() {
+        let good = encode_simple(1, "ok");
+        let malformed = [0xFFu8; 3];
+        let mut rep = LazyRepeatedView::<SimpleMessageView<'_>>::new();
+        rep.push_bytes(&good, crate::RECURSION_LIMIT);
+        rep.push_bytes(&malformed, crate::RECURSION_LIMIT);
+        let results: alloc::vec::Vec<_> = rep.iter().collect();
+        assert!(results[0].is_ok());
+        assert!(results[1].is_err());
+        let cloned = rep.clone();
+        assert_eq!(cloned.len(), 2);
     }
 }
