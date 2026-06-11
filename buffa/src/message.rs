@@ -871,7 +871,13 @@ impl DecodeOptions {
     ///
     /// The budgets remaining at each deferred field's position are recorded
     /// and charged when that field is accessed, so the configured limits
-    /// flow through deferred decoding.
+    /// flow through deferred decoding. Unlike
+    /// [`decode_view`](Self::decode_view), the unknown-field limit is not
+    /// enforced globally across the message tree at decode time: each
+    /// deferred subtree independently replays the allowance recorded at its
+    /// position, so a full traversal can materialize unknown-field records
+    /// proportional to input size. Prefer `decode_view` for untrusted input
+    /// if the global bound matters.
     ///
     /// # Errors
     ///

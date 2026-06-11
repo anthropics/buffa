@@ -1040,7 +1040,11 @@ family has no reflection, `OwnedView`, or text-format surface — use the
 eager `PersonView` for those. The recursion and unknown-field budgets
 recorded at decode time are charged on access (per deferred subtree), so
 deep navigation fails with `RecursionLimitExceeded` at the same boundary as
-the eager decoder; raise limits via `DecodeOptions::decode_lazy_view`.
+the eager decoder; raise limits via `DecodeOptions::decode_lazy_view`. Note
+that the unknown-field limit is a per-subtree bound on the lazy path, not
+the global decode-time cap `decode_view` enforces — a full lazy traversal
+can materialize unknown-field records proportional to input size, so prefer
+the eager view for untrusted input if that global bound matters.
 
 ### `OwnedView<V>` — views with `'static` lifetime
 

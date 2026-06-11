@@ -739,7 +739,11 @@ pub trait LazyMessageView<'a>: Sized {
     /// Convert this view to the owned message type.
     ///
     /// This decodes every deferred sub-message, so it is where deferred
-    /// validation errors surface.
+    /// validation errors surface. Each deferred subtree decodes under its
+    /// own replayed unknown-field allowance (see
+    /// [`LazyMessageFieldView::get`]), so the conversion's total
+    /// unknown-field records are bounded per subtree, not globally as in an
+    /// eager decode.
     ///
     /// # Errors
     ///
@@ -891,9 +895,14 @@ impl<'a, V: LazyMessageView<'a>> LazyMessageFieldView<'a, V> {
     /// Each access rebuilds a fresh decode context from the budgets recorded
     /// at decode time, so every deferred subtree independently gets the full
     /// recorded unknown-field allowance rather than sharing one pool with
-    /// its siblings — a capture-then-replay approximation (the original
-    /// decode call's shared allowance is gone by access time), matching
-    /// [`UnknownFieldsView::to_owned`].
+    /// its siblings (the original decode call's shared allowance is gone by
+    /// access time). The unknown-field limit is therefore a *per-subtree*
+    /// bound on the lazy path, not the global decode-time cap the eager
+    /// decoder enforces: a full traversal can materialize unknown-field
+    /// records proportional to input size, where eager
+    /// [`decode_view`](crate::DecodeOptions::decode_view) rejects such input
+    /// up front. Prefer the eager path for untrusted input if that global
+    /// bound matters.
     ///
     /// # Errors
     ///
@@ -1037,8 +1046,8 @@ impl<'a, V> LazyRepeatedView<'a, V> {
 
 /// Decode one deferred element under a fresh context carrying the budgets
 /// recorded at decode time. Each access decodes independently, so each gets
-/// the full recorded allowance — the same capture-then-replay approximation
-/// `UnknownFieldsView::to_owned` uses.
+/// the full recorded allowance — a per-subtree bound, not the eager
+/// decoder's shared global pool (see [`LazyMessageFieldView::get`]).
 #[inline]
 fn decode_deferred<'a, V: LazyMessageView<'a>>(
     raw: &'a [u8],
