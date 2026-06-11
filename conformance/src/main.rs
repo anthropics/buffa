@@ -167,6 +167,29 @@ where
 // cannot be deserialized); binary output and text format are covered by the
 // std and via-view runs.
 
+// ── Via-lazy mode ────────────────────────────────────────────────────────
+//
+// When `BUFFA_VIA_LAZY=1`, binary input is routed through
+// `decode_lazy → to_owned_message` on the lazy view family. The conversion
+// decodes every deferred sub-message, so this verifies the lazy decoder
+// (record arms, fragment merge, budget capture) against the full corpus.
+
+#[cfg(not(no_protos))]
+fn via_lazy() -> bool {
+    static FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FLAG.get_or_init(|| std::env::var("BUFFA_VIA_LAZY").as_deref() == Ok("1"))
+}
+
+/// Decode via the lazy path: `decode_lazy → to_owned_message`.
+#[cfg(not(no_protos))]
+fn decode_binary_via_lazy<'a, L>(bytes: &'a [u8]) -> Result<L::Owned, String>
+where
+    L: buffa::LazyMessageView<'a>,
+{
+    let view = L::decode_lazy(bytes).map_err(|e| format!("{e}"))?;
+    view.to_owned_message().map_err(|e| format!("{e}"))
+}
+
 #[cfg(not(no_protos))]
 fn view_json() -> bool {
     static FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -444,6 +467,16 @@ fn process(req: &envelope::Request) -> envelope::Response {
         };
     }
 
+    // Via-lazy mode: only binary→binary, like via-view.
+    if via_lazy() {
+        return match &req.payload {
+            Some(Payload::Protobuf(_)) if req.requested_output_format == WireFormat::Protobuf => {
+                process_via_lazy(req)
+            }
+            _ => Response::Skipped("lazy mode: JSON and non-binary I/O skipped".into()),
+        };
+    }
+
     // Via-reflect mode: binary and JSON I/O routed through DynamicMessage's
     // descriptor-driven codec and reflective serde impls. Text format is
     // skipped (no DynamicMessage textproto codec yet). The
@@ -590,6 +623,53 @@ fn process_via_view(req: &envelope::Request) -> envelope::Response {
             encode_binary,
         ),
         other => Response::Skipped(format!("message type '{other}' not in view dispatch")),
+    }
+}
+
+/// Binary→binary round-trip via `decode_lazy → to_owned_message → encode`.
+#[cfg(not(no_protos))]
+fn process_via_lazy(req: &envelope::Request) -> envelope::Response {
+    use envelope::{Payload, Response};
+    let Some(Payload::Protobuf(b)) = &req.payload else {
+        return Response::RuntimeError("process_via_lazy called without protobuf payload".into());
+    };
+
+    match req.message_type.as_str() {
+        MSG_PROTO3 => roundtrip_proto3(
+            || {
+                decode_binary_via_lazy::<proto3::__buffa::lazy_view::TestAllTypesProto3LazyView<'_>>(
+                    b,
+                )
+            },
+            encode_proto3_binary,
+        ),
+        MSG_PROTO2 => roundtrip_proto2(
+            || {
+                decode_binary_via_lazy::<proto2::__buffa::lazy_view::TestAllTypesProto2LazyView<'_>>(
+                    b,
+                )
+            },
+            encode_proto2_binary,
+        ),
+        #[cfg(has_editions_protos)]
+        MSG_EDITIONS_PROTO3 => roundtrip(
+            || {
+                decode_binary_via_lazy::<
+                    editions_proto3::__buffa::lazy_view::TestAllTypesProto3LazyView<'_>,
+                >(b)
+            },
+            encode_binary,
+        ),
+        #[cfg(has_editions_protos)]
+        MSG_EDITIONS_PROTO2 => roundtrip(
+            || {
+                decode_binary_via_lazy::<
+                    editions_proto2::__buffa::lazy_view::TestAllTypesProto2LazyView<'_>,
+                >(b)
+            },
+            encode_binary,
+        ),
+        other => Response::Skipped(format!("message type '{other}' not in lazy dispatch")),
     }
 }
 

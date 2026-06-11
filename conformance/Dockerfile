@@ -53,6 +53,7 @@ COPY --from=rust-builder \
 COPY conformance/known_failures.txt             /known_failures.txt
 COPY conformance/known_failures_nostd.txt       /known_failures_nostd.txt
 COPY conformance/known_failures_view.txt        /known_failures_view.txt
+COPY conformance/known_failures_lazy.txt        /known_failures_lazy.txt
 COPY conformance/known_failures_view_json.txt   /known_failures_view_json.txt
 COPY conformance/known_failures_text.txt        /known_failures_text.txt
 COPY conformance/known_failures_reflect.txt      /known_failures_reflect.txt

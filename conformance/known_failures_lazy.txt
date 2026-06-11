@@ -1,0 +1,8 @@
+# Known conformance test failures for buffa (via-lazy mode).
+#
+# Tests listed here are expected to fail and will not cause the test run to
+# report a failure.  Each line is a test name (matched by the runner with
+# --failure_list).  Remove entries as failures are fixed.
+#
+# Via-lazy mode routes binary input through decode_lazy → to_owned_message
+# instead of the direct owned decode. JSON I/O is skipped entirely.

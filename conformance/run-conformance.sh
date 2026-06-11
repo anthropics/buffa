@@ -46,6 +46,15 @@ BUFFA_VIA_VIEW=1 run_suite view \
     --maximum_edition 2024 \
     /usr/local/bin/buffa-conformance
 
+# Via-lazy mode: binary input through decode_lazy → to_owned_message →
+# encode on the lazy view family, verifying the lazy decoder (record arms,
+# fragment merge, budget capture) against the corpus. Binary→binary only.
+BUFFA_VIA_LAZY=1 run_suite lazy \
+    conformance_test_runner \
+    --failure_list /known_failures_lazy.txt \
+    --maximum_edition 2024 \
+    /usr/local/bin/buffa-conformance
+
 # View-JSON mode: serves binary input + JSON output requests via
 # decode_view → serde_json::to_string(&view). Exercises the generated view
 # Serialize impls (and WKT view Serialize impls in buffa-types) against the
