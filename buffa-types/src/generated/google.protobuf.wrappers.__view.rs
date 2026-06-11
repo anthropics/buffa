@@ -13,22 +13,20 @@ pub struct DoubleValueView<'a> {
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
 impl<'a> DoubleValueView<'a> {
-    /// Decode from `buf` under the limits carried by `ctx` (recursion
-    /// depth and the shared unknown-field allowance).
+    /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
     ///
-    /// Called by [`::buffa::MessageView::decode_view`] with a fresh
-    /// default context and by generated sub-message decode arms with
-    /// `ctx.descend()?`.
+    /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
+    /// and by generated sub-message decode arms with `depth - 1`.
     ///
     /// **Not part of the public API.** Named with a leading underscore to
     /// signal that it is for generated-code use only.
     #[doc(hidden)]
-    pub fn _decode_ctx(
+    pub fn _decode_depth(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         let mut view = Self::default();
-        view._merge_into_view(buf, ctx)?;
+        view._merge_into_view(buf, depth)?;
         ::core::result::Result::Ok(view)
     }
     /// Merge fields from `buf` into this view (proto merge semantics).
@@ -42,9 +40,9 @@ impl<'a> DoubleValueView<'a> {
     pub fn _merge_into_view(
         &mut self,
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-        let _ = ctx;
+        let _ = depth;
         #[allow(unused_variables)]
         let view = self;
         let mut cur: &'a [u8] = buf;
@@ -63,9 +61,9 @@ impl<'a> DoubleValueView<'a> {
                     view.value = ::buffa::types::decode_double(&mut cur)?;
                 }
                 _ => {
-                    ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+                    ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
                     let span_len = before_tag.len() - cur.len();
-                    view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
+                    view.__buffa_unknown_fields.push_raw(&before_tag[..span_len]);
                 }
             }
         }
@@ -75,36 +73,34 @@ impl<'a> DoubleValueView<'a> {
 impl<'a> ::buffa::MessageView<'a> for DoubleValueView<'a> {
     type Owned = super::super::DoubleValue;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
-        Self::_decode_ctx(
-            buf,
-            ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit),
-        )
+        Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
-    fn decode_view_with_ctx(
+    fn decode_view_with_limit(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        Self::_decode_ctx(buf, ctx)
+        Self::_decode_depth(buf, depth)
     }
-    fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::DoubleValue, ::buffa::DecodeError> {
+    fn to_owned_message(&self) -> super::super::DoubleValue {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> ::core::result::Result<super::super::DoubleValue, ::buffa::DecodeError> {
+    ) -> super::super::DoubleValue {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        ::core::result::Result::Ok(super::super::DoubleValue {
+        super::super::DoubleValue {
             value: self.value,
-            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
+            __buffa_unknown_fields: self
+                .__buffa_unknown_fields
+                .to_owned()
+                .unwrap_or_default()
+                .into(),
             ..::core::default::Default::default()
-        })
+        }
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for DoubleValueView<'a> {
@@ -217,14 +213,8 @@ impl DoubleValueOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::DoubleValue, ::buffa::DecodeError> {
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::DoubleValue {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -369,22 +359,20 @@ pub struct FloatValueView<'a> {
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
 impl<'a> FloatValueView<'a> {
-    /// Decode from `buf` under the limits carried by `ctx` (recursion
-    /// depth and the shared unknown-field allowance).
+    /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
     ///
-    /// Called by [`::buffa::MessageView::decode_view`] with a fresh
-    /// default context and by generated sub-message decode arms with
-    /// `ctx.descend()?`.
+    /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
+    /// and by generated sub-message decode arms with `depth - 1`.
     ///
     /// **Not part of the public API.** Named with a leading underscore to
     /// signal that it is for generated-code use only.
     #[doc(hidden)]
-    pub fn _decode_ctx(
+    pub fn _decode_depth(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         let mut view = Self::default();
-        view._merge_into_view(buf, ctx)?;
+        view._merge_into_view(buf, depth)?;
         ::core::result::Result::Ok(view)
     }
     /// Merge fields from `buf` into this view (proto merge semantics).
@@ -398,9 +386,9 @@ impl<'a> FloatValueView<'a> {
     pub fn _merge_into_view(
         &mut self,
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-        let _ = ctx;
+        let _ = depth;
         #[allow(unused_variables)]
         let view = self;
         let mut cur: &'a [u8] = buf;
@@ -419,9 +407,9 @@ impl<'a> FloatValueView<'a> {
                     view.value = ::buffa::types::decode_float(&mut cur)?;
                 }
                 _ => {
-                    ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+                    ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
                     let span_len = before_tag.len() - cur.len();
-                    view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
+                    view.__buffa_unknown_fields.push_raw(&before_tag[..span_len]);
                 }
             }
         }
@@ -431,36 +419,34 @@ impl<'a> FloatValueView<'a> {
 impl<'a> ::buffa::MessageView<'a> for FloatValueView<'a> {
     type Owned = super::super::FloatValue;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
-        Self::_decode_ctx(
-            buf,
-            ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit),
-        )
+        Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
-    fn decode_view_with_ctx(
+    fn decode_view_with_limit(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        Self::_decode_ctx(buf, ctx)
+        Self::_decode_depth(buf, depth)
     }
-    fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::FloatValue, ::buffa::DecodeError> {
+    fn to_owned_message(&self) -> super::super::FloatValue {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> ::core::result::Result<super::super::FloatValue, ::buffa::DecodeError> {
+    ) -> super::super::FloatValue {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        ::core::result::Result::Ok(super::super::FloatValue {
+        super::super::FloatValue {
             value: self.value,
-            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
+            __buffa_unknown_fields: self
+                .__buffa_unknown_fields
+                .to_owned()
+                .unwrap_or_default()
+                .into(),
             ..::core::default::Default::default()
-        })
+        }
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for FloatValueView<'a> {
@@ -573,14 +559,8 @@ impl FloatValueOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::FloatValue, ::buffa::DecodeError> {
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::FloatValue {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -725,22 +705,20 @@ pub struct Int64ValueView<'a> {
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
 impl<'a> Int64ValueView<'a> {
-    /// Decode from `buf` under the limits carried by `ctx` (recursion
-    /// depth and the shared unknown-field allowance).
+    /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
     ///
-    /// Called by [`::buffa::MessageView::decode_view`] with a fresh
-    /// default context and by generated sub-message decode arms with
-    /// `ctx.descend()?`.
+    /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
+    /// and by generated sub-message decode arms with `depth - 1`.
     ///
     /// **Not part of the public API.** Named with a leading underscore to
     /// signal that it is for generated-code use only.
     #[doc(hidden)]
-    pub fn _decode_ctx(
+    pub fn _decode_depth(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         let mut view = Self::default();
-        view._merge_into_view(buf, ctx)?;
+        view._merge_into_view(buf, depth)?;
         ::core::result::Result::Ok(view)
     }
     /// Merge fields from `buf` into this view (proto merge semantics).
@@ -754,9 +732,9 @@ impl<'a> Int64ValueView<'a> {
     pub fn _merge_into_view(
         &mut self,
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-        let _ = ctx;
+        let _ = depth;
         #[allow(unused_variables)]
         let view = self;
         let mut cur: &'a [u8] = buf;
@@ -775,9 +753,9 @@ impl<'a> Int64ValueView<'a> {
                     view.value = ::buffa::types::decode_int64(&mut cur)?;
                 }
                 _ => {
-                    ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+                    ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
                     let span_len = before_tag.len() - cur.len();
-                    view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
+                    view.__buffa_unknown_fields.push_raw(&before_tag[..span_len]);
                 }
             }
         }
@@ -787,36 +765,34 @@ impl<'a> Int64ValueView<'a> {
 impl<'a> ::buffa::MessageView<'a> for Int64ValueView<'a> {
     type Owned = super::super::Int64Value;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
-        Self::_decode_ctx(
-            buf,
-            ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit),
-        )
+        Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
-    fn decode_view_with_ctx(
+    fn decode_view_with_limit(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        Self::_decode_ctx(buf, ctx)
+        Self::_decode_depth(buf, depth)
     }
-    fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::Int64Value, ::buffa::DecodeError> {
+    fn to_owned_message(&self) -> super::super::Int64Value {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> ::core::result::Result<super::super::Int64Value, ::buffa::DecodeError> {
+    ) -> super::super::Int64Value {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        ::core::result::Result::Ok(super::super::Int64Value {
+        super::super::Int64Value {
             value: self.value,
-            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
+            __buffa_unknown_fields: self
+                .__buffa_unknown_fields
+                .to_owned()
+                .unwrap_or_default()
+                .into(),
             ..::core::default::Default::default()
-        })
+        }
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for Int64ValueView<'a> {
@@ -929,14 +905,8 @@ impl Int64ValueOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::Int64Value, ::buffa::DecodeError> {
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::Int64Value {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -1081,22 +1051,20 @@ pub struct UInt64ValueView<'a> {
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
 impl<'a> UInt64ValueView<'a> {
-    /// Decode from `buf` under the limits carried by `ctx` (recursion
-    /// depth and the shared unknown-field allowance).
+    /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
     ///
-    /// Called by [`::buffa::MessageView::decode_view`] with a fresh
-    /// default context and by generated sub-message decode arms with
-    /// `ctx.descend()?`.
+    /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
+    /// and by generated sub-message decode arms with `depth - 1`.
     ///
     /// **Not part of the public API.** Named with a leading underscore to
     /// signal that it is for generated-code use only.
     #[doc(hidden)]
-    pub fn _decode_ctx(
+    pub fn _decode_depth(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         let mut view = Self::default();
-        view._merge_into_view(buf, ctx)?;
+        view._merge_into_view(buf, depth)?;
         ::core::result::Result::Ok(view)
     }
     /// Merge fields from `buf` into this view (proto merge semantics).
@@ -1110,9 +1078,9 @@ impl<'a> UInt64ValueView<'a> {
     pub fn _merge_into_view(
         &mut self,
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-        let _ = ctx;
+        let _ = depth;
         #[allow(unused_variables)]
         let view = self;
         let mut cur: &'a [u8] = buf;
@@ -1131,9 +1099,9 @@ impl<'a> UInt64ValueView<'a> {
                     view.value = ::buffa::types::decode_uint64(&mut cur)?;
                 }
                 _ => {
-                    ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+                    ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
                     let span_len = before_tag.len() - cur.len();
-                    view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
+                    view.__buffa_unknown_fields.push_raw(&before_tag[..span_len]);
                 }
             }
         }
@@ -1143,36 +1111,34 @@ impl<'a> UInt64ValueView<'a> {
 impl<'a> ::buffa::MessageView<'a> for UInt64ValueView<'a> {
     type Owned = super::super::UInt64Value;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
-        Self::_decode_ctx(
-            buf,
-            ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit),
-        )
+        Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
-    fn decode_view_with_ctx(
+    fn decode_view_with_limit(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        Self::_decode_ctx(buf, ctx)
+        Self::_decode_depth(buf, depth)
     }
-    fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::UInt64Value, ::buffa::DecodeError> {
+    fn to_owned_message(&self) -> super::super::UInt64Value {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> ::core::result::Result<super::super::UInt64Value, ::buffa::DecodeError> {
+    ) -> super::super::UInt64Value {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        ::core::result::Result::Ok(super::super::UInt64Value {
+        super::super::UInt64Value {
             value: self.value,
-            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
+            __buffa_unknown_fields: self
+                .__buffa_unknown_fields
+                .to_owned()
+                .unwrap_or_default()
+                .into(),
             ..::core::default::Default::default()
-        })
+        }
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for UInt64ValueView<'a> {
@@ -1285,14 +1251,8 @@ impl UInt64ValueOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::UInt64Value, ::buffa::DecodeError> {
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::UInt64Value {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -1437,22 +1397,20 @@ pub struct Int32ValueView<'a> {
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
 impl<'a> Int32ValueView<'a> {
-    /// Decode from `buf` under the limits carried by `ctx` (recursion
-    /// depth and the shared unknown-field allowance).
+    /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
     ///
-    /// Called by [`::buffa::MessageView::decode_view`] with a fresh
-    /// default context and by generated sub-message decode arms with
-    /// `ctx.descend()?`.
+    /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
+    /// and by generated sub-message decode arms with `depth - 1`.
     ///
     /// **Not part of the public API.** Named with a leading underscore to
     /// signal that it is for generated-code use only.
     #[doc(hidden)]
-    pub fn _decode_ctx(
+    pub fn _decode_depth(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         let mut view = Self::default();
-        view._merge_into_view(buf, ctx)?;
+        view._merge_into_view(buf, depth)?;
         ::core::result::Result::Ok(view)
     }
     /// Merge fields from `buf` into this view (proto merge semantics).
@@ -1466,9 +1424,9 @@ impl<'a> Int32ValueView<'a> {
     pub fn _merge_into_view(
         &mut self,
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-        let _ = ctx;
+        let _ = depth;
         #[allow(unused_variables)]
         let view = self;
         let mut cur: &'a [u8] = buf;
@@ -1487,9 +1445,9 @@ impl<'a> Int32ValueView<'a> {
                     view.value = ::buffa::types::decode_int32(&mut cur)?;
                 }
                 _ => {
-                    ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+                    ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
                     let span_len = before_tag.len() - cur.len();
-                    view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
+                    view.__buffa_unknown_fields.push_raw(&before_tag[..span_len]);
                 }
             }
         }
@@ -1499,36 +1457,34 @@ impl<'a> Int32ValueView<'a> {
 impl<'a> ::buffa::MessageView<'a> for Int32ValueView<'a> {
     type Owned = super::super::Int32Value;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
-        Self::_decode_ctx(
-            buf,
-            ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit),
-        )
+        Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
-    fn decode_view_with_ctx(
+    fn decode_view_with_limit(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        Self::_decode_ctx(buf, ctx)
+        Self::_decode_depth(buf, depth)
     }
-    fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::Int32Value, ::buffa::DecodeError> {
+    fn to_owned_message(&self) -> super::super::Int32Value {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> ::core::result::Result<super::super::Int32Value, ::buffa::DecodeError> {
+    ) -> super::super::Int32Value {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        ::core::result::Result::Ok(super::super::Int32Value {
+        super::super::Int32Value {
             value: self.value,
-            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
+            __buffa_unknown_fields: self
+                .__buffa_unknown_fields
+                .to_owned()
+                .unwrap_or_default()
+                .into(),
             ..::core::default::Default::default()
-        })
+        }
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for Int32ValueView<'a> {
@@ -1641,14 +1597,8 @@ impl Int32ValueOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::Int32Value, ::buffa::DecodeError> {
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::Int32Value {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -1793,22 +1743,20 @@ pub struct UInt32ValueView<'a> {
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
 impl<'a> UInt32ValueView<'a> {
-    /// Decode from `buf` under the limits carried by `ctx` (recursion
-    /// depth and the shared unknown-field allowance).
+    /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
     ///
-    /// Called by [`::buffa::MessageView::decode_view`] with a fresh
-    /// default context and by generated sub-message decode arms with
-    /// `ctx.descend()?`.
+    /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
+    /// and by generated sub-message decode arms with `depth - 1`.
     ///
     /// **Not part of the public API.** Named with a leading underscore to
     /// signal that it is for generated-code use only.
     #[doc(hidden)]
-    pub fn _decode_ctx(
+    pub fn _decode_depth(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         let mut view = Self::default();
-        view._merge_into_view(buf, ctx)?;
+        view._merge_into_view(buf, depth)?;
         ::core::result::Result::Ok(view)
     }
     /// Merge fields from `buf` into this view (proto merge semantics).
@@ -1822,9 +1770,9 @@ impl<'a> UInt32ValueView<'a> {
     pub fn _merge_into_view(
         &mut self,
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-        let _ = ctx;
+        let _ = depth;
         #[allow(unused_variables)]
         let view = self;
         let mut cur: &'a [u8] = buf;
@@ -1843,9 +1791,9 @@ impl<'a> UInt32ValueView<'a> {
                     view.value = ::buffa::types::decode_uint32(&mut cur)?;
                 }
                 _ => {
-                    ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+                    ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
                     let span_len = before_tag.len() - cur.len();
-                    view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
+                    view.__buffa_unknown_fields.push_raw(&before_tag[..span_len]);
                 }
             }
         }
@@ -1855,36 +1803,34 @@ impl<'a> UInt32ValueView<'a> {
 impl<'a> ::buffa::MessageView<'a> for UInt32ValueView<'a> {
     type Owned = super::super::UInt32Value;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
-        Self::_decode_ctx(
-            buf,
-            ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit),
-        )
+        Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
-    fn decode_view_with_ctx(
+    fn decode_view_with_limit(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        Self::_decode_ctx(buf, ctx)
+        Self::_decode_depth(buf, depth)
     }
-    fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::UInt32Value, ::buffa::DecodeError> {
+    fn to_owned_message(&self) -> super::super::UInt32Value {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> ::core::result::Result<super::super::UInt32Value, ::buffa::DecodeError> {
+    ) -> super::super::UInt32Value {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        ::core::result::Result::Ok(super::super::UInt32Value {
+        super::super::UInt32Value {
             value: self.value,
-            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
+            __buffa_unknown_fields: self
+                .__buffa_unknown_fields
+                .to_owned()
+                .unwrap_or_default()
+                .into(),
             ..::core::default::Default::default()
-        })
+        }
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for UInt32ValueView<'a> {
@@ -1997,14 +1943,8 @@ impl UInt32ValueOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::UInt32Value, ::buffa::DecodeError> {
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::UInt32Value {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -2149,22 +2089,20 @@ pub struct BoolValueView<'a> {
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
 impl<'a> BoolValueView<'a> {
-    /// Decode from `buf` under the limits carried by `ctx` (recursion
-    /// depth and the shared unknown-field allowance).
+    /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
     ///
-    /// Called by [`::buffa::MessageView::decode_view`] with a fresh
-    /// default context and by generated sub-message decode arms with
-    /// `ctx.descend()?`.
+    /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
+    /// and by generated sub-message decode arms with `depth - 1`.
     ///
     /// **Not part of the public API.** Named with a leading underscore to
     /// signal that it is for generated-code use only.
     #[doc(hidden)]
-    pub fn _decode_ctx(
+    pub fn _decode_depth(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         let mut view = Self::default();
-        view._merge_into_view(buf, ctx)?;
+        view._merge_into_view(buf, depth)?;
         ::core::result::Result::Ok(view)
     }
     /// Merge fields from `buf` into this view (proto merge semantics).
@@ -2178,9 +2116,9 @@ impl<'a> BoolValueView<'a> {
     pub fn _merge_into_view(
         &mut self,
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-        let _ = ctx;
+        let _ = depth;
         #[allow(unused_variables)]
         let view = self;
         let mut cur: &'a [u8] = buf;
@@ -2199,9 +2137,9 @@ impl<'a> BoolValueView<'a> {
                     view.value = ::buffa::types::decode_bool(&mut cur)?;
                 }
                 _ => {
-                    ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+                    ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
                     let span_len = before_tag.len() - cur.len();
-                    view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
+                    view.__buffa_unknown_fields.push_raw(&before_tag[..span_len]);
                 }
             }
         }
@@ -2211,36 +2149,34 @@ impl<'a> BoolValueView<'a> {
 impl<'a> ::buffa::MessageView<'a> for BoolValueView<'a> {
     type Owned = super::super::BoolValue;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
-        Self::_decode_ctx(
-            buf,
-            ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit),
-        )
+        Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
-    fn decode_view_with_ctx(
+    fn decode_view_with_limit(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        Self::_decode_ctx(buf, ctx)
+        Self::_decode_depth(buf, depth)
     }
-    fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::BoolValue, ::buffa::DecodeError> {
+    fn to_owned_message(&self) -> super::super::BoolValue {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> ::core::result::Result<super::super::BoolValue, ::buffa::DecodeError> {
+    ) -> super::super::BoolValue {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        ::core::result::Result::Ok(super::super::BoolValue {
+        super::super::BoolValue {
             value: self.value,
-            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
+            __buffa_unknown_fields: self
+                .__buffa_unknown_fields
+                .to_owned()
+                .unwrap_or_default()
+                .into(),
             ..::core::default::Default::default()
-        })
+        }
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for BoolValueView<'a> {
@@ -2353,14 +2289,8 @@ impl BoolValueOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::BoolValue, ::buffa::DecodeError> {
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::BoolValue {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -2505,22 +2435,20 @@ pub struct StringValueView<'a> {
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
 impl<'a> StringValueView<'a> {
-    /// Decode from `buf` under the limits carried by `ctx` (recursion
-    /// depth and the shared unknown-field allowance).
+    /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
     ///
-    /// Called by [`::buffa::MessageView::decode_view`] with a fresh
-    /// default context and by generated sub-message decode arms with
-    /// `ctx.descend()?`.
+    /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
+    /// and by generated sub-message decode arms with `depth - 1`.
     ///
     /// **Not part of the public API.** Named with a leading underscore to
     /// signal that it is for generated-code use only.
     #[doc(hidden)]
-    pub fn _decode_ctx(
+    pub fn _decode_depth(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         let mut view = Self::default();
-        view._merge_into_view(buf, ctx)?;
+        view._merge_into_view(buf, depth)?;
         ::core::result::Result::Ok(view)
     }
     /// Merge fields from `buf` into this view (proto merge semantics).
@@ -2534,9 +2462,9 @@ impl<'a> StringValueView<'a> {
     pub fn _merge_into_view(
         &mut self,
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-        let _ = ctx;
+        let _ = depth;
         #[allow(unused_variables)]
         let view = self;
         let mut cur: &'a [u8] = buf;
@@ -2555,9 +2483,9 @@ impl<'a> StringValueView<'a> {
                     view.value = ::buffa::types::borrow_str(&mut cur)?;
                 }
                 _ => {
-                    ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+                    ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
                     let span_len = before_tag.len() - cur.len();
-                    view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
+                    view.__buffa_unknown_fields.push_raw(&before_tag[..span_len]);
                 }
             }
         }
@@ -2567,36 +2495,34 @@ impl<'a> StringValueView<'a> {
 impl<'a> ::buffa::MessageView<'a> for StringValueView<'a> {
     type Owned = super::super::StringValue;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
-        Self::_decode_ctx(
-            buf,
-            ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit),
-        )
+        Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
-    fn decode_view_with_ctx(
+    fn decode_view_with_limit(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        Self::_decode_ctx(buf, ctx)
+        Self::_decode_depth(buf, depth)
     }
-    fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::StringValue, ::buffa::DecodeError> {
+    fn to_owned_message(&self) -> super::super::StringValue {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> ::core::result::Result<super::super::StringValue, ::buffa::DecodeError> {
+    ) -> super::super::StringValue {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        ::core::result::Result::Ok(super::super::StringValue {
+        super::super::StringValue {
             value: self.value.to_string(),
-            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
+            __buffa_unknown_fields: self
+                .__buffa_unknown_fields
+                .to_owned()
+                .unwrap_or_default()
+                .into(),
             ..::core::default::Default::default()
-        })
+        }
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for StringValueView<'a> {
@@ -2712,14 +2638,8 @@ impl StringValueOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::StringValue, ::buffa::DecodeError> {
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::StringValue {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -2864,22 +2784,20 @@ pub struct BytesValueView<'a> {
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
 impl<'a> BytesValueView<'a> {
-    /// Decode from `buf` under the limits carried by `ctx` (recursion
-    /// depth and the shared unknown-field allowance).
+    /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
     ///
-    /// Called by [`::buffa::MessageView::decode_view`] with a fresh
-    /// default context and by generated sub-message decode arms with
-    /// `ctx.descend()?`.
+    /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
+    /// and by generated sub-message decode arms with `depth - 1`.
     ///
     /// **Not part of the public API.** Named with a leading underscore to
     /// signal that it is for generated-code use only.
     #[doc(hidden)]
-    pub fn _decode_ctx(
+    pub fn _decode_depth(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         let mut view = Self::default();
-        view._merge_into_view(buf, ctx)?;
+        view._merge_into_view(buf, depth)?;
         ::core::result::Result::Ok(view)
     }
     /// Merge fields from `buf` into this view (proto merge semantics).
@@ -2893,9 +2811,9 @@ impl<'a> BytesValueView<'a> {
     pub fn _merge_into_view(
         &mut self,
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-        let _ = ctx;
+        let _ = depth;
         #[allow(unused_variables)]
         let view = self;
         let mut cur: &'a [u8] = buf;
@@ -2914,9 +2832,9 @@ impl<'a> BytesValueView<'a> {
                     view.value = ::buffa::types::borrow_bytes(&mut cur)?;
                 }
                 _ => {
-                    ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+                    ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
                     let span_len = before_tag.len() - cur.len();
-                    view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
+                    view.__buffa_unknown_fields.push_raw(&before_tag[..span_len]);
                 }
             }
         }
@@ -2926,36 +2844,34 @@ impl<'a> BytesValueView<'a> {
 impl<'a> ::buffa::MessageView<'a> for BytesValueView<'a> {
     type Owned = super::super::BytesValue;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
-        Self::_decode_ctx(
-            buf,
-            ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit),
-        )
+        Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
-    fn decode_view_with_ctx(
+    fn decode_view_with_limit(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        Self::_decode_ctx(buf, ctx)
+        Self::_decode_depth(buf, depth)
     }
-    fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::BytesValue, ::buffa::DecodeError> {
+    fn to_owned_message(&self) -> super::super::BytesValue {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> ::core::result::Result<super::super::BytesValue, ::buffa::DecodeError> {
+    ) -> super::super::BytesValue {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        ::core::result::Result::Ok(super::super::BytesValue {
+        super::super::BytesValue {
             value: (self.value).to_vec(),
-            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
+            __buffa_unknown_fields: self
+                .__buffa_unknown_fields
+                .to_owned()
+                .unwrap_or_default()
+                .into(),
             ..::core::default::Default::default()
-        })
+        }
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for BytesValueView<'a> {
@@ -3071,14 +2987,8 @@ impl BytesValueOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::BytesValue, ::buffa::DecodeError> {
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::BytesValue {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.

@@ -273,14 +273,8 @@ pub(crate) fn generate_owned_view_wrapper(
             }
 
             /// Convert to the owned message type.
-            ///
-            /// # Errors
-            ///
-            /// Returns an error if re-materializing preserved unknown fields
-            /// fails (e.g. the unknown-field limit is exceeded).
-            pub fn to_owned_message(
-                &self,
-            ) -> ::core::result::Result<#owned_path, ::buffa::DecodeError> {
+            #[must_use]
+            pub fn to_owned_message(&self) -> #owned_path {
                 self.0.to_owned_message()
             }
 

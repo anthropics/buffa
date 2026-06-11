@@ -37,7 +37,7 @@ fn closed_enum_view_unknown_route(preserve_unknown_fields: bool) -> TokenStream 
     if preserve_unknown_fields {
         quote! {
             let __span_len = before_tag.len() - cur.len();
-            view.__buffa_unknown_fields.push_record(before_tag, __span_len, ctx)?;
+            view.__buffa_unknown_fields.push_raw(&before_tag[..__span_len]);
         }
     } else {
         quote! {}
@@ -237,7 +237,7 @@ pub(crate) fn generate_view_with_nesting(
     let unknown_field_handling = if ctx.config.preserve_unknown_fields {
         quote! {
             let span_len = before_tag.len() - cur.len();
-            view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
+            view.__buffa_unknown_fields.push_raw(&before_tag[..span_len]);
         }
     } else {
         quote! {}
@@ -245,7 +245,7 @@ pub(crate) fn generate_view_with_nesting(
 
     // If no field borrows from 'a (all-scalar message with unknown-fields
     // preservation disabled), inject PhantomData<&'a ()> so the struct's
-    // lifetime param is used. _decode_ctx(buf: &'a [u8]) requires 'a.
+    // lifetime param is used. _decode_depth(buf: &'a [u8]) requires 'a.
     let phantom_field =
         if message_view_has_borrowing_field(ctx, msg, features, ctx.config.preserve_unknown_fields)
         {
@@ -348,22 +348,20 @@ pub(crate) fn generate_view_with_nesting(
         #view_debug_impl
 
         impl<'a> #view_ident<'a> {
-            /// Decode from `buf` under the limits carried by `ctx` (recursion
-            /// depth and the shared unknown-field allowance).
+            /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
             ///
-            /// Called by [`::buffa::MessageView::decode_view`] with a fresh
-            /// default context and by generated sub-message decode arms with
-            /// `ctx.descend()?`.
+            /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
+            /// and by generated sub-message decode arms with `depth - 1`.
             ///
             /// **Not part of the public API.** Named with a leading underscore to
             /// signal that it is for generated-code use only.
             #[doc(hidden)]
-            pub fn _decode_ctx(
+            pub fn _decode_depth(
                 buf: &'a [u8],
-                ctx: ::buffa::DecodeContext<'_>,
+                depth: u32,
             ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
                 let mut view = Self::default();
-                view._merge_into_view(buf, ctx)?;
+                view._merge_into_view(buf, depth)?;
                 ::core::result::Result::Ok(view)
             }
 
@@ -378,11 +376,10 @@ pub(crate) fn generate_view_with_nesting(
             pub fn _merge_into_view(
                 &mut self,
                 buf: &'a [u8],
-                ctx: ::buffa::DecodeContext<'_>,
+                depth: u32,
             ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-                // `ctx` may be unused for messages with no nested sub-message
-                // fields and no unknown-field preservation.
-                let _ = ctx;
+                // `depth` may be unused for messages with no nested sub-message fields.
+                let _ = depth;
                 // Rebind as `view` so the arm-generating functions (which emit
                 // `view.#ident`) work unchanged.
                 #[allow(unused_variables)]
@@ -396,7 +393,7 @@ pub(crate) fn generate_view_with_nesting(
                         #(#repeated_arms)*
                         #(#oneof_arms)*
                         _ => {
-                            ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+                            ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
                             #unknown_field_handling
                         }
                     }
@@ -411,23 +408,17 @@ pub(crate) fn generate_view_with_nesting(
             fn decode_view(
                 buf: &'a [u8],
             ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-                let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
-                Self::_decode_ctx(
-                    buf,
-                    ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit),
-                )
+                Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
             }
 
-            fn decode_view_with_ctx(
+            fn decode_view_with_limit(
                 buf: &'a [u8],
-                ctx: ::buffa::DecodeContext<'_>,
+                depth: u32,
             ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-                Self::_decode_ctx(buf, ctx)
+                Self::_decode_depth(buf, depth)
             }
 
-            fn to_owned_message(
-                &self,
-            ) -> ::core::result::Result<#owned_path, ::buffa::DecodeError> {
+            fn to_owned_message(&self) -> #owned_path {
                 self.to_owned_from_source(None)
             }
 
@@ -438,14 +429,14 @@ pub(crate) fn generate_view_with_nesting(
             fn to_owned_from_source(
                 &self,
                 __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-            ) -> ::core::result::Result<#owned_path, ::buffa::DecodeError> {
+            ) -> #owned_path {
                 #[allow(unused_imports)]
                 use ::buffa::alloc::string::ToString as _;
                 let _ = __buffa_src;
-                ::core::result::Result::Ok(#owned_path {
+                #owned_path {
                     #(#owned_fields)*
                     ..::core::default::Default::default()
-                })
+                }
             }
         }
 
@@ -725,7 +716,7 @@ pub(crate) fn oneof_view_needs_lifetime(
 /// Repeated, map, string, bytes, message, group fields all use `'a`.
 /// Only an all-scalar/enum message with `preserve_unknown_fields=false`
 /// has no borrowing fields — in that case a PhantomData marker is needed
-/// to keep the `<'a>` lifetime valid for `_decode_ctx(buf: &'a [u8])`.
+/// to keep the `<'a>` lifetime valid for `_decode_depth(buf: &'a [u8])`.
 fn message_view_has_borrowing_field(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -1086,14 +1077,16 @@ fn scalar_decode_arm(
         Type::TYPE_MESSAGE => {
             let vt = resolve_view_decode_tokens(scope, field)?;
             quote! {
-                let __sub_ctx = ctx.descend()?;
+                if depth == 0 {
+                    return Err(::buffa::DecodeError::RecursionLimitExceeded);
+                }
                 let sub = ::buffa::types::borrow_bytes(&mut cur)?;
                 // Proto merge semantics: if this field appeared before,
                 // merge the new bytes into the existing view.
                 match view.#ident.as_mut() {
-                    Some(existing) => existing._merge_into_view(sub, __sub_ctx)?,
+                    Some(existing) => existing._merge_into_view(sub, depth - 1)?,
                     None => view.#ident = ::buffa::MessageFieldView::set(
-                        #vt::_decode_ctx(sub, __sub_ctx)?
+                        #vt::_decode_depth(sub, depth - 1)?
                     ),
                 }
             }
@@ -1101,12 +1094,14 @@ fn scalar_decode_arm(
         Type::TYPE_GROUP => {
             let vt = resolve_view_decode_tokens(scope, field)?;
             quote! {
-                let __sub_ctx = ctx.descend()?;
-                let sub = ::buffa::types::borrow_group(&mut cur, #field_number, __sub_ctx.depth())?;
+                if depth == 0 {
+                    return Err(::buffa::DecodeError::RecursionLimitExceeded);
+                }
+                let sub = ::buffa::types::borrow_group(&mut cur, #field_number, depth - 1)?;
                 match view.#ident.as_mut() {
-                    Some(existing) => existing._merge_into_view(sub, __sub_ctx)?,
+                    Some(existing) => existing._merge_into_view(sub, depth - 1)?,
                     None => view.#ident = ::buffa::MessageFieldView::set(
-                        #vt::_decode_ctx(sub, __sub_ctx)?
+                        #vt::_decode_depth(sub, depth - 1)?
                     ),
                 }
             }
@@ -1150,9 +1145,11 @@ fn repeated_decode_arm(
         return Ok(quote! {
             #field_number => {
                 #ld_check
-                let __sub_ctx = ctx.descend()?;
+                if depth == 0 {
+                    return Err(::buffa::DecodeError::RecursionLimitExceeded);
+                }
                 let sub = ::buffa::types::borrow_bytes(&mut cur)?;
-                view.#ident.push(#vt::_decode_ctx(sub, __sub_ctx)?);
+                view.#ident.push(#vt::_decode_depth(sub, depth - 1)?);
             }
         });
     }
@@ -1168,9 +1165,11 @@ fn repeated_decode_arm(
         return Ok(quote! {
             #field_number => {
                 #sg_check
-                let __sub_ctx = ctx.descend()?;
-                let sub = ::buffa::types::borrow_group(&mut cur, #field_number, __sub_ctx.depth())?;
-                view.#ident.push(#vt::_decode_ctx(sub, __sub_ctx)?);
+                if depth == 0 {
+                    return Err(::buffa::DecodeError::RecursionLimitExceeded);
+                }
+                let sub = ::buffa::types::borrow_group(&mut cur, #field_number, depth - 1)?;
+                view.#ident.push(#vt::_decode_depth(sub, depth - 1)?);
             }
         });
     }
@@ -1329,7 +1328,7 @@ fn map_decode_arm(
                 match entry_tag.field_number() {
                     1 => { #decode_key }
                     2 => { #decode_val }
-                    _ => { ::buffa::encoding::skip_field_depth(entry_tag, &mut entry_cur, ctx.depth())?; }
+                    _ => { ::buffa::encoding::skip_field_depth(entry_tag, &mut entry_cur, depth)?; }
                 }
             }
             view.#ident.push(key, val);
@@ -1378,9 +1377,11 @@ fn map_view_entry_decode(
         Type::TYPE_MESSAGE => {
             let vt = resolve_view_decode_tokens(scope, fd)?;
             quote! {
-                let __sub_ctx = ctx.descend()?;
+                if depth == 0 {
+                    return Err(::buffa::DecodeError::RecursionLimitExceeded);
+                }
                 let sub = ::buffa::types::borrow_bytes(&mut entry_cur)?;
-                #var = #vt::_decode_ctx(sub, __sub_ctx)?;
+                #var = #vt::_decode_depth(sub, depth - 1)?;
             }
         }
         _ => {
@@ -1431,14 +1432,16 @@ fn oneof_decode_arms(
                     return Ok(quote! {
                         #field_number => {
                             #wire_check
-                            let __sub_ctx = ctx.descend()?;
+                            if depth == 0 {
+                                return Err(::buffa::DecodeError::RecursionLimitExceeded);
+                            }
                             let sub = ::buffa::types::borrow_bytes(&mut cur)?;
                             if let Some(#view_enum::#variant(ref mut existing)) = view.#field_ident {
-                                existing._merge_into_view(sub, __sub_ctx)?;
+                                existing._merge_into_view(sub, depth - 1)?;
                             } else {
                                 view.#field_ident = Some(#view_enum::#variant(
                                     ::buffa::alloc::boxed::Box::new(
-                                        #vt::_decode_ctx(sub, __sub_ctx)?
+                                        #vt::_decode_depth(sub, depth - 1)?
                                     )
                                 ));
                             }
@@ -1450,14 +1453,16 @@ fn oneof_decode_arms(
                     return Ok(quote! {
                         #field_number => {
                             #wire_check
-                            let __sub_ctx = ctx.descend()?;
-                            let sub = ::buffa::types::borrow_group(&mut cur, #field_number, __sub_ctx.depth())?;
+                            if depth == 0 {
+                                return Err(::buffa::DecodeError::RecursionLimitExceeded);
+                            }
+                            let sub = ::buffa::types::borrow_group(&mut cur, #field_number, depth - 1)?;
                             if let Some(#view_enum::#variant(ref mut existing)) = view.#field_ident {
-                                existing._merge_into_view(sub, __sub_ctx)?;
+                                existing._merge_into_view(sub, depth - 1)?;
                             } else {
                                 view.#field_ident = Some(#view_enum::#variant(
                                     ::buffa::alloc::boxed::Box::new(
-                                        #vt::_decode_ctx(sub, __sub_ctx)?
+                                        #vt::_decode_depth(sub, depth - 1)?
                                     )
                                 ));
                             }
@@ -1576,39 +1581,22 @@ fn build_to_owned_fields(
             })
             .collect::<Result<Vec<_>, CodeGenError>>()?;
 
-        // Message-typed variants convert fallibly (`?` inside the arm), which
-        // a closure-based `Option::map` cannot propagate — use a `match` for
-        // those groups. Scalar-only groups keep `map` (clippy::manual_map
-        // fires on the match form when no `?` is present).
-        let has_fallible_variant = group.iter().any(|f| {
-            let t = effective_type(ctx, f, features);
-            t == Type::TYPE_MESSAGE || t == Type::TYPE_GROUP
+        out.push(quote! {
+            #field_ident: self.#field_ident.as_ref().map(|v| match v { #(#match_arms)* }),
         });
-        if has_fallible_variant {
-            out.push(quote! {
-                #field_ident: match self.#field_ident.as_ref() {
-                    ::core::option::Option::Some(v) => {
-                        ::core::option::Option::Some(match v { #(#match_arms)* })
-                    }
-                    ::core::option::Option::None => ::core::option::Option::None,
-                },
-            });
-        } else {
-            out.push(quote! {
-                #field_ident: self.#field_ident.as_ref().map(|v| match v { #(#match_arms)* }),
-            });
-        }
     }
 
     // Emit `unknown_fields` conversion so round-trip via decode_view +
     // to_owned_message preserves unknown fields. `.into()` is a no-op when
     // the owned field is `UnknownFields`; when generate_json is on it wraps
     // in the per-message `__<Name>ExtJson` newtype (which has `From<UnknownFields>`).
-    // Errors (e.g. the unknown-field limit during re-materialization)
-    // propagate instead of silently dropping the fields.
     if preserve_unknown_fields {
         out.push(quote! {
-            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
+            __buffa_unknown_fields: self
+                .__buffa_unknown_fields
+                .to_owned()
+                .unwrap_or_default()
+                .into(),
         });
     }
 
@@ -1685,7 +1673,7 @@ fn singular_to_owned(
             quote! {
                 match self.#ident.as_option() {
                     Some(v) => ::buffa::MessageField::<#owned_ty>::some(
-                        v.to_owned_from_source(__buffa_src)?,
+                        v.to_owned_from_source(__buffa_src),
                     ),
                     None => ::buffa::MessageField::none(),
                 }
@@ -1718,12 +1706,7 @@ fn repeated_to_owned(
             quote! { self.#ident.iter().map(|b| #conv).collect() }
         }
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
-            quote! {
-                self.#ident
-                    .iter()
-                    .map(|v| v.to_owned_from_source(__buffa_src))
-                    .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?
-            }
+            quote! { self.#ident.iter().map(|v| v.to_owned_from_source(__buffa_src)).collect() }
         }
         _ => quote! { self.#ident.to_vec() },
     }
@@ -1772,23 +1755,11 @@ fn map_to_owned_expr(
         Type::TYPE_MESSAGE => {
             // Verify the owned path resolves (catches missing imports at codegen time).
             let _owned_path = resolve_owned_path(scope, val_fd)?;
-            quote! { v.to_owned_from_source(__buffa_src)? }
+            quote! { v.to_owned_from_source(__buffa_src) }
         }
         _ => quote! { *v },
     };
 
-    // Message values convert fallibly; collect through Result so the `?`
-    // inside the closure has a Result-typed closure return to operate on.
-    if val_ty == Type::TYPE_MESSAGE {
-        return Ok(quote! {
-            self.#ident
-                .iter()
-                .map(|(k, v)| {
-                    ::core::result::Result::<_, ::buffa::DecodeError>::Ok((#key_conv, #val_conv))
-                })
-                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?
-        });
-    }
     Ok(quote! {
         self.#ident.iter().map(|(k, v)| (#key_conv, #val_conv)).collect()
     })
@@ -1815,7 +1786,7 @@ fn oneof_variant_to_owned(
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
             // The owned variant is boxed unless opted out; `v` derefs through
             // the view's own `Box` either way, so only the wrapper differs.
-            let owned = quote! { v.to_owned_from_source(__buffa_src)? };
+            let owned = quote! { v.to_owned_from_source(__buffa_src) };
             if crate::oneof::variant_boxed(
                 ctx,
                 ty,

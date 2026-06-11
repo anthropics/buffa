@@ -18,22 +18,20 @@ pub struct VersionView<'a> {
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
 impl<'a> VersionView<'a> {
-    /// Decode from `buf` under the limits carried by `ctx` (recursion
-    /// depth and the shared unknown-field allowance).
+    /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
     ///
-    /// Called by [`::buffa::MessageView::decode_view`] with a fresh
-    /// default context and by generated sub-message decode arms with
-    /// `ctx.descend()?`.
+    /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
+    /// and by generated sub-message decode arms with `depth - 1`.
     ///
     /// **Not part of the public API.** Named with a leading underscore to
     /// signal that it is for generated-code use only.
     #[doc(hidden)]
-    pub fn _decode_ctx(
+    pub fn _decode_depth(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         let mut view = Self::default();
-        view._merge_into_view(buf, ctx)?;
+        view._merge_into_view(buf, depth)?;
         ::core::result::Result::Ok(view)
     }
     /// Merge fields from `buf` into this view (proto merge semantics).
@@ -47,9 +45,9 @@ impl<'a> VersionView<'a> {
     pub fn _merge_into_view(
         &mut self,
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-        let _ = ctx;
+        let _ = depth;
         #[allow(unused_variables)]
         let view = self;
         let mut cur: &'a [u8] = buf;
@@ -98,9 +96,9 @@ impl<'a> VersionView<'a> {
                     view.suffix = Some(::buffa::types::borrow_str(&mut cur)?);
                 }
                 _ => {
-                    ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+                    ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
                     let span_len = before_tag.len() - cur.len();
-                    view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
+                    view.__buffa_unknown_fields.push_raw(&before_tag[..span_len]);
                 }
             }
         }
@@ -110,39 +108,37 @@ impl<'a> VersionView<'a> {
 impl<'a> ::buffa::MessageView<'a> for VersionView<'a> {
     type Owned = super::super::Version;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
-        Self::_decode_ctx(
-            buf,
-            ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit),
-        )
+        Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
-    fn decode_view_with_ctx(
+    fn decode_view_with_limit(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        Self::_decode_ctx(buf, ctx)
+        Self::_decode_depth(buf, depth)
     }
-    fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::Version, ::buffa::DecodeError> {
+    fn to_owned_message(&self) -> super::super::Version {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> ::core::result::Result<super::super::Version, ::buffa::DecodeError> {
+    ) -> super::super::Version {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        ::core::result::Result::Ok(super::super::Version {
+        super::super::Version {
             major: self.major,
             minor: self.minor,
             patch: self.patch,
             suffix: self.suffix.map(|s| s.to_string()),
-            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
+            __buffa_unknown_fields: self
+                .__buffa_unknown_fields
+                .to_owned()
+                .unwrap_or_default()
+                .into(),
             ..::core::default::Default::default()
-        })
+        }
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for VersionView<'a> {
@@ -341,14 +337,8 @@ impl VersionOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::Version, ::buffa::DecodeError> {
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::Version {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -472,22 +462,20 @@ pub struct CodeGeneratorRequestView<'a> {
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
 impl<'a> CodeGeneratorRequestView<'a> {
-    /// Decode from `buf` under the limits carried by `ctx` (recursion
-    /// depth and the shared unknown-field allowance).
+    /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
     ///
-    /// Called by [`::buffa::MessageView::decode_view`] with a fresh
-    /// default context and by generated sub-message decode arms with
-    /// `ctx.descend()?`.
+    /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
+    /// and by generated sub-message decode arms with `depth - 1`.
     ///
     /// **Not part of the public API.** Named with a leading underscore to
     /// signal that it is for generated-code use only.
     #[doc(hidden)]
-    pub fn _decode_ctx(
+    pub fn _decode_depth(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         let mut view = Self::default();
-        view._merge_into_view(buf, ctx)?;
+        view._merge_into_view(buf, depth)?;
         ::core::result::Result::Ok(view)
     }
     /// Merge fields from `buf` into this view (proto merge semantics).
@@ -501,9 +489,9 @@ impl<'a> CodeGeneratorRequestView<'a> {
     pub fn _merge_into_view(
         &mut self,
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-        let _ = ctx;
+        let _ = depth;
         #[allow(unused_variables)]
         let view = self;
         let mut cur: &'a [u8] = buf;
@@ -529,15 +517,17 @@ impl<'a> CodeGeneratorRequestView<'a> {
                             actual: tag.wire_type() as u8,
                         });
                     }
-                    let __sub_ctx = ctx.descend()?;
+                    if depth == 0 {
+                        return Err(::buffa::DecodeError::RecursionLimitExceeded);
+                    }
                     let sub = ::buffa::types::borrow_bytes(&mut cur)?;
                     match view.compiler_version.as_mut() {
-                        Some(existing) => existing._merge_into_view(sub, __sub_ctx)?,
+                        Some(existing) => existing._merge_into_view(sub, depth - 1)?,
                         None => {
                             view.compiler_version = ::buffa::MessageFieldView::set(
-                                super::super::__buffa::view::VersionView::_decode_ctx(
+                                super::super::__buffa::view::VersionView::_decode_depth(
                                     sub,
-                                    __sub_ctx,
+                                    depth - 1,
                                 )?,
                             );
                         }
@@ -561,13 +551,15 @@ impl<'a> CodeGeneratorRequestView<'a> {
                             actual: tag.wire_type() as u8,
                         });
                     }
-                    let __sub_ctx = ctx.descend()?;
+                    if depth == 0 {
+                        return Err(::buffa::DecodeError::RecursionLimitExceeded);
+                    }
                     let sub = ::buffa::types::borrow_bytes(&mut cur)?;
                     view.proto_file
                         .push(
-                            super::super::super::__buffa::view::FileDescriptorProtoView::_decode_ctx(
+                            super::super::super::__buffa::view::FileDescriptorProtoView::_decode_depth(
                                 sub,
-                                __sub_ctx,
+                                depth - 1,
                             )?,
                         );
                 }
@@ -579,20 +571,22 @@ impl<'a> CodeGeneratorRequestView<'a> {
                             actual: tag.wire_type() as u8,
                         });
                     }
-                    let __sub_ctx = ctx.descend()?;
+                    if depth == 0 {
+                        return Err(::buffa::DecodeError::RecursionLimitExceeded);
+                    }
                     let sub = ::buffa::types::borrow_bytes(&mut cur)?;
                     view.source_file_descriptors
                         .push(
-                            super::super::super::__buffa::view::FileDescriptorProtoView::_decode_ctx(
+                            super::super::super::__buffa::view::FileDescriptorProtoView::_decode_depth(
                                 sub,
-                                __sub_ctx,
+                                depth - 1,
                             )?,
                         );
                 }
                 _ => {
-                    ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+                    ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
                     let span_len = before_tag.len() - cur.len();
-                    view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
+                    view.__buffa_unknown_fields.push_raw(&before_tag[..span_len]);
                 }
             }
         }
@@ -602,38 +596,26 @@ impl<'a> CodeGeneratorRequestView<'a> {
 impl<'a> ::buffa::MessageView<'a> for CodeGeneratorRequestView<'a> {
     type Owned = super::super::CodeGeneratorRequest;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
-        Self::_decode_ctx(
-            buf,
-            ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit),
-        )
+        Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
-    fn decode_view_with_ctx(
+    fn decode_view_with_limit(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        Self::_decode_ctx(buf, ctx)
+        Self::_decode_depth(buf, depth)
     }
-    fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<
-        super::super::CodeGeneratorRequest,
-        ::buffa::DecodeError,
-    > {
+    fn to_owned_message(&self) -> super::super::CodeGeneratorRequest {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> ::core::result::Result<
-        super::super::CodeGeneratorRequest,
-        ::buffa::DecodeError,
-    > {
+    ) -> super::super::CodeGeneratorRequest {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        ::core::result::Result::Ok(super::super::CodeGeneratorRequest {
+        super::super::CodeGeneratorRequest {
             file_to_generate: self
                 .file_to_generate
                 .iter()
@@ -644,23 +626,27 @@ impl<'a> ::buffa::MessageView<'a> for CodeGeneratorRequestView<'a> {
                 .proto_file
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
+                .collect(),
             source_file_descriptors: self
                 .source_file_descriptors
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
+                .collect(),
             compiler_version: match self.compiler_version.as_option() {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::Version,
-                    >::some(v.to_owned_from_source(__buffa_src)?)
+                    >::some(v.to_owned_from_source(__buffa_src))
                 }
                 None => ::buffa::MessageField::none(),
             },
-            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
+            __buffa_unknown_fields: self
+                .__buffa_unknown_fields
+                .to_owned()
+                .unwrap_or_default()
+                .into(),
             ..::core::default::Default::default()
-        })
+        }
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for CodeGeneratorRequestView<'a> {
@@ -886,17 +872,8 @@ impl CodeGeneratorRequestOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<
-        super::super::CodeGeneratorRequest,
-        ::buffa::DecodeError,
-    > {
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::CodeGeneratorRequest {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -1051,22 +1028,20 @@ pub struct CodeGeneratorResponseView<'a> {
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
 impl<'a> CodeGeneratorResponseView<'a> {
-    /// Decode from `buf` under the limits carried by `ctx` (recursion
-    /// depth and the shared unknown-field allowance).
+    /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
     ///
-    /// Called by [`::buffa::MessageView::decode_view`] with a fresh
-    /// default context and by generated sub-message decode arms with
-    /// `ctx.descend()?`.
+    /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
+    /// and by generated sub-message decode arms with `depth - 1`.
     ///
     /// **Not part of the public API.** Named with a leading underscore to
     /// signal that it is for generated-code use only.
     #[doc(hidden)]
-    pub fn _decode_ctx(
+    pub fn _decode_depth(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         let mut view = Self::default();
-        view._merge_into_view(buf, ctx)?;
+        view._merge_into_view(buf, depth)?;
         ::core::result::Result::Ok(view)
     }
     /// Merge fields from `buf` into this view (proto merge semantics).
@@ -1080,9 +1055,9 @@ impl<'a> CodeGeneratorResponseView<'a> {
     pub fn _merge_into_view(
         &mut self,
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-        let _ = ctx;
+        let _ = depth;
         #[allow(unused_variables)]
         let view = self;
         let mut cur: &'a [u8] = buf;
@@ -1140,20 +1115,22 @@ impl<'a> CodeGeneratorResponseView<'a> {
                             actual: tag.wire_type() as u8,
                         });
                     }
-                    let __sub_ctx = ctx.descend()?;
+                    if depth == 0 {
+                        return Err(::buffa::DecodeError::RecursionLimitExceeded);
+                    }
                     let sub = ::buffa::types::borrow_bytes(&mut cur)?;
                     view.file
                         .push(
-                            super::super::__buffa::view::code_generator_response::FileView::_decode_ctx(
+                            super::super::__buffa::view::code_generator_response::FileView::_decode_depth(
                                 sub,
-                                __sub_ctx,
+                                depth - 1,
                             )?,
                         );
                 }
                 _ => {
-                    ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+                    ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
                     let span_len = before_tag.len() - cur.len();
-                    view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
+                    view.__buffa_unknown_fields.push_raw(&before_tag[..span_len]);
                 }
             }
         }
@@ -1163,38 +1140,26 @@ impl<'a> CodeGeneratorResponseView<'a> {
 impl<'a> ::buffa::MessageView<'a> for CodeGeneratorResponseView<'a> {
     type Owned = super::super::CodeGeneratorResponse;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
-        Self::_decode_ctx(
-            buf,
-            ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit),
-        )
+        Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
-    fn decode_view_with_ctx(
+    fn decode_view_with_limit(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        Self::_decode_ctx(buf, ctx)
+        Self::_decode_depth(buf, depth)
     }
-    fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<
-        super::super::CodeGeneratorResponse,
-        ::buffa::DecodeError,
-    > {
+    fn to_owned_message(&self) -> super::super::CodeGeneratorResponse {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> ::core::result::Result<
-        super::super::CodeGeneratorResponse,
-        ::buffa::DecodeError,
-    > {
+    ) -> super::super::CodeGeneratorResponse {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        ::core::result::Result::Ok(super::super::CodeGeneratorResponse {
+        super::super::CodeGeneratorResponse {
             error: self.error.map(|s| s.to_string()),
             supported_features: self.supported_features,
             minimum_edition: self.minimum_edition,
@@ -1203,10 +1168,14 @@ impl<'a> ::buffa::MessageView<'a> for CodeGeneratorResponseView<'a> {
                 .file
                 .iter()
                 .map(|v| v.to_owned_from_source(__buffa_src))
-                .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?,
-            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
+                .collect(),
+            __buffa_unknown_fields: self
+                .__buffa_unknown_fields
+                .to_owned()
+                .unwrap_or_default()
+                .into(),
             ..::core::default::Default::default()
-        })
+        }
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for CodeGeneratorResponseView<'a> {
@@ -1431,17 +1400,8 @@ impl CodeGeneratorResponseOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<
-        super::super::CodeGeneratorResponse,
-        ::buffa::DecodeError,
-    > {
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::CodeGeneratorResponse {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -1613,22 +1573,20 @@ pub mod code_generator_response {
         pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
     }
     impl<'a> FileView<'a> {
-        /// Decode from `buf` under the limits carried by `ctx` (recursion
-        /// depth and the shared unknown-field allowance).
+        /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
         ///
-        /// Called by [`::buffa::MessageView::decode_view`] with a fresh
-        /// default context and by generated sub-message decode arms with
-        /// `ctx.descend()?`.
+        /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
+        /// and by generated sub-message decode arms with `depth - 1`.
         ///
         /// **Not part of the public API.** Named with a leading underscore to
         /// signal that it is for generated-code use only.
         #[doc(hidden)]
-        pub fn _decode_ctx(
+        pub fn _decode_depth(
             buf: &'a [u8],
-            ctx: ::buffa::DecodeContext<'_>,
+            depth: u32,
         ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
             let mut view = Self::default();
-            view._merge_into_view(buf, ctx)?;
+            view._merge_into_view(buf, depth)?;
             ::core::result::Result::Ok(view)
         }
         /// Merge fields from `buf` into this view (proto merge semantics).
@@ -1642,9 +1600,9 @@ pub mod code_generator_response {
         pub fn _merge_into_view(
             &mut self,
             buf: &'a [u8],
-            ctx: ::buffa::DecodeContext<'_>,
+            depth: u32,
         ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-            let _ = ctx;
+            let _ = depth;
             #[allow(unused_variables)]
             let view = self;
             let mut cur: &'a [u8] = buf;
@@ -1700,25 +1658,26 @@ pub mod code_generator_response {
                                 actual: tag.wire_type() as u8,
                             });
                         }
-                        let __sub_ctx = ctx.descend()?;
+                        if depth == 0 {
+                            return Err(::buffa::DecodeError::RecursionLimitExceeded);
+                        }
                         let sub = ::buffa::types::borrow_bytes(&mut cur)?;
                         match view.generated_code_info.as_mut() {
-                            Some(existing) => existing._merge_into_view(sub, __sub_ctx)?,
+                            Some(existing) => existing._merge_into_view(sub, depth - 1)?,
                             None => {
                                 view.generated_code_info = ::buffa::MessageFieldView::set(
-                                    super::super::super::super::__buffa::view::GeneratedCodeInfoView::_decode_ctx(
+                                    super::super::super::super::__buffa::view::GeneratedCodeInfoView::_decode_depth(
                                         sub,
-                                        __sub_ctx,
+                                        depth - 1,
                                     )?,
                                 );
                             }
                         }
                     }
                     _ => {
-                        ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+                        ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
                         let span_len = before_tag.len() - cur.len();
-                        view.__buffa_unknown_fields
-                            .push_record(before_tag, span_len, ctx)?;
+                        view.__buffa_unknown_fields.push_raw(&before_tag[..span_len]);
                     }
                 }
             }
@@ -1730,38 +1689,28 @@ pub mod code_generator_response {
         fn decode_view(
             buf: &'a [u8],
         ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-            let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
-            Self::_decode_ctx(
-                buf,
-                ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit),
-            )
+            Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
         }
-        fn decode_view_with_ctx(
+        fn decode_view_with_limit(
             buf: &'a [u8],
-            ctx: ::buffa::DecodeContext<'_>,
+            depth: u32,
         ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-            Self::_decode_ctx(buf, ctx)
+            Self::_decode_depth(buf, depth)
         }
         fn to_owned_message(
             &self,
-        ) -> ::core::result::Result<
-            super::super::super::code_generator_response::File,
-            ::buffa::DecodeError,
-        > {
+        ) -> super::super::super::code_generator_response::File {
             self.to_owned_from_source(None)
         }
         #[allow(clippy::useless_conversion, clippy::needless_update)]
         fn to_owned_from_source(
             &self,
             __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-        ) -> ::core::result::Result<
-            super::super::super::code_generator_response::File,
-            ::buffa::DecodeError,
-        > {
+        ) -> super::super::super::code_generator_response::File {
             #[allow(unused_imports)]
             use ::buffa::alloc::string::ToString as _;
             let _ = __buffa_src;
-            ::core::result::Result::Ok(super::super::super::code_generator_response::File {
+            super::super::super::code_generator_response::File {
                 name: self.name.map(|s| s.to_string()),
                 insertion_point: self.insertion_point.map(|s| s.to_string()),
                 content: self.content.map(|s| s.to_string()),
@@ -1769,13 +1718,17 @@ pub mod code_generator_response {
                     Some(v) => {
                         ::buffa::MessageField::<
                             super::super::super::super::GeneratedCodeInfo,
-                        >::some(v.to_owned_from_source(__buffa_src)?)
+                        >::some(v.to_owned_from_source(__buffa_src))
                     }
                     None => ::buffa::MessageField::none(),
                 },
-                __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
+                __buffa_unknown_fields: self
+                    .__buffa_unknown_fields
+                    .to_owned()
+                    .unwrap_or_default()
+                    .into(),
                 ..::core::default::Default::default()
-            })
+            }
         }
     }
     impl<'a> ::buffa::ViewEncode<'a> for FileView<'a> {
@@ -1967,17 +1920,10 @@ pub mod code_generator_response {
             self.0.reborrow()
         }
         /// Convert to the owned message type.
-        ///
-        /// # Errors
-        ///
-        /// Returns an error if re-materializing preserved unknown fields
-        /// fails (e.g. the unknown-field limit is exceeded).
+        #[must_use]
         pub fn to_owned_message(
             &self,
-        ) -> ::core::result::Result<
-            super::super::super::code_generator_response::File,
-            ::buffa::DecodeError,
-        > {
+        ) -> super::super::super::code_generator_response::File {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.

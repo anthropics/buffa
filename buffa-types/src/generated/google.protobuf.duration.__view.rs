@@ -85,22 +85,20 @@ pub struct DurationView<'a> {
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
 impl<'a> DurationView<'a> {
-    /// Decode from `buf` under the limits carried by `ctx` (recursion
-    /// depth and the shared unknown-field allowance).
+    /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
     ///
-    /// Called by [`::buffa::MessageView::decode_view`] with a fresh
-    /// default context and by generated sub-message decode arms with
-    /// `ctx.descend()?`.
+    /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
+    /// and by generated sub-message decode arms with `depth - 1`.
     ///
     /// **Not part of the public API.** Named with a leading underscore to
     /// signal that it is for generated-code use only.
     #[doc(hidden)]
-    pub fn _decode_ctx(
+    pub fn _decode_depth(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         let mut view = Self::default();
-        view._merge_into_view(buf, ctx)?;
+        view._merge_into_view(buf, depth)?;
         ::core::result::Result::Ok(view)
     }
     /// Merge fields from `buf` into this view (proto merge semantics).
@@ -114,9 +112,9 @@ impl<'a> DurationView<'a> {
     pub fn _merge_into_view(
         &mut self,
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-        let _ = ctx;
+        let _ = depth;
         #[allow(unused_variables)]
         let view = self;
         let mut cur: &'a [u8] = buf;
@@ -145,9 +143,9 @@ impl<'a> DurationView<'a> {
                     view.nanos = ::buffa::types::decode_int32(&mut cur)?;
                 }
                 _ => {
-                    ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+                    ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
                     let span_len = before_tag.len() - cur.len();
-                    view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
+                    view.__buffa_unknown_fields.push_raw(&before_tag[..span_len]);
                 }
             }
         }
@@ -157,37 +155,35 @@ impl<'a> DurationView<'a> {
 impl<'a> ::buffa::MessageView<'a> for DurationView<'a> {
     type Owned = super::super::Duration;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
-        Self::_decode_ctx(
-            buf,
-            ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit),
-        )
+        Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
     }
-    fn decode_view_with_ctx(
+    fn decode_view_with_limit(
         buf: &'a [u8],
-        ctx: ::buffa::DecodeContext<'_>,
+        depth: u32,
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-        Self::_decode_ctx(buf, ctx)
+        Self::_decode_depth(buf, depth)
     }
-    fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::Duration, ::buffa::DecodeError> {
+    fn to_owned_message(&self) -> super::super::Duration {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-    ) -> ::core::result::Result<super::super::Duration, ::buffa::DecodeError> {
+    ) -> super::super::Duration {
         #[allow(unused_imports)]
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
-        ::core::result::Result::Ok(super::super::Duration {
+        super::super::Duration {
             seconds: self.seconds,
             nanos: self.nanos,
-            __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
+            __buffa_unknown_fields: self
+                .__buffa_unknown_fields
+                .to_owned()
+                .unwrap_or_default()
+                .into(),
             ..::core::default::Default::default()
-        })
+        }
     }
 }
 impl<'a> ::buffa::ViewEncode<'a> for DurationView<'a> {
@@ -306,14 +302,8 @@ impl DurationOwnedView {
         self.0.reborrow()
     }
     /// Convert to the owned message type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::Duration, ::buffa::DecodeError> {
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::Duration {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.

@@ -224,7 +224,6 @@ fn view_roundtrip<'a, V: MessageView<'a>>(bytes: &'a [u8]) -> V::Owned {
     V::decode_view(bytes)
         .expect("decode_view")
         .to_owned_message()
-        .expect("to_owned_message")
 }
 
 #[test]
