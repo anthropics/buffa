@@ -138,6 +138,9 @@ jobs:
       - name: Check buffa-types no_std
         run: cargo check -p buffa-types --no-default-features
 
+      - name: Check buffa-types no_std + chrono
+        run: cargo check -p buffa-types --no-default-features --features chrono
+
       - name: Check buffa-descriptor no_std
         run: cargo check -p buffa-descriptor --no-default-features
 

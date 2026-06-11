@@ -2,14 +2,26 @@
 
 use crate::google::protobuf::Timestamp;
 
+/// Maximum value of the `nanos` field per the protobuf `Timestamp` spec.
+///
+/// `Timestamp.nanos` is constrained to `[0, NANOS_MAX]`. Shared with
+/// `timestamp_chrono` so the validation range cannot drift between files.
+pub(crate) const NANOS_MAX: i32 = 999_999_999;
+
 /// Errors that can occur when converting a [`Timestamp`] to a Rust time type.
+///
+/// Deliberately shared by the `std` conversion (`Timestamp` →
+/// `std::time::SystemTime`) and the `chrono` conversion (`Timestamp` →
+/// `chrono::DateTime<Utc>`): the failure modes map identically for both
+/// targets, so a separate error enum per target would add API surface
+/// without adding information.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum TimestampError {
     /// The nanoseconds field is outside the valid range `[0, 999_999_999]`.
     #[error("nanos field must be in [0, 999_999_999]")]
     InvalidNanos,
     /// The timestamp is too far in the past or future for the target type.
-    #[error("timestamp is out of range for SystemTime")]
+    #[error("timestamp is out of range for the target type")]
     Overflow,
 }
 
@@ -27,7 +39,7 @@ impl Timestamp {
     /// variant that returns `None` on invalid input.
     pub fn from_unix(seconds: i64, nanos: i32) -> Self {
         debug_assert!(
-            (0..=999_999_999).contains(&nanos),
+            (0..=NANOS_MAX).contains(&nanos),
             "nanos ({nanos}) must be in [0, 999_999_999]"
         );
         Self {
@@ -51,7 +63,7 @@ impl Timestamp {
     /// Create a [`Timestamp`] from a Unix epoch offset, returning `None` if
     /// `nanos` is outside `[0, 999_999_999]`.
     pub fn from_unix_checked(seconds: i64, nanos: i32) -> Option<Self> {
-        if (0..=999_999_999).contains(&nanos) {
+        if (0..=NANOS_MAX).contains(&nanos) {
             Some(Self {
                 seconds,
                 nanos,
@@ -83,7 +95,7 @@ impl TryFrom<Timestamp> for std::time::SystemTime {
     /// `[0, 999_999_999]`, or [`TimestampError::Overflow`] if the result
     /// does not fit in a [`std::time::SystemTime`].
     fn try_from(ts: Timestamp) -> Result<Self, Self::Error> {
-        if ts.nanos < 0 || ts.nanos > 999_999_999 {
+        if ts.nanos < 0 || ts.nanos > NANOS_MAX {
             return Err(TimestampError::InvalidNanos);
         }
 
@@ -215,9 +227,9 @@ impl serde::Serialize for Timestamp {
     /// or if `seconds` is outside the proto spec range (years 0001–9999).
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use alloc::format;
-        if !(0..=999_999_999).contains(&self.nanos) {
+        if !(0..=NANOS_MAX).contains(&self.nanos) {
             return Err(serde::ser::Error::custom(format!(
-                "invalid Timestamp: nanos {} is outside [0, 999_999_999]",
+                "invalid Timestamp: nanos {} is outside [0, {NANOS_MAX}]",
                 self.nanos
             )));
         }
