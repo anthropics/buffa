@@ -188,27 +188,27 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                 "gate_impls" => codegen.gate_impls_on_crate_features = value.trim() == "true",
                 // `json_feature=serde` (etc.) renames the crate feature a
                 // gated impl kind is conditioned on. Inert without
-                // `gate_impls=true`. An empty value is rejected (the
-                // default is kept) — `#[cfg(feature = "")]` is permanently
-                // false and would silently drop the gated impls.
+                // `gate_impls=true`. An empty value is a hard error —
+                // `#[cfg(feature = "")]` is permanently false and would
+                // silently drop the gated impls. (A non-empty value that is
+                // not a valid Cargo feature name is rejected by `generate`
+                // when the gate is active.)
                 key @ ("json_feature" | "views_feature" | "text_feature" | "reflect_feature") => {
                     let value = value.trim();
                     if value.is_empty() {
-                        eprintln!(
-                            "protoc-gen-buffa: ignoring empty '{key}' \
-                             (would silently disable the gated impls); \
-                             keeping the default feature name"
-                        );
-                    } else {
-                        let names = &mut codegen.feature_gate_names;
-                        let slot = match key {
-                            "json_feature" => &mut names.json,
-                            "views_feature" => &mut names.views,
-                            "text_feature" => &mut names.text,
-                            _ => &mut names.reflect,
-                        };
-                        *slot = value.to_string();
+                        return Err(format!(
+                            "'{key}' requires a non-empty feature name \
+                             (an empty name would silently disable the gated impls)"
+                        ));
                     }
+                    let names = &mut codegen.feature_gate_names;
+                    let slot = match key {
+                        "json_feature" => &mut names.json,
+                        "views_feature" => &mut names.views,
+                        "text_feature" => &mut names.text,
+                        _ => &mut names.reflect,
+                    };
+                    *slot = value.to_string();
                 }
                 "allow_message_set" => codegen.allow_message_set = value.trim() == "true",
                 "strict_utf8" | "strict_utf8_mapping" => {
@@ -433,9 +433,15 @@ mod tests {
     }
 
     #[test]
-    fn empty_feature_name_keeps_default() {
-        let config = parse_config("json_feature=").unwrap();
-        assert_eq!(config.codegen.feature_gate_names.json, "json");
+    fn empty_feature_name_is_rejected() {
+        let err = match parse_config("json_feature=") {
+            Err(err) => err,
+            Ok(_) => panic!("empty feature name must be a parse error"),
+        };
+        assert!(
+            err.contains("json_feature"),
+            "error names the option: {err}"
+        );
     }
 
     #[test]

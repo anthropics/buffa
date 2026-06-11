@@ -933,9 +933,10 @@ pub fn generate(
 ///
 /// Returns [`CodeGenError::FileNotFound`] if a name in `files_to_generate` has
 /// no matching descriptor, [`CodeGenError::Other`] if `generate_reflection_vtable`
-/// is set without `generate_reflection`, and other [`CodeGenError`] variants for
-/// malformed descriptors (e.g. a missing required field) encountered while
-/// generating.
+/// is set without `generate_reflection` or if an active feature-gate name in
+/// [`CodeGenConfig::feature_gate_names`] is not a valid Cargo feature name,
+/// and other [`CodeGenError`] variants for malformed descriptors (e.g. a
+/// missing required field) encountered while generating.
 pub fn generate_with_diagnostics(
     file_descriptors: &[FileDescriptorProto],
     files_to_generate: &[String],
@@ -952,6 +953,21 @@ pub fn generate_with_diagnostics(
              (it provides the descriptor pool the reflect impls resolve against)"
                 .into(),
         ));
+    }
+
+    // Active feature-gate names are emitted verbatim into
+    // `#[cfg(feature = "...")]`; an invalid name fails open (the cfg is
+    // permanently false and the gated impls silently compile away), so it
+    // must be a hard error here rather than a debug assertion — build
+    // scripts and protoc plugins typically run as release builds.
+    if let Err((kind, name)) = config.feature_gates().validate() {
+        return Err(CodeGenError::Other(format!(
+            "invalid {kind} feature-gate name {name:?}: a Cargo feature name starts \
+             with an ASCII alphanumeric or '_' and contains only alphanumerics, \
+             '_', '-', '+', or '.'; an invalid name would leave the emitted \
+             #[cfg(feature = ...)] permanently false, silently compiling the \
+             gated impls away"
+        )));
     }
 
     let ctx = context::CodeGenContext::for_generate(file_descriptors, files_to_generate, config);

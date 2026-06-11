@@ -271,13 +271,13 @@ impl Config {
     /// consuming crate's `[features]` table**. A misspelled or undeclared
     /// name fails open: the `#[cfg]` is permanently false, so the gated
     /// impls silently compile away (on Rust ≥ 1.80 an undeclared name at
-    /// least triggers the `unexpected_cfgs` warning). Debug builds assert
-    /// the name is non-empty.
+    /// least triggers the `unexpected_cfgs` warning). A name that is not a
+    /// valid Cargo feature name at all (empty, or containing characters
+    /// outside alphanumerics and `_`/`-`/`+`/`.`) makes [`compile`](Self::compile)
+    /// fail with an error when the gate is active.
     #[must_use]
     pub fn json_feature_name(mut self, name: impl Into<String>) -> Self {
-        let name = name.into();
-        debug_assert!(!name.is_empty(), "feature name must not be empty");
-        self.codegen_config.feature_gate_names.json = name;
+        self.codegen_config.feature_gate_names.json = name.into();
         self
     }
 
@@ -289,9 +289,7 @@ impl Config {
     /// inert otherwise. See [`json_feature_name`](Self::json_feature_name).
     #[must_use]
     pub fn views_feature_name(mut self, name: impl Into<String>) -> Self {
-        let name = name.into();
-        debug_assert!(!name.is_empty(), "feature name must not be empty");
-        self.codegen_config.feature_gate_names.views = name;
+        self.codegen_config.feature_gate_names.views = name.into();
         self
     }
 
@@ -303,9 +301,7 @@ impl Config {
     /// inert otherwise. See [`json_feature_name`](Self::json_feature_name).
     #[must_use]
     pub fn text_feature_name(mut self, name: impl Into<String>) -> Self {
-        let name = name.into();
-        debug_assert!(!name.is_empty(), "feature name must not be empty");
-        self.codegen_config.feature_gate_names.text = name;
+        self.codegen_config.feature_gate_names.text = name.into();
         self
     }
 
@@ -318,9 +314,7 @@ impl Config {
     /// inert otherwise. See [`json_feature_name`](Self::json_feature_name).
     #[must_use]
     pub fn reflect_feature_name(mut self, name: impl Into<String>) -> Self {
-        let name = name.into();
-        debug_assert!(!name.is_empty(), "feature name must not be empty");
-        self.codegen_config.feature_gate_names.reflect = name;
+        self.codegen_config.feature_gate_names.reflect = name.into();
         self
     }
 
@@ -1426,6 +1420,21 @@ fn generate_include_file(entries: &[(String, String)], relative: bool) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn feature_name_setters_reach_codegen_config() {
+        let config = Config::new()
+            .json_feature_name("serde")
+            .views_feature_name("zero-copy")
+            .text_feature_name(String::from("textproto"))
+            .reflect_feature_name("reflection")
+            .codegen_config;
+        let names = &config.feature_gate_names;
+        assert_eq!(names.json, "serde");
+        assert_eq!(names.views, "zero-copy");
+        assert_eq!(names.text, "textproto");
+        assert_eq!(names.reflect, "reflection");
+    }
 
     #[test]
     fn unbox_oneof_in_normalizes_leading_dot() {

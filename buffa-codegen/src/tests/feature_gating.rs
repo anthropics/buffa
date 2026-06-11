@@ -177,6 +177,67 @@ fn custom_feature_names_replace_defaults_in_output() {
 }
 
 #[test]
+fn shared_custom_name_squashes_json_or_text_gate() {
+    // json and text gated behind one feature → `register_types` (the
+    // either-json-or-text surface) gets a single `feature = "serde"` gate,
+    // never `any(feature = "serde", feature = "serde")`.
+    let cfg = CodeGenConfig {
+        generate_json: true,
+        generate_text: true,
+        gate_impls_on_crate_features: true,
+        feature_gate_names: crate::FeatureGateNames {
+            json: "serde".to_string(),
+            text: "serde".to_string(),
+            ..crate::FeatureGateNames::default()
+        },
+        ..CodeGenConfig::default()
+    };
+    let files =
+        generate(&[fixture()], &["gated.proto".to_string()], &cfg).expect("should generate");
+    let content = joined(&files);
+    let squashed = squash(&content);
+    assert!(
+        squashed.contains(r#"feature = "serde""#),
+        "gates must use the shared custom name: {content}"
+    );
+    assert!(
+        !squashed.contains("any(feature"),
+        "a shared name must collapse to a single cfg predicate, not any(): {content}"
+    );
+}
+
+#[test]
+fn invalid_feature_name_is_a_generate_error() {
+    // An active gate with a name that can't be a Cargo feature must fail
+    // generation outright — the emitted `#[cfg]` would be permanently
+    // false and the gated impls would silently compile away.
+    let cfg = CodeGenConfig {
+        generate_json: true,
+        gate_impls_on_crate_features: true,
+        feature_gate_names: crate::FeatureGateNames {
+            json: "not a feature".to_string(),
+            ..crate::FeatureGateNames::default()
+        },
+        ..CodeGenConfig::default()
+    };
+    let err = generate(&[fixture()], &["gated.proto".to_string()], &cfg)
+        .expect_err("invalid feature name must fail generation");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("json") && msg.contains("not a feature"),
+        "error must name the gate kind and the offending name: {msg}"
+    );
+
+    // The same name is inert — and therefore accepted — without gating.
+    let ungated = CodeGenConfig {
+        gate_impls_on_crate_features: false,
+        ..cfg
+    };
+    generate(&[fixture()], &["gated.proto".to_string()], &ungated)
+        .expect("invalid name without gating is inert and must not error");
+}
+
+#[test]
 fn gated_message_serde_derive_is_cfg_attr() {
     let content = generate_gated(false);
     assert!(

@@ -38,8 +38,11 @@ pub(crate) const REFLECT_FEATURE: &str = "reflect";
 /// `#[cfg_attr(feature = "...", ...)]` attributes; they must be valid Cargo
 /// feature names. **An empty, misspelled, or undeclared name fails open**:
 /// the emitted `#[cfg]` is permanently false in the consuming crate, so the
-/// gated impls silently compile away. Debug builds assert the names are
-/// non-empty and use Cargo's feature-name alphabet to catch this early.
+/// gated impls silently compile away. To catch the cases that are
+/// detectable at generation time, [`generate`](crate::generate) returns an
+/// error when an *active* gate name is empty or not a valid Cargo feature
+/// name; an undeclared (but valid) name can only be diagnosed in the
+/// consuming crate, via the `unexpected_cfgs` lint on Rust ≥ 1.80.
 ///
 /// The struct is `#[non_exhaustive]`; construct it by mutating
 /// [`FeatureGateNames::default()`] (or use the `buffa_build::Config`
@@ -70,17 +73,20 @@ impl Default for FeatureGateNames {
     }
 }
 
-/// Whether `name` is plausibly a Cargo feature name: non-empty and built
-/// from Cargo's feature alphabet (alphanumerics, `_`, `-`, `+`, `.`).
+/// Whether `name` is a valid Cargo feature name: starts with an ASCII
+/// alphanumeric or `_`, with the remainder drawn from Cargo's feature
+/// alphabet (alphanumerics, `_`, `-`, `+`, `.`).
 ///
-/// Used in debug assertions only — a bad name is a build-script bug, and
-/// the failure mode without the assert is silent (`#[cfg(feature = "")]`
-/// is permanently false, so the gated impls just disappear).
+/// Enforced at the [`generate`](crate::generate) entry point for every
+/// *active* gate name — the failure mode of an invalid name is silent
+/// (`#[cfg(feature = "")]` is permanently false, so the gated impls just
+/// disappear), so it must be a hard error in every build profile.
 pub(crate) fn is_valid_feature_name(name: &str) -> bool {
-    !name.is_empty()
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '+' | '.'))
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '+' | '.'))
 }
 
 /// Resolved feature-gate names for the current codegen run, computed once
@@ -112,20 +118,38 @@ impl<'a> FeatureGates<'a> {
         let gate_all = config.gate_impls_on_crate_features;
         let gate_reflect = gate_all || config.gate_reflect_on_crate_feature;
         let names = &config.feature_gate_names;
-        debug_assert!(
-            [&names.json, &names.views, &names.text, &names.reflect]
-                .into_iter()
-                .all(|n| is_valid_feature_name(n)),
-            "feature gate names must be non-empty Cargo feature names \
-             (got {names:?}); an invalid name silently compiles the gated \
-             impls away"
-        );
         Self {
             json: (gate_all && config.generate_json).then_some(names.json.as_str()),
             views: (gate_all && config.generate_views).then_some(names.views.as_str()),
             text: (gate_all && config.generate_text).then_some(names.text.as_str()),
             reflect: (gate_reflect && config.generate_reflection).then_some(names.reflect.as_str()),
         }
+    }
+
+    /// Check every *active* gate name against [`is_valid_feature_name`],
+    /// returning the first offender as `Err((kind, name))`.
+    ///
+    /// Called from [`generate`](crate::generate) so an invalid name is a
+    /// hard error in every build profile — the failure mode otherwise is
+    /// silent (the emitted `#[cfg]` is permanently false and the gated
+    /// impls compile away). Inactive names are not checked: they are inert
+    /// and never reach the output.
+    pub(crate) fn validate(&self) -> Result<(), (&'static str, &'a str)> {
+        [
+            ("json", self.json),
+            ("views", self.views),
+            ("text", self.text),
+            ("reflect", self.reflect),
+        ]
+        .into_iter()
+        .filter_map(|(kind, name)| Some((kind, name?)))
+        .try_for_each(|(kind, name)| {
+            if is_valid_feature_name(name) {
+                Ok(())
+            } else {
+                Err((kind, name))
+            }
+        })
     }
 
     /// `Some("json")`, `Some("text")`, or — when both are active — the
@@ -398,23 +422,45 @@ mod tests {
         assert!(is_valid_feature_name("json"));
         assert!(is_valid_feature_name("zero-copy"));
         assert!(is_valid_feature_name("a_b.c+d2"));
+        assert!(is_valid_feature_name("_private"));
         assert!(!is_valid_feature_name(""));
         assert!(!is_valid_feature_name("with space"));
         assert!(!is_valid_feature_name("quo\"te"));
+        // Cargo requires the first character to be alphanumeric or `_`.
+        assert!(!is_valid_feature_name("-leading"));
+        assert!(!is_valid_feature_name(".leading"));
+        assert!(!is_valid_feature_name("+leading"));
     }
 
     #[test]
-    #[should_panic(expected = "feature gate names must be non-empty")]
-    #[cfg(debug_assertions)]
-    fn for_config_rejects_empty_name_in_debug() {
+    fn validate_reports_first_invalid_active_name() {
         let config = CodeGenConfig {
             feature_gate_names: FeatureGateNames {
-                json: String::new(),
+                views: String::new(),
                 ..FeatureGateNames::default()
             },
             ..gated_config()
         };
-        let _ = FeatureGates::for_config(&config);
+        assert_eq!(
+            FeatureGates::for_config(&config).validate(),
+            Err(("views", ""))
+        );
+    }
+
+    #[test]
+    fn validate_ignores_inactive_invalid_names() {
+        // An invalid name on a kind that isn't gated never reaches the
+        // output, so it must not fail validation.
+        let config = CodeGenConfig {
+            feature_gate_names: FeatureGateNames {
+                reflect: "not valid".to_string(),
+                ..FeatureGateNames::default()
+            },
+            ..gated_config() // generate_reflection is off in gated_config
+        };
+        let gates = FeatureGates::for_config(&config);
+        assert_eq!(gates.reflect, None);
+        assert_eq!(gates.validate(), Ok(()));
     }
 
     #[test]
