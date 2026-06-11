@@ -189,8 +189,12 @@ fn test_merge_appends_repeated_fields() {
         b.tags = vec!["y".into(), "z".into()];
         b.encode_to_vec()
     };
-    a.merge(&mut b_bytes.as_slice(), buffa::RECURSION_LIMIT)
-        .unwrap();
+    let limit = core::cell::Cell::new(buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
+    a.merge(
+        &mut b_bytes.as_slice(),
+        buffa::DecodeContext::new(buffa::RECURSION_LIMIT, &limit),
+    )
+    .unwrap();
     assert_eq!(a.tags, vec!["x", "y", "z"]);
 }
 

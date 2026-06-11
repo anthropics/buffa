@@ -372,7 +372,7 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     // Required methods (implemented by codegen per message type):
     fn compute_size(&self, cache: &mut SizeCache) -> u32;  // Pass 1
     fn write_to(&self, cache: &mut SizeCache, buf: &mut impl BufMut);  // Pass 2
-    fn merge_field(&mut self, tag: Tag, buf: &mut impl Buf, depth: u32)
+    fn merge_field(&mut self, tag: Tag, buf: &mut impl Buf, ctx: DecodeContext<'_>)
         -> Result<(), DecodeError>;     // Per-field decode dispatch
     fn clear(&mut self);
 
@@ -381,7 +381,7 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     fn encode_to_vec(&self) -> Vec<u8>;
     fn encode_to_bytes(&self) -> Bytes;
     fn decode_from_slice(data: &[u8]) -> Result<Self, DecodeError>;
-    fn merge(&mut self, buf: &mut impl Buf, depth: u32) -> Result<(), DecodeError>;
+    fn merge(&mut self, buf: &mut impl Buf, ctx: DecodeContext<'_>) -> Result<(), DecodeError>;
     fn merge_from_slice(&mut self, data: &[u8]) -> Result<(), DecodeError>;
     // ... + length-delimited and io::Read variants
 }

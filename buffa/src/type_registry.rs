@@ -730,7 +730,7 @@ mod tests {
                 &mut self,
                 tag: crate::encoding::Tag,
                 buf: &mut impl bytes::Buf,
-                _: u32,
+                _: crate::DecodeContext<'_>,
             ) -> Result<(), crate::DecodeError> {
                 if tag.field_number() == 1 && tag.wire_type() == crate::encoding::WireType::Varint {
                     self.n = crate::encoding::decode_varint(buf)? as i32;

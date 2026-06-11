@@ -55,7 +55,7 @@ fn test_owned_view_wrapper_view_escape_hatch() {
 fn test_owned_view_wrapper_owned_roundtrip() {
     let msg = sample_person();
     let owned = PersonOwnedView::from_owned(&msg).expect("from_owned");
-    let back: Person = owned.to_owned_message();
+    let back: Person = owned.to_owned_message().unwrap();
     assert_eq!(back, msg);
 }
 
@@ -183,7 +183,7 @@ mod view_family {
         let raw = handle.as_ref();
         let _view = raw.reborrow();
         let len = raw.bytes().len();
-        (raw.to_owned_message(), len)
+        (raw.to_owned_message().unwrap(), len)
     }
 
     #[test]

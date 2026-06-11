@@ -363,7 +363,7 @@ mod tests {
 
         // Direct trait path: to_owned_from_source(Some(&buf)) → slice_ref.
         let view = AnyView::decode_view(&buf).unwrap();
-        let owned = view.to_owned_from_source(Some(&buf));
+        let owned = view.to_owned_from_source(Some(&buf)).unwrap();
         assert_eq!(owned.value, src.value);
         let value_ptr = owned.value.as_ptr() as usize;
         let buf_range = (buf.as_ptr() as usize)..(buf.as_ptr() as usize + buf.len());
@@ -376,12 +376,12 @@ mod tests {
         // through to_owned_from_source(Some(&self.bytes)), so the bytes field
         // is a zero-copy slice_ref into the retained buffer.
         let ov = OwnedView::<AnyView<'static>>::decode(buf.clone()).unwrap();
-        let owned2 = ov.to_owned_message();
+        let owned2 = ov.to_owned_message().unwrap();
         assert_eq!(owned2.value, src.value);
         assert!(buf_range.contains(&(owned2.value.as_ptr() as usize)));
 
         // No-source path still copies (correct, distinct allocation).
-        let copied = view.to_owned_message();
+        let copied = view.to_owned_message().unwrap();
         assert_eq!(copied.value, src.value);
         assert!(!buf_range.contains(&(copied.value.as_ptr() as usize)));
     }

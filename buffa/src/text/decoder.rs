@@ -747,7 +747,7 @@ mod tests {
             &mut self,
             tag: crate::encoding::Tag,
             buf: &mut impl bytes::Buf,
-            _depth: u32,
+            _ctx: crate::DecodeContext<'_>,
         ) -> Result<(), crate::DecodeError> {
             crate::encoding::skip_field(tag, buf)
         }
@@ -1268,7 +1268,7 @@ mod tests {
                 &mut self,
                 t: crate::encoding::Tag,
                 b: &mut impl bytes::Buf,
-                _: u32,
+                _: crate::DecodeContext<'_>,
             ) -> Result<(), crate::DecodeError> {
                 crate::encoding::skip_field(t, b)
             }

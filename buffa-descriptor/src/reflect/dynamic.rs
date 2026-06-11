@@ -34,7 +34,7 @@ use buffa::types::{
     sint64_encoded_len, uint32_encoded_len, uint64_encoded_len,
 };
 use buffa::unknown_fields::UnknownFields;
-use buffa::{DecodeError, Message, RECURSION_LIMIT};
+use buffa::{DecodeContext, DecodeError, Message, DEFAULT_UNKNOWN_FIELD_LIMIT, RECURSION_LIMIT};
 
 use super::message::{ReflectCow, ReflectMessage, ReflectMessageMut};
 use super::value::{MapKey, MapValue, Value, ValueRef};
@@ -198,14 +198,15 @@ impl DynamicMessage {
     ///
     /// Returns a [`DecodeError`] if the wire data is malformed.
     pub fn merge(&mut self, bytes: &[u8]) -> Result<(), DecodeError> {
+        let limit = core::cell::Cell::new(DEFAULT_UNKNOWN_FIELD_LIMIT);
         let mut buf = bytes;
-        self.merge_buf(&mut buf, RECURSION_LIMIT)
+        self.merge_buf(&mut buf, DecodeContext::new(RECURSION_LIMIT, &limit))
     }
 
-    fn merge_buf(&mut self, buf: &mut impl Buf, depth: u32) -> Result<(), DecodeError> {
+    fn merge_buf(&mut self, buf: &mut impl Buf, ctx: DecodeContext<'_>) -> Result<(), DecodeError> {
         while buf.has_remaining() {
             let tag = Tag::decode(buf)?;
-            self.merge_one_field(tag, buf, depth)?;
+            self.merge_one_field(tag, buf, ctx)?;
         }
         Ok(())
     }
@@ -215,7 +216,7 @@ impl DynamicMessage {
         &mut self,
         buf: &mut impl Buf,
         group_field_number: u32,
-        depth: u32,
+        ctx: DecodeContext<'_>,
     ) -> Result<(), DecodeError> {
         loop {
             let tag = Tag::decode(buf)?;
@@ -225,7 +226,7 @@ impl DynamicMessage {
                 }
                 return Ok(());
             }
-            self.merge_one_field(tag, buf, depth)?;
+            self.merge_one_field(tag, buf, ctx)?;
         }
     }
 
@@ -233,7 +234,7 @@ impl DynamicMessage {
         &mut self,
         tag: Tag,
         buf: &mut impl Buf,
-        depth: u32,
+        ctx: DecodeContext<'_>,
     ) -> Result<(), DecodeError> {
         let number = tag.field_number();
         // Take the FieldDescriptor by index to avoid borrowing the
@@ -246,7 +247,7 @@ impl DynamicMessage {
         let (kind, oneof_index, delimited) = match self.field_or_extension(number) {
             Some(fd) => (fd.kind, fd.oneof_index, fd.delimited),
             None => {
-                self.unknown.push(decode_unknown_field(tag, buf, depth)?);
+                self.unknown.push(decode_unknown_field(tag, buf, ctx)?);
                 return Ok(());
             }
         };
@@ -259,7 +260,7 @@ impl DynamicMessage {
         // varint payload for a Fixed32 field) and silently corrupt every
         // subsequent field in the stream.
         if !wire_type_compatible(kind, tag.wire_type(), delimited) {
-            self.unknown.push(decode_unknown_field(tag, buf, depth)?);
+            self.unknown.push(decode_unknown_field(tag, buf, ctx)?);
             return Ok(());
         }
         match kind {
@@ -276,17 +277,17 @@ impl DynamicMessage {
                 if let SingularKind::Message(midx) = sk {
                     if let Some(Value::Message(_)) = self.fields.get(&number) {
                         // Decode the new bytes into the existing message.
-                        return self.merge_into_existing_message(number, midx, tag, buf, depth);
+                        return self.merge_into_existing_message(number, midx, tag, buf, ctx);
                     }
                 }
-                let v = self.decode_element(sk, tag, buf, depth)?;
+                let v = self.decode_element(sk, tag, buf, ctx)?;
                 self.fields.insert(number, v);
             }
             FieldKind::List(sk) => {
-                self.merge_list_field(number, sk, tag, buf, depth)?;
+                self.merge_list_field(number, sk, tag, buf, ctx)?;
             }
             FieldKind::Map { key, value } => {
-                self.merge_map_field(number, key, value, tag, buf, depth)?;
+                self.merge_map_field(number, key, value, tag, buf, ctx)?;
             }
         }
         Ok(())
@@ -319,12 +320,10 @@ impl DynamicMessage {
         midx: MessageIndex,
         tag: Tag,
         buf: &mut impl Buf,
-        depth: u32,
+        ctx: DecodeContext<'_>,
     ) -> Result<(), DecodeError> {
         let _ = midx;
-        let depth = depth
-            .checked_sub(1)
-            .ok_or(DecodeError::RecursionLimitExceeded)?;
+        let ctx = ctx.descend()?;
         // Take the existing message out of the map so we can borrow `self`
         // immutably for the descriptor lookup while merging into it.
         let Some(Value::Message(mut existing)) = self.fields.remove(&number) else {
@@ -339,9 +338,9 @@ impl DynamicMessage {
                     return Err(DecodeError::UnexpectedEof);
                 }
                 let mut sub = buf.copy_to_bytes(len);
-                existing.merge_buf(&mut sub, depth)
+                existing.merge_buf(&mut sub, ctx)
             }
-            WireType::StartGroup => existing.merge_group(buf, tag.field_number(), depth),
+            WireType::StartGroup => existing.merge_group(buf, tag.field_number(), ctx),
             wt => Err(DecodeError::WireTypeMismatch {
                 field_number: number,
                 expected: WireType::LengthDelimited as u8,
@@ -360,7 +359,7 @@ impl DynamicMessage {
         elem: SingularKind,
         tag: Tag,
         buf: &mut impl Buf,
-        depth: u32,
+        ctx: DecodeContext<'_>,
     ) -> Result<(), DecodeError> {
         let list = match self
             .fields
@@ -398,7 +397,7 @@ impl DynamicMessage {
         // we need first.
         // SAFETY: re-borrow `self.fields` after the descriptor look-up. Since
         // we already extracted `elem` as a Copy, no aliasing occurs.
-        let v = self.decode_element_no_alias(elem, tag, buf, depth)?;
+        let v = self.decode_element_no_alias(elem, tag, buf, ctx)?;
         // Re-fetch the list — `decode_element_no_alias` may have allocated
         // entries in `self.fields` if `elem` is a message... it didn't, but
         // the borrow checker doesn't know that. Re-fetch is cheap.
@@ -417,13 +416,13 @@ impl DynamicMessage {
         value_kind: SingularKind,
         tag: Tag,
         buf: &mut impl Buf,
-        depth: u32,
+        ctx: DecodeContext<'_>,
     ) -> Result<(), DecodeError> {
         // A map entry is a length-delimited message with fields 1 (key) and
         // 2 (value).
         if tag.wire_type() != WireType::LengthDelimited {
             // Unexpected wire type — skip and preserve as unknown.
-            self.unknown.push(decode_unknown_field(tag, buf, depth)?);
+            self.unknown.push(decode_unknown_field(tag, buf, ctx)?);
             return Ok(());
         }
         let len = decode_varint(buf)?;
@@ -439,14 +438,19 @@ impl DynamicMessage {
             match entry_tag.field_number() {
                 1 => key = Some(decode_map_key(key_ty, entry_tag, &mut entry)?),
                 2 => {
+                    // The map entry is a sub-message on the wire, so it
+                    // consumes one depth level. (The previous code used
+                    // `depth.saturating_sub(1)` here, which let scalar map
+                    // values through at exactly depth 0; erroring one level
+                    // earlier is intentional.)
                     value = Some(self.decode_element_no_alias(
                         value_kind,
                         entry_tag,
                         &mut entry,
-                        depth.saturating_sub(1),
+                        ctx.descend()?,
                     )?);
                 }
-                _ => skip_field_depth(entry_tag, &mut entry, depth)?,
+                _ => skip_field_depth(entry_tag, &mut entry, ctx.depth())?,
             }
         }
         let k = key.unwrap_or_else(|| default_map_key(key_ty));
@@ -475,9 +479,9 @@ impl DynamicMessage {
         kind: SingularKind,
         tag: Tag,
         buf: &mut impl Buf,
-        depth: u32,
+        ctx: DecodeContext<'_>,
     ) -> Result<Value, DecodeError> {
-        self.decode_element_no_alias(kind, tag, buf, depth)
+        self.decode_element_no_alias(kind, tag, buf, ctx)
     }
 
     /// Decode one singular element. Named to distinguish call sites where
@@ -487,7 +491,7 @@ impl DynamicMessage {
         kind: SingularKind,
         tag: Tag,
         buf: &mut impl Buf,
-        depth: u32,
+        ctx: DecodeContext<'_>,
     ) -> Result<Value, DecodeError> {
         match kind {
             SingularKind::Scalar(s) => decode_scalar(s, tag.wire_type(), buf),
@@ -497,9 +501,7 @@ impl DynamicMessage {
             }
             SingularKind::Message(midx) => {
                 let mut nested = DynamicMessage::new(Arc::clone(&self.pool), midx);
-                let depth = depth
-                    .checked_sub(1)
-                    .ok_or(DecodeError::RecursionLimitExceeded)?;
+                let ctx = ctx.descend()?;
                 match tag.wire_type() {
                     WireType::LengthDelimited => {
                         let len = decode_varint(buf)?;
@@ -508,10 +510,10 @@ impl DynamicMessage {
                             return Err(DecodeError::UnexpectedEof);
                         }
                         let mut sub = buf.copy_to_bytes(len);
-                        nested.merge_buf(&mut sub, depth)?;
+                        nested.merge_buf(&mut sub, ctx)?;
                     }
                     WireType::StartGroup => {
-                        nested.merge_group(buf, tag.field_number(), depth)?;
+                        nested.merge_group(buf, tag.field_number(), ctx)?;
                     }
                     _ => {
                         return Err(DecodeError::WireTypeMismatch {

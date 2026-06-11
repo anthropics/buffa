@@ -8,6 +8,17 @@ pub enum Mood {
     MOOD_FRIENDLY = 1i32,
     MOOD_FORMAL = 2i32,
 }
+impl Mood {
+    ///Idiomatic alias for [`Self::MOOD_UNSPECIFIED`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const Unspecified: Self = Self::MOOD_UNSPECIFIED;
+    ///Idiomatic alias for [`Self::MOOD_FRIENDLY`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const Friendly: Self = Self::MOOD_FRIENDLY;
+    ///Idiomatic alias for [`Self::MOOD_FORMAL`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const Formal: Self = Self::MOOD_FORMAL;
+}
 impl ::core::default::Default for Mood {
     fn default() -> Self {
         Self::MOOD_UNSPECIFIED
@@ -198,6 +209,12 @@ impl ::buffa::DefaultInstance for Greeting {
         VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
     }
 }
+impl ::buffa::MessageName for Greeting {
+    const PACKAGE: &'static str = "example.v1";
+    const NAME: &'static str = "Greeting";
+    const FULL_NAME: &'static str = "example.v1.Greeting";
+    const TYPE_URL: &'static str = "type.googleapis.com/example.v1.Greeting";
+}
 impl ::buffa::Message for Greeting {
     /// Returns the total encoded size in bytes.
     ///
@@ -308,7 +325,7 @@ impl ::buffa::Message for Greeting {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -336,7 +353,7 @@ impl ::buffa::Message for Greeting {
                 ::buffa::Message::merge_length_delimited(
                     self.at.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             3u32 => {
@@ -389,7 +406,7 @@ impl ::buffa::Message for Greeting {
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -649,20 +666,22 @@ pub mod __buffa {
             pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
         }
         impl<'a> GreetingView<'a> {
-            /// Decode from `buf`, enforcing a recursion depth limit for nested messages.
+            /// Decode from `buf` under the limits carried by `ctx` (recursion
+            /// depth and the shared unknown-field allowance).
             ///
-            /// Called by [`::buffa::MessageView::decode_view`] with [`::buffa::RECURSION_LIMIT`]
-            /// and by generated sub-message decode arms with `depth - 1`.
+            /// Called by [`::buffa::MessageView::decode_view`] with a fresh
+            /// default context and by generated sub-message decode arms with
+            /// `ctx.descend()?`.
             ///
             /// **Not part of the public API.** Named with a leading underscore to
             /// signal that it is for generated-code use only.
             #[doc(hidden)]
-            pub fn _decode_depth(
+            pub fn _decode_ctx(
                 buf: &'a [u8],
-                depth: u32,
+                ctx: ::buffa::DecodeContext<'_>,
             ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
                 let mut view = Self::default();
-                view._merge_into_view(buf, depth)?;
+                view._merge_into_view(buf, ctx)?;
                 ::core::result::Result::Ok(view)
             }
             /// Merge fields from `buf` into this view (proto merge semantics).
@@ -676,9 +695,9 @@ pub mod __buffa {
             pub fn _merge_into_view(
                 &mut self,
                 buf: &'a [u8],
-                depth: u32,
+                ctx: ::buffa::DecodeContext<'_>,
             ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-                let _ = depth;
+                let _ = ctx;
                 #[allow(unused_variables)]
                 let view = self;
                 let mut cur: &'a [u8] = buf;
@@ -708,17 +727,15 @@ pub mod __buffa {
                                     actual: tag.wire_type() as u8,
                                 });
                             }
-                            if depth == 0 {
-                                return Err(::buffa::DecodeError::RecursionLimitExceeded);
-                            }
+                            let __sub_ctx = ctx.descend()?;
                             let sub = ::buffa::types::borrow_bytes(&mut cur)?;
                             match view.at.as_mut() {
-                                Some(existing) => existing._merge_into_view(sub, depth - 1)?,
+                                Some(existing) => existing._merge_into_view(sub, __sub_ctx)?,
                                 None => {
                                     view.at = ::buffa::MessageFieldView::set(
-                                        ::buffa_types::google::protobuf::__buffa::view::TimestampView::_decode_depth(
+                                        ::buffa_types::google::protobuf::__buffa::view::TimestampView::_decode_ctx(
                                             sub,
-                                            depth - 1,
+                                            __sub_ctx,
                                         )?,
                                     );
                                 }
@@ -779,10 +796,14 @@ pub mod __buffa {
                             );
                         }
                         _ => {
-                            ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
+                            ::buffa::encoding::skip_field_depth(
+                                tag,
+                                &mut cur,
+                                ctx.depth(),
+                            )?;
                             let span_len = before_tag.len() - cur.len();
                             view.__buffa_unknown_fields
-                                .push_raw(&before_tag[..span_len]);
+                                .push_record(before_tag, span_len, ctx)?;
                         }
                     }
                 }
@@ -794,32 +815,40 @@ pub mod __buffa {
             fn decode_view(
                 buf: &'a [u8],
             ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-                Self::_decode_depth(buf, ::buffa::RECURSION_LIMIT)
+                let __limit = ::core::cell::Cell::new(
+                    ::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT,
+                );
+                Self::_decode_ctx(
+                    buf,
+                    ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit),
+                )
             }
-            fn decode_view_with_limit(
+            fn decode_view_with_ctx(
                 buf: &'a [u8],
-                depth: u32,
+                ctx: ::buffa::DecodeContext<'_>,
             ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-                Self::_decode_depth(buf, depth)
+                Self::_decode_ctx(buf, ctx)
             }
-            fn to_owned_message(&self) -> super::super::Greeting {
+            fn to_owned_message(
+                &self,
+            ) -> ::core::result::Result<super::super::Greeting, ::buffa::DecodeError> {
                 self.to_owned_from_source(None)
             }
             #[allow(clippy::useless_conversion, clippy::needless_update)]
             fn to_owned_from_source(
                 &self,
                 __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
-            ) -> super::super::Greeting {
+            ) -> ::core::result::Result<super::super::Greeting, ::buffa::DecodeError> {
                 #[allow(unused_imports)]
                 use ::buffa::alloc::string::ToString as _;
                 let _ = __buffa_src;
-                super::super::Greeting {
+                ::core::result::Result::Ok(super::super::Greeting {
                     text: self.text.to_string(),
                     at: match self.at.as_option() {
                         Some(v) => {
                             ::buffa::MessageField::<
                                 ::buffa_types::google::protobuf::Timestamp,
-                            >::some(v.to_owned_from_source(__buffa_src))
+                            >::some(v.to_owned_from_source(__buffa_src)?)
                         }
                         None => ::buffa::MessageField::none(),
                     },
@@ -846,11 +875,10 @@ pub mod __buffa {
                         }),
                     __buffa_unknown_fields: self
                         .__buffa_unknown_fields
-                        .to_owned()
-                        .unwrap_or_default()
+                        .to_owned()?
                         .into(),
                     ..::core::default::Default::default()
-                }
+                })
             }
         }
         impl<'a> ::buffa::ViewEncode<'a> for GreetingView<'a> {
@@ -967,6 +995,61 @@ pub mod __buffa {
                 self.__buffa_unknown_fields.write_to(buf);
             }
         }
+        /// Serializes this view as protobuf JSON.
+        ///
+        /// Implicit-presence fields with default values are omitted, `required`
+        /// fields are always emitted, explicit-presence (`optional`) fields are
+        /// emitted only when set, bytes fields are base64-encoded, and enum
+        /// values are their proto name strings.
+        ///
+        /// This impl uses `serialize_map(None)` because the number of emitted
+        /// fields depends on default-omission rules; serializers that require
+        /// known map lengths (e.g. `bincode`) will return a runtime error.
+        /// Use the owned message type for those formats.
+        impl<'__a> ::serde::Serialize for GreetingView<'__a> {
+            fn serialize<__S: ::serde::Serializer>(
+                &self,
+                __s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
+                use ::serde::ser::SerializeMap as _;
+                let mut __map = __s.serialize_map(::core::option::Option::None)?;
+                if !::buffa::json_helpers::skip_if::is_empty_str(self.text) {
+                    __map.serialize_entry("text", self.text)?;
+                }
+                {
+                    if let ::core::option::Option::Some(__v) = self.at.as_option() {
+                        __map.serialize_entry("at", __v)?;
+                    }
+                }
+                if !::buffa::json_helpers::skip_if::is_default_enum_value(&self.mood) {
+                    __map.serialize_entry("mood", &self.mood)?;
+                }
+                if !self.tags.is_empty() {
+                    __map.serialize_entry("tags", &*self.tags)?;
+                }
+                if let ::core::option::Option::Some(ref __ov) = self.recipient {
+                    match __ov {
+                        super::super::__buffa::view::oneof::greeting::Recipient::Name(
+                            v,
+                        ) => {
+                            __map.serialize_entry("name", v)?;
+                        }
+                        super::super::__buffa::view::oneof::greeting::Recipient::Everyone(
+                            v,
+                        ) => {
+                            __map.serialize_entry("everyone", v)?;
+                        }
+                    }
+                }
+                __map.end()
+            }
+        }
+        impl<'a> ::buffa::MessageName for GreetingView<'a> {
+            const PACKAGE: &'static str = "example.v1";
+            const NAME: &'static str = "Greeting";
+            const FULL_NAME: &'static str = "example.v1.Greeting";
+            const TYPE_URL: &'static str = "type.googleapis.com/example.v1.Greeting";
+        }
         impl<'v> ::buffa::DefaultViewInstance for GreetingView<'v> {
             fn default_view_instance<'a>() -> &'a Self
             where
@@ -983,6 +1066,158 @@ pub mod __buffa {
             type Reborrowed<'b> = GreetingView<'b>;
             fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
                 this
+            }
+        }
+        /** Self-contained, `'static` owned view of a `Greeting` message.
+
+ Wraps [`::buffa::OwnedView`]`<`[`GreetingView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
+
+ Field accessors return borrows tied to `&self`. Use [`Self::view`] to get the full [`GreetingView`] when you need struct patterns, iteration helpers, or to pass the view to lifetime-parameterised code.*/
+        #[derive(Clone, Debug)]
+        pub struct GreetingOwnedView(::buffa::OwnedView<GreetingView<'static>>);
+        impl GreetingOwnedView {
+            /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
+            ///
+            /// The view borrows directly from the buffer's data; the buffer is
+            /// retained inside the returned handle.
+            ///
+            /// # Errors
+            ///
+            /// Returns [`::buffa::DecodeError`] if the buffer contains invalid
+            /// protobuf data.
+            pub fn decode(
+                bytes: ::buffa::bytes::Bytes,
+            ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+                ::core::result::Result::Ok(
+                    GreetingOwnedView(::buffa::OwnedView::decode(bytes)?),
+                )
+            }
+            /// Decode with custom [`::buffa::DecodeOptions`] (recursion limit,
+            /// max message size).
+            ///
+            /// # Errors
+            ///
+            /// Returns [`::buffa::DecodeError`] if the buffer is invalid or
+            /// exceeds the configured limits.
+            pub fn decode_with_options(
+                bytes: ::buffa::bytes::Bytes,
+                opts: &::buffa::DecodeOptions,
+            ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+                ::core::result::Result::Ok(
+                    GreetingOwnedView(
+                        ::buffa::OwnedView::decode_with_options(bytes, opts)?,
+                    ),
+                )
+            }
+            /// Build from an owned message via an encode → decode round-trip.
+            ///
+            /// # Errors
+            ///
+            /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+            /// somehow invalid (should not happen for well-formed messages).
+            pub fn from_owned(
+                msg: &super::super::Greeting,
+            ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+                ::core::result::Result::Ok(
+                    GreetingOwnedView(::buffa::OwnedView::from_owned(msg)?),
+                )
+            }
+            /// Borrow the full [`GreetingView`] with its lifetime tied to `&self`.
+            #[must_use]
+            pub fn view(&self) -> &GreetingView<'_> {
+                self.0.reborrow()
+            }
+            /// Convert to the owned message type.
+            ///
+            /// # Errors
+            ///
+            /// Returns an error if re-materializing preserved unknown fields
+            /// fails (e.g. the unknown-field limit is exceeded).
+            pub fn to_owned_message(
+                &self,
+            ) -> ::core::result::Result<super::super::Greeting, ::buffa::DecodeError> {
+                self.0.to_owned_message()
+            }
+            /// The underlying bytes buffer.
+            #[must_use]
+            pub fn bytes(&self) -> &::buffa::bytes::Bytes {
+                self.0.bytes()
+            }
+            /// Consume the handle, returning the underlying bytes buffer.
+            #[must_use]
+            pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
+                self.0.into_bytes()
+            }
+            /// The greeting text.
+            ///
+            /// Field 1: `text`
+            #[must_use]
+            pub fn text(&self) -> &'_ str {
+                self.0.reborrow().text
+            }
+            /// When the greeting was created.
+            ///
+            /// Field 2: `at`
+            #[must_use]
+            pub fn at(
+                &self,
+            ) -> &::buffa::MessageFieldView<
+                ::buffa_types::google::protobuf::__buffa::view::TimestampView<'_>,
+            > {
+                &self.0.reborrow().at
+            }
+            /// The mood of the greeting.
+            ///
+            /// Field 3: `mood`
+            #[must_use]
+            pub fn mood(&self) -> ::buffa::EnumValue<super::super::Mood> {
+                self.0.reborrow().mood
+            }
+            /// Tags applied to the greeting.
+            ///
+            /// Field 20: `tags`
+            #[must_use]
+            pub fn tags(&self) -> &::buffa::RepeatedView<'_, &'_ str> {
+                &self.0.reborrow().tags
+            }
+            /// Oneof `recipient`.
+            #[must_use]
+            pub fn recipient(
+                &self,
+            ) -> ::core::option::Option<
+                &super::super::__buffa::view::oneof::greeting::Recipient<'_>,
+            > {
+                self.0.reborrow().recipient.as_ref()
+            }
+        }
+        impl ::core::convert::From<::buffa::OwnedView<GreetingView<'static>>>
+        for GreetingOwnedView {
+            fn from(inner: ::buffa::OwnedView<GreetingView<'static>>) -> Self {
+                GreetingOwnedView(inner)
+            }
+        }
+        impl ::core::convert::From<GreetingOwnedView>
+        for ::buffa::OwnedView<GreetingView<'static>> {
+            fn from(wrapper: GreetingOwnedView) -> Self {
+                wrapper.0
+            }
+        }
+        impl ::core::convert::AsRef<::buffa::OwnedView<GreetingView<'static>>>
+        for GreetingOwnedView {
+            fn as_ref(&self) -> &::buffa::OwnedView<GreetingView<'static>> {
+                &self.0
+            }
+        }
+        impl ::buffa::HasMessageView for super::super::Greeting {
+            type View<'a> = GreetingView<'a>;
+            type ViewHandle = GreetingOwnedView;
+        }
+        impl ::serde::Serialize for GreetingOwnedView {
+            fn serialize<__S: ::serde::Serializer>(
+                &self,
+                __s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
+                ::serde::Serialize::serialize(&self.0, __s)
             }
         }
         pub mod oneof {
@@ -1032,10 +1267,6 @@ pub mod __buffa {
             }
         }
     }
-    pub mod ext {
-        #[allow(unused_imports)]
-        use super::*;
-    }
     /// Register this package's `Any` type entries and extension entries.
     pub fn register_types(reg: &mut ::buffa::type_registry::TypeRegistry) {
         reg.register_json_any(super::__GREETING_JSON_ANY);
@@ -1043,5 +1274,7 @@ pub mod __buffa {
 }
 #[doc(inline)]
 pub use self::__buffa::view::GreetingView;
+#[doc(inline)]
+pub use self::__buffa::view::GreetingOwnedView;
 #[doc(inline)]
 pub use self::__buffa::register_types;

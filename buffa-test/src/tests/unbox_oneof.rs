@@ -103,7 +103,7 @@ fn inline_variant_view_to_owned_roundtrip() {
     // (oneof_variant_to_owned in view.rs branches on variant_boxed).
     let bytes = envelope_small(13).encode_to_vec();
     let view = crate::unbox_oneof::EnvelopeView::decode_view(&bytes).expect("decode_view");
-    let owned = view.to_owned_message();
+    let owned = view.to_owned_message().unwrap();
     match owned.body {
         Some(Body::Small(s)) => assert_eq!(s.value, 13),
         other => panic!("expected Body::Small, got {other:?}"),

@@ -277,7 +277,7 @@ impl ::buffa::Message for LogEntry {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -295,7 +295,7 @@ impl ::buffa::Message for LogEntry {
                 ::buffa::Message::merge_length_delimited(
                     self.timestamp.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             2u32 => {
@@ -341,7 +341,7 @@ impl ::buffa::Message for LogEntry {
                 ::buffa::Message::merge_length_delimited(
                     self.context.get_or_insert_default(),
                     buf,
-                    depth,
+                    ctx,
                 )?;
             }
             6u32 => {
@@ -391,7 +391,11 @@ impl ::buffa::Message for LogEntry {
                             val = ::buffa::types::decode_string(buf)?;
                         }
                         _ => {
-                            ::buffa::encoding::skip_field_depth(entry_tag, buf, depth)?;
+                            ::buffa::encoding::skip_field_depth(
+                                entry_tag,
+                                buf,
+                                ctx.depth(),
+                            )?;
                         }
                     }
                 }
@@ -409,7 +413,7 @@ impl ::buffa::Message for LogEntry {
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
@@ -509,7 +513,7 @@ impl ::buffa::Message for LogBatch {
         &mut self,
         tag: ::buffa::encoding::Tag,
         buf: &mut impl ::buffa::bytes::Buf,
-        depth: u32,
+        ctx: ::buffa::DecodeContext<'_>,
     ) -> ::core::result::Result<(), ::buffa::DecodeError> {
         #[allow(unused_imports)]
         use ::buffa::bytes::Buf as _;
@@ -525,12 +529,12 @@ impl ::buffa::Message for LogBatch {
                     });
                 }
                 let mut elem = ::core::default::Default::default();
-                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.entries.push(elem);
             }
             _ => {
                 self.__buffa_unknown_fields
-                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
             }
         }
         ::core::result::Result::Ok(())
