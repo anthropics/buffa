@@ -383,6 +383,111 @@ fn test_field_attribute_reaches_oneof_variant() {
     );
 }
 
+#[test]
+fn test_oneof_attribute_on_oneof_not_message_or_enum() {
+    let mut file = proto3_file("mix.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type
+        .push(oneof_message("Msg", "payload", &["a", "b"]));
+    file.enum_type.push(EnumDescriptorProto {
+        name: Some("Color".to_string()),
+        value: vec![enum_value("RED", 0)],
+        ..Default::default()
+    });
+    let config = CodeGenConfig {
+        generate_views: false,
+        oneof_attributes: vec![(".".to_string(), "#[derive(serde::Serialize)]".to_string())],
+        ..CodeGenConfig::default()
+    };
+    let files = generate(&[file], &["mix.proto".to_string()], &config).expect("should generate");
+    let content = &joined(&files);
+    // Appears exactly once: on the oneof enum, not on the message struct or the
+    // plain enum.
+    assert_eq!(
+        content.matches("derive(serde::Serialize)").count(),
+        1,
+        "oneof_attribute should appear only on the oneof enum: {content}"
+    );
+}
+
+#[test]
+fn test_oneof_attribute_specific_path_matches_one_oneof() {
+    let mut file = proto3_file("two.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type
+        .push(oneof_message("First", "payload", &["a"]));
+    file.message_type
+        .push(oneof_message("Second", "other", &["b"]));
+    let config = CodeGenConfig {
+        generate_views: false,
+        oneof_attributes: vec![(
+            ".pkg.First.payload".to_string(),
+            "#[derive(serde::Serialize)]".to_string(),
+        )],
+        ..CodeGenConfig::default()
+    };
+    let files = generate(&[file], &["two.proto".to_string()], &config).expect("should generate");
+    let content = &joined(&files);
+    assert_eq!(
+        content.matches("derive(serde::Serialize)").count(),
+        1,
+        "exact-path rule should match only First.payload: {content}"
+    );
+    let enum_pos = content.find("pub enum Payload").expect("oneof enum");
+    let attr_pos = content.find("derive(serde::Serialize)").expect("attr");
+    assert!(
+        attr_pos < enum_pos && enum_pos - attr_pos < 200,
+        "attribute should sit on the Payload enum: {content}"
+    );
+}
+
+#[test]
+fn test_oneof_attribute_owned_enum_only_with_views() {
+    // With views enabled, the attribute must land on the owned oneof enum
+    // only — the view-of-oneof enum receives no custom attributes (the
+    // documented family-wide scoping).
+    let mut file = proto3_file("viewed.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type
+        .push(oneof_message("Msg", "payload", &["a", "b"]));
+    let config = CodeGenConfig {
+        generate_views: true,
+        oneof_attributes: vec![(".".to_string(), "#[derive(serde::Serialize)]".to_string())],
+        ..CodeGenConfig::default()
+    };
+    let files = generate(&[file], &["viewed.proto".to_string()], &config).expect("should generate");
+    let content = &joined(&files);
+    assert_eq!(
+        content.matches("derive(serde::Serialize)").count(),
+        1,
+        "attribute must not leak onto the view oneof enum: {content}"
+    );
+}
+
+#[test]
+fn test_oneof_attribute_stacks_with_type_attribute() {
+    let mut file = proto3_file("stack.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type
+        .push(oneof_message("Msg", "payload", &["a"]));
+    let config = CodeGenConfig {
+        generate_views: false,
+        type_attributes: vec![(".".to_string(), "#[derive(Hash)]".to_string())],
+        oneof_attributes: vec![(".".to_string(), "#[derive(serde::Serialize)]".to_string())],
+        ..CodeGenConfig::default()
+    };
+    let files = generate(&[file], &["stack.proto".to_string()], &config).expect("should generate");
+    let content = &joined(&files);
+    // type_attribute hits the message struct and the oneof enum; the
+    // oneof_attribute stacks on the enum alongside it.
+    assert_eq!(content.matches("derive(Hash)").count(), 2, "{content}");
+    assert_eq!(
+        content.matches("derive(serde::Serialize)").count(),
+        1,
+        "{content}"
+    );
+}
+
 // ── malformed attributes fail loudly ────────────────────────────────
 
 #[test]

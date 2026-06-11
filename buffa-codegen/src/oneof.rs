@@ -520,6 +520,8 @@ pub fn generate_oneof_enum(
     } else {
         quote! {}
     };
+    let custom_oneof_attrs =
+        CodeGenContext::matching_attributes(&ctx.config.oneof_attributes, &oneof_fqn)?;
 
     // Variants whose field is `[debug_redact = true]` print a placeholder
     // instead of their payload. The `Debug` derive is swapped for a manual
@@ -569,6 +571,7 @@ pub fn generate_oneof_enum(
         #arbitrary_derive
         #large_variant_allow
         #custom_type_attrs
+        #custom_oneof_attrs
         pub enum #rust_enum_ident {
             #(#variants,)*
         }

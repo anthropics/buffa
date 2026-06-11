@@ -16,6 +16,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   instead of `json`. Defaults are unchanged; the knob is inert unless gating is
   enabled.
 
+- **`buffa-build` / `buffa-codegen`: `oneof_attribute`** (#166) — attach Rust
+  attributes to generated oneof enums only (not message structs, not regular
+  enums), matched against the oneof's fully-qualified path
+  (`.pkg.Message.oneof_name`) with the same prefix rules as `type_attribute`.
+  Completes the `type` / `message` / `enum` / `field` attribute family for
+  the case where a oneof needs a different attribute set than the
+  surrounding types.
+
 - **Zero-copy views enforce the unknown-field limit and coalesce adjacent
   unknown records.** View decoding previously stored one borrowed span (16
   bytes) per unknown wire record with no bound beyond the input size. Spans
