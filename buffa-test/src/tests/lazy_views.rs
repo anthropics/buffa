@@ -415,7 +415,13 @@ fn lean_lazy_drops_unknown_fields() {
             live: true,
         }
         .into(),
-        history: vec![Counters::default(), Counters { hits: 1, ..Default::default() }],
+        history: vec![
+            Counters::default(),
+            Counters {
+                hits: 1,
+                ..Default::default()
+            },
+        ],
         label: "lean".into(),
     };
     let mut bytes = crate::tests::varint_field(90, 5);
