@@ -56,6 +56,22 @@ fn main() {
         .compile()
         .expect("buffa_build failed for nested_deep.proto");
 
+    // unbox_oneof — a non-recursive message oneof variant stored inline rather
+    // than behind a Box. `Envelope.body.small` is opted out; `large` stays
+    // boxed. Views + JSON + text + vtable reflection all enabled so every
+    // boxing site is compiled for both shapes (enum decl, From impl, binary
+    // merge, JSON deser, text encode, owned ReflectMessage oneof arms).
+    // Runtime round-trips live in `tests/unbox_oneof.rs`.
+    buffa_build::Config::new()
+        .files(&["protos/unbox_oneof.proto"])
+        .includes(&["protos/"])
+        .unbox_oneof_in(&[".unboxoneof.Envelope.body.small"])
+        .generate_json(true)
+        .generate_text(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for unbox_oneof.proto");
+
     // WKT usage — well-known types are auto-mapped to buffa-types.
     buffa_build::Config::new()
         .files(&["protos/wkt_usage.proto"])
@@ -139,6 +155,28 @@ fn main() {
         .reflect_mode(buffa_build::ReflectMode::VTable)
         .compile()
         .expect("buffa_build failed for proto2_defaults.proto");
+
+    // Mixed-mode reflection: a bridge-mode dependency embedded by a
+    // vtable-mode parent (via extern_path). Every message-typed position in
+    // Outer (singular, repeated, map value, oneof variant) holds the
+    // bridge-grade Inner, so the vtable accessors must degrade through
+    // Inner's own Reflectable::reflect() / ReflectElement impls. Runtime
+    // assertions live in `tests/reflect_mixed_mode.rs`.
+    buffa_build::Config::new()
+        .files(&["protos/mixed_reflect_dep.proto"])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .reflect_mode(buffa_build::ReflectMode::Bridge)
+        .compile()
+        .expect("buffa_build failed for mixed_reflect_dep.proto");
+    buffa_build::Config::new()
+        .files(&["protos/mixed_reflect.proto"])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .extern_path(".mixedref.dep", "crate::mixed_reflect_dep")
+        .compile()
+        .expect("buffa_build failed for mixed_reflect.proto");
 
     // JSON code generation — proto3 JSON serialization for all field types.
     buffa_build::Config::new()

@@ -109,7 +109,7 @@ Reflection mode is selectable per message via FQN glob patterns, first-match-win
 --buffa_opt=reflect_for=mypkg.HotPath:vtable
 ```
 
-`ReflectMode` is three-state: `Off` (no `Reflectable` impl), `Bridge` (slow body), `VTable` (fast body + static table). Mixed modes are handled by `ValueRef::Message` holding a `ReflectCow` rather than a bare `&dyn ReflectMessage` — a vtable `Foo` containing a bridge `Bar` degrades at the boundary but stays source-compatible.
+`ReflectMode` is three-state: `Off` (no `Reflectable` impl), `Bridge` (slow body), `VTable` (fast body + static table). Mixed modes are handled by `ValueRef::Message` holding a `ReflectCow` rather than a bare `&dyn ReflectMessage` — a vtable `Foo` containing a bridge `Bar` degrades at the boundary but stays source-compatible. Concretely, the vtable accessors for message-typed fields call the field type's own `Reflectable::reflect()` (returning `Borrowed` for vtable-grade fields, `Owned` for bridge-grade), and repeated/map elements degrade through the `ReflectElement` impl that bridge mode also emits. The exception is the **view** reflection surface: a bridge-mode compilation generates no view reflection at all, so a vtable view embedding a bridge-grade view field is a compile error (with a `#[diagnostic::on_unimplemented]` pointer), not a degradation.
 
 ### Descriptor representation
 

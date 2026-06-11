@@ -89,16 +89,48 @@ pub(crate) fn reflectable_impl(ty: &TokenStream, buffa_path: &TokenStream) -> To
     }
 }
 
+/// Generate the bridge-mode `impl ReflectElement for #ty`.
+///
+/// `ReflectElement` is how repeated-field and map-value elements surface
+/// through vtable reflection (`Vec<T>: ReflectList` requires
+/// `T: ReflectElement`). Vtable mode emits its own zero-cost impl in
+/// [`reflect_owned`](crate::reflect_owned); this bridge-mode counterpart
+/// routes through [`Reflectable::reflect`], paying the encode/decode
+/// round-trip per element — which is what lets a vtable-mode message in
+/// another compilation hold `repeated` / `map` fields of this type and
+/// degrade at the boundary instead of failing to compile.
+pub(crate) fn reflect_element_impl_bridge(ty: &TokenStream) -> TokenStream {
+    quote! {
+        impl ::buffa_descriptor::reflect::ReflectElement for #ty {
+            /// Bridge-mode element reflection: each call snapshots this
+            /// element through [`Reflectable::reflect`]
+            /// (one encode/decode round-trip plus an allocation).
+            ///
+            /// [`Reflectable::reflect`]: ::buffa_descriptor::reflect::Reflectable::reflect
+            fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+                ::buffa_descriptor::reflect::ValueRef::Message(
+                    ::buffa_descriptor::reflect::Reflectable::reflect(self),
+                )
+            }
+        }
+    }
+}
+
 /// Generate the vtable-mode `impl Reflectable for #ty`, whose `reflect()`
 /// borrows `self` directly as `ReflectCow::Borrowed(self)` — no encode/decode
 /// round-trip. Requires `#ty: ReflectMessage` (the owned vtable impl emitted by
 /// [`reflect_owned`](crate::reflect_owned)).
+///
+/// The body carries `#[inline]` so a vtable parent in *another crate*
+/// reading this type through `Reflectable::reflect()` (the mixed-mode
+/// routing) stays zero-cost without LTO.
 pub(crate) fn reflectable_impl_vtable(ty: &TokenStream) -> TokenStream {
     quote! {
         impl ::buffa_descriptor::reflect::Reflectable for #ty {
             /// Vtable-mode reflective handle: borrows `self` directly. No
             /// encode/decode round-trip and no allocation — the reflective
             /// accessors read this message's fields in place.
+            #[inline]
             fn reflect(&self) -> ::buffa_descriptor::reflect::ReflectCow<'_> {
                 ::buffa_descriptor::reflect::ReflectCow::Borrowed(self)
             }

@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- **`chrono` interop for `buffa-types`.** A new off-by-default,
+- **`chrono` interop for `buffa-types`** (#163). A new off-by-default,
   `no_std`-compatible `chrono` feature adds conversions between the
   well-known `Timestamp` / `Duration` types and `chrono::DateTime` /
   `chrono::TimeDelta`: `From<chrono::DateTime<Tz>> for Timestamp` (any time
@@ -16,6 +16,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `From<TimeDelta> for Duration`, and `TryFrom<Duration> for TimeDelta`. The
   last returns a new `DurationChronoError` because `TimeDelta`'s range
   (±`i64::MAX` milliseconds) is narrower than proto `Duration`'s.
+  Contributed by @yordis.
+
+## [0.7.1] - 2026-06-10
+
+This release is a patch bump under the
+[Rust 0.x convention](https://doc.rust-lang.org/cargo/reference/semver.html):
+everything below is additive or a fix, with no breaking changes and no MSRV
+change. The new codegen capabilities are opt-in (`unbox_oneof`) or gated on a
+proto option (`debug_redact`); the packed view pre-allocation applies to all
+regenerated code but is behaviorally invisible — a pure performance hint. Code
+regenerated with 0.7.1 calls the new (hidden) `RepeatedView::reserve` hook, so
+pair regenerated code with a buffa 0.7.1 runtime — any caret `0.7` requirement
+resolves there automatically.
+
+### Added
+
+- **`unbox_oneof` opt-out for `Box`ed message oneof variants** (#126).
+  `Config::unbox_oneof_in(&[paths])` stores the matching message-typed oneof
+  variants inline in the owned enum instead of behind `Box<T>`, removing an
+  allocation per construction; `Config::unbox_oneof()` is the blanket form.
+  Recursive variants cannot be inlined: a rule naming one *exactly* is
+  rejected at codegen time, while broader prefix rules (including the
+  blanket) silently keep recursive variants boxed and inline the rest. View
+  oneof variants are unaffected and stay boxed. Enums with an inline message
+  variant carry `#[allow(clippy::large_enum_variant)]`. Contributed by
+  @sam-shridhar1950f.
 
 - **`[debug_redact = true]` is honored in generated `Debug` impls.** Fields
   carrying the standard `debug_redact` field option print `[REDACTED]` instead
@@ -63,6 +89,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **Mixed-mode reflection degrades at the boundary as designed** (#179). A
+  vtable-mode message embedding owned message types generated in bridge mode
+  (another crate or compilation) now reflects them as owned `DynamicMessage`
+  snapshots at the boundary instead of failing to compile: vtable accessors
+  for message-typed fields route through the field type's own
+  `Reflectable::reflect()`, and bridge mode now also emits `ReflectElement`
+  so `repeated` / `map` fields degrade too. View reflection still requires
+  vtable-grade types throughout — that limitation is now documented. (Code
+  matching exhaustively on `ReflectCow` may now observe `Owned` for
+  bridge-grade message fields; all-vtable builds are unchanged.)
+- **Missing-reflection compile errors point at the fix** (#179).
+  `ReflectMessage`, `Reflectable`, and `ReflectElement` carry
+  `#[diagnostic::on_unimplemented]` hints, so building vtable codegen against
+  an extern-path crate without its reflection feature (e.g. `buffa-types`
+  without `reflect`) names the missing cargo feature instead of emitting a
+  bare unsatisfied-trait error. The `reflect_mode` docs state the
+  requirement.
 - The owned message `Debug` impl now labels keyword-named fields without the
   raw-identifier prefix (`type` instead of `r#type`), matching what
   `#[derive(Debug)]` prints and what the view `Debug` impl emits.
@@ -1015,7 +1058,8 @@ This release publishes:
 
 MSRV: Rust 1.85.
 
-[Unreleased]: https://github.com/anthropics/buffa/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/anthropics/buffa/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/anthropics/buffa/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/anthropics/buffa/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/anthropics/buffa/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/anthropics/buffa/compare/v0.5.1...v0.5.2
