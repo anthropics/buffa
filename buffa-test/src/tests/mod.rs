@@ -39,6 +39,7 @@ mod extensions;
 mod extensions_json;
 mod json;
 mod keyword;
+mod lazy_views;
 mod message_set;
 mod mod_collision;
 mod nesting;
