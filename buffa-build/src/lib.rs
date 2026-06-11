@@ -35,6 +35,8 @@ use buffa_codegen::generated::descriptor::FileDescriptorSet;
 #[doc(inline)]
 pub use buffa_codegen::CodeGenConfig;
 #[doc(inline)]
+pub use buffa_codegen::FeatureGateNames;
+#[doc(inline)]
 pub use buffa_codegen::ReflectMode;
 #[doc(inline)]
 pub use buffa_codegen::StringRepr;
@@ -310,8 +312,9 @@ impl Config {
     ///
     /// Only meaningful together with
     /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features)
-    /// or [`gate_reflect_on_crate_feature`](Self::gate_reflect_on_crate_feature);
-    /// inert otherwise. See [`json_feature_name`](Self::json_feature_name).
+    /// (or the experimental, hidden `gate_reflect_on_crate_feature`, which
+    /// gates reflection alone); inert otherwise. See
+    /// [`json_feature_name`](Self::json_feature_name).
     #[must_use]
     pub fn reflect_feature_name(mut self, name: impl Into<String>) -> Self {
         self.codegen_config.feature_gate_names.reflect = name.into();

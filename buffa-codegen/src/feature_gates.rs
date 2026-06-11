@@ -62,6 +62,22 @@ pub struct FeatureGateNames {
     pub reflect: String,
 }
 
+impl FeatureGateNames {
+    /// Whether `name` is a valid Cargo feature name: starts with an ASCII
+    /// alphanumeric or `_`, with the remainder drawn from alphanumerics,
+    /// `_`, `-`, `+`, and `.`.
+    ///
+    /// This is the rule [`generate`](crate::generate) enforces on every
+    /// *active* gate name. It is public so toolchains layered on
+    /// buffa-codegen (e.g. service generators with their own feature-gate
+    /// knobs) can validate user-supplied names against the same rule
+    /// instead of re-deriving it.
+    #[must_use]
+    pub fn is_valid_name(name: &str) -> bool {
+        is_valid_feature_name(name)
+    }
+}
+
 impl Default for FeatureGateNames {
     fn default() -> Self {
         Self {
@@ -415,6 +431,18 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(shared.json_or_text(), vec!["serde"]);
+    }
+
+    #[test]
+    fn public_validator_matches_internal_rule() {
+        // The public surface for layered toolchains must agree with what
+        // `generate` enforces.
+        for name in ["json", "zero-copy", "", "-leading", "with space"] {
+            assert_eq!(
+                FeatureGateNames::is_valid_name(name),
+                is_valid_feature_name(name)
+            );
+        }
     }
 
     #[test]
