@@ -37,6 +37,7 @@ from pathlib import Path
 COLORS = {
     "buffa": "#4C78A8",
     "buffa (view)": "#72B7B2",
+    "buffa (lazy)": "#A0CBE8",
     "prost": "#F58518",
     "prost (bytes)": "#EEAE62",
     "protobuf-v4": "#E45756",
@@ -197,6 +198,7 @@ def build_tables(
         ("binary-decode", [
             ("buffa",         lambda ms, md: _get(buffa, "buffa", ms, "decode")),
             ("buffa (view)",  lambda ms, md: _get(buffa, "buffa", ms, "decode_view")),
+            ("buffa (lazy)",  lambda ms, md: _get(buffa, "buffa", ms, "decode_lazy")),
             ("prost",         lambda ms, md: _get(prost, "prost", ms, "decode")),
             ("prost (bytes)", lambda ms, md: _get(prost_bytes, "prost-bytes", ms, "decode")),
             ("protobuf-v4",   lambda ms, md: _get(google, "google", ms, "decode")),
@@ -205,6 +207,7 @@ def build_tables(
         ("binary-encode", [
             ("buffa",         lambda ms, md: _get(buffa, "buffa", ms, "encode")),
             ("buffa (view)",  lambda ms, md: _get(buffa, "buffa", ms, "encode_view")),
+            ("buffa (lazy)",  lambda ms, md: _get(buffa, "buffa", ms, "encode_lazy")),
             ("prost",         lambda ms, md: _get(prost, "prost", ms, "encode")),
             ("prost (bytes)", lambda ms, md: _get(prost_bytes, "prost-bytes", ms, "encode")),
             ("protobuf-v4",   lambda ms, md: _get(google, "google", ms, "encode")),
