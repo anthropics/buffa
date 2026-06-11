@@ -442,6 +442,29 @@ fn test_oneof_attribute_specific_path_matches_one_oneof() {
 }
 
 #[test]
+fn test_oneof_attribute_owned_enum_only_with_views() {
+    // With views enabled, the attribute must land on the owned oneof enum
+    // only — the view-of-oneof enum receives no custom attributes (the
+    // documented family-wide scoping).
+    let mut file = proto3_file("viewed.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type
+        .push(oneof_message("Msg", "payload", &["a", "b"]));
+    let config = CodeGenConfig {
+        generate_views: true,
+        oneof_attributes: vec![(".".to_string(), "#[derive(serde::Serialize)]".to_string())],
+        ..CodeGenConfig::default()
+    };
+    let files = generate(&[file], &["viewed.proto".to_string()], &config).expect("should generate");
+    let content = &joined(&files);
+    assert_eq!(
+        content.matches("derive(serde::Serialize)").count(),
+        1,
+        "attribute must not leak onto the view oneof enum: {content}"
+    );
+}
+
+#[test]
 fn test_oneof_attribute_stacks_with_type_attribute() {
     let mut file = proto3_file("stack.proto");
     file.package = Some("pkg".to_string());

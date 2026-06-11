@@ -862,13 +862,33 @@ impl Config {
     /// Add a custom attribute to generated oneof enums only (not message
     /// structs, not regular enums) matching a proto path prefix.
     ///
-    /// Same path-matching semantics as [`type_attribute`](Self::type_attribute),
-    /// matched against the oneof's fully-qualified path
-    /// (`.my.pkg.MyMessage.my_oneof`). Useful when a oneof needs a different
-    /// attribute set than the surrounding types — for example to keep
-    /// `#[derive(serde::Serialize)]` on messages and oneofs while
+    /// Same path-matching semantics as [`type_attribute`](Self::type_attribute):
+    /// a leading `.` is auto-prepended, a trailing `.` is trimmed, prefixes
+    /// match on proto-path segments, and attributes accumulate in insertion
+    /// order. The match key is the oneof's fully-qualified path
+    /// (`.my.pkg.MyMessage.my_oneof`) — the whole-enum path has no variant
+    /// segment; to target a single variant's field, append `.variant_name`
+    /// and use [`field_attribute`](Self::field_attribute) instead. A
+    /// malformed attribute produces a compile-time error in the generated
+    /// code. Useful when a oneof needs a different attribute set than the
+    /// surrounding types — for example to keep `#[derive(serde::Serialize)]`
+    /// on messages and oneofs while
     /// [`enum_attribute`](Self::enum_attribute) gives the regular enums a
     /// different serde derive.
+    ///
+    /// Applies to the owned oneof enum only; the zero-copy view-of-oneof
+    /// enum receives no custom attributes (true of the whole attribute
+    /// family). For JSON serialization of both owned types and views, use
+    /// [`generate_json(true)`](Self::generate_json), which emits canonical
+    /// protobuf-JSON impls rather than derived ones.
+    ///
+    /// # Pitfalls
+    ///
+    /// Generated oneof enums already derive `Clone`, `PartialEq`, and
+    /// `Debug` (oneofs containing `[debug_redact = true]` fields replace the
+    /// `Debug` derive with a manual impl). Re-deriving any of these via
+    /// `oneof_attribute` produces a conflicting-implementation compile error
+    /// inside the generated code.
     ///
     /// # Example
     ///
