@@ -1,0 +1,20 @@
+[package]
+name = "buffa-yaml"
+description = "YAML serialization for buffa Protocol Buffers messages"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["protobuf", "protocol-buffers", "yaml", "serialization"]
+categories = ["encoding"]
+
+[dependencies]
+buffa = { workspace = true, features = ["json", "std"] }
+serde = { workspace = true, features = ["std"] }
+serde_norway = { workspace = true }
+thiserror = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+buffa-test = { workspace = true }
+buffa-types = { workspace = true, features = ["json"] }
