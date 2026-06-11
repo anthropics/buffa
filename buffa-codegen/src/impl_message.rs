@@ -899,10 +899,36 @@ pub(crate) fn build_view_encode_methods(
         quote! { _buf: &mut impl ::buffa::bytes::BufMut }
     };
 
+    // On the lazy family these are inherent `pub fn`s, so they need doc
+    // comments (a consumer crate denying `missing_docs` would otherwise fail
+    // to build generated code). The eager family emits them as `ViewEncode`
+    // trait methods, where docs come from the trait — keep those token
+    // streams unchanged.
+    let compute_size_doc = if is_lazy.is_some() {
+        quote! {
+            /// Compute the encoded byte size, filling `cache` with
+            /// per-message sizes consumed by a following `write_to` call.
+            /// Called for that side effect by `encode`; prefer `encoded_len`
+            /// when only the size is needed.
+        }
+    } else {
+        quote! {}
+    };
+    let write_to_doc = if is_lazy.is_some() {
+        quote! {
+            /// Write the encoded bytes to `buf`, reading per-message sizes
+            /// from the `cache` filled by a preceding `compute_size` call.
+            /// Prefer `encode` unless threading a shared cache.
+        }
+    } else {
+        quote! {}
+    };
+
     Ok(quote! {
         // needless_borrow: stmt builders emit `&self.field` so they work on
         // owned `String`/`Vec<u8>`; on view fields (`&'a str`/`&'a [u8]`)
         // the borrow is redundant but harmless.
+        #compute_size_doc
         #[allow(clippy::needless_borrow, clippy::let_and_return)]
         #vis fn compute_size(&self, #cache_ident: &mut ::buffa::SizeCache) -> u32 {
             #[allow(unused_imports)]
@@ -914,6 +940,7 @@ pub(crate) fn build_view_encode_methods(
             size
         }
 
+        #write_to_doc
         #[allow(clippy::needless_borrow)]
         #vis fn write_to(&self, #cache_ident: &mut ::buffa::SizeCache, #buf_param) {
             #[allow(unused_imports)]

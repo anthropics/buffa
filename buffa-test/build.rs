@@ -457,6 +457,17 @@ fn main() {
         .compile()
         .expect("buffa_build failed for lazy_views.proto");
 
+    // lazy_views + preserve_unknown_fields(false): compiles the lazy decode
+    // loop without unknown-field capture, and the PhantomData lifetime anchor
+    // for an all-scalar lazy struct — branches lazy_views.proto can't reach.
+    buffa_build::Config::new()
+        .files(&["protos/lazy_views_lean.proto"])
+        .includes(&["protos/"])
+        .lazy_views(true)
+        .preserve_unknown_fields(false)
+        .compile()
+        .expect("buffa_build failed for lazy_views_lean.proto");
+
     // Edition 2024 — requires protoc v30+ (stabilized edition 2024).
     // Older protoc rejects it with "later than the maximum supported edition".
     // Skip gracefully on older protoc so the crate still builds; tests are

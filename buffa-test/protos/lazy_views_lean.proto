@@ -1,0 +1,20 @@
+// Compiles the lazy codegen branches that lazy_views.proto cannot reach:
+// `preserve_unknown_fields(false)` (no `__buffa_unknown_fields` field, no
+// unknown-record capture in the decode loop) and an all-scalar non-borrowing
+// message (the PhantomData lifetime-anchor branch of the lazy struct).
+syntax = "proto3";
+
+package test.lazyviewslean;
+
+// No borrowing fields: the lazy struct anchors `'a` with PhantomData.
+message Counters {
+  int32 hits = 1;
+  uint64 total = 2;
+  bool live = 3;
+}
+
+message LeanHolder {
+  Counters counters = 1;
+  repeated Counters history = 2;
+  string label = 3;
+}

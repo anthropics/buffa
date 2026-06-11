@@ -401,3 +401,49 @@ fn unknown_field_allowance_flows_through_lazy_boundary() {
     let view: HolderLazyView<'_> = opts.decode_lazy_view(&bytes).unwrap();
     assert_eq!(view.payload.get().unwrap().expect("set").name, "x");
 }
+
+// --- preserve_unknown_fields(false) family (`protos/lazy_views_lean.proto`) ---
+
+#[test]
+fn lean_lazy_drops_unknown_fields() {
+    use crate::lazyviewslean::{Counters, LeanHolder, LeanHolderLazyView};
+
+    let owned = LeanHolder {
+        counters: Counters {
+            hits: 7,
+            total: 99,
+            live: true,
+        }
+        .into(),
+        history: vec![Counters::default(), Counters { hits: 1, ..Default::default() }],
+        label: "lean".into(),
+    };
+    let mut bytes = crate::tests::varint_field(90, 5);
+    bytes.extend_from_slice(&owned.encode_to_vec());
+    bytes.extend_from_slice(&crate::tests::varint_field(91, 6));
+
+    let view = LeanHolderLazyView::decode_lazy(&bytes).unwrap();
+    assert_eq!(view.label, "lean");
+    assert_eq!(view.history.len(), 2);
+    assert_eq!(view.counters.get().unwrap().expect("set").hits, 7);
+    // No preservation: the round-trip equals the unknown-free encoding.
+    assert_eq!(view.to_owned_message().unwrap(), owned);
+    assert_eq!(view.encode_to_vec(), owned.encode_to_vec());
+}
+
+#[test]
+fn lean_all_scalar_lazy_struct() {
+    use crate::lazyviewslean::{Counters, CountersLazyView};
+
+    // Counters has no borrowing fields — its lazy struct is anchored by
+    // PhantomData. Decode + read + convert must still work.
+    let owned = Counters {
+        hits: -3,
+        total: u64::MAX,
+        live: true,
+    };
+    let bytes = owned.encode_to_vec();
+    let view = CountersLazyView::decode_lazy(&bytes).unwrap();
+    assert_eq!((view.hits, view.total, view.live), (-3, u64::MAX, true));
+    assert_eq!(view.to_owned_message().unwrap(), owned);
+}

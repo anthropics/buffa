@@ -60,8 +60,8 @@ pub(crate) struct MessageOutput {
     /// `__buffa::view::`.
     pub view_tree: TokenStream,
     /// Lazy view struct + impls (`lazy_views` option), wrapped
-    /// per-message-level. Destined for `__buffa::view::`, beside the eager
-    /// views.
+    /// per-message-level. Destined for `__buffa::lazy_view::`, its own
+    /// module beside the eager views.
     pub lazy_view_tree: TokenStream,
     /// Oneof view enum definitions, wrapped per-message-level. Destined
     /// for `__buffa::view::oneof::`.
