@@ -318,8 +318,10 @@ bench_view_encode!(
 /// recorded fragments verbatim (the lazy analogue of `encode_view`). The
 /// numbers bound the full-decode case; the lazy family's real advantage —
 /// skipping untouched sub-trees on partial access — is workload-dependent
-/// and not captured by a full-scan throughput chart. Parity with the owned
-/// decoder is asserted via `to_owned_message` before timing.
+/// and not captured by a full-scan throughput chart. Before timing, both
+/// paths are asserted against the owned decoder: `to_owned_message` for
+/// decode parity, and a decode of the re-encoded bytes for encode parity
+/// (decode-equivalence, as in `bench_view_encode!`).
 macro_rules! bench_lazy_view {
     ($fn_name:ident, $owned:ty, $lazy:ty, $group:literal, $dataset:literal) => {
         fn $fn_name(c: &mut Criterion) {
@@ -329,7 +331,9 @@ macro_rules! bench_lazy_view {
                 let lazy = <$lazy>::decode_lazy(p).unwrap();
                 let from_lazy = lazy.to_owned_message().unwrap();
                 let from_wire = <$owned>::decode_from_slice(p).unwrap();
-                assert!(from_lazy == from_wire, "lazy decode parity mismatch");
+                assert_eq!(from_lazy, from_wire, "lazy decode parity mismatch");
+                let from_reencode = <$owned>::decode_from_slice(&lazy.encode_to_vec()).unwrap();
+                assert_eq!(from_reencode, from_wire, "lazy re-encode wire mismatch");
             }
             let mut group = c.benchmark_group($group);
             group.throughput(Throughput::Bytes(bytes));
