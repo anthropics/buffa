@@ -886,28 +886,18 @@ impl<'__a> ::serde::Serialize for FileDescriptorProtoView<'__a> {
             __map.serialize_entry("dependency", &*self.dependency)?;
         }
         if !self.public_dependency.is_empty() {
-            struct _WSeq<'__x>(&'__x [i32]);
-            impl ::serde::Serialize for _WSeq<'_> {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::proto_seq::serialize(self.0, __s)
-                }
-            }
-            __map.serialize_entry("publicDependency", &_WSeq(&self.public_dependency))?;
+            __map
+                .serialize_entry(
+                    "publicDependency",
+                    &::buffa::json_helpers::RepeatedJson(&self.public_dependency),
+                )?;
         }
         if !self.weak_dependency.is_empty() {
-            struct _WSeq<'__x>(&'__x [i32]);
-            impl ::serde::Serialize for _WSeq<'_> {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::proto_seq::serialize(self.0, __s)
-                }
-            }
-            __map.serialize_entry("weakDependency", &_WSeq(&self.weak_dependency))?;
+            __map
+                .serialize_entry(
+                    "weakDependency",
+                    &::buffa::json_helpers::RepeatedJson(&self.weak_dependency),
+                )?;
         }
         if !self.option_dependency.is_empty() {
             __map.serialize_entry("optionDependency", &*self.option_dependency)?;
@@ -939,16 +929,11 @@ impl<'__a> ::serde::Serialize for FileDescriptorProtoView<'__a> {
             __map.serialize_entry("syntax", __v)?;
         }
         if let ::core::option::Option::Some(__v) = self.edition {
-            struct _W(super::super::Edition);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("edition", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "edition",
+                    &::buffa::json_helpers::ClosedEnumJson(&__v),
+                )?;
         }
         __map.end()
     }
@@ -1730,16 +1715,11 @@ impl<'__a> ::serde::Serialize for DescriptorProtoView<'__a> {
             __map.serialize_entry("reservedName", &*self.reserved_name)?;
         }
         if let ::core::option::Option::Some(__v) = self.visibility {
-            struct _W(super::super::SymbolVisibility);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("visibility", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "visibility",
+                    &::buffa::json_helpers::ClosedEnumJson(&__v),
+                )?;
         }
         __map.end()
     }
@@ -2186,28 +2166,10 @@ pub mod descriptor_proto {
             use ::serde::ser::SerializeMap as _;
             let mut __map = __s.serialize_map(::core::option::Option::None)?;
             if let ::core::option::Option::Some(__v) = self.start {
-                struct _W(i32);
-                impl ::serde::Serialize for _W {
-                    fn serialize<__S: ::serde::Serializer>(
-                        &self,
-                        __s: __S,
-                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                        ::buffa::json_helpers::int32::serialize(&self.0, __s)
-                    }
-                }
-                __map.serialize_entry("start", &_W(__v))?;
+                __map.serialize_entry("start", &::buffa::json_helpers::ProtoJson(&__v))?;
             }
             if let ::core::option::Option::Some(__v) = self.end {
-                struct _W(i32);
-                impl ::serde::Serialize for _W {
-                    fn serialize<__S: ::serde::Serializer>(
-                        &self,
-                        __s: __S,
-                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                        ::buffa::json_helpers::int32::serialize(&self.0, __s)
-                    }
-                }
-                __map.serialize_entry("end", &_W(__v))?;
+                __map.serialize_entry("end", &::buffa::json_helpers::ProtoJson(&__v))?;
             }
             {
                 if let ::core::option::Option::Some(__v) = self.options.as_option() {
@@ -2540,28 +2502,10 @@ pub mod descriptor_proto {
             use ::serde::ser::SerializeMap as _;
             let mut __map = __s.serialize_map(::core::option::Option::None)?;
             if let ::core::option::Option::Some(__v) = self.start {
-                struct _W(i32);
-                impl ::serde::Serialize for _W {
-                    fn serialize<__S: ::serde::Serializer>(
-                        &self,
-                        __s: __S,
-                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                        ::buffa::json_helpers::int32::serialize(&self.0, __s)
-                    }
-                }
-                __map.serialize_entry("start", &_W(__v))?;
+                __map.serialize_entry("start", &::buffa::json_helpers::ProtoJson(&__v))?;
             }
             if let ::core::option::Option::Some(__v) = self.end {
-                struct _W(i32);
-                impl ::serde::Serialize for _W {
-                    fn serialize<__S: ::serde::Serializer>(
-                        &self,
-                        __s: __S,
-                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                        ::buffa::json_helpers::int32::serialize(&self.0, __s)
-                    }
-                }
-                __map.serialize_entry("end", &_W(__v))?;
+                __map.serialize_entry("end", &::buffa::json_helpers::ProtoJson(&__v))?;
             }
             __map.end()
         }
@@ -3010,16 +2954,11 @@ impl<'__a> ::serde::Serialize for ExtensionRangeOptionsView<'__a> {
             }
         }
         if let ::core::option::Option::Some(__v) = self.verification {
-            struct _W(super::super::extension_range_options::VerificationState);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("verification", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "verification",
+                    &::buffa::json_helpers::ClosedEnumJson(&__v),
+                )?;
         }
         __map.end()
     }
@@ -3433,16 +3372,8 @@ pub mod extension_range_options {
             use ::serde::ser::SerializeMap as _;
             let mut __map = __s.serialize_map(::core::option::Option::None)?;
             if let ::core::option::Option::Some(__v) = self.number {
-                struct _W(i32);
-                impl ::serde::Serialize for _W {
-                    fn serialize<__S: ::serde::Serializer>(
-                        &self,
-                        __s: __S,
-                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                        ::buffa::json_helpers::int32::serialize(&self.0, __s)
-                    }
-                }
-                __map.serialize_entry("number", &_W(__v))?;
+                __map
+                    .serialize_entry("number", &::buffa::json_helpers::ProtoJson(&__v))?;
             }
             if let ::core::option::Option::Some(__v) = self.full_name {
                 __map.serialize_entry("fullName", __v)?;
@@ -4031,40 +3962,14 @@ impl<'__a> ::serde::Serialize for FieldDescriptorProtoView<'__a> {
             __map.serialize_entry("name", __v)?;
         }
         if let ::core::option::Option::Some(__v) = self.number {
-            struct _W(i32);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::int32::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("number", &_W(__v))?;
+            __map.serialize_entry("number", &::buffa::json_helpers::ProtoJson(&__v))?;
         }
         if let ::core::option::Option::Some(__v) = self.label {
-            struct _W(super::super::field_descriptor_proto::Label);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("label", &_W(__v))?;
+            __map
+                .serialize_entry("label", &::buffa::json_helpers::ClosedEnumJson(&__v))?;
         }
         if let ::core::option::Option::Some(__v) = self.r#type {
-            struct _W(super::super::field_descriptor_proto::Type);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("type", &_W(__v))?;
+            __map.serialize_entry("type", &::buffa::json_helpers::ClosedEnumJson(&__v))?;
         }
         if let ::core::option::Option::Some(__v) = self.type_name {
             __map.serialize_entry("typeName", __v)?;
@@ -4076,16 +3981,8 @@ impl<'__a> ::serde::Serialize for FieldDescriptorProtoView<'__a> {
             __map.serialize_entry("defaultValue", __v)?;
         }
         if let ::core::option::Option::Some(__v) = self.oneof_index {
-            struct _W(i32);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::int32::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("oneofIndex", &_W(__v))?;
+            __map
+                .serialize_entry("oneofIndex", &::buffa::json_helpers::ProtoJson(&__v))?;
         }
         if let ::core::option::Option::Some(__v) = self.json_name {
             __map.serialize_entry("jsonName", __v)?;
@@ -5010,16 +4907,11 @@ impl<'__a> ::serde::Serialize for EnumDescriptorProtoView<'__a> {
             __map.serialize_entry("reservedName", &*self.reserved_name)?;
         }
         if let ::core::option::Option::Some(__v) = self.visibility {
-            struct _W(super::super::SymbolVisibility);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("visibility", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "visibility",
+                    &::buffa::json_helpers::ClosedEnumJson(&__v),
+                )?;
         }
         __map.end()
     }
@@ -5382,28 +5274,10 @@ pub mod enum_descriptor_proto {
             use ::serde::ser::SerializeMap as _;
             let mut __map = __s.serialize_map(::core::option::Option::None)?;
             if let ::core::option::Option::Some(__v) = self.start {
-                struct _W(i32);
-                impl ::serde::Serialize for _W {
-                    fn serialize<__S: ::serde::Serializer>(
-                        &self,
-                        __s: __S,
-                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                        ::buffa::json_helpers::int32::serialize(&self.0, __s)
-                    }
-                }
-                __map.serialize_entry("start", &_W(__v))?;
+                __map.serialize_entry("start", &::buffa::json_helpers::ProtoJson(&__v))?;
             }
             if let ::core::option::Option::Some(__v) = self.end {
-                struct _W(i32);
-                impl ::serde::Serialize for _W {
-                    fn serialize<__S: ::serde::Serializer>(
-                        &self,
-                        __s: __S,
-                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                        ::buffa::json_helpers::int32::serialize(&self.0, __s)
-                    }
-                }
-                __map.serialize_entry("end", &_W(__v))?;
+                __map.serialize_entry("end", &::buffa::json_helpers::ProtoJson(&__v))?;
             }
             __map.end()
         }
@@ -5762,16 +5636,7 @@ impl<'__a> ::serde::Serialize for EnumValueDescriptorProtoView<'__a> {
             __map.serialize_entry("name", __v)?;
         }
         if let ::core::option::Option::Some(__v) = self.number {
-            struct _W(i32);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::int32::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("number", &_W(__v))?;
+            __map.serialize_entry("number", &::buffa::json_helpers::ProtoJson(&__v))?;
         }
         {
             if let ::core::option::Option::Some(__v) = self.options.as_option() {
@@ -7445,16 +7310,11 @@ impl<'__a> ::serde::Serialize for FileOptionsView<'__a> {
             __map.serialize_entry("javaStringCheckUtf8", &__v)?;
         }
         if let ::core::option::Option::Some(__v) = self.optimize_for {
-            struct _W(super::super::file_options::OptimizeMode);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("optimizeFor", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "optimizeFor",
+                    &::buffa::json_helpers::ClosedEnumJson(&__v),
+                )?;
         }
         if let ::core::option::Option::Some(__v) = self.go_package {
             __map.serialize_entry("goPackage", __v)?;
@@ -9046,31 +8906,18 @@ impl<'__a> ::serde::Serialize for FieldOptionsView<'__a> {
         use ::serde::ser::SerializeMap as _;
         let mut __map = __s.serialize_map(::core::option::Option::None)?;
         if let ::core::option::Option::Some(__v) = self.ctype {
-            struct _W(super::super::field_options::CType);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("ctype", &_W(__v))?;
+            __map
+                .serialize_entry("ctype", &::buffa::json_helpers::ClosedEnumJson(&__v))?;
         }
         if let ::core::option::Option::Some(__v) = self.packed {
             __map.serialize_entry("packed", &__v)?;
         }
         if let ::core::option::Option::Some(__v) = self.jstype {
-            struct _W(super::super::field_options::JSType);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("jstype", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "jstype",
+                    &::buffa::json_helpers::ClosedEnumJson(&__v),
+                )?;
         }
         if let ::core::option::Option::Some(__v) = self.lazy {
             __map.serialize_entry("lazy", &__v)?;
@@ -9088,28 +8935,18 @@ impl<'__a> ::serde::Serialize for FieldOptionsView<'__a> {
             __map.serialize_entry("debugRedact", &__v)?;
         }
         if let ::core::option::Option::Some(__v) = self.retention {
-            struct _W(super::super::field_options::OptionRetention);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("retention", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "retention",
+                    &::buffa::json_helpers::ClosedEnumJson(&__v),
+                )?;
         }
         if !self.targets.is_empty() {
-            struct _WSeq<'__x>(&'__x [super::super::field_options::OptionTargetType]);
-            impl ::serde::Serialize for _WSeq<'_> {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::repeated_closed_enum::serialize(self.0, __s)
-                }
-            }
-            __map.serialize_entry("targets", &_WSeq(&self.targets))?;
+            __map
+                .serialize_entry(
+                    "targets",
+                    &::buffa::json_helpers::ClosedEnumSeqJson(&self.targets),
+                )?;
         }
         if !self.edition_defaults.is_empty() {
             __map.serialize_entry("editionDefaults", &*self.edition_defaults)?;
@@ -9594,16 +9431,11 @@ pub mod field_options {
             use ::serde::ser::SerializeMap as _;
             let mut __map = __s.serialize_map(::core::option::Option::None)?;
             if let ::core::option::Option::Some(__v) = self.edition {
-                struct _W(super::super::super::Edition);
-                impl ::serde::Serialize for _W {
-                    fn serialize<__S: ::serde::Serializer>(
-                        &self,
-                        __s: __S,
-                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                        ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                    }
-                }
-                __map.serialize_entry("edition", &_W(__v))?;
+                __map
+                    .serialize_entry(
+                        "edition",
+                        &::buffa::json_helpers::ClosedEnumJson(&__v),
+                    )?;
             }
             if let ::core::option::Option::Some(__v) = self.value {
                 __map.serialize_entry("value", __v)?;
@@ -9991,43 +9823,28 @@ pub mod field_options {
             use ::serde::ser::SerializeMap as _;
             let mut __map = __s.serialize_map(::core::option::Option::None)?;
             if let ::core::option::Option::Some(__v) = self.edition_introduced {
-                struct _W(super::super::super::Edition);
-                impl ::serde::Serialize for _W {
-                    fn serialize<__S: ::serde::Serializer>(
-                        &self,
-                        __s: __S,
-                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                        ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                    }
-                }
-                __map.serialize_entry("editionIntroduced", &_W(__v))?;
+                __map
+                    .serialize_entry(
+                        "editionIntroduced",
+                        &::buffa::json_helpers::ClosedEnumJson(&__v),
+                    )?;
             }
             if let ::core::option::Option::Some(__v) = self.edition_deprecated {
-                struct _W(super::super::super::Edition);
-                impl ::serde::Serialize for _W {
-                    fn serialize<__S: ::serde::Serializer>(
-                        &self,
-                        __s: __S,
-                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                        ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                    }
-                }
-                __map.serialize_entry("editionDeprecated", &_W(__v))?;
+                __map
+                    .serialize_entry(
+                        "editionDeprecated",
+                        &::buffa::json_helpers::ClosedEnumJson(&__v),
+                    )?;
             }
             if let ::core::option::Option::Some(__v) = self.deprecation_warning {
                 __map.serialize_entry("deprecationWarning", __v)?;
             }
             if let ::core::option::Option::Some(__v) = self.edition_removed {
-                struct _W(super::super::super::Edition);
-                impl ::serde::Serialize for _W {
-                    fn serialize<__S: ::serde::Serializer>(
-                        &self,
-                        __s: __S,
-                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                        ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                    }
-                }
-                __map.serialize_entry("editionRemoved", &_W(__v))?;
+                __map
+                    .serialize_entry(
+                        "editionRemoved",
+                        &::buffa::json_helpers::ClosedEnumJson(&__v),
+                    )?;
             }
             __map.end()
         }
@@ -12239,16 +12056,11 @@ impl<'__a> ::serde::Serialize for MethodOptionsView<'__a> {
             __map.serialize_entry("deprecated", &__v)?;
         }
         if let ::core::option::Option::Some(__v) = self.idempotency_level {
-            struct _W(super::super::method_options::IdempotencyLevel);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("idempotencyLevel", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "idempotencyLevel",
+                    &::buffa::json_helpers::ClosedEnumJson(&__v),
+                )?;
         }
         {
             if let ::core::option::Option::Some(__v) = self.features.as_option() {
@@ -12711,52 +12523,29 @@ impl<'__a> ::serde::Serialize for UninterpretedOptionView<'__a> {
             __map.serialize_entry("identifierValue", __v)?;
         }
         if let ::core::option::Option::Some(__v) = self.positive_int_value {
-            struct _W(u64);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::uint64::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("positiveIntValue", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "positiveIntValue",
+                    &::buffa::json_helpers::ProtoJson(&__v),
+                )?;
         }
         if let ::core::option::Option::Some(__v) = self.negative_int_value {
-            struct _W(i64);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::int64::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("negativeIntValue", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "negativeIntValue",
+                    &::buffa::json_helpers::ProtoJson(&__v),
+                )?;
         }
         if let ::core::option::Option::Some(__v) = self.double_value {
-            struct _W(f64);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::double::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("doubleValue", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "doubleValue",
+                    &::buffa::json_helpers::ProtoJson(&__v),
+                )?;
         }
         if let ::core::option::Option::Some(__v) = self.string_value {
-            struct _W<'__x>(&'__x [u8]);
-            impl ::serde::Serialize for _W<'_> {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::bytes::serialize(self.0, __s)
-                }
-            }
-            __map.serialize_entry("stringValue", &_W(__v))?;
+            __map
+                .serialize_entry("stringValue", &::buffa::json_helpers::BytesJson(__v))?;
         }
         if let ::core::option::Option::Some(__v) = self.aggregate_value {
             __map.serialize_entry("aggregateValue", __v)?;
@@ -13589,102 +13378,60 @@ impl<'__a> ::serde::Serialize for FeatureSetView<'__a> {
         use ::serde::ser::SerializeMap as _;
         let mut __map = __s.serialize_map(::core::option::Option::None)?;
         if let ::core::option::Option::Some(__v) = self.field_presence {
-            struct _W(super::super::feature_set::FieldPresence);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("fieldPresence", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "fieldPresence",
+                    &::buffa::json_helpers::ClosedEnumJson(&__v),
+                )?;
         }
         if let ::core::option::Option::Some(__v) = self.enum_type {
-            struct _W(super::super::feature_set::EnumType);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("enumType", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "enumType",
+                    &::buffa::json_helpers::ClosedEnumJson(&__v),
+                )?;
         }
         if let ::core::option::Option::Some(__v) = self.repeated_field_encoding {
-            struct _W(super::super::feature_set::RepeatedFieldEncoding);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("repeatedFieldEncoding", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "repeatedFieldEncoding",
+                    &::buffa::json_helpers::ClosedEnumJson(&__v),
+                )?;
         }
         if let ::core::option::Option::Some(__v) = self.utf8_validation {
-            struct _W(super::super::feature_set::Utf8Validation);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("utf8Validation", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "utf8Validation",
+                    &::buffa::json_helpers::ClosedEnumJson(&__v),
+                )?;
         }
         if let ::core::option::Option::Some(__v) = self.message_encoding {
-            struct _W(super::super::feature_set::MessageEncoding);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("messageEncoding", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "messageEncoding",
+                    &::buffa::json_helpers::ClosedEnumJson(&__v),
+                )?;
         }
         if let ::core::option::Option::Some(__v) = self.json_format {
-            struct _W(super::super::feature_set::JsonFormat);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("jsonFormat", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "jsonFormat",
+                    &::buffa::json_helpers::ClosedEnumJson(&__v),
+                )?;
         }
         if let ::core::option::Option::Some(__v) = self.enforce_naming_style {
-            struct _W(super::super::feature_set::EnforceNamingStyle);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("enforceNamingStyle", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "enforceNamingStyle",
+                    &::buffa::json_helpers::ClosedEnumJson(&__v),
+                )?;
         }
         if let ::core::option::Option::Some(__v) = self.default_symbol_visibility {
-            struct _W(
-                super::super::feature_set::visibility_feature::DefaultSymbolVisibility,
-            );
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("defaultSymbolVisibility", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "defaultSymbolVisibility",
+                    &::buffa::json_helpers::ClosedEnumJson(&__v),
+                )?;
         }
         __map.end()
     }
@@ -14364,28 +14111,18 @@ impl<'__a> ::serde::Serialize for FeatureSetDefaultsView<'__a> {
             __map.serialize_entry("defaults", &*self.defaults)?;
         }
         if let ::core::option::Option::Some(__v) = self.minimum_edition {
-            struct _W(super::super::Edition);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("minimumEdition", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "minimumEdition",
+                    &::buffa::json_helpers::ClosedEnumJson(&__v),
+                )?;
         }
         if let ::core::option::Option::Some(__v) = self.maximum_edition {
-            struct _W(super::super::Edition);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("maximumEdition", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "maximumEdition",
+                    &::buffa::json_helpers::ClosedEnumJson(&__v),
+                )?;
         }
         __map.end()
     }
@@ -14807,16 +14544,11 @@ pub mod feature_set_defaults {
             use ::serde::ser::SerializeMap as _;
             let mut __map = __s.serialize_map(::core::option::Option::None)?;
             if let ::core::option::Option::Some(__v) = self.edition {
-                struct _W(super::super::super::Edition);
-                impl ::serde::Serialize for _W {
-                    fn serialize<__S: ::serde::Serializer>(
-                        &self,
-                        __s: __S,
-                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                        ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                    }
-                }
-                __map.serialize_entry("edition", &_W(__v))?;
+                __map
+                    .serialize_entry(
+                        "edition",
+                        &::buffa::json_helpers::ClosedEnumJson(&__v),
+                    )?;
             }
             {
                 if let ::core::option::Option::Some(__v) = self
@@ -15764,28 +15496,18 @@ pub mod source_code_info {
             use ::serde::ser::SerializeMap as _;
             let mut __map = __s.serialize_map(::core::option::Option::None)?;
             if !self.path.is_empty() {
-                struct _WSeq<'__x>(&'__x [i32]);
-                impl ::serde::Serialize for _WSeq<'_> {
-                    fn serialize<__S: ::serde::Serializer>(
-                        &self,
-                        __s: __S,
-                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                        ::buffa::json_helpers::proto_seq::serialize(self.0, __s)
-                    }
-                }
-                __map.serialize_entry("path", &_WSeq(&self.path))?;
+                __map
+                    .serialize_entry(
+                        "path",
+                        &::buffa::json_helpers::RepeatedJson(&self.path),
+                    )?;
             }
             if !self.span.is_empty() {
-                struct _WSeq<'__x>(&'__x [i32]);
-                impl ::serde::Serialize for _WSeq<'_> {
-                    fn serialize<__S: ::serde::Serializer>(
-                        &self,
-                        __s: __S,
-                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                        ::buffa::json_helpers::proto_seq::serialize(self.0, __s)
-                    }
-                }
-                __map.serialize_entry("span", &_WSeq(&self.span))?;
+                __map
+                    .serialize_entry(
+                        "span",
+                        &::buffa::json_helpers::RepeatedJson(&self.span),
+                    )?;
             }
             if let ::core::option::Option::Some(__v) = self.leading_comments {
                 __map.serialize_entry("leadingComments", __v)?;
@@ -16618,57 +16340,27 @@ pub mod generated_code_info {
             use ::serde::ser::SerializeMap as _;
             let mut __map = __s.serialize_map(::core::option::Option::None)?;
             if !self.path.is_empty() {
-                struct _WSeq<'__x>(&'__x [i32]);
-                impl ::serde::Serialize for _WSeq<'_> {
-                    fn serialize<__S: ::serde::Serializer>(
-                        &self,
-                        __s: __S,
-                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                        ::buffa::json_helpers::proto_seq::serialize(self.0, __s)
-                    }
-                }
-                __map.serialize_entry("path", &_WSeq(&self.path))?;
+                __map
+                    .serialize_entry(
+                        "path",
+                        &::buffa::json_helpers::RepeatedJson(&self.path),
+                    )?;
             }
             if let ::core::option::Option::Some(__v) = self.source_file {
                 __map.serialize_entry("sourceFile", __v)?;
             }
             if let ::core::option::Option::Some(__v) = self.begin {
-                struct _W(i32);
-                impl ::serde::Serialize for _W {
-                    fn serialize<__S: ::serde::Serializer>(
-                        &self,
-                        __s: __S,
-                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                        ::buffa::json_helpers::int32::serialize(&self.0, __s)
-                    }
-                }
-                __map.serialize_entry("begin", &_W(__v))?;
+                __map.serialize_entry("begin", &::buffa::json_helpers::ProtoJson(&__v))?;
             }
             if let ::core::option::Option::Some(__v) = self.end {
-                struct _W(i32);
-                impl ::serde::Serialize for _W {
-                    fn serialize<__S: ::serde::Serializer>(
-                        &self,
-                        __s: __S,
-                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                        ::buffa::json_helpers::int32::serialize(&self.0, __s)
-                    }
-                }
-                __map.serialize_entry("end", &_W(__v))?;
+                __map.serialize_entry("end", &::buffa::json_helpers::ProtoJson(&__v))?;
             }
             if let ::core::option::Option::Some(__v) = self.semantic {
-                struct _W(
-                    super::super::super::generated_code_info::annotation::Semantic,
-                );
-                impl ::serde::Serialize for _W {
-                    fn serialize<__S: ::serde::Serializer>(
-                        &self,
-                        __s: __S,
-                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                        ::buffa::json_helpers::closed_enum::serialize(&self.0, __s)
-                    }
-                }
-                __map.serialize_entry("semantic", &_W(__v))?;
+                __map
+                    .serialize_entry(
+                        "semantic",
+                        &::buffa::json_helpers::ClosedEnumJson(&__v),
+                    )?;
             }
             __map.end()
         }

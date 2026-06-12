@@ -197,40 +197,13 @@ impl<'__a> ::serde::Serialize for VersionView<'__a> {
         use ::serde::ser::SerializeMap as _;
         let mut __map = __s.serialize_map(::core::option::Option::None)?;
         if let ::core::option::Option::Some(__v) = self.major {
-            struct _W(i32);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::int32::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("major", &_W(__v))?;
+            __map.serialize_entry("major", &::buffa::json_helpers::ProtoJson(&__v))?;
         }
         if let ::core::option::Option::Some(__v) = self.minor {
-            struct _W(i32);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::int32::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("minor", &_W(__v))?;
+            __map.serialize_entry("minor", &::buffa::json_helpers::ProtoJson(&__v))?;
         }
         if let ::core::option::Option::Some(__v) = self.patch {
-            struct _W(i32);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::int32::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("patch", &_W(__v))?;
+            __map.serialize_entry("patch", &::buffa::json_helpers::ProtoJson(&__v))?;
         }
         if let ::core::option::Option::Some(__v) = self.suffix {
             __map.serialize_entry("suffix", __v)?;
@@ -1178,40 +1151,25 @@ impl<'__a> ::serde::Serialize for CodeGeneratorResponseView<'__a> {
             __map.serialize_entry("error", __v)?;
         }
         if let ::core::option::Option::Some(__v) = self.supported_features {
-            struct _W(u64);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::uint64::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("supportedFeatures", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "supportedFeatures",
+                    &::buffa::json_helpers::ProtoJson(&__v),
+                )?;
         }
         if let ::core::option::Option::Some(__v) = self.minimum_edition {
-            struct _W(i32);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::int32::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("minimumEdition", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "minimumEdition",
+                    &::buffa::json_helpers::ProtoJson(&__v),
+                )?;
         }
         if let ::core::option::Option::Some(__v) = self.maximum_edition {
-            struct _W(i32);
-            impl ::serde::Serialize for _W {
-                fn serialize<__S: ::serde::Serializer>(
-                    &self,
-                    __s: __S,
-                ) -> ::core::result::Result<__S::Ok, __S::Error> {
-                    ::buffa::json_helpers::int32::serialize(&self.0, __s)
-                }
-            }
-            __map.serialize_entry("maximumEdition", &_W(__v))?;
+            __map
+                .serialize_entry(
+                    "maximumEdition",
+                    &::buffa::json_helpers::ProtoJson(&__v),
+                )?;
         }
         if !self.file.is_empty() {
             __map.serialize_entry("file", &*self.file)?;
