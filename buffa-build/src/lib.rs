@@ -340,6 +340,28 @@ impl Config {
         self
     }
 
+    /// Prepend a prefix to every generated Rust type name (default: none).
+    ///
+    /// With prefix `"Rpc"`, `message User {}` generates `struct RpcUser`
+    /// (and `RpcUserView` / `RpcUserOwnedView`); every cross-reference uses
+    /// the prefixed name. Useful in multi-protocol systems where generated
+    /// types from different domains would otherwise collide with each other
+    /// or with a canonical hand-written model.
+    ///
+    /// Applies to message structs and enum types (top-level and nested).
+    /// Module names, oneof enums, [`extern_path`](Self::extern_path)-mapped
+    /// types (including well-known types), and the wire/JSON format are
+    /// unaffected.
+    ///
+    /// The prefix must be a valid Rust identifier prefix
+    /// (`[A-Za-z_][A-Za-z0-9_]*`); [`compile`](Self::compile) fails
+    /// otherwise.
+    #[must_use]
+    pub fn type_name_prefix(mut self, prefix: impl Into<String>) -> Self {
+        self.codegen_config.type_name_prefix = prefix.into();
+        self
+    }
+
     /// Enable or disable `with_*` builder-style setter methods for
     /// explicit-presence fields (default: true).
     ///

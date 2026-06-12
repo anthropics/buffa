@@ -120,6 +120,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   carrier-agnostic `Location { line, column }`. Requires message types
   generated with `json = true`. Contributed by @rsd-darshan.
 
+- **`type_name_prefix` option** (#46). `buffa_build::Config::type_name_prefix("Rpc")`
+  (also `CodeGenConfig::type_name_prefix` and `protoc-gen-buffa`'s
+  `type_name_prefix=` option) prepends a prefix to every generated message
+  struct and enum type name — `message User {}` generates `struct RpcUser`,
+  with views (`RpcUserView`), cross-references, and re-exports following.
+  Module names, oneof enums, `extern_path`-mapped types (including
+  well-known types), and the wire/JSON format are unaffected. An invalid
+  prefix (not a Rust identifier prefix) is rejected at generation time.
+
 ### Changed
 
 - **Breaking:** the decode-path `Message` trait methods (`merge`,

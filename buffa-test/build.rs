@@ -370,6 +370,23 @@ fn main() {
         .compile()
         .expect("buffa_build failed for basic.proto with use_bytes_type + generate_arbitrary");
 
+    // type_name_prefix (#46): every generated type name carries the "Rpc"
+    // prefix; views + JSON + text on so all cross-reference emission paths
+    // compile against the prefixed names. Module names, oneof enums, and
+    // the wire format are unaffected. Runtime checks in tests/type_prefix.rs.
+    let prefix_out =
+        std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("prefix_variant");
+    std::fs::create_dir_all(&prefix_out).expect("create prefix_variant dir");
+    buffa_build::Config::new()
+        .files(&["protos/basic.proto"])
+        .includes(&["protos/"])
+        .type_name_prefix("Rpc")
+        .generate_json(true)
+        .generate_text(true)
+        .out_dir(prefix_out)
+        .compile()
+        .expect("buffa_build failed for basic.proto with type_name_prefix");
+
     // Views + preserve_unknown_fields=false: the else-branches in view
     // codegen that omit the unknown-fields view field and before_tag tracking.
     // Compiled into a sub-directory; no runtime tests needed — the coverage

@@ -709,6 +709,35 @@ pub struct CodeGenConfig {
     /// different feature name (e.g. its JSON support behind a `serde`
     /// feature). Inert unless one of the gating flags is on.
     pub feature_gate_names: FeatureGateNames,
+    /// Prefix prepended to every locally-generated Rust type name.
+    ///
+    /// With prefix `"Rpc"`, `message User {}` generates `struct RpcUser`,
+    /// its view becomes `RpcUserView` / `RpcUserOwnedView`, and every
+    /// cross-reference (fields, oneof variants, maps, extensions) uses the
+    /// prefixed name. Useful in multi-protocol systems where generated
+    /// types from different domains would otherwise collide with each
+    /// other or with a canonical hand-written model.
+    ///
+    /// The prefix applies to **message structs and enum types** (top-level
+    /// and nested, plus their derived view/owned-view types). It does not
+    /// apply to:
+    ///
+    /// - module names (`message Outer` still nests under `pub mod outer` —
+    ///   modules are namespaced by the package tree and never collide with
+    ///   type names),
+    /// - oneof enums (structurally namespaced under `__buffa::oneof::`,
+    ///   named after the oneof declaration, not the message),
+    /// - types mapped away via [`extern_paths`](Self::extern_paths) or the
+    ///   automatic well-known-type mapping (their names are owned by the
+    ///   external crate),
+    /// - wire-format and JSON output (proto names, `TYPE_URL`s, and JSON
+    ///   field names are unaffected — this is a pure Rust-identifier
+    ///   rename).
+    ///
+    /// Must be a valid Rust identifier prefix (`[A-Za-z_][A-Za-z0-9_]*`);
+    /// generation fails with [`CodeGenError::InvalidTypeNamePrefix`]
+    /// otherwise. Defaults to `""` (no prefix).
+    pub type_name_prefix: String,
 }
 
 impl Default for CodeGenConfig {
@@ -741,6 +770,7 @@ impl Default for CodeGenConfig {
             idiomatic_enum_aliases: true,
             idiomatic_imports: false,
             feature_gate_names: FeatureGateNames::default(),
+            type_name_prefix: String::new(),
         }
     }
 }
@@ -753,6 +783,32 @@ impl CodeGenConfig {
     /// at each use site, whichever reads better.
     pub(crate) fn feature_gates(&self) -> feature_gates::FeatureGates<'_> {
         feature_gates::FeatureGates::for_config(self)
+    }
+
+    /// Apply [`type_name_prefix`](Self::type_name_prefix) to a locally
+    /// generated type's proto simple name, yielding the Rust identifier to
+    /// declare (and register in the type map).
+    pub(crate) fn prefixed_type_name(&self, proto_name: &str) -> String {
+        format!("{}{proto_name}", self.type_name_prefix)
+    }
+
+    /// Validate [`type_name_prefix`](Self::type_name_prefix): empty (no
+    /// prefix) or a valid Rust identifier prefix, so `{prefix}{TypeName}`
+    /// is always a valid identifier.
+    pub(crate) fn validate_type_name_prefix(&self) -> Result<(), CodeGenError> {
+        let prefix = &self.type_name_prefix;
+        let valid = prefix.is_empty()
+            || (!prefix.starts_with(|c: char| c.is_ascii_digit())
+                && prefix
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_'));
+        if valid {
+            Ok(())
+        } else {
+            Err(CodeGenError::InvalidTypeNamePrefix {
+                prefix: prefix.clone(),
+            })
+        }
     }
 }
 
@@ -1079,6 +1135,8 @@ pub fn generate_with_diagnostics(
         )));
     }
 
+    config.validate_type_name_prefix()?;
+
     let ctx = context::CodeGenContext::for_generate(file_descriptors, files_to_generate, config);
 
     // Lazy views need the eager view machinery; warn once per run.
@@ -1348,16 +1406,17 @@ fn generate_proto_content(
     let sentinel = make_field_ident(context::SENTINEL_MOD);
 
     for enum_type in &file.enum_type {
-        let enum_rust_name = enum_type.name.as_deref().unwrap_or("");
+        let enum_proto_name = enum_type.name.as_deref().unwrap_or("");
+        let enum_rust_name = ctx.config.prefixed_type_name(enum_proto_name);
         let enum_fqn = if current_package.is_empty() {
-            enum_rust_name.to_string()
+            enum_proto_name.to_string()
         } else {
-            format!("{}.{}", current_package, enum_rust_name)
+            format!("{}.{}", current_package, enum_proto_name)
         };
         owned.extend(enumeration::generate_enum(
             ctx,
             enum_type,
-            enum_rust_name,
+            &enum_rust_name,
             &enum_fqn,
             &features,
             &resolver,
@@ -1366,6 +1425,7 @@ fn generate_proto_content(
 
     for message_type in &file.message_type {
         let top_level_name = message_type.name.as_deref().unwrap_or("");
+        let rust_name = ctx.config.prefixed_type_name(top_level_name);
         let proto_fqn = if current_package.is_empty() {
             top_level_name.to_string()
         } else {
@@ -1383,7 +1443,7 @@ fn generate_proto_content(
             ctx,
             message_type,
             current_package,
-            top_level_name,
+            &rust_name,
             &proto_fqn,
             &features,
             &resolver,
@@ -1440,7 +1500,7 @@ fn generate_proto_content(
         // deterministically. `#[doc(inline)]` makes rustdoc render the type's
         // full page at the natural path instead of a "Re-export of …" stub.
         if ctx.config.generate_views {
-            let view_ident = format_ident!("{top_level_name}View");
+            let view_ident = format_ident!("{rust_name}View");
             root_reexports.push(message::ReexportCandidate {
                 name: view_ident.to_string(),
                 tokens: feature_gates::cfg_block(
@@ -1453,7 +1513,7 @@ fn generate_proto_content(
             });
             // The owned-view wrapper gets the same natural-path treatment as
             // the view struct, so `pkg::FooOwnedView` works out of the box.
-            let owned_view_ident = format_ident!("{top_level_name}OwnedView");
+            let owned_view_ident = format_ident!("{rust_name}OwnedView");
             root_reexports.push(message::ReexportCandidate {
                 name: owned_view_ident.to_string(),
                 tokens: feature_gates::cfg_block(
@@ -1727,12 +1787,17 @@ fn root_occupied_names(
         let package = file.package.as_deref().unwrap_or("");
         for m in &file.message_type {
             let name = m.name.as_deref().unwrap_or("");
-            occupied.insert(name.to_string());
+            // The declared struct name carries the configured prefix; the
+            // module name stays proto-derived.
+            occupied.insert(ctx.config.prefixed_type_name(name));
             // The actual module name (deconflicted from sub-packages, #135).
             occupied.insert(ctx.nested_module_name(package, name));
         }
         for e in &file.enum_type {
-            occupied.insert(e.name.as_deref().unwrap_or("").to_string());
+            occupied.insert(
+                ctx.config
+                    .prefixed_type_name(e.name.as_deref().unwrap_or("")),
+            );
         }
     }
     occupied
@@ -2182,6 +2247,14 @@ pub enum CodeGenError {
         attribute: String,
         detail: String,
     },
+    /// [`CodeGenConfig::type_name_prefix`] is not a valid Rust identifier
+    /// prefix (`[A-Za-z_][A-Za-z0-9_]*`), so prepending it to a type name
+    /// would produce invalid Rust.
+    #[error(
+        "invalid type_name_prefix '{prefix}': must be empty or a valid Rust \
+         identifier prefix (letters, digits, '_'; not starting with a digit)"
+    )]
+    InvalidTypeNamePrefix { prefix: String },
 }
 
 #[cfg(test)]

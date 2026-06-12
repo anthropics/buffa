@@ -255,6 +255,10 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                 // root. Requires file_per_package=true (rejected by codegen
                 // otherwise).
                 "idiomatic_imports" => codegen.idiomatic_imports = value.trim() == "true",
+                // `type_name_prefix=Rpc` prepends a prefix to every generated
+                // message/enum type name (and their view types). Validated by
+                // buffa-codegen at generation time.
+                "type_name_prefix" => codegen.type_name_prefix = value.trim().to_string(),
                 "extern_path" => {
                     // value is "<proto_path>=<rust_path>"
                     if let Some((proto, rust)) = value.split_once('=') {
@@ -479,6 +483,18 @@ mod tests {
         assert_eq!(config.codegen.feature_gate_names.views, "views");
         assert_eq!(config.codegen.feature_gate_names.text, "text");
         assert_eq!(config.codegen.feature_gate_names.reflect, "reflect");
+    }
+
+    #[test]
+    fn type_name_prefix_parsed() {
+        let config = parse_config("type_name_prefix=Rpc").unwrap();
+        assert_eq!(config.codegen.type_name_prefix, "Rpc");
+    }
+
+    #[test]
+    fn type_name_prefix_default_is_empty() {
+        let config = parse_config("").unwrap();
+        assert!(config.codegen.type_name_prefix.is_empty());
     }
 
     #[test]
