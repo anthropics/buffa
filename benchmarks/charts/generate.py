@@ -312,21 +312,31 @@ def generate_chart(title: str, unit: str, messages: list[str],
     bottom_margin = 35
     svg_w = chart_left + chart_w + 80
 
-    # Lay out legend entries left-aligned, wrapping to a new row when an
-    # entry would run past the right edge (7+ series no longer fit on one
-    # row). The legend band grows by 20px per extra row.
-    legend_x0 = 10
+    # Lay out legend entries centered, wrapping to a new row when an entry
+    # would run past the right edge (7+ series no longer fit on one row).
+    # First assign entries to rows, then center each row within the canvas.
+    # The legend band grows by 20px per extra row. The trailing 14px of each
+    # entry's advance is inter-entry padding, so it is excluded from the
+    # final entry's width when centering.
+    legend_margin = 10
     legend_row_h = 20
-    legend_positions: list[tuple[float, int]] = []
-    lx, legend_row = float(legend_x0), 0
+    legend_pad = 14
+    rows: list[list[tuple[Series, float]]] = [[]]
+    lx = 0.0
     for s in series_list:
-        entry_w = len(s.name) * 7.5 + 32
-        if lx > legend_x0 and lx + entry_w > svg_w - 10:
-            legend_row += 1
-            lx = float(legend_x0)
-        legend_positions.append((lx, legend_row))
+        entry_w = len(s.name) * 7.5 + 18 + legend_pad
+        if rows[-1] and lx + entry_w > svg_w - 2 * legend_margin:
+            rows.append([])
+            lx = 0.0
+        rows[-1].append((s, lx))
         lx += entry_w
-    legend_h = 20 + legend_row_h * (legend_row + 1)
+    legend_positions: list[tuple[float, int]] = []
+    for row_idx, row_entries in enumerate(rows):
+        last_s, last_x = row_entries[-1]
+        row_w = last_x + len(last_s.name) * 7.5 + 18
+        x0 = (svg_w - row_w) / 2
+        legend_positions.extend((x0 + ex, row_idx) for _, ex in row_entries)
+    legend_h = 20 + legend_row_h * len(rows)
     top_margin = title_h + legend_h + 10
 
     n_bars = len(series_list)

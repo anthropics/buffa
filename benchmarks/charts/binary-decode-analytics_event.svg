@@ -10,20 +10,20 @@
   </style>
   <rect width="100%" height="100%" fill="white"/>
   <text x="400.0" y="25" text-anchor="middle" class="title">Binary Decode Throughput — AnalyticsEvent</text>
-  <rect x="10" y="35" width="14" height="14" rx="2" fill="#4C78A8"/>
-  <text x="28" y="46" class="legend-text">buffa</text>
-  <rect x="79.5" y="35" width="14" height="14" rx="2" fill="#72B7B2"/>
-  <text x="97.5" y="46" class="legend-text">buffa (view)</text>
-  <rect x="201.5" y="35" width="14" height="14" rx="2" fill="#A0CBE8"/>
-  <text x="219.5" y="46" class="legend-text">buffa (lazy)</text>
-  <rect x="323.5" y="35" width="14" height="14" rx="2" fill="#F58518"/>
-  <text x="341.5" y="46" class="legend-text">prost</text>
-  <rect x="393" y="35" width="14" height="14" rx="2" fill="#EEAE62"/>
-  <text x="411" y="46" class="legend-text">prost (bytes)</text>
-  <rect x="522.5" y="35" width="14" height="14" rx="2" fill="#E45756"/>
-  <text x="540.5" y="46" class="legend-text">protobuf-v4</text>
-  <rect x="637" y="35" width="14" height="14" rx="2" fill="#54A24B"/>
-  <text x="655" y="46" class="legend-text">Go</text>
+  <rect x="70" y="35" width="14" height="14" rx="2" fill="#4C78A8"/>
+  <text x="88" y="46" class="legend-text">buffa</text>
+  <rect x="139.5" y="35" width="14" height="14" rx="2" fill="#72B7B2"/>
+  <text x="157.5" y="46" class="legend-text">buffa (view)</text>
+  <rect x="261.5" y="35" width="14" height="14" rx="2" fill="#A0CBE8"/>
+  <text x="279.5" y="46" class="legend-text">buffa (lazy)</text>
+  <rect x="383.5" y="35" width="14" height="14" rx="2" fill="#F58518"/>
+  <text x="401.5" y="46" class="legend-text">prost</text>
+  <rect x="453" y="35" width="14" height="14" rx="2" fill="#EEAE62"/>
+  <text x="471" y="46" class="legend-text">prost (bytes)</text>
+  <rect x="582.5" y="35" width="14" height="14" rx="2" fill="#E45756"/>
+  <text x="600.5" y="46" class="legend-text">protobuf-v4</text>
+  <rect x="697" y="35" width="14" height="14" rx="2" fill="#54A24B"/>
+  <text x="715" y="46" class="legend-text">Go</text>
   <line x1="140.0" y1="80" x2="140.0" y2="258" class="grid"/>
   <text x="140.0" y="273" text-anchor="middle" class="axis-label">0.0</text>
   <line x1="256.0" y1="80" x2="256.0" y2="258" class="grid"/>
