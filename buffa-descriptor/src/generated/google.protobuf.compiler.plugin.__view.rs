@@ -244,24 +244,8 @@ impl<'a> ::buffa::MessageName for VersionView<'a> {
     const FULL_NAME: &'static str = "google.protobuf.compiler.Version";
     const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.compiler.Version";
 }
-impl<'v> ::buffa::DefaultViewInstance for VersionView<'v> {
-    fn default_view_instance<'a>() -> &'a Self
-    where
-        Self: 'a,
-    {
-        static VALUE: ::buffa::__private::OnceBox<VersionView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                <VersionView<'static>>::default(),
-            ))
-    }
-}
-impl ::buffa::ViewReborrow for VersionView<'static> {
-    type Reborrowed<'b> = VersionView<'b>;
-    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
-        this
-    }
-}
+::buffa::impl_default_view_instance!(VersionView);
+::buffa::impl_view_reborrow!(VersionView);
 /** Self-contained, `'static` owned view of a `Version` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`VersionView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -743,24 +727,8 @@ impl<'a> ::buffa::MessageName for CodeGeneratorRequestView<'a> {
     const FULL_NAME: &'static str = "google.protobuf.compiler.CodeGeneratorRequest";
     const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.compiler.CodeGeneratorRequest";
 }
-impl<'v> ::buffa::DefaultViewInstance for CodeGeneratorRequestView<'v> {
-    fn default_view_instance<'a>() -> &'a Self
-    where
-        Self: 'a,
-    {
-        static VALUE: ::buffa::__private::OnceBox<CodeGeneratorRequestView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                <CodeGeneratorRequestView<'static>>::default(),
-            ))
-    }
-}
-impl ::buffa::ViewReborrow for CodeGeneratorRequestView<'static> {
-    type Reborrowed<'b> = CodeGeneratorRequestView<'b>;
-    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
-        this
-    }
-}
+::buffa::impl_default_view_instance!(CodeGeneratorRequestView);
+::buffa::impl_view_reborrow!(CodeGeneratorRequestView);
 /** Self-contained, `'static` owned view of a `CodeGeneratorRequest` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`CodeGeneratorRequestView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -1257,24 +1225,8 @@ impl<'a> ::buffa::MessageName for CodeGeneratorResponseView<'a> {
     const FULL_NAME: &'static str = "google.protobuf.compiler.CodeGeneratorResponse";
     const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.compiler.CodeGeneratorResponse";
 }
-impl<'v> ::buffa::DefaultViewInstance for CodeGeneratorResponseView<'v> {
-    fn default_view_instance<'a>() -> &'a Self
-    where
-        Self: 'a,
-    {
-        static VALUE: ::buffa::__private::OnceBox<CodeGeneratorResponseView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                <CodeGeneratorResponseView<'static>>::default(),
-            ))
-    }
-}
-impl ::buffa::ViewReborrow for CodeGeneratorResponseView<'static> {
-    type Reborrowed<'b> = CodeGeneratorResponseView<'b>;
-    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
-        this
-    }
-}
+::buffa::impl_default_view_instance!(CodeGeneratorResponseView);
+::buffa::impl_view_reborrow!(CodeGeneratorResponseView);
 /** Self-contained, `'static` owned view of a `CodeGeneratorResponse` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`CodeGeneratorResponseView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -1763,24 +1715,8 @@ pub mod code_generator_response {
         const FULL_NAME: &'static str = "google.protobuf.compiler.CodeGeneratorResponse.File";
         const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.compiler.CodeGeneratorResponse.File";
     }
-    impl<'v> ::buffa::DefaultViewInstance for FileView<'v> {
-        fn default_view_instance<'a>() -> &'a Self
-        where
-            Self: 'a,
-        {
-            static VALUE: ::buffa::__private::OnceBox<FileView<'static>> = ::buffa::__private::OnceBox::new();
-            VALUE
-                .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                    <FileView<'static>>::default(),
-                ))
-        }
-    }
-    impl ::buffa::ViewReborrow for FileView<'static> {
-        type Reborrowed<'b> = FileView<'b>;
-        fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
-            this
-        }
-    }
+    ::buffa::impl_default_view_instance!(FileView);
+    ::buffa::impl_view_reborrow!(FileView);
     /** Self-contained, `'static` owned view of a `File` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`FileView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.

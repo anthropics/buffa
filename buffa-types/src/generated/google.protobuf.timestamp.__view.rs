@@ -257,24 +257,8 @@ impl<'a> ::buffa::MessageName for TimestampView<'a> {
     const FULL_NAME: &'static str = "google.protobuf.Timestamp";
     const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Timestamp";
 }
-impl<'v> ::buffa::DefaultViewInstance for TimestampView<'v> {
-    fn default_view_instance<'a>() -> &'a Self
-    where
-        Self: 'a,
-    {
-        static VALUE: ::buffa::__private::OnceBox<TimestampView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                <TimestampView<'static>>::default(),
-            ))
-    }
-}
-impl ::buffa::ViewReborrow for TimestampView<'static> {
-    type Reborrowed<'b> = TimestampView<'b>;
-    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
-        this
-    }
-}
+::buffa::impl_default_view_instance!(TimestampView);
+::buffa::impl_view_reborrow!(TimestampView);
 /** Self-contained, `'static` owned view of a `Timestamp` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`TimestampView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.

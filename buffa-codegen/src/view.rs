@@ -457,25 +457,9 @@ pub(crate) fn generate_view_with_nesting(
 
         #message_name_impl
 
-        impl<'v> ::buffa::DefaultViewInstance for #view_ident<'v> {
-            fn default_view_instance<'a>() -> &'a Self
-            where
-                Self: 'a,
-            {
-                static VALUE: ::buffa::__private::OnceBox<#view_ident<'static>>
-                    = ::buffa::__private::OnceBox::new();
-                VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                    <#view_ident<'static>>::default(),
-                ))
-            }
-        }
+        ::buffa::impl_default_view_instance!(#view_ident);
 
-        impl ::buffa::ViewReborrow for #view_ident<'static> {
-            type Reborrowed<'b> = #view_ident<'b>;
-            fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
-                this
-            }
-        }
+        ::buffa::impl_view_reborrow!(#view_ident);
 
         #owned_view_wrapper
 

@@ -100,12 +100,7 @@ impl Version {
         self
     }
 }
-impl ::buffa::DefaultInstance for Version {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<Version> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(Version);
 impl ::buffa::MessageName for Version {
     const PACKAGE: &'static str = "google.protobuf.compiler";
     const NAME: &'static str = "Version";
@@ -433,12 +428,7 @@ impl CodeGeneratorRequest {
         self
     }
 }
-impl ::buffa::DefaultInstance for CodeGeneratorRequest {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<CodeGeneratorRequest> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(CodeGeneratorRequest);
 impl ::buffa::MessageName for CodeGeneratorRequest {
     const PACKAGE: &'static str = "google.protobuf.compiler";
     const NAME: &'static str = "CodeGeneratorRequest";
@@ -840,12 +830,7 @@ impl CodeGeneratorResponse {
         self
     }
 }
-impl ::buffa::DefaultInstance for CodeGeneratorResponse {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<CodeGeneratorResponse> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(CodeGeneratorResponse);
 impl ::buffa::MessageName for CodeGeneratorResponse {
     const PACKAGE: &'static str = "google.protobuf.compiler";
     const NAME: &'static str = "CodeGeneratorResponse";
@@ -1406,12 +1391,7 @@ pub mod code_generator_response {
             self
         }
     }
-    impl ::buffa::DefaultInstance for File {
-        fn default_instance() -> &'static Self {
-            static VALUE: ::buffa::__private::OnceBox<File> = ::buffa::__private::OnceBox::new();
-            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-        }
-    }
+    ::buffa::impl_default_instance!(File);
     impl ::buffa::MessageName for File {
         const PACKAGE: &'static str = "google.protobuf.compiler";
         const NAME: &'static str = "CodeGeneratorResponse.File";

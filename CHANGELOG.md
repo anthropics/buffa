@@ -146,6 +146,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   pairs (~870 sites); owned and view impls share them. Wire output is
   byte-identical. (#195)
 
+- `DefaultInstance` / `DefaultViewInstance` / `ViewReborrow` impls are
+  emitted via new public runtime macros (`impl_default_instance!`,
+  `impl_default_view_instance!`, `impl_view_reborrow!`) instead of being
+  expanded per generated type (~290 sites); hand-written message and view
+  types can reuse them. No behavioural change. (#196)
+
 - **Breaking:** the decode-path `Message` trait methods (`merge`,
   `merge_field`, `merge_to_limit`, `merge_group`, `merge_length_delimited`),
   `encoding::decode_unknown_field`, and `message_set::merge_item` now take a

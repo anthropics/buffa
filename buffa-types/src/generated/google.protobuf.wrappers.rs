@@ -26,12 +26,7 @@ impl DoubleValue {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.DoubleValue";
 }
-impl ::buffa::DefaultInstance for DoubleValue {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<DoubleValue> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(DoubleValue);
 #[cfg(feature = "reflect")]
 const _: () = {
     impl ::buffa_descriptor::reflect::ReflectMessage for DoubleValue {
@@ -263,12 +258,7 @@ impl FloatValue {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FloatValue";
 }
-impl ::buffa::DefaultInstance for FloatValue {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<FloatValue> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(FloatValue);
 #[cfg(feature = "reflect")]
 const _: () = {
     impl ::buffa_descriptor::reflect::ReflectMessage for FloatValue {
@@ -500,12 +490,7 @@ impl Int64Value {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Int64Value";
 }
-impl ::buffa::DefaultInstance for Int64Value {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<Int64Value> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(Int64Value);
 #[cfg(feature = "reflect")]
 const _: () = {
     impl ::buffa_descriptor::reflect::ReflectMessage for Int64Value {
@@ -737,12 +722,7 @@ impl UInt64Value {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.UInt64Value";
 }
-impl ::buffa::DefaultInstance for UInt64Value {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<UInt64Value> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(UInt64Value);
 #[cfg(feature = "reflect")]
 const _: () = {
     impl ::buffa_descriptor::reflect::ReflectMessage for UInt64Value {
@@ -974,12 +954,7 @@ impl Int32Value {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Int32Value";
 }
-impl ::buffa::DefaultInstance for Int32Value {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<Int32Value> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(Int32Value);
 #[cfg(feature = "reflect")]
 const _: () = {
     impl ::buffa_descriptor::reflect::ReflectMessage for Int32Value {
@@ -1211,12 +1186,7 @@ impl UInt32Value {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.UInt32Value";
 }
-impl ::buffa::DefaultInstance for UInt32Value {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<UInt32Value> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(UInt32Value);
 #[cfg(feature = "reflect")]
 const _: () = {
     impl ::buffa_descriptor::reflect::ReflectMessage for UInt32Value {
@@ -1448,12 +1418,7 @@ impl BoolValue {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.BoolValue";
 }
-impl ::buffa::DefaultInstance for BoolValue {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<BoolValue> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(BoolValue);
 #[cfg(feature = "reflect")]
 const _: () = {
     impl ::buffa_descriptor::reflect::ReflectMessage for BoolValue {
@@ -1685,12 +1650,7 @@ impl StringValue {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.StringValue";
 }
-impl ::buffa::DefaultInstance for StringValue {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<StringValue> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(StringValue);
 #[cfg(feature = "reflect")]
 const _: () = {
     impl ::buffa_descriptor::reflect::ReflectMessage for StringValue {
@@ -1922,12 +1882,7 @@ impl BytesValue {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.BytesValue";
 }
-impl ::buffa::DefaultInstance for BytesValue {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<BytesValue> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(BytesValue);
 #[cfg(feature = "reflect")]
 const _: () = {
     impl ::buffa_descriptor::reflect::ReflectMessage for BytesValue {

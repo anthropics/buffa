@@ -124,24 +124,8 @@ impl<'a> ::buffa::MessageName for EmptyView<'a> {
     const FULL_NAME: &'static str = "google.protobuf.Empty";
     const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Empty";
 }
-impl<'v> ::buffa::DefaultViewInstance for EmptyView<'v> {
-    fn default_view_instance<'a>() -> &'a Self
-    where
-        Self: 'a,
-    {
-        static VALUE: ::buffa::__private::OnceBox<EmptyView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                <EmptyView<'static>>::default(),
-            ))
-    }
-}
-impl ::buffa::ViewReborrow for EmptyView<'static> {
-    type Reborrowed<'b> = EmptyView<'b>;
-    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
-        this
-    }
-}
+::buffa::impl_default_view_instance!(EmptyView);
+::buffa::impl_view_reborrow!(EmptyView);
 /** Self-contained, `'static` owned view of a `Empty` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`EmptyView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.

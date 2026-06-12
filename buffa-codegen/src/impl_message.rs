@@ -651,13 +651,7 @@ pub fn generate_message_impl(
     };
 
     Ok(quote! {
-        impl ::buffa::DefaultInstance for #name_ident {
-            fn default_instance() -> &'static Self {
-                static VALUE: ::buffa::__private::OnceBox<#name_ident>
-                    = ::buffa::__private::OnceBox::new();
-                VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-            }
-        }
+        ::buffa::impl_default_instance!(#name_ident);
 
         #reflectable_impl
 

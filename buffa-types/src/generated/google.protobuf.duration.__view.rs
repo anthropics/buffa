@@ -222,24 +222,8 @@ impl<'a> ::buffa::MessageName for DurationView<'a> {
     const FULL_NAME: &'static str = "google.protobuf.Duration";
     const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Duration";
 }
-impl<'v> ::buffa::DefaultViewInstance for DurationView<'v> {
-    fn default_view_instance<'a>() -> &'a Self
-    where
-        Self: 'a,
-    {
-        static VALUE: ::buffa::__private::OnceBox<DurationView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                <DurationView<'static>>::default(),
-            ))
-    }
-}
-impl ::buffa::ViewReborrow for DurationView<'static> {
-    type Reborrowed<'b> = DurationView<'b>;
-    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
-        this
-    }
-}
+::buffa::impl_default_view_instance!(DurationView);
+::buffa::impl_view_reborrow!(DurationView);
 /** Self-contained, `'static` owned view of a `Duration` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`DurationView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.

@@ -222,24 +222,8 @@ impl<'a> ::buffa::MessageName for StructView<'a> {
     const FULL_NAME: &'static str = "google.protobuf.Struct";
     const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Struct";
 }
-impl<'v> ::buffa::DefaultViewInstance for StructView<'v> {
-    fn default_view_instance<'a>() -> &'a Self
-    where
-        Self: 'a,
-    {
-        static VALUE: ::buffa::__private::OnceBox<StructView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                <StructView<'static>>::default(),
-            ))
-    }
-}
-impl ::buffa::ViewReborrow for StructView<'static> {
-    type Reborrowed<'b> = StructView<'b>;
-    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
-        this
-    }
-}
+::buffa::impl_default_view_instance!(StructView);
+::buffa::impl_view_reborrow!(StructView);
 /** Self-contained, `'static` owned view of a `Struct` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`StructView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -766,24 +750,8 @@ impl<'a> ::buffa::MessageName for ValueView<'a> {
     const FULL_NAME: &'static str = "google.protobuf.Value";
     const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Value";
 }
-impl<'v> ::buffa::DefaultViewInstance for ValueView<'v> {
-    fn default_view_instance<'a>() -> &'a Self
-    where
-        Self: 'a,
-    {
-        static VALUE: ::buffa::__private::OnceBox<ValueView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                <ValueView<'static>>::default(),
-            ))
-    }
-}
-impl ::buffa::ViewReborrow for ValueView<'static> {
-    type Reborrowed<'b> = ValueView<'b>;
-    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
-        this
-    }
-}
+::buffa::impl_default_view_instance!(ValueView);
+::buffa::impl_view_reborrow!(ValueView);
 /** Self-contained, `'static` owned view of a `Value` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`ValueView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -1242,24 +1210,8 @@ impl<'a> ::buffa::MessageName for ListValueView<'a> {
     const FULL_NAME: &'static str = "google.protobuf.ListValue";
     const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.ListValue";
 }
-impl<'v> ::buffa::DefaultViewInstance for ListValueView<'v> {
-    fn default_view_instance<'a>() -> &'a Self
-    where
-        Self: 'a,
-    {
-        static VALUE: ::buffa::__private::OnceBox<ListValueView<'static>> = ::buffa::__private::OnceBox::new();
-        VALUE
-            .get_or_init(|| ::buffa::alloc::boxed::Box::new(
-                <ListValueView<'static>>::default(),
-            ))
-    }
-}
-impl ::buffa::ViewReborrow for ListValueView<'static> {
-    type Reborrowed<'b> = ListValueView<'b>;
-    fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
-        this
-    }
-}
+::buffa::impl_default_view_instance!(ListValueView);
+::buffa::impl_view_reborrow!(ListValueView);
 /** Self-contained, `'static` owned view of a `ListValue` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`ListValueView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.

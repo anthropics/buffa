@@ -54,6 +54,30 @@ pub trait DefaultInstance: Default + 'static {
     fn default_instance() -> &'static Self;
 }
 
+/// Implement [`DefaultInstance`] for a message type via a lazily-initialized
+/// `OnceBox` singleton.
+///
+/// Emitted by generated code (one invocation per message struct) so the
+/// six-line singleton body lives here once instead of in every generated
+/// impl. Hand-written `Message` types may also use it.
+///
+/// ```rust,ignore
+/// buffa::impl_default_instance!(MyMessage);
+/// ```
+#[macro_export]
+macro_rules! impl_default_instance {
+    ($ty:ty) => {
+        impl $crate::DefaultInstance for $ty {
+            fn default_instance() -> &'static Self {
+                static VALUE: $crate::__private::OnceBox<$ty> = $crate::__private::OnceBox::new();
+                VALUE.get_or_init(|| {
+                    $crate::alloc::boxed::Box::new(<$ty as ::core::default::Default>::default())
+                })
+            }
+        }
+    };
+}
+
 /// A wrapper for optional message fields that provides transparent access
 /// to a default instance when the field is not set.
 ///
@@ -316,11 +340,16 @@ mod tests {
         name: alloc::string::String,
     }
 
-    impl DefaultInstance for Inner {
-        fn default_instance() -> &'static Self {
-            static VALUE: crate::__private::OnceBox<Inner> = crate::__private::OnceBox::new();
-            VALUE.get_or_init(|| alloc::boxed::Box::new(Inner::default()))
-        }
+    // Via the exported macro, which doubles as its unit test (hygiene and
+    // `$crate` path resolution).
+    crate::impl_default_instance!(Inner);
+
+    #[test]
+    fn impl_default_instance_macro_returns_singleton() {
+        let a: &'static Inner = Inner::default_instance();
+        let b: &'static Inner = Inner::default_instance();
+        assert!(core::ptr::eq(a, b), "singleton must be a single allocation");
+        assert_eq!(a, &Inner::default());
     }
 
     #[test]

@@ -1349,7 +1349,7 @@ fn test_message_scalar_fields() {
         "missing score field: {content}"
     );
     assert!(
-        content.contains("impl ::buffa::DefaultInstance for Scalars"),
+        content.contains("::buffa::impl_default_instance!(Scalars);"),
         "missing DefaultInstance impl: {content}"
     );
     assert!(

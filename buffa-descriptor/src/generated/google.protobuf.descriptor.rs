@@ -441,12 +441,7 @@ impl FileDescriptorSet {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FileDescriptorSet";
 }
-impl ::buffa::DefaultInstance for FileDescriptorSet {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<FileDescriptorSet> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(FileDescriptorSet);
 impl ::buffa::MessageName for FileDescriptorSet {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "FileDescriptorSet";
@@ -981,12 +976,7 @@ impl FileDescriptorProto {
         self
     }
 }
-impl ::buffa::DefaultInstance for FileDescriptorProto {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<FileDescriptorProto> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(FileDescriptorProto);
 impl ::buffa::MessageName for FileDescriptorProto {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "FileDescriptorProto";
@@ -1730,12 +1720,7 @@ impl DescriptorProto {
         self
     }
 }
-impl ::buffa::DefaultInstance for DescriptorProto {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<DescriptorProto> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(DescriptorProto);
 impl ::buffa::MessageName for DescriptorProto {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "DescriptorProto";
@@ -2292,12 +2277,7 @@ pub mod descriptor_proto {
             self
         }
     }
-    impl ::buffa::DefaultInstance for ExtensionRange {
-        fn default_instance() -> &'static Self {
-            static VALUE: ::buffa::__private::OnceBox<ExtensionRange> = ::buffa::__private::OnceBox::new();
-            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-        }
-    }
+    ::buffa::impl_default_instance!(ExtensionRange);
     impl ::buffa::MessageName for ExtensionRange {
         const PACKAGE: &'static str = "google.protobuf";
         const NAME: &'static str = "DescriptorProto.ExtensionRange";
@@ -2554,12 +2534,7 @@ pub mod descriptor_proto {
             self
         }
     }
-    impl ::buffa::DefaultInstance for ReservedRange {
-        fn default_instance() -> &'static Self {
-            static VALUE: ::buffa::__private::OnceBox<ReservedRange> = ::buffa::__private::OnceBox::new();
-            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-        }
-    }
+    ::buffa::impl_default_instance!(ReservedRange);
     impl ::buffa::MessageName for ReservedRange {
         const PACKAGE: &'static str = "google.protobuf";
         const NAME: &'static str = "DescriptorProto.ReservedRange";
@@ -2819,12 +2794,7 @@ impl ExtensionRangeOptions {
         self
     }
 }
-impl ::buffa::DefaultInstance for ExtensionRangeOptions {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<ExtensionRangeOptions> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(ExtensionRangeOptions);
 impl ::buffa::MessageName for ExtensionRangeOptions {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "ExtensionRangeOptions";
@@ -3567,12 +3537,7 @@ pub mod extension_range_options {
             self
         }
     }
-    impl ::buffa::DefaultInstance for Declaration {
-        fn default_instance() -> &'static Self {
-            static VALUE: ::buffa::__private::OnceBox<Declaration> = ::buffa::__private::OnceBox::new();
-            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-        }
-    }
+    ::buffa::impl_default_instance!(Declaration);
     impl ::buffa::MessageName for Declaration {
         const PACKAGE: &'static str = "google.protobuf";
         const NAME: &'static str = "ExtensionRangeOptions.Declaration";
@@ -4095,12 +4060,7 @@ impl FieldDescriptorProto {
         self
     }
 }
-impl ::buffa::DefaultInstance for FieldDescriptorProto {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<FieldDescriptorProto> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(FieldDescriptorProto);
 impl ::buffa::MessageName for FieldDescriptorProto {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "FieldDescriptorProto";
@@ -5008,12 +4968,7 @@ impl OneofDescriptorProto {
         self
     }
 }
-impl ::buffa::DefaultInstance for OneofDescriptorProto {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<OneofDescriptorProto> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(OneofDescriptorProto);
 impl ::buffa::MessageName for OneofDescriptorProto {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "OneofDescriptorProto";
@@ -5299,12 +5254,7 @@ impl EnumDescriptorProto {
         self
     }
 }
-impl ::buffa::DefaultInstance for EnumDescriptorProto {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<EnumDescriptorProto> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(EnumDescriptorProto);
 impl ::buffa::MessageName for EnumDescriptorProto {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "EnumDescriptorProto";
@@ -5677,12 +5627,7 @@ pub mod enum_descriptor_proto {
             self
         }
     }
-    impl ::buffa::DefaultInstance for EnumReservedRange {
-        fn default_instance() -> &'static Self {
-            static VALUE: ::buffa::__private::OnceBox<EnumReservedRange> = ::buffa::__private::OnceBox::new();
-            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-        }
-    }
+    ::buffa::impl_default_instance!(EnumReservedRange);
     impl ::buffa::MessageName for EnumReservedRange {
         const PACKAGE: &'static str = "google.protobuf";
         const NAME: &'static str = "EnumDescriptorProto.EnumReservedRange";
@@ -5916,12 +5861,7 @@ impl EnumValueDescriptorProto {
         self
     }
 }
-impl ::buffa::DefaultInstance for EnumValueDescriptorProto {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<EnumValueDescriptorProto> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(EnumValueDescriptorProto);
 impl ::buffa::MessageName for EnumValueDescriptorProto {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "EnumValueDescriptorProto";
@@ -6175,12 +6115,7 @@ impl ServiceDescriptorProto {
         self
     }
 }
-impl ::buffa::DefaultInstance for ServiceDescriptorProto {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<ServiceDescriptorProto> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(ServiceDescriptorProto);
 impl ::buffa::MessageName for ServiceDescriptorProto {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "ServiceDescriptorProto";
@@ -6523,12 +6458,7 @@ impl MethodDescriptorProto {
         self
     }
 }
-impl ::buffa::DefaultInstance for MethodDescriptorProto {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<MethodDescriptorProto> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(MethodDescriptorProto);
 impl ::buffa::MessageName for MethodDescriptorProto {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "MethodDescriptorProto";
@@ -7345,12 +7275,7 @@ impl FileOptions {
         self
     }
 }
-impl ::buffa::DefaultInstance for FileOptions {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<FileOptions> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(FileOptions);
 impl ::buffa::MessageName for FileOptions {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "FileOptions";
@@ -8824,12 +8749,7 @@ impl MessageOptions {
         self
     }
 }
-impl ::buffa::DefaultInstance for MessageOptions {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<MessageOptions> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(MessageOptions);
 impl ::buffa::MessageName for MessageOptions {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "MessageOptions";
@@ -9650,12 +9570,7 @@ impl FieldOptions {
         self
     }
 }
-impl ::buffa::DefaultInstance for FieldOptions {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<FieldOptions> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(FieldOptions);
 impl ::buffa::MessageName for FieldOptions {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "FieldOptions";
@@ -11325,12 +11240,7 @@ pub mod field_options {
             self
         }
     }
-    impl ::buffa::DefaultInstance for EditionDefault {
-        fn default_instance() -> &'static Self {
-            static VALUE: ::buffa::__private::OnceBox<EditionDefault> = ::buffa::__private::OnceBox::new();
-            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-        }
-    }
+    ::buffa::impl_default_instance!(EditionDefault);
     impl ::buffa::MessageName for EditionDefault {
         const PACKAGE: &'static str = "google.protobuf";
         const NAME: &'static str = "FieldOptions.EditionDefault";
@@ -11630,12 +11540,7 @@ pub mod field_options {
             self
         }
     }
-    impl ::buffa::DefaultInstance for FeatureSupport {
-        fn default_instance() -> &'static Self {
-            static VALUE: ::buffa::__private::OnceBox<FeatureSupport> = ::buffa::__private::OnceBox::new();
-            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-        }
-    }
+    ::buffa::impl_default_instance!(FeatureSupport);
     impl ::buffa::MessageName for FeatureSupport {
         const PACKAGE: &'static str = "google.protobuf";
         const NAME: &'static str = "FieldOptions.FeatureSupport";
@@ -11944,12 +11849,7 @@ impl OneofOptions {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.OneofOptions";
 }
-impl ::buffa::DefaultInstance for OneofOptions {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<OneofOptions> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(OneofOptions);
 impl ::buffa::MessageName for OneofOptions {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "OneofOptions";
@@ -12407,12 +12307,7 @@ impl EnumOptions {
         self
     }
 }
-impl ::buffa::DefaultInstance for EnumOptions {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<EnumOptions> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(EnumOptions);
 impl ::buffa::MessageName for EnumOptions {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "EnumOptions";
@@ -12962,12 +12857,7 @@ impl EnumValueOptions {
         self
     }
 }
-impl ::buffa::DefaultInstance for EnumValueOptions {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<EnumValueOptions> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(EnumValueOptions);
 impl ::buffa::MessageName for EnumValueOptions {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "EnumValueOptions";
@@ -13494,12 +13384,7 @@ impl ServiceOptions {
         self
     }
 }
-impl ::buffa::DefaultInstance for ServiceOptions {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<ServiceOptions> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(ServiceOptions);
 impl ::buffa::MessageName for ServiceOptions {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "ServiceOptions";
@@ -13969,12 +13854,7 @@ impl MethodOptions {
         self
     }
 }
-impl ::buffa::DefaultInstance for MethodOptions {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<MethodOptions> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(MethodOptions);
 impl ::buffa::MessageName for MethodOptions {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "MethodOptions";
@@ -14730,12 +14610,7 @@ impl UninterpretedOption {
         self
     }
 }
-impl ::buffa::DefaultInstance for UninterpretedOption {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<UninterpretedOption> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(UninterpretedOption);
 impl ::buffa::MessageName for UninterpretedOption {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "UninterpretedOption";
@@ -15091,12 +14966,7 @@ pub mod uninterpreted_option {
         /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
         pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.UninterpretedOption.NamePart";
     }
-    impl ::buffa::DefaultInstance for NamePart {
-        fn default_instance() -> &'static Self {
-            static VALUE: ::buffa::__private::OnceBox<NamePart> = ::buffa::__private::OnceBox::new();
-            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-        }
-    }
+    ::buffa::impl_default_instance!(NamePart);
     impl ::buffa::MessageName for NamePart {
         const PACKAGE: &'static str = "google.protobuf";
         const NAME: &'static str = "UninterpretedOption.NamePart";
@@ -15454,12 +15324,7 @@ impl FeatureSet {
         self
     }
 }
-impl ::buffa::DefaultInstance for FeatureSet {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<FeatureSet> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(FeatureSet);
 impl ::buffa::MessageName for FeatureSet {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "FeatureSet";
@@ -17277,12 +17142,7 @@ pub mod feature_set {
         /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
         pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FeatureSet.VisibilityFeature";
     }
-    impl ::buffa::DefaultInstance for VisibilityFeature {
-        fn default_instance() -> &'static Self {
-            static VALUE: ::buffa::__private::OnceBox<VisibilityFeature> = ::buffa::__private::OnceBox::new();
-            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-        }
-    }
+    ::buffa::impl_default_instance!(VisibilityFeature);
     impl ::buffa::MessageName for VisibilityFeature {
         const PACKAGE: &'static str = "google.protobuf";
         const NAME: &'static str = "FeatureSet.VisibilityFeature";
@@ -17688,12 +17548,7 @@ impl FeatureSetDefaults {
         self
     }
 }
-impl ::buffa::DefaultInstance for FeatureSetDefaults {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<FeatureSetDefaults> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(FeatureSetDefaults);
 impl ::buffa::MessageName for FeatureSetDefaults {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "FeatureSetDefaults";
@@ -17987,12 +17842,7 @@ pub mod feature_set_defaults {
             self
         }
     }
-    impl ::buffa::DefaultInstance for FeatureSetEditionDefault {
-        fn default_instance() -> &'static Self {
-            static VALUE: ::buffa::__private::OnceBox<FeatureSetEditionDefault> = ::buffa::__private::OnceBox::new();
-            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-        }
-    }
+    ::buffa::impl_default_instance!(FeatureSetEditionDefault);
     impl ::buffa::MessageName for FeatureSetEditionDefault {
         const PACKAGE: &'static str = "google.protobuf";
         const NAME: &'static str = "FeatureSetDefaults.FeatureSetEditionDefault";
@@ -18302,12 +18152,7 @@ impl SourceCodeInfo {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.SourceCodeInfo";
 }
-impl ::buffa::DefaultInstance for SourceCodeInfo {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<SourceCodeInfo> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(SourceCodeInfo);
 impl ::buffa::MessageName for SourceCodeInfo {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "SourceCodeInfo";
@@ -18788,12 +18633,7 @@ pub mod source_code_info {
             self
         }
     }
-    impl ::buffa::DefaultInstance for Location {
-        fn default_instance() -> &'static Self {
-            static VALUE: ::buffa::__private::OnceBox<Location> = ::buffa::__private::OnceBox::new();
-            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-        }
-    }
+    ::buffa::impl_default_instance!(Location);
     impl ::buffa::MessageName for Location {
         const PACKAGE: &'static str = "google.protobuf";
         const NAME: &'static str = "SourceCodeInfo.Location";
@@ -19155,12 +18995,7 @@ impl GeneratedCodeInfo {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.GeneratedCodeInfo";
 }
-impl ::buffa::DefaultInstance for GeneratedCodeInfo {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<GeneratedCodeInfo> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(GeneratedCodeInfo);
 impl ::buffa::MessageName for GeneratedCodeInfo {
     const PACKAGE: &'static str = "google.protobuf";
     const NAME: &'static str = "GeneratedCodeInfo";
@@ -19441,12 +19276,7 @@ pub mod generated_code_info {
             self
         }
     }
-    impl ::buffa::DefaultInstance for Annotation {
-        fn default_instance() -> &'static Self {
-            static VALUE: ::buffa::__private::OnceBox<Annotation> = ::buffa::__private::OnceBox::new();
-            VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-        }
-    }
+    ::buffa::impl_default_instance!(Annotation);
     impl ::buffa::MessageName for Annotation {
         const PACKAGE: &'static str = "google.protobuf";
         const NAME: &'static str = "GeneratedCodeInfo.Annotation";

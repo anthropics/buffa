@@ -246,12 +246,7 @@ impl FieldMask {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FieldMask";
 }
-impl ::buffa::DefaultInstance for FieldMask {
-    fn default_instance() -> &'static Self {
-        static VALUE: ::buffa::__private::OnceBox<FieldMask> = ::buffa::__private::OnceBox::new();
-        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
-    }
-}
+::buffa::impl_default_instance!(FieldMask);
 #[cfg(feature = "reflect")]
 const _: () = {
     impl ::buffa_descriptor::reflect::ReflectMessage for FieldMask {
