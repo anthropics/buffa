@@ -533,6 +533,16 @@ pub mod __doctest_fixtures {
             // Stub: examples are `no_run`, so this never executes.
             Ok(PersonView::default())
         }
+        fn merge_view_field(
+            &mut self,
+            _tag: encoding::Tag,
+            cur: &'a [u8],
+            _before_tag: &'a [u8],
+            _ctx: DecodeContext<'_>,
+        ) -> Result<&'a [u8], DecodeError> {
+            // Stub for the doc-example view; never executes.
+            Ok(cur)
+        }
         fn to_owned_message(&self) -> Result<Person, DecodeError> {
             Ok(Person {
                 name: self.name.into(),

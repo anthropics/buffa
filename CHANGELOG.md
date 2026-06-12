@@ -166,6 +166,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   convenience methods (`decode`, `decode_from_slice`, `merge_from_slice`,
   `DecodeOptions`) are unaffected.
 
+- **Breaking:** `MessageView` gains a required `merge_view_field` method,
+  and the per-view decode tag loop is now a provided trait method
+  (`merge_into_view`), mirroring the owned side's `Message::merge` /
+  `merge_field` split. Generated views supply only the field match —
+  regenerate code from earlier releases. Hand-written `MessageView` impls
+  must add `merge_view_field`; the trait docs include the canonical shape,
+  the unknown-field-preserving arm, and the `decode_view` →
+  `decode_view_ctx` wiring. Sub-message arms call the new provided
+  `decode_view_ctx` / `merge_into_view` instead of the removed inherent
+  `_decode_ctx` / `_merge_into_view` helpers. (#198)
+
 ### Fixed
 
 - **`DecodeOptions::decode_length_delimited_reader` no longer allocates the
