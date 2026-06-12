@@ -141,6 +141,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   semantics, and the fixed-width sizing fast path are unchanged; everything
   monomorphizes to the previous code. (#194)
 
+- Generated `write_to` bodies use new fused `put_*_field` runtime writers
+  (one call per field arm) instead of separate tag-encode + payload-encode
+  pairs (~870 sites); owned and view impls share them. Wire output is
+  byte-identical. (#195)
+
 - **Breaking:** the decode-path `Message` trait methods (`merge`,
   `merge_field`, `merge_to_limit`, `merge_group`, `merge_length_delimited`),
   `encoding::decode_unknown_field`, and `message_set::merge_item` now take a

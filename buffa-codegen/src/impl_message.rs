@@ -836,15 +836,8 @@ pub(crate) fn build_view_encode_methods(
                             .ok_or(CodeGenError::MissingField("field.name"))?,
                     );
                     let tag_len = tag_encoded_len(field_number, wire_type_byte(ty));
-                    let wire_type = wire_type_token(ty);
                     size_arms.push(oneof_size_arm(&qualified, &variant, tag_len, ty));
-                    write_arms.push(oneof_write_arm(
-                        &qualified,
-                        &variant,
-                        field_number,
-                        ty,
-                        &wire_type,
-                    ));
+                    write_arms.push(oneof_write_arm(&qualified, &variant, field_number, ty));
                 }
                 compute_stmts.push(quote! {
                     if let ::core::option::Option::Some(ref v) = self.#field_ident {
@@ -1233,6 +1226,34 @@ fn encode_fn_token(ty: Type) -> TokenStream {
     }
 }
 
+/// Fused tag+payload writer for a numeric scalar field
+/// (`::buffa::types::put_<type>_field`). String/bytes/enum/message types
+/// have bespoke call shapes at the emission sites.
+fn put_field_fn_token(ty: Type) -> TokenStream {
+    match ty {
+        Type::TYPE_INT32 => quote! { ::buffa::types::put_int32_field },
+        Type::TYPE_INT64 => quote! { ::buffa::types::put_int64_field },
+        Type::TYPE_UINT32 => quote! { ::buffa::types::put_uint32_field },
+        Type::TYPE_UINT64 => quote! { ::buffa::types::put_uint64_field },
+        Type::TYPE_SINT32 => quote! { ::buffa::types::put_sint32_field },
+        Type::TYPE_SINT64 => quote! { ::buffa::types::put_sint64_field },
+        Type::TYPE_FIXED32 => quote! { ::buffa::types::put_fixed32_field },
+        Type::TYPE_FIXED64 => quote! { ::buffa::types::put_fixed64_field },
+        Type::TYPE_SFIXED32 => quote! { ::buffa::types::put_sfixed32_field },
+        Type::TYPE_SFIXED64 => quote! { ::buffa::types::put_sfixed64_field },
+        Type::TYPE_FLOAT => quote! { ::buffa::types::put_float_field },
+        Type::TYPE_DOUBLE => quote! { ::buffa::types::put_double_field },
+        Type::TYPE_BOOL => quote! { ::buffa::types::put_bool_field },
+        Type::TYPE_STRING
+        | Type::TYPE_BYTES
+        | Type::TYPE_ENUM
+        | Type::TYPE_MESSAGE
+        | Type::TYPE_GROUP => {
+            unreachable!("put_field_fn_token called for non-numeric type {:?}", ty)
+        }
+    }
+}
+
 pub(crate) fn decode_fn_token(ty: Type) -> TokenStream {
     match ty {
         Type::TYPE_INT32 => quote! { ::buffa::types::decode_int32 },
@@ -1477,38 +1498,24 @@ fn scalar_write_to_stmt(
         return match ty {
             Type::TYPE_STRING => Ok(quote! {
                 if let Some(ref v) = self.#ident {
-                    ::buffa::encoding::Tag::new(
-                        #field_number,
-                        ::buffa::encoding::WireType::LengthDelimited,
-                    ).encode(buf);
-                    ::buffa::types::encode_string(v, buf);
+                    ::buffa::types::put_string_field(#field_number, v, buf);
                 }
             }),
             Type::TYPE_BYTES => Ok(quote! {
                 if let Some(ref v) = self.#ident {
-                    ::buffa::encoding::Tag::new(
-                        #field_number,
-                        ::buffa::encoding::WireType::LengthDelimited,
-                    ).encode(buf);
-                    ::buffa::types::encode_bytes(v, buf);
+                    ::buffa::types::put_bytes_field(#field_number, v, buf);
                 }
             }),
             Type::TYPE_ENUM => Ok(quote! {
                 if let Some(ref v) = self.#ident {
-                    ::buffa::encoding::Tag::new(
-                        #field_number,
-                        ::buffa::encoding::WireType::Varint,
-                    ).encode(buf);
-                    ::buffa::types::encode_int32(v.to_i32(), buf);
+                    ::buffa::types::put_int32_field(#field_number, v.to_i32(), buf);
                 }
             }),
             _ => {
-                let wire_type = wire_type_token(ty);
-                let encode_fn = encode_fn_token(ty);
+                let put_fn = put_field_fn_token(ty);
                 Ok(quote! {
                     if let Some(v) = self.#ident {
-                        ::buffa::encoding::Tag::new(#field_number, #wire_type).encode(buf);
-                        #encode_fn(v, buf);
+                        #put_fn(#field_number, v, buf);
                     }
                 })
             }
@@ -1520,20 +1527,12 @@ fn scalar_write_to_stmt(
         Type::TYPE_STRING => {
             return Ok(if is_proto2_required {
                 quote! {
-                    ::buffa::encoding::Tag::new(
-                        #field_number,
-                        ::buffa::encoding::WireType::LengthDelimited,
-                    ).encode(buf);
-                    ::buffa::types::encode_string(&self.#ident, buf);
+                    ::buffa::types::put_string_field(#field_number, &self.#ident, buf);
                 }
             } else {
                 quote! {
                     if !self.#ident.is_empty() {
-                        ::buffa::encoding::Tag::new(
-                            #field_number,
-                            ::buffa::encoding::WireType::LengthDelimited,
-                        ).encode(buf);
-                        ::buffa::types::encode_string(&self.#ident, buf);
+                        ::buffa::types::put_string_field(#field_number, &self.#ident, buf);
                     }
                 }
             });
@@ -1541,20 +1540,12 @@ fn scalar_write_to_stmt(
         Type::TYPE_BYTES => {
             return Ok(if is_proto2_required {
                 quote! {
-                    ::buffa::encoding::Tag::new(
-                        #field_number,
-                        ::buffa::encoding::WireType::LengthDelimited,
-                    ).encode(buf);
-                    ::buffa::types::encode_bytes(&self.#ident, buf);
+                    ::buffa::types::put_bytes_field(#field_number, &self.#ident, buf);
                 }
             } else {
                 quote! {
                     if !self.#ident.is_empty() {
-                        ::buffa::encoding::Tag::new(
-                            #field_number,
-                            ::buffa::encoding::WireType::LengthDelimited,
-                        ).encode(buf);
-                        ::buffa::types::encode_bytes(&self.#ident, buf);
+                        ::buffa::types::put_bytes_field(#field_number, &self.#ident, buf);
                     }
                 }
             });
@@ -1562,25 +1553,14 @@ fn scalar_write_to_stmt(
         Type::TYPE_ENUM => {
             return Ok(if is_proto2_required {
                 quote! {
-                    {
-                        let val = self.#ident.to_i32();
-                        ::buffa::encoding::Tag::new(
-                            #field_number,
-                            ::buffa::encoding::WireType::Varint,
-                        ).encode(buf);
-                        ::buffa::types::encode_int32(val, buf);
-                    }
+                    ::buffa::types::put_int32_field(#field_number, self.#ident.to_i32(), buf);
                 }
             } else {
                 quote! {
                     {
                         let val = self.#ident.to_i32();
                         if val != 0 {
-                            ::buffa::encoding::Tag::new(
-                                #field_number,
-                                ::buffa::encoding::WireType::Varint,
-                            ).encode(buf);
-                            ::buffa::types::encode_int32(val, buf);
+                            ::buffa::types::put_int32_field(#field_number, val, buf);
                         }
                     }
                 }
@@ -1589,11 +1569,11 @@ fn scalar_write_to_stmt(
         Type::TYPE_MESSAGE => {
             return Ok(quote! {
                 if self.#ident.is_set() {
-                    ::buffa::encoding::Tag::new(
+                    ::buffa::types::put_len_delimited_header(
                         #field_number,
-                        ::buffa::encoding::WireType::LengthDelimited,
-                    ).encode(buf);
-                    ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+                        __cache.consume_next(),
+                        buf,
+                    );
                     self.#ident.write_to(__cache, buf);
                 }
             });
@@ -1601,15 +1581,9 @@ fn scalar_write_to_stmt(
         Type::TYPE_GROUP => {
             return Ok(quote! {
                 if self.#ident.is_set() {
-                    ::buffa::encoding::Tag::new(
-                        #field_number,
-                        ::buffa::encoding::WireType::StartGroup,
-                    ).encode(buf);
+                    ::buffa::types::put_group_start(#field_number, buf);
                     self.#ident.write_to(__cache, buf);
-                    ::buffa::encoding::Tag::new(
-                        #field_number,
-                        ::buffa::encoding::WireType::EndGroup,
-                    ).encode(buf);
+                    ::buffa::types::put_group_end(#field_number, buf);
                 }
             });
         }
@@ -1617,19 +1591,16 @@ fn scalar_write_to_stmt(
     }
 
     // Numeric scalars: encode by value.
-    let wire_type = wire_type_token(ty);
-    let encode_fn = encode_fn_token(ty);
+    let put_fn = put_field_fn_token(ty);
     Ok(if is_proto2_required {
         quote! {
-            ::buffa::encoding::Tag::new(#field_number, #wire_type).encode(buf);
-            #encode_fn(self.#ident, buf);
+            #put_fn(#field_number, self.#ident, buf);
         }
     } else {
         let is_non_default = is_non_default_expr(ty, &ident);
         quote! {
             if #is_non_default {
-                ::buffa::encoding::Tag::new(#field_number, #wire_type).encode(buf);
-                #encode_fn(self.#ident, buf);
+                #put_fn(#field_number, self.#ident, buf);
             }
         }
     })
@@ -2069,11 +2040,11 @@ fn repeated_write_to_stmt(
     if ty == Type::TYPE_MESSAGE {
         return Ok(quote! {
             for v in &self.#ident {
-                ::buffa::encoding::Tag::new(
+                ::buffa::types::put_len_delimited_header(
                     #field_number,
-                    ::buffa::encoding::WireType::LengthDelimited,
-                ).encode(buf);
-                ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+                    __cache.consume_next(),
+                    buf,
+                );
                 v.write_to(__cache, buf);
             }
         });
@@ -2081,34 +2052,32 @@ fn repeated_write_to_stmt(
     if ty == Type::TYPE_GROUP {
         return Ok(quote! {
             for v in &self.#ident {
-                ::buffa::encoding::Tag::new(
-                    #field_number,
-                    ::buffa::encoding::WireType::StartGroup,
-                ).encode(buf);
+                ::buffa::types::put_group_start(#field_number, buf);
                 v.write_to(__cache, buf);
-                ::buffa::encoding::Tag::new(
-                    #field_number,
-                    ::buffa::encoding::WireType::EndGroup,
-                ).encode(buf);
+                ::buffa::types::put_group_end(#field_number, buf);
             }
         });
     }
     if !is_field_packed(field, features) {
         // Unpacked: each element emits its own tag + value.
-        let wire_type = wire_type_token(ty);
-        let per_elem_encode = match ty {
-            Type::TYPE_STRING => quote! { ::buffa::types::encode_string(v, buf); },
-            Type::TYPE_BYTES => quote! { ::buffa::types::encode_bytes(v, buf); },
-            Type::TYPE_ENUM => quote! { ::buffa::types::encode_int32(v.to_i32(), buf); },
+        let per_elem = match ty {
+            Type::TYPE_STRING => {
+                quote! { ::buffa::types::put_string_field(#field_number, v, buf); }
+            }
+            Type::TYPE_BYTES => {
+                quote! { ::buffa::types::put_bytes_field(#field_number, v, buf); }
+            }
+            Type::TYPE_ENUM => {
+                quote! { ::buffa::types::put_int32_field(#field_number, v.to_i32(), buf); }
+            }
             _ => {
-                let encode_fn = encode_fn_token(ty);
-                quote! { #encode_fn(*v, buf); }
+                let put_fn = put_field_fn_token(ty);
+                quote! { #put_fn(#field_number, *v, buf); }
             }
         };
         return Ok(quote! {
             for v in &self.#ident {
-                ::buffa::encoding::Tag::new(#field_number, #wire_type).encode(buf);
-                #per_elem_encode
+                #per_elem
             }
         });
     }
@@ -2123,11 +2092,7 @@ fn repeated_write_to_stmt(
     Ok(quote! {
         if !self.#ident.is_empty() {
             let payload: u32 = #payload_expr;
-            ::buffa::encoding::Tag::new(
-                #field_number,
-                ::buffa::encoding::WireType::LengthDelimited,
-            ).encode(buf);
-            ::buffa::encoding::encode_varint(payload as u64, buf);
+            ::buffa::types::put_len_delimited_header(#field_number, payload, buf);
             #encode_loop
         }
     })
@@ -2397,59 +2362,45 @@ fn oneof_write_arm(
     variant_ident: &Ident,
     field_number: u32,
     ty: Type,
-    wire_type: &TokenStream,
 ) -> TokenStream {
     match ty {
         Type::TYPE_STRING => quote! {
             #enum_ident::#variant_ident(x) => {
-                ::buffa::encoding::Tag::new(
-                    #field_number, ::buffa::encoding::WireType::LengthDelimited,
-                ).encode(buf);
-                ::buffa::types::encode_string(x, buf);
+                ::buffa::types::put_string_field(#field_number, x, buf);
             }
         },
         Type::TYPE_BYTES => quote! {
             #enum_ident::#variant_ident(x) => {
-                ::buffa::encoding::Tag::new(
-                    #field_number, ::buffa::encoding::WireType::LengthDelimited,
-                ).encode(buf);
-                ::buffa::types::encode_bytes(x, buf);
+                ::buffa::types::put_bytes_field(#field_number, x, buf);
             }
         },
         Type::TYPE_ENUM => quote! {
             #enum_ident::#variant_ident(x) => {
-                ::buffa::encoding::Tag::new(
-                    #field_number, ::buffa::encoding::WireType::Varint,
-                ).encode(buf);
-                ::buffa::types::encode_int32(x.to_i32(), buf);
+                ::buffa::types::put_int32_field(#field_number, x.to_i32(), buf);
             }
         },
         Type::TYPE_MESSAGE => quote! {
             #enum_ident::#variant_ident(x) => {
-                ::buffa::encoding::Tag::new(
-                    #field_number, ::buffa::encoding::WireType::LengthDelimited,
-                ).encode(buf);
-                ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+                ::buffa::types::put_len_delimited_header(
+                    #field_number,
+                    __cache.consume_next(),
+                    buf,
+                );
                 x.write_to(__cache, buf);
             }
         },
         Type::TYPE_GROUP => quote! {
             #enum_ident::#variant_ident(x) => {
-                ::buffa::encoding::Tag::new(
-                    #field_number, ::buffa::encoding::WireType::StartGroup,
-                ).encode(buf);
+                ::buffa::types::put_group_start(#field_number, buf);
                 x.write_to(__cache, buf);
-                ::buffa::encoding::Tag::new(
-                    #field_number, ::buffa::encoding::WireType::EndGroup,
-                ).encode(buf);
+                ::buffa::types::put_group_end(#field_number, buf);
             }
         },
         _ => {
-            let encode_fn = encode_fn_token(ty);
+            let put_fn = put_field_fn_token(ty);
             quote! {
                 #enum_ident::#variant_ident(x) => {
-                    ::buffa::encoding::Tag::new(#field_number, #wire_type).encode(buf);
-                    #encode_fn(*x, buf);
+                    #put_fn(#field_number, *x, buf);
                 }
             }
         }
@@ -2633,7 +2584,6 @@ fn generate_oneof_impls(
         let ty = effective_type(ctx, field, features);
         let variant_ident = crate::oneof::oneof_variant_ident(field_name);
         let tag_len = tag_encoded_len(field_number, wire_type_byte(ty));
-        let wire_type = wire_type_token(ty);
 
         size_arms.push(oneof_size_arm(&qualified_enum, &variant_ident, tag_len, ty));
         write_arms.push(oneof_write_arm(
@@ -2641,7 +2591,6 @@ fn generate_oneof_impls(
             &variant_ident,
             field_number,
             ty,
-            &wire_type,
         ));
         let field_features = crate::features::resolve_field(ctx, field, features);
         let use_bytes = ty == Type::TYPE_BYTES && field_uses_bytes(ctx, proto_fqn, field_name);

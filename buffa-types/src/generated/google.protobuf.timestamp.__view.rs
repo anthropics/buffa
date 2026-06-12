@@ -243,14 +243,10 @@ impl<'a> ::buffa::ViewEncode<'a> for TimestampView<'a> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
         if self.seconds != 0i64 {
-            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
-                .encode(buf);
-            ::buffa::types::encode_int64(self.seconds, buf);
+            ::buffa::types::put_int64_field(1u32, self.seconds, buf);
         }
         if self.nanos != 0i32 {
-            ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::Varint)
-                .encode(buf);
-            ::buffa::types::encode_int32(self.nanos, buf);
+            ::buffa::types::put_int32_field(2u32, self.nanos, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }

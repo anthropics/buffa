@@ -1612,8 +1612,8 @@ fn test_message_proto3_optional_string() {
         "missing optional string field: {content}"
     );
     assert!(
-        content.contains("encode_string"),
-        "missing encode_string in write_to: {content}"
+        content.contains("put_string_field"),
+        "missing put_string_field in write_to: {content}"
     );
     assert!(
         content.contains("merge_string"),
@@ -1726,8 +1726,8 @@ fn test_message_proto3_optional_bytes_and_bool() {
     );
     // Bytes uses encode_bytes
     assert!(
-        content.contains("encode_bytes"),
-        "missing encode_bytes for optional bytes: {content}"
+        content.contains("put_bytes_field"),
+        "missing put_bytes_field for optional bytes: {content}"
     );
 }
 
@@ -1760,8 +1760,8 @@ fn test_message_string_and_bytes_fields() {
     );
     // impl Message should encode/decode these fields
     assert!(
-        content.contains("encode_string"),
-        "missing encode_string: {content}"
+        content.contains("put_string_field"),
+        "missing put_string_field: {content}"
     );
     assert!(
         content.contains("merge_string"),
@@ -1772,8 +1772,8 @@ fn test_message_string_and_bytes_fields() {
         "missing string_encoded_len: {content}"
     );
     assert!(
-        content.contains("encode_bytes"),
-        "missing encode_bytes: {content}"
+        content.contains("put_bytes_field"),
+        "missing put_bytes_field: {content}"
     );
     assert!(
         content.contains("merge_bytes"),
@@ -1914,8 +1914,8 @@ fn test_repeated_unpacked_string() {
         "missing string_encoded_len: {content}"
     );
     assert!(
-        content.contains("encode_string"),
-        "missing encode_string: {content}"
+        content.contains("put_string_field"),
+        "missing put_string_field: {content}"
     );
     assert!(
         content.contains("decode_string"),
@@ -2152,8 +2152,7 @@ fn editions_delimited_message_encoding() {
 
     // Field 3 (delim_child): inherits DELIMITED → StartGroup/EndGroup.
     assert!(
-        content
-            .contains("::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::StartGroup)"),
+        content.contains("::buffa::types::put_group_start(3u32, buf)"),
         "delim_child should encode as group: {content}"
     );
     assert!(
@@ -2173,7 +2172,7 @@ fn editions_delimited_message_encoding() {
     );
     // And it should NOT have a StartGroup encode for field 2.
     assert!(
-        !content.contains("Tag::new(2u32, ::buffa::encoding::WireType::StartGroup)"),
+        !content.contains("put_group_start(2u32, buf)"),
         "lp_child should not encode as group"
     );
 

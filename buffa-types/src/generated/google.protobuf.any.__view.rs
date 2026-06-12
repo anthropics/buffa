@@ -261,20 +261,10 @@ impl<'a> ::buffa::ViewEncode<'a> for AnyView<'a> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
         if !self.type_url.is_empty() {
-            ::buffa::encoding::Tag::new(
-                    1u32,
-                    ::buffa::encoding::WireType::LengthDelimited,
-                )
-                .encode(buf);
-            ::buffa::types::encode_string(&self.type_url, buf);
+            ::buffa::types::put_string_field(1u32, &self.type_url, buf);
         }
         if !self.value.is_empty() {
-            ::buffa::encoding::Tag::new(
-                    2u32,
-                    ::buffa::encoding::WireType::LengthDelimited,
-                )
-                .encode(buf);
-            ::buffa::types::encode_bytes(&self.value, buf);
+            ::buffa::types::put_bytes_field(2u32, &self.value, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }

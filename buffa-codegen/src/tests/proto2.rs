@@ -102,8 +102,8 @@ fn test_proto2_repeated_scalar_is_unpacked_by_default() {
     );
     // Each element gets its own tag in write_to.
     assert!(
-        content.contains("encode_int32"),
-        "missing encode_int32 in unpacked write_to: {content}"
+        content.contains("put_int32_field"),
+        "missing put_int32_field in unpacked write_to: {content}"
     );
 }
 

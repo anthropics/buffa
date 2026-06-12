@@ -163,27 +163,16 @@ impl<'a> ::buffa::ViewEncode<'a> for VersionView<'a> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
         if let Some(v) = self.major {
-            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint)
-                .encode(buf);
-            ::buffa::types::encode_int32(v, buf);
+            ::buffa::types::put_int32_field(1u32, v, buf);
         }
         if let Some(v) = self.minor {
-            ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::Varint)
-                .encode(buf);
-            ::buffa::types::encode_int32(v, buf);
+            ::buffa::types::put_int32_field(2u32, v, buf);
         }
         if let Some(v) = self.patch {
-            ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::Varint)
-                .encode(buf);
-            ::buffa::types::encode_int32(v, buf);
+            ::buffa::types::put_int32_field(3u32, v, buf);
         }
         if let Some(ref v) = self.suffix {
-            ::buffa::encoding::Tag::new(
-                    4u32,
-                    ::buffa::encoding::WireType::LengthDelimited,
-                )
-                .encode(buf);
-            ::buffa::types::encode_string(v, buf);
+            ::buffa::types::put_string_field(4u32, v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -684,46 +673,21 @@ impl<'a> ::buffa::ViewEncode<'a> for CodeGeneratorRequestView<'a> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
         for v in &self.file_to_generate {
-            ::buffa::encoding::Tag::new(
-                    1u32,
-                    ::buffa::encoding::WireType::LengthDelimited,
-                )
-                .encode(buf);
-            ::buffa::types::encode_string(v, buf);
+            ::buffa::types::put_string_field(1u32, v, buf);
         }
         if let Some(ref v) = self.parameter {
-            ::buffa::encoding::Tag::new(
-                    2u32,
-                    ::buffa::encoding::WireType::LengthDelimited,
-                )
-                .encode(buf);
-            ::buffa::types::encode_string(v, buf);
+            ::buffa::types::put_string_field(2u32, v, buf);
         }
         if self.compiler_version.is_set() {
-            ::buffa::encoding::Tag::new(
-                    3u32,
-                    ::buffa::encoding::WireType::LengthDelimited,
-                )
-                .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            ::buffa::types::put_len_delimited_header(3u32, __cache.consume_next(), buf);
             self.compiler_version.write_to(__cache, buf);
         }
         for v in &self.proto_file {
-            ::buffa::encoding::Tag::new(
-                    15u32,
-                    ::buffa::encoding::WireType::LengthDelimited,
-                )
-                .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            ::buffa::types::put_len_delimited_header(15u32, __cache.consume_next(), buf);
             v.write_to(__cache, buf);
         }
         for v in &self.source_file_descriptors {
-            ::buffa::encoding::Tag::new(
-                    17u32,
-                    ::buffa::encoding::WireType::LengthDelimited,
-                )
-                .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            ::buffa::types::put_len_delimited_header(17u32, __cache.consume_next(), buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -1205,35 +1169,19 @@ impl<'a> ::buffa::ViewEncode<'a> for CodeGeneratorResponseView<'a> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
         if let Some(ref v) = self.error {
-            ::buffa::encoding::Tag::new(
-                    1u32,
-                    ::buffa::encoding::WireType::LengthDelimited,
-                )
-                .encode(buf);
-            ::buffa::types::encode_string(v, buf);
+            ::buffa::types::put_string_field(1u32, v, buf);
         }
         if let Some(v) = self.supported_features {
-            ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::Varint)
-                .encode(buf);
-            ::buffa::types::encode_uint64(v, buf);
+            ::buffa::types::put_uint64_field(2u32, v, buf);
         }
         if let Some(v) = self.minimum_edition {
-            ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::Varint)
-                .encode(buf);
-            ::buffa::types::encode_int32(v, buf);
+            ::buffa::types::put_int32_field(3u32, v, buf);
         }
         if let Some(v) = self.maximum_edition {
-            ::buffa::encoding::Tag::new(4u32, ::buffa::encoding::WireType::Varint)
-                .encode(buf);
-            ::buffa::types::encode_int32(v, buf);
+            ::buffa::types::put_int32_field(4u32, v, buf);
         }
         for v in &self.file {
-            ::buffa::encoding::Tag::new(
-                    15u32,
-                    ::buffa::encoding::WireType::LengthDelimited,
-                )
-                .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            ::buffa::types::put_len_delimited_header(15u32, __cache.consume_next(), buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -1751,36 +1699,20 @@ pub mod code_generator_response {
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
             if let Some(ref v) = self.name {
-                ::buffa::encoding::Tag::new(
-                        1u32,
-                        ::buffa::encoding::WireType::LengthDelimited,
-                    )
-                    .encode(buf);
-                ::buffa::types::encode_string(v, buf);
+                ::buffa::types::put_string_field(1u32, v, buf);
             }
             if let Some(ref v) = self.insertion_point {
-                ::buffa::encoding::Tag::new(
-                        2u32,
-                        ::buffa::encoding::WireType::LengthDelimited,
-                    )
-                    .encode(buf);
-                ::buffa::types::encode_string(v, buf);
+                ::buffa::types::put_string_field(2u32, v, buf);
             }
             if let Some(ref v) = self.content {
-                ::buffa::encoding::Tag::new(
-                        15u32,
-                        ::buffa::encoding::WireType::LengthDelimited,
-                    )
-                    .encode(buf);
-                ::buffa::types::encode_string(v, buf);
+                ::buffa::types::put_string_field(15u32, v, buf);
             }
             if self.generated_code_info.is_set() {
-                ::buffa::encoding::Tag::new(
-                        16u32,
-                        ::buffa::encoding::WireType::LengthDelimited,
-                    )
-                    .encode(buf);
-                ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+                ::buffa::types::put_len_delimited_header(
+                    16u32,
+                    __cache.consume_next(),
+                    buf,
+                );
                 self.generated_code_info.write_to(__cache, buf);
             }
             self.__buffa_unknown_fields.write_to(buf);

@@ -21,6 +21,13 @@
 //! | string      | String    | LengthDelimited  | `encode_string`      |
 //! | bytes       | `Vec<u8>` | LengthDelimited  | `encode_bytes`       |
 //!
+//! Each `encode_<type>` also has a fused `put_<type>_field` sibling that
+//! writes the field tag and the payload in one call (plus
+//! [`put_len_delimited_header`] / [`put_group_start`] / [`put_group_end`]
+//! for message and group framing). Generated `write_to` bodies use the
+//! fused forms; the `encode_*` primitives remain the building blocks for
+//! packed payloads and hand-written codecs.
+//!
 //! # Wire format reference
 //!
 //! Fixed-width types are encoded as little-endian bytes on the wire, per the
@@ -40,7 +47,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use bytes::{Buf, BufMut, Bytes};
 
-use crate::encoding::{decode_varint, encode_varint, varint_len};
+use crate::encoding::{decode_varint, encode_varint, varint_len, Tag, WireType};
 use crate::error::DecodeError;
 
 // ---------------------------------------------------------------------------
@@ -352,6 +359,120 @@ pub const FIXED32_ENCODED_LEN: usize = 4;
 
 /// Encoded size of a `double`, `fixed64`, or `sfixed64` value: always 8 bytes.
 pub const FIXED64_ENCODED_LEN: usize = 8;
+
+// ---------------------------------------------------------------------------
+// Fused tag + payload field writers
+// ---------------------------------------------------------------------------
+//
+// Generated `write_to` bodies pair every payload write with a tag write.
+// These helpers fuse the two so each field arm is one call; the presence
+// check (`if !x.is_empty()`, `if let Some(v)`, …) stays in generated code
+// where the per-field semantics are visible. All are `#[inline]` shims over
+// the `Tag::encode` + `encode_*` primitives and monomorphize to the same
+// machine code as the previous two-statement expansion. They are shared by
+// owned and view `write_to` impls (duck-typed: `&String` / `&str` and
+// `&Vec<u8>` / `&[u8]` both coerce to the borrowed parameter).
+
+/// Stamp a fused `put_<type>_field` writer over an existing `encode_<type>`.
+macro_rules! put_field_fn {
+    ($(#[$doc:meta])* $name:ident, $value:ty, $wire:expr, $encode:ident) => {
+        $(#[$doc])*
+        ///
+        #[doc = concat!(
+            "Fused tag+payload sibling of [`", stringify!($encode), "`]; ",
+            "exists so generated `write_to` bodies are one call per field."
+        )]
+        #[inline]
+        pub fn $name(field_number: u32, value: $value, buf: &mut impl BufMut) {
+            Tag::new(field_number, $wire).encode(buf);
+            $encode(value, buf);
+        }
+    };
+}
+
+put_field_fn!(
+    /// Write a tagged `int32` field (tag + varint payload).
+    put_int32_field, i32, WireType::Varint, encode_int32
+);
+put_field_fn!(
+    /// Write a tagged `int64` field (tag + varint payload).
+    put_int64_field, i64, WireType::Varint, encode_int64
+);
+put_field_fn!(
+    /// Write a tagged `uint32` field (tag + varint payload).
+    put_uint32_field, u32, WireType::Varint, encode_uint32
+);
+put_field_fn!(
+    /// Write a tagged `uint64` field (tag + varint payload).
+    put_uint64_field, u64, WireType::Varint, encode_uint64
+);
+put_field_fn!(
+    /// Write a tagged `sint32` field (tag + zigzag varint payload).
+    put_sint32_field, i32, WireType::Varint, encode_sint32
+);
+put_field_fn!(
+    /// Write a tagged `sint64` field (tag + zigzag varint payload).
+    put_sint64_field, i64, WireType::Varint, encode_sint64
+);
+put_field_fn!(
+    /// Write a tagged `bool` field (tag + one-byte payload).
+    put_bool_field, bool, WireType::Varint, encode_bool
+);
+put_field_fn!(
+    /// Write a tagged `fixed32` field (tag + 4-byte payload).
+    put_fixed32_field, u32, WireType::Fixed32, encode_fixed32
+);
+put_field_fn!(
+    /// Write a tagged `fixed64` field (tag + 8-byte payload).
+    put_fixed64_field, u64, WireType::Fixed64, encode_fixed64
+);
+put_field_fn!(
+    /// Write a tagged `sfixed32` field (tag + 4-byte payload).
+    put_sfixed32_field, i32, WireType::Fixed32, encode_sfixed32
+);
+put_field_fn!(
+    /// Write a tagged `sfixed64` field (tag + 8-byte payload).
+    put_sfixed64_field, i64, WireType::Fixed64, encode_sfixed64
+);
+put_field_fn!(
+    /// Write a tagged `float` field (tag + 4-byte payload).
+    put_float_field, f32, WireType::Fixed32, encode_float
+);
+put_field_fn!(
+    /// Write a tagged `double` field (tag + 8-byte payload).
+    put_double_field, f64, WireType::Fixed64, encode_double
+);
+put_field_fn!(
+    /// Write a tagged `string` field (tag + length-prefixed UTF-8 payload).
+    put_string_field, &str, WireType::LengthDelimited, encode_string
+);
+put_field_fn!(
+    /// Write a tagged `bytes` field (tag + length-prefixed payload).
+    put_bytes_field, &[u8], WireType::LengthDelimited, encode_bytes
+);
+
+/// Write a length-delimited field header: tag + payload-length varint.
+///
+/// Used for sub-message fields (the payload follows via `write_to`, its
+/// length coming from the [`SizeCache`](crate::SizeCache)) and for packed
+/// repeated fields (the payload loop follows).
+#[inline]
+pub fn put_len_delimited_header(field_number: u32, len: u32, buf: &mut impl BufMut) {
+    Tag::new(field_number, WireType::LengthDelimited).encode(buf);
+    encode_varint(len as u64, buf);
+}
+
+/// Write a group field's `StartGroup` tag.
+#[inline]
+pub fn put_group_start(field_number: u32, buf: &mut impl BufMut) {
+    Tag::new(field_number, WireType::StartGroup).encode(buf);
+}
+
+/// Write a group field's `EndGroup` tag.
+#[inline]
+pub fn put_group_end(field_number: u32, buf: &mut impl BufMut) {
+    Tag::new(field_number, WireType::EndGroup).encode(buf);
+}
 
 // ---------------------------------------------------------------------------
 // Length-delimited types (wire type 2): string and bytes
@@ -744,6 +865,74 @@ pub fn borrow_group<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Each fused writer must emit exactly tag-then-payload.
+    #[test]
+    fn put_field_fns_match_tag_plus_encode() {
+        macro_rules! check {
+            ($put:ident, $encode:ident, $wire:expr, $value:expr) => {{
+                let mut fused = Vec::new();
+                $put(7, $value, &mut fused);
+                let mut split = Vec::new();
+                Tag::new(7, $wire).encode(&mut split);
+                $encode($value, &mut split);
+                assert_eq!(fused, split, stringify!($put));
+            }};
+        }
+        check!(put_int32_field, encode_int32, WireType::Varint, -5i32);
+        check!(put_int64_field, encode_int64, WireType::Varint, -5i64);
+        check!(put_uint32_field, encode_uint32, WireType::Varint, 300u32);
+        check!(put_uint64_field, encode_uint64, WireType::Varint, 300u64);
+        check!(put_sint32_field, encode_sint32, WireType::Varint, -5i32);
+        check!(put_sint64_field, encode_sint64, WireType::Varint, -5i64);
+        check!(put_bool_field, encode_bool, WireType::Varint, true);
+        check!(put_fixed32_field, encode_fixed32, WireType::Fixed32, 9u32);
+        check!(put_fixed64_field, encode_fixed64, WireType::Fixed64, 9u64);
+        check!(
+            put_sfixed32_field,
+            encode_sfixed32,
+            WireType::Fixed32,
+            -9i32
+        );
+        check!(
+            put_sfixed64_field,
+            encode_sfixed64,
+            WireType::Fixed64,
+            -9i64
+        );
+        check!(put_float_field, encode_float, WireType::Fixed32, 1.5f32);
+        check!(put_double_field, encode_double, WireType::Fixed64, 1.5f64);
+        check!(
+            put_string_field,
+            encode_string,
+            WireType::LengthDelimited,
+            "hi"
+        );
+        check!(
+            put_bytes_field,
+            encode_bytes,
+            WireType::LengthDelimited,
+            &[1u8, 2][..]
+        );
+    }
+
+    #[test]
+    fn put_len_delimited_header_and_group_tags() {
+        let mut fused = Vec::new();
+        put_len_delimited_header(3, 5, &mut fused);
+        let mut split = Vec::new();
+        Tag::new(3, WireType::LengthDelimited).encode(&mut split);
+        encode_varint(5, &mut split);
+        assert_eq!(fused, split);
+
+        let mut fused = Vec::new();
+        put_group_start(4, &mut fused);
+        put_group_end(4, &mut fused);
+        let mut split = Vec::new();
+        Tag::new(4, WireType::StartGroup).encode(&mut split);
+        Tag::new(4, WireType::EndGroup).encode(&mut split);
+        assert_eq!(fused, split);
+    }
 
     // -----------------------------------------------------------------------
     // ZigZag tests

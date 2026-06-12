@@ -633,53 +633,31 @@ impl ::buffa::Message for Value {
         if let ::core::option::Option::Some(ref v) = self.kind {
             match v {
                 __buffa::oneof::value::Kind::NullValue(x) => {
-                    ::buffa::encoding::Tag::new(
-                            1u32,
-                            ::buffa::encoding::WireType::Varint,
-                        )
-                        .encode(buf);
-                    ::buffa::types::encode_int32(x.to_i32(), buf);
+                    ::buffa::types::put_int32_field(1u32, x.to_i32(), buf);
                 }
                 __buffa::oneof::value::Kind::NumberValue(x) => {
-                    ::buffa::encoding::Tag::new(
-                            2u32,
-                            ::buffa::encoding::WireType::Fixed64,
-                        )
-                        .encode(buf);
-                    ::buffa::types::encode_double(*x, buf);
+                    ::buffa::types::put_double_field(2u32, *x, buf);
                 }
                 __buffa::oneof::value::Kind::StringValue(x) => {
-                    ::buffa::encoding::Tag::new(
-                            3u32,
-                            ::buffa::encoding::WireType::LengthDelimited,
-                        )
-                        .encode(buf);
-                    ::buffa::types::encode_string(x, buf);
+                    ::buffa::types::put_string_field(3u32, x, buf);
                 }
                 __buffa::oneof::value::Kind::BoolValue(x) => {
-                    ::buffa::encoding::Tag::new(
-                            4u32,
-                            ::buffa::encoding::WireType::Varint,
-                        )
-                        .encode(buf);
-                    ::buffa::types::encode_bool(*x, buf);
+                    ::buffa::types::put_bool_field(4u32, *x, buf);
                 }
                 __buffa::oneof::value::Kind::StructValue(x) => {
-                    ::buffa::encoding::Tag::new(
-                            5u32,
-                            ::buffa::encoding::WireType::LengthDelimited,
-                        )
-                        .encode(buf);
-                    ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+                    ::buffa::types::put_len_delimited_header(
+                        5u32,
+                        __cache.consume_next(),
+                        buf,
+                    );
                     x.write_to(__cache, buf);
                 }
                 __buffa::oneof::value::Kind::ListValue(x) => {
-                    ::buffa::encoding::Tag::new(
-                            6u32,
-                            ::buffa::encoding::WireType::LengthDelimited,
-                        )
-                        .encode(buf);
-                    ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+                    ::buffa::types::put_len_delimited_header(
+                        6u32,
+                        __cache.consume_next(),
+                        buf,
+                    );
                     x.write_to(__cache, buf);
                 }
             }
@@ -1095,12 +1073,7 @@ impl ::buffa::Message for ListValue {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
         for v in &self.values {
-            ::buffa::encoding::Tag::new(
-                    1u32,
-                    ::buffa::encoding::WireType::LengthDelimited,
-                )
-                .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            ::buffa::types::put_len_delimited_header(1u32, __cache.consume_next(), buf);
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);

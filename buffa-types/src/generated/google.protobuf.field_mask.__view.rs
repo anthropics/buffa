@@ -345,12 +345,7 @@ impl<'a> ::buffa::ViewEncode<'a> for FieldMaskView<'a> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
         for v in &self.paths {
-            ::buffa::encoding::Tag::new(
-                    1u32,
-                    ::buffa::encoding::WireType::LengthDelimited,
-                )
-                .encode(buf);
-            ::buffa::types::encode_string(v, buf);
+            ::buffa::types::put_string_field(1u32, v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
