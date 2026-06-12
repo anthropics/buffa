@@ -445,8 +445,8 @@ pub fn generate_message_impl(
                 clear_stmts.push(vec_field_clear_stmt(f)?);
             }
             FieldKind::Map(f) => {
-                compute_stmts.push(map_compute_size_stmt(ctx, msg, f, features)?);
-                write_stmts.push(map_write_to_stmt(ctx, msg, f, features)?);
+                compute_stmts.push(map_compute_size_stmt(ctx, msg, f, proto_fqn, features)?);
+                write_stmts.push(map_write_to_stmt(ctx, msg, f, proto_fqn, features)?);
                 merge_arms.push(map_merge_arm(ctx, msg, f, proto_fqn, features)?);
                 clear_stmts.push(vec_field_clear_stmt(f)?);
             }
@@ -809,8 +809,8 @@ pub(crate) fn build_view_encode_methods(
             // match-ergonomics binds the pattern `(k, v)` to `(&K, &V)` either
             // way — so the same generated body works on both.
             FieldKind::Map(f) => {
-                compute_stmts.push(map_compute_size_stmt(ctx, msg, f, features)?);
-                write_stmts.push(map_write_to_stmt(ctx, msg, f, features)?);
+                compute_stmts.push(map_view_compute_size_stmt(ctx, msg, f, features)?);
+                write_stmts.push(map_view_write_to_stmt(ctx, msg, f, features)?);
             }
             // The view-side oneof enum (in the parallel `__buffa::view::oneof::`
             // tree) has the same variant *names* as the owned enum but borrowed
@@ -2712,6 +2712,99 @@ pub(crate) fn find_map_entry_fields<'a>(
 /// Generate the encoded-byte-size expression for a single map entry element
 /// (key or value) bound to the variable named `var`. Uses `*var` for copy
 /// scalars, `var` for string/bytes/enum, and `var.compute_size()` for messages.
+/// Map a map-entry element's proto type to its `::buffa::map_codec` codec
+/// token.
+///
+/// Enum and message codecs use inference holes (`OpenEnum<_>`, `Msg<_>`): the
+/// map's own key/value Rust types pin the parameter, so no type-path
+/// resolution is needed here. `use_bytes` selects the `bytes::Bytes` value
+/// representation (the `bytes_fields` codegen option).
+fn map_codec_token(ty: Type, use_bytes: bool, features: &ResolvedFeatures) -> TokenStream {
+    match ty {
+        Type::TYPE_INT32 => quote! { ::buffa::map_codec::Int32 },
+        Type::TYPE_INT64 => quote! { ::buffa::map_codec::Int64 },
+        Type::TYPE_UINT32 => quote! { ::buffa::map_codec::Uint32 },
+        Type::TYPE_UINT64 => quote! { ::buffa::map_codec::Uint64 },
+        Type::TYPE_SINT32 => quote! { ::buffa::map_codec::Sint32 },
+        Type::TYPE_SINT64 => quote! { ::buffa::map_codec::Sint64 },
+        Type::TYPE_FIXED32 => quote! { ::buffa::map_codec::Fixed32 },
+        Type::TYPE_FIXED64 => quote! { ::buffa::map_codec::Fixed64 },
+        Type::TYPE_SFIXED32 => quote! { ::buffa::map_codec::Sfixed32 },
+        Type::TYPE_SFIXED64 => quote! { ::buffa::map_codec::Sfixed64 },
+        Type::TYPE_FLOAT => quote! { ::buffa::map_codec::Float },
+        Type::TYPE_DOUBLE => quote! { ::buffa::map_codec::Double },
+        Type::TYPE_BOOL => quote! { ::buffa::map_codec::Bool },
+        Type::TYPE_STRING => quote! { ::buffa::map_codec::Str },
+        Type::TYPE_BYTES if use_bytes => quote! { ::buffa::map_codec::BytesBuf },
+        Type::TYPE_BYTES => quote! { ::buffa::map_codec::BytesVec },
+        Type::TYPE_ENUM => {
+            if is_closed_enum(features) {
+                quote! { ::buffa::map_codec::ClosedEnum<_> }
+            } else {
+                quote! { ::buffa::map_codec::OpenEnum<_> }
+            }
+        }
+        Type::TYPE_MESSAGE => quote! { ::buffa::map_codec::Msg<_> },
+        Type::TYPE_GROUP => unreachable!("map values cannot be groups"),
+    }
+}
+
+/// Resolved map-entry context shared by the three per-field map emitters.
+struct MapEntryCtx {
+    field_number: u32,
+    ident: Ident,
+    outer_tag_len: u32,
+    val_ty: Type,
+    key_codec: TokenStream,
+    val_codec: TokenStream,
+}
+
+fn map_entry_ctx(
+    ctx: &CodeGenContext,
+    msg: &DescriptorProto,
+    field: &FieldDescriptorProto,
+    proto_fqn: &str,
+    features: &ResolvedFeatures,
+) -> Result<MapEntryCtx, CodeGenError> {
+    let field_name = field
+        .name
+        .as_deref()
+        .ok_or(CodeGenError::MissingField("field.name"))?;
+    let field_number = validated_field_number(field)?;
+    let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
+    let key_ty = effective_type_in_map_entry(ctx, key_fd, features);
+    let val_ty = effective_type_in_map_entry(ctx, val_fd, features);
+    // Resolve features per map-entry field so enum_type reflects the
+    // referenced enum's declaration (not the parent message's).
+    let key_features = crate::features::resolve_field(ctx, key_fd, features);
+    let val_features = crate::features::resolve_field(ctx, val_fd, features);
+    // `bytes_fields` on `map<K, bytes>` → value encodes/decodes as `Bytes`
+    // (shared carve-out in `map_value_use_bytes`).
+    let value_use_bytes =
+        map_value_use_bytes(ctx, Some(key_ty), Some(val_ty), proto_fqn, field_name);
+    Ok(MapEntryCtx {
+        field_number,
+        ident: make_field_ident(field_name),
+        outer_tag_len: tag_encoded_len(field_number, 2),
+        val_ty,
+        key_codec: map_codec_token(key_ty, false, &key_features),
+        val_codec: map_codec_token(val_ty, value_use_bytes, &val_features),
+    })
+}
+
+// ── View-side map encode emission ───────────────────────────────────────────
+//
+// The owned map paths above route through `::buffa::map_codec` generics,
+// which are typed on the owned element types (`String`, `Vec<u8>`, …). View
+// types store borrowed elements (`&str`, `&[u8]`) and view message values
+// implement the view encode surface rather than `Message`, so
+// `build_view_encode_methods` keeps the previous duck-typed inline emission
+// below. Unifying the two behind borrow-generic codecs is a possible
+// follow-up.
+
+/// Generate the encoded-byte-size expression for a single map entry element
+/// (key or value) bound to the variable named `var`. Uses `*var` for copy
+/// scalars, `var` for string/bytes/enum, and `var.compute_size()` for messages.
 fn map_element_size_expr(ty: Type, var: &Ident) -> TokenStream {
     match ty {
         Type::TYPE_STRING => quote! { ::buffa::types::string_encoded_len(#var) as u32 },
@@ -2774,51 +2867,7 @@ fn map_element_encode_stmt(ty: Type, tag_num: u32, var: &Ident) -> TokenStream {
     quote! { #tag #payload }
 }
 
-/// Generate the decode statement for a single map entry element in the merge loop.
-///
-/// `buf_expr` is the token stream for the buffer expression — typically
-/// `quote! { buf }` when the buffer is the outer `merge_to_limit` parameter
-/// (already `&mut impl Buf`).
-///
-/// `use_bytes` switches a `bytes`-typed element from `decode_bytes` (→ `Vec<u8>`)
-/// to `decode_bytes_to_bytes` (→ `bytes::Bytes`, zero-copy when `buf` is
-/// `Bytes`-backed). Only meaningful for value reads on `map<K, bytes>` fields
-/// when the outer field matches `bytes_fields`; keys are never bytes-typed.
-fn map_element_decode_stmt(
-    ty: Type,
-    var: &Ident,
-    buf_expr: &TokenStream,
-    features: &ResolvedFeatures,
-    use_bytes: bool,
-) -> TokenStream {
-    let wire_type = wire_type_token(ty);
-    let tag_check = wire_type_check(&quote! { entry_tag }, &wire_type);
-    let closed = is_closed_enum(features);
-    let assign = match ty {
-        Type::TYPE_STRING => quote! { #var = ::buffa::types::decode_string(#buf_expr)?; },
-        Type::TYPE_BYTES if use_bytes => {
-            quote! { #var = ::buffa::types::decode_bytes_to_bytes(#buf_expr)?; }
-        }
-        Type::TYPE_BYTES => quote! { #var = ::buffa::types::decode_bytes(#buf_expr)?; },
-        Type::TYPE_ENUM => {
-            if closed {
-                closed_enum_decode(buf_expr, quote! { #var = __v; })
-            } else {
-                quote! { #var = ::buffa::EnumValue::from(::buffa::types::decode_int32(#buf_expr)?); }
-            }
-        }
-        Type::TYPE_MESSAGE => {
-            quote! { ::buffa::Message::merge_length_delimited(&mut #var, #buf_expr, ctx)?; }
-        }
-        _ => {
-            let decode_fn = decode_fn_token(ty);
-            quote! { #var = #decode_fn(#buf_expr)?; }
-        }
-    };
-    quote! { #tag_check #assign }
-}
-
-fn map_compute_size_stmt(
+fn map_view_compute_size_stmt(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
     field: &FieldDescriptorProto,
@@ -2852,7 +2901,7 @@ fn map_compute_size_stmt(
         map_element_size_expr(val_ty, &v)
     };
     // Both passes iterate `for (k, v) in &self.#ident`, identical to
-    // `map_write_to_stmt`, so SizeCache slot order matches by construction.
+    // `map_view_write_to_stmt`, so SizeCache slot order matches by construction.
     // When both key and value are fixed-width (no cache slots reserved) the
     // entry size is constant and we fold to `len() * const`.
     if map_element_size_is_constant(key_ty) && map_element_size_is_constant(val_ty) {
@@ -2886,7 +2935,7 @@ fn map_compute_size_stmt(
     })
 }
 
-fn map_write_to_stmt(
+fn map_view_write_to_stmt(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
     field: &FieldDescriptorProto,
@@ -2931,6 +2980,75 @@ fn map_write_to_stmt(
     })
 }
 
+fn map_compute_size_stmt(
+    ctx: &CodeGenContext,
+    msg: &DescriptorProto,
+    field: &FieldDescriptorProto,
+    proto_fqn: &str,
+    features: &ResolvedFeatures,
+) -> Result<TokenStream, CodeGenError> {
+    let m = map_entry_ctx(ctx, msg, field, proto_fqn, features)?;
+    let MapEntryCtx {
+        ident,
+        outer_tag_len,
+        key_codec,
+        val_codec,
+        ..
+    } = &m;
+    // Message values are two-pass (SizeCache slot per entry, consumed by
+    // `map_write_to_stmt` in identical iteration order — both helpers
+    // iterate the same map, so slot order matches by construction).
+    if m.val_ty == Type::TYPE_MESSAGE {
+        return Ok(quote! {
+            size += ::buffa::map_codec::message_field_len::<#key_codec, _>(
+                &self.#ident,
+                #outer_tag_len,
+                __cache,
+            );
+        });
+    }
+    Ok(quote! {
+        size += ::buffa::map_codec::field_len::<#key_codec, #val_codec>(
+            &self.#ident,
+            #outer_tag_len,
+        );
+    })
+}
+
+fn map_write_to_stmt(
+    ctx: &CodeGenContext,
+    msg: &DescriptorProto,
+    field: &FieldDescriptorProto,
+    proto_fqn: &str,
+    features: &ResolvedFeatures,
+) -> Result<TokenStream, CodeGenError> {
+    let m = map_entry_ctx(ctx, msg, field, proto_fqn, features)?;
+    let MapEntryCtx {
+        field_number,
+        ident,
+        key_codec,
+        val_codec,
+        ..
+    } = &m;
+    if m.val_ty == Type::TYPE_MESSAGE {
+        return Ok(quote! {
+            ::buffa::map_codec::write_message_field::<#key_codec, _>(
+                &self.#ident,
+                #field_number,
+                __cache,
+                buf,
+            );
+        });
+    }
+    Ok(quote! {
+        ::buffa::map_codec::write_field::<#key_codec, #val_codec>(
+            &self.#ident,
+            #field_number,
+            buf,
+        );
+    })
+}
+
 fn map_merge_arm(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -2938,28 +3056,14 @@ fn map_merge_arm(
     proto_fqn: &str,
     features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
-    let field_name = field
-        .name
-        .as_deref()
-        .ok_or(CodeGenError::MissingField("field.name"))?;
-    let field_number = validated_field_number(field)?;
-    let ident = make_field_ident(field_name);
-    let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
-    let key_ty = effective_type_in_map_entry(ctx, key_fd, features);
-    let val_ty = effective_type_in_map_entry(ctx, val_fd, features);
-    let k = format_ident!("key");
-    let v = format_ident!("val");
-    let buf_expr = quote! { buf };
-    // Resolve features per map-entry field so enum_type reflects the
-    // referenced enum's declaration (not the parent message's).
-    let key_features = crate::features::resolve_field(ctx, key_fd, features);
-    let val_features = crate::features::resolve_field(ctx, val_fd, features);
-    // `bytes_fields` on `map<K, bytes>` → value decodes into `Bytes` (shared
-    // carve-out in `map_value_use_bytes`; bytes-key + bytes-value stays `Vec<u8>`).
-    let value_use_bytes =
-        map_value_use_bytes(ctx, Some(key_ty), Some(val_ty), proto_fqn, field_name);
-    let decode_key = map_element_decode_stmt(key_ty, &k, &buf_expr, &key_features, false);
-    let decode_val = map_element_decode_stmt(val_ty, &v, &buf_expr, &val_features, value_use_bytes);
+    let m = map_entry_ctx(ctx, msg, field, proto_fqn, features)?;
+    let MapEntryCtx {
+        field_number,
+        ident,
+        key_codec,
+        val_codec,
+        ..
+    } = &m;
     let wire_check = wire_type_check(
         &quote! { tag },
         &quote! { ::buffa::encoding::WireType::LengthDelimited },
@@ -2967,33 +3071,11 @@ fn map_merge_arm(
     Ok(quote! {
         #field_number => {
             #wire_check
-            let entry_len = ::buffa::encoding::decode_varint(buf)?;
-            let entry_len = usize::try_from(entry_len)
-                .map_err(|_| ::buffa::DecodeError::MessageTooLarge)?;
-            if buf.remaining() < entry_len {
-                return ::core::result::Result::Err(::buffa::DecodeError::UnexpectedEof);
-            }
-            let entry_limit = buf.remaining() - entry_len;
-            let mut #k = ::core::default::Default::default();
-            let mut #v = ::core::default::Default::default();
-            while buf.remaining() > entry_limit {
-                let entry_tag = ::buffa::encoding::Tag::decode(buf)?;
-                match entry_tag.field_number() {
-                    1 => { #decode_key }
-                    2 => { #decode_val }
-                    _ => { ::buffa::encoding::skip_field_depth(entry_tag, buf, ctx.depth())?; }
-                }
-            }
-            // Correct the buffer position if the entry was not fully consumed.
-            if buf.remaining() != entry_limit {
-                let remaining = buf.remaining();
-                if remaining > entry_limit {
-                    buf.advance(remaining - entry_limit);
-                } else {
-                    return ::core::result::Result::Err(::buffa::DecodeError::UnexpectedEof);
-                }
-            }
-            self.#ident.insert(#k, #v);
+            ::buffa::map_codec::merge_entry::<#key_codec, #val_codec>(
+                &mut self.#ident,
+                buf,
+                ctx,
+            )?;
         }
     })
 }

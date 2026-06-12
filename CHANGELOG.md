@@ -135,6 +135,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   out-of-line error constructor moves construction off the hot decode
   path. Regenerate checked-in code to pick up the shrink. (#193)
 
+- Owned map fields encode/decode through the new `buffa::map_codec` module
+  (zero-sized per-proto-type codecs plus generic field helpers) instead of
+  ~40-50 inline generated lines per map field. Wire output, decode-limit
+  semantics, and the fixed-width sizing fast path are unchanged; everything
+  monomorphizes to the previous code. (#194)
+
 - **Breaking:** the decode-path `Message` trait methods (`merge`,
   `merge_field`, `merge_to_limit`, `merge_group`, `merge_length_delimited`),
   `encoding::decode_unknown_field`, and `message_set::merge_item` now take a

@@ -197,20 +197,11 @@ impl ::buffa::Message for Struct {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
         let mut size = 0u32;
-        #[allow(clippy::for_kv_map)]
-        for (k, v) in &self.fields {
-            let entry_size: u32 = 1u32 + ::buffa::types::string_encoded_len(k) as u32
-                + 1u32
-                + {
-                    let __slot = __cache.reserve();
-                    let inner = v.compute_size(__cache);
-                    __cache.set(__slot, inner);
-                    ::buffa::encoding::varint_len(inner as u64) as u32 + inner
-                };
-            size
-                += 1u32 + ::buffa::encoding::varint_len(entry_size as u64) as u32
-                    + entry_size;
-        }
+        size
+            += ::buffa::map_codec::message_field_len::<
+                ::buffa::map_codec::Str,
+                _,
+            >(&self.fields, 1u32, __cache);
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -221,31 +212,10 @@ impl ::buffa::Message for Struct {
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        for (k, v) in &self.fields {
-            let __v_len = __cache.consume_next();
-            let entry_size: u32 = 1u32 + ::buffa::types::string_encoded_len(k) as u32
-                + 1u32
-                + (::buffa::encoding::varint_len(__v_len as u64) as u32 + __v_len);
-            ::buffa::encoding::Tag::new(
-                    1u32,
-                    ::buffa::encoding::WireType::LengthDelimited,
-                )
-                .encode(buf);
-            ::buffa::encoding::encode_varint(entry_size as u64, buf);
-            ::buffa::encoding::Tag::new(
-                    1u32,
-                    ::buffa::encoding::WireType::LengthDelimited,
-                )
-                .encode(buf);
-            ::buffa::types::encode_string(k, buf);
-            ::buffa::encoding::Tag::new(
-                    2u32,
-                    ::buffa::encoding::WireType::LengthDelimited,
-                )
-                .encode(buf);
-            ::buffa::encoding::encode_varint(__v_len as u64, buf);
-            v.write_to(__cache, buf);
-        }
+        ::buffa::map_codec::write_message_field::<
+            ::buffa::map_codec::Str,
+            _,
+        >(&self.fields, 1u32, __cache, buf);
         self.__buffa_unknown_fields.write_to(buf);
     }
     fn merge_field(
@@ -264,58 +234,10 @@ impl ::buffa::Message for Struct {
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
-                let entry_len = ::buffa::encoding::decode_varint(buf)?;
-                let entry_len = usize::try_from(entry_len)
-                    .map_err(|_| ::buffa::DecodeError::MessageTooLarge)?;
-                if buf.remaining() < entry_len {
-                    return ::core::result::Result::Err(
-                        ::buffa::DecodeError::UnexpectedEof,
-                    );
-                }
-                let entry_limit = buf.remaining() - entry_len;
-                let mut key = ::core::default::Default::default();
-                let mut val = ::core::default::Default::default();
-                while buf.remaining() > entry_limit {
-                    let entry_tag = ::buffa::encoding::Tag::decode(buf)?;
-                    match entry_tag.field_number() {
-                        1 => {
-                            ::buffa::encoding::check_wire_type(
-                                entry_tag,
-                                ::buffa::encoding::WireType::LengthDelimited,
-                            )?;
-                            key = ::buffa::types::decode_string(buf)?;
-                        }
-                        2 => {
-                            ::buffa::encoding::check_wire_type(
-                                entry_tag,
-                                ::buffa::encoding::WireType::LengthDelimited,
-                            )?;
-                            ::buffa::Message::merge_length_delimited(
-                                &mut val,
-                                buf,
-                                ctx,
-                            )?;
-                        }
-                        _ => {
-                            ::buffa::encoding::skip_field_depth(
-                                entry_tag,
-                                buf,
-                                ctx.depth(),
-                            )?;
-                        }
-                    }
-                }
-                if buf.remaining() != entry_limit {
-                    let remaining = buf.remaining();
-                    if remaining > entry_limit {
-                        buf.advance(remaining - entry_limit);
-                    } else {
-                        return ::core::result::Result::Err(
-                            ::buffa::DecodeError::UnexpectedEof,
-                        );
-                    }
-                }
-                self.fields.insert(key, val);
+                ::buffa::map_codec::merge_entry::<
+                    ::buffa::map_codec::Str,
+                    ::buffa::map_codec::Msg<_>,
+                >(&mut self.fields, buf, ctx)?;
             }
             _ => {
                 self.__buffa_unknown_fields

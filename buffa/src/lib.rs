@@ -233,6 +233,11 @@ pub mod extension_registry;
 pub mod json;
 #[cfg(feature = "json")]
 pub mod json_helpers;
+// Generated-code plumbing: codecs are named via turbofish by `write_to` /
+// `merge_field` emission, never by hand-written code. Hidden so the codec
+// ZSTs and their sealed traits don't surface as consumer API on docs.rs.
+#[doc(hidden)]
+pub mod map_codec;
 pub mod message;
 pub mod message_field;
 pub mod message_set;
