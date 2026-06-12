@@ -20,8 +20,8 @@ use crate::impl_message::{
     closed_enum_decode, closed_enum_decode_with_unknown, decode_fn_token, effective_type,
     effective_type_in_map_entry, field_string_repr, field_uses_bytes, find_map_entry_fields,
     is_explicit_presence_scalar, is_packed_type, is_real_oneof_member, is_required_field,
-    is_supported_field_type, map_value_use_bytes, validated_field_number, wire_type_byte,
-    wire_type_check, wire_type_token,
+    is_supported_field_type, map_value_use_bytes, validated_field_number, wire_type_check,
+    wire_type_token,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident, rust_path_to_tokens};
 use crate::oneof::{is_null_value_field, serde_helper_path};
@@ -1036,9 +1036,8 @@ pub(crate) fn scalar_decode_arm(
     let ty = effective_type(ctx, field, features);
     let ident = make_field_ident(field_name);
     let wire_type = wire_type_token(ty);
-    let expected_byte = wire_type_byte(ty);
 
-    let wire_check = wire_type_check(field_number, &wire_type, expected_byte);
+    let wire_check = wire_type_check(&quote! { tag }, &wire_type);
 
     if is_explicit_presence_scalar(field, ty, features) {
         let assign = match ty {
@@ -1144,9 +1143,8 @@ pub(crate) fn repeated_decode_arm(
     // Message: always LengthDelimited, unpacked.
     if ty == Type::TYPE_MESSAGE {
         let ld_check = wire_type_check(
-            field_number,
+            &quote! { tag },
             &quote! { ::buffa::encoding::WireType::LengthDelimited },
-            2u8,
         );
         let vt = resolve_view_decode_tokens(scope, field)?;
         return Ok(quote! {
@@ -1162,9 +1160,8 @@ pub(crate) fn repeated_decode_arm(
     // Group: StartGroup wire type, unpacked.
     if ty == Type::TYPE_GROUP {
         let sg_check = wire_type_check(
-            field_number,
+            &quote! { tag },
             &quote! { ::buffa::encoding::WireType::StartGroup },
-            3u8,
         );
         let vt = resolve_view_decode_tokens(scope, field)?;
         return Ok(quote! {
@@ -1180,9 +1177,8 @@ pub(crate) fn repeated_decode_arm(
     // String and bytes: unpacked only (no packed encoding for LD types).
     if !is_packed_type(ty) {
         let ld_check = wire_type_check(
-            field_number,
+            &quote! { tag },
             &quote! { ::buffa::encoding::WireType::LengthDelimited },
-            2u8,
         );
         let borrow = match ty {
             Type::TYPE_STRING => quote! { ::buffa::types::borrow_str(&mut cur)? },
@@ -1274,11 +1270,12 @@ pub(crate) fn repeated_decode_arm(
                 // Unpacked (backward-compat with old encoders).
                 #unpacked_elem
             } else {
-                return Err(::buffa::DecodeError::WireTypeMismatch {
-                    field_number: #field_number,
-                    expected: 2u8,
-                    actual: tag.wire_type() as u8,
-                });
+                // Accepts LengthDelimited (packed) or the element wire type
+                // (unpacked); report the packed wire type as expected.
+                return Err(::buffa::encoding::wire_type_mismatch(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                ));
             }
         }
     })
@@ -1299,9 +1296,8 @@ pub(crate) fn map_decode_arm(
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
 
     let ld_check = wire_type_check(
-        field_number,
+        &quote! { tag },
         &quote! { ::buffa::encoding::WireType::LengthDelimited },
-        2u8,
     );
 
     // Default values for key and value when the entry sub-message omits them.
@@ -1356,16 +1352,7 @@ fn map_view_entry_decode(
     let features = &crate::features::resolve_field(ctx, fd, parent_features);
     let ty = effective_type_in_map_entry(ctx, fd, features);
     let wire_type = wire_type_token(ty);
-    let wire_byte = wire_type_byte(ty);
-    let tag_check = quote! {
-        if entry_tag.wire_type() != #wire_type {
-            return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                field_number: entry_tag.field_number(),
-                expected: #wire_byte,
-                actual: entry_tag.wire_type() as u8,
-            });
-        }
-    };
+    let tag_check = wire_type_check(&quote! { entry_tag }, &wire_type);
 
     let assign = match ty {
         Type::TYPE_STRING => quote! { #var = ::buffa::types::borrow_str(&mut entry_cur)?; },
@@ -1418,8 +1405,7 @@ pub(crate) fn oneof_decode_arms(
             let field_features = crate::features::resolve_field(ctx, field, features);
             let variant = crate::oneof::oneof_variant_ident(name);
             let wire_type = wire_type_token(ty);
-            let expected_byte = wire_type_byte(ty);
-            let wire_check = wire_type_check(field_number, &wire_type, expected_byte);
+            let wire_check = wire_type_check(&quote! { tag }, &wire_type);
 
             let value = match ty {
                 Type::TYPE_STRING => quote! { ::buffa::types::borrow_str(&mut cur)? },

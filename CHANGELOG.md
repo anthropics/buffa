@@ -128,6 +128,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Generated decode arms (owned merge, view decode, lazy record arms,
+  map-entry loops) emit a single `::buffa::encoding::check_wire_type` call
+  instead of a seven-line inline wire-type guard (~1,100 sites across a
+  generated corpus). Error payloads are byte-identical; the `#[cold]`
+  out-of-line error constructor moves construction off the hot decode
+  path. Regenerate checked-in code to pick up the shrink. (#193)
+
 - **Breaking:** the decode-path `Message` trait methods (`merge`,
   `merge_field`, `merge_to_limit`, `merge_group`, `merge_length_delimited`),
   `encoding::decode_unknown_field`, and `message_set::merge_item` now take a
