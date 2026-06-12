@@ -308,16 +308,31 @@ def generate_chart(title: str, unit: str, messages: list[str],
     label_w = 130
     chart_left = label_w + 10
     chart_w = 580
-    legend_h = 40
     title_h = 30
-    top_margin = title_h + legend_h + 10
     bottom_margin = 35
+    svg_w = chart_left + chart_w + 80
+
+    # Lay out legend entries left-aligned, wrapping to a new row when an
+    # entry would run past the right edge (7+ series no longer fit on one
+    # row). The legend band grows by 20px per extra row.
+    legend_x0 = 10
+    legend_row_h = 20
+    legend_positions: list[tuple[float, int]] = []
+    lx, legend_row = float(legend_x0), 0
+    for s in series_list:
+        entry_w = len(s.name) * 7.5 + 32
+        if lx > legend_x0 and lx + entry_w > svg_w - 10:
+            legend_row += 1
+            lx = float(legend_x0)
+        legend_positions.append((lx, legend_row))
+        lx += entry_w
+    legend_h = 20 + legend_row_h * (legend_row + 1)
+    top_margin = title_h + legend_h + 10
 
     n_bars = len(series_list)
     group_h = n_bars * (bar_h + bar_gap) - bar_gap + group_gap
     total_chart_h = len(messages) * group_h - group_gap
     svg_h = top_margin + total_chart_h + bottom_margin
-    svg_w = chart_left + chart_w + 80
 
     all_vals = [v for s in series_list for v in s.data.values() if v]
     # Auto-rescale MiB/s → GiB/s on the chart when the max value is large
@@ -353,13 +368,12 @@ def generate_chart(title: str, unit: str, messages: list[str],
     a(f'  <text x="{svg_w / 2}" y="{title_h - 5}" text-anchor="middle"'
       f' class="title">{title}</text>')
 
-    lx = chart_left
-    for s in series_list:
-        a(f'  <rect x="{lx}" y="{title_h + 5}" width="14" height="14"'
+    for s, (ex, row) in zip(series_list, legend_positions):
+        ey = title_h + 5 + row * legend_row_h
+        a(f'  <rect x="{ex:g}" y="{ey}" width="14" height="14"'
           f' rx="2" fill="{s.color}"/>')
-        a(f'  <text x="{lx + 18}" y="{title_h + 16}"'
+        a(f'  <text x="{ex + 18:g}" y="{ey + 11}"'
           f' class="legend-text">{s.name}</text>')
-        lx += len(s.name) * 7.5 + 32
 
     for i in range(n_grid + 1):
         val = grid_step * i

@@ -10,12 +10,12 @@
   </style>
   <rect width="100%" height="100%" fill="white"/>
   <text x="400.0" y="25" text-anchor="middle" class="title">JSON Encode Throughput — LogRecord</text>
-  <rect x="140" y="35" width="14" height="14" rx="2" fill="#4C78A8"/>
-  <text x="158" y="46" class="legend-text">buffa</text>
-  <rect x="209.5" y="35" width="14" height="14" rx="2" fill="#F58518"/>
-  <text x="227.5" y="46" class="legend-text">prost</text>
-  <rect x="279.0" y="35" width="14" height="14" rx="2" fill="#54A24B"/>
-  <text x="297.0" y="46" class="legend-text">Go</text>
+  <rect x="10" y="35" width="14" height="14" rx="2" fill="#4C78A8"/>
+  <text x="28" y="46" class="legend-text">buffa</text>
+  <rect x="79.5" y="35" width="14" height="14" rx="2" fill="#F58518"/>
+  <text x="97.5" y="46" class="legend-text">prost</text>
+  <rect x="149" y="35" width="14" height="14" rx="2" fill="#54A24B"/>
+  <text x="167" y="46" class="legend-text">Go</text>
   <line x1="140.0" y1="80" x2="140.0" y2="154" class="grid"/>
   <text x="140.0" y="169" text-anchor="middle" class="axis-label">0</text>
   <line x1="256.0" y1="80" x2="256.0" y2="154" class="grid"/>
