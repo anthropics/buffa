@@ -417,3 +417,111 @@ fn test_view_coverage_group_in_oneof_merge() {
         other => panic!("expected merged Payload, got {other:?}"),
     }
 }
+
+// ── Required-field presence on views (#170) ─────────────────────────────
+
+#[test]
+fn test_view_required_presence_absent_vs_explicit_default() {
+    // The motivating case from gh#170: a required field explicitly encoded
+    // with its default value must be distinguishable from one that was
+    // absent on the wire.
+    use crate::proto2::__buffa::view::WithDefaultsView;
+    use crate::proto2::WithDefaults;
+    use buffa::MessageView;
+
+    // Absent: nothing on the wire.
+    let view = WithDefaultsView::decode_view(&[]).unwrap();
+    assert!(!view.has_name(), "absent required string must report false");
+    assert!(!view.has_id(), "absent required int must report false");
+    assert_eq!(view.name, "");
+    assert_eq!(view.id, 0);
+
+    // Present, explicitly encoded as type defaults ("" and 0) — required
+    // fields are always written by the encoder.
+    let msg = WithDefaults {
+        name: String::new(),
+        id: 0,
+        ..Default::default()
+    };
+    let wire = msg.encode_to_vec();
+    let view = WithDefaultsView::decode_view(&wire).unwrap();
+    assert!(view.has_name(), "explicit default string must report true");
+    assert!(view.has_id(), "explicit zero int must report true");
+    assert_eq!(view.name, "");
+    assert_eq!(view.id, 0);
+}
+
+#[test]
+fn test_view_required_presence_survives_submessage_merge() {
+    // Two wire occurrences of the same message concatenated (proto merge
+    // semantics): bits accumulated across both fragments.
+    use crate::proto2::__buffa::view::WithDefaultsView;
+    use crate::proto2::WithDefaults;
+    use buffa::MessageView;
+
+    let only_name = WithDefaults {
+        name: "n".to_string(),
+        ..Default::default()
+    };
+    let only_id = WithDefaults {
+        id: 9,
+        ..Default::default()
+    };
+    let mut wire = only_name.encode_to_vec();
+    wire.extend_from_slice(&only_id.encode_to_vec());
+
+    let view = WithDefaultsView::decode_view(&wire).unwrap();
+    assert!(
+        view.has_name(),
+        "bit from first fragment must survive merge"
+    );
+    assert!(view.has_id(), "bit from second fragment must be added");
+}
+
+#[test]
+fn test_view_required_closed_enum_unknown_value_not_marked_present() {
+    // An unknown closed-enum value routes to unknown fields (proto2
+    // semantics) — the required field was not effectively set, so it must
+    // not be marked present, matching C++ initialization checks.
+    use crate::proto2::__buffa::view::ViewCoverageView;
+    use crate::proto2::{Priority, ViewCoverage};
+    use buffa::MessageView;
+
+    let unknown_value = super::varint_field(1, 99);
+    let view = ViewCoverageView::decode_view(&unknown_value).unwrap();
+    assert!(
+        !view.has_level(),
+        "unknown closed-enum value must not mark the required field present"
+    );
+
+    // A known value does.
+    let msg = ViewCoverage {
+        level: Priority::HIGH,
+        ..Default::default()
+    };
+    let wire = msg.encode_to_vec();
+    let view = ViewCoverageView::decode_view(&wire).unwrap();
+    assert!(view.has_level());
+}
+
+#[test]
+fn test_view_required_presence_custom_defaults() {
+    // RequiredDefaults: 18 bit-tracked required fields across every scalar
+    // kind — all bits land in one word and report consistently.
+    use crate::proto2::__buffa::view::RequiredDefaultsView;
+    use crate::proto2::RequiredDefaults;
+    use buffa::MessageView;
+
+    let view = RequiredDefaultsView::decode_view(&[]).unwrap();
+    assert!(!view.has_count());
+    assert!(!view.has_label());
+    assert!(!view.has_level());
+    assert!(!view.has_sfx64());
+
+    let wire = RequiredDefaults::default().encode_to_vec();
+    let view = RequiredDefaultsView::decode_view(&wire).unwrap();
+    assert!(view.has_count());
+    assert!(view.has_label());
+    assert!(view.has_level());
+    assert!(view.has_sfx64());
+}

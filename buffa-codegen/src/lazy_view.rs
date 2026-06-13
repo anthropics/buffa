@@ -497,7 +497,7 @@ fn build_lazy_decode_arms(
             if is_lazy_field(scope, f) {
                 lazy_singular_message_arm(scope, f)
             } else {
-                scalar_decode_arm(scope, f)
+                scalar_decode_arm(scope, f, None)
             }
         })
         .collect::<Result<Vec<_>, _>>()?;

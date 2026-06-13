@@ -120,6 +120,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   carrier-agnostic `Location { line, column }`. Requires message types
   generated with `json = true`. Contributed by @rsd-darshan.
 
+- **Proto2 required-field presence on views** (#170). Generated
+  `MessageView` types for messages with proto2/editions `LEGACY_REQUIRED`
+  singular fields now expose `has_<field>()` accessors that distinguish a
+  field absent on the wire from one explicitly encoded with its default
+  value. Scalar required fields are tracked via hidden `__buffa_required_seen_*`
+  bit words; message/group required fields delegate to
+  `MessageFieldView::is_set()`. Messages without required fields are
+  byte-identical to before. Lazy views do not yet carry this tracking.
+
 ### Changed
 
 - **Breaking:** the decode-path `Message` trait methods (`merge`,

@@ -47,6 +47,181 @@ fn test_view_explicit_presence_scalar_is_option() {
     );
 }
 
+// -----------------------------------------------------------------------
+// Required-field presence on views (#170)
+// -----------------------------------------------------------------------
+
+fn proto2_file(name: &str) -> FileDescriptorProto {
+    FileDescriptorProto {
+        name: Some(name.to_string()),
+        syntax: Some("proto2".to_string()),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn test_view_required_fields_get_presence_tracking() {
+    let mut file = proto2_file("req.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("Layer".to_string()),
+        field: vec![
+            make_field("version", 15, Label::LABEL_REQUIRED, Type::TYPE_UINT32),
+            make_field("name", 1, Label::LABEL_REQUIRED, Type::TYPE_STRING),
+            make_field("extent", 5, Label::LABEL_OPTIONAL, Type::TYPE_UINT32),
+        ],
+        ..Default::default()
+    });
+    let files = generate(
+        &[file],
+        &["req.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let content = &joined(&files);
+
+    // A hidden seen-bit word on the view struct...
+    assert!(
+        content.contains("pub __buffa_required_seen_0: u64"),
+        "view must carry a seen-bit word for required fields: {content}"
+    );
+    // ...has_* accessors for the required fields only...
+    assert!(
+        content.contains("pub fn has_version(&self) -> bool"),
+        "required field must get a has_* accessor: {content}"
+    );
+    assert!(
+        content.contains("pub fn has_name(&self) -> bool"),
+        "required field must get a has_* accessor: {content}"
+    );
+    assert!(
+        !content.contains("fn has_extent"),
+        "proto2 optional must not get a has_* accessor (it is Option<T>): {content}"
+    );
+    // ...and the decode arms set the bits.
+    assert!(
+        content.contains("view.__buffa_required_seen_0 |= 1u64"),
+        "decode arm must set the seen bit: {content}"
+    );
+    assert!(
+        content.contains("view.__buffa_required_seen_0 |= 2u64"),
+        "second required field must use the next bit: {content}"
+    );
+}
+
+#[test]
+fn test_view_required_message_field_uses_is_set() {
+    let mut file = proto2_file("req_msg.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("Inner".to_string()),
+        field: vec![make_field("x", 1, Label::LABEL_OPTIONAL, Type::TYPE_INT32)],
+        ..Default::default()
+    });
+    file.message_type.push(DescriptorProto {
+        name: Some("Outer".to_string()),
+        field: vec![FieldDescriptorProto {
+            name: Some("inner".to_string()),
+            number: Some(1),
+            label: Some(Label::LABEL_REQUIRED),
+            r#type: Some(Type::TYPE_MESSAGE),
+            type_name: Some(".Inner".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let files = generate(
+        &[file],
+        &["req_msg.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let content = &joined(&files);
+
+    // Presence delegates to MessageFieldView::is_set — no bit word needed.
+    assert!(
+        content.contains("pub fn has_inner(&self) -> bool"),
+        "required message field must get a has_* accessor: {content}"
+    );
+    assert!(
+        content.contains("self.inner.is_set()"),
+        "message-field has_* must delegate to is_set: {content}"
+    );
+    let outer_view = files
+        .iter()
+        .filter(|f| f.content.contains("pub struct OuterView"))
+        .map(|f| f.content.as_str())
+        .collect::<String>();
+    assert!(
+        !outer_view.contains("__buffa_required_seen"),
+        "no seen-bit word when all required fields are message-typed: {outer_view}"
+    );
+}
+
+#[test]
+fn test_view_without_required_fields_is_unchanged() {
+    let mut file = proto3_file("plain.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("Msg".to_string()),
+        field: vec![make_field(
+            "value",
+            1,
+            Label::LABEL_OPTIONAL,
+            Type::TYPE_INT32,
+        )],
+        ..Default::default()
+    });
+    let files = generate(
+        &[file],
+        &["plain.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let content = &joined(&files);
+    assert!(
+        !content.contains("__buffa_required_seen"),
+        "proto3 views must not grow presence words: {content}"
+    );
+    assert!(
+        !content.contains("fn has_"),
+        "proto3 views must not grow has_* accessors: {content}"
+    );
+}
+
+#[test]
+fn test_view_more_than_64_required_fields_use_two_words() {
+    let mut file = proto2_file("req_many.proto");
+    let fields: Vec<FieldDescriptorProto> = (1..=65)
+        .map(|i| make_field(&format!("f{i}"), i, Label::LABEL_REQUIRED, Type::TYPE_INT32))
+        .collect();
+    file.message_type.push(DescriptorProto {
+        name: Some("Wide".to_string()),
+        field: fields,
+        ..Default::default()
+    });
+    let files = generate(
+        &[file],
+        &["req_many.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let content = &joined(&files);
+    assert!(
+        content.contains("pub __buffa_required_seen_0: u64"),
+        "first word must exist: {content}"
+    );
+    assert!(
+        content.contains("pub __buffa_required_seen_1: u64"),
+        "65th required field must spill into a second word: {content}"
+    );
+    assert!(
+        content.contains("view.__buffa_required_seen_1 |= 1u64"),
+        "bit 64 must target the second word: {content}"
+    );
+    for f in &files {
+        syn::parse_file(&f.content)
+            .unwrap_or_else(|e| panic!("generated file {} must parse: {e}", f.name));
+    }
+}
+
 #[test]
 fn test_view_repeated_message_field() {
     let mut file = proto3_file("rep_msg.proto");

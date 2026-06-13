@@ -138,9 +138,45 @@ pub(crate) fn generate_view_with_nesting(
         .map(|(idx, oneof)| generate_oneof_view_enum(scope, msg, idx, oneof, &oneof_idents))
         .collect::<Result<Vec<_>, _>>()?;
 
+    // Required-field presence tracking (#170): proto2 `required` / editions
+    // `LEGACY_REQUIRED` fields are stored as bare types, so without extra
+    // state a decoded view cannot distinguish "absent on the wire" from
+    // "explicitly encoded as the default value". Scalar-like required
+    // fields get hidden seen-bit words set by their decode arms; message
+    // and group required fields already expose presence via
+    // `MessageFieldView::is_set`. Both kinds get a `has_*` accessor.
+    // Messages without required fields emit none of this — their output is
+    // byte-identical to before.
+    let required_fields = required_view_fields(view_scope, msg);
+    let required_bit_count = required_fields.iter().filter(|r| r.bit.is_some()).count();
+    let required_seen_words: Vec<proc_macro2::Ident> = (0..required_bit_count.div_ceil(64))
+        .map(required_seen_word_ident)
+        .collect();
+    let required_seen_struct_fields = required_seen_words.iter().map(|w| {
+        quote! {
+            #[doc(hidden)]
+            pub #w: u64,
+        }
+    });
+    let required_has_methods = required_has_methods(&required_fields);
+    let required_bit_stmts: std::collections::HashMap<u32, TokenStream> = required_fields
+        .iter()
+        .filter_map(|r| {
+            let bit = r.bit?;
+            let word = required_seen_word_ident(bit / 64);
+            let mask = 1u64 << (bit % 64);
+            Some((r.field_number, quote! { view.#word |= #mask; }))
+        })
+        .collect();
+
     // decode_view match arms.
-    let (scalar_arms, repeated_arms, oneof_arms) =
-        build_decode_arms(view_scope, msg, &view_oneof_prefix, &oneof_idents)?;
+    let (scalar_arms, repeated_arms, oneof_arms) = build_decode_arms(
+        view_scope,
+        msg,
+        &view_oneof_prefix,
+        &oneof_idents,
+        &required_bit_stmts,
+    )?;
 
     // to_owned_message field initialisers.
     let owned_fields = build_to_owned_fields(
@@ -344,6 +380,7 @@ pub(crate) fn generate_view_with_nesting(
             #(#direct_fields)*
             #(#oneof_struct_fields)*
             #unknown_fields_field
+            #(#required_seen_struct_fields)*
             #phantom_field
         }
 
@@ -405,6 +442,8 @@ pub(crate) fn generate_view_with_nesting(
                 }
                 ::core::result::Result::Ok(())
             }
+
+            #(#required_has_methods)*
         }
 
         impl<'a> ::buffa::MessageView<'a> for #view_ident<'a> {
@@ -942,11 +981,113 @@ fn generate_oneof_view_enum(
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::type_complexity)]
+/// A proto2 `required` (or editions `LEGACY_REQUIRED`) singular field whose
+/// wire presence the generated view tracks (#170).
+struct RequiredViewField<'a> {
+    /// Rust field identifier on the view struct.
+    ident: proc_macro2::Ident,
+    /// Proto field name (for the `has_*` accessor name and its docs).
+    proto_name: &'a str,
+    field_number: u32,
+    /// Position in the hidden seen-bit words for scalar-like fields;
+    /// `None` for message/group fields, whose presence is already
+    /// observable via `MessageFieldView::is_set`.
+    bit: Option<usize>,
+}
+
+/// Collect the required singular fields of `msg` in declaration order,
+/// assigning seen-bit positions to the scalar-like ones.
+fn required_view_fields<'a>(
+    scope: MessageScope<'_>,
+    msg: &'a DescriptorProto,
+) -> Vec<RequiredViewField<'a>> {
+    let mut out = Vec::new();
+    let mut next_bit = 0usize;
+    for f in &msg.field {
+        let ty = f.r#type.unwrap_or_default();
+        if is_real_oneof_member(f)
+            || f.label.unwrap_or_default() == Label::LABEL_REPEATED
+            || !is_supported_field_type(ty)
+            || !crate::impl_message::is_required_field(f, scope.features)
+        {
+            continue;
+        }
+        let (Some(proto_name), Some(number)) = (f.name.as_deref(), f.number) else {
+            continue;
+        };
+        let bit = if matches!(ty, Type::TYPE_MESSAGE | Type::TYPE_GROUP) {
+            None
+        } else {
+            let b = next_bit;
+            next_bit += 1;
+            Some(b)
+        };
+        out.push(RequiredViewField {
+            ident: make_field_ident(proto_name),
+            proto_name,
+            field_number: number as u32,
+            bit,
+        });
+    }
+    out
+}
+
+/// Identifier of the `w`-th hidden seen-bit word on the view struct.
+fn required_seen_word_ident(w: usize) -> proc_macro2::Ident {
+    format_ident!("__buffa_required_seen_{}", w)
+}
+
+/// `pub fn has_<name>(&self) -> bool` accessors for the required fields.
+fn required_has_methods(required: &[RequiredViewField<'_>]) -> Vec<TokenStream> {
+    required
+        .iter()
+        .map(|r| {
+            let method = format_ident!("has_{}", r.proto_name);
+            let doc = format!(
+                "Whether required field `{}` was present on the wire.\n\n\
+                 Distinguishes a field that was absent from one explicitly \
+                 encoded with its default value — required fields are stored \
+                 as bare (non-`Option`) types, so the value alone cannot. \
+                 Presence is recorded by the wire decoder; on a hand-built \
+                 view this reports `false` unless the hidden seen-bits are \
+                 set (encoding is unaffected: required fields are always \
+                 written).",
+                r.proto_name
+            );
+            match r.bit {
+                Some(bit) => {
+                    let word = required_seen_word_ident(bit / 64);
+                    let mask = 1u64 << (bit % 64);
+                    quote! {
+                        #[doc = #doc]
+                        #[must_use]
+                        pub fn #method(&self) -> bool {
+                            self.#word & #mask != 0
+                        }
+                    }
+                }
+                None => {
+                    let ident = &r.ident;
+                    quote! {
+                        #[doc = #doc]
+                        #[must_use]
+                        pub fn #method(&self) -> bool {
+                            self.#ident.is_set()
+                        }
+                    }
+                }
+            }
+        })
+        .collect()
+}
+
+#[allow(clippy::type_complexity)]
 fn build_decode_arms(
     scope: MessageScope<'_>,
     msg: &DescriptorProto,
     view_oneof_prefix: &TokenStream,
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
+    required_bit_stmts: &std::collections::HashMap<u32, TokenStream>,
 ) -> Result<(Vec<TokenStream>, Vec<TokenStream>, Vec<TokenStream>), CodeGenError> {
     let scalar_fields: Vec<_> = msg
         .field
@@ -961,7 +1102,10 @@ fn build_decode_arms(
         .collect();
     let scalar_arms = scalar_fields
         .iter()
-        .map(|f| scalar_decode_arm(scope, f))
+        .map(|f| {
+            let bit_stmt = f.number.and_then(|n| required_bit_stmts.get(&(n as u32)));
+            scalar_decode_arm(scope, f, bit_stmt)
+        })
         .collect::<Result<Vec<_>, _>>()?;
 
     let repeated_fields: Vec<_> = msg
@@ -1020,6 +1164,11 @@ fn build_decode_arms(
 pub(crate) fn scalar_decode_arm(
     scope: MessageScope<'_>,
     field: &FieldDescriptorProto,
+    // `Some` for a bit-tracked required field (#170): a statement setting
+    // the field's seen bit, emitted wherever the arm actually assigns the
+    // value (so a closed-enum unknown value routed to unknown fields does
+    // NOT mark the field present, matching proto2 initialization checks).
+    required_bit_stmt: Option<&TokenStream>,
 ) -> Result<TokenStream, CodeGenError> {
     let MessageScope {
         ctx,
@@ -1070,19 +1219,24 @@ pub(crate) fn scalar_decode_arm(
         return Ok(quote! { #field_number => { #wire_check #assign } });
     }
 
+    let bit_stmt = required_bit_stmt.cloned().unwrap_or_default();
     let assign = match ty {
-        Type::TYPE_STRING => quote! { view.#ident = ::buffa::types::borrow_str(&mut cur)?; },
-        Type::TYPE_BYTES => quote! { view.#ident = ::buffa::types::borrow_bytes(&mut cur)?; },
+        Type::TYPE_STRING => {
+            quote! { view.#ident = ::buffa::types::borrow_str(&mut cur)?; #bit_stmt }
+        }
+        Type::TYPE_BYTES => {
+            quote! { view.#ident = ::buffa::types::borrow_bytes(&mut cur)?; #bit_stmt }
+        }
         Type::TYPE_ENUM => {
             if is_closed_enum(features) {
                 let unknown_route = closed_enum_view_unknown_route(preserve_unknown_fields);
                 closed_enum_decode_with_unknown(
                     &quote! { &mut cur },
-                    quote! { view.#ident = __v; },
+                    quote! { view.#ident = __v; #bit_stmt },
                     unknown_route,
                 )
             } else {
-                quote! { view.#ident = ::buffa::EnumValue::from(::buffa::types::decode_int32(&mut cur)?); }
+                quote! { view.#ident = ::buffa::EnumValue::from(::buffa::types::decode_int32(&mut cur)?); #bit_stmt }
             }
         }
         Type::TYPE_MESSAGE => {
@@ -1115,7 +1269,7 @@ pub(crate) fn scalar_decode_arm(
         }
         _ => {
             let dfn = decode_fn_token(ty);
-            quote! { view.#ident = #dfn(&mut cur)?; }
+            quote! { view.#ident = #dfn(&mut cur)?; #bit_stmt }
         }
     };
 
