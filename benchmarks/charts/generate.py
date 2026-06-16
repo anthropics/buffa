@@ -37,6 +37,7 @@ from pathlib import Path
 COLORS = {
     "buffa": "#4C78A8",
     "buffa (view)": "#72B7B2",
+    "buffa (lazy)": "#A0CBE8",
     "prost": "#F58518",
     "prost (bytes)": "#EEAE62",
     "protobuf-v4": "#E45756",
@@ -197,6 +198,7 @@ def build_tables(
         ("binary-decode", [
             ("buffa",         lambda ms, md: _get(buffa, "buffa", ms, "decode")),
             ("buffa (view)",  lambda ms, md: _get(buffa, "buffa", ms, "decode_view")),
+            ("buffa (lazy)",  lambda ms, md: _get(buffa, "buffa", ms, "decode_lazy")),
             ("prost",         lambda ms, md: _get(prost, "prost", ms, "decode")),
             ("prost (bytes)", lambda ms, md: _get(prost_bytes, "prost-bytes", ms, "decode")),
             ("protobuf-v4",   lambda ms, md: _get(google, "google", ms, "decode")),
@@ -205,6 +207,7 @@ def build_tables(
         ("binary-encode", [
             ("buffa",         lambda ms, md: _get(buffa, "buffa", ms, "encode")),
             ("buffa (view)",  lambda ms, md: _get(buffa, "buffa", ms, "encode_view")),
+            ("buffa (lazy)",  lambda ms, md: _get(buffa, "buffa", ms, "encode_lazy")),
             ("prost",         lambda ms, md: _get(prost, "prost", ms, "encode")),
             ("prost (bytes)", lambda ms, md: _get(prost_bytes, "prost-bytes", ms, "encode")),
             ("protobuf-v4",   lambda ms, md: _get(google, "google", ms, "encode")),
@@ -296,6 +299,17 @@ def _nice_max(values: list[float]) -> float:
 # produce unwieldy MiB/s axis labels ("70k MiB/s" → "68.4 GiB/s" reads better).
 _MIB_TO_GIB_CUTOFF = 10 * 1024
 
+# Broken-axis threshold: when the largest value exceeds the runner-up by this
+# factor (e.g. lazy decode on AnalyticsEvent, ~54× the eager view), a linear
+# axis would compress every other bar into a sliver. The axis is then scaled
+# to the runner-up, and outlier bars run to the full chart width through a
+# break glyph, with their value label giving the actual number. At 10× the
+# runner-up bar would occupy under a tenth of a linear axis; smaller gaps
+# (the 4–7× spreads on the reflection charts) stay readable unbroken.
+_BREAK_RATIO = 10
+# Width of the truncated segment an outlier bar extends past the break.
+_BREAK_SEGMENT_W = 70
+
 
 def generate_chart(title: str, unit: str, messages: list[str],
                    series_list: list[Series]) -> str:
@@ -305,27 +319,63 @@ def generate_chart(title: str, unit: str, messages: list[str],
     label_w = 130
     chart_left = label_w + 10
     chart_w = 580
-    legend_h = 40
     title_h = 30
-    top_margin = title_h + legend_h + 10
     bottom_margin = 35
+    svg_w = chart_left + chart_w + 80
+
+    # Lay out legend entries centered, wrapping to a new row when an entry
+    # would run past the right edge (7+ series no longer fit on one row).
+    # First assign entries to rows, then center each row within the canvas.
+    # The legend band grows by 20px per extra row. The trailing 14px of each
+    # entry's advance is inter-entry padding, so it is excluded from the
+    # final entry's width when centering.
+    legend_margin = 10
+    legend_row_h = 20
+    legend_pad = 14
+    rows: list[list[tuple[Series, float]]] = [[]]
+    lx = 0.0
+    for s in series_list:
+        entry_w = len(s.name) * 7.5 + 18 + legend_pad
+        if rows[-1] and lx + entry_w > svg_w - 2 * legend_margin:
+            rows.append([])
+            lx = 0.0
+        rows[-1].append((s, lx))
+        lx += entry_w
+    legend_positions: list[tuple[float, int]] = []
+    for row_idx, row_entries in enumerate(rows):
+        last_s, last_x = row_entries[-1]
+        row_w = last_x + len(last_s.name) * 7.5 + 18
+        x0 = (svg_w - row_w) / 2
+        legend_positions.extend((x0 + ex, row_idx) for _, ex in row_entries)
+    legend_h = 20 + legend_row_h * len(rows)
+    top_margin = title_h + legend_h + 10
 
     n_bars = len(series_list)
     group_h = n_bars * (bar_h + bar_gap) - bar_gap + group_gap
     total_chart_h = len(messages) * group_h - group_gap
     svg_h = top_margin + total_chart_h + bottom_margin
-    svg_w = chart_left + chart_w + 80
 
     all_vals = [v for s in series_list for v in s.data.values() if v]
-    # Auto-rescale MiB/s → GiB/s on the chart when the max value is large
-    # enough to make integer-MiB axis labels unreadable.
+    sorted_vals = sorted(all_vals, reverse=True)
+    broken = (len(sorted_vals) >= 2
+              and sorted_vals[0] > _BREAK_RATIO * sorted_vals[1])
+    # Auto-rescale MiB/s → GiB/s on the chart when the axis maximum is large
+    # enough to make integer-MiB axis labels unreadable. With a broken axis
+    # the runner-up sets the axis, so the outlier doesn't force GiB units
+    # onto an otherwise-MiB chart.
+    axis_basis = sorted_vals[1] if broken else sorted_vals[0]
     scale_factor = 1.0
-    if unit == "MiB/s" and max(all_vals) >= _MIB_TO_GIB_CUTOFF:
+    if unit == "MiB/s" and axis_basis >= _MIB_TO_GIB_CUTOFF:
         unit = "GiB/s"
         scale_factor = 1 / 1024
     all_vals = [v * scale_factor for v in all_vals]
-    max_val = _nice_max(all_vals)
-    scale = chart_w / max_val
+    if broken:
+        max_val = _nice_max(sorted(all_vals, reverse=True)[1:])
+        lower_w = chart_w - _BREAK_SEGMENT_W
+    else:
+        max_val = _nice_max(all_vals)
+        lower_w = chart_w
+    scale = lower_w / max_val
 
     n_grid = 5
     grid_step = max_val / n_grid
@@ -350,13 +400,12 @@ def generate_chart(title: str, unit: str, messages: list[str],
     a(f'  <text x="{svg_w / 2}" y="{title_h - 5}" text-anchor="middle"'
       f' class="title">{title}</text>')
 
-    lx = chart_left
-    for s in series_list:
-        a(f'  <rect x="{lx}" y="{title_h + 5}" width="14" height="14"'
+    for s, (ex, row) in zip(series_list, legend_positions):
+        ey = title_h + 5 + row * legend_row_h
+        a(f'  <rect x="{ex:g}" y="{ey}" width="14" height="14"'
           f' rx="2" fill="{s.color}"/>')
-        a(f'  <text x="{lx + 18}" y="{title_h + 16}"'
+        a(f'  <text x="{ex + 18:g}" y="{ey + 11}"'
           f' class="legend-text">{s.name}</text>')
-        lx += len(s.name) * 7.5 + 32
 
     for i in range(n_grid + 1):
         val = grid_step * i
@@ -370,6 +419,16 @@ def generate_chart(title: str, unit: str, messages: list[str],
     a(f'  <text x="{chart_left + chart_w / 2}"'
       f' y="{svg_h - 5}" text-anchor="middle" class="axis-label">{unit}</text>')
 
+    # Axis-level break marker: double slash on the baseline between the last
+    # grid line and the outlier segment.
+    if broken:
+        xb = chart_left + lower_w + _BREAK_SEGMENT_W / 4
+        yb = top_margin + total_chart_h
+        for dx in (0, 6):
+            a(f'  <line x1="{xb + dx - 3:.1f}" y1="{yb + 5}"'
+              f' x2="{xb + dx + 3:.1f}" y2="{yb - 5}"'
+              f' stroke="#57606a" stroke-width="1"/>')
+
     for gi, msg in enumerate(messages):
         gy = top_margin + gi * group_h
         label_y = gy + (n_bars * (bar_h + bar_gap) - bar_gap) / 2 + 4
@@ -379,9 +438,22 @@ def generate_chart(title: str, unit: str, messages: list[str],
         for si, s in enumerate(series_list):
             val = s.data.get(msg, 0) * scale_factor
             by = gy + si * (bar_h + bar_gap)
-            bw = max(val * scale, 1)
+            is_outlier = broken and val > max_val
+            bw = chart_w if is_outlier else max(val * scale, 1)
             a(f'  <rect x="{chart_left}" y="{by:.1f}" width="{bw:.1f}"'
               f' height="{bar_h}" rx="2" fill="{s.color}"/>')
+            if is_outlier:
+                # Break glyph: white parallelogram gap with slanted edges,
+                # marking that the bar's scale is discontinuous here.
+                xb = chart_left + lower_w + _BREAK_SEGMENT_W / 4
+                yt, yb_ = by - 1, by + bar_h + 1
+                a(f'  <polygon points="{xb - 4:.1f},{yb_:.1f}'
+                  f' {xb + 2:.1f},{yt:.1f} {xb + 8:.1f},{yt:.1f}'
+                  f' {xb + 2:.1f},{yb_:.1f}" fill="white"/>')
+                for dx in (0, 6):
+                    a(f'  <line x1="{xb + dx - 4:.1f}" y1="{yb_:.1f}"'
+                      f' x2="{xb + dx + 2:.1f}" y2="{yt:.1f}"'
+                      f' stroke="#57606a" stroke-width="1"/>')
             a(f'  <text x="{chart_left + bw + 4:.1f}" y="{by + bar_h / 2 + 4:.1f}"'
               f' class="value">{_format_bar(val, unit)}</text>')
 

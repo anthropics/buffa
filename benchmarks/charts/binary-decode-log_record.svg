@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="800" height="267" viewBox="0 0 800 267">
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="293" viewBox="0 0 800 293">
   <style>
     text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
     .title { font-size: 16px; font-weight: 600; fill: #24292f; }
@@ -10,42 +10,46 @@
   </style>
   <rect width="100%" height="100%" fill="white"/>
   <text x="400.0" y="25" text-anchor="middle" class="title">Binary Decode Throughput — LogRecord</text>
-  <rect x="140" y="35" width="14" height="14" rx="2" fill="#4C78A8"/>
-  <text x="158" y="46" class="legend-text">buffa</text>
-  <rect x="209.5" y="35" width="14" height="14" rx="2" fill="#72B7B2"/>
-  <text x="227.5" y="46" class="legend-text">buffa (view)</text>
-  <rect x="331.5" y="35" width="14" height="14" rx="2" fill="#F58518"/>
-  <text x="349.5" y="46" class="legend-text">prost</text>
-  <rect x="401.0" y="35" width="14" height="14" rx="2" fill="#EEAE62"/>
-  <text x="419.0" y="46" class="legend-text">prost (bytes)</text>
-  <rect x="530.5" y="35" width="14" height="14" rx="2" fill="#E45756"/>
-  <text x="548.5" y="46" class="legend-text">protobuf-v4</text>
-  <rect x="645.0" y="35" width="14" height="14" rx="2" fill="#54A24B"/>
-  <text x="663.0" y="46" class="legend-text">Go</text>
-  <line x1="140.0" y1="80" x2="140.0" y2="232" class="grid"/>
-  <text x="140.0" y="247" text-anchor="middle" class="axis-label">0</text>
-  <line x1="256.0" y1="80" x2="256.0" y2="232" class="grid"/>
-  <text x="256.0" y="247" text-anchor="middle" class="axis-label">400</text>
-  <line x1="372.0" y1="80" x2="372.0" y2="232" class="grid"/>
-  <text x="372.0" y="247" text-anchor="middle" class="axis-label">800</text>
-  <line x1="488.0" y1="80" x2="488.0" y2="232" class="grid"/>
-  <text x="488.0" y="247" text-anchor="middle" class="axis-label">1,200</text>
-  <line x1="604.0" y1="80" x2="604.0" y2="232" class="grid"/>
-  <text x="604.0" y="247" text-anchor="middle" class="axis-label">1,600</text>
-  <line x1="720.0" y1="80" x2="720.0" y2="232" class="grid"/>
-  <text x="720.0" y="247" text-anchor="middle" class="axis-label">2,000</text>
-  <text x="430.0" y="262" text-anchor="middle" class="axis-label">MiB/s</text>
-  <text x="130" y="160.0" text-anchor="end" class="label">LogRecord</text>
-  <rect x="140" y="80.0" width="214.8" height="22" rx="2" fill="#4C78A8"/>
-  <text x="358.8" y="95.0" class="value">740</text>
-  <rect x="140" y="106.0" width="542.1" height="22" rx="2" fill="#72B7B2"/>
-  <text x="686.1" y="121.0" class="value">1,869</text>
-  <rect x="140" y="132.0" width="213.3" height="22" rx="2" fill="#F58518"/>
-  <text x="357.3" y="147.0" class="value">735</text>
-  <rect x="140" y="158.0" width="197.8" height="22" rx="2" fill="#EEAE62"/>
-  <text x="341.8" y="173.0" class="value">682</text>
-  <rect x="140" y="184.0" width="251.4" height="22" rx="2" fill="#E45756"/>
-  <text x="395.4" y="199.0" class="value">866</text>
-  <rect x="140" y="210.0" width="72.8" height="22" rx="2" fill="#54A24B"/>
-  <text x="216.8" y="225.0" class="value">251</text>
+  <rect x="70" y="35" width="14" height="14" rx="2" fill="#4C78A8"/>
+  <text x="88" y="46" class="legend-text">buffa</text>
+  <rect x="139.5" y="35" width="14" height="14" rx="2" fill="#72B7B2"/>
+  <text x="157.5" y="46" class="legend-text">buffa (view)</text>
+  <rect x="261.5" y="35" width="14" height="14" rx="2" fill="#A0CBE8"/>
+  <text x="279.5" y="46" class="legend-text">buffa (lazy)</text>
+  <rect x="383.5" y="35" width="14" height="14" rx="2" fill="#F58518"/>
+  <text x="401.5" y="46" class="legend-text">prost</text>
+  <rect x="453" y="35" width="14" height="14" rx="2" fill="#EEAE62"/>
+  <text x="471" y="46" class="legend-text">prost (bytes)</text>
+  <rect x="582.5" y="35" width="14" height="14" rx="2" fill="#E45756"/>
+  <text x="600.5" y="46" class="legend-text">protobuf-v4</text>
+  <rect x="697" y="35" width="14" height="14" rx="2" fill="#54A24B"/>
+  <text x="715" y="46" class="legend-text">Go</text>
+  <line x1="140.0" y1="80" x2="140.0" y2="258" class="grid"/>
+  <text x="140.0" y="273" text-anchor="middle" class="axis-label">0</text>
+  <line x1="256.0" y1="80" x2="256.0" y2="258" class="grid"/>
+  <text x="256.0" y="273" text-anchor="middle" class="axis-label">600</text>
+  <line x1="372.0" y1="80" x2="372.0" y2="258" class="grid"/>
+  <text x="372.0" y="273" text-anchor="middle" class="axis-label">1,200</text>
+  <line x1="488.0" y1="80" x2="488.0" y2="258" class="grid"/>
+  <text x="488.0" y="273" text-anchor="middle" class="axis-label">1,800</text>
+  <line x1="604.0" y1="80" x2="604.0" y2="258" class="grid"/>
+  <text x="604.0" y="273" text-anchor="middle" class="axis-label">2,400</text>
+  <line x1="720.0" y1="80" x2="720.0" y2="258" class="grid"/>
+  <text x="720.0" y="273" text-anchor="middle" class="axis-label">3,000</text>
+  <text x="430.0" y="288" text-anchor="middle" class="axis-label">MiB/s</text>
+  <text x="130" y="173.0" text-anchor="end" class="label">LogRecord</text>
+  <rect x="140" y="80.0" width="146.3" height="22" rx="2" fill="#4C78A8"/>
+  <text x="290.3" y="95.0" class="value">756</text>
+  <rect x="140" y="106.0" width="397.4" height="22" rx="2" fill="#72B7B2"/>
+  <text x="541.4" y="121.0" class="value">2,055</text>
+  <rect x="140" y="132.0" width="450.6" height="22" rx="2" fill="#A0CBE8"/>
+  <text x="594.6" y="147.0" class="value">2,330</text>
+  <rect x="140" y="158.0" width="132.7" height="22" rx="2" fill="#F58518"/>
+  <text x="276.7" y="173.0" class="value">686</text>
+  <rect x="140" y="184.0" width="124.4" height="22" rx="2" fill="#EEAE62"/>
+  <text x="268.4" y="199.0" class="value">643</text>
+  <rect x="140" y="210.0" width="153.9" height="22" rx="2" fill="#E45756"/>
+  <text x="297.9" y="225.0" class="value">795</text>
+  <rect x="140" y="236.0" width="47.9" height="22" rx="2" fill="#54A24B"/>
+  <text x="191.9" y="251.0" class="value">247</text>
 </svg>

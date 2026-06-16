@@ -10,10 +10,10 @@
   </style>
   <rect width="100%" height="100%" fill="white"/>
   <text x="400.0" y="25" text-anchor="middle" class="title">Reflection Encode Throughput (generated vs DynamicMessage) — GoogleMessage1</text>
-  <rect x="140" y="35" width="14" height="14" rx="2" fill="#4C78A8"/>
-  <text x="158" y="46" class="legend-text">generated</text>
-  <rect x="239.5" y="35" width="14" height="14" rx="2" fill="#B279A2"/>
-  <text x="257.5" y="46" class="legend-text">reflect</text>
+  <rect x="315" y="35" width="14" height="14" rx="2" fill="#4C78A8"/>
+  <text x="333" y="46" class="legend-text">generated</text>
+  <rect x="414.5" y="35" width="14" height="14" rx="2" fill="#B279A2"/>
+  <text x="432.5" y="46" class="legend-text">reflect</text>
   <line x1="140.0" y1="80" x2="140.0" y2="128" class="grid"/>
   <text x="140.0" y="143" text-anchor="middle" class="axis-label">0</text>
   <line x1="256.0" y1="80" x2="256.0" y2="128" class="grid"/>
@@ -28,8 +28,8 @@
   <text x="720.0" y="143" text-anchor="middle" class="axis-label">3,000</text>
   <text x="430.0" y="158" text-anchor="middle" class="axis-label">MiB/s</text>
   <text x="130" y="108.0" text-anchor="end" class="label">GoogleMessage1</text>
-  <rect x="140" y="80.0" width="429.6" height="22" rx="2" fill="#4C78A8"/>
-  <text x="573.6" y="95.0" class="value">2,222</text>
-  <rect x="140" y="106.0" width="68.0" height="22" rx="2" fill="#B279A2"/>
-  <text x="212.0" y="121.0" class="value">351</text>
+  <rect x="140" y="80.0" width="486.4" height="22" rx="2" fill="#4C78A8"/>
+  <text x="630.4" y="95.0" class="value">2,515</text>
+  <rect x="140" y="106.0" width="71.9" height="22" rx="2" fill="#B279A2"/>
+  <text x="215.9" y="121.0" class="value">372</text>
 </svg>

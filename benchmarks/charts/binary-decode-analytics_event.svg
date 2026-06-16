@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="800" height="267" viewBox="0 0 800 267">
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="293" viewBox="0 0 800 293">
   <style>
     text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
     .title { font-size: 16px; font-weight: 600; fill: #24292f; }
@@ -10,42 +10,51 @@
   </style>
   <rect width="100%" height="100%" fill="white"/>
   <text x="400.0" y="25" text-anchor="middle" class="title">Binary Decode Throughput — AnalyticsEvent</text>
-  <rect x="140" y="35" width="14" height="14" rx="2" fill="#4C78A8"/>
-  <text x="158" y="46" class="legend-text">buffa</text>
-  <rect x="209.5" y="35" width="14" height="14" rx="2" fill="#72B7B2"/>
-  <text x="227.5" y="46" class="legend-text">buffa (view)</text>
-  <rect x="331.5" y="35" width="14" height="14" rx="2" fill="#F58518"/>
-  <text x="349.5" y="46" class="legend-text">prost</text>
-  <rect x="401.0" y="35" width="14" height="14" rx="2" fill="#EEAE62"/>
-  <text x="419.0" y="46" class="legend-text">prost (bytes)</text>
-  <rect x="530.5" y="35" width="14" height="14" rx="2" fill="#E45756"/>
-  <text x="548.5" y="46" class="legend-text">protobuf-v4</text>
-  <rect x="645.0" y="35" width="14" height="14" rx="2" fill="#54A24B"/>
-  <text x="663.0" y="46" class="legend-text">Go</text>
-  <line x1="140.0" y1="80" x2="140.0" y2="232" class="grid"/>
-  <text x="140.0" y="247" text-anchor="middle" class="axis-label">0</text>
-  <line x1="256.0" y1="80" x2="256.0" y2="232" class="grid"/>
-  <text x="256.0" y="247" text-anchor="middle" class="axis-label">80</text>
-  <line x1="372.0" y1="80" x2="372.0" y2="232" class="grid"/>
-  <text x="372.0" y="247" text-anchor="middle" class="axis-label">160</text>
-  <line x1="488.0" y1="80" x2="488.0" y2="232" class="grid"/>
-  <text x="488.0" y="247" text-anchor="middle" class="axis-label">240</text>
-  <line x1="604.0" y1="80" x2="604.0" y2="232" class="grid"/>
-  <text x="604.0" y="247" text-anchor="middle" class="axis-label">320</text>
-  <line x1="720.0" y1="80" x2="720.0" y2="232" class="grid"/>
-  <text x="720.0" y="247" text-anchor="middle" class="axis-label">400</text>
-  <text x="430.0" y="262" text-anchor="middle" class="axis-label">MiB/s</text>
-  <text x="130" y="160.0" text-anchor="end" class="label">AnalyticsEvent</text>
-  <rect x="140" y="80.0" width="278.4" height="22" rx="2" fill="#4C78A8"/>
-  <text x="422.4" y="95.0" class="value">192</text>
-  <rect x="140" y="106.0" width="459.0" height="22" rx="2" fill="#72B7B2"/>
-  <text x="603.0" y="121.0" class="value">316</text>
-  <rect x="140" y="132.0" width="368.0" height="22" rx="2" fill="#F58518"/>
-  <text x="512.0" y="147.0" class="value">253</text>
-  <rect x="140" y="158.0" width="285.8" height="22" rx="2" fill="#EEAE62"/>
-  <text x="429.8" y="173.0" class="value">197</text>
-  <rect x="140" y="184.0" width="521.2" height="22" rx="2" fill="#E45756"/>
-  <text x="665.2" y="199.0" class="value">359</text>
-  <rect x="140" y="210.0" width="132.1" height="22" rx="2" fill="#54A24B"/>
-  <text x="276.1" y="225.0" class="value">91</text>
+  <rect x="70" y="35" width="14" height="14" rx="2" fill="#4C78A8"/>
+  <text x="88" y="46" class="legend-text">buffa</text>
+  <rect x="139.5" y="35" width="14" height="14" rx="2" fill="#72B7B2"/>
+  <text x="157.5" y="46" class="legend-text">buffa (view)</text>
+  <rect x="261.5" y="35" width="14" height="14" rx="2" fill="#A0CBE8"/>
+  <text x="279.5" y="46" class="legend-text">buffa (lazy)</text>
+  <rect x="383.5" y="35" width="14" height="14" rx="2" fill="#F58518"/>
+  <text x="401.5" y="46" class="legend-text">prost</text>
+  <rect x="453" y="35" width="14" height="14" rx="2" fill="#EEAE62"/>
+  <text x="471" y="46" class="legend-text">prost (bytes)</text>
+  <rect x="582.5" y="35" width="14" height="14" rx="2" fill="#E45756"/>
+  <text x="600.5" y="46" class="legend-text">protobuf-v4</text>
+  <rect x="697" y="35" width="14" height="14" rx="2" fill="#54A24B"/>
+  <text x="715" y="46" class="legend-text">Go</text>
+  <line x1="140.0" y1="80" x2="140.0" y2="258" class="grid"/>
+  <text x="140.0" y="273" text-anchor="middle" class="axis-label">0</text>
+  <line x1="242.0" y1="80" x2="242.0" y2="258" class="grid"/>
+  <text x="242.0" y="273" text-anchor="middle" class="axis-label">80</text>
+  <line x1="344.0" y1="80" x2="344.0" y2="258" class="grid"/>
+  <text x="344.0" y="273" text-anchor="middle" class="axis-label">160</text>
+  <line x1="446.0" y1="80" x2="446.0" y2="258" class="grid"/>
+  <text x="446.0" y="273" text-anchor="middle" class="axis-label">240</text>
+  <line x1="548.0" y1="80" x2="548.0" y2="258" class="grid"/>
+  <text x="548.0" y="273" text-anchor="middle" class="axis-label">320</text>
+  <line x1="650.0" y1="80" x2="650.0" y2="258" class="grid"/>
+  <text x="650.0" y="273" text-anchor="middle" class="axis-label">400</text>
+  <text x="430.0" y="288" text-anchor="middle" class="axis-label">MiB/s</text>
+  <line x1="664.5" y1="263" x2="670.5" y2="253" stroke="#57606a" stroke-width="1"/>
+  <line x1="670.5" y1="263" x2="676.5" y2="253" stroke="#57606a" stroke-width="1"/>
+  <text x="130" y="173.0" text-anchor="end" class="label">AnalyticsEvent</text>
+  <rect x="140" y="80.0" width="248.5" height="22" rx="2" fill="#4C78A8"/>
+  <text x="392.5" y="95.0" class="value">194</text>
+  <rect x="140" y="106.0" width="405.7" height="22" rx="2" fill="#72B7B2"/>
+  <text x="549.7" y="121.0" class="value">318</text>
+  <rect x="140" y="132.0" width="580.0" height="22" rx="2" fill="#A0CBE8"/>
+  <polygon points="663.5,155.0 669.5,131.0 675.5,131.0 669.5,155.0" fill="white"/>
+  <line x1="663.5" y1="155.0" x2="669.5" y2="131.0" stroke="#57606a" stroke-width="1"/>
+  <line x1="669.5" y1="155.0" x2="675.5" y2="131.0" stroke="#57606a" stroke-width="1"/>
+  <text x="724.0" y="147.0" class="value">18,306</text>
+  <rect x="140" y="158.0" width="319.8" height="22" rx="2" fill="#F58518"/>
+  <text x="463.8" y="173.0" class="value">250</text>
+  <rect x="140" y="184.0" width="252.2" height="22" rx="2" fill="#EEAE62"/>
+  <text x="396.2" y="199.0" class="value">197</text>
+  <rect x="140" y="210.0" width="430.9" height="22" rx="2" fill="#E45756"/>
+  <text x="574.9" y="225.0" class="value">337</text>
+  <rect x="140" y="236.0" width="115.8" height="22" rx="2" fill="#54A24B"/>
+  <text x="259.8" y="251.0" class="value">90</text>
 </svg>

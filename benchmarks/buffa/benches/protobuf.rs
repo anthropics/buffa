@@ -1,7 +1,11 @@
+use buffa::view::LazyMessageView;
 use buffa::{Message, MessageView, ViewEncode};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use serde::{de::DeserializeOwned, Serialize};
 
+use bench_buffa::bench::__buffa::lazy_view::{
+    AnalyticsEventLazyView, ApiResponseLazyView, LogRecordLazyView, MediaFrameLazyView,
+};
 use bench_buffa::bench::__buffa::view::{
     analytics_event::PropertyView, AnalyticsEventView, ApiResponseView, LogRecordView,
     MediaFrameView, PackedTileView,
@@ -9,6 +13,7 @@ use bench_buffa::bench::__buffa::view::{
 use bench_buffa::bench::__buffa::{oneof, view::oneof as view_oneof};
 use bench_buffa::bench::*;
 use bench_buffa::benchmarks::BenchmarkDataset;
+use bench_buffa::proto3::__buffa::lazy_view::GoogleMessage1LazyView;
 use bench_buffa::proto3::__buffa::view::GoogleMessage1View;
 
 fn load_dataset(data: &[u8]) -> BenchmarkDataset {
@@ -303,6 +308,92 @@ bench_view_encode!(
     bench_media_frame_view_encode,
     MediaFrame,
     MediaFrameView,
+    "buffa/media_frame",
+    "../../datasets/media_frame.pb"
+);
+
+/// Lazy-view benches: `decode_lazy` is the single non-recursive scan that
+/// records sub-message fields as undecoded byte ranges (the lazy analogue of
+/// `decode_view`), and `encode_lazy` re-encodes from the lazy view, replaying
+/// recorded fragments verbatim (the lazy analogue of `encode_view`). The
+/// numbers bound the full-decode case; the lazy family's real advantage —
+/// skipping untouched sub-trees on partial access — is workload-dependent
+/// and not captured by a full-scan throughput chart. Before timing, both
+/// paths are asserted against the owned decoder: `to_owned_message` for
+/// decode parity, and a decode of the re-encoded bytes for encode parity
+/// (decode-equivalence, as in `bench_view_encode!`).
+macro_rules! bench_lazy_view {
+    ($fn_name:ident, $owned:ty, $lazy:ty, $group:literal, $dataset:literal) => {
+        fn $fn_name(c: &mut Criterion) {
+            let dataset = load_dataset(include_bytes!($dataset));
+            let bytes = total_payload_bytes(&dataset);
+            for p in &dataset.payload {
+                let lazy = <$lazy>::decode_lazy(p).unwrap();
+                let from_lazy = lazy.to_owned_message().unwrap();
+                let from_wire = <$owned>::decode_from_slice(p).unwrap();
+                assert_eq!(from_lazy, from_wire, "lazy decode parity mismatch");
+                let from_reencode = <$owned>::decode_from_slice(&lazy.encode_to_vec()).unwrap();
+                assert_eq!(from_reencode, from_wire, "lazy re-encode wire mismatch");
+            }
+            let mut group = c.benchmark_group($group);
+            group.throughput(Throughput::Bytes(bytes));
+            group.bench_function("decode_lazy", |b| {
+                b.iter(|| {
+                    for payload in &dataset.payload {
+                        let view = <$lazy>::decode_lazy(payload).unwrap();
+                        criterion::black_box(&view);
+                    }
+                });
+            });
+            let views: Vec<$lazy> = dataset
+                .payload
+                .iter()
+                .map(|p| <$lazy>::decode_lazy(p).unwrap())
+                .collect();
+            group.bench_function("encode_lazy", |b| {
+                b.iter(|| {
+                    for v in &views {
+                        criterion::black_box(v.encode_to_vec());
+                    }
+                });
+            });
+            group.finish();
+        }
+    };
+}
+
+bench_lazy_view!(
+    bench_api_response_lazy,
+    ApiResponse,
+    ApiResponseLazyView,
+    "buffa/api_response",
+    "../../datasets/api_response.pb"
+);
+bench_lazy_view!(
+    bench_log_record_lazy,
+    LogRecord,
+    LogRecordLazyView,
+    "buffa/log_record",
+    "../../datasets/log_record.pb"
+);
+bench_lazy_view!(
+    bench_analytics_event_lazy,
+    AnalyticsEvent,
+    AnalyticsEventLazyView,
+    "buffa/analytics_event",
+    "../../datasets/analytics_event.pb"
+);
+bench_lazy_view!(
+    bench_google_message1_lazy,
+    bench_buffa::proto3::GoogleMessage1,
+    GoogleMessage1LazyView,
+    "buffa/google_message1_proto3",
+    "../../datasets/google_message1_proto3.pb"
+);
+bench_lazy_view!(
+    bench_media_frame_lazy,
+    MediaFrame,
+    MediaFrameLazyView,
     "buffa/media_frame",
     "../../datasets/media_frame.pb"
 );
@@ -647,6 +738,15 @@ criterion_group!(
 );
 
 criterion_group!(
+    lazy,
+    bench_api_response_lazy,
+    bench_log_record_lazy,
+    bench_analytics_event_lazy,
+    bench_google_message1_lazy,
+    bench_media_frame_lazy,
+);
+
+criterion_group!(
     json,
     bench_api_response_json,
     bench_log_record_json,
@@ -655,4 +755,4 @@ criterion_group!(
     bench_media_frame_json,
 );
 
-criterion_main!(owned, views, json);
+criterion_main!(owned, views, lazy, json);

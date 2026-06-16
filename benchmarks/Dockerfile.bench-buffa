@@ -4,7 +4,7 @@
 #   docker build -t buffa-bench-buffa -f benchmarks/Dockerfile.bench-buffa .
 #   docker run --rm buffa-bench-buffa
 
-FROM rust:1.85-slim AS builder
+FROM rust:1.87-slim AS builder
 
 RUN apt-get update && apt-get install -y \
     protobuf-compiler pkg-config \
