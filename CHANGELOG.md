@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **Docker-free conformance runs** (#192). `task conformance-tools-local`
+  builds `conformance_test_runner` from the pinned protobuf tag into
+  `.local/bin/` and `task conformance-local` executes the same seven runs
+  as the Docker path with the same failure lists — for dev environments
+  without a Docker daemon or GHCR access.
+
 - **Opt-in lazy views: the additive `FooLazyView` family** (#165). With
   `Config::lazy_views(true)` (plugin: `lazy_views=true`), each message
   additionally generates a `FooLazyView<'a>` implementing the new

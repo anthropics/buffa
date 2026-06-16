@@ -48,6 +48,19 @@ task tools-image-local   # builds for local platform only, ~5 min
 task conformance         # now uses the locally-built image
 ```
 
+**Without Docker**: the suite can also run natively. `conformance_test_runner`
+talks to the testee over stdin/stdout pipes, so no container plumbing is
+needed — the runner just has to be built from protobuf source once:
+
+```bash
+task conformance-tools-local   # one-time: cmake-builds the runner into .local/bin,
+                               # populates conformance/protos/ (~10-20 min)
+task conformance-local         # seven runs, same failure lists as the Docker path
+```
+
+Requires cmake, a C++ toolchain, and protoc v30+ on PATH or `$PROTOC`
+(`task install-protoc`). Set `CONFORMANCE_OUT=<dir>` to tee per-run logs.
+
 **Understanding the output**: The conformance runner executes seven runs
 (std, no_std, via-view, via-lazy, view-json, via-reflect, via-vtable), each
 producing two suites:

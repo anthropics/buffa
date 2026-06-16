@@ -66,6 +66,24 @@ tasks:
     cmds:
       - docker run --rm {{.CONFORMANCE_IMAGE}}
 
+  conformance-tools-local:
+    desc: >-
+      Build conformance_test_runner from protobuf source into .local/bin/
+      and populate conformance/protos/ — no Docker required. One-time setup
+      for conformance-local (slow, ~10-20 min). protoc is not built; install
+      it separately (task install-protoc).
+    cmds:
+      - scripts/build-conformance-tools.sh
+
+  conformance-local:
+    desc: >-
+      Run the full six-run conformance suite without Docker, using the
+      runner from conformance-tools-local and host cargo builds of the
+      std/no_std conformance binaries. Requires protoc v30+ on PATH or
+      $PROTOC.
+    cmds:
+      - scripts/run-conformance-local.sh
+
   conformance-full:
     desc: >-
       Build the tools image locally then run the full conformance suite.
