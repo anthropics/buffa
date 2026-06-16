@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **Docker-free conformance runs** (#192). `task conformance-tools-local`
+  builds `conformance_test_runner` from the pinned protobuf tag into
+  `.local/bin/` and `task conformance-local` executes the same seven runs
+  as the Docker path with the same failure lists — for dev environments
+  without a Docker daemon or GHCR access.
+
 - **Opt-in lazy views: the additive `FooLazyView` family** (#165). With
   `Config::lazy_views(true)` (plugin: `lazy_views=true`), each message
   additionally generates a `FooLazyView<'a>` implementing the new
@@ -133,6 +139,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   reflection still reports `has() == false` for a required field at its
   default value. Messages without required fields are byte-identical to
   before. `MessageFieldView::is_set` / `is_unset` are now `const fn`.
+
+- **`type_name_prefix` option** (#46). `buffa_build::Config::type_name_prefix("Rpc")`
+  (also `CodeGenConfig::type_name_prefix` and `protoc-gen-buffa`'s
+  `type_name_prefix=` option) prepends a prefix to every generated message
+  struct and enum type name — `message User {}` generates `struct RpcUser`,
+  with views (`RpcUserView`), cross-references, and re-exports following.
+  Module names, oneof enums, `extern_path`-mapped types (including
+  well-known types), and the wire/JSON format are unaffected. The prefix
+  must be PascalCase (an ASCII uppercase letter followed by ASCII letters
+  and digits); anything else is rejected at generation time.
 
 ### Changed
 
