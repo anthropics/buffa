@@ -4,13 +4,7 @@ A comprehensive guide to using buffa for Protocol Buffers in Rust.
 
 ## Installation
 
-You can install buffa with [Homebrew](https://brew.sh).
-
-```shell
-brew install buffa
-```
-
-Then, add it to your project:
+Add buffa to your project:
 
 ```toml
 # Cargo.toml
@@ -21,6 +15,14 @@ buffa-types = "0.7"       # well-known types (Timestamp, Duration, Any, etc.)
 [build-dependencies]
 buffa-build = "0.7"
 ```
+
+The Cargo dependency is all you need when generating code via `buffa-build` or the `buf.build/anthropics/buffa` remote plugin. A [Homebrew](https://brew.sh) formula is also available:
+
+```sh
+brew install buffa
+```
+
+This is **optional** — it does not install the library. It puts the `protoc-gen-buffa` and `protoc-gen-buffa-packaging` plugin binaries on your `PATH` (and pulls in `protobuf` for `protoc`), which is only useful if you are driving codegen through a `local:` buf plugin reference or invoking `protoc --buffa_out` directly. See [Installing the protoc plugins](#installing-the-protoc-plugins) for details and for pinning the plugin version to match your Cargo dependency.
 
 ### Feature flags
 
@@ -401,6 +403,18 @@ This is the standard Rust mechanism for using keywords as identifiers. It applie
 There are two binaries: `protoc-gen-buffa` (the codegen plugin) and `protoc-gen-buffa-packaging` (the module-tree assembler). Both are released together.
 
 You only need a local install if you use `local:` plugin references. The codegen plugin is published to the Buf Schema Registry as [`buf.build/anthropics/buffa`](https://buf.build/anthropics/buffa) and can be referenced with `remote:` instead — see [Using buf](#using-buf). The packaging plugin is local-only; if you don't want to install it, use the [`file_per_package=true`](#remote-plugin-only-no-local-install) opt and write the `pub mod` tree yourself.
+
+**With Homebrew:**
+
+```sh
+brew install buffa
+```
+
+The [formula](https://formulae.brew.sh/formula/buffa) builds both plugins from the latest crates.io release and declares `protobuf` as a dependency, so `protoc` comes along with it. Homebrew always tracks the latest release; if you need the plugin version to match an older `buffa = "x.y"` in your `Cargo.toml`, use `cargo install` with an explicit `--version` instead:
+
+```sh
+cargo install --locked --version 0.7.1 protoc-gen-buffa protoc-gen-buffa-packaging
+```
 
 **From source (requires Rust toolchain):**
 
