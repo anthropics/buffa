@@ -4,7 +4,13 @@ A comprehensive guide to using buffa for Protocol Buffers in Rust.
 
 ## Installation
 
-Add buffa to your project:
+You can install buffa with [Homebrew](https://brew.sh).
+
+```shell
+brew install buffa
+```
+
+Then, add it to your project:
 
 ```toml
 # Cargo.toml
