@@ -571,13 +571,13 @@ impl<V> MessageFieldView<V> {
 
     /// Returns `true` if the field has a value.
     #[inline]
-    pub fn is_set(&self) -> bool {
+    pub const fn is_set(&self) -> bool {
         self.inner.is_some()
     }
 
     /// Returns `true` if the field has no value.
     #[inline]
-    pub fn is_unset(&self) -> bool {
+    pub const fn is_unset(&self) -> bool {
         self.inner.is_none()
     }
 

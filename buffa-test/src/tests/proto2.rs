@@ -525,3 +525,98 @@ fn test_view_required_presence_custom_defaults() {
     assert!(view.has_level());
     assert!(view.has_sfx64());
 }
+
+#[test]
+fn test_lazy_view_required_presence_parity() {
+    // The lazy view family answers has_* identically to the eager view:
+    // absent vs explicitly-encoded-default required fields.
+    use crate::proto2::{WithDefaults, WithDefaultsLazyView};
+    use buffa::view::LazyMessageView;
+
+    let view = WithDefaultsLazyView::decode_lazy(&[]).unwrap();
+    assert!(!view.has_name(), "absent required string must report false");
+    assert!(!view.has_id(), "absent required int must report false");
+
+    let msg = WithDefaults {
+        name: String::new(),
+        id: 0,
+        ..Default::default()
+    };
+    let wire = msg.encode_to_vec();
+    let view = WithDefaultsLazyView::decode_lazy(&wire).unwrap();
+    assert!(view.has_name(), "explicit default string must report true");
+    assert!(view.has_id(), "explicit zero int must report true");
+}
+
+#[test]
+fn test_view_required_reflect_has_agrees_with_accessor() {
+    // ReflectMessage::has on the view consults the same wire-presence
+    // tracking as the inherent has_* accessors, so the two surfaces agree
+    // for required fields explicitly encoded with their default value.
+    use crate::proto2::__buffa::view::WithDefaultsView;
+    use crate::proto2::WithDefaults;
+    use buffa::MessageView;
+    use buffa_descriptor::reflect::ReflectMessage;
+
+    let view = WithDefaultsView::decode_view(&[]).unwrap();
+    let r: &dyn ReflectMessage = &view;
+    let md = r.message_descriptor();
+    assert!(!r.has(md.field(13).unwrap()), "absent required string");
+    assert!(!r.has(md.field(14).unwrap()), "absent required int");
+
+    let wire = WithDefaults {
+        name: String::new(),
+        id: 0,
+        ..Default::default()
+    }
+    .encode_to_vec();
+    let view = WithDefaultsView::decode_view(&wire).unwrap();
+    let r: &dyn ReflectMessage = &view;
+    assert_eq!(r.has(md.field(13).unwrap()), view.has_name());
+    assert_eq!(r.has(md.field(14).unwrap()), view.has_id());
+    assert!(view.has_name() && view.has_id());
+}
+
+#[test]
+fn test_view_required_numeric_only_presence() {
+    // All-numeric required message: the view's only borrowing state is the
+    // seen-bit word (PhantomData + seen word coexist on the struct).
+    use crate::proto2::__buffa::view::RequiredNumericOnlyView;
+    use crate::proto2::RequiredNumericOnly;
+    use buffa::MessageView;
+
+    let view = RequiredNumericOnlyView::decode_view(&[]).unwrap();
+    assert!(!view.has_a());
+    assert!(!view.has_b());
+    assert!(!view.has_c());
+
+    let wire = RequiredNumericOnly::default().encode_to_vec();
+    let view = RequiredNumericOnlyView::decode_view(&wire).unwrap();
+    assert!(view.has_a());
+    assert!(view.has_b());
+    assert!(view.has_c());
+}
+
+#[test]
+fn test_view_required_group_presence_uses_is_set() {
+    // A required group field delegates has_* to MessageFieldView::is_set.
+    use crate::proto2::__buffa::view::WithRequiredGroupView;
+    use crate::proto2::with_required_group::Item;
+    use crate::proto2::WithRequiredGroup;
+    use buffa::MessageView;
+
+    let view = WithRequiredGroupView::decode_view(&[]).unwrap();
+    assert!(!view.has_item(), "absent required group must report false");
+
+    let msg = WithRequiredGroup {
+        item: buffa::MessageField::some(Item {
+            x: Some(5),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let wire = msg.encode_to_vec();
+    let view = WithRequiredGroupView::decode_view(&wire).unwrap();
+    assert!(view.has_item(), "present required group must report true");
+    assert_eq!(view.item.x, Some(5));
+}

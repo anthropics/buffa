@@ -120,14 +120,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   carrier-agnostic `Location { line, column }`. Requires message types
   generated with `json = true`. Contributed by @rsd-darshan.
 
-- **Proto2 required-field presence on views** (#170). Generated
-  `MessageView` types for messages with proto2/editions `LEGACY_REQUIRED`
-  singular fields now expose `has_<field>()` accessors that distinguish a
-  field absent on the wire from one explicitly encoded with its default
-  value. Scalar required fields are tracked via hidden `__buffa_required_seen_*`
-  bit words; message/group required fields delegate to
-  `MessageFieldView::is_set()`. Messages without required fields are
-  byte-identical to before. Lazy views do not yet carry this tracking.
+- **Proto2 required-field presence on views** (#170). Generated view types
+  (`FooView` and `FooLazyView`) for messages with proto2/editions
+  `LEGACY_REQUIRED` singular fields now expose `has_<field>()` accessors
+  that distinguish a field absent on the wire from one explicitly encoded
+  with its default value. Scalar required fields are tracked via hidden
+  `__buffa_required_seen_*` bit words; message/group required fields
+  delegate to `MessageFieldView::is_set()` / `LazyMessageFieldView::is_set()`.
+  The view `ReflectMessage::has()` implementation consults the same
+  tracking, so reflection agrees with the inherent accessors. Owned
+  messages are unchanged: they store required fields bare and their
+  reflection still reports `has() == false` for a required field at its
+  default value. Messages without required fields are byte-identical to
+  before. `MessageFieldView::is_set` / `is_unset` are now `const fn`.
 
 ### Changed
 

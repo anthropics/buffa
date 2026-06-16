@@ -138,36 +138,10 @@ pub(crate) fn generate_view_with_nesting(
         .map(|(idx, oneof)| generate_oneof_view_enum(scope, msg, idx, oneof, &oneof_idents))
         .collect::<Result<Vec<_>, _>>()?;
 
-    // Required-field presence tracking (#170): proto2 `required` / editions
-    // `LEGACY_REQUIRED` fields are stored as bare types, so without extra
-    // state a decoded view cannot distinguish "absent on the wire" from
-    // "explicitly encoded as the default value". Scalar-like required
-    // fields get hidden seen-bit words set by their decode arms; message
-    // and group required fields already expose presence via
-    // `MessageFieldView::is_set`. Both kinds get a `has_*` accessor.
-    // Messages without required fields emit none of this — their output is
-    // byte-identical to before.
-    let required_fields = required_view_fields(view_scope, msg);
-    let required_bit_count = required_fields.iter().filter(|r| r.bit.is_some()).count();
-    let required_seen_words: Vec<proc_macro2::Ident> = (0..required_bit_count.div_ceil(64))
-        .map(required_seen_word_ident)
-        .collect();
-    let required_seen_struct_fields = required_seen_words.iter().map(|w| {
-        quote! {
-            #[doc(hidden)]
-            pub #w: u64,
-        }
-    });
-    let required_has_methods = required_has_methods(&required_fields);
-    let required_bit_stmts: std::collections::HashMap<u32, TokenStream> = required_fields
-        .iter()
-        .filter_map(|r| {
-            let bit = r.bit?;
-            let word = required_seen_word_ident(bit / 64);
-            let mask = 1u64 << (bit % 64);
-            Some((r.field_number, quote! { view.#word |= #mask; }))
-        })
-        .collect();
+    // Required-field presence tracking (#170) — see `required_presence`.
+    let required = required_presence(view_scope, msg);
+    let required_seen_struct_fields = &required.struct_fields;
+    let required_has_methods = &required.has_methods;
 
     // decode_view match arms.
     let (scalar_arms, repeated_arms, oneof_arms) = build_decode_arms(
@@ -175,7 +149,7 @@ pub(crate) fn generate_view_with_nesting(
         msg,
         &view_oneof_prefix,
         &oneof_idents,
-        &required_bit_stmts,
+        &required.bit_stmts,
     )?;
 
     // to_owned_message field initialisers.
@@ -980,7 +954,57 @@ fn generate_oneof_view_enum(
 // decode_view match arms
 // ---------------------------------------------------------------------------
 
-#[allow(clippy::type_complexity)]
+/// Required-field presence parts for one message (#170).
+///
+/// Proto2 `required` / editions `LEGACY_REQUIRED` fields are stored as bare
+/// types, so without extra state a decoded view cannot distinguish "absent on
+/// the wire" from "explicitly encoded as the default value". Scalar-like
+/// required fields get hidden seen-bit words set by their decode arms;
+/// message and group required fields already expose presence via
+/// `MessageFieldView::is_set` / `LazyMessageFieldView::is_set`. Both kinds get
+/// a `has_*` accessor. Messages without required fields produce empty parts —
+/// their generated output is byte-identical to before.
+///
+/// Shared by the eager view ([`generate_view_with_nesting`]) and the lazy view
+/// family ([`crate::lazy_view`]), which interpolate the same struct fields,
+/// accessors, and decode-arm bit statements into their respective types.
+pub(crate) struct RequiredPresence {
+    /// Hidden `__buffa_required_seen_N: u64` struct field declarations.
+    pub(crate) struct_fields: Vec<TokenStream>,
+    /// `has_*` accessor methods for the required fields.
+    pub(crate) has_methods: Vec<TokenStream>,
+    /// Field number → statement setting the field's seen bit
+    /// (`view.__buffa_required_seen_N |= mask;`), bit-tracked fields only.
+    pub(crate) bit_stmts: std::collections::HashMap<u32, TokenStream>,
+}
+
+/// Compute the [`RequiredPresence`] parts for `msg`.
+pub(crate) fn required_presence(
+    scope: MessageScope<'_>,
+    msg: &DescriptorProto,
+) -> RequiredPresence {
+    let fields = required_view_fields(scope, msg);
+    let bit_count = fields.iter().filter(|r| r.bit.is_some()).count();
+    let struct_fields = (0..bit_count.div_ceil(64))
+        .map(required_seen_word_ident)
+        .map(|w| quote! { #[doc(hidden)] pub #w: u64, })
+        .collect();
+    let bit_stmts = fields
+        .iter()
+        .filter_map(|r| {
+            let bit = r.bit?;
+            let word = required_seen_word_ident(bit / 64);
+            let mask = 1u64 << (bit % 64);
+            Some((r.field_number, quote! { view.#word |= #mask; }))
+        })
+        .collect();
+    RequiredPresence {
+        struct_fields,
+        has_methods: required_has_methods(&fields),
+        bit_stmts,
+    }
+}
+
 /// A proto2 `required` (or editions `LEGACY_REQUIRED`) singular field whose
 /// wire presence the generated view tracks (#170).
 struct RequiredViewField<'a> {
@@ -1037,41 +1061,54 @@ fn required_seen_word_ident(w: usize) -> proc_macro2::Ident {
     format_ident!("__buffa_required_seen_{}", w)
 }
 
-/// `pub fn has_<name>(&self) -> bool` accessors for the required fields.
+/// `pub const fn has_<name>(&self) -> bool` accessors for the required fields.
 fn required_has_methods(required: &[RequiredViewField<'_>]) -> Vec<TokenStream> {
     required
         .iter()
         .map(|r| {
             let method = format_ident!("has_{}", r.proto_name);
-            let doc = format!(
-                "Whether required field `{}` was present on the wire.\n\n\
-                 Distinguishes a field that was absent from one explicitly \
-                 encoded with its default value — required fields are stored \
-                 as bare (non-`Option`) types, so the value alone cannot. \
-                 Presence is recorded by the wire decoder; on a hand-built \
-                 view this reports `false` unless the hidden seen-bits are \
-                 set (encoding is unaffected: required fields are always \
-                 written).",
-                r.proto_name
-            );
             match r.bit {
                 Some(bit) => {
+                    // Bit-tracked scalar: the value is stored bare, so only
+                    // the decoder-recorded seen bit can answer presence.
+                    let doc = format!(
+                        "Whether required field `{}` was present on the wire.\n\n\
+                         Distinguishes a field that was absent from one explicitly \
+                         encoded with its default value (required scalar fields are \
+                         stored as bare, non-`Option` types, so the value alone \
+                         cannot tell the two apart). Presence is recorded only by \
+                         the wire decoder: a default or hand-built view reports \
+                         `false`. Encoding is unaffected — required fields are \
+                         always written.",
+                        r.proto_name
+                    );
                     let word = required_seen_word_ident(bit / 64);
                     let mask = 1u64 << (bit % 64);
                     quote! {
                         #[doc = #doc]
                         #[must_use]
-                        pub fn #method(&self) -> bool {
+                        #[inline]
+                        pub const fn #method(&self) -> bool {
                             self.#word & #mask != 0
                         }
                     }
                 }
                 None => {
+                    // Message/group: the field itself stores presence.
+                    let doc = format!(
+                        "Whether required field `{}` is set.\n\n\
+                         Mirrors `is_set()` on the field: `true` after decoding a \
+                         message where the field was present on the wire, and `true` \
+                         on a hand-built view whose field is populated. Encoding is \
+                         unaffected — required fields are always written.",
+                        r.proto_name
+                    );
                     let ident = &r.ident;
                     quote! {
                         #[doc = #doc]
                         #[must_use]
-                        pub fn #method(&self) -> bool {
+                        #[inline]
+                        pub const fn #method(&self) -> bool {
                             self.#ident.is_set()
                         }
                     }
