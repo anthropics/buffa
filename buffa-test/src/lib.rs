@@ -360,7 +360,6 @@ pub mod basic_bytes {
     clippy::derivable_impls,
     clippy::match_single_binding,
     clippy::manual_map,
-    non_camel_case_types,
     dead_code
 )]
 pub mod basic_prefixed {
@@ -371,12 +370,7 @@ pub mod basic_prefixed {
 // `.type_name_prefix("Rpc")` and lazy views — the nested view / owned-view /
 // lazy-view re-exports must reference the prefixed type names. Compile-only;
 // no runtime tests.
-#[allow(
-    clippy::derivable_impls,
-    clippy::match_single_binding,
-    non_camel_case_types,
-    dead_code
-)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding, dead_code)]
 pub mod nested_prefixed {
     include!(concat!(
         env!("OUT_DIR"),

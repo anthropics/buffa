@@ -263,33 +263,43 @@ fn test_type_name_prefix_does_not_touch_modules_or_wkt() {
 
 #[test]
 fn test_type_name_prefix_invalid_rejected() {
-    for bad in ["1Rpc", "Rpc-", "Rpc ", "Rp.c"] {
+    // The prefix must be PascalCase: not just any identifier prefix —
+    // lowercase, leading/embedded underscores, digits-first, whitespace,
+    // and punctuation are all rejected so prefixed names stay
+    // conventionally cased.
+    for bad in [
+        "1Rpc", "Rpc-", "Rpc ", " Rpc", "Rp.c", "rpc", "rpcUser", "_Rpc", "Rpc_", "X_",
+    ] {
         let config = CodeGenConfig {
             type_name_prefix: bad.to_string(),
             ..CodeGenConfig::default()
         };
         let result = generate(&[prefix_fixture()], &["test.proto".to_string()], &config);
-        let err = result
-            .expect_err("invalid prefix must be rejected")
-            .to_string();
+        let err = result.expect_err("invalid prefix must be rejected");
         assert!(
-            err.contains("type_name_prefix"),
+            matches!(err, CodeGenError::InvalidTypeNamePrefix { .. }),
+            "expected InvalidTypeNamePrefix for '{bad}', got: {err}"
+        );
+        assert!(
+            err.to_string().contains("type_name_prefix"),
             "error should name the offending option: {err}"
         );
     }
 }
 
 #[test]
-fn test_type_name_prefix_snake_case_prefix_allowed() {
-    // The prefix is not required to be PascalCase — any identifier prefix
-    // works (the result is just unidiomatic).
-    let config = CodeGenConfig {
-        type_name_prefix: "X_".to_string(),
-        ..CodeGenConfig::default()
-    };
-    let files = generate(&[prefix_fixture()], &["test.proto".to_string()], &config)
-        .expect("should generate");
-    assert!(joined(&files).contains("pub struct X_User"));
+fn test_type_name_prefix_pascal_case_accepted() {
+    // Any PascalCase prefix is accepted, including digits after the leading
+    // uppercase letter and a bare single letter.
+    for good in ["Rpc", "RpcV2", "X"] {
+        let config = CodeGenConfig {
+            type_name_prefix: good.to_string(),
+            ..CodeGenConfig::default()
+        };
+        let files = generate(&[prefix_fixture()], &["test.proto".to_string()], &config)
+            .expect("PascalCase prefix must be accepted");
+        assert!(joined(&files).contains(&format!("pub struct {good}User")));
+    }
 }
 
 #[test]

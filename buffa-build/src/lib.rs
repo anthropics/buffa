@@ -358,9 +358,10 @@ impl Config {
     /// spell out the prefixed name (e.g. `::crate_a::RpcUser`) — the proto
     /// name carries no prefix, so the mapping is not derived automatically.
     ///
-    /// The prefix must be a valid Rust identifier prefix
-    /// (`[A-Za-z_][A-Za-z0-9_]*`); [`compile`](Self::compile) fails
-    /// otherwise.
+    /// The prefix must be PascalCase (`[A-Z][A-Za-z0-9]*`) — an ASCII
+    /// uppercase letter followed by ASCII letters and digits — so the
+    /// prefixed names stay conventionally cased; [`compile`](Self::compile)
+    /// fails otherwise.
     #[must_use]
     pub fn type_name_prefix(mut self, prefix: impl Into<String>) -> Self {
         self.codegen_config.type_name_prefix = prefix.into();

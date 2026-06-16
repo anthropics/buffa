@@ -743,9 +743,11 @@ pub struct CodeGenConfig {
     /// they surface as ordinary duplicate-definition errors when the
     /// generated code is compiled.
     ///
-    /// Must be a valid Rust identifier prefix (`[A-Za-z_][A-Za-z0-9_]*`);
-    /// generation fails with [`CodeGenError::InvalidTypeNamePrefix`]
-    /// otherwise. Defaults to `""` (no prefix).
+    /// Must be PascalCase (`[A-Z][A-Za-z0-9]*`) — an ASCII uppercase letter
+    /// followed by ASCII letters and digits — so the prefixed names stay
+    /// conventionally cased; generation fails with
+    /// [`CodeGenError::InvalidTypeNamePrefix`] otherwise. Defaults to `""`
+    /// (no prefix).
     pub type_name_prefix: String,
 }
 
@@ -802,15 +804,14 @@ impl CodeGenConfig {
     }
 
     /// Validate [`type_name_prefix`](Self::type_name_prefix): empty (no
-    /// prefix) or a valid Rust identifier prefix, so `{prefix}{TypeName}`
-    /// is always a valid identifier.
+    /// prefix) or PascalCase (`[A-Z][A-Za-z0-9]*`), so `{prefix}{TypeName}`
+    /// is always a valid, conventionally-cased identifier that does not
+    /// trip `non_camel_case_types` in consumer crates.
     pub(crate) fn validate_type_name_prefix(&self) -> Result<(), CodeGenError> {
         let prefix = &self.type_name_prefix;
         let valid = prefix.is_empty()
-            || (!prefix.starts_with(|c: char| c.is_ascii_digit())
-                && prefix
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '_'));
+            || (prefix.starts_with(|c: char| c.is_ascii_uppercase())
+                && prefix.chars().all(|c| c.is_ascii_alphanumeric()));
         if valid {
             Ok(())
         } else {
@@ -1095,7 +1096,7 @@ pub fn generate(
 ///
 /// Returns [`CodeGenError::FileNotFound`] if a name in `files_to_generate` has
 /// no matching descriptor, [`CodeGenError::InvalidTypeNamePrefix`] if
-/// [`CodeGenConfig::type_name_prefix`] is not a valid Rust identifier prefix,
+/// [`CodeGenConfig::type_name_prefix`] is not empty or PascalCase,
 /// [`CodeGenError::Other`] if `generate_reflection_vtable`
 /// is set without `generate_reflection` or if an active feature-gate name in
 /// [`CodeGenConfig::feature_gate_names`] is not a valid Cargo feature name,
@@ -2258,12 +2259,13 @@ pub enum CodeGenError {
         attribute: String,
         detail: String,
     },
-    /// [`CodeGenConfig::type_name_prefix`] is not a valid Rust identifier
-    /// prefix (`[A-Za-z_][A-Za-z0-9_]*`), so prepending it to a type name
-    /// would produce invalid Rust.
+    /// [`CodeGenConfig::type_name_prefix`] is not PascalCase
+    /// (`[A-Z][A-Za-z0-9]*`), so prepending it to a type name would produce
+    /// an invalid or unconventionally-cased Rust identifier.
     #[error(
-        "invalid type_name_prefix '{prefix}': must be empty or a valid Rust \
-         identifier prefix (letters, digits, '_'; not starting with a digit)"
+        "invalid type_name_prefix '{prefix}': must be empty or PascalCase \
+         (start with an ASCII uppercase letter, followed by ASCII letters \
+         and digits only)"
     )]
     InvalidTypeNamePrefix { prefix: String },
 }

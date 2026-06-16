@@ -256,9 +256,11 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                 // otherwise).
                 "idiomatic_imports" => codegen.idiomatic_imports = value.trim() == "true",
                 // `type_name_prefix=Rpc` prepends a prefix to every generated
-                // message/enum type name (and their view types). Validated by
-                // buffa-codegen at generation time.
-                "type_name_prefix" => codegen.type_name_prefix = value.trim().to_string(),
+                // message/enum type name (and their view types). The value is
+                // passed through verbatim; buffa-codegen rejects anything that
+                // is not PascalCase at generation time (same rule as the
+                // builder API).
+                "type_name_prefix" => codegen.type_name_prefix = value.to_string(),
                 "extern_path" => {
                     // value is "<proto_path>=<rust_path>"
                     if let Some((proto, rust)) = value.split_once('=') {
@@ -495,6 +497,15 @@ mod tests {
     fn type_name_prefix_default_is_empty() {
         let config = parse_config("").unwrap();
         assert!(config.codegen.type_name_prefix.is_empty());
+    }
+
+    #[test]
+    fn type_name_prefix_not_trimmed() {
+        // The value is passed through verbatim (no per-value trim) so the
+        // plugin and the builder API accept/reject exactly the same strings —
+        // codegen later rejects this one as not PascalCase.
+        let config = parse_config("type_name_prefix= Rpc").unwrap();
+        assert_eq!(config.codegen.type_name_prefix, " Rpc");
     }
 
     #[test]

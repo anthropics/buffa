@@ -126,8 +126,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   struct and enum type name — `message User {}` generates `struct RpcUser`,
   with views (`RpcUserView`), cross-references, and re-exports following.
   Module names, oneof enums, `extern_path`-mapped types (including
-  well-known types), and the wire/JSON format are unaffected. An invalid
-  prefix (not a Rust identifier prefix) is rejected at generation time.
+  well-known types), and the wire/JSON format are unaffected. The prefix
+  must be PascalCase (an ASCII uppercase letter followed by ASCII letters
+  and digits); anything else is rejected at generation time.
 
 ### Changed
 
