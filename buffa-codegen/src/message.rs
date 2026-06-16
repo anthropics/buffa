@@ -997,7 +997,7 @@ fn collect_natural_reexports(
                 ),
             });
             if ctx.config.lazy_views {
-                let lazy_ident = format_ident!("{}LazyView", nested.name.as_deref().unwrap_or(""));
+                let lazy_ident = format_ident!("{nested_rust_name}LazyView");
                 candidates.push(ReexportCandidate {
                     name: lazy_ident.to_string(),
                     tokens: crate::feature_gates::cfg_block(

@@ -734,6 +734,15 @@ pub struct CodeGenConfig {
     ///   field names are unaffected — this is a pure Rust-identifier
     ///   rename).
     ///
+    /// When another codegen run references these prefixed types via its own
+    /// [`extern_paths`](Self::extern_paths) mapping, the mapped Rust path
+    /// must spell out the prefixed name (e.g. `::crate_a::RpcUser`) — the
+    /// proto name carries no prefix, so the mapping is not derived
+    /// automatically. Prefix-induced name collisions (e.g. `message RpcUser`
+    /// alongside `message User` with prefix `Rpc`) are not detected here;
+    /// they surface as ordinary duplicate-definition errors when the
+    /// generated code is compiled.
+    ///
     /// Must be a valid Rust identifier prefix (`[A-Za-z_][A-Za-z0-9_]*`);
     /// generation fails with [`CodeGenError::InvalidTypeNamePrefix`]
     /// otherwise. Defaults to `""` (no prefix).
@@ -1085,7 +1094,9 @@ pub fn generate(
 /// # Errors
 ///
 /// Returns [`CodeGenError::FileNotFound`] if a name in `files_to_generate` has
-/// no matching descriptor, [`CodeGenError::Other`] if `generate_reflection_vtable`
+/// no matching descriptor, [`CodeGenError::InvalidTypeNamePrefix`] if
+/// [`CodeGenConfig::type_name_prefix`] is not a valid Rust identifier prefix,
+/// [`CodeGenError::Other`] if `generate_reflection_vtable`
 /// is set without `generate_reflection` or if an active feature-gate name in
 /// [`CodeGenConfig::feature_gate_names`] is not a valid Cargo feature name,
 /// and other [`CodeGenError`] variants for malformed descriptors (e.g. a
@@ -1525,7 +1536,7 @@ fn generate_proto_content(
                 ),
             });
             if ctx.config.lazy_views {
-                let lazy_ident = format_ident!("{top_level_name}LazyView");
+                let lazy_ident = format_ident!("{rust_name}LazyView");
                 root_reexports.push(message::ReexportCandidate {
                     name: lazy_ident.to_string(),
                     tokens: feature_gates::cfg_block(

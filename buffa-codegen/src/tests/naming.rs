@@ -113,11 +113,13 @@ fn prefix_fixture() -> FileDescriptorProto {
 
 #[test]
 fn test_type_name_prefix_declarations_and_references() {
-    // json/text/views on so every emission path runs against the prefix.
+    // json/text/views/lazy views on so every emission path runs against the
+    // prefix.
     let config = CodeGenConfig {
         type_name_prefix: "Rpc".to_string(),
         generate_json: true,
         generate_text: true,
+        lazy_views: true,
         ..CodeGenConfig::default()
     };
     let files = generate(&[prefix_fixture()], &["test.proto".to_string()], &config)
@@ -154,6 +156,21 @@ fn test_type_name_prefix_declarations_and_references() {
     assert!(
         content.contains("RpcUserOwnedView"),
         "owned-view wrapper must be prefixed: {content}"
+    );
+
+    // Lazy-view declarations and their root/nested re-exports use the
+    // prefixed name (a stale unprefixed re-export would not resolve).
+    assert!(
+        content.contains("lazy_view::RpcUserLazyView"),
+        "top-level lazy-view re-export must be prefixed: {content}"
+    );
+    assert!(
+        content.contains("lazy_view::user::RpcInnerLazyView"),
+        "nested lazy-view re-export must be prefixed: {content}"
+    );
+    assert!(
+        !content.contains("::UserLazyView") && !content.contains("::InnerLazyView"),
+        "unprefixed lazy-view re-exports must not be emitted: {content}"
     );
 
     // Cross-references use the prefixed names.

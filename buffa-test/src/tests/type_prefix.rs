@@ -7,7 +7,8 @@
 // The oneof tree keeps the proto-derived module name (`person`, not
 // `rpc_person`) — only type identifiers carry the prefix.
 use crate::basic_prefixed::__buffa::oneof::person::Contact;
-use crate::basic_prefixed::{RpcAddress, RpcPerson, RpcPersonView, RpcStatus};
+use crate::basic_prefixed::{RpcAddress, RpcPerson, RpcPersonLazyView, RpcPersonView, RpcStatus};
+use buffa::view::LazyMessageView;
 use buffa::{Message, MessageView};
 
 fn sample() -> RpcPerson {
@@ -41,6 +42,16 @@ fn prefixed_view_decodes_zero_copy() {
     assert_eq!(view.id, 7);
     assert_eq!(view.name, "ada");
     assert_eq!(view.to_owned_message().expect("to_owned"), sample());
+}
+
+#[test]
+fn prefixed_lazy_view_decodes() {
+    // The lazy-view family is re-exported under the prefixed name (the
+    // import above is the regression check) and decodes like any other.
+    let bytes = sample().encode_to_vec();
+    let view = RpcPersonLazyView::decode_lazy(&bytes).expect("lazy decode");
+    assert_eq!(view.id, 7);
+    assert_eq!(view.name, "ada");
 }
 
 #[test]
