@@ -28,9 +28,9 @@ use crate::message::{is_map_field, make_field_ident, rust_path_to_tokens};
 use crate::view::{
     map_decode_arm, map_to_owned_expr, message_view_has_borrowing_field, oneof_decode_arms,
     oneof_variant_to_owned, oneof_view_struct_fields, repeated_decode_arm, repeated_to_owned,
-    resolve_lazy_view_path, resolve_lazy_view_ty_tokens, resolve_owned_path, scalar_decode_arm,
-    singular_to_owned, view_field_serialize_stmt, view_map_type, view_repeated_type,
-    view_singular_type,
+    required_presence, resolve_lazy_view_path, resolve_lazy_view_ty_tokens, resolve_owned_path,
+    scalar_decode_arm, singular_to_owned, view_field_serialize_stmt, view_map_type,
+    view_repeated_type, view_singular_type,
 };
 use crate::CodeGenError;
 
@@ -107,8 +107,19 @@ pub(crate) fn generate_lazy_view_with_nesting(
     let oneof_struct_fields: Vec<&TokenStream> =
         oneof_view_fields.iter().map(|(tokens, _)| tokens).collect();
 
-    let (scalar_arms, repeated_arms, oneof_arms) =
-        build_lazy_decode_arms(view_scope, msg, &view_oneof_prefix, &oneof_idents)?;
+    // Required-field presence tracking (#170) — same parts as the eager view,
+    // so eager and lazy views answer `has_*` identically.
+    let required = required_presence(view_scope, msg);
+    let required_seen_struct_fields = &required.struct_fields;
+    let required_has_methods = &required.has_methods;
+
+    let (scalar_arms, repeated_arms, oneof_arms) = build_lazy_decode_arms(
+        view_scope,
+        msg,
+        &view_oneof_prefix,
+        &oneof_idents,
+        &required.bit_stmts,
+    )?;
 
     let owned_fields = build_lazy_to_owned_fields(
         view_scope,
@@ -250,6 +261,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
             #(#direct_fields)*
             #(#oneof_struct_fields)*
             #unknown_fields_field
+            #(#required_seen_struct_fields)*
             #phantom_field
         }
 
@@ -299,6 +311,8 @@ pub(crate) fn generate_lazy_view_with_nesting(
                 }
                 ::core::result::Result::Ok(())
             }
+
+            #(#required_has_methods)*
         }
 
         impl<'a> ::buffa::LazyMessageView<'a> for #lazy_ident<'a> {
@@ -484,6 +498,7 @@ fn build_lazy_decode_arms(
     msg: &DescriptorProto,
     view_oneof_prefix: &TokenStream,
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
+    required_bit_stmts: &std::collections::HashMap<u32, TokenStream>,
 ) -> Result<(Vec<TokenStream>, Vec<TokenStream>, Vec<TokenStream>), CodeGenError> {
     let scalar_arms = msg
         .field
@@ -497,7 +512,8 @@ fn build_lazy_decode_arms(
             if is_lazy_field(scope, f) {
                 lazy_singular_message_arm(scope, f)
             } else {
-                scalar_decode_arm(scope, f)
+                let bit_stmt = f.number.and_then(|n| required_bit_stmts.get(&(n as u32)));
+                scalar_decode_arm(scope, f, bit_stmt)
             }
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -705,14 +721,29 @@ fn build_lazy_to_owned_fields(
             })
             .collect::<Result<Vec<_>, CodeGenError>>()?;
 
-        out.push(quote! {
-            #field_ident: match self.#field_ident.as_ref() {
-                ::core::option::Option::Some(v) => {
-                    ::core::option::Option::Some(match v { #(#match_arms)* })
-                }
-                ::core::option::Option::None => ::core::option::Option::None,
-            },
+        // Same split as the eager view's to_owned: message-typed variants
+        // convert fallibly (`?` inside the arm), which a closure-based
+        // `Option::map` cannot propagate — use a `match` for those groups.
+        // Scalar-only groups keep `map` (clippy::manual_map fires on the
+        // match form when no `?` is present).
+        let has_fallible_variant = group.iter().any(|f| {
+            let t = effective_type(ctx, f, features);
+            t == Type::TYPE_MESSAGE || t == Type::TYPE_GROUP
         });
+        if has_fallible_variant {
+            out.push(quote! {
+                #field_ident: match self.#field_ident.as_ref() {
+                    ::core::option::Option::Some(v) => {
+                        ::core::option::Option::Some(match v { #(#match_arms)* })
+                    }
+                    ::core::option::Option::None => ::core::option::Option::None,
+                },
+            });
+        } else {
+            out.push(quote! {
+                #field_ident: self.#field_ident.as_ref().map(|v| match v { #(#match_arms)* }),
+            });
+        }
     }
 
     if ctx.config.preserve_unknown_fields {

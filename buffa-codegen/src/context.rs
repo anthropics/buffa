@@ -346,6 +346,7 @@ impl<'a> CodeGenContext<'a> {
                         file_root,
                         &local_module,
                         effective_extern_paths,
+                        &config.type_name_prefix,
                     );
 
                     // The module the message's nested types live in. For a local
@@ -373,11 +374,14 @@ impl<'a> CodeGenContext<'a> {
                     register_nested_types(
                         &mut type_map,
                         &mut package_of,
-                        package,
+                        NestedRegistrationCtx {
+                            package,
+                            extern_paths: effective_extern_paths,
+                            type_name_prefix: &config.type_name_prefix,
+                        },
                         &fqn,
                         &parent_mod,
                         msg,
-                        effective_extern_paths,
                     );
                     register_nested_enum_closedness(
                         &mut enum_closedness,
@@ -398,6 +402,7 @@ impl<'a> CodeGenContext<'a> {
                         file_root,
                         &local_module,
                         effective_extern_paths,
+                        &config.type_name_prefix,
                     );
                     type_map.insert(fqn.clone(), rust_path);
                     package_of.insert(fqn.clone(), package.to_string());
@@ -1184,11 +1189,17 @@ fn resolve_type_path(
     file_root: Option<&str>,
     local_module: &str,
     extern_paths: &[(String, String)],
+    type_name_prefix: &str,
 ) -> (String, bool) {
     // The exact check is done here (not left to `resolve_extern_type`) so an
     // exact per-type entry outranks the file-level mapping below; once it has
     // failed, `resolve_extern_type`'s own exact pass can only fall through to
     // its prefix logic.
+    //
+    // `type_name_prefix` applies only to the local fallback: extern-mapped
+    // types are named by the external crate, and the file-level root is the
+    // internal descriptor.proto → buffa-descriptor split (also external to
+    // this codegen run).
     if let Some((_, rust)) = extern_paths.iter().find(|(proto, _)| proto == fqn) {
         (rust.clone(), true)
     } else if let Some(root) = file_root {
@@ -1196,8 +1207,20 @@ fn resolve_type_path(
     } else if let Some(path) = resolve_extern_type(fqn, extern_paths) {
         (path, true)
     } else {
-        (join_mod(local_module, name), false)
+        (
+            join_mod(local_module, &format!("{type_name_prefix}{name}")),
+            false,
+        )
     }
+}
+
+/// Per-file invariants of [`register_nested_types`], bundled so the
+/// recursion only threads the parent FQN / module that actually vary.
+#[derive(Clone, Copy)]
+struct NestedRegistrationCtx<'a> {
+    package: &'a str,
+    extern_paths: &'a [(String, String)],
+    type_name_prefix: &'a str,
 }
 
 /// Recursively register nested messages and enums with module-qualified paths.
@@ -1212,18 +1235,24 @@ fn resolve_type_path(
 fn register_nested_types(
     type_map: &mut HashMap<String, String>,
     package_of: &mut HashMap<String, String>,
-    package: &str,
+    reg: NestedRegistrationCtx<'_>,
     parent_fqn: &str,
     parent_mod: &str,
     msg: &crate::generated::descriptor::DescriptorProto,
-    extern_paths: &[(String, String)],
 ) {
+    let NestedRegistrationCtx {
+        package,
+        extern_paths,
+        type_name_prefix,
+    } = reg;
     for nested in &msg.nested_type {
         if let Some(name) = &nested.name {
             let fqn = format!("{}.{}", parent_fqn, name);
             // An exact per-type override wins; the child module is then the
             // override's parent plus the plain snake_case name. Otherwise the
-            // type lives in `parent_mod`.
+            // type lives in `parent_mod`, named with the configured prefix
+            // (the module segment stays the proto-derived snake_case name —
+            // modules never collide with type names).
             let (rust_path, child_mod) = match extern_paths.iter().find(|(proto, _)| proto == &fqn)
             {
                 Some((_, rust)) => {
@@ -1234,7 +1263,7 @@ fn register_nested_types(
                     (rust.clone(), child)
                 }
                 None => (
-                    format!("{parent_mod}::{name}"),
+                    format!("{parent_mod}::{type_name_prefix}{name}"),
                     format!("{parent_mod}::{}", to_snake_case(name)),
                 ),
             };
@@ -1242,15 +1271,7 @@ fn register_nested_types(
             package_of.insert(fqn.clone(), package.to_string());
 
             // Recurse: nested-of-nested goes in a deeper module.
-            register_nested_types(
-                type_map,
-                package_of,
-                package,
-                &fqn,
-                &child_mod,
-                nested,
-                extern_paths,
-            );
+            register_nested_types(type_map, package_of, reg, &fqn, &child_mod, nested);
         }
     }
 
@@ -1261,7 +1282,7 @@ fn register_nested_types(
                 .iter()
                 .find(|(proto, _)| proto == &fqn)
                 .map(|(_, rust)| rust.clone())
-                .unwrap_or_else(|| format!("{parent_mod}::{name}"));
+                .unwrap_or_else(|| format!("{parent_mod}::{type_name_prefix}{name}"));
             type_map.insert(fqn.clone(), rust_path);
             package_of.insert(fqn, package.to_string());
         }
