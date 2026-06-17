@@ -505,13 +505,10 @@ impl ::buffa::Message for FileDescriptorSet {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             1u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 1u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.file.push(elem);
@@ -1217,97 +1214,73 @@ impl ::buffa::Message for FileDescriptorProto {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             1u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 1u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self.name.get_or_insert_with(::buffa::alloc::string::String::new),
                     buf,
                 )?;
             }
             2u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 2u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self.package.get_or_insert_with(::buffa::alloc::string::String::new),
                     buf,
                 )?;
             }
             3u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 3u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 self.dependency.push(::buffa::types::decode_string(buf)?);
             }
             4u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 4u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.message_type.push(elem);
             }
             5u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 5u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.enum_type.push(elem);
             }
             6u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 6u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.service.push(elem);
             }
             7u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 7u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.extension.push(elem);
             }
             8u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 8u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.options.get_or_insert_default(),
                     buf,
@@ -1315,13 +1288,10 @@ impl ::buffa::Message for FileDescriptorProto {
                 )?;
             }
             9u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 9u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.source_code_info.get_or_insert_default(),
                     buf,
@@ -1351,11 +1321,12 @@ impl ::buffa::Message for FileDescriptorProto {
                 } else if tag.wire_type() == ::buffa::encoding::WireType::Varint {
                     self.public_dependency.push(::buffa::types::decode_int32(buf)?);
                 } else {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 10u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
+                    return ::core::result::Result::Err(
+                        ::buffa::encoding::wire_type_mismatch(
+                            tag,
+                            ::buffa::encoding::WireType::LengthDelimited,
+                        ),
+                    );
                 }
             }
             11u32 => {
@@ -1381,34 +1352,29 @@ impl ::buffa::Message for FileDescriptorProto {
                 } else if tag.wire_type() == ::buffa::encoding::WireType::Varint {
                     self.weak_dependency.push(::buffa::types::decode_int32(buf)?);
                 } else {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 11u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
+                    return ::core::result::Result::Err(
+                        ::buffa::encoding::wire_type_mismatch(
+                            tag,
+                            ::buffa::encoding::WireType::LengthDelimited,
+                        ),
+                    );
                 }
             }
             12u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 12u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self.syntax.get_or_insert_with(::buffa::alloc::string::String::new),
                     buf,
                 )?;
             }
             14u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 14u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -1423,13 +1389,10 @@ impl ::buffa::Message for FileDescriptorProto {
                 }
             }
             15u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 15u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 self.option_dependency.push(::buffa::types::decode_string(buf)?);
             }
             _ => {
@@ -2046,86 +2009,65 @@ impl ::buffa::Message for DescriptorProto {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             1u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 1u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self.name.get_or_insert_with(::buffa::alloc::string::String::new),
                     buf,
                 )?;
             }
             2u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 2u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.field.push(elem);
             }
             3u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 3u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.nested_type.push(elem);
             }
             4u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 4u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.enum_type.push(elem);
             }
             5u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 5u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.extension_range.push(elem);
             }
             6u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 6u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.extension.push(elem);
             }
             7u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 7u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.options.get_or_insert_default(),
                     buf,
@@ -2133,47 +2075,35 @@ impl ::buffa::Message for DescriptorProto {
                 )?;
             }
             8u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 8u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.oneof_decl.push(elem);
             }
             9u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 9u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.reserved_range.push(elem);
             }
             10u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 10u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 self.reserved_name.push(::buffa::types::decode_string(buf)?);
             }
             11u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 11u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -2560,37 +2490,28 @@ pub mod descriptor_proto {
             use ::buffa::Enumeration as _;
             match tag.field_number() {
                 1u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 1u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::Varint,
+                    )?;
                     self.start = ::core::option::Option::Some(
                         ::buffa::types::decode_int32(buf)?,
                     );
                 }
                 2u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 2u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::Varint,
+                    )?;
                     self.end = ::core::option::Option::Some(
                         ::buffa::types::decode_int32(buf)?,
                     );
                 }
                 3u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 3u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::LengthDelimited,
+                    )?;
                     ::buffa::Message::merge_length_delimited(
                         self.options.get_or_insert_default(),
                         buf,
@@ -2819,25 +2740,19 @@ pub mod descriptor_proto {
             use ::buffa::Enumeration as _;
             match tag.field_number() {
                 1u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 1u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::Varint,
+                    )?;
                     self.start = ::core::option::Option::Some(
                         ::buffa::types::decode_int32(buf)?,
                     );
                 }
                 2u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 2u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::Varint,
+                    )?;
                     self.end = ::core::option::Option::Some(
                         ::buffa::types::decode_int32(buf)?,
                     );
@@ -3137,25 +3052,19 @@ impl ::buffa::Message for ExtensionRangeOptions {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             2u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 2u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.declaration.push(elem);
             }
             3u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 3u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -3170,13 +3079,10 @@ impl ::buffa::Message for ExtensionRangeOptions {
                 }
             }
             50u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 50u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.features.get_or_insert_default(),
                     buf,
@@ -3184,13 +3090,10 @@ impl ::buffa::Message for ExtensionRangeOptions {
                 )?;
             }
             999u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 999u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
@@ -3897,25 +3800,19 @@ pub mod extension_range_options {
             use ::buffa::Enumeration as _;
             match tag.field_number() {
                 1u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 1u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::Varint,
+                    )?;
                     self.number = ::core::option::Option::Some(
                         ::buffa::types::decode_int32(buf)?,
                     );
                 }
                 2u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 2u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::LengthDelimited,
+                    )?;
                     ::buffa::types::merge_string(
                         self
                             .full_name
@@ -3924,13 +3821,10 @@ pub mod extension_range_options {
                     )?;
                 }
                 3u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 3u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::LengthDelimited,
+                    )?;
                     ::buffa::types::merge_string(
                         self
                             .r#type
@@ -3939,25 +3833,19 @@ pub mod extension_range_options {
                     )?;
                 }
                 5u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 5u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::Varint,
+                    )?;
                     self.reserved = ::core::option::Option::Some(
                         ::buffa::types::decode_bool(buf)?,
                     );
                 }
                 6u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 6u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::Varint,
+                    )?;
                     self.repeated = ::core::option::Option::Some(
                         ::buffa::types::decode_bool(buf)?,
                     );
@@ -4522,26 +4410,20 @@ impl ::buffa::Message for FieldDescriptorProto {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             1u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 1u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self.name.get_or_insert_with(::buffa::alloc::string::String::new),
                     buf,
                 )?;
             }
             2u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 2u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self
                         .extendee
@@ -4550,25 +4432,19 @@ impl ::buffa::Message for FieldDescriptorProto {
                 )?;
             }
             3u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 3u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.number = ::core::option::Option::Some(
                     ::buffa::types::decode_int32(buf)?,
                 );
             }
             4u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 4u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -4583,13 +4459,10 @@ impl ::buffa::Message for FieldDescriptorProto {
                 }
             }
             5u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 5u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -4604,13 +4477,10 @@ impl ::buffa::Message for FieldDescriptorProto {
                 }
             }
             6u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 6u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self
                         .type_name
@@ -4619,13 +4489,10 @@ impl ::buffa::Message for FieldDescriptorProto {
                 )?;
             }
             7u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 7u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self
                         .default_value
@@ -4634,13 +4501,10 @@ impl ::buffa::Message for FieldDescriptorProto {
                 )?;
             }
             8u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 8u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.options.get_or_insert_default(),
                     buf,
@@ -4648,25 +4512,19 @@ impl ::buffa::Message for FieldDescriptorProto {
                 )?;
             }
             9u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 9u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.oneof_index = ::core::option::Option::Some(
                     ::buffa::types::decode_int32(buf)?,
                 );
             }
             10u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 10u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self
                         .json_name
@@ -4675,13 +4533,10 @@ impl ::buffa::Message for FieldDescriptorProto {
                 )?;
             }
             17u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 17u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.proto3_optional = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
@@ -5424,26 +5279,20 @@ impl ::buffa::Message for OneofDescriptorProto {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             1u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 1u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self.name.get_or_insert_with(::buffa::alloc::string::String::new),
                     buf,
                 )?;
             }
             2u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 2u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.options.get_or_insert_default(),
                     buf,
@@ -5784,38 +5633,29 @@ impl ::buffa::Message for EnumDescriptorProto {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             1u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 1u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self.name.get_or_insert_with(::buffa::alloc::string::String::new),
                     buf,
                 )?;
             }
             2u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 2u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.value.push(elem);
             }
             3u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 3u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.options.get_or_insert_default(),
                     buf,
@@ -5823,35 +5663,26 @@ impl ::buffa::Message for EnumDescriptorProto {
                 )?;
             }
             4u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 4u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.reserved_range.push(elem);
             }
             5u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 5u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 self.reserved_name.push(::buffa::types::decode_string(buf)?);
             }
             6u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 6u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -6142,25 +5973,19 @@ pub mod enum_descriptor_proto {
             use ::buffa::Enumeration as _;
             match tag.field_number() {
                 1u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 1u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::Varint,
+                    )?;
                     self.start = ::core::option::Option::Some(
                         ::buffa::types::decode_int32(buf)?,
                     );
                 }
                 2u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 2u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::Varint,
+                    )?;
                     self.end = ::core::option::Option::Some(
                         ::buffa::types::decode_int32(buf)?,
                     );
@@ -6411,38 +6236,29 @@ impl ::buffa::Message for EnumValueDescriptorProto {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             1u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 1u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self.name.get_or_insert_with(::buffa::alloc::string::String::new),
                     buf,
                 )?;
             }
             2u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 2u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.number = ::core::option::Option::Some(
                     ::buffa::types::decode_int32(buf)?,
                 );
             }
             3u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 3u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.options.get_or_insert_default(),
                     buf,
@@ -6700,38 +6516,29 @@ impl ::buffa::Message for ServiceDescriptorProto {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             1u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 1u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self.name.get_or_insert_with(::buffa::alloc::string::String::new),
                     buf,
                 )?;
             }
             2u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 2u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.method.push(elem);
             }
             3u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 3u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.options.get_or_insert_default(),
                     buf,
@@ -7093,26 +6900,20 @@ impl ::buffa::Message for MethodDescriptorProto {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             1u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 1u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self.name.get_or_insert_with(::buffa::alloc::string::String::new),
                     buf,
                 )?;
             }
             2u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 2u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self
                         .input_type
@@ -7121,13 +6922,10 @@ impl ::buffa::Message for MethodDescriptorProto {
                 )?;
             }
             3u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 3u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self
                         .output_type
@@ -7136,13 +6934,10 @@ impl ::buffa::Message for MethodDescriptorProto {
                 )?;
             }
             4u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 4u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.options.get_or_insert_default(),
                     buf,
@@ -7150,25 +6945,19 @@ impl ::buffa::Message for MethodDescriptorProto {
                 )?;
             }
             5u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 5u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.client_streaming = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             6u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 6u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.server_streaming = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
@@ -8107,13 +7896,10 @@ impl ::buffa::Message for FileOptions {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             1u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 1u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self
                         .java_package
@@ -8122,13 +7908,10 @@ impl ::buffa::Message for FileOptions {
                 )?;
             }
             8u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 8u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self
                         .java_outer_classname
@@ -8137,13 +7920,10 @@ impl ::buffa::Message for FileOptions {
                 )?;
             }
             9u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 9u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -8158,25 +7938,19 @@ impl ::buffa::Message for FileOptions {
                 }
             }
             10u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 10u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.java_multiple_files = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             11u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 11u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self
                         .go_package
@@ -8185,97 +7959,73 @@ impl ::buffa::Message for FileOptions {
                 )?;
             }
             16u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 16u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.cc_generic_services = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             17u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 17u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.java_generic_services = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             18u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 18u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.py_generic_services = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             20u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 20u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.java_generate_equals_and_hash = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             23u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 23u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.deprecated = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             27u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 27u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.java_string_check_utf8 = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             31u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 31u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.cc_enable_arenas = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             36u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 36u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self
                         .objc_class_prefix
@@ -8284,13 +8034,10 @@ impl ::buffa::Message for FileOptions {
                 )?;
             }
             37u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 37u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self
                         .csharp_namespace
@@ -8299,13 +8046,10 @@ impl ::buffa::Message for FileOptions {
                 )?;
             }
             39u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 39u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self
                         .swift_prefix
@@ -8314,13 +8058,10 @@ impl ::buffa::Message for FileOptions {
                 )?;
             }
             40u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 40u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self
                         .php_class_prefix
@@ -8329,13 +8070,10 @@ impl ::buffa::Message for FileOptions {
                 )?;
             }
             41u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 41u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self
                         .php_namespace
@@ -8344,13 +8082,10 @@ impl ::buffa::Message for FileOptions {
                 )?;
             }
             44u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 44u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self
                         .php_metadata_namespace
@@ -8359,13 +8094,10 @@ impl ::buffa::Message for FileOptions {
                 )?;
             }
             45u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 45u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self
                         .ruby_package
@@ -8374,13 +8106,10 @@ impl ::buffa::Message for FileOptions {
                 )?;
             }
             50u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 50u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.features.get_or_insert_default(),
                     buf,
@@ -8388,13 +8117,10 @@ impl ::buffa::Message for FileOptions {
                 )?;
             }
             999u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 999u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
@@ -9581,73 +9307,55 @@ impl ::buffa::Message for MessageOptions {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             1u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 1u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.message_set_wire_format = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             2u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 2u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.no_standard_descriptor_accessor = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             3u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 3u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.deprecated = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             7u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 7u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.map_entry = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             11u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 11u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.deprecated_legacy_json_field_conflicts = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             12u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 12u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.features.get_or_insert_default(),
                     buf,
@@ -9655,13 +9363,10 @@ impl ::buffa::Message for MessageOptions {
                 )?;
             }
             999u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 999u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
@@ -10518,13 +10223,10 @@ impl ::buffa::Message for FieldOptions {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             1u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 1u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -10539,49 +10241,37 @@ impl ::buffa::Message for FieldOptions {
                 }
             }
             2u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 2u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.packed = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             3u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 3u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.deprecated = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             5u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 5u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.lazy = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             6u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 6u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -10596,49 +10286,37 @@ impl ::buffa::Message for FieldOptions {
                 }
             }
             10u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 10u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.weak = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             15u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 15u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.unverified_lazy = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             16u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 16u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.debug_redact = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             17u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 17u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -10696,33 +10374,28 @@ impl ::buffa::Message for FieldOptions {
                             });
                     }
                 } else {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 19u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
+                    return ::core::result::Result::Err(
+                        ::buffa::encoding::wire_type_mismatch(
+                            tag,
+                            ::buffa::encoding::WireType::LengthDelimited,
+                        ),
+                    );
                 }
             }
             20u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 20u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.edition_defaults.push(elem);
             }
             21u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 21u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.features.get_or_insert_default(),
                     buf,
@@ -10730,13 +10403,10 @@ impl ::buffa::Message for FieldOptions {
                 )?;
             }
             22u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 22u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.feature_support.get_or_insert_default(),
                     buf,
@@ -10744,13 +10414,10 @@ impl ::buffa::Message for FieldOptions {
                 )?;
             }
             999u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 999u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
@@ -12138,13 +11805,10 @@ pub mod field_options {
             use ::buffa::Enumeration as _;
             match tag.field_number() {
                 2u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 2u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::LengthDelimited,
+                    )?;
                     ::buffa::types::merge_string(
                         self
                             .value
@@ -12153,13 +11817,10 @@ pub mod field_options {
                     )?;
                 }
                 3u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 3u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::Varint,
+                    )?;
                     let __raw = ::buffa::types::decode_int32(buf)?;
                     if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                         __raw,
@@ -12472,13 +12133,10 @@ pub mod field_options {
             use ::buffa::Enumeration as _;
             match tag.field_number() {
                 1u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 1u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::Varint,
+                    )?;
                     let __raw = ::buffa::types::decode_int32(buf)?;
                     if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                         __raw,
@@ -12493,13 +12151,10 @@ pub mod field_options {
                     }
                 }
                 2u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 2u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::Varint,
+                    )?;
                     let __raw = ::buffa::types::decode_int32(buf)?;
                     if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                         __raw,
@@ -12514,13 +12169,10 @@ pub mod field_options {
                     }
                 }
                 3u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 3u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::LengthDelimited,
+                    )?;
                     ::buffa::types::merge_string(
                         self
                             .deprecation_warning
@@ -12529,13 +12181,10 @@ pub mod field_options {
                     )?;
                 }
                 4u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 4u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::Varint,
+                    )?;
                     let __raw = ::buffa::types::decode_int32(buf)?;
                     if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                         __raw,
@@ -12808,13 +12457,10 @@ impl ::buffa::Message for OneofOptions {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             1u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 1u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.features.get_or_insert_default(),
                     buf,
@@ -12822,13 +12468,10 @@ impl ::buffa::Message for OneofOptions {
                 )?;
             }
             999u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 999u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
@@ -13307,49 +12950,37 @@ impl ::buffa::Message for EnumOptions {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             2u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 2u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.allow_alias = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             3u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 3u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.deprecated = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             6u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 6u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.deprecated_legacy_json_field_conflicts = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             7u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 7u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.features.get_or_insert_default(),
                     buf,
@@ -13357,13 +12988,10 @@ impl ::buffa::Message for EnumOptions {
                 )?;
             }
             999u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 999u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
@@ -13898,25 +13526,19 @@ impl ::buffa::Message for EnumValueOptions {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             1u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 1u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.deprecated = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             2u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 2u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.features.get_or_insert_default(),
                     buf,
@@ -13924,25 +13546,19 @@ impl ::buffa::Message for EnumValueOptions {
                 )?;
             }
             3u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 3u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.debug_redact = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             4u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 4u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.feature_support.get_or_insert_default(),
                     buf,
@@ -13950,13 +13566,10 @@ impl ::buffa::Message for EnumValueOptions {
                 )?;
             }
             999u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 999u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
@@ -14435,25 +14048,19 @@ impl ::buffa::Message for ServiceOptions {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             33u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 33u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.deprecated = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             34u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 34u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.features.get_or_insert_default(),
                     buf,
@@ -14461,13 +14068,10 @@ impl ::buffa::Message for ServiceOptions {
                 )?;
             }
             999u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 999u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
@@ -14935,25 +14539,19 @@ impl ::buffa::Message for MethodOptions {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             33u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 33u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.deprecated = ::core::option::Option::Some(
                     ::buffa::types::decode_bool(buf)?,
                 );
             }
             34u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 34u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -14968,13 +14566,10 @@ impl ::buffa::Message for MethodOptions {
                 }
             }
             35u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 35u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::Message::merge_length_delimited(
                     self.features.get_or_insert_default(),
                     buf,
@@ -14982,13 +14577,10 @@ impl ::buffa::Message for MethodOptions {
                 )?;
             }
             999u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 999u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
@@ -15742,25 +15334,19 @@ impl ::buffa::Message for UninterpretedOption {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             2u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 2u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.name.push(elem);
             }
             3u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 3u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self
                         .identifier_value
@@ -15769,62 +15355,47 @@ impl ::buffa::Message for UninterpretedOption {
                 )?;
             }
             4u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 4u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.positive_int_value = ::core::option::Option::Some(
                     ::buffa::types::decode_uint64(buf)?,
                 );
             }
             5u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 5u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 self.negative_int_value = ::core::option::Option::Some(
                     ::buffa::types::decode_int64(buf)?,
                 );
             }
             6u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Fixed64 {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 6u32,
-                        expected: 1u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Fixed64,
+                )?;
                 self.double_value = ::core::option::Option::Some(
                     ::buffa::types::decode_double(buf)?,
                 );
             }
             7u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 7u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_bytes(
                     self.string_value.get_or_insert_with(::buffa::alloc::vec::Vec::new),
                     buf,
                 )?;
             }
             8u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 8u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 ::buffa::types::merge_string(
                     self
                         .aggregate_value
@@ -16087,23 +15658,17 @@ pub mod uninterpreted_option {
             use ::buffa::Enumeration as _;
             match tag.field_number() {
                 1u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 1u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::LengthDelimited,
+                    )?;
                     ::buffa::types::merge_string(&mut self.name_part, buf)?;
                 }
                 2u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 2u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::Varint,
+                    )?;
                     self.is_extension = ::buffa::types::decode_bool(buf)?;
                 }
                 _ => {
@@ -16516,13 +16081,10 @@ impl ::buffa::Message for FeatureSet {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             1u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 1u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -16537,13 +16099,10 @@ impl ::buffa::Message for FeatureSet {
                 }
             }
             2u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 2u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -16558,13 +16117,10 @@ impl ::buffa::Message for FeatureSet {
                 }
             }
             3u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 3u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -16579,13 +16135,10 @@ impl ::buffa::Message for FeatureSet {
                 }
             }
             4u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 4u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -16600,13 +16153,10 @@ impl ::buffa::Message for FeatureSet {
                 }
             }
             5u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 5u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -16621,13 +16171,10 @@ impl ::buffa::Message for FeatureSet {
                 }
             }
             6u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 6u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -16642,13 +16189,10 @@ impl ::buffa::Message for FeatureSet {
                 }
             }
             7u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 7u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -16663,13 +16207,10 @@ impl ::buffa::Message for FeatureSet {
                 }
             }
             8u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 8u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -18759,25 +18300,19 @@ impl ::buffa::Message for FeatureSetDefaults {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             1u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 1u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.defaults.push(elem);
             }
             4u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 4u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -18792,13 +18327,10 @@ impl ::buffa::Message for FeatureSetDefaults {
                 }
             }
             5u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 5u32,
-                        expected: 0u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::Varint,
+                )?;
                 let __raw = ::buffa::types::decode_int32(buf)?;
                 if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                     __raw,
@@ -19085,13 +18617,10 @@ pub mod feature_set_defaults {
             use ::buffa::Enumeration as _;
             match tag.field_number() {
                 3u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 3u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::Varint,
+                    )?;
                     let __raw = ::buffa::types::decode_int32(buf)?;
                     if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                         __raw,
@@ -19106,13 +18635,10 @@ pub mod feature_set_defaults {
                     }
                 }
                 4u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 4u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::LengthDelimited,
+                    )?;
                     ::buffa::Message::merge_length_delimited(
                         self.overridable_features.get_or_insert_default(),
                         buf,
@@ -19120,13 +18646,10 @@ pub mod feature_set_defaults {
                     )?;
                 }
                 5u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 5u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::LengthDelimited,
+                    )?;
                     ::buffa::Message::merge_length_delimited(
                         self.fixed_features.get_or_insert_default(),
                         buf,
@@ -19388,13 +18911,10 @@ impl ::buffa::Message for SourceCodeInfo {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             1u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 1u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.location.push(elem);
@@ -19971,11 +19491,12 @@ pub mod source_code_info {
                     } else if tag.wire_type() == ::buffa::encoding::WireType::Varint {
                         self.path.push(::buffa::types::decode_int32(buf)?);
                     } else {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 1u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
+                        return ::core::result::Result::Err(
+                            ::buffa::encoding::wire_type_mismatch(
+                                tag,
+                                ::buffa::encoding::WireType::LengthDelimited,
+                            ),
+                        );
                     }
                 }
                 2u32 => {
@@ -20000,21 +19521,19 @@ pub mod source_code_info {
                     } else if tag.wire_type() == ::buffa::encoding::WireType::Varint {
                         self.span.push(::buffa::types::decode_int32(buf)?);
                     } else {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 2u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
+                        return ::core::result::Result::Err(
+                            ::buffa::encoding::wire_type_mismatch(
+                                tag,
+                                ::buffa::encoding::WireType::LengthDelimited,
+                            ),
+                        );
                     }
                 }
                 3u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 3u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::LengthDelimited,
+                    )?;
                     ::buffa::types::merge_string(
                         self
                             .leading_comments
@@ -20023,13 +19542,10 @@ pub mod source_code_info {
                     )?;
                 }
                 4u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 4u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::LengthDelimited,
+                    )?;
                     ::buffa::types::merge_string(
                         self
                             .trailing_comments
@@ -20038,13 +19554,10 @@ pub mod source_code_info {
                     )?;
                 }
                 6u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 6u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::LengthDelimited,
+                    )?;
                     self.leading_detached_comments
                         .push(::buffa::types::decode_string(buf)?);
                 }
@@ -20281,13 +19794,10 @@ impl ::buffa::Message for GeneratedCodeInfo {
         use ::buffa::Enumeration as _;
         match tag.field_number() {
             1u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 1u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.annotation.push(elem);
@@ -20640,21 +20150,19 @@ pub mod generated_code_info {
                     } else if tag.wire_type() == ::buffa::encoding::WireType::Varint {
                         self.path.push(::buffa::types::decode_int32(buf)?);
                     } else {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 1u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
+                        return ::core::result::Result::Err(
+                            ::buffa::encoding::wire_type_mismatch(
+                                tag,
+                                ::buffa::encoding::WireType::LengthDelimited,
+                            ),
+                        );
                     }
                 }
                 2u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 2u32,
-                            expected: 2u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::LengthDelimited,
+                    )?;
                     ::buffa::types::merge_string(
                         self
                             .source_file
@@ -20663,37 +20171,28 @@ pub mod generated_code_info {
                     )?;
                 }
                 3u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 3u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::Varint,
+                    )?;
                     self.begin = ::core::option::Option::Some(
                         ::buffa::types::decode_int32(buf)?,
                     );
                 }
                 4u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 4u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::Varint,
+                    )?;
                     self.end = ::core::option::Option::Some(
                         ::buffa::types::decode_int32(buf)?,
                     );
                 }
                 5u32 => {
-                    if tag.wire_type() != ::buffa::encoding::WireType::Varint {
-                        return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                            field_number: 5u32,
-                            expected: 0u8,
-                            actual: tag.wire_type() as u8,
-                        });
-                    }
+                    ::buffa::encoding::check_wire_type(
+                        tag,
+                        ::buffa::encoding::WireType::Varint,
+                    )?;
                     let __raw = ::buffa::types::decode_int32(buf)?;
                     if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(
                         __raw,

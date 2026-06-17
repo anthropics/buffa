@@ -377,6 +377,41 @@ pub fn skip_field(tag: Tag, buf: &mut impl Buf) -> Result<(), DecodeError> {
     skip_field_depth(tag, buf, crate::RECURSION_LIMIT)
 }
 
+/// Verify a decoded tag carries the expected wire type.
+///
+/// Generated `merge_field` / view-decode arms call this once per field arm
+/// before reading the payload, replacing an inline comparison + error
+/// construction at every arm. The mismatch path is delegated to the
+/// `#[cold]` [`wire_type_mismatch`] so the hot decode loop carries only the
+/// comparison.
+///
+/// # Errors
+///
+/// Returns [`DecodeError::WireTypeMismatch`] when `tag`'s wire type is not
+/// `expected`.
+#[inline]
+pub fn check_wire_type(tag: Tag, expected: WireType) -> Result<(), DecodeError> {
+    if tag.wire_type() != expected {
+        return Err(wire_type_mismatch(tag, expected));
+    }
+    Ok(())
+}
+
+/// Construct a [`DecodeError::WireTypeMismatch`] for `tag`.
+///
+/// Out of line and `#[cold]`: error construction never belongs in the
+/// per-field decode loop's instruction stream. Also called directly by
+/// generated repeated-field arms that accept two wire types (packed +
+/// unpacked) and report the packed `LengthDelimited` form as expected.
+#[cold]
+pub fn wire_type_mismatch(tag: Tag, expected: WireType) -> DecodeError {
+    DecodeError::WireTypeMismatch {
+        field_number: tag.field_number(),
+        expected: expected as u8,
+        actual: tag.wire_type() as u8,
+    }
+}
+
 /// Skip a field's payload, with an explicit recursion depth budget for groups.
 ///
 /// Generated code must call this (not [`skip_field`]) when a decode context
@@ -542,6 +577,47 @@ pub fn decode_unknown_field(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_check_wire_type_match() {
+        let tag = Tag::new(3, WireType::Varint);
+        assert!(check_wire_type(tag, WireType::Varint).is_ok());
+    }
+
+    #[test]
+    fn test_check_wire_type_mismatch() {
+        let tag = Tag::new(3, WireType::Varint);
+        match check_wire_type(tag, WireType::LengthDelimited) {
+            Err(DecodeError::WireTypeMismatch {
+                field_number,
+                expected,
+                actual,
+            }) => {
+                assert_eq!(field_number, 3);
+                assert_eq!(expected, WireType::LengthDelimited as u8);
+                assert_eq!(actual, WireType::Varint as u8);
+            }
+            other => panic!("expected WireTypeMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_wire_type_mismatch_constructor() {
+        let tag = Tag::new(7, WireType::Fixed32);
+        let err = wire_type_mismatch(tag, WireType::Fixed64);
+        match err {
+            DecodeError::WireTypeMismatch {
+                field_number,
+                expected,
+                actual,
+            } => {
+                assert_eq!(field_number, 7);
+                assert_eq!(expected, 1);
+                assert_eq!(actual, 5);
+            }
+            other => panic!("expected WireTypeMismatch, got {other:?}"),
+        }
+    }
 
     #[test]
     fn test_varint_roundtrip() {

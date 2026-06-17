@@ -126,6 +126,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   carrier-agnostic `Location { line, column }`. Requires message types
   generated with `json = true`. Contributed by @rsd-darshan.
 
+- **Proto2 required-field presence on views** (#170). Generated view types
+  (`FooView` and `FooLazyView`) for messages with proto2/editions
+  `LEGACY_REQUIRED` singular fields now expose `has_<field>()` accessors
+  that distinguish a field absent on the wire from one explicitly encoded
+  with its default value. Scalar required fields are tracked via hidden
+  `__buffa_required_seen_*` bit words; message/group required fields
+  delegate to `MessageFieldView::is_set()` / `LazyMessageFieldView::is_set()`.
+  The view `ReflectMessage::has()` implementation consults the same
+  tracking, so reflection agrees with the inherent accessors. Owned
+  messages are unchanged: they store required fields bare and their
+  reflection still reports `has() == false` for a required field at its
+  default value. Messages without required fields are byte-identical to
+  before. `MessageFieldView::is_set` / `is_unset` are now `const fn`.
+
 - **`type_name_prefix` option** (#46). `buffa_build::Config::type_name_prefix("Rpc")`
   (also `CodeGenConfig::type_name_prefix` and `protoc-gen-buffa`'s
   `type_name_prefix=` option) prepends a prefix to every generated message
@@ -137,6 +151,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   and digits); anything else is rejected at generation time.
 
 ### Changed
+
+- Generated decode arms (owned merge, view decode, lazy record arms,
+  map-entry loops) emit a single `::buffa::encoding::check_wire_type` call
+  instead of a seven-line inline wire-type guard (~1,100 sites across a
+  generated corpus). Error payloads are byte-identical; the `#[cold]`
+  out-of-line error constructor moves construction off the hot decode
+  path. Regenerate checked-in code to pick up the shrink. (#193)
 
 - **Breaking:** the decode-path `Message` trait methods (`merge`,
   `merge_field`, `merge_to_limit`, `merge_group`, `merge_length_delimited`),
