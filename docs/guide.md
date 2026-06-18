@@ -16,6 +16,14 @@ buffa-types = "0.7"       # well-known types (Timestamp, Duration, Any, etc.)
 buffa-build = "0.7"
 ```
 
+The Cargo dependency is all you need when generating code via `buffa-build` or the `buf.build/anthropics/buffa` remote plugin. A [Homebrew](https://brew.sh) formula is also available:
+
+```sh
+brew install buffa
+```
+
+This is **optional** — it does not install the library. It puts the `protoc-gen-buffa` and `protoc-gen-buffa-packaging` plugin binaries on your `PATH` (and pulls in `protobuf` for `protoc`), which is only useful if you are driving codegen through a `local:` buf plugin reference or invoking `protoc --buffa_out` directly. See [Installing the protoc plugins](#installing-the-protoc-plugins) for details and for pinning the plugin version to match your Cargo dependency.
+
 ### Feature flags
 
 `buffa` and `buffa-types` share the same names for the core feature flags, and each adds a few crate-specific ones:
@@ -186,6 +194,7 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.json_feature_name(name)` etc. | `"json"`, `"views"`, `"text"`, `"reflect"` | Rename the crate feature a gated impl kind is conditioned on (one setter per kind: `json_feature_name`, `views_feature_name`, `text_feature_name`, `reflect_feature_name`); inert without `gate_impls_on_crate_features`. The renamed feature must be declared in the consuming crate's `[features]` table — an undeclared name leaves the `#[cfg]` permanently false and the impls silently absent |
 | `.strict_utf8_mapping(bool)` | `false` | Map `utf8_validation = NONE` string fields to `Vec<u8>` / `&[u8]` instead of `String` (see [Skipping UTF-8 validation](#skipping-utf-8-validation)) |
 | `.extern_path(proto, rust)` | — | Map a proto package or a single type to an external Rust path (see below) |
+| `.type_name_prefix(prefix)` | `""` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to every generated message/enum type name (`message User` → `struct RpcUser`); modules, oneof enums, extern-mapped types, and the wire format are unaffected. A crate referencing these types via `extern_path` must spell out the prefixed name (`::crate_a::RpcUser`) |
 | `.use_bytes_type()` | — | Use `bytes::Bytes` for all bytes fields, including `map<K, bytes>` values |
 | `.use_bytes_type_in(&[...])` | — | Use `bytes::Bytes` for matching bytes fields (same `map<K, bytes>` rule) |
 | `.string_type(repr)` | `String` | Use an alternative owned representation (`SmolStr`, `EcoString`, `CompactString`) for all string fields (see [String field representations](#string-field-representations)) |
@@ -395,6 +404,18 @@ There are two binaries: `protoc-gen-buffa` (the codegen plugin) and `protoc-gen-
 
 You only need a local install if you use `local:` plugin references. The codegen plugin is published to the Buf Schema Registry as [`buf.build/anthropics/buffa`](https://buf.build/anthropics/buffa) and can be referenced with `remote:` instead — see [Using buf](#using-buf). The packaging plugin is local-only; if you don't want to install it, use the [`file_per_package=true`](#remote-plugin-only-no-local-install) opt and write the `pub mod` tree yourself.
 
+**With Homebrew:**
+
+```sh
+brew install buffa
+```
+
+The [formula](https://formulae.brew.sh/formula/buffa) builds both plugins from the latest crates.io release and declares `protobuf` as a dependency, so `protoc` comes along with it. Homebrew always tracks the latest release; if you need the plugin version to match an older `buffa = "x.y"` in your `Cargo.toml`, use `cargo install` with an explicit `--version` instead:
+
+```sh
+cargo install --locked --version 0.7.1 protoc-gen-buffa protoc-gen-buffa-packaging
+```
+
 **From source (requires Rust toolchain):**
 
 From crates.io (recommended):
@@ -540,6 +561,7 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `gate_impls=true` | Wrap json/views/text impls in `#[cfg(feature = ...)]` for library crates whose generated code is a public dependency surface (default: emitted unconditionally) |
 | `json_feature=<name>` | Rename the crate feature a gated impl kind is conditioned on (also `views_feature=`, `text_feature=`, `reflect_feature=`); inert without `gate_impls=true` |
 | `with_setters=false` | Disable `with_<name>()` builder-style setters for explicit-presence fields (default: emitted) |
+| `type_name_prefix=<prefix>` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to every generated message/enum type name (`message User` → `struct RpcUser`) |
 | `reflection=true` | Emit reflection support (vtable mode) plus an embedded per-package descriptor pool — see [Runtime reflection](#runtime-reflection) |
 | `reflect_mode=off\|bridge\|vtable` | Finer-grained reflection selector; `reflection=true` is shorthand for `vtable` |
 | `extern_path=.pkg=::rust` | Map a proto package — or a single type, e.g. `extern_path=.pkg.Type=::rust::Type` — to an external Rust path |
@@ -2022,13 +2044,9 @@ impl Message for Int64Range {
     }
 }
 
-impl buffa::DefaultInstance for Int64Range {
-    fn default_instance() -> &'static Self {
-        static INST: buffa::__private::OnceBox<Int64Range> =
-            buffa::__private::OnceBox::new();
-        INST.get_or_init(|| Box::new(Int64Range::default()))
-    }
-}
+// Expands to a `DefaultInstance` impl backed by a lazily-initialized
+// `'static` singleton — the same shape generated code uses.
+buffa::impl_default_instance!(Int64Range);
 ```
 
 Note what's *not* needed:

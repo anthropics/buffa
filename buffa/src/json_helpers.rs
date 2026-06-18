@@ -105,7 +105,7 @@ pub trait ProtoElemJson: Sized {
 /// surface (the `#[serde(with = ...)]` modules in this file are the
 /// supported API); they are hidden from rustdoc accordingly.
 #[doc(hidden)]
-pub struct ProtoJson<'a, T: ?Sized>(pub &'a T);
+pub struct ProtoJson<'a, T>(pub &'a T);
 impl<T: ProtoElemJson> serde::Serialize for ProtoJson<'_, T> {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         T::serialize_proto_json(self.0, s)

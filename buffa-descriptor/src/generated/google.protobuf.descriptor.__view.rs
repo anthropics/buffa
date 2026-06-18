@@ -12012,6 +12012,26 @@ pub mod uninterpreted_option {
         /// Field 2: `is_extension`
         pub is_extension: bool,
         pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
+        #[doc(hidden)]
+        pub __buffa_required_seen_0: u64,
+    }
+    impl<'a> NamePartView<'a> {
+        /**Whether required field `name_part` was present on the wire.
+
+Distinguishes a field that was absent from one explicitly encoded with its default value (required scalar fields are stored as bare, non-`Option` types, so the value alone cannot tell the two apart). Presence is recorded only by the wire decoder: a default or hand-built view reports `false`. Encoding is unaffected — required fields are always written.*/
+        #[must_use]
+        #[inline]
+        pub const fn has_name_part(&self) -> bool {
+            self.__buffa_required_seen_0 & 1u64 != 0
+        }
+        /**Whether required field `is_extension` was present on the wire.
+
+Distinguishes a field that was absent from one explicitly encoded with its default value (required scalar fields are stored as bare, non-`Option` types, so the value alone cannot tell the two apart). Presence is recorded only by the wire decoder: a default or hand-built view reports `false`. Encoding is unaffected — required fields are always written.*/
+        #[must_use]
+        #[inline]
+        pub const fn has_is_extension(&self) -> bool {
+            self.__buffa_required_seen_0 & 2u64 != 0
+        }
     }
     impl<'a> ::buffa::MessageView<'a> for NamePartView<'a> {
         type Owned = super::super::super::uninterpreted_option::NamePart;
@@ -12048,6 +12068,7 @@ pub mod uninterpreted_option {
                         ::buffa::encoding::WireType::LengthDelimited,
                     )?;
                     view.name_part = ::buffa::types::borrow_str(&mut cur)?;
+                    view.__buffa_required_seen_0 |= 1u64;
                 }
                 2u32 => {
                     ::buffa::encoding::check_wire_type(
@@ -12055,6 +12076,7 @@ pub mod uninterpreted_option {
                         ::buffa::encoding::WireType::Varint,
                     )?;
                     view.is_extension = ::buffa::types::decode_bool(&mut cur)?;
+                    view.__buffa_required_seen_0 |= 2u64;
                 }
                 _ => {
                     ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;

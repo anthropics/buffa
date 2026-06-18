@@ -171,3 +171,20 @@ message ViewCoverage {
     int32 code = 7;
   }
 }
+
+// Required-field presence on views (#170): a message whose only borrowing
+// state is the seen-bit word — exercises the PhantomData + seen-word
+// combination that all-numeric required fields produce.
+message RequiredNumericOnly {
+  required int32 a = 1;
+  required fixed64 b = 2;
+  required double c = 3;
+}
+
+// Required-field presence on views (#170): a required group delegates
+// `has_*` to `MessageFieldView::is_set` rather than a seen bit.
+message WithRequiredGroup {
+  required group Item = 1 {
+    optional int32 x = 2;
+  }
+}

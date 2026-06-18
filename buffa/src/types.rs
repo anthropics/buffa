@@ -456,6 +456,9 @@ put_field_fn!(
 /// Used for sub-message fields (the payload follows via `write_to`, its
 /// length coming from the [`SizeCache`](crate::SizeCache)) and for packed
 /// repeated fields (the payload loop follows).
+///
+/// The arguments are `(field_number, len)` — both `u32`, so transposing them
+/// compiles but emits a structurally-valid-but-wrong header.
 #[inline]
 pub fn put_len_delimited_header(field_number: u32, len: u32, buf: &mut impl BufMut) {
     Tag::new(field_number, WireType::LengthDelimited).encode(buf);
