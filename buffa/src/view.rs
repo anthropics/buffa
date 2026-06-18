@@ -176,6 +176,12 @@ pub trait MessageView<'a>: Sized {
     /// context. Not to be confused with
     /// [`decode_view_with_ctx`](Self::decode_view_with_ctx), the
     /// `DecodeOptions` override point whose *default* ignores the context.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`DecodeError`] on malformed input, a wire-type mismatch, or
+    /// when a configured decode limit (recursion depth, unknown-field
+    /// allowance) is exceeded.
     fn decode_view_ctx(buf: &'a [u8], ctx: crate::DecodeContext<'_>) -> Result<Self, DecodeError>
     where
         Self: Default,
@@ -194,6 +200,12 @@ pub trait MessageView<'a>: Sized {
     /// owns the tag loop that every generated view previously restated.
     /// Each iteration consumes the field's tag itself, so the loop makes
     /// progress even if an arm consumes no payload bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`DecodeError`] on malformed input, a wire-type mismatch, or
+    /// when a configured decode limit (recursion depth, unknown-field
+    /// allowance) is exceeded.
     fn merge_into_view(
         &mut self,
         buf: &'a [u8],
@@ -221,7 +233,11 @@ pub trait MessageView<'a>: Sized {
     /// input including the tag bytes, for raw-span unknown-field capture.
     ///
     /// Hand-written views must supply this (it is the one method the
-    /// provided decode loop requires). The canonical shape is a match on
+    /// provided decode loop requires). A view that instead overrides both
+    /// [`decode_view`](Self::decode_view) and
+    /// [`decode_view_with_ctx`](Self::decode_view_with_ctx) to decode by hand
+    /// never reaches the provided loop, so it can satisfy the trait with a
+    /// one-line `Ok(cur)` stub. The canonical shape is a match on
     /// `tag.field_number()`:
     ///
     /// ```rust,ignore
@@ -256,6 +272,11 @@ pub trait MessageView<'a>: Sized {
     ///     self.unknown_spans.push(&before_tag[..span_len]);
     /// }
     /// ```
+    ///
+    /// The returned slice must be a suffix of `cur` (and hence of
+    /// `before_tag`): the provided loop continues from it, and the
+    /// unknown-field span is measured as `before_tag.len() - cur.len()`, which
+    /// underflows and panics if the returned slice is longer than the input.
     ///
     /// # Errors
     ///
