@@ -175,6 +175,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `impl_default_view_instance!`, `impl_view_reborrow!`) instead of being
   expanded per generated type (~290 sites); hand-written message and view
   types can reuse them. No behavioural change. (#196)
+
+- Generated JSON `Serialize` impls use new internal (`#[doc(hidden)]`)
+  `buffa::json_helpers` adapter newtypes (`ProtoJson`, `BytesJson`,
+  `MapKeyJson`, sequence variants, ...) instead of ~65 per-site local `_W*`
+  wrapper structs. JSON output is unchanged. (#197)
 - **Breaking:** the decode-path `Message` trait methods (`merge`,
   `merge_field`, `merge_to_limit`, `merge_group`, `merge_length_delimited`),
   `encoding::decode_unknown_field`, and `message_set::merge_item` now take a
@@ -183,6 +188,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   generated with earlier releases must be regenerated. Callers of the
   convenience methods (`decode`, `decode_from_slice`, `merge_from_slice`,
   `DecodeOptions`) are unaffected.
+
+- **Breaking:** `MessageView` gains a required `merge_view_field` method,
+  and the per-view decode tag loop is now a provided trait method
+  (`merge_into_view`), mirroring the owned side's `Message::merge` /
+  `merge_field` split. Generated views supply only the field match —
+  regenerate code from earlier releases. Hand-written `MessageView` impls
+  must add `merge_view_field`; the trait docs include the canonical shape,
+  the unknown-field-preserving arm, and the `decode_view` →
+  `decode_view_ctx` wiring. Sub-message arms call the new provided
+  `decode_view_ctx` / `merge_into_view` instead of the removed inherent
+  `_decode_ctx` / `_merge_into_view` helpers. (#198)
 
 ### Fixed
 

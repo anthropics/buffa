@@ -2076,7 +2076,7 @@ For scalar-only types like `Int64Range` (no strings, bytes, or sub-messages to b
 pub type Int64RangeView<'a> = Int64Range;
 ```
 
-For types with string or bytes fields where zero-copy borrowing is valuable, you would implement `MessageView` by hand, following the same pattern as the generated view types.
+For types with string or bytes fields where zero-copy borrowing is valuable, you would implement `MessageView` by hand, following the same pattern as the generated view types. The decode tag loop is a provided method on the trait, so a hand-written view supplies only `decode_view` and the per-field `merge_view_field`; see the `MessageView` trait docs for the canonical shape.
 
 Alternatively, pass `.generate_views(false)` in your build config if you don't use views at all.
 

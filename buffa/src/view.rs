@@ -123,6 +123,11 @@ pub trait MessageView<'a>: Sized {
     /// Decoding validates the whole message tree eagerly. For
     /// decode-on-access of large sub-message trees, see the opt-in
     /// [`LazyMessageView`] family (`lazy_views` codegen option).
+    ///
+    /// Generated impls construct a default [`DecodeContext`](crate::DecodeContext)
+    /// and delegate to [`decode_view_ctx`](Self::decode_view_ctx). (Kept
+    /// required, without a `Self: Default` bound, so generic callers stay
+    /// bound-free.)
     fn decode_view(buf: &'a [u8]) -> Result<Self, DecodeError>;
 
     /// Decode a view under custom decode limits.
@@ -133,14 +138,157 @@ pub trait MessageView<'a>: Sized {
     /// [`decode_view`](Self::decode_view) and **ignores the context** —
     /// a hand-written `MessageView` that recurses or preserves unknown
     /// fields must override this method to honor the limits configured on
-    /// `DecodeOptions`. Generated code always overrides it, calling
-    /// `_decode_ctx(buf, ctx)`.
+    /// `DecodeOptions`. Implementing
+    /// [`merge_view_field`](Self::merge_view_field) is **not sufficient**:
+    /// without this override, `DecodeOptions` limits never reach your
+    /// field arms. The one-line override is
+    /// `Self::decode_view_ctx(buf, ctx)` (when `Self: Default`). Generated
+    /// code always overrides it that way.
+    ///
+    /// Not to be confused with [`decode_view_ctx`](Self::decode_view_ctx),
+    /// which is the provided decoder that *honors* the context; this method
+    /// is the override point `DecodeOptions` calls.
     fn decode_view_with_ctx(
         buf: &'a [u8],
         _ctx: crate::DecodeContext<'_>,
     ) -> Result<Self, DecodeError> {
         Self::decode_view(buf)
     }
+
+    /// Decode a view under an explicit [`DecodeContext`](crate::DecodeContext)
+    /// (remaining recursion depth and unknown-field allowance), driving the
+    /// provided tag loop over [`merge_view_field`](Self::merge_view_field).
+    ///
+    /// This is the bridge a hand-written impl uses to wire its required
+    /// `decode_view` to its required `merge_view_field`:
+    ///
+    /// ```rust,ignore
+    /// fn decode_view(buf: &'a [u8]) -> Result<Self, buffa::DecodeError> {
+    ///     let limit = core::cell::Cell::new(buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
+    ///     Self::decode_view_ctx(
+    ///         buf,
+    ///         buffa::DecodeContext::new(buffa::RECURSION_LIMIT, &limit),
+    ///     )
+    /// }
+    /// ```
+    ///
+    /// Also called by generated sub-message decode arms with a descended
+    /// context. Not to be confused with
+    /// [`decode_view_with_ctx`](Self::decode_view_with_ctx), the
+    /// `DecodeOptions` override point whose *default* ignores the context.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`DecodeError`] on malformed input, a wire-type mismatch, or
+    /// when a configured decode limit (recursion depth, unknown-field
+    /// allowance) is exceeded.
+    fn decode_view_ctx(buf: &'a [u8], ctx: crate::DecodeContext<'_>) -> Result<Self, DecodeError>
+    where
+        Self: Default,
+    {
+        let mut view = Self::default();
+        view.merge_into_view(buf, ctx)?;
+        Ok(view)
+    }
+
+    /// Merge fields from `buf` into this view (proto merge semantics):
+    /// repeated fields append, singular fields last-wins, singular message
+    /// fields merge recursively.
+    ///
+    /// The per-message work is the field `match` in
+    /// [`merge_view_field`](Self::merge_view_field); this provided method
+    /// owns the tag loop that every generated view previously restated.
+    /// Each iteration consumes the field's tag itself, so the loop makes
+    /// progress even if an arm consumes no payload bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`DecodeError`] on malformed input, a wire-type mismatch, or
+    /// when a configured decode limit (recursion depth, unknown-field
+    /// allowance) is exceeded.
+    fn merge_into_view(
+        &mut self,
+        buf: &'a [u8],
+        ctx: crate::DecodeContext<'_>,
+    ) -> Result<(), DecodeError> {
+        let mut cur: &'a [u8] = buf;
+        while !cur.is_empty() {
+            // Captured so unknown fields can preserve their raw byte span
+            // (`before_tag.len() - cur.len()` after the payload is consumed).
+            let before_tag = cur;
+            let tag = crate::encoding::Tag::decode(&mut cur)?;
+            cur = self.merge_view_field(tag, cur, before_tag, ctx)?;
+        }
+        Ok(())
+    }
+
+    /// Decode one field's payload into this view (generated per message).
+    ///
+    /// `cur` is the input positioned just past `tag`; the implementation
+    /// returns the remaining input after the field's payload. The
+    /// pass-by-value/return shape (rather than `&mut &'a [u8]`) keeps each
+    /// arm's `&mut` borrow of the slice local to that arm — sub-message
+    /// arms can hand `cur` slices to recursive decode calls without
+    /// fighting a long-lived outer `&mut` reborrow. `before_tag` is the
+    /// input including the tag bytes, for raw-span unknown-field capture.
+    ///
+    /// Hand-written views must supply this (it is the one method the
+    /// provided decode loop requires). A view that instead overrides both
+    /// [`decode_view`](Self::decode_view) and
+    /// [`decode_view_with_ctx`](Self::decode_view_with_ctx) to decode by hand
+    /// never reaches the provided loop, so it can satisfy the trait with a
+    /// one-line `Ok(cur)` stub. The canonical shape is a match on
+    /// `tag.field_number()`:
+    ///
+    /// ```rust,ignore
+    /// fn merge_view_field(
+    ///     &mut self,
+    ///     tag: buffa::encoding::Tag,
+    ///     cur: &'a [u8],
+    ///     _before_tag: &'a [u8],
+    ///     ctx: buffa::DecodeContext<'_>,
+    /// ) -> Result<&'a [u8], buffa::DecodeError> {
+    ///     let mut cur = cur;
+    ///     match tag.field_number() {
+    ///         1 => self.id = buffa::types::decode_int32(&mut cur)?,
+    ///         2 => self.name = buffa::types::borrow_str(&mut cur)?,
+    ///         _ => buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?,
+    ///     }
+    ///     Ok(cur)
+    /// }
+    /// ```
+    ///
+    /// Views that preserve unknown fields charge the context's
+    /// unknown-field allowance in the `_ =>` arm and capture the raw span
+    /// — tag included — via `before_tag` (the span length is measured
+    /// *after* the payload is consumed); the provided loop stays
+    /// message-agnostic:
+    ///
+    /// ```rust,ignore
+    /// _ => {
+    ///     buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
+    ///     ctx.register_unknown_field()?;
+    ///     let span_len = before_tag.len() - cur.len();
+    ///     self.unknown_spans.push(&before_tag[..span_len]);
+    /// }
+    /// ```
+    ///
+    /// The returned slice must be a suffix of `cur` (and hence of
+    /// `before_tag`): the provided loop continues from it, and the
+    /// unknown-field span is measured as `before_tag.len() - cur.len()`, which
+    /// underflows and panics if the returned slice is longer than the input.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`DecodeError`] on malformed payloads or wire-type
+    /// mismatches.
+    fn merge_view_field(
+        &mut self,
+        tag: crate::encoding::Tag,
+        cur: &'a [u8],
+        before_tag: &'a [u8],
+        ctx: crate::DecodeContext<'_>,
+    ) -> Result<&'a [u8], DecodeError>;
 
     /// Convert this view to the owned message type.
     ///
@@ -2120,39 +2268,16 @@ mod tests {
         pub value: &'a str,
     }
 
-    impl<'v> DefaultViewInstance for TinyView<'v> {
-        fn default_view_instance<'a>() -> &'a Self
-        where
-            Self: 'a,
-        {
-            static INST: crate::__private::OnceBox<TinyView<'static>> =
-                crate::__private::OnceBox::new();
-            INST.get_or_init(|| alloc::boxed::Box::new(<TinyView<'static>>::default()))
-        }
-    }
-
-    /// A view type whose `DefaultViewInstance` impl comes from the exported
-    /// macro. The invocation doubles as the macro's unit test: it exercises
-    /// `$crate` path resolution and hygiene the same way generated code
-    /// invokes it from a downstream crate. (`impl_view_reborrow!` requires a
-    /// full `MessageView` impl, so it is covered by the generated view types
-    /// rather than a standalone fixture here.)
-    #[derive(Clone, Debug, Default, PartialEq)]
-    pub(super) struct MacroView<'a> {
-        pub value: &'a str,
-    }
-
-    crate::impl_default_view_instance!(MacroView);
+    // Via the exported macro, which doubles as its unit test (hygiene and
+    // `$crate` path resolution).
+    crate::impl_default_view_instance!(TinyView);
 
     #[test]
     fn impl_default_view_instance_macro_returns_singleton() {
-        let a: &MacroView<'_> = MacroView::default_view_instance();
-        let b: &MacroView<'_> = MacroView::default_view_instance();
-        assert!(
-            core::ptr::eq(a, b),
-            "view singleton must be a single allocation"
-        );
-        assert_eq!(a, &MacroView::default());
+        let a: &TinyView<'_> = TinyView::default_view_instance();
+        let b: &TinyView<'_> = TinyView::default_view_instance();
+        assert!(core::ptr::eq(a, b), "singleton must be a single allocation");
+        assert_eq!(a, &TinyView::default());
     }
 
     #[test]
@@ -2708,15 +2833,20 @@ mod tests {
         pub name: &'a str,
     }
 
-    impl ViewReborrow for SimpleMessageView<'static> {
-        type Reborrowed<'b> = SimpleMessageView<'b>;
-        fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {
-            this
-        }
-    }
+    // Via the exported macro, which doubles as its unit test.
+    crate::impl_view_reborrow!(SimpleMessageView);
 
     impl<'a> MessageView<'a> for SimpleMessageView<'a> {
         type Owned = SimpleMessage;
+        fn merge_view_field(
+            &mut self,
+            _tag: crate::encoding::Tag,
+            cur: &'a [u8],
+            _before_tag: &'a [u8],
+            _ctx: crate::DecodeContext<'_>,
+        ) -> Result<&'a [u8], DecodeError> {
+            Ok(cur)
+        }
 
         fn decode_view(buf: &'a [u8]) -> Result<Self, DecodeError> {
             let mut view = SimpleMessageView::default();
@@ -2938,6 +3068,15 @@ mod tests {
 
         impl<'a> MessageView<'a> for DropCountingView<'a> {
             type Owned = SimpleMessage;
+            fn merge_view_field(
+                &mut self,
+                _tag: crate::encoding::Tag,
+                cur: &'a [u8],
+                _before_tag: &'a [u8],
+                _ctx: crate::DecodeContext<'_>,
+            ) -> Result<&'a [u8], DecodeError> {
+                Ok(cur)
+            }
 
             fn decode_view(buf: &'a [u8]) -> Result<Self, DecodeError> {
                 Ok(DropCountingView {

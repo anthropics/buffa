@@ -1289,8 +1289,8 @@ fn test_view_serialize_map_keys_stringified() {
     );
     syn::parse_file(&content).expect("generated content must parse");
     assert!(
-        content.contains("collect_str"),
-        "non-string map keys must be stringified via collect_str: {content}"
+        content.contains("::buffa::json_helpers::MapKeyJson"),
+        "non-string map keys must be stringified via MapKeyJson: {content}"
     );
 }
 

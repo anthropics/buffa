@@ -455,10 +455,11 @@ fn test_view_repeated_message_field() {
         content.contains("RepeatedView") && content.contains("ItemView"),
         "ContainerView.items must be RepeatedView<ItemView>: {content}"
     );
-    // _decode_ctx must be generated for both view types.
+    // The per-field decode method must be generated for both view types
+    // (the tag loop itself is provided by the MessageView trait).
     assert!(
-        content.contains("fn _decode_ctx"),
-        "missing _decode_ctx impl: {content}"
+        content.contains("fn merge_view_field"),
+        "missing merge_view_field impl: {content}"
     );
 }
 

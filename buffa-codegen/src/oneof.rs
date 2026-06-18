@@ -640,19 +640,16 @@ fn generate_oneof_serialize(
                 };
             }
 
-            let rust_type = &v.rust_type;
-            if let Some(helper) = serde_helper_path(v.field_type) {
-                // Type needs special proto JSON encoding — wrap in a newtype
-                // that delegates to the helper's serialize function.
+            if serde_helper_path(v.field_type).is_some() {
+                // Type needs special proto JSON encoding — route through the
+                // runtime ProtoJson adapter (ProtoElemJson covers every type
+                // serde_helper_path matches).
                 quote! {
                     Self::#ident(v) => {
-                        struct _W<'a>(&'a #rust_type);
-                        impl serde::Serialize for _W<'_> {
-                            fn serialize<S2: serde::Serializer>(&self, s: S2) -> ::core::result::Result<S2::Ok, S2::Error> {
-                                #helper::serialize(self.0, s)
-                            }
-                        }
-                        map.serialize_entry(#json_name, &_W(v))?;
+                        map.serialize_entry(
+                            #json_name,
+                            &::buffa::json_helpers::ProtoJson(v),
+                        )?;
                     }
                 }
             } else {

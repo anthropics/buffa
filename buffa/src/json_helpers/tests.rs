@@ -1633,3 +1633,87 @@ fn double_deserialize_table() {
     let h: SerdeDouble = serde_json::from_str(r#""NaN""#).unwrap();
     assert!(h.0.is_nan());
 }
+
+// ── Adapter newtypes (generated-code plumbing) ──────────────────────────────
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+#[repr(i32)]
+enum TestEnum {
+    #[default]
+    Zero = 0,
+    One = 1,
+}
+impl crate::Enumeration for TestEnum {
+    fn from_i32(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::Zero),
+            1 => Some(Self::One),
+            _ => None,
+        }
+    }
+    fn to_i32(&self) -> i32 {
+        *self as i32
+    }
+    fn proto_name(&self) -> &'static str {
+        match self {
+            Self::Zero => "ZERO",
+            Self::One => "ONE",
+        }
+    }
+    fn from_proto_name(name: &str) -> Option<Self> {
+        match name {
+            "ZERO" => Some(Self::Zero),
+            "ONE" => Some(Self::One),
+            _ => None,
+        }
+    }
+}
+
+#[test]
+fn adapter_newtypes_match_their_helpers() {
+    // Each adapter must produce exactly what the helper fn it wraps
+    // produces (the generated `_W` wrappers they replaced called the same
+    // fns inline).
+    assert_eq!(
+        serde_json::to_string(&ProtoJson(&i64::MAX)).unwrap(),
+        r#""9223372036854775807""#
+    );
+    assert_eq!(
+        serde_json::to_string(&BytesJson(&[0u8, 1][..])).unwrap(),
+        r#""AAE=""#
+    );
+    assert_eq!(
+        serde_json::to_string(&ClosedEnumJson(&TestEnum::One)).unwrap(),
+        r#""ONE""#
+    );
+    assert_eq!(
+        serde_json::to_string(&MapKeyJson(&42i64)).unwrap(),
+        r#""42""#
+    );
+    assert_eq!(
+        serde_json::to_string(&MapKeyJson(&true)).unwrap(),
+        r#""true""#
+    );
+    assert_eq!(
+        serde_json::to_string(&RepeatedJson(&[1u64, 2][..])).unwrap(),
+        r#"["1","2"]"#
+    );
+    assert_eq!(
+        serde_json::to_string(&BytesSeqJson(&[&[0u8][..], &[1, 2][..]][..])).unwrap(),
+        r#"["AA==","AQI="]"#
+    );
+    assert_eq!(
+        serde_json::to_string(&EnumSeqJson(
+            &[
+                crate::EnumValue::Known(TestEnum::One),
+                crate::EnumValue::Unknown(7),
+            ][..]
+        ))
+        .unwrap(),
+        r#"["ONE",7]"#
+    );
+    assert_eq!(
+        serde_json::to_string(&ClosedEnumSeqJson(&[TestEnum::Zero, TestEnum::One][..])).unwrap(),
+        r#"["ZERO","ONE"]"#
+    );
+}
