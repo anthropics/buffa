@@ -35,6 +35,18 @@ fn main() {
         .compile()
         .expect("buffa_build failed for vtable_string_repr.proto");
 
+    // bytes_type + vtable: the bytes-side mirror of vtable_string_repr. A
+    // crate-LOCAL `LocalBytes` newtype in a repeated field exercises the
+    // codegen-emitted `ReflectElement` and the base64 `ProtoElemJson` impl.
+    buffa_build::Config::new()
+        .files(&["protos/vtable_bytes_repr.proto"])
+        .includes(&["protos/"])
+        .bytes_type_custom("crate::vtable_bytes_repr::LocalBytes")
+        .generate_json(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for vtable_bytes_repr.proto");
+
     // Comprehensive proto3 semantics: implicit vs explicit presence for all
     // scalar types, open-enum contexts, default packing, synthetic oneofs.
     buffa_build::Config::new()

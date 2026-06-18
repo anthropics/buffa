@@ -1264,22 +1264,11 @@ fn render_custom_elem_impls(
     let mut out = TokenStream::new();
     for (path, kind) in elems {
         let ty = parse_custom_type_path(path)?;
-        if ctx.config.generate_json {
-            let (ser_call, de_mod) = match kind {
-                CustomElemKind::String => (
-                    quote! { ::buffa::json_helpers::proto_string::serialize(v, s) },
-                    quote! { proto_string },
-                ),
-                CustomElemKind::Bytes => (
-                    quote! {
-                        ::buffa::json_helpers::bytes::serialize(
-                            ::core::convert::AsRef::<[u8]>::as_ref(v),
-                            s,
-                        )
-                    },
-                    quote! { bytes },
-                ),
-            };
+        // `ProtoElemJson` is only needed for the `bytes` element path (proto3
+        // JSON base64). A repeated `string` element serializes through the
+        // native `Vec<T>` serde derive, and `map` string keys/values stay
+        // `String`, so a String-kind `ProtoElemJson` impl would be dead code.
+        if ctx.config.generate_json && *kind == CustomElemKind::Bytes {
             out.extend(feature_gates::cfg_block(
                 quote! {
                     impl ::buffa::json_helpers::ProtoElemJson for #ty {
@@ -1287,12 +1276,15 @@ fn render_custom_elem_impls(
                             v: &Self,
                             s: S,
                         ) -> ::core::result::Result<S::Ok, S::Error> {
-                            #ser_call
+                            ::buffa::json_helpers::bytes::serialize(
+                                ::core::convert::AsRef::<[u8]>::as_ref(v),
+                                s,
+                            )
                         }
                         fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
                             d: D,
                         ) -> ::core::result::Result<Self, D::Error> {
-                            ::buffa::json_helpers::#de_mod::deserialize(d)
+                            ::buffa::json_helpers::bytes::deserialize(d)
                         }
                     }
                 },

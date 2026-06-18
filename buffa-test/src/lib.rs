@@ -59,6 +59,43 @@ pub mod vtable_string_repr {
     buffa::include_proto!("vtable_string_repr");
 }
 
+/// `bytes_type` + vtable reflection with a crate-local newtype used as a
+/// `repeated` element. Mirrors `vtable_string_repr` for the bytes side: the
+/// codegen-emitted `ReflectElement` and `ProtoElemJson` (base64) impls for
+/// `LocalBytes` compile only because the type is local to this crate.
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types
+)]
+pub mod vtable_bytes_repr {
+    /// `Vec<u8>`-backed newtype satisfying `buffa::ProtoBytes` (`Deref<[u8]>` +
+    /// `AsRef<[u8]>` + `From<Vec<u8>>`). It needs no `serde` impl: singular bytes
+    /// use the `bytes` JSON with-module and repeated bytes use the emitted
+    /// `ProtoElemJson` base64 impl.
+    #[derive(Clone, PartialEq, Eq, Default, Debug)]
+    pub struct LocalBytes(pub ::buffa::alloc::vec::Vec<u8>);
+
+    impl ::core::ops::Deref for LocalBytes {
+        type Target = [u8];
+        fn deref(&self) -> &[u8] {
+            &self.0
+        }
+    }
+    impl ::core::convert::AsRef<[u8]> for LocalBytes {
+        fn as_ref(&self) -> &[u8] {
+            &self.0
+        }
+    }
+    impl ::core::convert::From<::buffa::alloc::vec::Vec<u8>> for LocalBytes {
+        fn from(v: ::buffa::alloc::vec::Vec<u8>) -> Self {
+            LocalBytes(v)
+        }
+    }
+
+    buffa::include_proto!("vtable_bytes_repr");
+}
+
 /// `generate_views(false)` + vtable reflection — owned-only vtable, no views.
 #[allow(
     clippy::derivable_impls,
