@@ -137,7 +137,7 @@ pub struct Any {
     /// Field 2: `value`
     #[cfg_attr(
         feature = "arbitrary",
-        arbitrary(with = ::buffa::__private::arbitrary_bytes)
+        arbitrary(with = ::buffa::__private::arbitrary_proto_bytes)
     )]
     pub value: ::buffa::bytes::Bytes,
     #[doc(hidden)]
@@ -333,7 +333,7 @@ impl ::buffa::Message for Any {
     }
     fn clear(&mut self) {
         self.type_url.clear();
-        self.value = ::buffa::bytes::Bytes::new();
+        self.value = ::core::default::Default::default();
         self.__buffa_unknown_fields.clear();
     }
 }
