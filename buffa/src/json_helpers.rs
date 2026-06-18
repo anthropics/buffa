@@ -94,11 +94,92 @@ pub trait ProtoElemJson: Sized {
     fn deserialize_proto_json<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error>;
 }
 
-/// Bridge struct: wraps `&T: ProtoElemJson` as `serde::Serialize`.
-struct ProtoElemSer<'a, T>(&'a T);
-impl<T: ProtoElemJson> serde::Serialize for ProtoElemSer<'_, T> {
+/// Wraps `&T: ProtoElemJson` as `serde::Serialize`.
+///
+/// Generated code uses this (and the sibling `*Json` adapters below) where
+/// a value needs proto3-JSON encoding inside a hand-rolled `Serialize` impl
+/// — oneof variant entries, view map/sequence elements — instead of
+/// emitting a local newtype + impl at every site.
+///
+/// The adapters are generated-code plumbing, not a stable consumer-facing
+/// surface (the `#[serde(with = ...)]` modules in this file are the
+/// supported API); they are hidden from rustdoc accordingly.
+#[doc(hidden)]
+pub struct ProtoJson<'a, T>(pub &'a T);
+impl<T: ProtoElemJson> serde::Serialize for ProtoJson<'_, T> {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         T::serialize_proto_json(self.0, s)
+    }
+}
+
+/// Serialize a borrowed `bytes` payload as base64 (the proto3 JSON
+/// encoding), for view types whose bytes fields are `&[u8]` (no
+/// [`ProtoElemJson`] impl exists for the unsized slice).
+#[doc(hidden)]
+pub struct BytesJson<'a>(pub &'a [u8]);
+impl serde::Serialize for BytesJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        bytes::serialize(self.0, s)
+    }
+}
+
+/// Serialize a closed enum as its proto name string.
+#[doc(hidden)]
+pub struct ClosedEnumJson<'a, E>(pub &'a E);
+impl<E: crate::Enumeration> serde::Serialize for ClosedEnumJson<'_, E> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        closed_enum::serialize(self.0, s)
+    }
+}
+
+/// Serialize a proto map key by stringification (proto3 JSON maps always
+/// use string keys), mirroring [`proto_map`]'s internal `DisplayKey`.
+#[doc(hidden)]
+pub struct MapKeyJson<'a, T: ?Sized>(pub &'a T);
+impl<T: ?Sized + core::fmt::Display> serde::Serialize for MapKeyJson<'_, T> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(self.0)
+    }
+}
+
+/// Serialize a slice of proto-JSON-encoded elements (see [`proto_seq`]).
+#[doc(hidden)]
+pub struct RepeatedJson<'a, T>(pub &'a [T]);
+impl<T: ProtoElemJson> serde::Serialize for RepeatedJson<'_, T> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        proto_seq::serialize(self.0, s)
+    }
+}
+
+/// Serialize a slice of borrowed `bytes` payloads, each base64-encoded.
+#[doc(hidden)]
+pub struct BytesSeqJson<'a>(pub &'a [&'a [u8]]);
+impl serde::Serialize for BytesSeqJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut seq = s.serialize_seq(Some(self.0.len()))?;
+        for v in self.0 {
+            seq.serialize_element(&BytesJson(v))?;
+        }
+        seq.end()
+    }
+}
+
+/// Serialize a slice of open-enum values (see [`repeated_enum`]).
+#[doc(hidden)]
+pub struct EnumSeqJson<'a, E: crate::Enumeration>(pub &'a [crate::EnumValue<E>]);
+impl<E: crate::Enumeration> serde::Serialize for EnumSeqJson<'_, E> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        repeated_enum::serialize(self.0, s)
+    }
+}
+
+/// Serialize a slice of closed-enum values as proto name strings.
+#[doc(hidden)]
+pub struct ClosedEnumSeqJson<'a, E>(pub &'a [E]);
+impl<E: crate::Enumeration> serde::Serialize for ClosedEnumSeqJson<'_, E> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        repeated_closed_enum::serialize(self.0, s)
     }
 }
 
@@ -170,7 +251,7 @@ macro_rules! proto_elem_json_delegate {
 ///
 /// Use with `#[serde(with = "::buffa::json_helpers::proto_seq")]`.
 pub mod proto_seq {
-    use super::{ProtoElemJson, ProtoElemSeed, ProtoElemSer};
+    use super::{ProtoElemJson, ProtoElemSeed, ProtoJson};
     use alloc::vec::Vec;
     use serde::{Deserializer, Serializer};
 
@@ -178,7 +259,7 @@ pub mod proto_seq {
         use serde::ser::SerializeSeq;
         let mut seq = s.serialize_seq(Some(v.len()))?;
         for elem in v {
-            seq.serialize_element(&ProtoElemSer(elem))?;
+            seq.serialize_element(&ProtoJson(elem))?;
         }
         seq.end()
     }
@@ -223,7 +304,7 @@ pub mod proto_seq {
 ///
 /// Use with `#[serde(with = "::buffa::json_helpers::proto_map")]`.
 pub mod proto_map {
-    use super::{ProtoElemJson, ProtoElemSeed, ProtoElemSer};
+    use super::{ProtoElemJson, ProtoElemSeed, ProtoJson};
     use alloc::string::String;
     use core::fmt::Display;
     use core::hash::Hash;
@@ -253,7 +334,7 @@ pub mod proto_map {
         use serde::ser::SerializeMap;
         let mut map = s.serialize_map(Some(m.len()))?;
         for (k, v) in m {
-            map.serialize_entry(&DisplayKey(k), &ProtoElemSer(v))?;
+            map.serialize_entry(&DisplayKey(k), &ProtoJson(v))?;
         }
         map.end()
     }
