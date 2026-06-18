@@ -61,16 +61,19 @@ use super::value::{MapKey, MapKeyRef, ReflectList, ReflectMap, Value, ValueRef};
 /// derive [`Debug`] (the supertrait lets the generic container impls satisfy
 /// *their* `Debug` supertrait through the container's derive).
 ///
-/// The non-default `string_type` representations (`SmolStr`, `EcoString`,
-/// `CompactString`) have impls gated behind the matching `buffa-descriptor`
-/// feature (`smol_str` / `ecow` / `compact_str`), for reflecting a `repeated`
-/// field of that type in vtable mode. A consumer building with both that
-/// `string_type` and vtable reflection must enable the corresponding feature.
+/// For a custom `string_type` / `bytes_type` element used in a `repeated`
+/// field under vtable reflection, codegen emits this impl for the element type
+/// (there is no blanket impl — it would collide with the concrete scalar impls
+/// under coherence). That emitted `impl ReflectElement for <your type>` only
+/// compiles when the type is **local** to the generating crate, so a foreign
+/// representation used as a repeated element must be wrapped in a crate-local
+/// newtype. Singular / optional / oneof custom elements need no such impl
+/// (they reflect through `Deref`).
 #[diagnostic::on_unimplemented(
     message = "`{Self}` does not implement `ReflectElement`, which vtable-mode reflection requires on repeated-field and map-value element types",
     note = "if `{Self}` comes from another buffa-generated crate via an extern path (well-known types resolve to `buffa-types` by default), enable that crate's reflection feature, e.g. `buffa-types = {{ version = \"...\", features = [\"reflect\"] }}`",
     note = "if `{Self}` is a message generated in this crate, enable reflection in its `build.rs` config — either reflection mode emits this impl",
-    note = "for a non-default `string_type` element (`SmolStr` / `EcoString` / `CompactString`), enable the matching `buffa-descriptor` feature"
+    note = "if `{Self}` is a custom `string_type`/`bytes_type` used as a `repeated` element, it must be a crate-local type (e.g. a newtype) so codegen can emit `impl ReflectElement` for it"
 )]
 pub trait ReflectElement: core::fmt::Debug {
     /// Borrow this element as a [`ValueRef`].

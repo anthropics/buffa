@@ -34,7 +34,6 @@ This is **optional** — it does not install the library. It puts the `protoc-ge
 | `json` | No | Proto-canonical JSON via serde (works with `no_std` + `alloc`) |
 | `arbitrary` | No | `arbitrary::Arbitrary` derive on generated types, for fuzzing |
 | `text` (`buffa` only) | No | Text format (`textproto`) encode/decode — see [Text format](#text-format-textproto) |
-| `smol_str`, `ecow`, `compact_str` (`buffa` only) | No | Alternative owned representations for `string` fields, selected with the `string_type` codegen option — see [String field representations](#string-field-representations) |
 | `reflect` (`buffa-types` only) | No | `ReflectMessage` impls for the well-known types, so messages that embed WKTs reflect end to end — see [Runtime reflection](#runtime-reflection) |
 
 ```toml
@@ -197,8 +196,10 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.type_name_prefix(prefix)` | `""` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to every generated message/enum type name (`message User` → `struct RpcUser`); modules, oneof enums, extern-mapped types, and the wire format are unaffected. A crate referencing these types via `extern_path` must spell out the prefixed name (`::crate_a::RpcUser`) |
 | `.use_bytes_type()` | — | Use `bytes::Bytes` for all bytes fields, including `map<K, bytes>` values |
 | `.use_bytes_type_in(&[...])` | — | Use `bytes::Bytes` for matching bytes fields (same `map<K, bytes>` rule) |
-| `.string_type(repr)` | `String` | Use an alternative owned representation (`SmolStr`, `EcoString`, `CompactString`) for all string fields (see [String field representations](#string-field-representations)) |
-| `.string_type_in(repr, &[...])` | — | Use an alternative string representation for matching string fields |
+| `.string_type_custom(path)` | `String` | Use a custom owned string representation, named by Rust path (e.g. `"::smol_str::SmolStr"`), for all string fields (see [String and bytes field representations](#string-and-bytes-field-representations)) |
+| `.string_type_custom_in(path, &[...])` | — | Use a custom string representation for matching string fields |
+| `.bytes_type(repr)` / `.bytes_type_in(repr, &[...])` | `Vec<u8>` | Owned `bytes` representation: `BytesRepr::{Vec, Bytes, Custom(path)}` (`use_bytes_type` is the `Bytes` alias) |
+| `.bytes_type_custom(path)` / `.bytes_type_custom_in(path, &[...])` | — | Use a custom `bytes` representation by Rust path |
 | `.generate_reflection(bool)` | `false` | Emit reflection support (vtable mode) plus an embedded per-package descriptor pool (see [Runtime reflection](#runtime-reflection)) |
 | `.reflect_mode(mode)` | `Off` | Finer-grained reflection selector: `ReflectMode::{Off, Bridge, VTable}` |
 | `.idiomatic_enum_aliases(bool)` | `true` | Emit `UpperCamelCase` associated-const aliases for enum values (see the aliases note under `EnumValue<T>`) |
@@ -1832,9 +1833,11 @@ Two Cargo notes:
   feature, and generated reflection requires `std` (the embedded pool sits
   behind a `std::sync::OnceLock`).
 - Messages that embed well-known types reflect end to end when `buffa-types`
-  is built with its `reflect` feature; fields using an alternative
-  [string representation](#string-field-representations) need the matching
-  `buffa-descriptor` feature (`smol_str`, `ecow`, `compact_str`).
+  is built with its `reflect` feature. A custom
+  [string/bytes representation](#string-and-bytes-field-representations) used as
+  a `repeated` element gets its `ReflectElement` impl emitted by codegen and so
+  must be a crate-local type (the orphan rule forbids it for a foreign type);
+  singular/optional/oneof uses need nothing extra.
 
 For the cost of reflection relative to the generated codec — and when to
 prefer views instead — see the [README's reflection
