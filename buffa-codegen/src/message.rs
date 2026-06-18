@@ -134,14 +134,23 @@ fn generate_message_with_nesting(
         });
     }
 
-    // Nested enums — simple name, emitted inside the message's module.
+    // Nested enums — prefixed simple name, emitted inside the message's
+    // module.
     let nested_enums = msg
         .enum_type
         .iter()
         .map(|e| {
             let enum_name = e.name.as_deref().unwrap_or("");
             let enum_fqn = format!("{}.{}", proto_fqn, enum_name);
-            crate::enumeration::generate_enum(ctx, e, enum_name, &enum_fqn, features, resolver)
+            let enum_rust_name = ctx.config.prefixed_type_name(enum_name);
+            crate::enumeration::generate_enum(
+                ctx,
+                e,
+                &enum_rust_name,
+                &enum_fqn,
+                features,
+                resolver,
+            )
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -161,12 +170,13 @@ fn generate_message_with_nesting(
         .map(|nested| {
             let nested_proto_name = nested.name.as_deref().unwrap_or("");
             let nested_fqn = format!("{}.{}", proto_fqn, nested_proto_name);
+            let nested_rust_name = ctx.config.prefixed_type_name(nested_proto_name);
             let msg_features =
                 crate::features::resolve_child(features, crate::features::message_features(nested));
             generate_message_with_nesting(
                 scope.nested(&nested_fqn, &msg_features),
                 nested,
-                nested_proto_name,
+                &nested_rust_name,
                 resolver,
             )
         })
@@ -896,16 +906,20 @@ fn collect_natural_reexports(
     let mut occupied: BTreeSet<String> = BTreeSet::new();
     for nested in non_map_nested {
         let name = nested.name.as_deref().unwrap_or("");
-        // Both the nested struct (`Bar`) and its sub-module (`bar`) reserve a
+        // Both the nested struct (`Bar`, declared with the configured
+        // prefix) and its sub-module (`bar`, proto-derived) reserve a
         // type-namespace slot. The sub-module name only matters when it
         // happens to be PascalCase (e.g. proto `message X` → `pub mod x`
         // is benign, but proto `message FooView` → `pub mod foo_view` is
         // also benign). We track both for safety with no real cost.
-        occupied.insert(name.to_string());
+        occupied.insert(ctx.config.prefixed_type_name(name));
         occupied.insert(crate::oneof::to_snake_case(name));
     }
     for e in &msg.enum_type {
-        occupied.insert(e.name.as_deref().unwrap_or("").to_string());
+        occupied.insert(
+            ctx.config
+                .prefixed_type_name(e.name.as_deref().unwrap_or("")),
+        );
     }
     for ext in &msg.extension {
         occupied.insert(
@@ -963,7 +977,10 @@ fn collect_natural_reexports(
         // Nested-message views: `__buffa::view::<msg>::BarView` → `BarView`.
         // The owned-view wrapper rides along: `BarOwnedView` → `BarOwnedView`.
         for nested in non_map_nested {
-            let view_ident = format_ident!("{}View", nested.name.as_deref().unwrap_or(""));
+            let nested_rust_name = ctx
+                .config
+                .prefixed_type_name(nested.name.as_deref().unwrap_or(""));
+            let view_ident = format_ident!("{nested_rust_name}View");
             candidates.push(ReexportCandidate {
                 name: view_ident.to_string(),
                 tokens: crate::feature_gates::cfg_block(
@@ -971,8 +988,7 @@ fn collect_natural_reexports(
                     views_gate,
                 ),
             });
-            let owned_view_ident =
-                format_ident!("{}OwnedView", nested.name.as_deref().unwrap_or(""));
+            let owned_view_ident = format_ident!("{nested_rust_name}OwnedView");
             candidates.push(ReexportCandidate {
                 name: owned_view_ident.to_string(),
                 tokens: crate::feature_gates::cfg_block(
@@ -981,7 +997,7 @@ fn collect_natural_reexports(
                 ),
             });
             if ctx.config.lazy_views {
-                let lazy_ident = format_ident!("{}LazyView", nested.name.as_deref().unwrap_or(""));
+                let lazy_ident = format_ident!("{nested_rust_name}LazyView");
                 candidates.push(ReexportCandidate {
                     name: lazy_ident.to_string(),
                     tokens: crate::feature_gates::cfg_block(

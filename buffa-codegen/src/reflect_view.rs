@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 
 use crate::context::{MessageScope, SENTINEL_MOD};
 use crate::features::resolve_field;
@@ -28,7 +28,8 @@ use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
 use crate::generated::descriptor::DescriptorProto;
 use crate::idents::make_field_ident;
 use crate::impl_message::{
-    effective_type, is_explicit_presence_scalar, is_real_oneof_member, is_supported_field_type,
+    effective_type, is_explicit_presence_scalar, is_real_oneof_member, is_required_field,
+    is_supported_field_type,
 };
 use crate::message::{is_closed_enum, is_map_field};
 use crate::oneof::oneof_variant_ident;
@@ -144,9 +145,8 @@ pub(crate) fn reflect_view_impls(
         } else {
             // Implicit presence: absent is the default value, present is
             // non-default. proto2 `required` fields also fall here (they are
-            // stored as bare types, not `Option`), so a required field set to
-            // its type default reflects as `has() == false` — the view layer
-            // cannot distinguish wire-set-to-default from absent.
+            // stored as bare types, not `Option`); their `has()` is overridden
+            // below to consult the view's wire-presence tracking.
             match ty {
                 Type::TYPE_STRING => (
                     quote! { #vr::String(self.#id) },
@@ -185,6 +185,15 @@ pub(crate) fn reflect_view_impls(
                     (quote! { #vr::#variant(self.#id) }, has_val)
                 }
             }
+        };
+        // Required fields (#170): the view records wire presence (seen-bit
+        // words / `is_set`), surfaced by the generated `has_*` accessor —
+        // route reflection's `has()` through it so the two surfaces agree.
+        let has_val = if is_required_field(field, features) && field.number.is_some() {
+            let has_method = format_ident!("has_{}", name);
+            quote! { self.#has_method() }
+        } else {
+            has_val
         };
         get_arms.push(quote! { #number => #get_val, });
         has_arms.push(quote! { #number => #has_val, });

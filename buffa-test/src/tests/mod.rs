@@ -50,6 +50,7 @@ mod proto2;
 mod proto3_semantics;
 mod string_type;
 mod textproto;
+mod type_prefix;
 mod unbox_oneof;
 mod utf8_validation;
 mod view;
