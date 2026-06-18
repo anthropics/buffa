@@ -16,14 +16,46 @@ pub mod debug_redact {
     buffa::include_proto!("debug_redact");
 }
 
-/// `string_type(SmolStr)` + vtable reflection — exercises `ReflectElement for
-/// SmolStr` on the repeated-string element path.
+/// `string_type` + vtable reflection with a crate-local newtype string used as
+/// a `repeated` element. Because the type is local, codegen may emit the
+/// `ReflectElement` and `ProtoElemJson` impls for it — the orphan rule forbids
+/// those for a foreign type used in a repeated field.
 #[allow(
     clippy::derivable_impls,
     clippy::match_single_binding,
     non_camel_case_types
 )]
 pub mod vtable_string_repr {
+    /// `String`-backed newtype satisfying `buffa::ProtoString` (`Deref<str>` +
+    /// `AsRef<str>` + `From<String>`/`From<&str>`). It derives `Serialize` /
+    /// `Deserialize` because a `repeated string` JSON field serializes its
+    /// elements through their native serde impls (singular fields use the
+    /// `proto_string` with-module instead, which needs only `AsRef`/`From`).
+    #[derive(Clone, PartialEq, Eq, Default, Debug, ::serde::Serialize, ::serde::Deserialize)]
+    pub struct LocalStr(pub ::buffa::alloc::string::String);
+
+    impl ::core::ops::Deref for LocalStr {
+        type Target = str;
+        fn deref(&self) -> &str {
+            &self.0
+        }
+    }
+    impl ::core::convert::AsRef<str> for LocalStr {
+        fn as_ref(&self) -> &str {
+            &self.0
+        }
+    }
+    impl ::core::convert::From<::buffa::alloc::string::String> for LocalStr {
+        fn from(s: ::buffa::alloc::string::String) -> Self {
+            LocalStr(s)
+        }
+    }
+    impl ::core::convert::From<&str> for LocalStr {
+        fn from(s: &str) -> Self {
+            LocalStr(::buffa::alloc::string::String::from(s))
+        }
+    }
+
     buffa::include_proto!("vtable_string_repr");
 }
 

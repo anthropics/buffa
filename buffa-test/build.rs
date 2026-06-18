@@ -20,13 +20,17 @@ fn main() {
         .compile()
         .expect("buffa_build failed for vtable_no_views.proto");
 
-    // string_type(SmolStr) + vtable: exercises `ReflectElement for SmolStr` on
-    // the repeated-string element path (`Vec<SmolStr>`). Singular string fields
-    // reflect via deref; map string keys/values stay `String`.
+    // string_type + vtable: a crate-LOCAL newtype string used in a repeated
+    // field exercises the codegen-emitted `ReflectElement` (and, with json,
+    // `ProtoElemJson`) impl for the element path (`Vec<LocalStr>`). A foreign
+    // type here would be an orphan-rule error — only local types are reflectable
+    // in a repeated field. Singular string fields reflect via deref; map string
+    // keys/values stay `String`.
     buffa_build::Config::new()
         .files(&["protos/vtable_string_repr.proto"])
         .includes(&["protos/"])
-        .string_type(buffa_build::StringRepr::SmolStr)
+        .string_type_custom("crate::vtable_string_repr::LocalStr")
+        .generate_json(true)
         .reflect_mode(buffa_build::ReflectMode::VTable)
         .compile()
         .expect("buffa_build failed for vtable_string_repr.proto");
@@ -318,23 +322,33 @@ fn main() {
 
     // Configurable string_type: a broad SmolStr default plus per-field
     // CompactString / EcoString overrides, with generate_json + arbitrary so
-    // every string code path (decode/clear/view/json/arbitrary, including the
-    // EcoString arbitrary shim) is compiled. Map keys/values stay String.
+    // every string code path (decode/clear/view/json/arbitrary) is compiled.
+    // EcoString ships no native Arbitrary, exercising the generic
+    // arbitrary_proto_string builder. Map keys/values stay String.
     let string_out =
         std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("string_variant");
     std::fs::create_dir_all(&string_out).expect("create string_variant dir");
+    // Per-field rules (no broad `.` rule): foreign custom types apply only to
+    // singular / optional / oneof fields. The repeated `many` field stays
+    // `String` — a foreign type used as a repeated element would need an
+    // orphan-rule-forbidden `ReflectElement`/`ProtoElemJson` impl; that case is
+    // covered by the crate-local `LocalStr` in `vtable_string_repr` above.
     buffa_build::Config::new()
         .files(&["protos/string_types.proto"])
         .includes(&["protos/"])
-        .string_type(buffa_build::StringRepr::SmolStr)
-        .string_type_in(
-            buffa_build::StringRepr::CompactString,
+        .string_type_custom_in(
+            "::smol_str::SmolStr",
+            &[
+                ".stringtypes.StringContexts.singular",
+                ".stringtypes.StringContexts.maybe",
+                ".stringtypes.StringContexts.named",
+            ],
+        )
+        .string_type_custom_in(
+            "::compact_str::CompactString",
             &[".stringtypes.StringContexts.compact"],
         )
-        .string_type_in(
-            buffa_build::StringRepr::EcoString,
-            &[".stringtypes.StringContexts.eco"],
-        )
+        .string_type_custom_in("::ecow::EcoString", &[".stringtypes.StringContexts.eco"])
         .generate_json(true)
         .generate_arbitrary(true)
         .generate_text(true)
@@ -351,7 +365,7 @@ fn main() {
     buffa_build::Config::new()
         .files(&["protos/string_proto2.proto"])
         .includes(&["protos/"])
-        .string_type(buffa_build::StringRepr::SmolStr)
+        .string_type_custom("::smol_str::SmolStr")
         .out_dir(string_p2_out)
         .compile()
         .expect("buffa_build failed for string_proto2.proto with string_type");

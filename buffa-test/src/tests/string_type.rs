@@ -1,7 +1,10 @@
 //! string_type(): configurable owned string representation.
 //!
-//! `string_types.proto` is compiled with a broad `SmolStr` default plus
-//! per-field `CompactString` (`compact`) and `EcoString` (`eco`) overrides.
+//! `string_types.proto` is compiled with per-field foreign custom types:
+//! `SmolStr` (`singular`/`maybe`/`named`), `CompactString` (`compact`), and
+//! `EcoString` (`eco`). The repeated `many` field stays `String` (a foreign
+//! custom repeated element would need an orphan-forbidden element impl; the
+//! crate-local case is covered by `vtable_string_repr`).
 //! Compiling `crate::string_types` is itself most of the test — if any decode,
 //! clear, view→owned, JSON, or arbitrary path emitted the wrong type these
 //! would not build. The runtime checks below verify behavior and pin the field
@@ -17,15 +20,16 @@ fn test_string_type_field_types_are_configured() {
     // produce exactly the configured representations. These fail to compile if
     // the wrong type was emitted.
     let m = StringContexts::default();
-    let _: &::buffa::smol_str::SmolStr = &m.singular;
-    let _: &::core::option::Option<::buffa::smol_str::SmolStr> = &m.maybe;
-    let _: &::buffa::alloc::vec::Vec<::buffa::smol_str::SmolStr> = &m.many;
-    let _: &::buffa::compact_str::CompactString = &m.compact;
-    let _: &::buffa::ecow::EcoString = &m.eco;
+    let _: &::smol_str::SmolStr = &m.singular;
+    let _: &::core::option::Option<::smol_str::SmolStr> = &m.maybe;
+    // `many` is repeated → stays default `String` (see module docs).
+    let _: &::buffa::alloc::vec::Vec<::buffa::alloc::string::String> = &m.many;
+    let _: &::compact_str::CompactString = &m.compact;
+    let _: &::ecow::EcoString = &m.eco;
     // Map keys/values are unaffected — always String.
     let _: &std::collections::HashMap<String, String> = &m.by_key;
     // The oneof string variant payload must also honor the configured repr.
-    let _: ::buffa::smol_str::SmolStr = match Choice::Named("x".into()) {
+    let _: ::smol_str::SmolStr = match Choice::Named("x".into()) {
         Choice::Named(s) => s,
         Choice::Count(_) => unreachable!(),
     };
@@ -98,9 +102,9 @@ fn test_string_type_view_to_owned() {
     let owned: StringContexts = view.to_owned_message().unwrap();
     assert_eq!(owned, msg);
     // to_owned built the configured types, not String.
-    let _: ::buffa::smol_str::SmolStr = owned.singular.clone();
-    let _: ::buffa::compact_str::CompactString = owned.compact.clone();
-    let _: ::buffa::ecow::EcoString = owned.eco.clone();
+    let _: ::smol_str::SmolStr = owned.singular.clone();
+    let _: ::compact_str::CompactString = owned.compact.clone();
+    let _: ::ecow::EcoString = owned.eco.clone();
 }
 
 #[test]
@@ -138,7 +142,7 @@ fn test_string_type_proto2_default() {
     use crate::string_proto2::Defaults;
     let d = Defaults::default();
     assert_eq!(d.name.as_str(), "anonymous");
-    let _: ::buffa::smol_str::SmolStr = d.name.clone();
+    let _: ::smol_str::SmolStr = d.name.clone();
 
     let mut m = Defaults {
         name: "custom".into(),

@@ -850,7 +850,9 @@ fn inline_view_keyword_package_path() {
 #[test]
 fn inline_bytes_field_mapping() {
     let mut config = no_views();
-    config.bytes_fields.push(".".into());
+    config
+        .bytes_fields
+        .push((".".into(), buffa_codegen::BytesRepr::Bytes));
     let content = generate_proto(
         r#"
         syntax = "proto3";
@@ -889,7 +891,9 @@ fn inline_bytes_field_mapping() {
 #[test]
 fn inline_bytes_field_selective_mapping() {
     let mut config = no_views();
-    config.bytes_fields.push(".test.Msg.data".into());
+    config
+        .bytes_fields
+        .push((".test.Msg.data".into(), buffa_codegen::BytesRepr::Bytes));
     let content = generate_proto(
         r#"
         syntax = "proto3";
@@ -1035,7 +1039,9 @@ fn module_no_collision_keeps_natural_module_name() {
 fn inline_string_field_mapping() {
     use buffa_codegen::StringRepr;
     let mut config = no_views();
-    config.string_fields.push((".".into(), StringRepr::SmolStr));
+    config
+        .string_fields
+        .push((".".into(), StringRepr::Custom("::smol_str::SmolStr".into())));
     let content = generate_proto(
         r#"
         syntax = "proto3";
@@ -1043,14 +1049,13 @@ fn inline_string_field_mapping() {
         message Msg {
           string name = 1;
           optional string nick = 2;
-          repeated string tags = 3;
         }
         "#,
         &config,
     );
     assert!(
-        content.contains("::buffa::smol_str::SmolStr"),
-        "string fields should use SmolStr: {content}"
+        content.contains("::smol_str::SmolStr"),
+        "string fields should use the custom type: {content}"
     );
     // Non-optional singular decode must use the generic helper, not merge_string.
     assert!(
@@ -1068,10 +1073,13 @@ fn inline_string_field_selective_and_override() {
     use buffa_codegen::StringRepr;
     let mut config = no_views();
     // Broad default, then a more specific override (last match wins).
-    config.string_fields.push((".".into(), StringRepr::SmolStr));
     config
         .string_fields
-        .push((".test.Msg.code".into(), StringRepr::CompactString));
+        .push((".".into(), StringRepr::Custom("::smol_str::SmolStr".into())));
+    config.string_fields.push((
+        ".test.Msg.code".into(),
+        StringRepr::Custom("::compact_str::CompactString".into()),
+    ));
     let content = generate_proto(
         r#"
         syntax = "proto3";
@@ -1084,23 +1092,23 @@ fn inline_string_field_selective_and_override() {
         &config,
     );
     assert!(
-        content.contains("::buffa::smol_str::SmolStr"),
+        content.contains("::smol_str::SmolStr"),
         "broad rule should apply SmolStr to `name`: {content}"
     );
     assert!(
-        content.contains("::buffa::compact_str::CompactString"),
+        content.contains("::compact_str::CompactString"),
         "specific override should apply CompactString to `code`: {content}"
     );
 }
 
 #[test]
-fn inline_string_ecow_emits_arbitrary_shim() {
+fn inline_string_custom_emits_generic_arbitrary_builder() {
     use buffa_codegen::StringRepr;
     let mut config = no_views();
     config.generate_arbitrary = true;
     config
         .string_fields
-        .push((".".into(), StringRepr::EcoString));
+        .push((".".into(), StringRepr::Custom("::ecow::EcoString".into())));
     let content = generate_proto(
         r#"
         syntax = "proto3";
@@ -1110,13 +1118,14 @@ fn inline_string_ecow_emits_arbitrary_shim() {
         &config,
     );
     assert!(
-        content.contains("::buffa::ecow::EcoString"),
-        "string field should use EcoString: {content}"
+        content.contains("::ecow::EcoString"),
+        "string field should use the custom type: {content}"
     );
-    // EcoString has no native Arbitrary impl — codegen must attach the shim.
+    // A non-default string repr attaches the type-agnostic generic builder,
+    // regardless of whether the type has a native Arbitrary impl.
     assert!(
-        content.contains("arbitrary(with = ::buffa::__private::arbitrary_ecow"),
-        "EcoString field must use the arbitrary_ecow shim: {content}"
+        content.contains("arbitrary(with = ::buffa::__private::arbitrary_proto_string"),
+        "custom string field must use the generic arbitrary_proto_string builder: {content}"
     );
 }
 
@@ -1396,7 +1405,9 @@ fn with_setters_disabled_by_config() {
 #[test]
 fn with_setters_bytes_type_uses_into() {
     let mut config = no_views();
-    config.bytes_fields.push(".test.Msg.data".into());
+    config
+        .bytes_fields
+        .push((".test.Msg.data".into(), buffa_codegen::BytesRepr::Bytes));
     let content = generate_proto(
         r#"
         syntax = "proto3";
