@@ -57,29 +57,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
 
 [[package]]
-name = "borsh"
-version = "1.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfd1e3f8955a5d7de9fab72fc8373fade9fb8a703968cb200ae3dc6cf08e185a"
-dependencies = [
- "bytes",
- "cfg_aliases",
-]
-
-[[package]]
 name = "buffa"
 version = "0.7.1"
 dependencies = [
  "arbitrary",
  "base64",
  "bytes",
- "compact_str",
- "ecow",
  "hashbrown 0.15.5",
  "once_cell",
  "serde",
  "serde_json",
- "smol_str",
  "thiserror",
 ]
 
@@ -126,8 +113,11 @@ dependencies = [
  "buffa-descriptor",
  "buffa-types",
  "bytes",
+ "compact_str",
+ "ecow",
  "serde",
  "serde_json",
+ "smol_str",
 ]
 
 [[package]]
@@ -189,12 +179,6 @@ name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
-
-[[package]]
-name = "cfg_aliases"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chrono"
@@ -263,7 +247,6 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fdb1325a1cece981e8a296ab8f0f9b63ae357bd0784a9faaf548cc7b480707a"
 dependencies = [
- "arbitrary",
  "castaway",
  "cfg-if",
  "itoa",
@@ -780,8 +763,6 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9676b89cd56310a87b93dec47b11af744f34d5fc9f367b829474eec0a891350d"
 dependencies = [
- "arbitrary",
- "borsh",
  "serde",
 ]
 
