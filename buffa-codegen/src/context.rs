@@ -859,18 +859,23 @@ impl<'a> CodeGenContext<'a> {
         Ok(tokens)
     }
 
-    /// Check whether a bytes field at the given proto path should use
-    /// `bytes::Bytes` instead of `Vec<u8>`.
+    /// Resolve the [`BytesRepr`](crate::BytesRepr) for a `bytes` field at the
+    /// given proto path.
     ///
     /// `field_fqn` is the fully-qualified proto field path, e.g.,
-    /// `".my.pkg.MyMessage.data"`. Matches against `config.bytes_fields`
-    /// entries using proto-segment-aware prefix matching: `"."` matches all,
-    /// `".my.pkg"` matches `".my.pkg.Msg.data"` but not `".my.pkgs.X.data"`.
-    pub fn use_bytes_type(&self, field_fqn: &str) -> bool {
+    /// `".my.pkg.MyMessage.data"`. Rules in `config.bytes_fields` are matched
+    /// using proto-segment-aware prefix matching (`"."` matches all,
+    /// `".my.pkg"` matches `".my.pkg.Msg.data"` but not `".my.pkgs.X.data"`);
+    /// the **last** matching rule wins, letting a specific override follow a
+    /// broad default. Fields matching no rule use
+    /// [`BytesRepr::Vec`](crate::BytesRepr::Vec).
+    pub fn bytes_repr(&self, field_fqn: &str) -> crate::BytesRepr {
         self.config
             .bytes_fields
             .iter()
-            .any(|prefix| matches_proto_prefix(prefix, field_fqn))
+            .rev()
+            .find(|(prefix, _)| matches_proto_prefix(prefix, field_fqn))
+            .map_or(crate::BytesRepr::default(), |(_, repr)| repr.clone())
     }
 
     /// Check whether a message-typed oneof variant at the given proto path is
@@ -901,7 +906,7 @@ impl<'a> CodeGenContext<'a> {
             .iter()
             .rev()
             .find(|(prefix, _)| matches_proto_prefix(prefix, field_fqn))
-            .map_or(crate::StringRepr::default(), |(_, repr)| *repr)
+            .map_or(crate::StringRepr::default(), |(_, repr)| repr.clone())
     }
 }
 

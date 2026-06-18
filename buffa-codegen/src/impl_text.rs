@@ -25,7 +25,7 @@ use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
 use crate::generated::descriptor::{DescriptorProto, FieldDescriptorProto};
 use crate::idents::rust_path_to_tokens;
 use crate::impl_message::{
-    effective_type, effective_type_in_map_entry, field_string_repr, field_uses_bytes,
+    effective_type, effective_type_in_map_entry, field_bytes_repr, field_string_repr,
     find_map_entry_fields, is_explicit_presence_scalar, is_non_default_expr, is_real_oneof_member,
     is_required_field, is_supported_field_type, map_value_use_bytes,
 };
@@ -41,6 +41,17 @@ fn text_string_into(repr: crate::StringRepr, owned: TokenStream) -> TokenStream 
         owned
     } else {
         quote! { ::core::convert::Into::into(#owned) }
+    }
+}
+
+/// Wrap a `Vec<u8>`-producing expression in the conversion for the field's
+/// [`BytesRepr`](crate::BytesRepr): identity for `Vec<u8>`, `Bytes::from` for
+/// `bytes::Bytes`, and `Into::into` (via `From<Vec<u8>>`) for a custom type.
+fn text_bytes_into(repr: &crate::BytesRepr, owned: TokenStream) -> TokenStream {
+    match repr {
+        crate::BytesRepr::Vec => owned,
+        crate::BytesRepr::Bytes => quote! { ::buffa::bytes::Bytes::from(#owned) },
+        crate::BytesRepr::Custom(_) => quote! { ::core::convert::Into::into(#owned) },
     }
 }
 
@@ -605,7 +616,7 @@ fn scalar_merge_arm(
     let ty = effective_type(ctx, field, features);
     let (_, name_pat) = text_field_name(proto_name, field, ty);
     let explicit = is_explicit_presence_scalar(field, ty, features);
-    let use_bytes = ty == Type::TYPE_BYTES && field_uses_bytes(ctx, proto_fqn, proto_name);
+    let bytes_repr = field_bytes_repr(ctx, proto_fqn, proto_name);
 
     // Message: merge into existing (proto merge semantics).
     if matches!(ty, Type::TYPE_MESSAGE | Type::TYPE_GROUP) {
@@ -633,7 +644,7 @@ fn scalar_merge_arm(
             field_string_repr(ctx, proto_fqn, proto_name),
             quote! { dec.read_string()?.into_owned() },
         ),
-        Type::TYPE_BYTES if use_bytes => quote! { ::buffa::bytes::Bytes::from(dec.read_bytes()?) },
+        Type::TYPE_BYTES => text_bytes_into(&bytes_repr, quote! { dec.read_bytes()? }),
         _ => read_call(ty),
     };
     Ok(if explicit {
@@ -694,7 +705,7 @@ fn repeated_merge_arm(
     let ident = make_field_ident(proto_name);
     let ty = effective_type(ctx, field, features);
     let (_, name_pat) = text_field_name(proto_name, field, ty);
-    let use_bytes = ty == Type::TYPE_BYTES && field_uses_bytes(ctx, proto_fqn, proto_name);
+    let bytes_repr = field_bytes_repr(ctx, proto_fqn, proto_name);
 
     // read_repeated_into handles both `f: [a, b]` and `f: a` forms. The
     // closure takes `&mut TextDecoder` as `__d` (not `dec`, which is already
@@ -719,11 +730,9 @@ fn repeated_merge_arm(
             );
             quote! { ::core::result::Result::Ok(#v) }
         }
-        Type::TYPE_BYTES if use_bytes => {
-            quote! { ::core::result::Result::Ok(::buffa::bytes::Bytes::from(__d.read_bytes()?)) }
-        }
         Type::TYPE_BYTES => {
-            quote! { __d.read_bytes() }
+            let v = text_bytes_into(&bytes_repr, quote! { __d.read_bytes()? });
+            quote! { ::core::result::Result::Ok(#v) }
         }
         _ => {
             // Numeric: re-dispatch read_call but against __d.
@@ -851,7 +860,7 @@ fn oneof_merge_arms(
         let variant = crate::oneof::oneof_variant_ident(proto_name);
         let ty = effective_type(ctx, field, &features);
         let (_, name_pat) = text_field_name(proto_name, field, ty);
-        let use_bytes = ty == Type::TYPE_BYTES && field_uses_bytes(ctx, proto_fqn, proto_name);
+        let bytes_repr = field_bytes_repr(ctx, proto_fqn, proto_name);
 
         // Message/group variants are boxed unless opted out. Merge-into-existing
         // matches binary oneof semantics (oneof_merge_arm in impl_message.rs).
@@ -908,11 +917,7 @@ fn oneof_merge_arms(
                 }
             }
             Type::TYPE_BYTES => {
-                let read = if use_bytes {
-                    quote! { ::buffa::bytes::Bytes::from(dec.read_bytes()?) }
-                } else {
-                    quote! { dec.read_bytes()? }
-                };
+                let read = text_bytes_into(&bytes_repr, quote! { dec.read_bytes()? });
                 quote! {
                     self.#field_ident = ::core::option::Option::Some(
                         #qualified::#variant(#read)

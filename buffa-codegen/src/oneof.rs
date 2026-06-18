@@ -9,7 +9,7 @@ use quote::{format_ident, quote};
 
 use crate::context::CodeGenContext;
 use crate::features::ResolvedFeatures;
-use crate::impl_message::{field_string_repr, field_uses_bytes};
+use crate::impl_message::{field_bytes_repr, field_string_repr};
 use crate::message::scalar_or_message_type_nested;
 use crate::CodeGenError;
 
@@ -233,10 +233,11 @@ struct VariantInfo {
     /// Custom attributes matched via `CodeGenConfig::field_attributes` on the
     /// variant's fully-qualified path (`{oneof_fqn}.{variant_proto_name}`).
     custom_attrs: TokenStream,
-    /// Used to emit `#[arbitrary(with = ...)]` alongside `derive(Arbitrary)`.
-    use_bytes: bool,
+    /// Owned bytes representation for a `bytes` variant (default `Vec<u8>`).
+    /// Drives both the variant type and the `arbitrary` shim selection.
+    bytes_repr: crate::BytesRepr,
     /// Owned string representation for a `string` variant (default `String`).
-    /// Drives both the variant type and the EcoString arbitrary shim.
+    /// Drives both the variant type and the `arbitrary` shim selection.
     string_repr: crate::StringRepr,
     /// Variant's field carries `[debug_redact = true]`; the enum's `Debug`
     /// impl prints a placeholder instead of the payload.
@@ -289,18 +290,21 @@ fn collect_variant_info(
             // (sentinel + `oneof` + one snake-case segment per message in
             // the FQN path). `nesting` here is the owning message's
             // msg_nesting, so the enum body sits at `nesting + 3`.
-            let use_bytes =
-                field_type == Type::TYPE_BYTES && field_uses_bytes(ctx, proto_fqn, proto_name);
+            let bytes_repr = if field_type == Type::TYPE_BYTES {
+                field_bytes_repr(ctx, proto_fqn, proto_name)
+            } else {
+                crate::BytesRepr::Vec
+            };
             // Configurable owned string representation for a `string` variant.
             let string_repr = if field_type == Type::TYPE_STRING {
                 field_string_repr(ctx, proto_fqn, proto_name)
             } else {
                 crate::StringRepr::String
             };
-            let rust_type = if use_bytes {
-                quote! { ::buffa::bytes::Bytes }
+            let rust_type = if field_type == Type::TYPE_BYTES && !bytes_repr.is_default() {
+                bytes_repr.type_path(resolver, ctx, nesting + 3)?
             } else if field_type == Type::TYPE_STRING && !string_repr.is_default() {
-                string_repr.type_path(resolver, ctx, nesting + 3)
+                string_repr.type_path(resolver, ctx, nesting + 3)?
             } else {
                 scalar_or_message_type_nested(
                     ctx,
@@ -344,7 +348,7 @@ fn collect_variant_info(
                 is_boxed,
                 is_null_value: is_null_value_field(field),
                 custom_attrs,
-                use_bytes,
+                bytes_repr,
                 string_repr,
                 debug_redact: crate::message::is_debug_redacted(field),
             })
@@ -401,14 +405,16 @@ pub fn generate_oneof_enum(
             let attrs = &v.custom_attrs;
             // The arbitrary crate does not support #[arbitrary(...)] on
             // enum variants — the attribute must be on the inner field.
-            let arbitrary_field_attr = if ctx.config.generate_arbitrary && v.use_bytes {
-                quote! { #[cfg_attr(feature = "arbitrary", arbitrary(with = ::buffa::__private::arbitrary_bytes))] }
-            } else if ctx.config.generate_arbitrary
-                && v.string_repr == crate::StringRepr::EcoString
+            // A non-default `bytes`/`string` variant attaches a type-agnostic
+            // `Arbitrary` builder (singular form — a variant holds one value),
+            // selected by kind rather than concrete type, so the substituted
+            // type needs no native `Arbitrary` impl.
+            let arbitrary_field_attr = if ctx.config.generate_arbitrary
+                && !v.bytes_repr.is_default()
             {
-                // EcoString has no native Arbitrary impl (unlike SmolStr /
-                // CompactString), so the derived enum impl needs the shim.
-                quote! { #[cfg_attr(feature = "arbitrary", arbitrary(with = ::buffa::__private::arbitrary_ecow))] }
+                quote! { #[cfg_attr(feature = "arbitrary", arbitrary(with = ::buffa::__private::arbitrary_proto_bytes))] }
+            } else if ctx.config.generate_arbitrary && !v.string_repr.is_default() {
+                quote! { #[cfg_attr(feature = "arbitrary", arbitrary(with = ::buffa::__private::arbitrary_proto_string))] }
             } else {
                 quote! {}
             };
@@ -416,7 +422,7 @@ pub fn generate_oneof_enum(
                 // Boxed variants are message/group types (see is_boxed_variant),
                 // never bytes — so there's no shim to lose here. Lock the
                 // invariant in case is_boxed_variant ever broadens.
-                debug_assert!(!v.use_bytes, "boxed oneof variant cannot be bytes_fields-typed");
+                debug_assert!(v.bytes_repr.is_default(), "boxed oneof variant cannot be bytes_fields-typed");
                 quote! { #attrs #ident(::buffa::alloc::boxed::Box<#ty>) }
             } else {
                 quote! { #attrs #ident(#arbitrary_field_attr #ty) }

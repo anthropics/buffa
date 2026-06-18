@@ -104,7 +104,10 @@ fn main() {
     // `Any.value` carries arbitrary encoded payloads that callers commonly
     // cache and clone into `repeated google.protobuf.Any` response fields.
     // `Bytes::clone()` is a refcount bump rather than a payload memcpy.
-    config.bytes_fields = vec![".google.protobuf.Any.value".into()];
+    config.bytes_fields = vec![(
+        ".google.protobuf.Any.value".to_string(),
+        buffa_codegen::BytesRepr::Bytes,
+    )];
 
     let files_to_generate: Vec<String> = WKT_PROTOS.iter().map(|s| s.to_string()).collect();
 

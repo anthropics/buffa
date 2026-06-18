@@ -176,71 +176,140 @@ pub enum GeneratedFileKind {
     Companion,
 }
 
+/// Parse a custom owned-type path string (e.g. `"::smol_str::SmolStr"`) into a
+/// token stream, validating it as a Rust type so a malformed path surfaces as a
+/// codegen error rather than unparseable generated output.
+fn parse_custom_type_path(path: &str) -> Result<proc_macro2::TokenStream, CodeGenError> {
+    let ty: syn::Type =
+        syn::parse_str(path).map_err(|_| CodeGenError::InvalidTypePath(path.to_string()))?;
+    Ok(quote::quote! { #ty })
+}
+
 /// The Rust type a proto `string` field maps to in generated owned structs.
 ///
-/// The default is [`String`](StringRepr::String). The other variants are
-/// small-string-optimized types that avoid `String`'s growable buffer for
-/// read-mostly schemas; each is gated behind the matching `buffa` Cargo feature
-/// (`smol_str`, `ecow`, `compact_str`), and the downstream crate must enable
-/// that feature so the re-exported type path (`::buffa::smol_str::SmolStr`,
-/// etc.) resolves.
+/// The default is [`String`](StringRepr::String).
+/// [`Custom`](StringRepr::Custom) substitutes any type named by its
+/// fully-qualified Rust path — for example `::smol_str::SmolStr`,
+/// `::ecow::EcoString`, or `::compact_str::CompactString` for read-mostly
+/// schemas — that satisfies the `buffa::ProtoString` bound. The downstream crate
+/// must itself depend on the crate providing that type (buffa does not re-export
+/// it).
 ///
 /// Select a representation through `buffa_build`'s `string_type` /
-/// `string_type_in` builder methods. The wire format is identical regardless of
-/// representation — only the in-memory owned type changes; view types keep
+/// `string_type_custom` builder methods. The wire format is identical regardless
+/// of representation — only the in-memory owned type changes; view types keep
 /// borrowing `&str`, and `map<_, string>` / `map<string, _>` keys and values
 /// always stay `String`.
-///
-/// Sizes below are for 64-bit targets. See the buffa README for a fuller
-/// comparison of the small-string crates.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum StringRepr {
-    /// `::buffa::alloc::string::String` — 24-byte struct, growable and mutable
-    /// (the default).
+    /// `::buffa::alloc::string::String` — growable and mutable (the default).
     #[default]
     String,
-    /// `smol_str::SmolStr` — 24-byte struct, inlines up to 23 bytes, `O(1)`
-    /// clone of long strings via `Arc<str>`. **Immutable** (assign a new value
-    /// to mutate). Requires the `buffa/smol_str` feature.
-    SmolStr,
-    /// `ecow::EcoString` — 16-byte struct, inlines up to 15 bytes, clone-on-write
-    /// with `O(1)` clone. **Immutable** (assign a new value to mutate).
-    /// Requires the `buffa/ecow` feature.
-    EcoString,
-    /// `compact_str::CompactString` — 24-byte struct, inlines up to 24 bytes,
-    /// mutable (a drop-in `String` replacement). Requires the
-    /// `buffa/compact_str` feature.
-    CompactString,
+    /// A custom type named by its fully-qualified Rust path (e.g.
+    /// `"::smol_str::SmolStr"`). Must satisfy `buffa::ProtoString` and be
+    /// provided by a crate the downstream depends on.
+    Custom(String),
 }
 
 impl StringRepr {
     /// The owned Rust type path emitted for a `string` field with this
     /// representation.
     ///
-    /// `ctx` and `nesting` route the default `String` through the
-    /// package-root import registry (`idiomatic_imports`); the non-default
-    /// representations stay fully qualified.
+    /// `ctx` and `nesting` route the default `String` through the package-root
+    /// import registry (`idiomatic_imports`); a custom path is parsed and
+    /// emitted fully qualified.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CodeGenError::InvalidTypePath`] if a custom path does not parse
+    /// as a Rust type.
     pub(crate) fn type_path(
-        self,
+        &self,
         resolver: &imports::ImportResolver,
         ctx: &context::CodeGenContext,
         nesting: usize,
-    ) -> proc_macro2::TokenStream {
-        use quote::quote;
+    ) -> Result<proc_macro2::TokenStream, CodeGenError> {
         match self {
-            StringRepr::String => resolver.string_at(ctx, nesting),
-            StringRepr::SmolStr => quote! { ::buffa::smol_str::SmolStr },
-            StringRepr::EcoString => quote! { ::buffa::ecow::EcoString },
-            StringRepr::CompactString => quote! { ::buffa::compact_str::CompactString },
+            StringRepr::String => Ok(resolver.string_at(ctx, nesting)),
+            StringRepr::Custom(path) => parse_custom_type_path(path),
         }
     }
 
     /// Whether this is the default `String` representation, which keeps the
     /// `String`-specialized fast paths (in-place `merge_string`, `clear()`,
     /// native `Arbitrary`) instead of the generic `ProtoString` ones.
-    pub(crate) fn is_default(self) -> bool {
+    pub(crate) fn is_default(&self) -> bool {
         matches!(self, StringRepr::String)
+    }
+}
+
+/// The Rust type a proto `bytes` field maps to in generated owned structs.
+///
+/// The default is [`Vec`](BytesRepr::Vec) (`Vec<u8>`). [`Bytes`](BytesRepr::Bytes)
+/// uses [`bytes::Bytes`](::bytes::Bytes), which decodes zero-copy from a
+/// `Bytes`-backed buffer. [`Custom`](BytesRepr::Custom) substitutes any type
+/// named by its fully-qualified Rust path that satisfies the `buffa::ProtoBytes`
+/// bound; the downstream crate must itself depend on the providing crate.
+///
+/// Select a representation through `buffa_build`'s `bytes_type` /
+/// `bytes_type_custom` builder methods (or the legacy `use_bytes_type`, which
+/// selects [`Bytes`](BytesRepr::Bytes)). The wire format is identical regardless
+/// of representation; view types keep borrowing `&[u8]`, and `map` bytes values
+/// follow the same rules as the string path.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum BytesRepr {
+    /// `::buffa::alloc::vec::Vec<u8>` — growable and mutable (the default).
+    #[default]
+    Vec,
+    /// `::buffa::bytes::Bytes` — reference-counted, immutable, decodes zero-copy
+    /// from a `Bytes`-backed buffer.
+    Bytes,
+    /// A custom type named by its fully-qualified Rust path. Must satisfy
+    /// `buffa::ProtoBytes` and be provided by a crate the downstream depends on.
+    Custom(String),
+}
+
+impl BytesRepr {
+    /// The owned Rust type path emitted for a `bytes` field with this
+    /// representation.
+    ///
+    /// `ctx` and `nesting` route the default `Vec<u8>` through the package-root
+    /// import registry; `Bytes` and a custom path are emitted fully qualified.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CodeGenError::InvalidTypePath`] if a custom path does not parse
+    /// as a Rust type.
+    pub(crate) fn type_path(
+        &self,
+        resolver: &imports::ImportResolver,
+        ctx: &context::CodeGenContext,
+        nesting: usize,
+    ) -> Result<proc_macro2::TokenStream, CodeGenError> {
+        use quote::quote;
+        match self {
+            BytesRepr::Vec => {
+                let vec = resolver.vec_at(ctx, nesting);
+                Ok(quote! { #vec<u8> })
+            }
+            BytesRepr::Bytes => Ok(quote! { ::buffa::bytes::Bytes }),
+            BytesRepr::Custom(path) => parse_custom_type_path(path),
+        }
+    }
+
+    /// Whether this is the default `Vec<u8>` representation, which keeps the
+    /// `Vec`-specialized fast paths (in-place `merge_bytes`, `clear()`, native
+    /// `Arbitrary`) instead of the generic `ProtoBytes` ones.
+    pub(crate) fn is_default(&self) -> bool {
+        matches!(self, BytesRepr::Vec)
+    }
+
+    /// Whether this representation is the built-in [`bytes::Bytes`](::bytes::Bytes),
+    /// which decodes zero-copy via `decode_bytes_to_bytes`.
+    pub(crate) fn is_bytes(&self) -> bool {
+        matches!(self, BytesRepr::Bytes)
     }
 }
 
@@ -371,13 +440,12 @@ pub struct CodeGenConfig {
     /// entry here. To override with a custom implementation, add an
     /// `extern_path` for `.google.protobuf` pointing to your crate.
     pub extern_paths: Vec<(String, String)>,
-    /// Fully-qualified proto field paths whose `bytes` fields should use
-    /// `bytes::Bytes` instead of `Vec<u8>`.
-    ///
-    /// Each entry is a proto path prefix (e.g., `".my.pkg.MyMessage.data"` for
-    /// a specific field, or `"."` for all bytes fields). The path is matched
-    /// as a prefix, so `"."` applies to every bytes field in every message.
-    pub bytes_fields: Vec<String>,
+    /// Ordered (proto-path-prefix, [`BytesRepr`]) rules selecting the Rust type
+    /// for `bytes` fields. Later rules win, so a broad rule (e.g. `"."` →
+    /// `Bytes`) can be refined by a more specific one. Fields matching no rule
+    /// use `Vec<u8>`. The path is matched with the same proto-segment-aware
+    /// prefix logic as [`string_fields`](Self::string_fields).
+    pub bytes_fields: Vec<(String, BytesRepr)>,
     /// Ordered (proto-path-prefix, [`StringRepr`]) rules selecting the Rust type
     /// for `string` fields. Later rules win, so a broad rule (e.g. `"."` →
     /// `SmolStr`) can be refined by a more specific one

@@ -39,7 +39,7 @@ pub use buffa_codegen::FeatureGateNames;
 #[doc(inline)]
 pub use buffa_codegen::ReflectMode;
 #[doc(inline)]
-pub use buffa_codegen::StringRepr;
+pub use buffa_codegen::{BytesRepr, StringRepr};
 
 /// How to produce a `FileDescriptorSet` from `.proto` files.
 #[derive(Debug, Clone, Default)]
@@ -746,11 +746,8 @@ impl Config {
     ///     .unwrap();
     /// ```
     #[must_use]
-    pub fn use_bytes_type_in(mut self, paths: &[impl AsRef<str>]) -> Self {
-        self.codegen_config
-            .bytes_fields
-            .extend(paths.iter().map(|p| p.as_ref().to_string()));
-        self
+    pub fn use_bytes_type_in(self, paths: &[impl AsRef<str>]) -> Self {
+        self.bytes_type_in(BytesRepr::Bytes, paths)
     }
 
     /// Use `bytes::Bytes` for all `bytes` fields in all messages.
@@ -764,9 +761,55 @@ impl Config {
     /// [`use_bytes_type_in`]: Self::use_bytes_type_in
     /// [`strict_utf8_mapping`]: Self::strict_utf8_mapping
     #[must_use]
-    pub fn use_bytes_type(mut self) -> Self {
-        self.codegen_config.bytes_fields.push(".".to_string());
+    pub fn use_bytes_type(self) -> Self {
+        self.bytes_type(BytesRepr::Bytes)
+    }
+
+    /// Map `bytes` fields to a [`BytesRepr`] other than `Vec<u8>` for the given
+    /// proto path prefixes. The bytes counterpart to
+    /// [`string_type_in`](Self::string_type_in).
+    ///
+    /// Rules accumulate and the **last** matching rule wins, so call the broad
+    /// [`bytes_type`](Self::bytes_type) *first*, then `bytes_type_in` for
+    /// narrower overrides. For [`BytesRepr::Custom`], the downstream crate must
+    /// depend on the crate providing the type (buffa does not re-export it).
+    /// Only the owned Rust type changes — the wire format is unchanged and view
+    /// types still borrow `&[u8]`.
+    #[must_use]
+    pub fn bytes_type_in(mut self, repr: BytesRepr, paths: &[impl AsRef<str>]) -> Self {
+        self.codegen_config
+            .bytes_fields
+            .extend(paths.iter().map(|p| (p.as_ref().to_string(), repr.clone())));
         self
+    }
+
+    /// Map every `bytes` field in all messages to the given [`BytesRepr`].
+    /// Convenience for `.bytes_type_in(repr, &["."])`; call before any
+    /// [`bytes_type_in`](Self::bytes_type_in) overrides (last matching rule
+    /// wins).
+    #[must_use]
+    pub fn bytes_type(mut self, repr: BytesRepr) -> Self {
+        self.codegen_config
+            .bytes_fields
+            .push((".".to_string(), repr));
+        self
+    }
+
+    /// Map the matching `bytes` fields to a custom type named by its
+    /// fully-qualified Rust path (e.g. `"::my_crate::MyBytes"`). The type must
+    /// satisfy `buffa::ProtoBytes`, and the downstream crate must depend on the
+    /// crate providing it. Shorthand for
+    /// [`bytes_type_in`](Self::bytes_type_in)`(BytesRepr::Custom(path), paths)`.
+    #[must_use]
+    pub fn bytes_type_custom_in(self, path: &str, paths: &[impl AsRef<str>]) -> Self {
+        self.bytes_type_in(BytesRepr::Custom(path.to_string()), paths)
+    }
+
+    /// Map every `bytes` field to the given custom type path. Convenience for
+    /// `.bytes_type_custom_in(path, &["."])`.
+    #[must_use]
+    pub fn bytes_type_custom(self, path: &str) -> Self {
+        self.bytes_type(BytesRepr::Custom(path.to_string()))
     }
 
     /// Store the matching message-typed oneof variants inline instead of
@@ -831,9 +874,9 @@ impl Config {
     /// *first*, then `string_type_in` for narrower overrides — a broad rule
     /// added after a specific one will shadow it.
     ///
-    /// The downstream crate must enable the selected type's `buffa` feature
-    /// (`smol_str`, `ecow`, or `compact_str`); otherwise the generated
-    /// `::buffa::<crate>::<Type>` references fail to resolve.
+    /// For [`StringRepr::Custom`], the downstream crate must depend on the crate
+    /// providing the type (buffa does not re-export it); the type must satisfy
+    /// `buffa::ProtoString`.
     ///
     /// Only the owned Rust type changes: the wire format is unchanged, view
     /// types still borrow `&str`, and `map<_, string>` keys and values stay
@@ -844,8 +887,8 @@ impl Config {
     /// ```rust,ignore
     /// use buffa_build::StringRepr;
     /// buffa_build::Config::new()
-    ///     .string_type(StringRepr::SmolStr)                          // broad default first
-    ///     .string_type_in(StringRepr::CompactString, &[".my.pkg.Msg.body"]) // narrow override
+    ///     .string_type(StringRepr::Custom("::smol_str::SmolStr".to_string()))  // broad default first
+    ///     .string_type_custom_in("::compact_str::CompactString", &[".my.pkg.Msg.body"]) // narrow override
     ///     .files(&["proto/my_service.proto"])
     ///     .includes(&["proto/"])
     ///     .compile()
@@ -855,7 +898,7 @@ impl Config {
     pub fn string_type_in(mut self, repr: StringRepr, paths: &[impl AsRef<str>]) -> Self {
         self.codegen_config
             .string_fields
-            .extend(paths.iter().map(|p| (p.as_ref().to_string(), repr)));
+            .extend(paths.iter().map(|p| (p.as_ref().to_string(), repr.clone())));
         self
     }
 
@@ -864,14 +907,30 @@ impl Config {
     /// Convenience for `.string_type_in(repr, &["."])`. Call this *before* any
     /// [`string_type_in`](Self::string_type_in) overrides, since the last
     /// matching rule wins (a `"."` rule added later shadows earlier specific
-    /// rules). `map<_, string>` keys and values stay `String`, and the
-    /// downstream crate must enable the selected type's `buffa` feature.
+    /// rules). `map<_, string>` keys and values stay `String`.
     #[must_use]
     pub fn string_type(mut self, repr: StringRepr) -> Self {
         self.codegen_config
             .string_fields
             .push((".".to_string(), repr));
         self
+    }
+
+    /// Map the matching `string` fields to a custom type named by its
+    /// fully-qualified Rust path (e.g. `"::smol_str::SmolStr"`). The type must
+    /// satisfy `buffa::ProtoString`, and the downstream crate must depend on the
+    /// crate providing it. Shorthand for
+    /// [`string_type_in`](Self::string_type_in)`(StringRepr::Custom(path), paths)`.
+    #[must_use]
+    pub fn string_type_custom_in(self, path: &str, paths: &[impl AsRef<str>]) -> Self {
+        self.string_type_in(StringRepr::Custom(path.to_string()), paths)
+    }
+
+    /// Map every `string` field to the given custom type path. Convenience for
+    /// `.string_type_custom_in(path, &["."])`.
+    #[must_use]
+    pub fn string_type_custom(self, path: &str) -> Self {
+        self.string_type(StringRepr::Custom(path.to_string()))
     }
 
     /// Add a custom attribute to generated types (messages and enums)

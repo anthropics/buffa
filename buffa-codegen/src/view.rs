@@ -18,7 +18,7 @@ use crate::context::{ancillary_prefix, AncillaryKind, CodeGenContext, MessageSco
 use crate::features::ResolvedFeatures;
 use crate::impl_message::{
     closed_enum_decode, closed_enum_decode_with_unknown, decode_fn_token, effective_type,
-    effective_type_in_map_entry, field_string_repr, field_uses_bytes, find_map_entry_fields,
+    effective_type_in_map_entry, field_string_repr, find_map_entry_fields,
     is_explicit_presence_scalar, is_packed_type, is_real_oneof_member, is_required_field,
     is_supported_field_type, map_value_use_bytes, validated_field_number, wire_type_check,
     wire_type_token,
@@ -60,10 +60,16 @@ fn bytes_to_owned(
     field_name: &str,
     expr: TokenStream,
 ) -> TokenStream {
-    if field_uses_bytes(ctx, proto_fqn, field_name) {
-        quote! { ::buffa::view::bytes_from_source(__buffa_src, #expr) }
-    } else {
-        quote! { (#expr).to_vec() }
+    match crate::impl_message::field_bytes_repr(ctx, proto_fqn, field_name) {
+        crate::BytesRepr::Bytes => {
+            quote! { ::buffa::view::bytes_from_source(__buffa_src, #expr) }
+        }
+        crate::BytesRepr::Vec => quote! { (#expr).to_vec() },
+        // A custom type is built from a freshly-copied `Vec<u8>` via
+        // `From<Vec<u8>>` (the `ProtoBytes` bound).
+        crate::BytesRepr::Custom(_) => {
+            quote! { ::core::convert::Into::into((#expr).to_vec()) }
+        }
     }
 }
 
