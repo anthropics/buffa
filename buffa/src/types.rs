@@ -1652,56 +1652,6 @@ mod tests {
         );
     }
 
-    /// Every configurable string representation must decode identically to
-    /// `String` via the shared `decode_string_to` / `ProtoString` path. The
-    /// inputs straddle the small-string-optimization inline boundary so both
-    /// the inline and heap representations are exercised.
-    #[cfg(feature = "smol_str")]
-    #[test]
-    fn test_decode_string_to_smol_str() {
-        // Lengths straddle the inline caps of all three SSO types (ecow ~15,
-        // smol_str 23, compact_str 24 bytes on 64-bit) plus a clearly-heap case.
-        for n in [0usize, 13, 14, 15, 22, 23, 24, 25, 64] {
-            let owned = "a".repeat(n);
-            let s = owned.as_str();
-            let mut buf = Vec::new();
-            encode_string(s, &mut buf);
-            let decoded: smol_str::SmolStr = decode_string_to(&mut buf.as_slice()).unwrap();
-            assert_eq!(decoded.as_str(), s);
-        }
-    }
-
-    #[cfg(feature = "ecow")]
-    #[test]
-    fn test_decode_string_to_ecow() {
-        // Lengths straddle the inline caps of all three SSO types (ecow ~15,
-        // smol_str 23, compact_str 24 bytes on 64-bit) plus a clearly-heap case.
-        for n in [0usize, 13, 14, 15, 22, 23, 24, 25, 64] {
-            let owned = "a".repeat(n);
-            let s = owned.as_str();
-            let mut buf = Vec::new();
-            encode_string(s, &mut buf);
-            let decoded: ecow::EcoString = decode_string_to(&mut buf.as_slice()).unwrap();
-            assert_eq!(decoded.as_str(), s);
-        }
-    }
-
-    #[cfg(feature = "compact_str")]
-    #[test]
-    fn test_decode_string_to_compact_str() {
-        // Lengths straddle the inline caps of all three SSO types (ecow ~15,
-        // smol_str 23, compact_str 24 bytes on 64-bit) plus a clearly-heap case.
-        for n in [0usize, 13, 14, 15, 22, 23, 24, 25, 64] {
-            let owned = "a".repeat(n);
-            let s = owned.as_str();
-            let mut buf = Vec::new();
-            encode_string(s, &mut buf);
-            let decoded: compact_str::CompactString =
-                decode_string_to(&mut buf.as_slice()).unwrap();
-            assert_eq!(decoded.as_str(), s);
-        }
-    }
-
     #[test]
     fn test_string_invalid_utf8() {
         // Length prefix = 2, payload = two invalid UTF-8 bytes.

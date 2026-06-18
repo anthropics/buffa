@@ -11,32 +11,25 @@ arbitrary = ["dep:arbitrary", "buffa/arbitrary"]
 
 [dependencies]
 arbitrary = { workspace = true, optional = true }
-buffa = { workspace = true, features = [
-    "std",
-    "json",
-    "text",
-    "smol_str",
-    "ecow",
-    "compact_str",
-] }
+buffa = { workspace = true, features = ["std", "json", "text"] }
 # `reflect`+`json` so the codegen-emitted `impl Reflectable` and the
 # embedded descriptor pool resolve. `json` because `basic.proto` is also
 # generated with `generate_text(true)` and the pool decodes the WKT
 # descriptors that need it.
-buffa-descriptor = { workspace = true, features = [
-    "reflect",
-    "json",
-    "std",
-    # `ReflectElement` impls for the configurable string reprs, so a
-    # `repeated <repr>` field reflects in vtable mode (vtable_string_repr test).
-    "smol_str",
-    "ecow",
-    "compact_str",
-] }
+buffa-descriptor = { workspace = true, features = ["reflect", "json", "std"] }
 buffa-types = { workspace = true, features = ["json", "chrono"] }
 bytes = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# Custom owned-type representations exercised by the string_type / bytes_type
+# tests. With the open mechanism these are ordinary downstream dependencies:
+# generated code references `::smol_str::SmolStr` etc., so buffa-test declares
+# them directly rather than through a buffa feature. `serde` for the JSON tests;
+# the `arbitrary` support uses the type-agnostic generic builders, so these need
+# no `arbitrary` feature.
+smol_str = { workspace = true, features = ["serde"] }
+ecow = { workspace = true, features = ["serde"] }
+compact_str = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 

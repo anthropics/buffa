@@ -21,9 +21,6 @@ std = [
     "thiserror/std",
     "serde?/std",
     "serde_json?/std",
-    "smol_str?/std",
-    "ecow?/std",
-    "compact_str?/std",
 ]
 # `json` and `text` are independently enableable. Both share the
 # `type_registry` module (gated `any(json, text)`) but carry per-format
@@ -36,22 +33,9 @@ json = [
     "serde/alloc",
     "serde/derive",
     "hashbrown/serde",
-    # Pull in serde support for whichever configurable string types are enabled.
-    "smol_str?/serde",
-    "ecow?/serde",
-    "compact_str?/serde",
 ]
-arbitrary = ["dep:arbitrary", "smol_str?/arbitrary", "compact_str?/arbitrary"]
+arbitrary = ["dep:arbitrary"]
 text = []
-# Configurable `string` field representations. Enabling one of these will let
-# `buffa_build`'s forthcoming `string_type` knob map proto `string` to that
-# type; buffa re-exports the crate so generated code references
-# `::buffa::<crate>::<Type>` and downstream crates do not declare the dependency
-# themselves. `ecow` has no native `arbitrary` impl, so buffa supplies a shim
-# under the `arbitrary` feature.
-smol_str = ["dep:smol_str"]
-ecow = ["dep:ecow"]
-compact_str = ["dep:compact_str"]
 
 [dependencies]
 arbitrary = { workspace = true, optional = true }
@@ -62,6 +46,3 @@ once_cell = { workspace = true, features = ["alloc"] }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
-smol_str = { workspace = true, optional = true }
-ecow = { workspace = true, optional = true }
-compact_str = { workspace = true, optional = true }

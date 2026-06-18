@@ -170,32 +170,12 @@ impl ReflectElement for Value {
     }
 }
 
-// Configurable `string_type` representations, for reflecting a `repeated <repr>`
-// field in vtable mode. Each is gated on the matching `buffa-descriptor` feature
-// (which forwards to `buffa`'s). Only the repeated case needs these: singular
-// fields reflect via `&self.field` (any repr derefs to `str`), and `map` string
-// keys/values always stay `String`. All reprs satisfy `AsRef<str>`.
-
-#[cfg(feature = "smol_str")]
-impl ReflectElement for buffa::smol_str::SmolStr {
-    fn as_value_ref(&self) -> ValueRef<'_> {
-        ValueRef::String(self.as_ref())
-    }
-}
-
-#[cfg(feature = "ecow")]
-impl ReflectElement for buffa::ecow::EcoString {
-    fn as_value_ref(&self) -> ValueRef<'_> {
-        ValueRef::String(self.as_ref())
-    }
-}
-
-#[cfg(feature = "compact_str")]
-impl ReflectElement for buffa::compact_str::CompactString {
-    fn as_value_ref(&self) -> ValueRef<'_> {
-        ValueRef::String(self.as_ref())
-    }
-}
+// A custom `string_type`/`bytes_type` element used in a `repeated` field under
+// vtable reflection gets its `ReflectElement` impl emitted by codegen into the
+// generating crate (where the type is local, so the orphan rule permits it).
+// Only the repeated case needs the impl: singular fields reflect via
+// `&self.field` (any repr derefs to `str`/`[u8]`), and `map` string keys/values
+// always stay `String`.
 
 // ── Map key impls (spec-valid key set) ──────────────────────────────────────
 

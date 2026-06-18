@@ -1264,63 +1264,6 @@ fn proto_string_deserializes_into_custom_type() {
     assert_eq!(json, r#""hi""#);
 }
 
-// Configurable string types: the singular `proto_string` with-module and the
-// `ProtoElemJson` (repeated) path must both round-trip through proto3 JSON.
-#[cfg(feature = "smol_str")]
-#[test]
-fn proto_string_smol_str_roundtrip() {
-    #[derive(serde::Serialize, serde::Deserialize)]
-    struct W(#[serde(with = "proto_string")] smol_str::SmolStr);
-    let json = serde_json::to_string(&W("hi".into())).unwrap();
-    assert_eq!(json, r#""hi""#);
-    assert_eq!(serde_json::from_str::<W>(&json).unwrap().0, "hi");
-    assert_eq!(serde_json::from_str::<W>("null").unwrap().0, "");
-
-    // repeated string via ProtoElemJson
-    #[derive(serde::Serialize, serde::Deserialize)]
-    struct R(#[serde(with = "proto_seq")] alloc::vec::Vec<smol_str::SmolStr>);
-    let v = R(vec!["a".into(), "b".into()]);
-    let json = serde_json::to_string(&v).unwrap();
-    assert_eq!(json, r#"["a","b"]"#);
-    assert_eq!(serde_json::from_str::<R>(&json).unwrap().0, v.0);
-}
-
-#[cfg(feature = "ecow")]
-#[test]
-fn proto_string_ecow_roundtrip() {
-    #[derive(serde::Serialize, serde::Deserialize)]
-    struct W(#[serde(with = "proto_string")] ecow::EcoString);
-    let json = serde_json::to_string(&W("hi".into())).unwrap();
-    assert_eq!(json, r#""hi""#);
-    assert_eq!(serde_json::from_str::<W>(&json).unwrap().0, "hi");
-    assert_eq!(serde_json::from_str::<W>("null").unwrap().0, "");
-
-    #[derive(serde::Serialize, serde::Deserialize)]
-    struct R(#[serde(with = "proto_seq")] alloc::vec::Vec<ecow::EcoString>);
-    let v = R(vec!["a".into(), "b".into()]);
-    let json = serde_json::to_string(&v).unwrap();
-    assert_eq!(json, r#"["a","b"]"#);
-    assert_eq!(serde_json::from_str::<R>(&json).unwrap().0, v.0);
-}
-
-#[cfg(feature = "compact_str")]
-#[test]
-fn proto_string_compact_str_roundtrip() {
-    #[derive(serde::Serialize, serde::Deserialize)]
-    struct W(#[serde(with = "proto_string")] compact_str::CompactString);
-    let json = serde_json::to_string(&W("hi".into())).unwrap();
-    assert_eq!(json, r#""hi""#);
-    assert_eq!(serde_json::from_str::<W>(&json).unwrap().0, "hi");
-    assert_eq!(serde_json::from_str::<W>("null").unwrap().0, "");
-
-    #[derive(serde::Serialize, serde::Deserialize)]
-    struct R(#[serde(with = "proto_seq")] alloc::vec::Vec<compact_str::CompactString>);
-    let v = R(vec!["a".into(), "b".into()]);
-    let json = serde_json::to_string(&v).unwrap();
-    assert_eq!(json, r#"["a","b"]"#);
-    assert_eq!(serde_json::from_str::<R>(&json).unwrap().0, v.0);
-}
-
 // ── closed_enum tests ─────────────────────────────────────────────────
 
 #[derive(serde::Serialize, serde::Deserialize)]
