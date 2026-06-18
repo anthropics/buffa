@@ -19,14 +19,17 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: "CLA Assistant"
-        if: (github.event.comment.body == 'recheck' || github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA') || github.event_name == 'pull_request_target'
+        # contains() rather than == so the action also fires when the sign
+        # phrase or `recheck` is accompanied by a small amount of extra text;
+        # the action itself enforces the precise matching policy.
+        if: github.event_name == 'pull_request_target' || contains(github.event.comment.body, 'recheck') || contains(github.event.comment.body, 'I have read the CLA Document and I hereby sign the CLA')
         # Upstream contributor-assistant/github-action was archived 2026-03-23
         # still on Node 20 (deprecated 2026-06-02). This fork bumps to Node 24
         # and adds: an impersonation guard (PR opener must be an author or
         # co-author of at least one commit), Co-authored-by trailer support,
         # email-based allowlist matching, automatic retry of transient
         # GitHub 5xx errors, and actionable unlinked-email guidance.
-        uses: iainmcgin/cla-github-action@b2654283c3d541393bf2c6efa1e0097537186313 # v3.1.0 (sha-pinned)
+        uses: iainmcgin/cla-github-action@0d27e5a16278d4adb6b0c4b92f08ad27b0a21dc8 # v3.2.0 (sha-pinned)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
