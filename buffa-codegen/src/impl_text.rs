@@ -730,6 +730,11 @@ fn repeated_merge_arm(
             );
             quote! { ::core::result::Result::Ok(#v) }
         }
+        Type::TYPE_BYTES if bytes_repr.is_default() => {
+            // `Vec<u8>`: `read_bytes()` already yields `Result<Vec<u8>>`, so
+            // return it directly rather than `Ok(read_bytes()?)`.
+            quote! { __d.read_bytes() }
+        }
         Type::TYPE_BYTES => {
             let v = text_bytes_into(&bytes_repr, quote! { __d.read_bytes()? });
             quote! { ::core::result::Result::Ok(#v) }
