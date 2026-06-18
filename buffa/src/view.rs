@@ -2131,6 +2131,30 @@ mod tests {
         }
     }
 
+    /// A view type whose `DefaultViewInstance` impl comes from the exported
+    /// macro. The invocation doubles as the macro's unit test: it exercises
+    /// `$crate` path resolution and hygiene the same way generated code
+    /// invokes it from a downstream crate. (`impl_view_reborrow!` requires a
+    /// full `MessageView` impl, so it is covered by the generated view types
+    /// rather than a standalone fixture here.)
+    #[derive(Clone, Debug, Default, PartialEq)]
+    pub(super) struct MacroView<'a> {
+        pub value: &'a str,
+    }
+
+    crate::impl_default_view_instance!(MacroView);
+
+    #[test]
+    fn impl_default_view_instance_macro_returns_singleton() {
+        let a: &MacroView<'_> = MacroView::default_view_instance();
+        let b: &MacroView<'_> = MacroView::default_view_instance();
+        assert!(
+            core::ptr::eq(a, b),
+            "view singleton must be a single allocation"
+        );
+        assert_eq!(a, &MacroView::default());
+    }
+
     #[test]
     fn message_field_view_deref_set() {
         let v = MessageFieldView::set(TinyView { value: "hello" });

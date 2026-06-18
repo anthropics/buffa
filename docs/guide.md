@@ -2044,13 +2044,9 @@ impl Message for Int64Range {
     }
 }
 
-impl buffa::DefaultInstance for Int64Range {
-    fn default_instance() -> &'static Self {
-        static INST: buffa::__private::OnceBox<Int64Range> =
-            buffa::__private::OnceBox::new();
-        INST.get_or_init(|| Box::new(Int64Range::default()))
-    }
-}
+// Expands to a `DefaultInstance` impl backed by a lazily-initialized
+// `'static` singleton — the same shape generated code uses.
+buffa::impl_default_instance!(Int64Range);
 ```
 
 Note what's *not* needed:
