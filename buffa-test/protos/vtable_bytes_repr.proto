@@ -2,11 +2,11 @@ syntax = "proto3";
 
 package vtable_bytes_repr;
 
-// Built with `bytes_type_custom(crate-local LocalBytes)` + `reflect_mode(VTable)`
-// + json. The repeated `chunks` field is `Vec<LocalBytes>`, exercising the
-// codegen-emitted `ReflectElement` (vtable `ValueRef::List`) and `ProtoElemJson`
-// (proto3 JSON base64) impls — which compile only because the type is local.
-// Singular `head` reflects via deref and uses the `bytes` JSON with-module.
+// Built with a crate-local LocalBytes representation, vtable reflection, and
+// JSON. The repeated chunks field is a vector of LocalBytes, which exercises the
+// codegen-emitted ReflectElement and base64 ProtoElemJson element impls; those
+// compile only because the type is local. The singular head field reflects via
+// deref and uses the bytes JSON with-module.
 message Blob {
   bytes head = 1;
   repeated bytes chunks = 2;

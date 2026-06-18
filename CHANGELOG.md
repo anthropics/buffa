@@ -379,26 +379,39 @@ up the new `FooOwnedView` wrappers, `HasMessageView` impls, and
 - **`buffa-types` `reflect` feature.** Well-known types (`Timestamp`,
   `Duration`, `Struct`/`Value`, `Any`, wrappers, …) now implement
   `ReflectMessage`, so messages that embed WKTs reflect end to end.
-- **Configurable string field representations (#127).**
-  `buffa_build::Config::string_type(StringRepr)` and
-  `string_type_in(StringRepr, &[paths])` map proto `string` fields to
-  `SmolStr`, `EcoString`, or `CompactString` instead of `String`
-  (`buffa_build::StringRepr`), mirroring `use_bytes_type_in`'s path rules —
-  rules accumulate and the last match wins, so call the broad `string_type`
-  before narrower `string_type_in` overrides. Only the owned struct field
-  type changes: the wire format is untouched, view types still borrow
-  `&str`, and `map<_, string>` keys and values stay `String`. The consuming
-  crate must enable the matching `buffa` feature (`smol_str`, `ecow`, or
-  `compact_str`), which re-exports the chosen crate so generated code can
-  name it without a direct dependency. The new `buffa::ProtoString` trait
-  (blanket-implemented — nothing to implement by hand) is what the decode
-  and JSON paths are generic over. Default output (`StringRepr::String`) is
-  byte-for-byte unchanged. `buffa-build` / `buffa-codegen` only — there is
-  no `protoc-gen-buffa` plugin option yet.
-- **`ReflectElement` for the configurable `string_type` representations**
-  (`SmolStr`, `EcoString`, `CompactString`), gated behind the matching
-  `buffa-descriptor` feature, so a `repeated <repr>` field reflects in vtable
-  mode.
+- **Pluggable owned types for `string` and `bytes` fields (#127, #156).**
+  Generated `string` / `bytes` fields can use a custom in-memory type chosen at
+  code-generation time, with no change to the wire format. `buffa_build::Config`
+  gains `string_type(StringRepr)` / `string_type_in` and the convenience
+  `string_type_custom("::path::To::Type")` / `string_type_custom_in`, where
+  `buffa_build::StringRepr` is `{ String (default), Custom(path) }`. The new
+  `bytes` counterpart is `bytes_type(BytesRepr)` / `bytes_type_in` /
+  `bytes_type_custom` / `bytes_type_custom_in`, where `BytesRepr` is
+  `{ Vec (default), Bytes, Custom(path) }`; `use_bytes_type` / `use_bytes_type_in`
+  remain as aliases for `BytesRepr::Bytes`. Rules accumulate and the last match
+  wins. Only the owned struct field type changes — view types still borrow
+  `&str` / `&[u8]`, and `map` keys/values keep their default type.
+
+  The chosen type must satisfy the new blanket marker traits `buffa::ProtoString`
+  / `buffa::ProtoBytes` (nothing to implement by hand) — bounded on
+  `Clone + PartialEq + Default + Debug + Send + Sync`, `Deref` to `str` / `[u8]`,
+  `AsRef`, and `From<String>` / `From<Vec<u8>>`. `buffa::decode_bytes_to::<B>` is
+  the new generic constructor (the `bytes` twin of `decode_string_to`). A custom
+  type needs no native `Arbitrary` impl (a generic builder handles it). A custom
+  type used as the element of a **`repeated`** field must be **crate-local**:
+  codegen emits `ReflectElement` (vtable) and, for bytes, base64 `ProtoElemJson`
+  (JSON) impls for it, which the orphan rule forbids for a foreign type — wrap a
+  foreign type in a local newtype for that case. Singular / optional / oneof /
+  map uses work with foreign types directly.
+
+  **BREAKING (unreleased only):** the earlier unreleased `string_type` preset API
+  is removed — `StringRepr::{SmolStr, EcoString, CompactString}`, the
+  `buffa` / `buffa-descriptor` `smol_str` / `ecow` / `compact_str` Cargo features,
+  and the `::buffa::{smol_str, ecow, compact_str}` re-exports. Migrate to
+  `string_type_custom("::smol_str::SmolStr")` (etc.) and depend on the type's
+  crate directly, the same arrangement `serde` already uses. Default output
+  (`String` / `Vec<u8>`) is byte-for-byte unchanged. `buffa-build` /
+  `buffa-codegen` only — there is no `protoc-gen-buffa` plugin option yet.
 - **Generated `FooOwnedView` wrapper types.** When views are generated, each
   message now also gets a `FooOwnedView` — re-exported at the package root
   next to `Foo` and `FooView` (canonical path `__buffa::view::FooOwnedView`):

@@ -800,13 +800,29 @@ impl Config {
     /// satisfy `buffa::ProtoBytes`, and the downstream crate must depend on the
     /// crate providing it. Shorthand for
     /// [`bytes_type_in`](Self::bytes_type_in)`(BytesRepr::Custom(path), paths)`.
+    ///
+    /// # Limitations
+    ///
+    /// - A **foreign** custom type used as a `repeated` element fails to compile:
+    ///   codegen emits `ReflectElement` / `ProtoElemJson` impls for it, which the
+    ///   orphan rule forbids for a foreign type. Wrap it in a crate-local newtype
+    ///   for the repeated case; singular / optional / oneof uses work directly.
+    /// - A `Custom` rule does **not** apply to `map<K, bytes>` values — they stay
+    ///   `Vec<u8>`. This is asymmetric with the built-in
+    ///   [`use_bytes_type`](Self::use_bytes_type) ([`BytesRepr::Bytes`]), which
+    ///   *does* map matching map values to `Bytes`.
+    /// - A `path` that does not parse as a Rust type is reported as a codegen
+    ///   error from [`compile`](Self::compile).
+    /// - A custom bytes type needs no native `arbitrary::Arbitrary` impl (a
+    ///   generic builder handles it under `generate_arbitrary`).
     #[must_use]
     pub fn bytes_type_custom_in(self, path: &str, paths: &[impl AsRef<str>]) -> Self {
         self.bytes_type_in(BytesRepr::Custom(path.to_string()), paths)
     }
 
     /// Map every `bytes` field to the given custom type path. Convenience for
-    /// `.bytes_type_custom_in(path, &["."])`.
+    /// `.bytes_type_custom_in(path, &["."])`; see it for the limitations
+    /// (foreign `repeated` elements, `map` values, path parsing).
     #[must_use]
     pub fn bytes_type_custom(self, path: &str) -> Self {
         self.bytes_type(BytesRepr::Custom(path.to_string()))
@@ -921,13 +937,31 @@ impl Config {
     /// satisfy `buffa::ProtoString`, and the downstream crate must depend on the
     /// crate providing it. Shorthand for
     /// [`string_type_in`](Self::string_type_in)`(StringRepr::Custom(path), paths)`.
+    ///
+    /// # Limitations
+    ///
+    /// - A **foreign** custom type used as a `repeated` element fails to compile:
+    ///   codegen emits a `ReflectElement` impl for it, which the orphan rule
+    ///   forbids for a foreign type. Wrap it in a crate-local newtype for the
+    ///   repeated case; singular / optional / oneof uses work directly.
+    /// - **JSON of a `repeated` custom string** serializes elements through their
+    ///   native `serde`, so such a type must derive `Serialize` / `Deserialize`
+    ///   (and an external type must enable its `serde` feature). Singular /
+    ///   optional / oneof custom strings use the `proto_string` with-module and
+    ///   need no `serde` impl.
+    /// - A `path` that does not parse as a Rust type is reported as a codegen
+    ///   error from [`compile`](Self::compile).
+    /// - A custom string type needs no native `arbitrary::Arbitrary` impl (a
+    ///   generic builder handles it under `generate_arbitrary`).
     #[must_use]
     pub fn string_type_custom_in(self, path: &str, paths: &[impl AsRef<str>]) -> Self {
         self.string_type_in(StringRepr::Custom(path.to_string()), paths)
     }
 
     /// Map every `string` field to the given custom type path. Convenience for
-    /// `.string_type_custom_in(path, &["."])`.
+    /// `.string_type_custom_in(path, &["."])`; see it for the limitations
+    /// (foreign `repeated` elements, the `repeated` JSON `serde` requirement,
+    /// path parsing).
     #[must_use]
     pub fn string_type_custom(self, path: &str) -> Self {
         self.string_type(StringRepr::Custom(path.to_string()))

@@ -294,40 +294,34 @@ When several entries could match a reference, the most specific one wins: an exa
 
 **View types:** When view generation is enabled (the default), the codegen also expects a `FooView<'a>` type at `<extern_crate>::__buffa::view::FooView` for each extern-mapped message `Foo`. If you're using extern_path to reference types from another buffa-generated crate, the views are already there. If you're mapping to [custom type implementations](#custom-type-implementations), see that section for how to provide the view type. This applies to per-type mappings too: a message referenced by generated views must map to a buffa-generated crate, or view generation must be disabled (`.generate_views(false)`).
 
-### String field representations
+### String and bytes field representations
 
-By default every proto `string` field is generated as `String`. For schemas dominated by many short strings — log labels, identifiers, header-like maps — a small-string type can avoid most of those heap allocations. The `string_type` option selects an alternative owned representation, with the same path-prefix rules as `use_bytes_type_in`:
+By default every proto `string` field is generated as `String` and every `bytes` field as `Vec<u8>`. For schemas dominated by many short strings — log labels, identifiers, header-like maps — a small-string type can avoid most of those heap allocations. The `string_type` / `bytes_type` options select an alternative owned representation, with the same path-prefix rules as `use_bytes_type_in` (rules accumulate, last match wins):
 
 ```rust,ignore
-use buffa_build::StringRepr;
-
 buffa_build::Config::new()
     // Broad default first: every string field becomes SmolStr…
-    .string_type(StringRepr::SmolStr)
-    // …then narrower overrides. Rules accumulate and the last match wins.
-    .string_type_in(StringRepr::CompactString, &[".my.pkg.LogRecord.message"])
+    .string_type_custom("::smol_str::SmolStr")
+    // …then narrower overrides.
+    .string_type_custom_in("::compact_str::CompactString", &[".my.pkg.LogRecord.message"])
+    // bytes fields: the built-in zero-copy Bytes, or any custom ProtoBytes type.
+    .bytes_type_custom("::my_crate::SmallBytes")
     .files(&["proto/my_service.proto"])
     .includes(&["proto/"])
     .compile()
     .unwrap();
 ```
 
-The available representations (`buffa_build::StringRepr`, sizes for 64-bit targets):
+A representation is **any type you name by its Rust path**, as long as it satisfies the `buffa::ProtoString` / `buffa::ProtoBytes` marker traits — bounded on `Clone + PartialEq + Default + Debug + Send + Sync`, `Deref` to `str` / `[u8]`, `AsRef`, and `From<String>` / `From<Vec<u8>>`. These traits are blanket-implemented, so there is nothing to implement by hand; common choices such as `smol_str::SmolStr`, `ecow::EcoString`, `compact_str::CompactString`, and `bytes::Bytes` qualify as-is. `bytes` additionally has a built-in convenience: `bytes_type(BytesRepr::Bytes)` (and the `use_bytes_type` / `use_bytes_type_in` aliases) map to `bytes::Bytes`, which decodes zero-copy from a `Bytes`-backed buffer.
 
-| Representation | Size | Inline capacity | Mutability | Required `buffa` feature |
-|---|---|---|---|---|
-| `String` (default) | 24 bytes | — | Mutable, growable | none |
-| `SmolStr` | 24 bytes | 23 bytes | Immutable (assign a new value to mutate); `O(1)` clone | `smol_str` |
-| `EcoString` | 16 bytes | 15 bytes | Immutable (assign a new value to mutate); clone-on-write, `O(1)` clone | `ecow` |
-| `CompactString` | 24 bytes | 24 bytes | Mutable (drop-in `String` replacement) | `compact_str` |
+Key points:
 
-Three things to keep in mind:
+- **You depend on the type's crate directly.** buffa does **not** re-export the representation crates, so add (for example) `smol_str` to your own `Cargo.toml` — the same arrangement `serde` already uses. The generated code references the path you gave (`::smol_str::SmolStr`).
+- **Only the owned struct field type changes.** The wire format is identical regardless of representation, view types still borrow `&str` / `&[u8]`, and `map` keys/values keep their default type.
+- **A custom type needs no `Arbitrary` impl.** Under `generate_arbitrary`, codegen attaches a generic builder.
+- **A custom type used as a `repeated` element must be crate-local.** Codegen emits per-element `ReflectElement` (vtable reflection) and base64 `ProtoElemJson` (JSON, bytes only) impls for it, which the orphan rule forbids for a foreign type — wrap a foreign type in a local newtype for that case. JSON of a `repeated` custom *string* also serializes through the element's native `serde`, so such a type must derive `Serialize` / `Deserialize`. Singular / optional / oneof / map uses work with a foreign type directly.
 
-- **Only the owned struct field type changes.** The wire format is identical regardless of representation, view types still borrow `&str`, and `map<_, string>` keys and values always stay `String`.
-- **Rules accumulate and the last match wins**, so call the broad `string_type` before narrower `string_type_in` overrides — a `"."` rule added later shadows earlier specific rules.
-- **The consuming crate must enable the matching `buffa` feature** (`smol_str`, `ecow`, or `compact_str`). The feature re-exports the chosen crate so generated code can reference it without you adding the dependency yourself; without it, the generated `::buffa::smol_str::SmolStr` (and similar) paths fail to resolve.
-
-`string_type` is a `buffa-build` / `buffa-codegen` option only — there is no `protoc-gen-buffa` plugin equivalent yet.
+`string_type` / `bytes_type` are `buffa-build` / `buffa-codegen` options only — there is no `protoc-gen-buffa` plugin equivalent yet.
 
 ### Multi-package projects
 

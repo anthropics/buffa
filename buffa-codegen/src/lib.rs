@@ -209,6 +209,15 @@ pub enum StringRepr {
     /// A custom type named by its fully-qualified Rust path (e.g.
     /// `"::smol_str::SmolStr"`). Must satisfy `buffa::ProtoString` and be
     /// provided by a crate the downstream depends on.
+    ///
+    /// # Limitations
+    ///
+    /// - A *foreign* custom type used as a `repeated` element fails to compile
+    ///   (the emitted `ReflectElement` impl violates the orphan rule). Wrap it
+    ///   in a crate-local newtype for that case; singular / optional / oneof /
+    ///   map uses work with a foreign type directly.
+    /// - A path that does not parse as a Rust type surfaces as
+    ///   [`CodeGenError::InvalidTypePath`] at generation (`.compile()`) time.
     Custom(String),
 }
 
@@ -268,6 +277,18 @@ pub enum BytesRepr {
     Bytes,
     /// A custom type named by its fully-qualified Rust path. Must satisfy
     /// `buffa::ProtoBytes` and be provided by a crate the downstream depends on.
+    ///
+    /// # Limitations
+    ///
+    /// - A *foreign* custom type used as a `repeated` element fails to compile
+    ///   (the emitted `ReflectElement` / `ProtoElemJson` impls violate the
+    ///   orphan rule). Wrap it in a crate-local newtype for that case; singular
+    ///   / optional / oneof uses work with a foreign type directly.
+    /// - A `Custom` rule does **not** apply to `map<K, bytes>` values — they
+    ///   stay `Vec<u8>`. Only the built-in [`Bytes`](BytesRepr::Bytes) applies
+    ///   to map values.
+    /// - A path that does not parse as a Rust type surfaces as
+    ///   [`CodeGenError::InvalidTypePath`] at generation (`.compile()`) time.
     Custom(String),
 }
 

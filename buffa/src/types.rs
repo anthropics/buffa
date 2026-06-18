@@ -603,6 +603,23 @@ pub fn string_encoded_len(value: &str) -> usize {
 ///
 /// For the default `String` representation every conversion is the identity, so
 /// the generic path costs nothing relative to the specialized one.
+///
+/// # Limitations
+///
+/// - **`repeated` elements must be crate-local.** A custom type used as the
+///   element of a `repeated` field needs a codegen-emitted `ReflectElement`
+///   impl (for vtable reflection), which the orphan rule permits only when the
+///   type is local to the generating crate. A *foreign* custom type in that
+///   position fails to compile — wrap it in a crate-local newtype. Singular,
+///   optional, oneof, and map uses work with a foreign type directly.
+/// - **JSON of a `repeated` custom string** serializes through the element's
+///   native `serde`, so a custom string used as a `repeated` element under JSON
+///   must derive `Serialize` / `Deserialize` (and, for an external type, enable
+///   its `serde` feature). Singular / optional / oneof custom strings use the
+///   `proto_string` with-module and need no `serde` impl.
+/// - **No `Arbitrary` impl required.** Under the `arbitrary` feature codegen
+///   attaches a generic builder, so a custom type needs no native
+///   `arbitrary::Arbitrary` impl.
 pub trait ProtoString:
     Clone
     + PartialEq
@@ -757,6 +774,23 @@ pub fn decode_bytes_to_bytes(buf: &mut impl Buf) -> Result<Bytes, DecodeError> {
 ///
 /// For the default `Vec<u8>` representation every conversion is the identity, so
 /// the generic path costs nothing relative to the specialized one.
+///
+/// # Limitations
+///
+/// - **`repeated` elements must be crate-local.** A custom type used as the
+///   element of a `repeated` field needs codegen-emitted `ReflectElement`
+///   (vtable) and base64 `ProtoElemJson` (JSON) impls, which the orphan rule
+///   permits only when the type is local to the generating crate. A *foreign*
+///   custom type in that position fails to compile — wrap it in a crate-local
+///   newtype. Singular, optional, oneof, and map uses work with a foreign type
+///   directly.
+/// - **`map<K, bytes>` values are unaffected by a custom `bytes_type`.** A
+///   `Custom` rule does not apply to map values (they stay `Vec<u8>`); only the
+///   built-in `BytesRepr::Bytes` applies to map values (see
+///   `buffa_build::Config::bytes_type_custom`).
+/// - **No `Arbitrary` impl required.** Under the `arbitrary` feature codegen
+///   attaches a generic builder, so a custom type needs no native
+///   `arbitrary::Arbitrary` impl.
 pub trait ProtoBytes:
     Clone
     + PartialEq
