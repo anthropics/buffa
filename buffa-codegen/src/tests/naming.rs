@@ -34,6 +34,274 @@ fn test_reserved_field_name_rejected() {
     );
 }
 
+// ── type_name_prefix (#46) ──────────────────────────────────────────────────
+
+/// Two messages (one referencing the other and a top-level enum) plus a
+/// nested message and nested enum — the full surface a prefix must cover.
+fn prefix_fixture() -> FileDescriptorProto {
+    let mut file = proto3_file("test.proto");
+    file.package = Some("my.pkg".to_string());
+    file.enum_type.push(EnumDescriptorProto {
+        name: Some("Status".to_string()),
+        value: vec![enum_value("STATUS_UNKNOWN", 0), enum_value("STATUS_OK", 1)],
+        ..Default::default()
+    });
+    file.message_type.push(DescriptorProto {
+        name: Some("User".to_string()),
+        nested_type: vec![DescriptorProto {
+            name: Some("Inner".to_string()),
+            ..Default::default()
+        }],
+        enum_type: vec![EnumDescriptorProto {
+            name: Some("Kind".to_string()),
+            value: vec![enum_value("KIND_UNSPECIFIED", 0)],
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    file.message_type.push(DescriptorProto {
+        name: Some("Account".to_string()),
+        field: vec![
+            FieldDescriptorProto {
+                name: Some("owner".to_string()),
+                number: Some(1),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_MESSAGE),
+                type_name: Some(".my.pkg.User".to_string()),
+                json_name: Some("owner".to_string()),
+                ..Default::default()
+            },
+            FieldDescriptorProto {
+                name: Some("status".to_string()),
+                number: Some(2),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_ENUM),
+                type_name: Some(".my.pkg.Status".to_string()),
+                json_name: Some("status".to_string()),
+                ..Default::default()
+            },
+            FieldDescriptorProto {
+                name: Some("inner".to_string()),
+                number: Some(3),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_MESSAGE),
+                type_name: Some(".my.pkg.User.Inner".to_string()),
+                json_name: Some("inner".to_string()),
+                ..Default::default()
+            },
+            // A message-typed oneof variant exercises the oneof enum's
+            // cross-reference path.
+            FieldDescriptorProto {
+                name: Some("primary".to_string()),
+                number: Some(4),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_MESSAGE),
+                type_name: Some(".my.pkg.User".to_string()),
+                oneof_index: Some(0),
+                json_name: Some("primary".to_string()),
+                ..Default::default()
+            },
+        ],
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("sel".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    file
+}
+
+#[test]
+fn test_type_name_prefix_declarations_and_references() {
+    // json/text/views/lazy views on so every emission path runs against the
+    // prefix.
+    let config = CodeGenConfig {
+        type_name_prefix: "Rpc".to_string(),
+        generate_json: true,
+        generate_text: true,
+        lazy_views: true,
+        ..CodeGenConfig::default()
+    };
+    let files = generate(&[prefix_fixture()], &["test.proto".to_string()], &config)
+        .expect("should generate");
+    let content = joined(&files);
+
+    // Declarations are prefixed.
+    assert!(
+        content.contains("pub struct RpcUser"),
+        "top-level struct must be prefixed: {content}"
+    );
+    assert!(
+        content.contains("pub struct RpcAccount"),
+        "top-level struct must be prefixed: {content}"
+    );
+    assert!(
+        content.contains("pub enum RpcStatus"),
+        "top-level enum must be prefixed: {content}"
+    );
+    assert!(
+        content.contains("pub struct RpcInner"),
+        "nested struct must be prefixed: {content}"
+    );
+    assert!(
+        content.contains("pub enum RpcKind"),
+        "nested enum must be prefixed: {content}"
+    );
+
+    // View types follow the struct name.
+    assert!(
+        content.contains("pub struct RpcUserView"),
+        "view struct must be prefixed: {content}"
+    );
+    assert!(
+        content.contains("RpcUserOwnedView"),
+        "owned-view wrapper must be prefixed: {content}"
+    );
+
+    // Lazy-view declarations and their root/nested re-exports use the
+    // prefixed name (a stale unprefixed re-export would not resolve).
+    assert!(
+        content.contains("lazy_view::RpcUserLazyView"),
+        "top-level lazy-view re-export must be prefixed: {content}"
+    );
+    assert!(
+        content.contains("lazy_view::user::RpcInnerLazyView"),
+        "nested lazy-view re-export must be prefixed: {content}"
+    );
+    assert!(
+        !content.contains("::UserLazyView") && !content.contains("::InnerLazyView"),
+        "unprefixed lazy-view re-exports must not be emitted: {content}"
+    );
+
+    // Cross-references use the prefixed names.
+    assert!(
+        content.contains("MessageField<RpcUser>"),
+        "message field must reference prefixed type: {content}"
+    );
+    assert!(
+        content.contains("EnumValue<RpcStatus>"),
+        "enum field must reference prefixed type: {content}"
+    );
+    assert!(
+        content.contains("user::RpcInner"),
+        "nested reference must keep the proto-derived module and prefix \
+         only the type: {content}"
+    );
+
+    // Unprefixed declarations must be gone.
+    assert!(
+        !content.contains("pub struct User"),
+        "unprefixed struct must not be declared: {content}"
+    );
+    assert!(
+        !content.contains("pub enum Status"),
+        "unprefixed enum must not be declared: {content}"
+    );
+
+    // The whole output still parses as Rust.
+    for f in &files {
+        syn::parse_file(&f.content)
+            .unwrap_or_else(|e| panic!("generated file {} must parse: {e}\n{}", f.name, f.content));
+    }
+}
+
+#[test]
+fn test_type_name_prefix_does_not_touch_modules_or_wkt() {
+    let mut file = prefix_fixture();
+    // A Timestamp-typed field exercises the extern (WKT) mapping.
+    file.dependency
+        .push("google/protobuf/timestamp.proto".to_string());
+    file.message_type[1].field.push(FieldDescriptorProto {
+        name: Some("created".to_string()),
+        number: Some(4),
+        label: Some(Label::LABEL_OPTIONAL),
+        r#type: Some(Type::TYPE_MESSAGE),
+        type_name: Some(".google.protobuf.Timestamp".to_string()),
+        json_name: Some("created".to_string()),
+        ..Default::default()
+    });
+    // Minimal Timestamp descriptor so the import resolves; it is not in
+    // files_to_generate, so the automatic WKT extern mapping applies.
+    let mut ts_file = proto3_file("google/protobuf/timestamp.proto");
+    ts_file.package = Some("google.protobuf".to_string());
+    ts_file.message_type.push(DescriptorProto {
+        name: Some("Timestamp".to_string()),
+        field: vec![
+            make_field("seconds", 1, Label::LABEL_OPTIONAL, Type::TYPE_INT64),
+            make_field("nanos", 2, Label::LABEL_OPTIONAL, Type::TYPE_INT32),
+        ],
+        ..Default::default()
+    });
+    let config = CodeGenConfig {
+        type_name_prefix: "Rpc".to_string(),
+        ..CodeGenConfig::default()
+    };
+    let files =
+        generate(&[ts_file, file], &["test.proto".to_string()], &config).expect("should generate");
+    let content = joined(&files);
+
+    // Module names stay proto-derived (no `rpc_user` / `RpcUser` module).
+    assert!(
+        content.contains("pub mod user"),
+        "nested-types module must keep the proto-derived name: {content}"
+    );
+    assert!(
+        !content.contains("pub mod rpc_user"),
+        "module name must not be prefixed: {content}"
+    );
+
+    // Extern-mapped well-known types keep their external names.
+    assert!(
+        content.contains("buffa_types::google::protobuf::Timestamp"),
+        "WKT reference must stay extern and unprefixed: {content}"
+    );
+    assert!(
+        !content.contains("RpcTimestamp"),
+        "extern types must not be prefixed: {content}"
+    );
+}
+
+#[test]
+fn test_type_name_prefix_invalid_rejected() {
+    // The prefix must be PascalCase: not just any identifier prefix —
+    // lowercase, leading/embedded underscores, digits-first, whitespace,
+    // and punctuation are all rejected so prefixed names stay
+    // conventionally cased.
+    for bad in [
+        "1Rpc", "Rpc-", "Rpc ", " Rpc", "Rp.c", "rpc", "rpcUser", "_Rpc", "Rpc_", "X_",
+    ] {
+        let config = CodeGenConfig {
+            type_name_prefix: bad.to_string(),
+            ..CodeGenConfig::default()
+        };
+        let result = generate(&[prefix_fixture()], &["test.proto".to_string()], &config);
+        let err = result.expect_err("invalid prefix must be rejected");
+        assert!(
+            matches!(err, CodeGenError::InvalidTypeNamePrefix { .. }),
+            "expected InvalidTypeNamePrefix for '{bad}', got: {err}"
+        );
+        assert!(
+            err.to_string().contains("type_name_prefix"),
+            "error should name the offending option: {err}"
+        );
+    }
+}
+
+#[test]
+fn test_type_name_prefix_pascal_case_accepted() {
+    // Any PascalCase prefix is accepted, including digits after the leading
+    // uppercase letter and a bare single letter.
+    for good in ["Rpc", "RpcV2", "X"] {
+        let config = CodeGenConfig {
+            type_name_prefix: good.to_string(),
+            ..CodeGenConfig::default()
+        };
+        let files = generate(&[prefix_fixture()], &["test.proto".to_string()], &config)
+            .expect("PascalCase prefix must be accepted");
+        assert!(joined(&files).contains(&format!("pub struct {good}User")));
+    }
+}
+
 #[test]
 fn test_non_reserved_field_name_accepted() {
     let field = make_field("cached_size", 1, Label::LABEL_OPTIONAL, Type::TYPE_INT32);

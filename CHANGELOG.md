@@ -126,6 +126,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   carrier-agnostic `Location { line, column }`. Requires message types
   generated with `json = true`. Contributed by @rsd-darshan.
 
+- **Proto2 required-field presence on views** (#170). Generated view types
+  (`FooView` and `FooLazyView`) for messages with proto2/editions
+  `LEGACY_REQUIRED` singular fields now expose `has_<field>()` accessors
+  that distinguish a field absent on the wire from one explicitly encoded
+  with its default value. Scalar required fields are tracked via hidden
+  `__buffa_required_seen_*` bit words; message/group required fields
+  delegate to `MessageFieldView::is_set()` / `LazyMessageFieldView::is_set()`.
+  The view `ReflectMessage::has()` implementation consults the same
+  tracking, so reflection agrees with the inherent accessors. Owned
+  messages are unchanged: they store required fields bare and their
+  reflection still reports `has() == false` for a required field at its
+  default value. Messages without required fields are byte-identical to
+  before. `MessageFieldView::is_set` / `is_unset` are now `const fn`.
+
+- **`type_name_prefix` option** (#46). `buffa_build::Config::type_name_prefix("Rpc")`
+  (also `CodeGenConfig::type_name_prefix` and `protoc-gen-buffa`'s
+  `type_name_prefix=` option) prepends a prefix to every generated message
+  struct and enum type name — `message User {}` generates `struct RpcUser`,
+  with views (`RpcUserView`), cross-references, and re-exports following.
+  Module names, oneof enums, `extern_path`-mapped types (including
+  well-known types), and the wire/JSON format are unaffected. The prefix
+  must be PascalCase (an ASCII uppercase letter followed by ASCII letters
+  and digits); anything else is rejected at generation time.
+
 ### Changed
 
 - Generated decode arms (owned merge, view decode, lazy record arms,
