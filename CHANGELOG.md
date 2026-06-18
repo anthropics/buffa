@@ -176,11 +176,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   expanded per generated type (~290 sites); hand-written message and view
   types can reuse them. No behavioural change. (#196)
 
-- Generated JSON `Serialize` impls use new public `buffa::json_helpers`
-  adapter newtypes (`ProtoJson`, `BytesJson`, `MapKeyJson`, sequence
-  variants, ...) instead of ~65 per-site local `_W*` wrapper structs. JSON
-  output is unchanged. (#197)
-
+- Generated JSON `Serialize` impls use new internal (`#[doc(hidden)]`)
+  `buffa::json_helpers` adapter newtypes (`ProtoJson`, `BytesJson`,
+  `MapKeyJson`, sequence variants, ...) instead of ~65 per-site local `_W*`
+  wrapper structs. JSON output is unchanged. (#197)
 - **Breaking:** the decode-path `Message` trait methods (`merge`,
   `merge_field`, `merge_to_limit`, `merge_group`, `merge_length_delimited`),
   `encoding::decode_unknown_field`, and `message_set::merge_item` now take a
