@@ -1170,6 +1170,163 @@ pub fn generate(
 /// [`CodeGenConfig::feature_gate_names`] is not a valid Cargo feature name,
 /// and other [`CodeGenError`] variants for malformed descriptors (e.g. a
 /// missing required field) encountered while generating.
+/// Whether a custom `repeated` element type holds proto `string` or `bytes` —
+/// selects `ValueRef::String`/`ValueRef::Bytes` and the JSON delegate module.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CustomElemKind {
+    String,
+    Bytes,
+}
+
+/// Collect the distinct custom owned types used as elements of a `repeated`
+/// field across the whole request, keyed by Rust type path. Only `repeated`
+/// scalar `string`/`bytes` fields with a `Custom` representation qualify: map
+/// keys/values always stay `String`/`Vec<u8>`/`Bytes`, and singular / optional /
+/// oneof custom fields reach JSON and reflection without an element-trait impl.
+fn collect_custom_repeated_elements(
+    ctx: &context::CodeGenContext,
+    file_descriptors: &[FileDescriptorProto],
+    files_to_generate: &[String],
+) -> std::collections::BTreeMap<String, CustomElemKind> {
+    use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
+
+    fn walk(
+        ctx: &context::CodeGenContext,
+        messages: &[crate::generated::descriptor::DescriptorProto],
+        scope: &str,
+        parent_features: &crate::features::ResolvedFeatures,
+        out: &mut std::collections::BTreeMap<String, CustomElemKind>,
+    ) {
+        for msg in messages {
+            let name = msg.name.as_deref().unwrap_or("");
+            let fqn = if scope.is_empty() {
+                name.to_string()
+            } else {
+                format!("{scope}.{name}")
+            };
+            let msg_features = crate::features::resolve_child(
+                parent_features,
+                crate::features::message_features(msg),
+            );
+            for field in &msg.field {
+                if field.label.unwrap_or_default() != Label::LABEL_REPEATED {
+                    continue;
+                }
+                let field_features = crate::features::resolve_field(ctx, field, &msg_features);
+                let ty = crate::impl_message::effective_type(ctx, field, &field_features);
+                let field_name = field.name.as_deref().unwrap_or("");
+                let field_fqn = format!(".{fqn}.{field_name}");
+                match ty {
+                    Type::TYPE_STRING => {
+                        if let crate::StringRepr::Custom(path) = ctx.string_repr(&field_fqn) {
+                            out.entry(path).or_insert(CustomElemKind::String);
+                        }
+                    }
+                    Type::TYPE_BYTES => {
+                        if let crate::BytesRepr::Custom(path) = ctx.bytes_repr(&field_fqn) {
+                            out.entry(path).or_insert(CustomElemKind::Bytes);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            walk(ctx, &msg.nested_type, &fqn, &msg_features, out);
+        }
+    }
+
+    let mut out = std::collections::BTreeMap::new();
+    for file_name in files_to_generate {
+        let Some(file) = file_descriptors
+            .iter()
+            .find(|f| f.name.as_deref() == Some(file_name.as_str()))
+        else {
+            continue;
+        };
+        let pkg = file.package.as_deref().unwrap_or("");
+        let file_features = crate::features::for_file(file);
+        walk(ctx, &file.message_type, pkg, &file_features, &mut out);
+    }
+    out
+}
+
+/// Render the deduped `ProtoElemJson` / `ReflectElement` impls for the collected
+/// custom repeated-element types. Each impl is feature-gated so a non-JSON /
+/// non-reflect build never references an absent trait. These compile only when
+/// the custom type is local to the generating crate (the orphan rule); that is
+/// the documented limitation of a custom `repeated` element under JSON or vtable
+/// reflection.
+fn render_custom_elem_impls(
+    ctx: &context::CodeGenContext,
+    elems: &std::collections::BTreeMap<String, CustomElemKind>,
+) -> Result<TokenStream, CodeGenError> {
+    let json_gate = ctx.config.feature_gates().json;
+    let reflect_gate = ctx.config.feature_gates().reflect;
+    let mut out = TokenStream::new();
+    for (path, kind) in elems {
+        let ty = parse_custom_type_path(path)?;
+        if ctx.config.generate_json {
+            let (ser_call, de_mod) = match kind {
+                CustomElemKind::String => (
+                    quote! { ::buffa::json_helpers::proto_string::serialize(v, s) },
+                    quote! { proto_string },
+                ),
+                CustomElemKind::Bytes => (
+                    quote! {
+                        ::buffa::json_helpers::bytes::serialize(
+                            ::core::convert::AsRef::<[u8]>::as_ref(v),
+                            s,
+                        )
+                    },
+                    quote! { bytes },
+                ),
+            };
+            out.extend(feature_gates::cfg_block(
+                quote! {
+                    impl ::buffa::json_helpers::ProtoElemJson for #ty {
+                        fn serialize_proto_json<S: ::serde::Serializer>(
+                            v: &Self,
+                            s: S,
+                        ) -> ::core::result::Result<S::Ok, S::Error> {
+                            #ser_call
+                        }
+                        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+                            d: D,
+                        ) -> ::core::result::Result<Self, D::Error> {
+                            ::buffa::json_helpers::#de_mod::deserialize(d)
+                        }
+                    }
+                },
+                json_gate,
+            ));
+        }
+        if ctx.config.generate_reflection_vtable {
+            let value_ref = match kind {
+                CustomElemKind::String => quote! {
+                    ::buffa_descriptor::reflect::ValueRef::String(
+                        ::core::convert::AsRef::<str>::as_ref(self),
+                    )
+                },
+                CustomElemKind::Bytes => quote! {
+                    ::buffa_descriptor::reflect::ValueRef::Bytes(
+                        ::core::convert::AsRef::<[u8]>::as_ref(self),
+                    )
+                },
+            };
+            out.extend(feature_gates::cfg_block(
+                quote! {
+                    impl ::buffa_descriptor::reflect::ReflectElement for #ty {
+                        fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+                            #value_ref
+                        }
+                    }
+                },
+                reflect_gate,
+            ));
+        }
+    }
+    Ok(out)
+}
+
 pub fn generate_with_diagnostics(
     file_descriptors: &[FileDescriptorProto],
     files_to_generate: &[String],
@@ -1246,9 +1403,25 @@ pub fn generate_with_diagnostics(
         Vec::new()
     };
 
+    // Custom owned types used as elements of a `repeated` field need a
+    // `ProtoElemJson` (JSON) and/or `ReflectElement` (vtable) impl, which buffa
+    // cannot provide for a foreign type (orphan rule). Collect them once across
+    // the whole request, render the impls, and hand them to the first package so
+    // they are emitted exactly once (a per-package emit would collide, E0119).
+    let custom_elems = collect_custom_repeated_elements(&ctx, file_descriptors, files_to_generate);
+    let custom_elem_impls = render_custom_elem_impls(&ctx, &custom_elems)?;
+
+    let empty_impls = TokenStream::new();
     let mut output = Vec::new();
+    let mut custom_emitted = false;
     for (package, files) in by_package {
-        generate_package(&ctx, &package, &files, &fds_bytes, &mut output)?;
+        let impls = if custom_emitted {
+            &empty_impls
+        } else {
+            custom_emitted = true;
+            &custom_elem_impls
+        };
+        generate_package(&ctx, &package, &files, &fds_bytes, impls, &mut output)?;
     }
 
     Ok((output, ctx.take_warnings()))
@@ -1705,6 +1878,10 @@ fn generate_package(
     current_package: &str,
     files: &[&FileDescriptorProto],
     fds_bytes: &[u8],
+    // Deduped `ProtoElemJson` / `ReflectElement` impls for custom repeated
+    // element types, collected generation-wide and emitted into exactly one
+    // package's `__buffa` module (empty for every package but the first).
+    custom_elem_impls: &TokenStream,
     out: &mut Vec<GeneratedFile>,
 ) -> Result<(), CodeGenError> {
     // Registry paths are package-root-relative; `register_types` lives at
@@ -1837,7 +2014,14 @@ fn generate_package(
         },
         package: current_package.to_string(),
         kind: GeneratedFileKind::PackageMod,
-        content: generate_package_mod(ctx, &sections, &reg, &reexport_block, fds_bytes)?,
+        content: generate_package_mod(
+            ctx,
+            &sections,
+            &reg,
+            &reexport_block,
+            fds_bytes,
+            custom_elem_impls,
+        )?,
     });
 
     // Drop the import registry so its bindings can't leak into the next
@@ -1931,6 +2115,7 @@ fn generate_package_mod(
     reg: &message::RegistryPaths,
     root_reexports: &TokenStream,
     fds_bytes: &[u8],
+    custom_elem_impls: &TokenStream,
 ) -> Result<String, CodeGenError> {
     use crate::idents::make_field_ident;
 
@@ -2102,6 +2287,7 @@ fn generate_package_mod(
         && ext_mod.is_empty()
         && register_fn.is_empty()
         && reflect_mod.is_empty()
+        && custom_elem_impls.is_empty()
     {
         TokenStream::new()
     } else {
@@ -2117,6 +2303,7 @@ fn generate_package_mod(
                 #ext_mod
                 #register_fn
                 #reflect_mod
+                #custom_elem_impls
             }
         }
     };
