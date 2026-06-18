@@ -591,11 +591,15 @@ pub fn string_encoded_len(value: &str) -> usize {
 /// - `Send + Sync` — so a message owning such a field stays `Send + Sync`;
 ///   without this bound an exotic string type could silently make every
 ///   containing message thread-unsafe.
-/// - [`AsRef<str>`] — the encoder borrows the field as `&str`;
-///   [`encode_string`] and [`string_encoded_len`] take `&str`.
+/// - `Deref<Target = str>` and [`AsRef<str>`] — generated code borrows the field
+///   as `&str` by plain reference coercion (`&self.field` where
+///   [`encode_string`] / [`string_encoded_len`] expect `&str`), so the
+///   representation must `Deref` to `str`; `AsRef<str>` is also required for the
+///   call sites that ask for it explicitly. Every standard string-like type
+///   (`String`, `SmolStr`, `EcoString`, `CompactString`) satisfies both.
 /// - `From<String>` and `From<&str>` — used by the decode path
-///   ([`decode_string_to`]) and (once the knob lands) the view→owned conversion
-///   to construct the field from freshly decoded text.
+///   ([`decode_string_to`]) and the view→owned conversion to construct the field
+///   from freshly decoded text.
 ///
 /// For the default `String` representation every conversion is the identity, so
 /// the generic path costs nothing relative to the specialized one.
@@ -606,6 +610,7 @@ pub trait ProtoString:
     + core::fmt::Debug
     + Send
     + Sync
+    + core::ops::Deref<Target = str>
     + AsRef<str>
     + From<String>
     + for<'a> From<&'a str>
@@ -619,6 +624,7 @@ impl<T> ProtoString for T where
         + core::fmt::Debug
         + Send
         + Sync
+        + core::ops::Deref<Target = str>
         + AsRef<str>
         + From<String>
         + for<'a> From<&'a str>
@@ -718,6 +724,92 @@ pub fn decode_bytes_to_bytes(buf: &mut impl Buf) -> Result<Bytes, DecodeError> {
         return Err(DecodeError::UnexpectedEof);
     }
     Ok(buf.copy_to_bytes(len))
+}
+
+/// The bound generated code places on the Rust type used for a proto `bytes`
+/// field. You neither implement nor name this trait by hand — a blanket impl
+/// covers every conforming type, and `buffa_build`'s `bytes_type` knob selects
+/// the concrete type at code-generation time.
+///
+/// buffa generates [`Vec<u8>`] by default. The knob can substitute
+/// [`bytes::Bytes`](crate::bytes::Bytes) (a built-in convenience that decodes
+/// zero-copy from a `Bytes`-backed buffer) or any other conforming type — for
+/// example a small-buffer-optimized or reference-counted byte container.
+///
+/// This is the `bytes`-side twin of [`ProtoString`]; the bounds are exactly what
+/// generated code requires of a `bytes` field:
+///
+/// - `Clone + PartialEq + Default + Debug` — for the `#[derive(...)]` and the
+///   hand-written `Debug` impl on message structs, and for `clear()` (which
+///   resets the field to [`Default`] rather than relying on a `Vec`-specific
+///   `clear`, since a substituted type may be immutable).
+/// - `Send + Sync` — so a message owning such a field stays `Send + Sync`.
+/// - `Deref<Target = [u8]>` and [`AsRef<[u8]>`](AsRef) — generated code borrows
+///   the field as `&[u8]` by plain reference coercion (`&self.field` where
+///   [`encode_bytes`] / [`bytes_encoded_len`] expect `&[u8]`), so the
+///   representation must `Deref` to `[u8]`; `AsRef<[u8]>` is also required for
+///   the call sites that ask for it explicitly. `Vec<u8>` and `bytes::Bytes`
+///   satisfy both.
+/// - `From<Vec<u8>>` — used by the decode path ([`decode_bytes_to`]) and the
+///   JSON path to construct the field from freshly decoded bytes. Note that
+///   `From<&[u8]>` is deliberately *not* required: `bytes::Bytes` implements it
+///   only for `&'static [u8]`, so requiring it would exclude `Bytes` itself.
+///
+/// For the default `Vec<u8>` representation every conversion is the identity, so
+/// the generic path costs nothing relative to the specialized one.
+pub trait ProtoBytes:
+    Clone
+    + PartialEq
+    + Default
+    + core::fmt::Debug
+    + Send
+    + Sync
+    + core::ops::Deref<Target = [u8]>
+    + AsRef<[u8]>
+    + From<Vec<u8>>
+{
+}
+
+impl<T> ProtoBytes for T where
+    T: Clone
+        + PartialEq
+        + Default
+        + core::fmt::Debug
+        + Send
+        + Sync
+        + core::ops::Deref<Target = [u8]>
+        + AsRef<[u8]>
+        + From<Vec<u8>>
+{
+}
+
+// The two built-in representations must always satisfy the bound; freeze that
+// invariant against future changes to the trait's supertraits.
+const _: fn() = || {
+    fn assert_proto_bytes<B: ProtoBytes>() {}
+    assert_proto_bytes::<Vec<u8>>();
+    assert_proto_bytes::<Bytes>();
+};
+
+/// Decode a length-delimited `bytes` value into a configurable [`ProtoBytes`]
+/// type.
+///
+/// This is the generic counterpart to [`decode_bytes`]: it reads the varint
+/// length prefix and copies that many bytes identically, then constructs the
+/// target representation via `From<Vec<u8>>`. Generated code uses the in-place
+/// [`merge_bytes`] for `Vec<u8>` fields (which reuses the existing allocation)
+/// and the zero-copy [`decode_bytes_to_bytes`] for `bytes::Bytes` fields; this
+/// helper serves every other [`ProtoBytes`] type.
+///
+/// # Errors
+///
+/// Propagates the same errors as [`decode_bytes`]:
+/// - [`DecodeError::UnexpectedEof`] if the buffer is shorter than the declared
+///   length.
+/// - [`DecodeError::MessageTooLarge`] if the declared length overflows `usize`.
+#[inline]
+pub fn decode_bytes_to<B: ProtoBytes>(buf: &mut impl Buf) -> Result<B, DecodeError> {
+    decode_bytes(buf).map(B::from)
 }
 
 /// Merge length-delimited bytes into an existing `Vec<u8>`, reusing its

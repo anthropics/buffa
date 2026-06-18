@@ -265,7 +265,7 @@ pub use message::{
 pub use message_field::{DefaultInstance, MessageField};
 pub use oneof::Oneof;
 pub use size_cache::SizeCache;
-pub use types::ProtoString;
+pub use types::{ProtoBytes, ProtoString};
 pub use unknown_fields::{UnknownField, UnknownFieldData, UnknownFields};
 
 #[cfg(feature = "text")]
@@ -392,6 +392,89 @@ pub mod __private {
         // parity test asserts. Do not "optimize" the intermediate `Vec` away.
         let vv: ::alloc::vec::Vec<::alloc::string::String> = ::arbitrary::Arbitrary::arbitrary(u)?;
         Ok(vv.into_iter().map(::ecow::EcoString::from).collect())
+    }
+
+    // ── Type-agnostic `Arbitrary` builders for configurable owned types ──────
+    //
+    // These replace the per-type shims above (`arbitrary_ecow*`,
+    // `arbitrary_bytes*`): codegen attaches them to any field whose
+    // representation is non-default, selecting by *kind* (string vs bytes,
+    // singular vs optional vs repeated) rather than by the concrete type. They
+    // build the canonical `String` / `Vec<u8>` first and convert through the
+    // `From` bound, so a substituted type needs no native `Arbitrary` impl and
+    // codegen carries no knowledge of any specific type. Materializing the
+    // canonical type first also keeps byte-consumption order identical to the
+    // default-representation impl, which the parity tests assert.
+
+    /// Build a [`ProtoString`](crate::ProtoString) from `Arbitrary` bytes.
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_proto_string<S: crate::ProtoString>(
+        u: &mut ::arbitrary::Unstructured<'_>,
+    ) -> ::arbitrary::Result<S> {
+        let s: ::alloc::string::String = ::arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(S::from(s))
+    }
+
+    /// Build an `Option<S>` for an explicit-presence `string` field.
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_proto_string_opt<S: crate::ProtoString>(
+        u: &mut ::arbitrary::Unstructured<'_>,
+    ) -> ::arbitrary::Result<::core::option::Option<S>> {
+        let opt: ::core::option::Option<::alloc::string::String> =
+            ::arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(opt.map(S::from))
+    }
+
+    /// Build a `Vec<S>` for a repeated `string` field.
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_proto_string_vec<S: crate::ProtoString>(
+        u: &mut ::arbitrary::Unstructured<'_>,
+    ) -> ::arbitrary::Result<::alloc::vec::Vec<S>> {
+        let vv: ::alloc::vec::Vec<::alloc::string::String> = ::arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(vv.into_iter().map(S::from).collect())
+    }
+
+    /// Build a [`ProtoBytes`](crate::ProtoBytes) from `Arbitrary` bytes.
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_proto_bytes<B: crate::ProtoBytes>(
+        u: &mut ::arbitrary::Unstructured<'_>,
+    ) -> ::arbitrary::Result<B> {
+        let v: ::alloc::vec::Vec<u8> = ::arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(B::from(v))
+    }
+
+    /// Build an `Option<B>` for an explicit-presence `bytes` field.
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_proto_bytes_opt<B: crate::ProtoBytes>(
+        u: &mut ::arbitrary::Unstructured<'_>,
+    ) -> ::arbitrary::Result<::core::option::Option<B>> {
+        let opt: ::core::option::Option<::alloc::vec::Vec<u8>> =
+            ::arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(opt.map(B::from))
+    }
+
+    /// Build a `Vec<B>` for a repeated `bytes` field.
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_proto_bytes_vec<B: crate::ProtoBytes>(
+        u: &mut ::arbitrary::Unstructured<'_>,
+    ) -> ::arbitrary::Result<::alloc::vec::Vec<B>> {
+        let vv: ::alloc::vec::Vec<::alloc::vec::Vec<u8>> = ::arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(vv.into_iter().map(B::from).collect())
+    }
+
+    /// Build a `HashMap<K, B>` for a `map<K, bytes>` field with a non-default
+    /// value representation. Generic over the key type so the call site needs
+    /// no per-key shim.
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_proto_bytes_map<'a, K, B>(
+        u: &mut ::arbitrary::Unstructured<'a>,
+    ) -> ::arbitrary::Result<HashMap<K, B>>
+    where
+        K: ::arbitrary::Arbitrary<'a> + ::core::cmp::Eq + ::core::hash::Hash,
+        B: crate::ProtoBytes,
+    {
+        let m: HashMap<K, ::alloc::vec::Vec<u8>> = ::arbitrary::Arbitrary::arbitrary(u)?;
+        Ok(m.into_iter().map(|(k, v)| (k, B::from(v))).collect())
     }
 }
 
