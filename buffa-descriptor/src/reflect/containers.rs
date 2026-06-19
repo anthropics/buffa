@@ -337,6 +337,44 @@ impl<K: ReflectMapKey, V: ReflectElement> ReflectMap for std::collections::HashM
     }
 }
 
+/// `BTreeMap` is an `alloc` collection, so buffa-descriptor (which owns
+/// `ReflectMap`) can implement it directly — no orphan-rule problem and no new
+/// dependency. This is the asymmetry versus a *foreign* map such as
+/// `indexmap::IndexMap`, which would be a foreign type for both buffa-descriptor
+/// and the consumer crate and so needs a crate-local newtype. `BTreeMap` is the
+/// container `buffa_build`'s `map_type(MapRepr::BTreeMap)` selects, and like the
+/// `HashMap` impl above it is `std`-gated (vtable reflection requires `std`).
+#[cfg(feature = "std")]
+impl<K: ReflectMapKey, V: ReflectElement> ReflectMap for alloc::collections::BTreeMap<K, V> {
+    fn len(&self) -> usize {
+        Self::len(self)
+    }
+
+    // `get`/`get_str` are deliberate O(n) linear scans (not BTreeMap's native
+    // O(log n) lookup), mirroring the `HashMap` impl above: reflective lookup
+    // compares through the `MapKey` abstraction rather than the concrete key
+    // type, so an ordered/hashed probe isn't available without a key conversion.
+    // Reflection is not a hot path; keep parity with `HashMap` here.
+    fn get(&self, key: &MapKey) -> Option<ValueRef<'_>> {
+        let want = key.as_ref();
+        self.iter()
+            .find(|(k, _)| k.as_map_key_ref() == want)
+            .map(|(_, v)| v.as_value_ref())
+    }
+
+    fn get_str(&self, key: &str) -> Option<ValueRef<'_>> {
+        self.iter()
+            .find(|(k, _)| matches!(k.as_map_key_ref(), MapKeyRef::String(s) if s == key))
+            .map(|(_, v)| v.as_value_ref())
+    }
+
+    fn for_each(&self, f: &mut dyn FnMut(MapKeyRef<'_>, ValueRef<'_>)) {
+        for (k, v) in self {
+            f(k.as_map_key_ref(), v.as_value_ref());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

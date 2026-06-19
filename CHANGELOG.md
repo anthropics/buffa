@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **Pluggable owned map container for `map<K, V>` fields** (#156). A new
+  `buffa::MapStorage` trait (with associated `Key` / `Value` types) selects the
+  owned map collection, via `buffa_build`'s `map_type` / `map_type_custom` knobs.
+  The default stays `HashMap`; `BTreeMap` is a zero-dependency built-in giving
+  deterministic (reproducible) encoded bytes, and a crate-local newtype can wrap
+  any other map (e.g. `IndexMap`). JSON and `arbitrary` work for every proto map
+  key/value type regardless of the container — the proto-JSON `with`-modules and
+  the `arbitrary` shim are generic over `MapStorage`. The wire format is
+  unchanged; only the in-memory collection changes, and view types are
+  unaffected.
+
 - **Docker-free conformance runs** (#192). `task conformance-tools-local`
   builds `conformance_test_runner` from the pinned protobuf tag into
   `.local/bin/` and `task conformance-local` executes the same seven runs

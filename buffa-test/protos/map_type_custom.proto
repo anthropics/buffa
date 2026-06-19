@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package map_type_custom;
+
+// Compiled with `.map_type_custom("crate::map_type_custom::CustomMap")`, so
+// every `map` field uses the crate-local `CustomMap<K, V>` newtype (a
+// `MapStorage` impl) instead of `HashMap`. This exercises the `MapRepr::Custom`
+// codegen path (path<K, V> emission) end-to-end with consumer-provided
+// `MapStorage` / `ReflectMap` / `FromIterator` impls, rather than buffa's
+// built-in ones — the worked example a downstream user cribs from. Covers a
+// scalar-valued and a message-valued map (the two-pass message helpers and
+// view→owned message conversion).
+message CustomMaps {
+  map<string, int32> scores = 1;
+  map<string, Item> items = 2;
+}
+
+message Item {
+  int32 id = 1;
+}

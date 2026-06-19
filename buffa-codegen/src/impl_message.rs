@@ -448,7 +448,7 @@ pub fn generate_message_impl(
                 compute_stmts.push(map_compute_size_stmt(ctx, msg, f, proto_fqn, features)?);
                 write_stmts.push(map_write_to_stmt(ctx, msg, f, proto_fqn, features)?);
                 merge_arms.push(map_merge_arm(ctx, msg, f, proto_fqn, features)?);
-                clear_stmts.push(vec_field_clear_stmt(f)?);
+                clear_stmts.push(map_field_clear_stmt(ctx, f, proto_fqn)?);
             }
             FieldKind::Oneof {
                 name,
@@ -951,6 +951,27 @@ fn vec_field_clear_stmt(field: &FieldDescriptorProto) -> Result<TokenStream, Cod
     Ok(quote! { self.#ident.clear(); })
 }
 
+/// Clear statement for a `map` field. The default `HashMap` keeps the bare
+/// inherent `.clear()` (byte-identical output); a `BTreeMap` or custom container
+/// clears through the `MapStorage` trait, since a custom newtype has no inherent
+/// `clear`.
+fn map_field_clear_stmt(
+    ctx: &CodeGenContext,
+    field: &FieldDescriptorProto,
+    proto_fqn: &str,
+) -> Result<TokenStream, CodeGenError> {
+    let field_name = field
+        .name
+        .as_deref()
+        .ok_or(CodeGenError::MissingField("field.name"))?;
+    let ident = make_field_ident(field_name);
+    if field_map_repr(ctx, proto_fqn, field_name).is_default() {
+        Ok(quote! { self.#ident.clear(); })
+    } else {
+        Ok(quote! { ::buffa::map_codec::MapStorage::storage_clear(&mut self.#ident); })
+    }
+}
+
 /// Generate a clear statement for a scalar (non-repeated, non-oneof) field.
 ///
 /// Returns a `TokenStream` that clears the field to its default value while
@@ -1024,6 +1045,20 @@ pub(crate) fn field_string_repr(
 ) -> crate::StringRepr {
     let field_fqn = format!(".{}.{}", proto_fqn, field_name);
     ctx.string_repr(&field_fqn)
+}
+
+/// Resolve the [`MapRepr`](crate::MapRepr) for a `map` field.
+///
+/// `proto_fqn` is the fully-qualified message name (no leading dot). Matched
+/// against `config.map_fields` as `".my.pkg.Msg.field"`. Returns
+/// [`MapRepr::HashMap`](crate::MapRepr::HashMap) for fields with no rule.
+pub(crate) fn field_map_repr(
+    ctx: &CodeGenContext,
+    proto_fqn: &str,
+    field_name: &str,
+) -> crate::MapRepr {
+    let field_fqn = format!(".{}.{}", proto_fqn, field_name);
+    ctx.map_repr(&field_fqn)
 }
 
 fn scalar_clear_stmt(
@@ -2966,7 +3001,7 @@ fn map_compute_size_stmt(
     // iterate the same map, so slot order matches by construction).
     if m.val_ty == Type::TYPE_MESSAGE {
         return Ok(quote! {
-            size += ::buffa::map_codec::message_field_len::<#key_codec, _>(
+            size += ::buffa::map_codec::message_field_len::<#key_codec, _, _>(
                 &self.#ident,
                 #outer_tag_len,
                 __cache,
@@ -2974,7 +3009,7 @@ fn map_compute_size_stmt(
         });
     }
     Ok(quote! {
-        size += ::buffa::map_codec::field_len::<#key_codec, #val_codec>(
+        size += ::buffa::map_codec::field_len::<#key_codec, #val_codec, _>(
             &self.#ident,
             #outer_tag_len,
         );
@@ -2998,7 +3033,7 @@ fn map_write_to_stmt(
     } = &m;
     if m.val_ty == Type::TYPE_MESSAGE {
         return Ok(quote! {
-            ::buffa::map_codec::write_message_field::<#key_codec, _>(
+            ::buffa::map_codec::write_message_field::<#key_codec, _, _>(
                 &self.#ident,
                 #field_number,
                 __cache,
@@ -3007,7 +3042,7 @@ fn map_write_to_stmt(
         });
     }
     Ok(quote! {
-        ::buffa::map_codec::write_field::<#key_codec, #val_codec>(
+        ::buffa::map_codec::write_field::<#key_codec, #val_codec, _>(
             &self.#ident,
             #field_number,
             buf,
@@ -3037,7 +3072,7 @@ fn map_merge_arm(
     Ok(quote! {
         #field_number => {
             #wire_check
-            ::buffa::map_codec::merge_entry::<#key_codec, #val_codec>(
+            ::buffa::map_codec::merge_entry::<#key_codec, #val_codec, _>(
                 &mut self.#ident,
                 buf,
                 ctx,

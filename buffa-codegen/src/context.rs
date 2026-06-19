@@ -908,6 +908,24 @@ impl<'a> CodeGenContext<'a> {
             .find(|(prefix, _)| matches_proto_prefix(prefix, field_fqn))
             .map_or(crate::StringRepr::default(), |(_, repr)| repr.clone())
     }
+
+    /// Resolve the [`MapRepr`](crate::MapRepr) for a `map` field at the given
+    /// proto path.
+    ///
+    /// `field_fqn` is the fully-qualified proto field path, e.g.
+    /// `".my.pkg.MyMessage.entries"`. Rules in `config.map_fields` are matched
+    /// with the same proto-segment-aware prefix logic as
+    /// [`string_repr`](Self::string_repr); the **last** matching rule wins,
+    /// letting a specific override follow a broad default. Fields matching no
+    /// rule use [`MapRepr::HashMap`](crate::MapRepr::HashMap).
+    pub fn map_repr(&self, field_fqn: &str) -> crate::MapRepr {
+        self.config
+            .map_fields
+            .iter()
+            .rev()
+            .find(|(prefix, _)| matches_proto_prefix(prefix, field_fqn))
+            .map_or(crate::MapRepr::default(), |(_, repr)| repr.clone())
+    }
 }
 
 /// Scope-local context for code generation within a message.

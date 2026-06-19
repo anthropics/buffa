@@ -9,10 +9,14 @@
 //! turbofish and let the map's own key/value types drive inference:
 //!
 //! ```ignore
-//! size += ::buffa::map_codec::field_len::<Str, Int32>(&self.stock, 1u32);
-//! ::buffa::map_codec::write_field::<Str, Int32>(&self.stock, 5u32, buf);
-//! ::buffa::map_codec::merge_entry::<Str, Int32>(&mut self.stock, buf, ctx)?;
+//! size += ::buffa::map_codec::field_len::<Str, Int32, _>(&self.stock, 1u32);
+//! ::buffa::map_codec::write_field::<Str, Int32, _>(&self.stock, 5u32, buf);
+//! ::buffa::map_codec::merge_entry::<Str, Int32, _>(&mut self.stock, buf, ctx)?;
 //! ```
+//!
+//! The trailing `_` is the container type ([`MapStorage`]); it is inferred from
+//! the map argument but must be written explicitly, because a partial turbofish
+//! on a three-generic function is a hard error.
 //!
 //! Everything monomorphizes to the same code the previous inline expansion
 //! produced; the fixed-width fast path (`len() * const`) is preserved via
@@ -39,6 +43,152 @@ use core::hash::Hash;
 /// in these helpers' signatures only so generated call sites type-check.
 /// Like the rest of this module it is not a stable consumer-facing surface.
 pub type Map<K, V> = crate::__private::HashMap<K, V>;
+
+/// The owned collection backing a proto `map<K, V>` field.
+///
+/// The default is the `__private::HashMap` alias above; `buffa_build`'s
+/// `map_type` knob can instead select the buffa-provided
+/// [`BTreeMap`](alloc::collections::BTreeMap) (deterministic iteration order,
+/// no extra dependency) or a custom map. The five runtime helpers in this
+/// module need only three operations from the container — count entries,
+/// borrow-iterate entries, and insert one entry — so this trait captures that
+/// minimal surface and lets the helpers stay generic over *which* map a field
+/// uses rather than hard-coding `__private::HashMap`.
+///
+/// The wire format is identical regardless of the container; only the in-memory
+/// owned type changes, and view types are unaffected.
+///
+/// It is re-exported at the crate root, so downstream code can write
+/// `use buffa::MapStorage;` (the longer `buffa::map_codec::MapStorage` path also
+/// works).
+///
+/// # Sealing
+///
+/// Unlike [`MapCodec`] / [`MapValueDecode`], this trait is **not** sealed.
+/// Those traits guard wire-format invariants the type system cannot express, so
+/// they must stay closed. `MapStorage` carries no wire invariant: a buggy impl
+/// can at worst iterate in an unusual order (already permitted for proto maps)
+/// or drop the consumer's own entries. Leaving it open lets a downstream crate
+/// wrap a foreign map (e.g. `indexmap::IndexMap`) in a crate-local newtype and
+/// implement `MapStorage` on it, exactly as the orphan rule requires. The
+/// wire-format seal is orthogonal and unaffected.
+///
+/// # Contract
+///
+/// - [`storage_insert`](Self::storage_insert) is **last-write-wins**, matching
+///   proto map-merge semantics (a later entry for an existing key replaces the
+///   earlier value).
+/// - [`storage_iter`](Self::storage_iter) and [`storage_len`](Self::storage_len)
+///   must agree: the iterator yields exactly `storage_len()` entries.
+///
+/// The key/value types are **associated types** ([`Key`](Self::Key) /
+/// [`Value`](Self::Value)), not trait parameters, and the per-collection key
+/// bound (`Eq + Hash` for `HashMap`, `Ord` for `BTreeMap`) lives on each impl.
+/// The generic helpers bound only `C: MapStorage<Key = …, Value = …>` and never
+/// name a key bound themselves. Because the key/value are associated, a type
+/// implements `MapStorage` at most once, so the container — and its key and
+/// value types — resolve unambiguously everywhere the trait is used as a bound.
+///
+/// # Requirements (for a *custom* map)
+///
+/// This is the canonical list of what a custom map must provide. A custom map is
+/// always a **crate-local newtype** (the orphan rule blocks implementing the
+/// buffa-owned reflection / serde traits on a foreign map), and must implement:
+///
+/// - `MapStorage` itself (this trait), naming its `Key` / `Value`.
+/// - `Default` + `Clone` + `PartialEq` + `Debug` — the generated owned message
+///   derives these, so its map field must support them.
+/// - [`FromIterator<(Key, Value)>`] — the view→owned conversion `.collect()`s
+///   entries into the owned map.
+/// - `buffa_descriptor`'s `ReflectMap` under the reflection / vtable path — not
+///   derivable, but a `BTreeMap`/`HashMap`-backed newtype can delegate to the
+///   inner map's impl. This requirement is `std`-only (vtable reflection
+///   requires `std`), so a `no_std` build never needs it.
+/// - `arbitrary::Arbitrary` under the `arbitrary` feature (derivable on a
+///   newtype).
+/// - `serde::Serialize` / `Deserialize` under a JSON-enabled build. The proto3
+///   JSON codec drives serialization through this trait, so **every** proto map
+///   key/value type is supported regardless of the container — there is no
+///   string-key or scalar-value restriction. (When a newtype wraps the inner map
+///   in a single field, a derived `Serialize` / `Deserialize` already routes
+///   transparently to the inner map; the with-modules call this trait's methods
+///   directly rather than the newtype's serde, so even that is only needed when
+///   the field type bypasses a with-module.)
+///
+/// The buffa-provided `HashMap` and `BTreeMap` already satisfy all of these, so
+/// selecting `BTreeMap` needs no consumer code.
+///
+/// This trait is used only as a generic bound; it is **not object-safe** (the
+/// [`storage_iter`](Self::storage_iter) RPITIT precludes `dyn MapStorage`).
+pub trait MapStorage {
+    /// The map key type.
+    type Key;
+    /// The map value type.
+    type Value;
+    /// Number of entries.
+    fn storage_len(&self) -> usize;
+    /// Insert one entry (last-write-wins, matching proto map-merge semantics).
+    fn storage_insert(&mut self, key: Self::Key, value: Self::Value);
+    /// Remove all entries (the field's cleared / default state), retaining
+    /// capacity where the underlying type allows. Invoked by the generated
+    /// message `clear()`.
+    fn storage_clear(&mut self);
+    /// Borrow-iterate entries in the container's native order.
+    fn storage_iter<'a>(&'a self) -> impl Iterator<Item = (&'a Self::Key, &'a Self::Value)>
+    where
+        Self::Key: 'a,
+        Self::Value: 'a;
+}
+
+impl<K: Eq + Hash, V> MapStorage for crate::__private::HashMap<K, V> {
+    type Key = K;
+    type Value = V;
+    #[inline]
+    fn storage_len(&self) -> usize {
+        self.len()
+    }
+    #[inline]
+    fn storage_insert(&mut self, key: K, value: V) {
+        self.insert(key, value);
+    }
+    #[inline]
+    fn storage_clear(&mut self) {
+        self.clear();
+    }
+    #[inline]
+    fn storage_iter<'a>(&'a self) -> impl Iterator<Item = (&'a K, &'a V)>
+    where
+        K: 'a,
+        V: 'a,
+    {
+        self.iter()
+    }
+}
+
+impl<K: Ord, V> MapStorage for crate::alloc::collections::BTreeMap<K, V> {
+    type Key = K;
+    type Value = V;
+    #[inline]
+    fn storage_len(&self) -> usize {
+        self.len()
+    }
+    #[inline]
+    fn storage_insert(&mut self, key: K, value: V) {
+        self.insert(key, value);
+    }
+    #[inline]
+    fn storage_clear(&mut self) {
+        self.clear();
+    }
+    #[inline]
+    fn storage_iter<'a>(&'a self) -> impl Iterator<Item = (&'a K, &'a V)>
+    where
+        K: 'a,
+        V: 'a,
+    {
+        self.iter()
+    }
+}
 
 mod sealed {
     /// Seals [`MapValueDecode`](super::MapValueDecode) / [`MapCodec`](super::MapCodec).
@@ -397,16 +547,17 @@ fn entry_len<KC: MapCodec, VC: MapCodec>(k: &KC::Value, v: &VC::Value) -> u32 {
 /// `outer_tag_len` is the encoded length of the field's outer tag (a codegen
 /// constant). When both codecs are fixed-width the per-entry size is a
 /// compile-time constant and the loop folds to `len() * entry`.
-pub fn field_len<KC: MapCodec, VC: MapCodec>(
-    map: &Map<KC::Value, VC::Value>,
-    outer_tag_len: u32,
-) -> u32 {
+pub fn field_len<KC: MapCodec, VC: MapCodec, C>(map: &C, outer_tag_len: u32) -> u32
+where
+    C: MapStorage<Key = KC::Value, Value = VC::Value>,
+{
     if let (Some(kf), Some(vf)) = (KC::FIXED_LEN, VC::FIXED_LEN) {
         let entry = ENTRY_TAG_LEN + kf + vf;
-        return map.len() as u32 * (outer_tag_len + varint_len(entry as u64) as u32 + entry);
+        return map.storage_len() as u32
+            * (outer_tag_len + varint_len(entry as u64) as u32 + entry);
     }
     let mut size = 0u32;
-    for (k, v) in map {
+    for (k, v) in map.storage_iter() {
         let entry = entry_len::<KC, VC>(k, v);
         size += outer_tag_len + varint_len(entry as u64) as u32 + entry;
     }
@@ -415,12 +566,11 @@ pub fn field_len<KC: MapCodec, VC: MapCodec>(
 
 /// Write a scalar-valued map field: one `field_number`-tagged,
 /// length-prefixed entry per element.
-pub fn write_field<KC: MapCodec, VC: MapCodec>(
-    map: &Map<KC::Value, VC::Value>,
-    field_number: u32,
-    buf: &mut impl BufMut,
-) {
-    for (k, v) in map {
+pub fn write_field<KC: MapCodec, VC: MapCodec, C>(map: &C, field_number: u32, buf: &mut impl BufMut)
+where
+    C: MapStorage<Key = KC::Value, Value = VC::Value>,
+{
+    for (k, v) in map.storage_iter() {
         let entry = entry_len::<KC, VC>(k, v);
         Tag::new(field_number, WireType::LengthDelimited).encode(buf);
         encode_varint(entry as u64, buf);
@@ -436,13 +586,16 @@ pub fn write_field<KC: MapCodec, VC: MapCodec>(
 /// Reserves one [`SizeCache`] slot per entry (in map iteration order);
 /// [`write_message_field`] consumes the slots in the same order — both
 /// helpers iterate the same map, so the orders match by construction.
-pub fn message_field_len<KC: MapCodec, M: Message>(
-    map: &Map<KC::Value, M>,
+pub fn message_field_len<KC: MapCodec, M: Message, C>(
+    map: &C,
     outer_tag_len: u32,
     cache: &mut SizeCache,
-) -> u32 {
+) -> u32
+where
+    C: MapStorage<Key = KC::Value, Value = M>,
+{
     let mut size = 0u32;
-    for (k, v) in map {
+    for (k, v) in map.storage_iter() {
         let slot = cache.reserve();
         let inner = v.compute_size(cache);
         cache.set(slot, inner);
@@ -454,13 +607,15 @@ pub fn message_field_len<KC: MapCodec, M: Message>(
 
 /// Write a message-valued map field, consuming the [`SizeCache`] slots
 /// reserved by [`message_field_len`].
-pub fn write_message_field<KC: MapCodec, M: Message>(
-    map: &Map<KC::Value, M>,
+pub fn write_message_field<KC: MapCodec, M: Message, C>(
+    map: &C,
     field_number: u32,
     cache: &mut SizeCache,
     buf: &mut impl BufMut,
-) {
-    for (k, v) in map {
+) where
+    C: MapStorage<Key = KC::Value, Value = M>,
+{
+    for (k, v) in map.storage_iter() {
         let inner = cache.consume_next();
         let entry = ENTRY_TAG_LEN + KC::encoded_len(k) + varint_len(inner as u64) as u32 + inner;
         Tag::new(field_number, WireType::LengthDelimited).encode(buf);
@@ -484,15 +639,15 @@ pub fn write_message_field<KC: MapCodec, M: Message>(
 ///
 /// Returns a [`DecodeError`] on malformed lengths, payloads, or wire-type
 /// mismatches inside the entry.
-pub fn merge_entry<KC, VC>(
-    map: &mut Map<KC::Value, VC::Value>,
+pub fn merge_entry<KC, VC, C>(
+    map: &mut C,
     buf: &mut impl Buf,
     ctx: DecodeContext<'_>,
 ) -> Result<(), DecodeError>
 where
     KC: MapValueDecode,
-    KC::Value: Eq + Hash,
     VC: MapValueDecode,
+    C: MapStorage<Key = KC::Value, Value = VC::Value>,
 {
     let entry_len = decode_varint(buf)?;
     let entry_len = usize::try_from(entry_len).map_err(|_| DecodeError::MessageTooLarge)?;
@@ -527,7 +682,7 @@ where
             return Err(DecodeError::UnexpectedEof);
         }
     }
-    map.insert(key, val);
+    map.storage_insert(key, val);
     Ok(())
 }
 
@@ -541,10 +696,13 @@ mod tests {
         map: &Map<KC::Value, VC::Value>,
         field_number: u32,
         outer_tag_len: u32,
-    ) -> Vec<u8> {
-        let len = field_len::<KC, VC>(map, outer_tag_len);
+    ) -> Vec<u8>
+    where
+        KC::Value: Eq + Hash,
+    {
+        let len = field_len::<KC, VC, _>(map, outer_tag_len);
         let mut buf = Vec::new();
-        write_field::<KC, VC>(map, field_number, &mut buf);
+        write_field::<KC, VC, _>(map, field_number, &mut buf);
         assert_eq!(buf.len() as u32, len, "field_len must match written bytes");
         buf
     }
@@ -561,7 +719,7 @@ mod tests {
             let tag = Tag::decode(&mut wire).unwrap();
             assert_eq!(tag.wire_type(), WireType::LengthDelimited);
             let ctx = DecodeContext::new(crate::RECURSION_LIMIT, &limit);
-            merge_entry::<KC, VC>(&mut map, &mut wire, ctx).unwrap();
+            merge_entry::<KC, VC, _>(&mut map, &mut wire, ctx).unwrap();
         }
         map
     }
@@ -595,7 +753,7 @@ mod tests {
         let wire = [0x00u8];
         let mut map: Map<String, i32> = Map::default();
         let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
-        merge_entry::<Str, Int32>(&mut map, &mut &wire[..], DecodeContext::new(10, &limit))
+        merge_entry::<Str, Int32, _>(&mut map, &mut &wire[..], DecodeContext::new(10, &limit))
             .unwrap();
         assert_eq!(map.get(""), Some(&0));
     }
@@ -616,7 +774,7 @@ mod tests {
 
         let mut map: Map<String, i32> = Map::default();
         let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
-        merge_entry::<Str, Int32>(
+        merge_entry::<Str, Int32, _>(
             &mut map,
             &mut wire.as_slice(),
             DecodeContext::new(10, &limit),
@@ -637,7 +795,7 @@ mod tests {
 
         let mut map: Map<String, i32> = Map::default();
         let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
-        let err = merge_entry::<Str, Int32>(
+        let err = merge_entry::<Str, Int32, _>(
             &mut map,
             &mut wire.as_slice(),
             DecodeContext::new(10, &limit),
@@ -653,7 +811,7 @@ mod tests {
         let mut map: Map<String, i32> = Map::default();
         let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
         let err =
-            merge_entry::<Str, Int32>(&mut map, &mut &wire[..], DecodeContext::new(10, &limit))
+            merge_entry::<Str, Int32, _>(&mut map, &mut &wire[..], DecodeContext::new(10, &limit))
                 .unwrap_err();
         assert!(matches!(err, DecodeError::UnexpectedEof));
     }
@@ -714,9 +872,9 @@ mod tests {
         // iteration order; write_message_field consumes them in the same
         // order. The size must equal the written bytes exactly.
         let mut cache = SizeCache::default();
-        let len = message_field_len::<Int32, FlatMsg>(&map, 1, &mut cache);
+        let len = message_field_len::<Int32, FlatMsg, _>(&map, 1, &mut cache);
         let mut wire = Vec::new();
-        write_message_field::<Int32, FlatMsg>(&map, 4, &mut cache, &mut wire);
+        write_message_field::<Int32, FlatMsg, _>(&map, 4, &mut cache, &mut wire);
         assert_eq!(wire.len() as u32, len, "size pass must match write pass");
 
         let back = decode_field::<Int32, Msg<FlatMsg>>(&wire);

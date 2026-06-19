@@ -239,6 +239,7 @@ pub mod view;
 pub use enumeration::{EnumValue, Enumeration};
 pub use error::{DecodeError, EncodeError};
 pub use extension::{Extension, ExtensionCodec, ExtensionSet};
+pub use map_codec::MapStorage;
 pub use message::{
     DecodeContext, DecodeOptions, Message, MessageName, DEFAULT_UNKNOWN_FIELD_LIMIT,
     RECURSION_LIMIT,
@@ -353,19 +354,25 @@ pub mod __private {
         Ok(vv.into_iter().map(B::from).collect())
     }
 
-    /// Build a `HashMap<K, B>` for a `map<K, bytes>` field with a non-default
-    /// value representation. Generic over the key type so the call site needs
-    /// no per-key shim.
+    /// Build the owned map collection for a `map<K, bytes>` field with a
+    /// non-default value representation. Generic over the container (any
+    /// [`MapStorage`](crate::map_codec::MapStorage)) and the key type, so a
+    /// `HashMap`, `BTreeMap`, or custom map field needs no per-container shim.
     #[cfg(feature = "arbitrary")]
-    pub fn arbitrary_proto_bytes_map<'a, K, B>(
+    pub fn arbitrary_proto_bytes_map<'a, C>(
         u: &mut ::arbitrary::Unstructured<'a>,
-    ) -> ::arbitrary::Result<HashMap<K, B>>
+    ) -> ::arbitrary::Result<C>
     where
-        K: ::arbitrary::Arbitrary<'a> + ::core::cmp::Eq + ::core::hash::Hash,
-        B: crate::ProtoBytes,
+        C: crate::map_codec::MapStorage + Default,
+        C::Key: ::arbitrary::Arbitrary<'a>,
+        C::Value: crate::ProtoBytes,
     {
-        let m: HashMap<K, ::alloc::vec::Vec<u8>> = ::arbitrary::Arbitrary::arbitrary(u)?;
-        Ok(m.into_iter().map(|(k, v)| (k, B::from(v))).collect())
+        let mut out = C::default();
+        for entry in u.arbitrary_iter::<(C::Key, ::alloc::vec::Vec<u8>)>()? {
+            let (k, v) = entry?;
+            out.storage_insert(k, <C::Value as ::core::convert::From<_>>::from(v));
+        }
+        Ok(out)
     }
 }
 

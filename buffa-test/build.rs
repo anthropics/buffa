@@ -48,6 +48,41 @@ fn main() {
         .compile()
         .expect("buffa_build failed for vtable_bytes_repr.proto");
 
+    // map_type: every `map` field uses the buffa-provided `BTreeMap<K, V>`
+    // instead of `HashMap`, via `.map_type(MapRepr::BTreeMap)`. The crate
+    // compiling is most of the test — the merge (`storage_insert`), size/write
+    // (`storage_iter`/`storage_len`), JSON skip (`is_empty_map`), reflect `has`
+    // (`MapStorage::storage_len`), and view→owned (`.collect()`) paths must all
+    // emit code that works for the non-`HashMap` container. JSON + vtable
+    // reflection enabled so those surfaces are compiled.
+    buffa_build::Config::new()
+        .files(&["protos/map_type.proto"])
+        .includes(&["protos/"])
+        .map_type(buffa_build::MapRepr::BTreeMap)
+        .bytes_type(buffa_build::BytesRepr::Bytes)
+        .generate_json(true)
+        .generate_arbitrary(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for map_type.proto");
+
+    // map_type_custom: a crate-LOCAL `CustomMap<K, V>` newtype (a `MapStorage`
+    // impl wrapping BTreeMap) used for every `map` field, via the
+    // `map_type_custom` knob. Exercises the `MapRepr::Custom` codegen path and
+    // the consumer-implemented `MapStorage` / `ReflectMap` (delegating to the
+    // inner map) / `FromIterator` surface — the worked example for a downstream
+    // user. Vtable reflection on so the consumer `ReflectMap` delegation and the
+    // `MapStorage::storage_len` reflect `has`-arm are compiled. JSON is left off
+    // (a custom container's JSON support is covered by the BTreeMap built-in
+    // fixture; see the `MapStorage` docs for the with-module caveat).
+    buffa_build::Config::new()
+        .files(&["protos/map_type_custom.proto"])
+        .includes(&["protos/"])
+        .map_type_custom("crate::map_type_custom::CustomMap")
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for map_type_custom.proto");
+
     // Comprehensive proto3 semantics: implicit vs explicit presence for all
     // scalar types, open-enum contexts, default packing, synthetic oneofs.
     buffa_build::Config::new()

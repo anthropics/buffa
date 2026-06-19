@@ -41,6 +41,8 @@ mod idiomatic_imports;
 mod json;
 mod keyword;
 mod lazy_views;
+mod map_type;
+mod map_type_custom;
 mod message_set;
 mod mod_collision;
 mod nesting;

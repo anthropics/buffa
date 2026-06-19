@@ -99,7 +99,16 @@ pub(crate) fn reflect_owned_impls(
 
         if is_repeated && is_map_field(msg, field) {
             get_arms.push(quote! { #number => #vr::Map(&self.#id), });
-            has_arms.push(quote! { #number => !self.#id.is_empty(), });
+            // The default `HashMap` keeps `.is_empty()` (byte-identical output);
+            // a `BTreeMap` or custom map is checked through the generic
+            // `MapStorage` surface, which any configured map implements.
+            if crate::impl_message::field_map_repr(ctx, proto_fqn, name).is_default() {
+                has_arms.push(quote! { #number => !self.#id.is_empty(), });
+            } else {
+                has_arms.push(quote! {
+                    #number => ::buffa::map_codec::MapStorage::storage_len(&self.#id) != 0,
+                });
+            }
             continue;
         }
         if is_repeated {

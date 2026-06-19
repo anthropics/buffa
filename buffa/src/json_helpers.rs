@@ -305,9 +305,9 @@ pub mod proto_seq {
 /// Use with `#[serde(with = "::buffa::json_helpers::proto_map")]`.
 pub mod proto_map {
     use super::{ProtoElemJson, ProtoElemSeed, ProtoJson};
+    use crate::map_codec::MapStorage;
     use alloc::string::String;
     use core::fmt::Display;
-    use core::hash::Hash;
     use core::str::FromStr;
     use serde::{Deserializer, Serializer};
 
@@ -325,57 +325,61 @@ pub mod proto_map {
         }
     }
 
-    pub fn serialize<K, V, S>(m: &crate::__private::HashMap<K, V>, s: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<C, S>(m: &C, s: S) -> Result<S::Ok, S::Error>
     where
-        K: Display + Eq + Hash,
-        V: ProtoElemJson,
+        C: MapStorage,
+        C::Key: Display,
+        C::Value: ProtoElemJson,
         S: Serializer,
     {
         use serde::ser::SerializeMap;
-        let mut map = s.serialize_map(Some(m.len()))?;
-        for (k, v) in m {
+        let mut map = s.serialize_map(Some(m.storage_len()))?;
+        for (k, v) in m.storage_iter() {
             map.serialize_entry(&DisplayKey(k), &ProtoJson(v))?;
         }
         map.end()
     }
 
-    pub fn deserialize<'de, K, V, D>(d: D) -> Result<crate::__private::HashMap<K, V>, D::Error>
+    pub fn deserialize<'de, C, D>(d: D) -> Result<C, D::Error>
     where
-        K: FromStr + Eq + Hash,
-        K::Err: Display,
-        V: ProtoElemJson,
+        C: MapStorage + Default,
+        C::Key: FromStr,
+        <C::Key as FromStr>::Err: Display,
+        C::Value: ProtoElemJson,
         D: Deserializer<'de>,
     {
-        struct Vis<K, V>(core::marker::PhantomData<(K, V)>);
-        impl<'de, K, V> serde::de::Visitor<'de> for Vis<K, V>
+        struct Vis<C>(core::marker::PhantomData<C>);
+        impl<'de, C> serde::de::Visitor<'de> for Vis<C>
         where
-            K: FromStr + Eq + Hash,
-            K::Err: Display,
-            V: ProtoElemJson,
+            C: MapStorage + Default,
+            C::Key: FromStr,
+            <C::Key as FromStr>::Err: Display,
+            C::Value: ProtoElemJson,
         {
-            type Value = crate::__private::HashMap<K, V>;
+            type Value = C;
             fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 f.write_str("a JSON object with string keys, or null")
             }
             fn visit_unit<E>(self) -> Result<Self::Value, E> {
-                Ok(crate::__private::HashMap::new())
+                Ok(C::default())
             }
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> Result<Self::Value, A::Error> {
-                let mut out = crate::__private::HashMap::new();
+                let mut out = C::default();
                 while let Some(key) = map.next_key::<String>()? {
-                    let k = K::from_str(&key).map_err(|e| {
+                    let k = <C::Key as FromStr>::from_str(&key).map_err(|e| {
                         serde::de::Error::custom(alloc::format!("invalid map key '{key}': {e}"))
                     })?;
-                    let v = map.next_value_seed(ProtoElemSeed::<V>(core::marker::PhantomData))?;
-                    out.insert(k, v);
+                    let v =
+                        map.next_value_seed(ProtoElemSeed::<C::Value>(core::marker::PhantomData))?;
+                    out.storage_insert(k, v);
                 }
                 Ok(out)
             }
         }
-        d.deserialize_any(Vis::<K, V>(core::marker::PhantomData))
+        d.deserialize_any(Vis::<C>(core::marker::PhantomData))
     }
 }
 
@@ -739,53 +743,58 @@ pub mod repeated_enum {
 /// (or no_std builds) this behaves identically to standard deserialization
 /// with null→empty-map handling.
 pub mod map_enum {
+    use crate::map_codec::MapStorage;
     use serde::{Deserializer, Serializer};
 
-    pub fn serialize<
-        K: serde::Serialize + Eq + core::hash::Hash,
-        E: crate::Enumeration,
+    pub fn serialize<C, S>(value: &C, s: S) -> Result<S::Ok, S::Error>
+    where
+        C: MapStorage,
+        C::Key: serde::Serialize,
+        C::Value: serde::Serialize,
         S: Serializer,
-    >(
-        value: &crate::__private::HashMap<K, crate::EnumValue<E>>,
-        s: S,
-    ) -> Result<S::Ok, S::Error> {
-        serde::Serialize::serialize(value, s)
+    {
+        use serde::ser::SerializeMap;
+        let mut map = s.serialize_map(Some(value.storage_len()))?;
+        for (k, v) in value.storage_iter() {
+            map.serialize_entry(k, v)?;
+        }
+        map.end()
     }
 
-    pub fn deserialize<
-        'de,
-        K: serde::Deserialize<'de> + Eq + core::hash::Hash,
-        E: crate::Enumeration,
+    pub fn deserialize<'de, C, D>(d: D) -> Result<C, D::Error>
+    where
+        C: MapStorage + Default,
+        C::Key: serde::Deserialize<'de>,
+        C::Value: serde::de::DeserializeOwned,
         D: Deserializer<'de>,
-    >(
-        d: D,
-    ) -> Result<crate::__private::HashMap<K, crate::EnumValue<E>>, D::Error> {
-        struct V<K, E>(core::marker::PhantomData<(K, E)>);
-        impl<'de, K: serde::Deserialize<'de> + Eq + core::hash::Hash, E: crate::Enumeration>
-            serde::de::Visitor<'de> for V<K, E>
+    {
+        struct V<C>(core::marker::PhantomData<C>);
+        impl<'de, C> serde::de::Visitor<'de> for V<C>
+        where
+            C: MapStorage + Default,
+            C::Key: serde::Deserialize<'de>,
+            C::Value: serde::de::DeserializeOwned,
         {
-            type Value = crate::__private::HashMap<K, crate::EnumValue<E>>;
+            type Value = C;
 
             fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 f.write_str("a map with enum values or null")
             }
 
             fn visit_unit<Err>(self) -> Result<Self::Value, Err> {
-                Ok(crate::__private::HashMap::new())
+                Ok(C::default())
             }
 
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> Result<Self::Value, A::Error> {
-                let mut out = crate::__private::HashMap::with_capacity(super::clamp_size_hint(
-                    map.size_hint(),
-                ));
-                while let Some(key) = map.next_key::<K>()? {
+                let mut out = C::default();
+                while let Some(key) = map.next_key::<C::Key>()? {
                     let raw = map.next_value::<serde_json::Value>()?;
-                    match super::try_deserialize_enum::<crate::EnumValue<E>>(raw) {
+                    match super::try_deserialize_enum::<C::Value>(raw) {
                         Ok(Some(v)) => {
-                            out.insert(key, v);
+                            out.storage_insert(key, v);
                         }
                         Ok(None) => continue,
                         Err(e) => return Err(serde::de::Error::custom(e)),
@@ -794,7 +803,7 @@ pub mod map_enum {
                 Ok(out)
             }
         }
-        d.deserialize_any(V(core::marker::PhantomData))
+        d.deserialize_any(V::<C>(core::marker::PhantomData))
     }
 }
 
@@ -1285,54 +1294,56 @@ where
 ///
 /// Use with `#[serde(with = "::buffa::json_helpers::bytes_key_map")]`.
 pub mod bytes_key_map {
+    use crate::map_codec::MapStorage;
     use serde::{Deserializer, Serializer};
 
-    pub fn serialize<V, S>(
-        value: &crate::__private::HashMap<alloc::vec::Vec<u8>, V>,
-        s: S,
-    ) -> Result<S::Ok, S::Error>
+    pub fn serialize<C, S>(value: &C, s: S) -> Result<S::Ok, S::Error>
     where
-        V: serde::Serialize,
+        C: MapStorage<Key = alloc::vec::Vec<u8>>,
+        C::Value: serde::Serialize,
         S: Serializer,
     {
         use serde::ser::SerializeMap;
-        let mut map = s.serialize_map(Some(value.len()))?;
-        for (k, v) in value {
+        let mut map = s.serialize_map(Some(value.storage_len()))?;
+        for (k, v) in value.storage_iter() {
             map.serialize_entry(&super::Base64Wrapper(k), v)?;
         }
         map.end()
     }
 
-    pub fn deserialize<'de, V, D>(
-        d: D,
-    ) -> Result<crate::__private::HashMap<alloc::vec::Vec<u8>, V>, D::Error>
+    pub fn deserialize<'de, C, D>(d: D) -> Result<C, D::Error>
     where
-        V: serde::Deserialize<'de>,
+        C: MapStorage<Key = alloc::vec::Vec<u8>> + Default,
+        C::Value: serde::Deserialize<'de>,
         D: Deserializer<'de>,
     {
-        struct Vis<V>(core::marker::PhantomData<V>);
-        impl<'de, V: serde::Deserialize<'de>> serde::de::Visitor<'de> for Vis<V> {
-            type Value = crate::__private::HashMap<alloc::vec::Vec<u8>, V>;
+        struct Vis<C>(core::marker::PhantomData<C>);
+        impl<'de, C> serde::de::Visitor<'de> for Vis<C>
+        where
+            C: MapStorage<Key = alloc::vec::Vec<u8>> + Default,
+            C::Value: serde::Deserialize<'de>,
+        {
+            type Value = C;
             fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 f.write_str("a map with base64-encoded keys, or null")
             }
             fn visit_unit<E>(self) -> Result<Self::Value, E> {
-                Ok(crate::__private::HashMap::new())
+                Ok(C::default())
             }
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> Result<Self::Value, A::Error> {
-                let mut out = crate::__private::HashMap::new();
+                let mut out = C::default();
                 while let Some(key_str) = map.next_key::<alloc::string::String>()? {
                     let k = super::decode_base64(&key_str).map_err(serde::de::Error::custom)?;
-                    let v: V = map.next_value()?;
-                    out.insert(k, v);
+                    let v: C::Value = map.next_value()?;
+                    out.storage_insert(k, v);
                 }
                 Ok(out)
             }
         }
-        d.deserialize_any(Vis(core::marker::PhantomData))
+        d.deserialize_any(Vis::<C>(core::marker::PhantomData))
     }
 }
 
@@ -1343,52 +1354,59 @@ pub mod bytes_key_map {
 ///
 /// Use with `#[serde(with = "::buffa::json_helpers::bytes_key_bytes_val_map")]`.
 pub mod bytes_key_bytes_val_map {
+    use crate::map_codec::MapStorage;
     use serde::{Deserializer, Serializer};
 
-    pub fn serialize<S: Serializer>(
-        value: &crate::__private::HashMap<alloc::vec::Vec<u8>, alloc::vec::Vec<u8>>,
-        s: S,
-    ) -> Result<S::Ok, S::Error> {
+    pub fn serialize<C, S>(value: &C, s: S) -> Result<S::Ok, S::Error>
+    where
+        C: MapStorage<Key = alloc::vec::Vec<u8>, Value = alloc::vec::Vec<u8>>,
+        S: Serializer,
+    {
         use serde::ser::SerializeMap;
-        let mut map = s.serialize_map(Some(value.len()))?;
-        for (k, v) in value {
+        let mut map = s.serialize_map(Some(value.storage_len()))?;
+        for (k, v) in value.storage_iter() {
             map.serialize_entry(&super::Base64Wrapper(k), &super::Base64Wrapper(v))?;
         }
         map.end()
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(
-        d: D,
-    ) -> Result<crate::__private::HashMap<alloc::vec::Vec<u8>, alloc::vec::Vec<u8>>, D::Error> {
-        struct V;
-        impl<'de> serde::de::Visitor<'de> for V {
-            type Value = crate::__private::HashMap<alloc::vec::Vec<u8>, alloc::vec::Vec<u8>>;
+    pub fn deserialize<'de, C, D>(d: D) -> Result<C, D::Error>
+    where
+        C: MapStorage<Key = alloc::vec::Vec<u8>, Value = alloc::vec::Vec<u8>> + Default,
+        D: Deserializer<'de>,
+    {
+        struct V<C>(core::marker::PhantomData<C>);
+        impl<'de, C> serde::de::Visitor<'de> for V<C>
+        where
+            C: MapStorage<Key = alloc::vec::Vec<u8>, Value = alloc::vec::Vec<u8>> + Default,
+        {
+            type Value = C;
             fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 f.write_str("a map with base64-encoded keys and values, or null")
             }
             fn visit_unit<E>(self) -> Result<Self::Value, E> {
-                Ok(crate::__private::HashMap::new())
+                Ok(C::default())
             }
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> Result<Self::Value, A::Error> {
-                let mut out = crate::__private::HashMap::new();
+                let mut out = C::default();
                 while let Some((ks, vs)) =
                     map.next_entry::<alloc::string::String, alloc::string::String>()?
                 {
                     let k = super::decode_base64(&ks).map_err(serde::de::Error::custom)?;
                     let v = super::decode_base64(&vs).map_err(serde::de::Error::custom)?;
-                    out.insert(k, v);
+                    out.storage_insert(k, v);
                 }
                 Ok(out)
             }
         }
-        d.deserialize_any(V)
+        d.deserialize_any(V::<C>(core::marker::PhantomData))
     }
 }
 
-// ── string_key_map: HashMap<K, V> where K is parsed from string ──────────────
+// ── string_key_map: non-string keys stringified, any MapStorage container ────
 
 /// Serde with-module for map fields with non-string key types (int32, int64,
 /// uint32, uint64, bool, etc.).
@@ -1399,57 +1417,57 @@ pub mod bytes_key_bytes_val_map {
 ///
 /// Use with `#[serde(with = "::buffa::json_helpers::string_key_map")]`.
 pub mod string_key_map {
+    use crate::map_codec::MapStorage;
     use alloc::string::ToString;
     use core::fmt::Display;
-    use core::hash::Hash;
     use core::str::FromStr;
     use serde::{Deserializer, Serializer};
 
-    pub fn serialize<K, V, S>(
-        value: &crate::__private::HashMap<K, V>,
-        s: S,
-    ) -> Result<S::Ok, S::Error>
+    pub fn serialize<C, S>(value: &C, s: S) -> Result<S::Ok, S::Error>
     where
-        K: Display + Eq + Hash,
-        V: serde::Serialize,
+        C: MapStorage,
+        C::Key: Display,
+        C::Value: serde::Serialize,
         S: Serializer,
     {
         use serde::ser::SerializeMap;
-        let mut map = s.serialize_map(Some(value.len()))?;
-        for (k, v) in value {
+        let mut map = s.serialize_map(Some(value.storage_len()))?;
+        for (k, v) in value.storage_iter() {
             map.serialize_entry(&k.to_string(), v)?;
         }
         map.end()
     }
 
-    pub fn deserialize<'de, K, V, D>(d: D) -> Result<crate::__private::HashMap<K, V>, D::Error>
+    pub fn deserialize<'de, C, D>(d: D) -> Result<C, D::Error>
     where
-        K: FromStr + Eq + Hash,
-        K::Err: Display,
-        V: serde::Deserialize<'de>,
+        C: MapStorage + Default,
+        C::Key: FromStr,
+        <C::Key as FromStr>::Err: Display,
+        C::Value: serde::Deserialize<'de>,
         D: Deserializer<'de>,
     {
-        struct MapVisitor<K, V>(core::marker::PhantomData<(K, V)>);
-        impl<'de, K, V> serde::de::Visitor<'de> for MapVisitor<K, V>
+        struct MapVisitor<C>(core::marker::PhantomData<C>);
+        impl<'de, C> serde::de::Visitor<'de> for MapVisitor<C>
         where
-            K: FromStr + Eq + Hash,
-            K::Err: Display,
-            V: serde::Deserialize<'de>,
+            C: MapStorage + Default,
+            C::Key: FromStr,
+            <C::Key as FromStr>::Err: Display,
+            C::Value: serde::Deserialize<'de>,
         {
-            type Value = crate::__private::HashMap<K, V>;
+            type Value = C;
             fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 f.write_str("a JSON object with string keys, or null")
             }
             fn visit_unit<E>(self) -> Result<Self::Value, E> {
-                Ok(crate::__private::HashMap::new())
+                Ok(C::default())
             }
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> Result<Self::Value, A::Error> {
-                let mut out = crate::__private::HashMap::new();
+                let mut out = C::default();
                 while let Some(key_str) = map.next_key::<alloc::string::String>()? {
-                    let key = key_str.parse::<K>().map_err(|e| {
+                    let key = key_str.parse::<C::Key>().map_err(|e| {
                         serde::de::Error::custom(alloc::format!(
                             "invalid map key '{}': {}",
                             key_str,
@@ -1457,12 +1475,12 @@ pub mod string_key_map {
                         ))
                     })?;
                     let value = map.next_value()?;
-                    out.insert(key, value);
+                    out.storage_insert(key, value);
                 }
                 Ok(out)
             }
         }
-        d.deserialize_any(MapVisitor(core::marker::PhantomData))
+        d.deserialize_any(MapVisitor::<C>(core::marker::PhantomData))
     }
 }
 
@@ -1745,6 +1763,17 @@ pub mod skip_if {
     pub fn is_empty_vec<T>(v: &[T]) -> bool {
         v.is_empty()
     }
+    /// Empty-check for a non-default map collection (`BTreeMap` or a custom
+    /// map) via the [`MapStorage`](crate::map_codec::MapStorage) surface, so the
+    /// `skip_serializing_if` predicate works regardless of the concrete map
+    /// type. The default `HashMap` map fields keep `HashMap::is_empty`, so their
+    /// generated output is unchanged.
+    pub fn is_empty_map<C>(m: &C) -> bool
+    where
+        C: crate::map_codec::MapStorage,
+    {
+        m.storage_len() == 0
+    }
     pub fn is_unset_message_field<T: Default>(v: &crate::MessageField<T>) -> bool {
         v.is_unset()
     }
@@ -1913,61 +1942,58 @@ pub mod repeated_closed_enum {
 /// When `ignore_unknown_enum_values` is active, map entries whose
 /// value is an unknown enum string are silently dropped.
 pub mod map_closed_enum {
+    use crate::map_codec::MapStorage;
     use serde::{Deserializer, Serializer};
 
-    pub fn serialize<
-        K: serde::Serialize + Eq + core::hash::Hash,
-        E: crate::Enumeration,
+    pub fn serialize<C, S>(value: &C, s: S) -> Result<S::Ok, S::Error>
+    where
+        C: MapStorage,
+        C::Key: serde::Serialize,
+        C::Value: crate::Enumeration,
         S: Serializer,
-    >(
-        value: &crate::__private::HashMap<K, E>,
-        s: S,
-    ) -> Result<S::Ok, S::Error> {
+    {
         use serde::ser::SerializeMap;
-        let mut map = s.serialize_map(Some(value.len()))?;
-        for (k, v) in value {
+        let mut map = s.serialize_map(Some(value.storage_len()))?;
+        for (k, v) in value.storage_iter() {
             map.serialize_entry(k, &crate::json_helpers::EnumProtoNameRef(v))?;
         }
         map.end()
     }
 
-    pub fn deserialize<
-        'de,
-        K: serde::Deserialize<'de> + Eq + core::hash::Hash,
-        E: crate::Enumeration + Default,
+    pub fn deserialize<'de, C, D>(d: D) -> Result<C, D::Error>
+    where
+        C: MapStorage + Default,
+        C::Key: serde::Deserialize<'de>,
+        C::Value: crate::Enumeration + Default,
         D: Deserializer<'de>,
-    >(
-        d: D,
-    ) -> Result<crate::__private::HashMap<K, E>, D::Error> {
-        struct V<K, E>(core::marker::PhantomData<(K, E)>);
-        impl<
-                'de,
-                K: serde::Deserialize<'de> + Eq + core::hash::Hash,
-                E: crate::Enumeration + Default,
-            > serde::de::Visitor<'de> for V<K, E>
+    {
+        struct V<C>(core::marker::PhantomData<C>);
+        impl<'de, C> serde::de::Visitor<'de> for V<C>
+        where
+            C: MapStorage + Default,
+            C::Key: serde::Deserialize<'de>,
+            C::Value: crate::Enumeration + Default,
         {
-            type Value = crate::__private::HashMap<K, E>;
+            type Value = C;
 
             fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 f.write_str("a map with enum values or null")
             }
 
             fn visit_unit<Err>(self) -> Result<Self::Value, Err> {
-                Ok(crate::__private::HashMap::new())
+                Ok(C::default())
             }
 
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> Result<Self::Value, A::Error> {
-                let mut out = crate::__private::HashMap::with_capacity(super::clamp_size_hint(
-                    map.size_hint(),
-                ));
-                while let Some(key) = map.next_key::<K>()? {
+                let mut out = C::default();
+                while let Some(key) = map.next_key::<C::Key>()? {
                     let raw = map.next_value::<serde_json::Value>()?;
-                    match super::try_deserialize_closed_enum::<E>(&raw) {
+                    match super::try_deserialize_closed_enum::<C::Value>(&raw) {
                         Ok(Some(v)) => {
-                            out.insert(key, v);
+                            out.storage_insert(key, v);
                         }
                         Ok(None) => continue,
                         Err(e) => return Err(serde::de::Error::custom(e)),
@@ -1976,7 +2002,7 @@ pub mod map_closed_enum {
                 Ok(out)
             }
         }
-        d.deserialize_any(V(core::marker::PhantomData))
+        d.deserialize_any(V::<C>(core::marker::PhantomData))
     }
 }
 

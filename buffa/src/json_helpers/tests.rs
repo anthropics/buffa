@@ -1425,7 +1425,9 @@ fn repeated_closed_enum_works_without_deserialize_impl() {
 fn map_closed_enum_works_without_deserialize_impl() {
     let json = r#"{"a":"ZERO","b":1}"#;
     let mut d = serde_json::Deserializer::from_str(json);
-    let got = map_closed_enum::deserialize::<String, BareEnum, _>(&mut d).unwrap();
+    let got =
+        map_closed_enum::deserialize::<crate::__private::HashMap<String, BareEnum>, _>(&mut d)
+            .unwrap();
     assert_eq!(got.get("a"), Some(&BareEnum::Zero));
     assert_eq!(got.get("b"), Some(&BareEnum::One));
 }
@@ -1462,7 +1464,9 @@ fn closed_enum_lenient_drops_unknown_without_deserialize_impl() {
         // map: unknown / undecodable entries dropped
         let mut d =
             serde_json::Deserializer::from_str(r#"{"a":"ZERO","b":"UNKNOWN","c":1.5,"d":true}"#);
-        let map = map_closed_enum::deserialize::<String, BareEnum, _>(&mut d).unwrap();
+        let map =
+            map_closed_enum::deserialize::<crate::__private::HashMap<String, BareEnum>, _>(&mut d)
+                .unwrap();
         assert_eq!(map.len(), 1);
         assert_eq!(map.get("a"), Some(&BareEnum::Zero));
     });

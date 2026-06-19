@@ -185,6 +185,37 @@ pub(crate) fn parse_custom_type_path(path: &str) -> Result<proc_macro2::TokenStr
     Ok(quote::quote! { #ty })
 }
 
+/// Parse a custom **map** container path, which is applied as `path<K, V>`.
+///
+/// The path must therefore be a bare type path with no `<...>` parameters of its
+/// own (and, unlike the box/repeated knobs, no `*` placeholder — a map's key and
+/// value are appended positionally). Reject anything else with a message that
+/// names the convention, rather than letting `Foo<Bar><K, V>` surface as an
+/// opaque whole-file parse error later.
+pub(crate) fn parse_custom_map_path(path: &str) -> Result<proc_macro2::TokenStream, CodeGenError> {
+    let ty: syn::Type = syn::parse_str(path).map_err(|_| {
+        CodeGenError::InvalidTypePath(format!(
+            "{path} (map custom path takes no `<K, V>` parameters and no `*` placeholder)"
+        ))
+    })?;
+    let syn::Type::Path(tp) = &ty else {
+        return Err(CodeGenError::InvalidTypePath(format!(
+            "{path} (map custom path must be a plain type path)"
+        )));
+    };
+    if tp
+        .path
+        .segments
+        .iter()
+        .any(|s| !matches!(s.arguments, syn::PathArguments::None))
+    {
+        return Err(CodeGenError::InvalidTypePath(format!(
+            "{path} (map custom path must not include `<K, V>`; the key and value are appended automatically)"
+        )));
+    }
+    Ok(quote::quote! { #ty })
+}
+
 /// The Rust type a proto `string` field maps to in generated owned structs.
 ///
 /// The default is [`String`](StringRepr::String).
@@ -338,6 +369,98 @@ impl BytesRepr {
     }
 }
 
+/// The owned Rust collection a proto `map<K, V>` field maps to in generated
+/// owned structs.
+///
+/// The default is [`HashMap`](MapRepr::HashMap) (`std::collections::HashMap`, or
+/// `hashbrown::HashMap` under `no_std`). [`BTreeMap`](MapRepr::BTreeMap) selects
+/// the buffa-provided `alloc::collections::BTreeMap` for deterministic iteration
+/// order with no extra dependency or consumer code.
+/// [`Custom`](MapRepr::Custom) substitutes any map that satisfies the
+/// `buffa::map_codec::MapStorage` bound — for example a crate-local newtype
+/// wrapping `indexmap::IndexMap`.
+///
+/// Unlike the `repeated` knob (which wraps the element type and needs a `*`
+/// placeholder template), a map type is always `path<K, V>` with both
+/// parameters positional and buffa-resolved, so a custom path is a plain type
+/// path (e.g. `"::my_crate::OrderedMap"`) with no placeholder.
+///
+/// Select a representation through `buffa_build`'s `map_type` /
+/// `map_type_custom` builder methods. The wire format is identical regardless of
+/// the collection; only the in-memory owned type changes.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum MapRepr {
+    /// `::buffa::__private::HashMap<K, V>` — the default. Generated output is
+    /// byte-identical to a build without the knob.
+    #[default]
+    HashMap,
+    /// `::buffa::alloc::collections::BTreeMap<K, V>` — buffa-provided, no extra
+    /// dependency, deterministic key order (so encoded bytes are stable across
+    /// runs). The key type must be `Ord`, which every proto map key type
+    /// (integers, bool, string) satisfies.
+    BTreeMap,
+    /// A custom map named by a fully-qualified Rust type path (e.g.
+    /// `"::my_crate::OrderedMap"`). The named type must satisfy
+    /// `buffa::map_codec::MapStorage` and be a **crate-local newtype** (a foreign
+    /// map cannot implement the buffa-owned reflection / serde traits).
+    ///
+    /// # Limitations
+    ///
+    /// - The path is a plain type path applied as `path<K, V>` — it must **not**
+    ///   include the `<K, V>` parameters or a `*` placeholder. A path that does
+    ///   not parse as a Rust type surfaces as [`CodeGenError::InvalidTypePath`]
+    ///   at generation (`.compile()`) time.
+    /// - The newtype must implement `buffa::map_codec::MapStorage` plus the
+    ///   derive / `FromIterator` / `ReflectMap` / serde / `arbitrary` bounds
+    ///   listed on that trait's docs (the canonical list). JSON and `arbitrary`
+    ///   now work for every proto map key/value type regardless of the container.
+    ///   The buffa-provided [`BTreeMap`](MapRepr::BTreeMap) already satisfies every
+    ///   bound, so prefer it unless you need a specific foreign map.
+    Custom(String),
+}
+
+impl MapRepr {
+    /// The owned Rust map type emitted for a `map<K, V>` field with this
+    /// representation, given the already-resolved key and value type tokens.
+    ///
+    /// `ctx` and `nesting` route the default `HashMap` through the package-root
+    /// import registry; `BTreeMap` and a custom path are emitted fully
+    /// qualified.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CodeGenError::InvalidTypePath`] if a custom path does not parse
+    /// as a Rust type.
+    pub(crate) fn type_path(
+        &self,
+        key: &proc_macro2::TokenStream,
+        value: &proc_macro2::TokenStream,
+        resolver: &imports::ImportResolver,
+        ctx: &context::CodeGenContext,
+        nesting: usize,
+    ) -> Result<proc_macro2::TokenStream, CodeGenError> {
+        use quote::quote;
+        match self {
+            MapRepr::HashMap => {
+                let hm = resolver.hashmap_at(ctx, nesting);
+                Ok(quote! { #hm<#key, #value> })
+            }
+            MapRepr::BTreeMap => Ok(quote! { ::buffa::alloc::collections::BTreeMap<#key, #value> }),
+            MapRepr::Custom(path) => {
+                let ty = parse_custom_map_path(path)?;
+                Ok(quote! { #ty<#key, #value> })
+            }
+        }
+    }
+
+    /// Whether this is the default `HashMap` representation, whose generated
+    /// output is byte-identical to a build without the knob.
+    pub(crate) fn is_default(&self) -> bool {
+        matches!(self, MapRepr::HashMap)
+    }
+}
+
 /// How much reflection support generated types get.
 ///
 /// Selected through `buffa_build`'s `reflect_mode` builder method (or the
@@ -482,6 +605,15 @@ pub struct CodeGenConfig {
     /// `string` variants. Map keys and values always stay `String`, mirroring
     /// the bytes path (where map values always stay `Vec<u8>`).
     pub string_fields: Vec<(String, StringRepr)>,
+    /// Ordered (proto-path-prefix, [`MapRepr`]) rules selecting the owned Rust
+    /// map collection for `map` fields. Later rules win, with the same
+    /// proto-segment-aware prefix matching as [`bytes_fields`](Self::bytes_fields)
+    /// (`"."` matches every field). Fields matching no rule use `HashMap<K, V>`.
+    ///
+    /// Independent of the element/value representation: a `map` field's key and
+    /// value types are chosen by the usual scalar/string/bytes/message rules,
+    /// and this knob only changes the surrounding collection.
+    pub map_fields: Vec<(String, MapRepr)>,
     /// Fully-qualified proto paths whose message-typed oneof variants should
     /// **not** be wrapped in `Box<T>`. By default every message/group oneof
     /// variant is boxed (so recursive types compile); entries here opt matching
@@ -855,6 +987,7 @@ impl Default for CodeGenConfig {
             extern_paths: Vec::new(),
             bytes_fields: Vec::new(),
             string_fields: Vec::new(),
+            map_fields: Vec::new(),
             unboxed_oneof_fields: Vec::new(),
             strict_utf8_mapping: false,
             allow_message_set: false,

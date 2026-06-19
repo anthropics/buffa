@@ -39,7 +39,7 @@ pub use buffa_codegen::FeatureGateNames;
 #[doc(inline)]
 pub use buffa_codegen::ReflectMode;
 #[doc(inline)]
-pub use buffa_codegen::{BytesRepr, StringRepr};
+pub use buffa_codegen::{BytesRepr, MapRepr, StringRepr};
 
 /// How to produce a `FileDescriptorSet` from `.proto` files.
 #[derive(Debug, Clone, Default)]
@@ -974,6 +974,78 @@ impl Config {
     #[must_use]
     pub fn string_type_custom(self, path: &str) -> Self {
         self.string_type(StringRepr::Custom(path.to_string()))
+    }
+
+    /// Map the matching `map` fields to a [`MapRepr`] other than the default
+    /// `HashMap`. Rules are matched with proto-segment-aware prefix logic; the
+    /// **last** matching rule wins, so add a broad rule first and narrower
+    /// overrides after.
+    ///
+    /// Use [`MapRepr::BTreeMap`] for the buffa-provided `BTreeMap` (deterministic
+    /// key order, no extra dependency, no consumer code), or
+    /// [`MapRepr::Custom`] for a crate-local newtype that implements
+    /// `buffa::map_codec::MapStorage`.
+    ///
+    /// Only the owned collection changes: the wire format is unchanged and view
+    /// types are unaffected.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// buffa_build::Config::new()
+    ///     .map_type(buffa_build::MapRepr::BTreeMap)                       // broad default
+    ///     .map_type_in(buffa_build::MapRepr::HashMap, &[".my.pkg.Msg.cache"]) // narrow override
+    ///     .compile()
+    ///     .unwrap();
+    /// ```
+    #[must_use]
+    pub fn map_type_in(mut self, repr: MapRepr, paths: &[impl AsRef<str>]) -> Self {
+        self.codegen_config
+            .map_fields
+            .extend(paths.iter().map(|p| (p.as_ref().to_string(), repr.clone())));
+        self
+    }
+
+    /// Map every `map` field in all messages to the given [`MapRepr`].
+    /// Convenience for `.map_type_in(repr, &["."])`. Call this *before* any
+    /// [`map_type_in`](Self::map_type_in) overrides, since the last matching
+    /// rule wins.
+    #[must_use]
+    pub fn map_type(mut self, repr: MapRepr) -> Self {
+        self.codegen_config.map_fields.push((".".to_string(), repr));
+        self
+    }
+
+    /// Map the matching `map` fields to a custom collection implementing
+    /// `buffa::map_codec::MapStorage`, named by its fully-qualified Rust path
+    /// (e.g. `"::my_crate::OrderedMap"`). The path must **not** include the
+    /// `<K, V>` parameters — they are applied positionally. Shorthand for
+    /// [`map_type_in`](Self::map_type_in)`(MapRepr::Custom(path), paths)`.
+    ///
+    /// # Limitations
+    ///
+    /// - The path must name a **crate-local newtype** — a foreign map cannot
+    ///   implement the buffa-owned reflection / serde traits (orphan rule).
+    ///   Prefer the built-in [`MapRepr::BTreeMap`] unless you need a specific
+    ///   foreign map.
+    /// - The newtype must implement `buffa::MapStorage` plus the derive /
+    ///   `FromIterator` / `ReflectMap` / serde / `arbitrary` bounds documented on
+    ///   `buffa::map_codec::MapStorage` (the canonical list). JSON and
+    ///   `arbitrary` work for every proto map key/value type regardless of the
+    ///   container.
+    /// - A path that does not parse as a Rust type is reported as a codegen
+    ///   error from [`compile`](Self::compile).
+    #[must_use]
+    pub fn map_type_custom_in(self, path: &str, paths: &[impl AsRef<str>]) -> Self {
+        self.map_type_in(MapRepr::Custom(path.to_string()), paths)
+    }
+
+    /// Map every `map` field to the given custom collection path. Convenience
+    /// for `.map_type_custom_in(path, &["."])`; see it for the limitations (the
+    /// crate-local newtype requirement, the trait bounds, path parsing).
+    #[must_use]
+    pub fn map_type_custom(self, path: &str) -> Self {
+        self.map_type(MapRepr::Custom(path.to_string()))
     }
 
     /// Add a custom attribute to generated types (messages and enums)

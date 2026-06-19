@@ -222,6 +222,91 @@ pub mod proto3sem {
     buffa::include_proto!("test.proto3sem");
 }
 
+/// `map_type` fixture: every `map` field uses the buffa-provided `BTreeMap<K, V>`
+/// (selected with `.map_type(MapRepr::BTreeMap)`) instead of `HashMap`. No
+/// consumer code is needed — `BTreeMap` already satisfies `MapStorage`,
+/// `ReflectMap`, serde, and the derive bounds — so this module is just the
+/// generated code, exercised by `tests/map_type.rs`.
+pub mod map_type {
+    buffa::include_proto!("map_type");
+}
+
+/// `map_type_custom` fixture: a crate-local `CustomMap<K, V>` newtype used for
+/// every `map` field (via `.map_type_custom(...)`). `CustomMap` is a thin
+/// `BTreeMap`-backed `MapStorage` impl — the point is to exercise the
+/// `MapRepr::Custom` codegen path and the consumer-provided trait surface
+/// (`MapStorage`, a `ReflectMap` impl delegating to the inner map, and
+/// `FromIterator` for the view→owned `.collect()`), independent of buffa's
+/// built-in container impls. A real consumer would back this with a foreign map
+/// such as `indexmap::IndexMap`; `BTreeMap` is used here so the derives
+/// (`Clone` / `PartialEq` / `Debug`) need no extra key bounds.
+#[allow(clippy::derivable_impls)]
+pub mod map_type_custom {
+    use ::buffa::alloc::collections::BTreeMap;
+    use ::buffa_descriptor::reflect::{
+        MapKey, MapKeyRef, ReflectElement, ReflectMap, ReflectMapKey, ValueRef,
+    };
+
+    /// A `BTreeMap`-backed map implementing `buffa::MapStorage`. `Default`
+    /// is hand-written (not derived) so it does not require `K: Default` /
+    /// `V: Default`.
+    #[derive(Clone, PartialEq, Debug)]
+    pub struct CustomMap<K, V>(pub BTreeMap<K, V>);
+
+    impl<K, V> ::core::default::Default for CustomMap<K, V> {
+        fn default() -> Self {
+            CustomMap(BTreeMap::new())
+        }
+    }
+
+    impl<K: ::core::cmp::Ord, V> ::core::iter::FromIterator<(K, V)> for CustomMap<K, V> {
+        fn from_iter<I: ::core::iter::IntoIterator<Item = (K, V)>>(iter: I) -> Self {
+            CustomMap(BTreeMap::from_iter(iter))
+        }
+    }
+
+    impl<K: ::core::cmp::Ord, V> ::buffa::MapStorage for CustomMap<K, V> {
+        type Key = K;
+        type Value = V;
+        fn storage_len(&self) -> usize {
+            self.0.len()
+        }
+        fn storage_insert(&mut self, key: K, value: V) {
+            self.0.insert(key, value);
+        }
+        fn storage_clear(&mut self) {
+            self.0.clear();
+        }
+        fn storage_iter<'a>(&'a self) -> impl ::core::iter::Iterator<Item = (&'a K, &'a V)>
+        where
+            K: 'a,
+            V: 'a,
+        {
+            self.0.iter()
+        }
+    }
+
+    // The vtable reflect path needs `ReflectMap`; delegate every method to the
+    // inner `BTreeMap`'s impl (the "Vec/BTreeMap/HashMap-backed newtype can
+    // delegate" claim in the `MapStorage` docs, verified by compilation).
+    impl<K: ReflectMapKey, V: ReflectElement> ReflectMap for CustomMap<K, V> {
+        fn len(&self) -> usize {
+            ReflectMap::len(&self.0)
+        }
+        fn get(&self, key: &MapKey) -> ::core::option::Option<ValueRef<'_>> {
+            ReflectMap::get(&self.0, key)
+        }
+        fn get_str(&self, key: &str) -> ::core::option::Option<ValueRef<'_>> {
+            ReflectMap::get_str(&self.0, key)
+        }
+        fn for_each(&self, f: &mut dyn FnMut(MapKeyRef<'_>, ValueRef<'_>)) {
+            ReflectMap::for_each(&self.0, f)
+        }
+    }
+
+    buffa::include_proto!("map_type_custom");
+}
+
 #[allow(
     clippy::derivable_impls,
     clippy::match_single_binding,
