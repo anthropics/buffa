@@ -399,7 +399,9 @@ up the new `FooOwnedView` wrappers, `HasMessageView` impls, and
   `AsRef`, and `From<String>` / `From<Vec<u8>>`). `from_wire` lets each
   representation own validation and borrow-vs-own:
   [`WirePayload`](https://docs.rs/buffa) is `Borrowed(&[u8])` (zero-copy) or
-  `Owned(Bytes)`, with `as_slice()` and `into_bytes()`. buffa ships the built-in
+  `Owned(Bytes)`, with `as_slice()` and `into_bytes()`. A representation that
+  enforces extra invariants can reject a value from `from_wire` with the new
+  `DecodeError::Custom(&'static str)` variant. buffa ships the built-in
   impls for `String`, `Vec<u8>`, and `bytes::Bytes`; a foreign type (e.g.
   `smol_str::SmolStr`) is wrapped in a local newtype that implements the trait —
   the new **`buffa-smolstr`** crate is the template (an inline, allocation-free

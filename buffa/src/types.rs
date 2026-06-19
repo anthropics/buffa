@@ -747,10 +747,10 @@ pub trait ProtoString:
     ///
     /// # Errors
     ///
-    /// Returns [`DecodeError::InvalidUtf8`] if the payload is not valid UTF-8, or
-    /// another existing [`DecodeError`] variant. Note that `DecodeError` has no
-    /// custom variant today, so a representation cannot surface a bespoke
-    /// validation failure distinctly (a planned follow-up).
+    /// Returns [`DecodeError::InvalidUtf8`] if the payload is not valid UTF-8. A
+    /// representation that enforces additional invariants can reject the value
+    /// with [`DecodeError::Custom`] (carrying a static reason), or return any
+    /// other [`DecodeError`] variant.
     fn from_wire(payload: WirePayload<'_>) -> Result<Self, DecodeError>;
 }
 
@@ -948,10 +948,10 @@ pub trait ProtoBytes:
     ///
     /// # Errors
     ///
-    /// Returns an existing [`DecodeError`] variant if the representation
-    /// validates (the built-in representations are infallible). Note that
-    /// `DecodeError` has no custom variant today, so a bespoke validation
-    /// failure cannot be surfaced distinctly (a planned follow-up).
+    /// The built-in representations are infallible. A representation that
+    /// enforces additional invariants (e.g. a fixed length) can reject the
+    /// value with [`DecodeError::Custom`] (carrying a static reason), or return
+    /// any other [`DecodeError`] variant.
     fn from_wire(payload: WirePayload<'_>) -> Result<Self, DecodeError>;
 }
 
@@ -1153,6 +1153,58 @@ pub fn borrow_group<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A custom string representation that enforces an extra invariant in
+    /// `from_wire`, to prove a representation can surface `DecodeError::Custom`
+    /// through `decode_string_to`.
+    #[derive(Clone, PartialEq, Default, Debug)]
+    struct Tiny(alloc::string::String);
+    impl core::ops::Deref for Tiny {
+        type Target = str;
+        fn deref(&self) -> &str {
+            &self.0
+        }
+    }
+    impl AsRef<str> for Tiny {
+        fn as_ref(&self) -> &str {
+            &self.0
+        }
+    }
+    impl From<alloc::string::String> for Tiny {
+        fn from(s: alloc::string::String) -> Self {
+            Tiny(s)
+        }
+    }
+    impl From<&str> for Tiny {
+        fn from(s: &str) -> Self {
+            Tiny(s.into())
+        }
+    }
+    impl ProtoString for Tiny {
+        fn from_wire(p: WirePayload<'_>) -> Result<Self, DecodeError> {
+            let s = core::str::from_utf8(p.as_slice()).map_err(|_| DecodeError::InvalidUtf8)?;
+            if s.len() > 3 {
+                return Err(DecodeError::Custom("string too long"));
+            }
+            Ok(Tiny(s.into()))
+        }
+    }
+
+    #[test]
+    fn from_wire_can_surface_custom_decode_error() {
+        // Length-delimited "hello" (len 5) — rejected by Tiny's from_wire.
+        let mut buf: &[u8] = b"\x05hello";
+        assert_eq!(
+            decode_string_to::<Tiny>(&mut buf).unwrap_err(),
+            DecodeError::Custom("string too long"),
+        );
+        // A value within the limit decodes normally.
+        let mut ok: &[u8] = b"\x02hi";
+        assert_eq!(
+            decode_string_to::<Tiny>(&mut ok).unwrap(),
+            Tiny("hi".into())
+        );
+    }
 
     /// Each fused writer must emit exactly tag-then-payload.
     #[test]

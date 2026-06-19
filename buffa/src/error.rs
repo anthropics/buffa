@@ -75,6 +75,19 @@ pub enum DecodeError {
     /// unknown fields.
     #[error("unknown field limit exceeded")]
     UnknownFieldLimitExceeded,
+
+    /// A custom `string`/`bytes` representation rejected the decoded payload in
+    /// its [`from_wire`](crate::ProtoString::from_wire) constructor — for
+    /// example a length or domain check beyond UTF-8 validation. Carries a
+    /// static reason for diagnostics (mirroring [`InvalidMessageSet`]).
+    ///
+    /// Only produced by user-supplied [`ProtoString`](crate::ProtoString) /
+    /// [`ProtoBytes`](crate::ProtoBytes) impls; the built-in representations
+    /// never return it.
+    ///
+    /// [`InvalidMessageSet`]: DecodeError::InvalidMessageSet
+    #[error("custom representation rejected the field value: {0}")]
+    Custom(&'static str),
 }
 
 /// An error that occurred while encoding a protobuf message.
