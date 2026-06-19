@@ -21,12 +21,26 @@ series simply starts at the release that introduced it.
 
 ## How the numbers are produced
 
-To keep absolute numbers stable, runs are done on a quiesced machine: a dedicated
-host with CPU turbo disabled, the `performance` frequency governor, and the
-benchmark pinned to one core. A shared or virtualised machine cannot give
-trustworthy absolute throughput, so do not regenerate these files on a laptop or
-a busy CI runner and commit the result — the drift would masquerade as a
-regression.
+Two things are pinned so a cross-release delta reflects buffa's code, not the
+measurement.
+
+**The machine.** Runs are done on a quiesced host: CPU turbo disabled, the
+`performance` frequency governor, and the benchmark pinned to one core. A shared
+or virtualised machine cannot give trustworthy absolute throughput, so do not
+regenerate these files on a laptop or a busy CI runner and commit the result —
+the drift would masquerade as a regression.
+
+**The build profile.** Every binary is built with **`lto=true,
+codegen-units=1`** — the same optimized profile a consumer building buffa in
+release gets, and the one that is reproducible across releases. (At cargo's
+default `bench` profile, `codegen-units=16, lto=off`, the binary's *layout* is
+unstable: adding unrelated code re-partitions functions across the 16 units and a
+benchmark can swing 10-20% with no code change — see the layout-noise envelope
+below. A single codegen unit removes that partitioning, and LTO matches the
+shipped profile.) Because `benchmarks/buffa` is excluded from the root workspace,
+the root's profile does not reach it, so the profile is applied via
+`CARGO_PROFILE_BENCH_LTO=true CARGO_PROFILE_BENCH_CODEGEN_UNITS=1` at build time;
+each run file records it in `build_profile`.
 
 ## Comparability caveats
 
@@ -39,15 +53,15 @@ regression.
 - **There is a reproducibility floor of roughly ±5%** even on a quiesced machine,
   from residual scheduler and thermal effects. Treat sub-5% movements as noise
   unless a later release confirms the trend.
-- **Above that sits a larger build-layout floor.** The benches build with cargo's
-  default `bench` profile — `codegen-units=16`, `lto=off` — because
-  `benchmarks/buffa` is excluded from the root workspace, so the root's
-  `lto=true` / `codegen-units=1` do **not** apply to it. At 16 codegen units with
-  no LTO, adding unrelated code re-partitions functions across units and flips
-  inline decisions at unit boundaries, which can move a small dispatch-bound
-  benchmark 10-20% with the measured code unchanged. Quantify this per benchmark
-  with the layout-noise harness below before attributing a movement to the
-  library. A delta within the measured envelope is build noise, not code.
+- **Build-layout noise is controlled by the profile, not eliminated.** Building at
+  `codegen-units=1` removes the codegen-unit-partitioning instability that
+  dominates the default `bench` profile (measured there at p50 5.8% / p90 15% /
+  max 24% across builds — large enough to invent a regression, which is exactly
+  what happened to the first v0.7.1 data set; see `annotations.md`). A single unit
+  has nothing to re-partition, so the series is far more reproducible. The
+  layout-noise harness below still exists to *verify* the floor on a quiesced box;
+  a surprising delta should clear the measured envelope before being attributed to
+  the library.
 - **The compiler is held constant.** No release tag pins a Rust toolchain, so
   every binary in the current series was built with the same compiler (recorded
   as `"toolchain": "default"` in each run file). That removes the compiler as a
@@ -114,11 +128,12 @@ python3 benchmarks/history/generate.py     # or: task bench-history-report
 
 ## Adding a new release
 
-1. Build the release tag's bench binary: from a checkout of the tag,
-   `cd benchmarks/buffa && cargo bench --bench protobuf --no-run`.
+1. Build the release tag's bench binary at the pinned profile: from a checkout of
+   the tag,
+   `cd benchmarks/buffa && CARGO_PROFILE_BENCH_LTO=true CARGO_PROFILE_BENCH_CODEGEN_UNITS=1 cargo bench --bench protobuf --no-run`.
 2. Run it on a quiesced machine, capturing stdout — criterion needs the `--bench`
    flag: `<binary> --bench --measurement-time 4 > <version>.txt`.
-3. Parse it into a run file:
+3. Parse it into a run file (record the profile so the data is self-documenting):
 
    ```bash
    python3 benchmarks/history/parse_criterion.py \
@@ -126,6 +141,7 @@ python3 benchmarks/history/generate.py     # or: task bench-history-report
      --commit $(git rev-parse <version>) \
      --commit-date "$(git log -1 --format=%cI <version>)" \
      --measured-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+     --profile "lto=true, codegen-units=1" \
      --out benchmarks/history/runs/<version>.json
    ```
 

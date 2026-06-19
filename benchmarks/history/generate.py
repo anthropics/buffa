@@ -143,6 +143,7 @@ def render_report(runs: list[dict], matrix: dict[tuple[str, str], dict[str, floa
     w(f"- Machine: {machine.get('instance_type', '?')} — {cpu}")
     w(f"- Tuning: turbo_disabled={machine.get('turbo_disabled', '?')}, "
       f"governor={machine.get('governor', '?')}, pin_core={machine.get('pin_core', '?')}")
+    w(f"- Build profile: {latest.get('build_profile') or '?'}")
     w(f"- Criterion: {latest.get('criterion', '?')} · latest measured at "
       f"{latest.get('measured_at', '?')}")
     w("")

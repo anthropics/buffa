@@ -159,6 +159,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--instance-type", default="", help="AWS instance type")
     ap.add_argument("--toolchain", default="", help="rust toolchain used")
     ap.add_argument("--criterion", default="", help="criterion version")
+    ap.add_argument("--profile", default="", help="build profile, e.g. 'lto=true, codegen-units=1'")
     ap.add_argument("--out", type=Path, help="output JSON path (default: stdout)")
     args = ap.parse_args(argv)
 
@@ -178,6 +179,7 @@ def main(argv: list[str]) -> int:
         "measured_at": args.measured_at,
         "toolchain": args.toolchain,
         "criterion": args.criterion,
+        "build_profile": args.profile,
         "machine": machine,
         "benchmarks": dict(sorted(benchmarks.items())),
     }
