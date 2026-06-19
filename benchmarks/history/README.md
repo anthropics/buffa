@@ -62,11 +62,17 @@ each run file records it in `build_profile`.
   layout-noise harness below still exists to *verify* the floor on a quiesced box;
   a surprising delta should clear the measured envelope before being attributed to
   the library.
-- **The compiler is held constant.** No release tag pins a Rust toolchain, so
-  every binary in the current series was built with the same compiler (recorded
-  as `"toolchain": "default"` in each run file). That removes the compiler as a
-  variable — a movement reflects buffa's own code, not a rustc change. If a
-  future release pins a toolchain, record it and watch for compiler-driven shifts.
+- **The compiler is held constant.** Every binary is built with one explicitly
+  pinned toolchain (recorded in each run file's `toolchain`), forced via
+  `RUSTUP_TOOLCHAIN` so it does not depend on the working directory's
+  `rust-toolchain.toml`. That removes the compiler as a variable — a movement
+  reflects buffa's code, not a rustc change. The pin is the **latest stable at
+  the time of the run** (currently `1.96.0`), chosen for longevity rather than
+  the minimum: it only has to be ≥ the highest MSRV across the tracked releases
+  (1.87 today), and pinning to latest stable keeps the whole series buildable
+  until stable advances past a future release's MSRV — roughly a year out under a
+  stable-minus-12-months MSRV policy. Re-pin and **regenerate the entire series**
+  (not just the new release) when that happens, so every row shares one compiler.
 
 ## Files
 
@@ -128,12 +134,17 @@ python3 benchmarks/history/generate.py     # or: task bench-history-report
 
 ## Adding a new release
 
-1. Build the release tag's bench binary at the pinned profile: from a checkout of
-   the tag,
-   `cd benchmarks/buffa && CARGO_PROFILE_BENCH_LTO=true CARGO_PROFILE_BENCH_CODEGEN_UNITS=1 cargo bench --bench protobuf --no-run`.
+All releases share one toolchain and profile, so adding a release means matching
+them, not picking new ones. If the new release's MSRV exceeds the pinned
+toolchain, re-pin to a newer stable and regenerate the *whole* series instead.
+
+1. Build the release tag's bench at the pinned toolchain and profile: from a
+   checkout of the tag,
+   `cd benchmarks/buffa && RUSTUP_TOOLCHAIN=1.96.0 CARGO_PROFILE_BENCH_LTO=true CARGO_PROFILE_BENCH_CODEGEN_UNITS=1 cargo bench --bench protobuf --no-run`.
 2. Run it on a quiesced machine, capturing stdout — criterion needs the `--bench`
    flag: `<binary> --bench --measurement-time 4 > <version>.txt`.
-3. Parse it into a run file (record the profile so the data is self-documenting):
+3. Parse it into a run file (record toolchain + profile so the data is
+   self-documenting):
 
    ```bash
    python3 benchmarks/history/parse_criterion.py \
@@ -141,7 +152,7 @@ python3 benchmarks/history/generate.py     # or: task bench-history-report
      --commit $(git rev-parse <version>) \
      --commit-date "$(git log -1 --format=%cI <version>)" \
      --measured-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-     --profile "lto=true, codegen-units=1" \
+     --toolchain 1.96.0 --profile "lto=true, codegen-units=1" \
      --out benchmarks/history/runs/<version>.json
    ```
 
