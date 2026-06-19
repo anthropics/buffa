@@ -2671,8 +2671,9 @@ pub(crate) fn find_map_entry_fields<'a>(
 ///
 /// Enum and message codecs use inference holes (`OpenEnum<_>`, `Msg<_>`): the
 /// map's own key/value Rust types pin the parameter, so no type-path
-/// resolution is needed here. `use_bytes` selects the `bytes::Bytes` value
-/// representation (the `bytes_fields` codegen option).
+/// resolution is needed here. For a `bytes` value, `bytes_repr` selects the
+/// codec: `Vec` → `BytesVec`, `Bytes` → `BytesBuf`, `Custom(path)` →
+/// `ProtoBytesMap<path>`.
 fn map_codec_token(
     ty: Type,
     bytes_repr: &crate::BytesRepr,
