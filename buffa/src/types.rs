@@ -563,6 +563,87 @@ pub fn merge_string(value: &mut String, buf: &mut impl Buf) -> Result<(), Decode
     Ok(())
 }
 
+/// The raw, length-delimited payload of a `string` or `bytes` field, handed to
+/// [`ProtoString::from_wire`] / [`ProtoBytes::from_wire`] so a representation can
+/// construct itself directly from the wire — validating (or skipping validation)
+/// and choosing borrow-vs-own on its own terms.
+///
+/// The decoder hands over `Borrowed` when the field's bytes are contiguous in
+/// the current input chunk (the common case for slice- and `Bytes`-backed
+/// sources) and `Owned` otherwise (e.g. a field straddling a `Chain` boundary).
+/// A representation reads the bytes with [`as_slice`](Self::as_slice) (zero-copy)
+/// or takes ownership with [`into_bytes`](Self::into_bytes) (zero-copy from a
+/// `Bytes`-backed source, a copy otherwise).
+#[derive(Debug)]
+pub enum WirePayload<'a> {
+    /// The field's bytes borrowed directly from the input buffer.
+    Borrowed(&'a [u8]),
+    /// The field's bytes owned as `Bytes` (reference-counted; zero-copy when the
+    /// decode source was itself `Bytes`-backed).
+    Owned(Bytes),
+}
+
+impl WirePayload<'_> {
+    /// Borrow the field's bytes (zero-copy in both variants).
+    #[inline]
+    #[must_use]
+    pub fn as_slice(&self) -> &[u8] {
+        match self {
+            WirePayload::Borrowed(s) => s,
+            WirePayload::Owned(b) => b,
+        }
+    }
+
+    /// Take ownership of the field's bytes as [`Bytes`]. Zero-copy when the
+    /// payload is already `Owned` (the decode source was `Bytes`-backed); copies
+    /// the borrowed slice otherwise.
+    #[inline]
+    #[must_use]
+    pub fn into_bytes(self) -> Bytes {
+        match self {
+            WirePayload::Borrowed(s) => Bytes::copy_from_slice(s),
+            WirePayload::Owned(b) => b,
+        }
+    }
+}
+
+/// Read one length-delimited field payload from `buf` and pass it to `f` as a
+/// [`WirePayload`], advancing `buf` past the field.
+///
+/// The payload is `Borrowed` when the whole field is contiguous in the current
+/// chunk (zero-copy), and `Owned` (via [`Buf::copy_to_bytes`], itself zero-copy
+/// for a `Bytes`-backed `buf`) when it is not. `f` produces an owned value, so
+/// the borrow never escapes and `buf` can be advanced afterwards.
+///
+/// # Errors
+///
+/// - [`DecodeError::UnexpectedEof`] if the buffer is shorter than the declared
+///   length.
+/// - [`DecodeError::MessageTooLarge`] if the declared length overflows `usize`.
+/// - Any error returned by `f` (e.g. [`DecodeError::InvalidUtf8`]).
+#[inline]
+pub fn read_field_payload<R>(
+    buf: &mut impl Buf,
+    f: impl FnOnce(WirePayload<'_>) -> Result<R, DecodeError>,
+) -> Result<R, DecodeError> {
+    let len = decode_varint(buf)?;
+    let len = usize::try_from(len).map_err(|_| DecodeError::MessageTooLarge)?;
+    if buf.remaining() < len {
+        return Err(DecodeError::UnexpectedEof);
+    }
+    let chunk = buf.chunk();
+    if chunk.len() >= len {
+        // Whole field is contiguous: hand over a borrowed slice (zero-copy).
+        let r = f(WirePayload::Borrowed(&chunk[..len]))?;
+        buf.advance(len);
+        Ok(r)
+    } else {
+        // Field straddles chunk boundaries: take an owned `Bytes` (zero-copy
+        // when `buf` is `Bytes`-backed, a copy otherwise).
+        f(WirePayload::Owned(buf.copy_to_bytes(len)))
+    }
+}
+
 /// Compute the encoded byte count of a `string` value (varint length prefix +
 /// UTF-8 byte count), excluding the field tag.
 #[inline]
@@ -632,20 +713,31 @@ pub trait ProtoString:
     + From<String>
     + for<'a> From<&'a str>
 {
+    /// Construct the representation from a decoded `string` field's wire payload.
+    ///
+    /// This is the decode constructor: it owns the validation/ownership choice,
+    /// so a representation can borrow-and-inline a short string (no transient
+    /// heap allocation), validate UTF-8 only when it must, or zero-copy a long
+    /// string from a `Bytes`-backed source. There is intentionally no blanket
+    /// impl — every representation provides its own optimal `from_wire`; the
+    /// `From<String>`/`From<&str>` supertraits remain for the JSON, text, and
+    /// view→owned paths.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeError::InvalidUtf8`] if the payload is not valid UTF-8
+    /// (for representations that validate), or any decode error the
+    /// representation chooses to surface.
+    fn from_wire(payload: WirePayload<'_>) -> Result<Self, DecodeError>;
 }
 
-impl<T> ProtoString for T where
-    T: Clone
-        + PartialEq
-        + Default
-        + core::fmt::Debug
-        + Send
-        + Sync
-        + core::ops::Deref<Target = str>
-        + AsRef<str>
-        + From<String>
-        + for<'a> From<&'a str>
-{
+impl ProtoString for String {
+    #[inline]
+    fn from_wire(payload: WirePayload<'_>) -> Result<Self, DecodeError> {
+        core::str::from_utf8(payload.as_slice())
+            .map(alloc::borrow::ToOwned::to_owned)
+            .map_err(|_| DecodeError::InvalidUtf8)
+    }
 }
 
 // The default representation must always satisfy the bound; freeze that
@@ -655,24 +747,25 @@ const _: fn() = || {
     assert_proto_string::<String>();
 };
 
-/// Decode a length-delimited `string` into a configurable [`ProtoString`] type.
+/// Decode a length-delimited `string` into a configurable [`ProtoString`] type
+/// by handing its wire payload to [`ProtoString::from_wire`].
 ///
-/// This is the generic counterpart to [`decode_string`]: it reads the varint
-/// length prefix, copies that many bytes, and validates UTF-8 identically, then
-/// constructs the target representation via `From<String>`. Generated code uses
-/// the in-place [`merge_string`] for `String` fields (which reuses the existing
-/// allocation) and this helper for every other [`ProtoString`] type.
+/// The representation's `from_wire` decides validation and borrow-vs-own, so an
+/// inline-capable type avoids the transient `String` allocation that a
+/// `From<String>` path would force. Generated code uses the in-place
+/// [`merge_string`] for default `String` fields (allocation reuse) and this
+/// helper for every other [`ProtoString`] type.
 ///
 /// # Errors
 ///
-/// Propagates the same errors as [`decode_string`]:
 /// - [`DecodeError::UnexpectedEof`] if the buffer is shorter than the declared
 ///   length.
 /// - [`DecodeError::MessageTooLarge`] if the declared length overflows `usize`.
-/// - [`DecodeError::InvalidUtf8`] if the bytes are not valid UTF-8.
+/// - [`DecodeError::InvalidUtf8`] (or another error) as returned by the
+///   representation's [`from_wire`](ProtoString::from_wire).
 #[inline]
 pub fn decode_string_to<S: ProtoString>(buf: &mut impl Buf) -> Result<S, DecodeError> {
-    decode_string(buf).map(S::from)
+    read_field_payload(buf, S::from_wire)
 }
 
 /// Encode a `bytes` value as a varint length prefix followed by raw bytes
@@ -802,19 +895,35 @@ pub trait ProtoBytes:
     + AsRef<[u8]>
     + From<Vec<u8>>
 {
+    /// Construct the representation from a decoded `bytes` field's wire payload.
+    ///
+    /// This is the decode constructor: it owns the borrow-vs-own choice, so a
+    /// `Bytes`-backed representation can take ownership zero-copy via
+    /// [`WirePayload::into_bytes`] while a `Vec<u8>` copies. There is
+    /// intentionally no blanket impl — every representation provides its own
+    /// optimal `from_wire`; the `From<Vec<u8>>` supertrait remains for the JSON
+    /// and view→owned paths.
+    ///
+    /// # Errors
+    ///
+    /// Returns any decode error the representation chooses to surface (the
+    /// built-in representations are infallible).
+    fn from_wire(payload: WirePayload<'_>) -> Result<Self, DecodeError>;
 }
 
-impl<T> ProtoBytes for T where
-    T: Clone
-        + PartialEq
-        + Default
-        + core::fmt::Debug
-        + Send
-        + Sync
-        + core::ops::Deref<Target = [u8]>
-        + AsRef<[u8]>
-        + From<Vec<u8>>
-{
+impl ProtoBytes for Vec<u8> {
+    #[inline]
+    fn from_wire(payload: WirePayload<'_>) -> Result<Self, DecodeError> {
+        Ok(payload.as_slice().to_vec())
+    }
+}
+
+impl ProtoBytes for Bytes {
+    #[inline]
+    fn from_wire(payload: WirePayload<'_>) -> Result<Self, DecodeError> {
+        // Zero-copy when the decode source was `Bytes`-backed.
+        Ok(payload.into_bytes())
+    }
 }
 
 // The two built-in representations must always satisfy the bound; freeze that
@@ -828,22 +937,22 @@ const _: fn() = || {
 /// Decode a length-delimited `bytes` value into a configurable [`ProtoBytes`]
 /// type.
 ///
-/// This is the generic counterpart to [`decode_bytes`]: it reads the varint
-/// length prefix and copies that many bytes identically, then constructs the
-/// target representation via `From<Vec<u8>>`. Generated code uses the in-place
-/// [`merge_bytes`] for `Vec<u8>` fields (which reuses the existing allocation)
-/// and the zero-copy [`decode_bytes_to_bytes`] for `bytes::Bytes` fields; this
-/// helper serves every other [`ProtoBytes`] type.
+/// This is the generic counterpart to [`decode_bytes`]: it hands the field's
+/// wire payload to [`ProtoBytes::from_wire`], so a `Bytes`-backed representation
+/// can take ownership zero-copy. Generated code uses the in-place [`merge_bytes`]
+/// for default `Vec<u8>` fields (allocation reuse) and this helper for every
+/// other [`ProtoBytes`] type (including `bytes::Bytes`).
 ///
 /// # Errors
 ///
-/// Propagates the same errors as [`decode_bytes`]:
 /// - [`DecodeError::UnexpectedEof`] if the buffer is shorter than the declared
 ///   length.
 /// - [`DecodeError::MessageTooLarge`] if the declared length overflows `usize`.
+/// - Any error returned by the representation's
+///   [`from_wire`](ProtoBytes::from_wire).
 #[inline]
 pub fn decode_bytes_to<B: ProtoBytes>(buf: &mut impl Buf) -> Result<B, DecodeError> {
-    decode_bytes(buf).map(B::from)
+    read_field_payload(buf, B::from_wire)
 }
 
 /// Merge length-delimited bytes into an existing `Vec<u8>`, reusing its

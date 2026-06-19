@@ -104,6 +104,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "buffa-smolstr"
+version = "0.7.1"
+dependencies = [
+ "buffa",
+ "smol_str",
+]
+
+[[package]]
 name = "buffa-test"
 version = "0.7.1"
 dependencies = [

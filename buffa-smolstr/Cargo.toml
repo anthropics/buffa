@@ -1,0 +1,11 @@
+[package]
+name = "buffa-smolstr"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "buffa ProtoString support for smol_str::SmolStr (string_type preset)."
+
+[dependencies]
+buffa = { workspace = true, features = ["std"] }
+smol_str = { workspace = true }
