@@ -13,6 +13,10 @@ description = "buffa ProtoString support for smol_str::SmolStr (string_type pres
 serde = ["dep:serde", "smol_str/serde"]
 
 [dependencies]
+# buffa-smolstr is a std crate (it depends on buffa/std), so use smol_str with
+# std too — smol_str 0.3's serde impl requires it, and without it enabling the
+# `serde` feature fails to compile unless another crate happens to unify
+# `smol_str/std` in.
 buffa = { workspace = true, features = ["std"] }
-smol_str = { workspace = true }
+smol_str = { workspace = true, features = ["std"] }
 serde = { workspace = true, optional = true, features = ["derive"] }

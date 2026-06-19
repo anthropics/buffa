@@ -30,7 +30,17 @@ use buffa::{DecodeError, ProtoString, WirePayload};
 #[derive(Clone, PartialEq, Eq, Default, Debug, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
+#[repr(transparent)]
 pub struct SmolStr(pub smol_str::SmolStr);
+
+// `#[repr(transparent)]` guarantees this newtype has the same layout and ABI as
+// the inner `smol_str::SmolStr` — so storing it in a field or passing it by
+// value/reference is free, with no wrapper word and no conversion at the
+// boundary. Freeze that guarantee against accidental regression.
+const _: () = {
+    assert!(core::mem::size_of::<SmolStr>() == core::mem::size_of::<smol_str::SmolStr>());
+    assert!(core::mem::align_of::<SmolStr>() == core::mem::align_of::<smol_str::SmolStr>());
+};
 
 impl SmolStr {
     /// Borrow as `&str`.
