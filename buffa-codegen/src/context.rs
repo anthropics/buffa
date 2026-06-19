@@ -926,6 +926,37 @@ impl<'a> CodeGenContext<'a> {
             .find(|(prefix, _)| matches_proto_prefix(prefix, field_fqn))
             .map_or(crate::MapRepr::default(), |(_, repr)| repr.clone())
     }
+
+    /// Resolve the [`PointerRepr`](crate::PointerRepr) for a singular message
+    /// field at the given proto path. Last matching rule wins (proto-segment
+    /// prefix match); fields matching no rule use
+    /// [`PointerRepr::Box`](crate::PointerRepr::Box).
+    pub fn pointer_repr(&self, field_fqn: &str) -> crate::PointerRepr {
+        self.config
+            .pointer_fields
+            .iter()
+            .rev()
+            .find(|(prefix, _)| matches_proto_prefix(prefix, field_fqn))
+            .map_or(crate::PointerRepr::default(), |(_, repr)| repr.clone())
+    }
+
+    /// Resolve the [`RepeatedRepr`](crate::RepeatedRepr) for a `repeated` field
+    /// at the given proto path.
+    ///
+    /// `field_fqn` is the fully-qualified proto field path, e.g.
+    /// `".my.pkg.MyMessage.items"`. Rules in `config.repeated_fields` are matched
+    /// with the same proto-segment-aware prefix logic as
+    /// [`string_repr`](Self::string_repr); the **last** matching rule wins,
+    /// letting a specific override follow a broad default. Fields matching no
+    /// rule use [`RepeatedRepr::Vec`](crate::RepeatedRepr::Vec).
+    pub fn repeated_repr(&self, field_fqn: &str) -> crate::RepeatedRepr {
+        self.config
+            .repeated_fields
+            .iter()
+            .rev()
+            .find(|(prefix, _)| matches_proto_prefix(prefix, field_fqn))
+            .map_or(crate::RepeatedRepr::default(), |(_, repr)| repr.clone())
+    }
 }
 
 /// Scope-local context for code generation within a message.

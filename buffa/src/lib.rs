@@ -244,10 +244,10 @@ pub use message::{
     DecodeContext, DecodeOptions, Message, MessageName, DEFAULT_UNKNOWN_FIELD_LIMIT,
     RECURSION_LIMIT,
 };
-pub use message_field::{DefaultInstance, MessageField};
+pub use message_field::{DefaultInstance, MessageField, ProtoBox};
 pub use oneof::Oneof;
 pub use size_cache::SizeCache;
-pub use types::{ProtoBytes, ProtoString, WirePayload};
+pub use types::{ProtoBytes, ProtoList, ProtoString, WirePayload};
 pub use unknown_fields::{UnknownField, UnknownFieldData, UnknownFields};
 
 #[cfg(feature = "text")]

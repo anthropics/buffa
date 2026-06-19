@@ -1845,9 +1845,14 @@ pub(crate) fn singular_to_owned(
             // Use rust_path_to_tokens, not syn::parse_str: the latter chokes
             // on keyword segments like `super::super::type::LatLng`.
             let owned_ty = crate::message::rust_path_to_tokens(&owned_path);
+            // The `some` path carries the field's configured pointer (Box by
+            // default) so the constructed `MessageField` matches the field type;
+            // `none()` infers the pointer from the assignment target.
+            let some_path = crate::impl_message::field_pointer_repr(ctx, proto_fqn, field_name)
+                .some_path(&owned_ty)?;
             quote! {
                 match self.#ident.as_option() {
-                    Some(v) => ::buffa::MessageField::<#owned_ty>::some(
+                    Some(v) => #some_path::some(
                         v.to_owned_from_source(__buffa_src)?,
                     ),
                     None => ::buffa::MessageField::none(),
@@ -1888,7 +1893,16 @@ pub(crate) fn repeated_to_owned(
                     .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?
             }
         }
-        _ => quote! { self.#ident.to_vec() },
+        // Scalar elements. The default `Vec` uses `to_vec()` (byte-identical to
+        // a build without the knob); a custom collection collects the copied
+        // scalars via `FromIterator`, since `to_vec()` would force a `Vec`.
+        _ => {
+            if crate::impl_message::field_repeated_repr(ctx, proto_fqn, field_name).is_default() {
+                quote! { self.#ident.to_vec() }
+            } else {
+                quote! { self.#ident.iter().copied().collect() }
+            }
+        }
     }
 }
 
@@ -1980,13 +1994,19 @@ pub(crate) fn oneof_variant_to_owned(
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
             // The owned variant is boxed unless opted out; `v` derefs through
             // the view's own `Box` either way, so only the wrapper differs.
+            // `owned` is a typed expression (`to_owned_from_source` returns the
+            // concrete owned type), so the custom pointer's `ProtoBox::new`
+            // infers its element type from it — no type token needed here, unlike
+            // the binary merge where the value starts as `Default::default()`.
             let owned = quote! { v.to_owned_from_source(__buffa_src)? };
-            if crate::oneof::variant_boxed(
-                ctx,
-                ty,
-                &format!(".{proto_fqn}.{oneof_name}.{field_name}"),
-            ) {
-                quote! { ::buffa::alloc::boxed::Box::new(#owned) }
+            let variant_fqn = format!(".{proto_fqn}.{oneof_name}.{field_name}");
+            if crate::oneof::variant_boxed(ctx, ty, &variant_fqn) {
+                if matches!(ctx.pointer_repr(&variant_fqn), crate::PointerRepr::Box) {
+                    quote! { ::buffa::alloc::boxed::Box::new(#owned) }
+                } else {
+                    // Trait-qualified so an inherent `new` can't shadow it.
+                    quote! { ::buffa::ProtoBox::new(#owned) }
+                }
             } else {
                 owned
             }

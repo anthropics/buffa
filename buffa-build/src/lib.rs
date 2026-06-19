@@ -39,7 +39,7 @@ pub use buffa_codegen::FeatureGateNames;
 #[doc(inline)]
 pub use buffa_codegen::ReflectMode;
 #[doc(inline)]
-pub use buffa_codegen::{BytesRepr, MapRepr, StringRepr};
+pub use buffa_codegen::{BytesRepr, MapRepr, PointerRepr, RepeatedRepr, StringRepr};
 
 /// How to produce a `FileDescriptorSet` from `.proto` files.
 #[derive(Debug, Clone, Default)]
@@ -1046,6 +1046,154 @@ impl Config {
     #[must_use]
     pub fn map_type_custom(self, path: &str) -> Self {
         self.map_type(MapRepr::Custom(path.to_string()))
+    }
+
+    /// Map the matching message fields to a [`PointerRepr`] other than the
+    /// default `Box`. Rules are matched with proto-segment-aware prefix logic;
+    /// the **last** matching rule wins, so add a broad rule first and narrower
+    /// overrides after.
+    ///
+    /// Applies to singular (and proto2 optional/required) message fields and to
+    /// **boxed** oneof message/group variants (matched by the variant's path).
+    /// A oneof variant opted into inline storage via [`unbox_oneof_in`](Self::unbox_oneof_in)
+    /// takes precedence and gets no pointer; recursive variants stay boxed and so
+    /// accept a custom pointer. Repeated message fields use a collection, not a
+    /// pointer. For [`PointerRepr::Custom`], the pointer must implement
+    /// `buffa::ProtoBox<T>` and be a crate-local newtype; the path is a
+    /// **template** with a `*` placeholder for the message type (e.g.
+    /// `"::my_crate::SmallBox<*>"`).
+    ///
+    /// Only the in-memory pointer changes: the wire format is unchanged and view
+    /// types are unaffected.
+    #[must_use]
+    pub fn box_type_in(mut self, repr: PointerRepr, paths: &[impl AsRef<str>]) -> Self {
+        self.codegen_config
+            .pointer_fields
+            .extend(paths.iter().map(|p| (p.as_ref().to_string(), repr.clone())));
+        self
+    }
+
+    /// Map every message field (and boxed oneof variant) to the given [`PointerRepr`].
+    /// Convenience for `.box_type_in(repr, &["."])`. Call before any
+    /// [`box_type_in`](Self::box_type_in) overrides, since the last matching rule
+    /// wins. An inline pointer inflates each parent struct, so prefer narrow
+    /// rules over a blanket default.
+    #[must_use]
+    pub fn box_type(mut self, repr: PointerRepr) -> Self {
+        self.codegen_config
+            .pointer_fields
+            .push((".".to_string(), repr));
+        self
+    }
+
+    /// Map the matching singular message fields to a custom pointer implementing
+    /// `buffa::ProtoBox<T>`, named by a Rust type-path **template** with a `*`
+    /// placeholder for the message type (e.g. `"::my_crate::SmallBox<*>"`).
+    /// Shorthand for
+    /// [`box_type_in`](Self::box_type_in)`(PointerRepr::Custom(template), paths)`.
+    ///
+    /// # Limitations
+    ///
+    /// - The template must contain at least one `*`; a template that omits it,
+    ///   or whose substitution does not parse as a Rust type, is reported as a
+    ///   codegen error from [`compile`](Self::compile).
+    /// - The pointer must be exclusively owned (`Rc`/`Arc` are unusable — the
+    ///   decoder needs `DerefMut`) and a crate-local newtype (a foreign pointer
+    ///   cannot implement the buffa-owned `ProtoBox`).
+    #[must_use]
+    pub fn box_type_custom_in(self, template: &str, paths: &[impl AsRef<str>]) -> Self {
+        self.box_type_in(PointerRepr::Custom(template.to_string()), paths)
+    }
+
+    /// Map every message field (and boxed oneof variant) to the given custom pointer template.
+    /// Convenience for `.box_type_custom_in(template, &["."])`; see it for the
+    /// limitations (the `*` placeholder, `Rc`/`Arc` exclusion, newtype rule).
+    #[must_use]
+    pub fn box_type_custom(self, template: &str) -> Self {
+        self.box_type(PointerRepr::Custom(template.to_string()))
+    }
+
+    /// Map the matching `repeated` fields to a [`RepeatedRepr`] other than the
+    /// default `Vec<T>`. Rules are matched with proto-segment-aware prefix
+    /// logic; the **last** matching rule wins, so add a broad rule first and
+    /// narrower overrides after. Applies only to `repeated` fields (not `map`).
+    ///
+    /// For [`RepeatedRepr::Custom`], the collection must implement
+    /// `buffa::ProtoList<T>`. Unlike the scalar `string_type_custom` /
+    /// `bytes_type_custom` knobs (which take a *complete* type path), this path
+    /// is a **template** with a `*` placeholder for the element type, and it must
+    /// name a **crate-local newtype** (a foreign collection cannot implement the
+    /// buffa-owned `ProtoList`).
+    ///
+    /// Only the owned collection changes: the wire format is unchanged and view
+    /// types still borrow `&[T]`.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // `SmallList<T>` is a crate-local newtype over smallvec::SmallVec that
+    /// // implements buffa::ProtoList (see the ProtoList docs for the template).
+    /// buffa_build::Config::new()
+    ///     .repeated_type_custom("::my_crate::SmallList<*>")               // broad default
+    ///     .repeated_type_custom_in("::my_crate::SmallList8<*>", &[".my.pkg.Msg.tags"])
+    ///     .compile()
+    ///     .unwrap();
+    /// ```
+    #[must_use]
+    pub fn repeated_type_in(mut self, repr: RepeatedRepr, paths: &[impl AsRef<str>]) -> Self {
+        self.codegen_config
+            .repeated_fields
+            .extend(paths.iter().map(|p| (p.as_ref().to_string(), repr.clone())));
+        self
+    }
+
+    /// Map every `repeated` field in all messages to the given
+    /// [`RepeatedRepr`]. Convenience for `.repeated_type_in(repr, &["."])`.
+    /// Call this *before* any [`repeated_type_in`](Self::repeated_type_in)
+    /// overrides, since the last matching rule wins.
+    #[must_use]
+    pub fn repeated_type(mut self, repr: RepeatedRepr) -> Self {
+        self.codegen_config
+            .repeated_fields
+            .push((".".to_string(), repr));
+        self
+    }
+
+    /// Map the matching `repeated` fields to a custom collection implementing
+    /// `buffa::ProtoList<T>`, named by a Rust type-path **template** with a `*`
+    /// placeholder for the element type (e.g. `"::my_crate::SmallList<*>"`).
+    /// Note the asymmetry with the scalar `string_type_custom` /
+    /// `bytes_type_custom` knobs: those take a *complete* path, this takes a
+    /// `*`-template that wraps the element. Shorthand for
+    /// [`repeated_type_in`](Self::repeated_type_in)`(RepeatedRepr::Custom(template), paths)`.
+    ///
+    /// # Limitations
+    ///
+    /// - The template must contain at least one `*`; a template that omits it,
+    ///   or whose substitution does not parse as a Rust type, is reported as a
+    ///   codegen error from [`compile`](Self::compile).
+    /// - The template must name a **crate-local newtype** — a foreign collection
+    ///   cannot implement the buffa-owned `ProtoList` (orphan rule). This applies
+    ///   to *every* build, not just reflection: the generated decode and clear
+    ///   code require `Field: ProtoList`.
+    /// - Under reflection / vtable the newtype must also implement
+    ///   `buffa_descriptor`'s `ReflectList` (not derivable, but a `Vec`-backed
+    ///   newtype can delegate to the inner `Vec<T>`). Under JSON it must
+    ///   implement `serde::Serialize` / `Deserialize`; under `generate_arbitrary`,
+    ///   `arbitrary::Arbitrary` (derivable on a newtype). See `buffa::ProtoList`
+    ///   for a worked newtype example.
+    #[must_use]
+    pub fn repeated_type_custom_in(self, template: &str, paths: &[impl AsRef<str>]) -> Self {
+        self.repeated_type_in(RepeatedRepr::Custom(template.to_string()), paths)
+    }
+
+    /// Map every `repeated` field to the given custom collection template.
+    /// Convenience for `.repeated_type_custom_in(template, &["."])`; see it for
+    /// the limitations (the `*` placeholder, foreign reflection, the JSON /
+    /// `arbitrary` requirements).
+    #[must_use]
+    pub fn repeated_type_custom(self, template: &str) -> Self {
+        self.repeated_type(RepeatedRepr::Custom(template.to_string()))
     }
 
     /// Add a custom attribute to generated types (messages and enums)

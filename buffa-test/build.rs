@@ -10,6 +10,18 @@ fn main() {
         .compile()
         .expect("buffa_build failed for basic.proto");
 
+    // box_type: a crate-LOCAL `CustomBox<T>` pointer (a `ProtoBox<T>` impl) for
+    // singular message fields, via the `*`-templated knob. The crate compiling
+    // is most of the test — the field type, decode (`get_or_insert_default`),
+    // clear, and view→owned (`some`) paths must all emit `MessageField<T,
+    // CustomBox<T>>` and the generic `ProtoBox` surface.
+    buffa_build::Config::new()
+        .files(&["protos/box_type.proto"])
+        .includes(&["protos/"])
+        .box_type_custom("crate::box_type::CustomBox<*>")
+        .compile()
+        .expect("buffa_build failed for box_type.proto");
+
     // views(false) + vtable: owned-message vtable reflection is self-contained,
     // so it must compile without view generation (only owned impls emitted).
     buffa_build::Config::new()
@@ -82,6 +94,18 @@ fn main() {
         .reflect_mode(buffa_build::ReflectMode::VTable)
         .compile()
         .expect("buffa_build failed for map_type_custom.proto");
+
+    // repeated_type: a crate-LOCAL `CustomList<T>` collection (a `ProtoList<T>`
+    // impl) used for every `repeated` field, via the `*`-templated knob. The
+    // crate compiling is most of the test — the merge (`push`/`reserve`),
+    // encode (`.iter()`), clear, and view→owned (`collect`) paths must all emit
+    // the generic `ProtoList` surface for the custom collection.
+    buffa_build::Config::new()
+        .files(&["protos/repeated_type.proto"])
+        .includes(&["protos/"])
+        .repeated_type_custom("crate::repeated_type::CustomList<*>")
+        .compile()
+        .expect("buffa_build failed for repeated_type.proto");
 
     // Comprehensive proto3 semantics: implicit vs explicit presence for all
     // scalar types, open-enum contexts, default packing, synthetic oneofs.

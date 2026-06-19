@@ -433,16 +433,18 @@ pub fn generate_message_impl(
                 )?);
             }
             FieldKind::Repeated(f) => {
-                compute_stmts.push(repeated_compute_size_stmt(ctx, f, features)?);
-                write_stmts.push(repeated_write_to_stmt(ctx, f, features)?);
+                let repr = field_repeated_repr(ctx, proto_fqn, f.name.as_deref().unwrap_or(""));
+                compute_stmts.push(repeated_compute_size_stmt(ctx, f, features, &repr)?);
+                write_stmts.push(repeated_write_to_stmt(ctx, f, features, &repr)?);
                 merge_arms.push(repeated_merge_arm(
                     ctx,
                     f,
                     proto_fqn,
                     features,
                     preserve_unknown_fields,
+                    &repr,
                 )?);
-                clear_stmts.push(vec_field_clear_stmt(f)?);
+                clear_stmts.push(vec_field_clear_stmt(f, &repr)?);
             }
             FieldKind::Map(f) => {
                 compute_stmts.push(map_compute_size_stmt(ctx, msg, f, proto_fqn, features)?);
@@ -462,6 +464,8 @@ pub fn generate_message_impl(
                     fields,
                     oneof_prefix,
                     proto_fqn,
+                    current_package,
+                    nesting,
                     features,
                     preserve_unknown_fields,
                 )?;
@@ -794,8 +798,21 @@ pub(crate) fn build_view_encode_methods(
                 write_stmts.push(scalar_write_to_stmt(ctx, f, features)?);
             }
             FieldKind::Repeated(f) => {
-                compute_stmts.push(repeated_compute_size_stmt(ctx, f, features)?);
-                write_stmts.push(repeated_write_to_stmt(ctx, f, features)?);
+                // The view's repeated fields are always borrowed `RepeatedView`s,
+                // independent of the owned collection's `RepeatedRepr`, so the
+                // default `&self.field` iteration form always applies here.
+                compute_stmts.push(repeated_compute_size_stmt(
+                    ctx,
+                    f,
+                    features,
+                    &crate::RepeatedRepr::Vec,
+                )?);
+                write_stmts.push(repeated_write_to_stmt(
+                    ctx,
+                    f,
+                    features,
+                    &crate::RepeatedRepr::Vec,
+                )?);
             }
             // map_{compute_size,write_to}_stmt emit `for (k, v) in &self.field
             // { ... }`. For owned `&HashMap<K,V>` that yields `(&K, &V)`
@@ -941,14 +958,23 @@ pub(crate) fn build_view_encode_methods(
 
 /// `self.<field>.clear();` for repeated and map fields — both `Vec<T>` and
 /// `HashMap<K,V>` retain their backing allocation on `.clear()`.
-fn vec_field_clear_stmt(field: &FieldDescriptorProto) -> Result<TokenStream, CodeGenError> {
+fn vec_field_clear_stmt(
+    field: &FieldDescriptorProto,
+    repr: &crate::RepeatedRepr,
+) -> Result<TokenStream, CodeGenError> {
     let ident = make_field_ident(
         field
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?,
     );
-    Ok(quote! { self.#ident.clear(); })
+    if repr.is_default() {
+        Ok(quote! { self.#ident.clear(); })
+    } else {
+        // A custom collection's `clear` lives behind the `ProtoList` trait;
+        // call it fully-qualified so no `use` is needed at this site.
+        Ok(quote! { ::buffa::ProtoList::clear(&mut self.#ident); })
+    }
 }
 
 /// Clear statement for a `map` field. The default `HashMap` keeps the bare
@@ -1059,6 +1085,33 @@ pub(crate) fn field_map_repr(
 ) -> crate::MapRepr {
     let field_fqn = format!(".{}.{}", proto_fqn, field_name);
     ctx.map_repr(&field_fqn)
+}
+
+/// Resolve the [`PointerRepr`](crate::PointerRepr) for a singular message field.
+/// Returns [`PointerRepr::Box`](crate::PointerRepr::Box) for fields with no rule.
+pub(crate) fn field_pointer_repr(
+    ctx: &CodeGenContext,
+    proto_fqn: &str,
+    field_name: &str,
+) -> crate::PointerRepr {
+    let field_fqn = format!(".{}.{}", proto_fqn, field_name);
+    ctx.pointer_repr(&field_fqn)
+}
+
+/// Resolve the [`RepeatedRepr`](crate::RepeatedRepr) for a `repeated` field.
+///
+/// `proto_fqn` is the fully-qualified message name (no leading dot). Matched
+/// against `config.repeated_fields` as `".my.pkg.Msg.field"`. Returns
+/// [`RepeatedRepr::Vec`](crate::RepeatedRepr::Vec) for fields with no rule.
+/// Callers must only consult this for non-map repeated fields (map collections
+/// are not configured by `repeated_fields`).
+pub(crate) fn field_repeated_repr(
+    ctx: &CodeGenContext,
+    proto_fqn: &str,
+    field_name: &str,
+) -> crate::RepeatedRepr {
+    let field_fqn = format!(".{}.{}", proto_fqn, field_name);
+    ctx.repeated_repr(&field_fqn)
 }
 
 fn scalar_clear_stmt(
@@ -1947,6 +2000,20 @@ pub(crate) fn is_field_packed(field: &FieldDescriptorProto, features: &ResolvedF
     field_features.repeated_field_encoding == crate::features::RepeatedFieldEncoding::Packed
 }
 
+/// The element-iteration expression for a repeated field's encode/size loops.
+///
+/// The default `Vec` keeps `&self.field` (byte-identical to a build without the
+/// knob). A custom collection iterates via its `Deref<Target = [T]>` slice
+/// (`self.field.iter()`), because `&C: IntoIterator` is not available for a
+/// newtype that only provides `Deref`.
+fn repeated_for_iter(ident: &Ident, repr: &crate::RepeatedRepr) -> TokenStream {
+    if repr.is_default() {
+        quote! { &self.#ident }
+    } else {
+        quote! { self.#ident.iter() }
+    }
+}
+
 /// Generate the payload-size expression for a packed repeated field.
 /// The expression evaluates to a `u32` at runtime.
 fn repeated_payload_size_expr(ty: Type, ident: &Ident) -> TokenStream {
@@ -1982,6 +2049,7 @@ fn repeated_compute_size_stmt(
     ctx: &CodeGenContext,
     field: &FieldDescriptorProto,
     features: &ResolvedFeatures,
+    repr: &crate::RepeatedRepr,
 ) -> Result<TokenStream, CodeGenError> {
     let field_name = field
         .name
@@ -1990,6 +2058,7 @@ fn repeated_compute_size_stmt(
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
     let ident = make_field_ident(field_name);
+    let elems = repeated_for_iter(&ident, repr);
     // LengthDelimited tag (wire type 2): used for packed, message, string, bytes.
     let ld_tag_len = tag_encoded_len(field_number, 2);
     // Per-element tag using the field's own wire type: used for unpacked numerics.
@@ -1998,7 +2067,7 @@ fn repeated_compute_size_stmt(
     if ty == Type::TYPE_MESSAGE {
         // Messages are always length-delimited (one tag per element).
         return Ok(quote! {
-            for v in &self.#ident {
+            for v in #elems {
                 let __slot = __cache.reserve();
                 let inner_size = v.compute_size(__cache);
                 __cache.set(__slot, inner_size);
@@ -2011,7 +2080,7 @@ fn repeated_compute_size_stmt(
     if ty == Type::TYPE_GROUP {
         // Groups: start_tag + body + end_tag per element (no length prefix).
         return Ok(quote! {
-            for v in &self.#ident {
+            for v in #elems {
                 let inner_size = v.compute_size(__cache);
                 size += #elem_tag_len + inner_size + #elem_tag_len;
             }
@@ -2061,7 +2130,7 @@ fn repeated_compute_size_stmt(
             }
         };
         return Ok(quote! {
-            for v in &self.#ident { #per_elem_size }
+            for v in #elems { #per_elem_size }
         });
     }
     // Packed: single LengthDelimited tag + varint payload length + elements.
@@ -2078,6 +2147,7 @@ fn repeated_write_to_stmt(
     ctx: &CodeGenContext,
     field: &FieldDescriptorProto,
     features: &ResolvedFeatures,
+    repr: &crate::RepeatedRepr,
 ) -> Result<TokenStream, CodeGenError> {
     let field_name = field
         .name
@@ -2086,10 +2156,11 @@ fn repeated_write_to_stmt(
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
     let ident = make_field_ident(field_name);
+    let elems = repeated_for_iter(&ident, repr);
 
     if ty == Type::TYPE_MESSAGE {
         return Ok(quote! {
-            for v in &self.#ident {
+            for v in #elems {
                 ::buffa::types::put_len_delimited_header(
                     #field_number,
                     __cache.consume_next(),
@@ -2101,7 +2172,7 @@ fn repeated_write_to_stmt(
     }
     if ty == Type::TYPE_GROUP {
         return Ok(quote! {
-            for v in &self.#ident {
+            for v in #elems {
                 ::buffa::types::put_group_start(#field_number, buf);
                 v.write_to(__cache, buf);
                 ::buffa::types::put_group_end(#field_number, buf);
@@ -2126,7 +2197,7 @@ fn repeated_write_to_stmt(
             }
         };
         return Ok(quote! {
-            for v in &self.#ident {
+            for v in #elems {
                 #per_elem
             }
         });
@@ -2134,10 +2205,10 @@ fn repeated_write_to_stmt(
     // Packed.
     let payload_expr = repeated_payload_size_expr(ty, &ident);
     let encode_loop = if ty == Type::TYPE_ENUM {
-        quote! { for v in &self.#ident { ::buffa::types::encode_int32(v.to_i32(), buf); } }
+        quote! { for v in #elems { ::buffa::types::encode_int32(v.to_i32(), buf); } }
     } else {
         let encode_fn = encode_fn_token(ty);
-        quote! { for &v in &self.#ident { #encode_fn(v, buf); } }
+        quote! { for &v in #elems { #encode_fn(v, buf); } }
     };
     Ok(quote! {
         if !self.#ident.is_empty() {
@@ -2154,6 +2225,7 @@ fn repeated_merge_arm(
     proto_fqn: &str,
     parent_features: &ResolvedFeatures,
     preserve_unknown_fields: bool,
+    repr: &crate::RepeatedRepr,
 ) -> Result<TokenStream, CodeGenError> {
     let features = &crate::features::resolve_field(ctx, field, parent_features);
     let field_name = field
@@ -2164,6 +2236,16 @@ fn repeated_merge_arm(
     let ty = effective_type(ctx, field, features);
     let bytes_repr = field_bytes_repr(ctx, proto_fqn, field_name);
     let ident = make_field_ident(field_name);
+    // For a custom collection, bring `ProtoList` into the arm's scope so the
+    // bare `self.field.push(..)` / `.reserve(..)` below resolve to the trait
+    // (a newtype has no inherent push). For the default `Vec` this stays empty,
+    // so the arm is byte-identical to a build without the knob and `Vec`'s
+    // inherent methods win.
+    let list_use = if repr.is_default() {
+        quote! {}
+    } else {
+        quote! { use ::buffa::ProtoList as _; }
+    };
 
     if ty == Type::TYPE_MESSAGE {
         let wire_check = wire_type_check(
@@ -2172,6 +2254,7 @@ fn repeated_merge_arm(
         );
         return Ok(quote! {
             #field_number => {
+                #list_use
                 #wire_check
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
@@ -2186,6 +2269,7 @@ fn repeated_merge_arm(
         );
         return Ok(quote! {
             #field_number => {
+                #list_use
                 #wire_check
                 let mut elem = ::core::default::Default::default();
                 ::buffa::Message::merge_group(&mut elem, buf, ctx, #field_number)?;
@@ -2229,6 +2313,7 @@ fn repeated_merge_arm(
         };
         return Ok(quote! {
             #field_number => {
+                #list_use
                 #wire_check
                 self.#ident.push(#decode_expr);
             }
@@ -2276,14 +2361,24 @@ fn repeated_merge_arm(
         Type::TYPE_FIXED64 | Type::TYPE_SFIXED64 | Type::TYPE_DOUBLE => 8,
         _ => 1,
     };
-    let reserve_stmt = if reserve_divisor > 1 {
-        quote! { self.#ident.reserve(len / #reserve_divisor); }
+    // The default `Vec` keeps the bare inherent `reserve` (byte-identical). A
+    // custom collection calls the advisory `ProtoList::reserve` via UFCS so an
+    // inherent `reserve` on the type cannot shadow the no-op default and
+    // re-enable eager allocation from an untrusted length prefix.
+    let amount = if reserve_divisor > 1 {
+        quote! { len / #reserve_divisor }
     } else {
-        quote! { self.#ident.reserve(len); }
+        quote! { len }
+    };
+    let reserve_stmt = if repr.is_default() {
+        quote! { self.#ident.reserve(#amount); }
+    } else {
+        quote! { ::buffa::ProtoList::reserve(&mut self.#ident, #amount); }
     };
 
     Ok(quote! {
         #field_number => {
+            #list_use
             if tag.wire_type() == ::buffa::encoding::WireType::LengthDelimited {
                 // Packed encoding.
                 let len = ::buffa::encoding::decode_varint(buf)?;
@@ -2469,21 +2564,31 @@ fn oneof_merge_arm(
     bytes_repr: &crate::BytesRepr,
     string_repr: crate::StringRepr,
     boxed: bool,
+    // `Some((msg_ty, ptr_ty))` for a boxed message/group variant with a custom
+    // pointer; `None` for the default `Box` or a non-message variant.
+    custom_box: Option<&(TokenStream, TokenStream)>,
 ) -> TokenStream {
     let wire_type = wire_type_token(ty);
     let wire_check = wire_type_check(&quote! { tag }, &wire_type);
     // Message/group variants merge into the existing value. When boxed, the
-    // binding is `&mut Box<M>` (deref once); when stored inline it is `&mut M`,
-    // and the freshly decoded value is moved in without a `Box`.
+    // binding is `&mut **existing` — `DerefMut` through any `ProtoBox` (`Box` or
+    // custom) yields `&mut M`; when stored inline it is `&mut M`.
     let existing_ref = if boxed {
         quote! { &mut **existing }
     } else {
         quote! { existing }
     };
-    let wrapped_val = if boxed {
-        quote! { ::buffa::alloc::boxed::Box::new(val) }
-    } else {
-        quote! { val }
+    // The freshly-decoded value's wrapping. A custom pointer constructs via the
+    // trait (fully-qualified, so an inherent `new` can't shadow it); the default
+    // `Box` keeps `Box::new` (byte-identical). The matching `val` ascription
+    // types the value so the trait `new`'s element type is determined.
+    let (wrapped_val, val_ascription) = match (custom_box, boxed) {
+        (Some((msg_ty, ptr_ty)), _) => (
+            quote! { <#ptr_ty as ::buffa::ProtoBox<#msg_ty>>::new(val) },
+            quote! { : #msg_ty },
+        ),
+        (None, true) => (quote! { ::buffa::alloc::boxed::Box::new(val) }, quote! {}),
+        (None, false) => (quote! { val }, quote! {}),
     };
     match ty {
         Type::TYPE_STRING => {
@@ -2555,7 +2660,7 @@ fn oneof_merge_arm(
                 ) = self.#field_ident {
                     ::buffa::Message::merge_length_delimited(#existing_ref, buf, ctx)?;
                 } else {
-                    let mut val = ::core::default::Default::default();
+                    let mut val #val_ascription = ::core::default::Default::default();
                     ::buffa::Message::merge_length_delimited(&mut val, buf, ctx)?;
                     self.#field_ident = ::core::option::Option::Some(
                         #enum_ident::#variant_ident(#wrapped_val)
@@ -2571,7 +2676,7 @@ fn oneof_merge_arm(
                 ) = self.#field_ident {
                     ::buffa::Message::merge_group(#existing_ref, buf, ctx, #field_number)?;
                 } else {
-                    let mut val = ::core::default::Default::default();
+                    let mut val #val_ascription = ::core::default::Default::default();
                     ::buffa::Message::merge_group(&mut val, buf, ctx, #field_number)?;
                     self.#field_ident = ::core::option::Option::Some(
                         #enum_ident::#variant_ident(#wrapped_val)
@@ -2605,6 +2710,8 @@ fn generate_oneof_impls(
     fields: &[&FieldDescriptorProto],
     oneof_prefix: &TokenStream,
     proto_fqn: &str,
+    current_package: &str,
+    nesting: usize,
     features: &ResolvedFeatures,
     preserve_unknown_fields: bool,
 ) -> Result<(TokenStream, TokenStream, Vec<TokenStream>), CodeGenError> {
@@ -2635,11 +2742,26 @@ fn generate_oneof_impls(
         let field_features = crate::features::resolve_field(ctx, field, features);
         let bytes_repr = field_bytes_repr(ctx, proto_fqn, field_name);
         let string_repr = field_string_repr(ctx, proto_fqn, field_name);
-        let boxed = crate::oneof::variant_boxed(
-            ctx,
-            ty,
-            &format!(".{proto_fqn}.{oneof_name}.{field_name}"),
-        );
+        let variant_fqn = format!(".{proto_fqn}.{oneof_name}.{field_name}");
+        let boxed = crate::oneof::variant_boxed(ctx, ty, &variant_fqn);
+        // A boxed message/group variant with a custom pointer needs the inner
+        // message type (to type the decoded value) and the pointer type (to
+        // construct it). Resolve both here; `None` means the default `Box`.
+        let custom_box = if boxed
+            && matches!(ty, Type::TYPE_MESSAGE | Type::TYPE_GROUP)
+            && !matches!(ctx.pointer_repr(&variant_fqn), crate::PointerRepr::Box)
+        {
+            let msg_ty = field
+                .type_name
+                .as_deref()
+                .and_then(|tn| ctx.rust_type_relative(tn, current_package, nesting))
+                .map(|p| crate::idents::rust_path_to_tokens(&p))
+                .ok_or(CodeGenError::MissingField("oneof variant type_name"))?;
+            let ptr_ty = ctx.pointer_repr(&variant_fqn).pointer_type(&msg_ty)?;
+            Some((msg_ty, ptr_ty))
+        } else {
+            None
+        };
         merge_arm_list.push(oneof_merge_arm(
             &field_ident,
             &qualified_enum,
@@ -2651,6 +2773,7 @@ fn generate_oneof_impls(
             &bytes_repr,
             string_repr,
             boxed,
+            custom_box.as_ref(),
         ));
     }
 
