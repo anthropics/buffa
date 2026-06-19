@@ -20,7 +20,7 @@ use crate::impl_message::{
     closed_enum_decode, closed_enum_decode_with_unknown, decode_fn_token, effective_type,
     effective_type_in_map_entry, field_string_repr, find_map_entry_fields,
     is_explicit_presence_scalar, is_packed_type, is_real_oneof_member, is_required_field,
-    is_supported_field_type, map_value_use_bytes, validated_field_number, wire_type_check,
+    is_supported_field_type, map_value_bytes_repr, validated_field_number, wire_type_check,
     wire_type_token,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident, rust_path_to_tokens};
@@ -1919,19 +1919,21 @@ pub(crate) fn map_to_owned_expr(
         _ => quote! { *k },
     };
 
-    // `bytes_fields` on the outer map field promotes `bytes` values to `Bytes`,
-    // matching the owned-side map type (shared carve-out in `map_value_use_bytes`).
-    // When it holds, emit `bytes_from_source` directly: the predicate already
-    // implies `field_uses_bytes`, so routing through `bytes_to_owned` (which
-    // re-checks it) would be redundant.
-    let value_use_bytes =
-        map_value_use_bytes(ctx, Some(key_ty), Some(val_ty), proto_fqn, field_name);
+    // `bytes_type` on the outer map field promotes `bytes` values to the
+    // configured representation, matching the owned-side map type (shared
+    // carve-out in `map_value_bytes_repr`). `Bytes` converts zero-copy via
+    // `bytes_from_source`; a custom type constructs from a fresh `Vec<u8>`.
+    let value_bytes_repr =
+        map_value_bytes_repr(ctx, Some(key_ty), Some(val_ty), proto_fqn, field_name);
     let val_conv = match val_ty {
         Type::TYPE_STRING => quote! { v.to_string() },
-        Type::TYPE_BYTES if value_use_bytes => {
-            quote! { ::buffa::view::bytes_from_source(__buffa_src, v) }
-        }
-        Type::TYPE_BYTES => quote! { v.to_vec() },
+        Type::TYPE_BYTES => match value_bytes_repr {
+            crate::BytesRepr::Vec => quote! { v.to_vec() },
+            crate::BytesRepr::Bytes => {
+                quote! { ::buffa::view::bytes_from_source(__buffa_src, v) }
+            }
+            crate::BytesRepr::Custom(_) => quote! { ::core::convert::Into::into(v.to_vec()) },
+        },
         Type::TYPE_MESSAGE => {
             // Verify the owned path resolves (catches missing imports at codegen time).
             let _owned_path = resolve_owned_path(scope, val_fd)?;

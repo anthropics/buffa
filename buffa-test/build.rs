@@ -43,6 +43,7 @@ fn main() {
         .includes(&["protos/"])
         .bytes_type_custom("crate::vtable_bytes_repr::LocalBytes")
         .generate_json(true)
+        .generate_text(true)
         .reflect_mode(buffa_build::ReflectMode::VTable)
         .compile()
         .expect("buffa_build failed for vtable_bytes_repr.proto");

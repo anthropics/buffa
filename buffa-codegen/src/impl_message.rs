@@ -955,14 +955,6 @@ fn vec_field_clear_stmt(field: &FieldDescriptorProto) -> Result<TokenStream, Cod
 ///
 /// Returns a `TokenStream` that clears the field to its default value while
 /// retaining heap allocations where possible (String, Vec, MessageField).
-/// Check if a bytes-typed field should use `bytes::Bytes` instead of `Vec<u8>`.
-///
-/// `proto_fqn` is the fully-qualified message name (no leading dot), e.g.
-/// `"my.pkg.Msg"`. Matched against `config.bytes_fields` as `".my.pkg.Msg.field"`.
-pub(crate) fn field_uses_bytes(ctx: &CodeGenContext, proto_fqn: &str, field_name: &str) -> bool {
-    field_bytes_repr(ctx, proto_fqn, field_name).is_bytes()
-}
-
 /// Resolve the [`BytesRepr`](crate::BytesRepr) for a `bytes`-typed field.
 ///
 /// `proto_fqn` is the fully-qualified message name (no leading dot). Matched
@@ -989,34 +981,35 @@ fn bytes_decode_expr(repr: &crate::BytesRepr) -> TokenStream {
     }
 }
 
-/// Whether a `map<K, bytes>` value field should use `bytes::Bytes` instead of
-/// `Vec<u8>`.
+/// Resolve the [`BytesRepr`](crate::BytesRepr) for a `map<K, bytes>` value.
 ///
-/// Single source of truth for the `bytes_fields` → map-value rule, shared by
+/// Single source of truth for the `bytes_type` → map-value rule, shared by
 /// `classify_field` (owned struct type, serde, and `arbitrary`), the binary and
-/// text `map_merge_arm` decoders, and `view::map_to_owned_expr`. Centralizing it
-/// keeps every site in agreement — a split decision would emit a `Bytes` value
-/// on one side and `Vec<u8>` on another, surfacing only as a compile error in
-/// the consuming crate.
+/// text map decoders, `view::map_to_owned_expr`, and the custom-element
+/// collector. Centralizing it keeps every site in agreement — a split decision
+/// would emit one representation on one side and another elsewhere, surfacing
+/// only as a compile error in the consuming crate.
 ///
 /// `key_ty` / `val_ty` are the **effective** map-entry types (see
-/// [`effective_type_in_map_entry`]); `None` means the entry lacks that field and
-/// is treated as non-`bytes`, so a non-map caller naturally yields `false`. The
-/// value becomes `Bytes` only when the value is proto `bytes`, the outer map
-/// field matches `bytes_fields`, and the key is *not* effective-`bytes`. The key
-/// carve-out tracks the one JSON helper (`bytes_key_bytes_val_map`) whose
-/// signature is the concrete `HashMap<Vec<u8>, Vec<u8>>`; when the key is
-/// effective-`bytes` the value must stay `Vec<u8>` to match it.
-pub(crate) fn map_value_use_bytes(
+/// [`effective_type_in_map_entry`]); `None` means the entry lacks that field, so
+/// a non-map caller naturally yields [`BytesRepr::Vec`](crate::BytesRepr::Vec).
+/// The value takes the matching rule only when the value is proto `bytes` and the
+/// key is *not* effective-`bytes` (the `map<bytes, bytes>` carve-out keeps
+/// `Vec<u8>` values, matching the concrete `bytes_key_bytes_val_map` JSON
+/// helper); otherwise it is `Vec`. The rule is keyed on the outer map field's
+/// path, like the singular path.
+pub(crate) fn map_value_bytes_repr(
     ctx: &CodeGenContext,
     key_ty: Option<Type>,
     val_ty: Option<Type>,
     proto_fqn: &str,
     field_name: &str,
-) -> bool {
-    val_ty == Some(Type::TYPE_BYTES)
-        && key_ty != Some(Type::TYPE_BYTES)
-        && field_uses_bytes(ctx, proto_fqn, field_name)
+) -> crate::BytesRepr {
+    if val_ty == Some(Type::TYPE_BYTES) && key_ty != Some(Type::TYPE_BYTES) {
+        field_bytes_repr(ctx, proto_fqn, field_name)
+    } else {
+        crate::BytesRepr::Vec
+    }
 }
 
 /// Resolve the [`StringRepr`](crate::StringRepr) for a `string`-typed field.
@@ -2680,8 +2673,12 @@ pub(crate) fn find_map_entry_fields<'a>(
 /// map's own key/value Rust types pin the parameter, so no type-path
 /// resolution is needed here. `use_bytes` selects the `bytes::Bytes` value
 /// representation (the `bytes_fields` codegen option).
-fn map_codec_token(ty: Type, use_bytes: bool, features: &ResolvedFeatures) -> TokenStream {
-    match ty {
+fn map_codec_token(
+    ty: Type,
+    bytes_repr: &crate::BytesRepr,
+    features: &ResolvedFeatures,
+) -> Result<TokenStream, CodeGenError> {
+    Ok(match ty {
         Type::TYPE_INT32 => quote! { ::buffa::map_codec::Int32 },
         Type::TYPE_INT64 => quote! { ::buffa::map_codec::Int64 },
         Type::TYPE_UINT32 => quote! { ::buffa::map_codec::Uint32 },
@@ -2696,8 +2693,14 @@ fn map_codec_token(ty: Type, use_bytes: bool, features: &ResolvedFeatures) -> To
         Type::TYPE_DOUBLE => quote! { ::buffa::map_codec::Double },
         Type::TYPE_BOOL => quote! { ::buffa::map_codec::Bool },
         Type::TYPE_STRING => quote! { ::buffa::map_codec::Str },
-        Type::TYPE_BYTES if use_bytes => quote! { ::buffa::map_codec::BytesBuf },
-        Type::TYPE_BYTES => quote! { ::buffa::map_codec::BytesVec },
+        Type::TYPE_BYTES => match bytes_repr {
+            crate::BytesRepr::Vec => quote! { ::buffa::map_codec::BytesVec },
+            crate::BytesRepr::Bytes => quote! { ::buffa::map_codec::BytesBuf },
+            crate::BytesRepr::Custom(path) => {
+                let ty = crate::parse_custom_type_path(path)?;
+                quote! { ::buffa::map_codec::ProtoBytesMap<#ty> }
+            }
+        },
         Type::TYPE_ENUM => {
             if is_closed_enum(features) {
                 quote! { ::buffa::map_codec::ClosedEnum<_> }
@@ -2707,7 +2710,7 @@ fn map_codec_token(ty: Type, use_bytes: bool, features: &ResolvedFeatures) -> To
         }
         Type::TYPE_MESSAGE => quote! { ::buffa::map_codec::Msg<_> },
         Type::TYPE_GROUP => unreachable!("map values cannot be groups"),
-    }
+    })
 }
 
 /// Resolved map-entry context shared by the three per-field map emitters.
@@ -2739,17 +2742,18 @@ fn map_entry_ctx(
     // referenced enum's declaration (not the parent message's).
     let key_features = crate::features::resolve_field(ctx, key_fd, features);
     let val_features = crate::features::resolve_field(ctx, val_fd, features);
-    // `bytes_fields` on `map<K, bytes>` → value encodes/decodes as `Bytes`
-    // (shared carve-out in `map_value_use_bytes`).
-    let value_use_bytes =
-        map_value_use_bytes(ctx, Some(key_ty), Some(val_ty), proto_fqn, field_name);
+    // `bytes_type` on `map<K, bytes>` → value encodes/decodes with the matching
+    // representation (Vec / Bytes / custom), via the shared carve-out in
+    // `map_value_bytes_repr`. Keys are always built-in, so they pass `Vec`.
+    let value_bytes_repr =
+        map_value_bytes_repr(ctx, Some(key_ty), Some(val_ty), proto_fqn, field_name);
     Ok(MapEntryCtx {
         field_number,
         ident: make_field_ident(field_name),
         outer_tag_len: tag_encoded_len(field_number, 2),
         val_ty,
-        key_codec: map_codec_token(key_ty, false, &key_features),
-        val_codec: map_codec_token(val_ty, value_use_bytes, &val_features),
+        key_codec: map_codec_token(key_ty, &crate::BytesRepr::Vec, &key_features)?,
+        val_codec: map_codec_token(val_ty, &value_bytes_repr, &val_features)?,
     })
 }
 

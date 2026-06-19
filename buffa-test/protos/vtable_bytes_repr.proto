@@ -10,4 +10,7 @@ package vtable_bytes_repr;
 message Blob {
   bytes head = 1;
   repeated bytes chunks = 2;
+  // A string-keyed map with custom bytes values: the bytes_type_custom rule
+  // reaches map values too, so the value type is the LocalBytes newtype.
+  map<string, bytes> tagged = 3;
 }

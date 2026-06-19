@@ -1,10 +1,10 @@
-//! Repeated custom-bytes element using a crate-local newtype (`LocalBytes`)
-//! under vtable reflection + JSON. The bytes-side mirror of
-//! `vtable_string_repr`: the `chunks` field is `Vec<LocalBytes>`, exercising the
-//! codegen-emitted `ReflectElement` (so the reflective `get` returns
-//! `ValueRef::List`) and the emitted base64 `ProtoElemJson` impl (proto3 JSON
-//! renders `bytes` as base64). The type is local so those emitted impls clear
-//! the orphan rule.
+//! Custom-bytes element using a crate-local newtype (`LocalBytes`) under vtable
+//! reflection + JSON. The bytes-side mirror of `vtable_string_repr`: the
+//! `chunks` field is `Vec<LocalBytes>` and the `tagged` field is
+//! `HashMap<String, LocalBytes>`, exercising the codegen-emitted `ReflectElement`
+//! (so the reflective `get` returns `ValueRef::List` / `ValueRef::Map`) and the
+//! emitted base64 `ProtoElemJson` impl (proto3 JSON renders `bytes` as base64).
+//! The type is local so those emitted impls clear the orphan rule.
 
 use buffa::Message;
 use buffa_descriptor::reflect::{Reflectable, ValueRef};
@@ -18,6 +18,9 @@ fn sample() -> Blob {
             LocalBytes(b"bb".to_vec()),
             LocalBytes(b"ccc".to_vec()),
         ],
+        tagged: [("k".to_string(), LocalBytes(b"z".to_vec()))]
+            .into_iter()
+            .collect(),
         ..Default::default()
     }
 }
@@ -46,7 +49,17 @@ fn custom_repeated_bytes_json_roundtrip_base64() {
         json.contains(r#""chunks":["YQ==","YmI=","Y2Nj"]"#),
         "{json}"
     );
+    // Map value is also base64 (custom bytes map value via proto_map).
+    assert!(json.contains(r#""tagged":{"k":"eg=="}"#), "{json}");
     let back: Blob = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(back, m);
+}
+
+#[test]
+fn custom_bytes_map_value_text_roundtrip() {
+    let m = sample();
+    let text = buffa::text::encode_to_string(&m);
+    let back: Blob = buffa::text::decode_from_str(&text).expect("parse text");
     assert_eq!(back, m);
 }
 
@@ -76,5 +89,19 @@ fn custom_repeated_bytes_vtable_reflect() {
     match r.get(md.field(1).expect("field 1")) {
         ValueRef::Bytes(b) => assert_eq!(b, b"hi"),
         other => panic!("expected Bytes, got {other:?}"),
+    }
+
+    // Map `tagged` (field 3) reflects as a map whose values dispatch through the
+    // emitted `ReflectElement for LocalBytes` (HashMap<_, V>: ReflectMap where
+    // V: ReflectElement).
+    match r.get(md.field(3).expect("field 3")) {
+        ValueRef::Map(map) => {
+            assert_eq!(map.len(), 1);
+            match map.get_str("k") {
+                Some(ValueRef::Bytes(b)) => assert_eq!(b, b"z"),
+                other => panic!("expected Bytes map value, got {other:?}"),
+            }
+        }
+        other => panic!("expected Map, got {other:?}"),
     }
 }

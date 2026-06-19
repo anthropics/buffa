@@ -179,7 +179,7 @@ pub enum GeneratedFileKind {
 /// Parse a custom owned-type path string (e.g. `"::smol_str::SmolStr"`) into a
 /// token stream, validating it as a Rust type so a malformed path surfaces as a
 /// codegen error rather than unparseable generated output.
-fn parse_custom_type_path(path: &str) -> Result<proc_macro2::TokenStream, CodeGenError> {
+pub(crate) fn parse_custom_type_path(path: &str) -> Result<proc_macro2::TokenStream, CodeGenError> {
     let ty: syn::Type =
         syn::parse_str(path).map_err(|_| CodeGenError::InvalidTypePath(path.to_string()))?;
     Ok(quote::quote! { #ty })
@@ -335,12 +335,6 @@ impl BytesRepr {
     /// `Arbitrary`) instead of the generic `ProtoBytes` ones.
     pub(crate) fn is_default(&self) -> bool {
         matches!(self, BytesRepr::Vec)
-    }
-
-    /// Whether this representation is the built-in [`bytes::Bytes`](::bytes::Bytes),
-    /// which decodes zero-copy via `decode_bytes_to_bytes`.
-    pub(crate) fn is_bytes(&self) -> bool {
-        matches!(self, BytesRepr::Bytes)
     }
 }
 
@@ -1209,12 +1203,15 @@ enum CustomElemKind {
     Bytes,
 }
 
-/// Collect the distinct custom owned types used as elements of a `repeated`
-/// field across the whole request, keyed by Rust type path. Only `repeated`
-/// scalar `string`/`bytes` fields with a `Custom` representation qualify: map
-/// keys/values always stay `String`/`Vec<u8>`/`Bytes`, and singular / optional /
-/// oneof custom fields reach JSON and reflection without an element-trait impl.
-fn collect_custom_repeated_elements(
+/// Collect the distinct custom owned types that need a codegen-emitted element
+/// impl (`ReflectElement` / `ProtoElemJson`), keyed by Rust type path, across
+/// the whole request. These are custom `string`/`bytes` types used as the
+/// element of a `repeated` field, and custom `bytes` types used as a
+/// `map<K, bytes>` value — both reflect via the element trait and (for bytes)
+/// serialize JSON via `proto_map`/`proto_seq`. Singular / optional / oneof
+/// custom fields reach JSON and reflection without an element-trait impl, and
+/// `string`/`Vec<u8>`/`Bytes` map values are covered by the built-in impls.
+fn collect_custom_elements(
     ctx: &context::CodeGenContext,
     file_descriptors: &[FileDescriptorProto],
     files_to_generate: &[String],
@@ -1243,10 +1240,28 @@ fn collect_custom_repeated_elements(
                 if field.label.unwrap_or_default() != Label::LABEL_REPEATED {
                     continue;
                 }
-                let field_features = crate::features::resolve_field(ctx, field, &msg_features);
-                let ty = crate::impl_message::effective_type(ctx, field, &field_features);
                 let field_name = field.name.as_deref().unwrap_or("");
                 let field_fqn = format!(".{fqn}.{field_name}");
+
+                // `map<K, bytes>` value: a custom value type needs the element
+                // impls (reflected via ReflectMap → ReflectElement, JSON via
+                // proto_map → ProtoElemJson). Keyed on the outer map field path,
+                // with the `map<bytes, bytes>` carve-out.
+                if let Some(entry) = crate::message::find_map_entry(msg, field) {
+                    let key_ty = crate::message::map_entry_key_type(ctx, entry, &msg_features);
+                    let val_ty = crate::message::map_entry_value_type(ctx, entry, &msg_features);
+                    if let crate::BytesRepr::Custom(path) =
+                        crate::impl_message::map_value_bytes_repr(
+                            ctx, key_ty, val_ty, &fqn, field_name,
+                        )
+                    {
+                        out.entry(path).or_insert(CustomElemKind::Bytes);
+                    }
+                    continue;
+                }
+
+                let field_features = crate::features::resolve_field(ctx, field, &msg_features);
+                let ty = crate::impl_message::effective_type(ctx, field, &field_features);
                 match ty {
                     Type::TYPE_STRING => {
                         if let crate::StringRepr::Custom(path) = ctx.string_repr(&field_fqn) {
@@ -1281,7 +1296,8 @@ fn collect_custom_repeated_elements(
 }
 
 /// Render the deduped `ProtoElemJson` / `ReflectElement` impls for the collected
-/// custom repeated-element types. Each impl is feature-gated so a non-JSON /
+/// custom element types (repeated elements and `map<K, bytes>` values). Each
+/// impl is feature-gated so a non-JSON /
 /// non-reflect build never references an absent trait. These compile only when
 /// the custom type is local to the generating crate (the orphan rule); that is
 /// the documented limitation of a custom `repeated` element under JSON or vtable
@@ -1431,7 +1447,7 @@ pub fn generate_with_diagnostics(
     // cannot provide for a foreign type (orphan rule). Collect them once across
     // the whole request, render the impls, and hand them to the first package so
     // they are emitted exactly once (a per-package emit would collide, E0119).
-    let custom_elems = collect_custom_repeated_elements(&ctx, file_descriptors, files_to_generate);
+    let custom_elems = collect_custom_elements(&ctx, file_descriptors, files_to_generate);
     let custom_elem_impls = render_custom_elem_impls(&ctx, &custom_elems)?;
 
     let empty_impls = TokenStream::new();

@@ -252,6 +252,42 @@ scalar_codec!(
     decode: types::decode_bytes_to_bytes
 );
 
+/// `bytes` codec for a custom [`ProtoBytes`](crate::types::ProtoBytes) map-value
+/// representation (via `bytes_type_custom`). Decodes through
+/// [`from_wire`](crate::types::ProtoBytes::from_wire); encodes the borrowed
+/// `&[u8]`. Generic over the value type, so the codec itself stays sealed in
+/// buffa while the concrete representation is a downstream (crate-local) type.
+pub struct ProtoBytesMap<B>(core::marker::PhantomData<B>);
+
+impl<B: crate::types::ProtoBytes> sealed::Sealed for ProtoBytesMap<B> {}
+
+impl<B: crate::types::ProtoBytes> MapValueDecode for ProtoBytesMap<B> {
+    type Value = B;
+    const WIRE_TYPE: WireType = WireType::LengthDelimited;
+
+    #[inline]
+    fn merge(
+        value: &mut Self::Value,
+        buf: &mut impl Buf,
+        _ctx: DecodeContext<'_>,
+    ) -> Result<(), DecodeError> {
+        *value = crate::types::decode_bytes_to::<B>(buf)?;
+        Ok(())
+    }
+}
+
+impl<B: crate::types::ProtoBytes> MapCodec for ProtoBytesMap<B> {
+    #[inline]
+    fn encoded_len(value: &Self::Value) -> u32 {
+        types::bytes_encoded_len(value.as_ref()) as u32
+    }
+
+    #[inline]
+    fn encode(value: &Self::Value, buf: &mut impl BufMut) {
+        types::encode_bytes(value.as_ref(), buf);
+    }
+}
+
 /// Open-enum codec: values decode into [`EnumValue<E>`], preserving unknown
 /// numbers.
 pub struct OpenEnum<E>(core::marker::PhantomData<E>);

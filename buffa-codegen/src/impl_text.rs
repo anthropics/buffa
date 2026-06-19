@@ -27,7 +27,7 @@ use crate::idents::rust_path_to_tokens;
 use crate::impl_message::{
     effective_type, effective_type_in_map_entry, field_bytes_repr, field_string_repr,
     find_map_entry_fields, is_explicit_presence_scalar, is_non_default_expr, is_real_oneof_member,
-    is_required_field, is_supported_field_type, map_value_use_bytes,
+    is_required_field, is_supported_field_type, map_value_bytes_repr,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident};
 use crate::CodeGenError;
@@ -1045,11 +1045,11 @@ fn map_merge_arm(
         }
     };
 
-    // `bytes_fields` on `map<K, bytes>` → value type is `Bytes`; convert
-    // `read_bytes()`'s `Vec<u8>` via `Bytes::from`. The bytes-key carve-out
-    // lives in the shared `map_value_use_bytes` predicate.
-    let value_use_bytes =
-        map_value_use_bytes(ctx, Some(key_ty), Some(val_ty), proto_fqn, proto_name);
+    // `bytes_type` on `map<K, bytes>` → value uses the configured representation
+    // (Vec / Bytes / custom); `text_bytes_into` wraps `read_bytes()`'s `Vec<u8>`
+    // accordingly. The bytes-key carve-out lives in `map_value_bytes_repr`.
+    let value_bytes_repr =
+        map_value_bytes_repr(ctx, Some(key_ty), Some(val_ty), proto_fqn, proto_name);
     let val_read = match val_ty {
         Type::TYPE_MESSAGE => quote! {
             {
@@ -1065,10 +1065,7 @@ fn map_merge_arm(
             quote! { #read? }
         }
         Type::TYPE_STRING => quote! { __d.read_string()?.into_owned() },
-        Type::TYPE_BYTES if value_use_bytes => {
-            quote! { ::buffa::bytes::Bytes::from(__d.read_bytes()?) }
-        }
-        Type::TYPE_BYTES => quote! { __d.read_bytes()? },
+        Type::TYPE_BYTES => text_bytes_into(&value_bytes_repr, quote! { __d.read_bytes()? }),
         Type::TYPE_INT32 | Type::TYPE_SINT32 | Type::TYPE_SFIXED32 => quote! { __d.read_i32()? },
         Type::TYPE_INT64 | Type::TYPE_SINT64 | Type::TYPE_SFIXED64 => quote! { __d.read_i64()? },
         Type::TYPE_UINT32 | Type::TYPE_FIXED32 => quote! { __d.read_u32()? },
