@@ -23,8 +23,23 @@ use buffa::{DecodeError, ProtoString, WirePayload};
 ///
 /// Inlines strings up to 23 bytes (no heap allocation) and clones long strings
 /// in `O(1)` via the inner `Arc<str>`. Immutable: assign a new value to mutate.
+///
+/// Under the `serde` feature it serializes transparently as a JSON string, so it
+/// also works in `optional` / `repeated` string fields (which serialize through
+/// the element's native serde rather than buffa's `proto_string` with-module).
 #[derive(Clone, PartialEq, Eq, Default, Debug, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct SmolStr(pub smol_str::SmolStr);
+
+impl SmolStr {
+    /// Borrow as `&str`.
+    #[inline]
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
 
 impl core::ops::Deref for SmolStr {
     type Target = str;

@@ -6,6 +6,13 @@ rust-version.workspace = true
 license.workspace = true
 description = "buffa ProtoString support for smol_str::SmolStr (string_type preset)."
 
+[features]
+# Proto3 JSON support: derive Serialize/Deserialize so the newtype works in
+# optional / repeated string fields (which serialize through the element's
+# native serde). Off by default to keep the binary/text-only path lean.
+serde = ["dep:serde", "smol_str/serde"]
+
 [dependencies]
 buffa = { workspace = true, features = ["std"] }
 smol_str = { workspace = true }
+serde = { workspace = true, optional = true, features = ["derive"] }

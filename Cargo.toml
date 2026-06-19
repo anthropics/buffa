@@ -55,6 +55,7 @@ buffa-types = { path = "buffa-types", version = "0.7.1" }
 buffa-descriptor = { path = "buffa-descriptor", version = "0.7.1", default-features = false }
 buffa-codegen = { path = "buffa-codegen", version = "0.7.1" }
 buffa-build = { path = "buffa-build", version = "0.7.1" }
+buffa-smolstr = { path = "buffa-smolstr", version = "0.7.1" }
 buffa-test = { path = "buffa-test", version = "0.7.1" }
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
 bytes = { version = "1", default-features = false }

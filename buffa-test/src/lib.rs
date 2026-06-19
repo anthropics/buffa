@@ -55,6 +55,15 @@ pub mod vtable_string_repr {
             LocalStr(::buffa::alloc::string::String::from(s))
         }
     }
+    impl ::buffa::ProtoString for LocalStr {
+        fn from_wire(
+            payload: ::buffa::WirePayload<'_>,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::str::from_utf8(payload.as_slice())
+                .map(|s| LocalStr(::buffa::alloc::string::String::from(s)))
+                .map_err(|_| ::buffa::DecodeError::InvalidUtf8)
+        }
+    }
 
     buffa::include_proto!("vtable_string_repr");
 }
@@ -92,8 +101,106 @@ pub mod vtable_bytes_repr {
             LocalBytes(v)
         }
     }
+    impl ::buffa::ProtoBytes for LocalBytes {
+        fn from_wire(
+            payload: ::buffa::WirePayload<'_>,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::result::Result::Ok(LocalBytes(payload.as_slice().to_vec()))
+        }
+    }
 
     buffa::include_proto!("vtable_bytes_repr");
+}
+
+/// Crate-local `ProtoString` newtypes wrapping foreign small-string types, used
+/// by the `string_types` fixture. They mirror `buffa_smolstr::SmolStr`: a thin
+/// newtype with an inline, allocation-free `from_wire`. Direct use of the
+/// foreign types is no longer possible (the blanket impl is gone), so a
+/// downstream crate wraps them like this. None of them needs a native
+/// `Arbitrary` impl — codegen's generic `arbitrary_proto_*` builder handles it.
+pub mod reprs {
+    /// Newtype over `ecow::EcoString`. `ecow` ships no native `Arbitrary`, so
+    /// this fixture also exercises the generic arbitrary builder path.
+    #[derive(Clone, PartialEq, Eq, Default, Debug)]
+    pub struct EcoStr(pub ::ecow::EcoString);
+
+    impl EcoStr {
+        pub fn as_str(&self) -> &str {
+            self.0.as_str()
+        }
+    }
+
+    impl ::core::ops::Deref for EcoStr {
+        type Target = str;
+        fn deref(&self) -> &str {
+            &self.0
+        }
+    }
+    impl ::core::convert::AsRef<str> for EcoStr {
+        fn as_ref(&self) -> &str {
+            &self.0
+        }
+    }
+    impl ::core::convert::From<::buffa::alloc::string::String> for EcoStr {
+        fn from(s: ::buffa::alloc::string::String) -> Self {
+            EcoStr(::ecow::EcoString::from(s))
+        }
+    }
+    impl ::core::convert::From<&str> for EcoStr {
+        fn from(s: &str) -> Self {
+            EcoStr(::ecow::EcoString::from(s))
+        }
+    }
+    impl ::buffa::ProtoString for EcoStr {
+        fn from_wire(
+            payload: ::buffa::WirePayload<'_>,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::str::from_utf8(payload.as_slice())
+                .map(|s| EcoStr(::ecow::EcoString::from(s)))
+                .map_err(|_| ::buffa::DecodeError::InvalidUtf8)
+        }
+    }
+
+    /// Newtype over `compact_str::CompactString`.
+    #[derive(Clone, PartialEq, Eq, Default, Debug)]
+    pub struct CompactStr(pub ::compact_str::CompactString);
+
+    impl CompactStr {
+        pub fn as_str(&self) -> &str {
+            self.0.as_str()
+        }
+    }
+
+    impl ::core::ops::Deref for CompactStr {
+        type Target = str;
+        fn deref(&self) -> &str {
+            &self.0
+        }
+    }
+    impl ::core::convert::AsRef<str> for CompactStr {
+        fn as_ref(&self) -> &str {
+            &self.0
+        }
+    }
+    impl ::core::convert::From<::buffa::alloc::string::String> for CompactStr {
+        fn from(s: ::buffa::alloc::string::String) -> Self {
+            CompactStr(::compact_str::CompactString::from(s))
+        }
+    }
+    impl ::core::convert::From<&str> for CompactStr {
+        fn from(s: &str) -> Self {
+            CompactStr(::compact_str::CompactString::from(s))
+        }
+    }
+    impl ::buffa::ProtoString for CompactStr {
+        fn from_wire(
+            payload: ::buffa::WirePayload<'_>,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::str::from_utf8(payload.as_slice())
+                .map(|s| CompactStr(::compact_str::CompactString::from(s)))
+                .map_err(|_| ::buffa::DecodeError::InvalidUtf8)
+        }
+    }
 }
 
 /// `generate_views(false)` + vtable reflection — owned-only vtable, no views.
