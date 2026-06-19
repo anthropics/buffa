@@ -11,32 +11,42 @@ as noise unless they form a consistent pattern across many benchmarks.
 
 ## v0.7.1 — 2026-06-10
 
-Net-flat versus v0.7.0 (median −0.2% across the shared benchmarks). Two movements
-clear their spread and reproduce across two independent full runs, so they are
-real:
-- **GoogleMessage1 improved:** `decode` +12%, `merge` +14%, `decode_view` +10%
-  (spreads ≤2.4%). The deeply-nested small message got faster on the owned and
-  eager-view decode paths.
-- **`media_frame/decode_view` regressed −11.6%** (spread ±0.9% — the most solid
-  signal), and `log_record/decode_view` is marginally down (−4 to −6%, near the
-  noise floor). The eager-view decode path lost ground on the bytes/map-heavy
-  messages. This is the one regression worth investigating in v0.7.1.
+Net-flat versus v0.7.0 (median −0.2%), and — importantly — **none of the
+per-message deltas across this boundary are real code changes.** The run files
+show `media_frame/decode_view` −11.6%, `GoogleMessage1` decode/merge/decode_view
++10 to +14%, and `log_record/decode_view` ~−5%, all clearing their spread and
+reproducing across runs. They are nonetheless artifacts of **cross-message
+inliner coupling**, because v0.7.1 added a new benchmark message (`PackedTile`,
+#174) and every message's decoder is compiled into one binary.
 
-Cautionary tale (why this history pins its build config): an earlier measurement
-at cargo's *default* `bench` profile (`codegen-units=16, lto=off`, single sample)
-showed a broad −3.3% regression and fingered `GoogleMessage1/decode_view` at
-−17.5%. **All of that was build-layout noise.** At 16 codegen units, adding
-unrelated code re-partitions functions and flips inline decisions; the v0.7.1
-layout envelope across builds measured p50 5.8% / p90 15% / max 24%
-(`layout_envelope.py`), and the broad deficit sat entirely inside it — the same
-source measured −3.3% on one build and +0.3% on a fresh one. At the reproducible
-profile this history now uses (`lto=true, codegen-units=1`, toolchain pinned,
-median of 4 cores), `GoogleMessage1/decode_view` reverses from −17.5% to **+10%** —
-it was never a regression. The lesson: a sub-~15% delta at the noisy profile means
-nothing; pin the profile, hold the toolchain, and take the median of several runs
-before attributing anything. (An earlier packed-varint over-reservation theory was
-also unsupported here — the messages it would affect have no packed varint fields —
-though it surfaced a separate, real allocation fix.)
+Proof (disassembly, clean profile, by the v0.7.1-regression investigation):
+`MediaFrameView::decode_view` is 605 instructions in v0.7.0 and 666 in v0.7.1
+(it stops inlining `decode_varint_slice` / `decode_varint_slow` / `borrow_str`) —
+the −11.6%. Remove `PackedTile` from the v0.7.1 bench and it recompiles to 605
+instructions, **byte-identical to v0.7.0** after symbol normalisation. MediaFrame's
+generated view code and buffa's decode runtime are byte-identical between the tags,
+so nothing in the decoder changed; adding `PackedTile` shifted rustc's global
+inlining decisions for the *other* messages' unchanged decoders. The same
+mechanism drives the GoogleMessage1 and log_record deltas.
+
+`codegen-units=1` does not immunise this — it **maximises** it: one codegen unit
+means all decoders share the inliner's global view, so adding any message
+perturbs them all. (This is separate from, and on top of, the earlier finding
+that the *default* `bench` profile — cgu=16, lto=off, single sample — added pure
+layout noise: that's why a still-earlier measurement fingered
+`GoogleMessage1/decode_view` at −17.5%, which is now +10%. Both effects are build
+artifacts, not code.)
+
+**Consequence for this history:** a release that adds or removes a benchmark
+message moves the numbers of *unchanged* messages. The affected transitions are
+v0.3.0→v0.4.0 (added `MediaFrame`) and v0.7.0→v0.7.1 (added `PackedTile`); their
+per-message deltas are coupling artifacts, not code. A consumer who decodes only
+`MediaFrame` would not link `PackedTile`, so they would see the v0.7.0 codegen.
+The clean fix is per-message isolation — build each message's decoder in its own
+binary — which is also more representative of real usage; see
+[README](README.md#comparability-caveats). (An earlier packed-varint
+over-reservation theory was also unsupported — the messages it would affect have
+no packed varint fields — though it surfaced a separate, real allocation fix.)
 
 ## v0.7.0 — 2026-05-28
 

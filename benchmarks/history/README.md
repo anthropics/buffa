@@ -71,6 +71,20 @@ each run file records it in `build_profile`.
   layout-noise harness below still exists to *verify* the floor on a quiesced box;
   a surprising delta should clear the measured envelope before being attributed to
   the library.
+- **Adding or removing a benchmark message contaminates the *other* messages'
+  numbers.** All message decoders compile into one binary, so rustc's inlining is
+  a global decision; at `codegen-units=1` (which maximises this coupling, since
+  there is one unit) introducing a new message reshuffles inlining for the
+  unchanged decoders. This was proven by disassembly: v0.7.1's
+  `MediaFrameView::decode_view` reads −11.6% purely because v0.7.1 added the
+  `PackedTile` benchmark message — remove `PackedTile` and the machine code is
+  byte-identical to v0.7.0 (see `annotations.md`). **So per-message deltas across a
+  transition that changed the message set (v0.3.0→v0.4.0 added `MediaFrame`,
+  v0.7.0→v0.7.1 added `PackedTile`) are coupling artifacts, not code changes.** The
+  clean fix — not yet applied — is to build each message's decoder in its own
+  binary (separate target), which isolates it from the others and also matches
+  what a consumer who uses only that message links. Until then, treat
+  message-set-change transitions as suspect.
 - **The compiler is held constant.** Every binary is built with one explicitly
   pinned toolchain (recorded in each run file's `toolchain`), forced via
   `RUSTUP_TOOLCHAIN` so it does not depend on the working directory's
