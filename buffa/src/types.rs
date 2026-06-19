@@ -1018,6 +1018,162 @@ pub fn decode_bytes_to<B: ProtoBytes>(buf: &mut impl Buf) -> Result<B, DecodeErr
     read_field_payload(buf, B::from_wire)
 }
 
+// ---------------------------------------------------------------------------
+// Pluggable repeated-field collections (ProtoList)
+// ---------------------------------------------------------------------------
+
+/// The owned collection type backing a proto `repeated` field.
+///
+/// The default is [`Vec<T>`]; `buffa_build`'s `repeated_type_custom` knob
+/// substitutes any type that implements `ProtoList<T>` — for example a
+/// `SmallVec`-backed inline collection that avoids a heap allocation for short
+/// repeated fields. The wire format is identical regardless of the collection;
+/// only the in-memory owned type changes, and view types keep borrowing
+/// `&[T]`.
+///
+/// There is intentionally no blanket impl — the built-in `Vec<T>` impl below is
+/// the only one buffa provides. Because `ProtoList` is a buffa-owned trait, a
+/// *foreign* collection (e.g. `smallvec::SmallVec`) cannot implement it
+/// directly (orphan rule). Always wrap a foreign collection in a **crate-local
+/// newtype** and implement `ProtoList` on the newtype, exactly like the
+/// `ProtoString` newtype pattern (see the `buffa-smolstr` crate). This holds
+/// even for binary-only builds — the generated decode/clear paths require
+/// `Field: ProtoList`.
+///
+/// # Contract
+///
+/// - The collection must be **growable**: [`push`](Self::push) is infallible
+///   (no `try_push`), so the decoder appends one element per wire element with
+///   no way to reject an oversized field. A truly capacity-bounded collection
+///   (e.g. a fixed-capacity `ArrayVec`) will **panic** on input larger than its
+///   capacity rather than return a decode error — do not use one as a
+///   `ProtoList`. `SmallVec` is fine because it spills to the heap.
+/// - The supertraits and methods must agree on contents: `push` appends one
+///   element in order, [`Deref<Target = [T]>`](core::ops::Deref) exposes the
+///   elements as a slice in that same order (the encode and `compute_size`
+///   paths iterate it), [`FromIterator`] rebuilds the collection for the
+///   view→owned conversion, [`From<Vec<T>>`](From) is the ergonomic constructor
+///   for building a field by hand (`vec![..].into()`, mirroring `ProtoBytes`'s
+///   `From<Vec<u8>>`), and [`Default`] produces the empty collection (the
+///   field's cleared state).
+/// - A **generic** newtype's [`Default`] must be hand-written (not
+///   `#[derive]`d), or the derive forces a spurious `T: Default` bound; expect a
+///   `clippy::derivable_impls` lint there and `#[allow]` it (see the example).
+///
+/// # Limitations (for a *custom* collection)
+///
+/// - **Reflection / vtable:** a collection used under the reflection or vtable
+///   path must implement `buffa_descriptor`'s `ReflectList`. It is not
+///   derivable, but a `Vec`-backed newtype can delegate all three methods to
+///   the inner `Vec<T>: ReflectList` impl (which requires `T: ReflectElement`).
+/// - **JSON / connectrpc:** a collection used in a JSON-enabled build must
+///   implement `serde::Serialize` / `Deserialize` (its own impls, or the
+///   newtype's). Note that frameworks built on buffa may require the message's
+///   serde derive unconditionally — for example `connectrpc` bounds its handler
+///   and client message types on `Serialize` / `DeserializeOwned` even when JSON
+///   is never used at runtime — so a custom collection used through such a
+///   framework must be serde-capable regardless.
+/// - **`arbitrary`:** under the `arbitrary` feature a collection must implement
+///   `arbitrary::Arbitrary` (trivially derivable on a newtype).
+///
+/// # Examples
+///
+/// A minimal crate-local newtype wrapping `smallvec::SmallVec` for binary use:
+///
+/// ```rust,ignore
+/// #[derive(Clone, PartialEq, Debug)]
+/// pub struct SmallList<T>(pub smallvec::SmallVec<[T; 4]>);
+///
+/// // Hand-written so it does not require `T: Default`.
+/// #[allow(clippy::derivable_impls)]
+/// impl<T> Default for SmallList<T> {
+///     fn default() -> Self { SmallList(smallvec::SmallVec::new()) }
+/// }
+/// impl<T> core::ops::Deref for SmallList<T> {
+///     type Target = [T];
+///     fn deref(&self) -> &[T] { &self.0 }
+/// }
+/// impl<T> FromIterator<T> for SmallList<T> {
+///     fn from_iter<I: IntoIterator<Item = T>>(it: I) -> Self {
+///         SmallList(smallvec::SmallVec::from_iter(it))
+///     }
+/// }
+/// impl<T> From<Vec<T>> for SmallList<T> {        // enables `vec![..].into()`
+///     fn from(v: Vec<T>) -> Self { SmallList(smallvec::SmallVec::from_vec(v)) }
+/// }
+/// impl<T: Clone + PartialEq + core::fmt::Debug + Send + Sync> buffa::ProtoList<T>
+///     for SmallList<T>
+/// {
+///     fn push(&mut self, v: T) { self.0.push(v); }
+///     fn clear(&mut self) { self.0.clear(); }
+///     // reserve left as the advisory no-op default, so a byte-count hint
+///     // never spills the inline storage.
+/// }
+/// ```
+///
+/// Then point a field at it: `repeated_type_custom("::my_crate::SmallList<*>")`.
+pub trait ProtoList<T>:
+    Default
+    + Clone
+    + PartialEq
+    + core::fmt::Debug
+    + Send
+    + Sync
+    + FromIterator<T>
+    + From<Vec<T>>
+    + core::ops::Deref<Target = [T]>
+{
+    /// Append one decoded element to the end of the collection. Infallible —
+    /// the collection must be growable (see the trait's `# Contract`).
+    fn push(&mut self, value: T);
+
+    /// Remove all elements (the field's cleared / default state), retaining
+    /// capacity where the underlying type allows.
+    fn clear(&mut self);
+
+    /// Best-effort capacity hint from the packed-scalar decoder, sized in
+    /// elements.
+    ///
+    /// This is **advisory**: the default implementation does nothing, so a
+    /// bounded inline collection is never forced to pre-allocate (or spill its
+    /// inline storage) from an attacker-influenced length prefix. The built-in
+    /// `Vec<T>` impl overrides it to call [`Vec::reserve`]. The decoder invokes
+    /// it through the trait (so an inherent `reserve` on the collection does not
+    /// shadow this advisory contract); decoders may pass a loose upper bound, so
+    /// never rely on the requested capacity being honored.
+    #[inline]
+    fn reserve(&mut self, additional: usize) {
+        let _ = additional;
+    }
+}
+
+impl<T> ProtoList<T> for Vec<T>
+where
+    T: Clone + PartialEq + core::fmt::Debug + Send + Sync,
+{
+    #[inline]
+    fn push(&mut self, value: T) {
+        Vec::push(self, value);
+    }
+
+    #[inline]
+    fn clear(&mut self) {
+        Vec::clear(self);
+    }
+
+    #[inline]
+    fn reserve(&mut self, additional: usize) {
+        Vec::reserve(self, additional);
+    }
+}
+
+// The default representation must always satisfy the bound; freeze that
+// invariant against future changes to the trait's supertraits.
+const _: fn() = || {
+    fn assert_proto_list<C: ProtoList<T>, T>() {}
+    assert_proto_list::<Vec<u32>, u32>();
+};
+
 /// Merge length-delimited bytes into an existing `Vec<u8>`, reusing its
 /// heap allocation when possible.
 ///

@@ -63,4 +63,5 @@ mod pointer_repr;
 mod proto2;
 mod reexports;
 mod reflect_view;
+mod repeated_type;
 mod view_codegen;

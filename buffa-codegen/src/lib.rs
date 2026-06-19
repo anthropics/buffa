@@ -206,6 +206,27 @@ pub(crate) fn parse_wildcard_type_path(
     Ok(quote::quote! { #ty })
 }
 
+/// Build a custom collection type from a `*`-templated path and the resolved
+/// element type, validating the result as a Rust type.
+///
+/// `*` cannot be a parsed placeholder (it is not valid in Rust type position),
+/// so substitution is textual — every `*` in `template` is replaced by the
+/// element's token text before the whole string is parsed. The template must
+/// contain at least one `*`, otherwise the element type would have nowhere to
+/// go and the field would silently drop its element type.
+pub(crate) fn parse_custom_list_path(
+    template: &str,
+    elem: &proc_macro2::TokenStream,
+) -> Result<proc_macro2::TokenStream, CodeGenError> {
+    if !template.contains('*') {
+        return Err(CodeGenError::MissingListPlaceholder(template.to_string()));
+    }
+    let substituted = template.replace('*', &elem.to_string());
+    let ty: syn::Type = syn::parse_str(&substituted)
+        .map_err(|_| CodeGenError::InvalidTypePath(template.to_string()))?;
+    Ok(quote::quote! { #ty })
+}
+
 /// The Rust type a proto `string` field maps to in generated owned structs.
 ///
 /// The default is [`String`](StringRepr::String).
@@ -502,6 +523,99 @@ impl PointerRepr {
     }
 }
 
+/// The owned Rust collection a proto `repeated` field maps to in generated
+/// owned structs.
+///
+/// The default is [`Vec`](RepeatedRepr::Vec) (`Vec<T>`).
+/// [`Custom`](RepeatedRepr::Custom) substitutes any collection that satisfies
+/// the `buffa::ProtoList<T>` bound — for example a crate-local newtype wrapping
+/// a `SmallVec`-backed inline collection. Unlike the scalar `string`/`bytes`
+/// knobs the custom collection *wraps* the element type, so its path is a
+/// **template** containing a `*` placeholder where the element type is
+/// substituted (e.g. `"::my_crate::SmallList<*>"`).
+///
+/// Because `buffa::ProtoList` is buffa-owned, a *foreign* collection cannot
+/// implement it directly (orphan rule) — the template must always name a
+/// crate-local newtype, mirroring the `ProtoString` newtype expectation.
+///
+/// Select a representation through `buffa_build`'s `repeated_type_custom`
+/// builder method. The wire format is identical regardless of the collection;
+/// view types keep borrowing `&[T]`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum RepeatedRepr {
+    /// `::buffa::alloc::vec::Vec<T>` — the default. Keeps the `Vec`-specialized
+    /// fast paths (in-place `push`/`reserve`/`clear`, native `Arbitrary`)
+    /// instead of the generic `ProtoList` ones, so generated output for the
+    /// default is byte-identical to a build without the knob.
+    #[default]
+    Vec,
+    /// A custom collection named by a Rust type-path **template** with a `*`
+    /// placeholder for the element type (e.g. `"::my_crate::SmallList<*>"`). The
+    /// named type must satisfy `buffa::ProtoList<T>` and be a **crate-local
+    /// newtype** (a foreign collection cannot implement the buffa-owned
+    /// `ProtoList`).
+    ///
+    /// # Limitations
+    ///
+    /// - The template must contain at least one `*`; the element type is
+    ///   substituted for every `*` before the result is parsed as a Rust type.
+    ///   A template that omits `*` surfaces as
+    ///   [`CodeGenError::MissingListPlaceholder`], and one whose substitution
+    ///   does not parse as [`CodeGenError::InvalidTypePath`], at generation
+    ///   (`.compile()`) time.
+    /// - A custom collection always needs a crate-local newtype — this is not
+    ///   limited to the reflection path. The generated decode and clear code
+    ///   require `Field: ProtoList`, so even a binary-only build cannot use a
+    ///   foreign collection directly.
+    /// - Under reflection / vtable the newtype must implement
+    ///   `buffa_descriptor`'s `ReflectList` (a `Vec`-backed newtype can delegate
+    ///   to the inner `Vec<T>: ReflectList`). Under JSON it must implement
+    ///   `serde::Serialize` / `Deserialize`; under the `arbitrary` feature,
+    ///   `arbitrary::Arbitrary` (derivable on a newtype).
+    /// - A `repeated <self-type>` field becomes `Collection<Self>`, so the
+    ///   collection must be heap-backed; an inline collection (`SmallVec<[Self;
+    ///   N]>`) would be infinitely sized and fail to compile.
+    Custom(String),
+}
+
+impl RepeatedRepr {
+    /// The owned Rust collection type emitted for a `repeated` field with this
+    /// representation, given the already-resolved element type tokens.
+    ///
+    /// `ctx` and `nesting` route the default `Vec` through the package-root
+    /// import registry; a custom template has its `*` placeholders replaced by
+    /// `elem` and the result is parsed and emitted fully qualified.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CodeGenError::MissingListPlaceholder`] if a custom template
+    /// omits `*`, or [`CodeGenError::InvalidTypePath`] if it does not parse as a
+    /// Rust type once the element is substituted.
+    pub(crate) fn type_path(
+        &self,
+        elem: &proc_macro2::TokenStream,
+        resolver: &imports::ImportResolver,
+        ctx: &context::CodeGenContext,
+        nesting: usize,
+    ) -> Result<proc_macro2::TokenStream, CodeGenError> {
+        use quote::quote;
+        match self {
+            RepeatedRepr::Vec => {
+                let vec = resolver.vec_at(ctx, nesting);
+                Ok(quote! { #vec<#elem> })
+            }
+            RepeatedRepr::Custom(template) => parse_custom_list_path(template, elem),
+        }
+    }
+
+    /// Whether this is the default `Vec` representation, which keeps the
+    /// `Vec`-specialized fast paths instead of the generic `ProtoList` ones.
+    pub(crate) fn is_default(&self) -> bool {
+        matches!(self, RepeatedRepr::Vec)
+    }
+}
+
 /// How much reflection support generated types get.
 ///
 /// Selected through `buffa_build`'s `reflect_mode` builder method (or the
@@ -655,6 +769,16 @@ pub struct CodeGenConfig {
     /// Applies to singular (and proto2 optional/required) message fields only —
     /// not repeated message fields (a collection) or oneof message variants.
     pub pointer_fields: Vec<(String, PointerRepr)>,
+    /// Ordered (proto-path-prefix, [`RepeatedRepr`]) rules selecting the owned
+    /// Rust collection for `repeated` fields. Later rules win, with the same
+    /// proto-segment-aware prefix matching as [`bytes_fields`](Self::bytes_fields)
+    /// (`"."` matches every field). Fields matching no rule use `Vec<T>`.
+    ///
+    /// Applies only to `repeated` fields (not `map`, whose collection stays
+    /// the configured map type). The element type is chosen by the usual
+    /// scalar/string/bytes/message rules and substituted into the collection
+    /// template.
+    pub repeated_fields: Vec<(String, RepeatedRepr)>,
     /// Fully-qualified proto paths whose message-typed oneof variants should
     /// **not** be wrapped in `Box<T>`. By default every message/group oneof
     /// variant is boxed (so recursive types compile); entries here opt matching
@@ -1029,6 +1153,7 @@ impl Default for CodeGenConfig {
             bytes_fields: Vec::new(),
             string_fields: Vec::new(),
             pointer_fields: Vec::new(),
+            repeated_fields: Vec::new(),
             unboxed_oneof_fields: Vec::new(),
             strict_utf8_mapping: false,
             allow_message_set: false,
@@ -2667,6 +2792,14 @@ pub enum CodeGenError {
     /// it goes with `*`, e.g. `"::smallbox::SmallBox<*, smallbox::space::S4>"`.
     #[error("box_type template must contain a `*` placeholder for the message type: '{0}'")]
     MissingWildcard(String),
+    /// A `repeated_type_custom` collection template did not contain the `*`
+    /// element placeholder.
+    ///
+    /// Unlike the scalar `string_type_custom` / `bytes_type_custom` knobs (which
+    /// take a complete type path), a collection template wraps the element type
+    /// and must mark where it goes with `*`, e.g. `"::my_crate::SmallList<*>"`.
+    #[error("repeated_type template must contain a `*` element placeholder: '{0}'")]
+    MissingListPlaceholder(String),
     /// The accumulated `TokenStream` failed to parse as valid Rust syntax.
     #[error("generated code failed to parse as Rust: {0}")]
     InvalidSyntax(String),

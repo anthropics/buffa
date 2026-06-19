@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package repeated_type;
+
+// Compiled with `repeated_type_custom("crate::repeated_type::CustomList<*>")`
+// so every `repeated` field uses the crate-local `CustomList<T>` collection
+// (a `ProtoList<T>` impl) instead of `Vec<T>`. Covers the element kinds whose
+// merge/encode paths differ: packed varint (`numbers`, reserve hint), packed
+// fixed-width (`fixed`, exact reserve), unpacked string (`names`), and
+// repeated message (`items`, view→owned via `to_owned_from_source`).
+message Lists {
+  repeated int32 numbers = 1;
+  repeated string names = 2;
+  repeated Inner items = 3;
+  repeated sfixed32 fixed = 4;
+}
+
+message Inner {
+  int32 id = 1;
+}
