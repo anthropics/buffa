@@ -733,10 +733,12 @@ impl Config {
     /// `[features.utf8_validation = NONE]` on its key, which normalizes the
     /// string key to `bytes` — `strict_utf8_mapping` alone does not trigger it.
     ///
-    /// Note the asymmetry with a **custom** `bytes` representation: the built-in
-    /// `Bytes` here applies to `map<K, bytes>` values, but a
-    /// [`bytes_type_custom`](Self::bytes_type_custom) rule does **not** — custom
-    /// map values stay `Vec<u8>`. Reconciling this is a planned follow-up.
+    /// A **custom** `bytes` representation
+    /// ([`bytes_type_custom`](Self::bytes_type_custom)) is honored for
+    /// `map<K, bytes>` values too, the same as the built-in `Bytes` — but a
+    /// custom map value (like a custom `repeated` element) must be a crate-local
+    /// type, since codegen emits its `ReflectElement` / `ProtoElemJson` impls
+    /// (the orphan rule forbids them for a foreign type).
     ///
     /// [`strict_utf8_mapping`]: Self::strict_utf8_mapping
     ///
@@ -808,14 +810,14 @@ impl Config {
     ///
     /// # Limitations
     ///
-    /// - A **foreign** custom type used as a `repeated` element fails to compile:
-    ///   codegen emits `ReflectElement` / `ProtoElemJson` impls for it, which the
-    ///   orphan rule forbids for a foreign type. Wrap it in a crate-local newtype
-    ///   for the repeated case; singular / optional / oneof uses work directly.
-    /// - A `Custom` rule does **not** apply to `map<K, bytes>` values — they stay
-    ///   `Vec<u8>`. This is asymmetric with the built-in
-    ///   [`use_bytes_type`](Self::use_bytes_type) ([`BytesRepr::Bytes`]), which
-    ///   *does* map matching map values to `Bytes`.
+    /// - A **foreign** custom type used as a `repeated` element — or a
+    ///   `map<K, bytes>` value — fails to compile: codegen emits
+    ///   `ReflectElement` / `ProtoElemJson` impls for it, which the orphan rule
+    ///   forbids for a foreign type. Wrap it in a crate-local newtype for those
+    ///   cases; singular / optional / oneof uses work directly.
+    /// - A `Custom` rule **does** apply to `map<K, bytes>` values (honored like
+    ///   the built-in [`BytesRepr::Bytes`]); only the `map<bytes, bytes>`
+    ///   carve-out keeps `Vec<u8>` values.
     /// - A `path` that does not parse as a Rust type is reported as a codegen
     ///   error from [`compile`](Self::compile).
     /// - A custom bytes type needs no native `arbitrary::Arbitrary` impl (a

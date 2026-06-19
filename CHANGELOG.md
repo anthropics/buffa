@@ -404,10 +404,13 @@ up the new `FooOwnedView` wrappers, `HasMessageView` impls, and
   `smol_str::SmolStr`) is wrapped in a local newtype that implements the trait —
   the new **`buffa-smolstr`** crate is the template (an inline, allocation-free
   `from_wire`). A custom type needs no native `Arbitrary` impl (a generic builder
-  handles it). A custom type used as the element of a **`repeated`** field must be
-  **crate-local**: codegen emits `ReflectElement` (vtable) and, for bytes, base64
-  `ProtoElemJson` (JSON) impls for it, which the orphan rule forbids for a foreign
-  type. Singular / optional / oneof / map uses work through the newtype too.
+  handles it). A custom type used as the element of a **`repeated`** field — or a
+  custom `bytes` type as a **`map<K, bytes>`** value — must be **crate-local**:
+  codegen emits `ReflectElement` (vtable) and, for bytes, base64 `ProtoElemJson`
+  (JSON) impls for it, which the orphan rule forbids for a foreign type. A custom
+  `bytes` map value is honored just like the built-in `Bytes` (only the
+  `map<bytes, bytes>` carve-out keeps `Vec<u8>`). Singular / optional / oneof uses
+  work with the newtype without the crate-local restriction.
 
   Why `from_wire` rather than a blanket `From`-based impl: the decode path was
   first built as a blanket impl over `From<String>` / `From<Vec<u8>>` to learn the

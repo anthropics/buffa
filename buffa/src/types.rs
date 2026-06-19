@@ -910,18 +910,15 @@ pub fn decode_bytes_to_bytes(buf: &mut impl Buf) -> Result<Bytes, DecodeError> {
 ///
 /// # Limitations
 ///
-/// - **`repeated` elements must be crate-local.** A custom type used as the
-///   element of a `repeated` field needs codegen-emitted `ReflectElement`
-///   (vtable) and base64 `ProtoElemJson` (JSON) impls, which the orphan rule
-///   permits only when the type is local to the generating crate. A *foreign*
-///   custom type in that position fails to compile — wrap it in a crate-local
-///   newtype. Singular, optional, oneof, and map uses work with a foreign type
-///   directly.
-/// - **`map<K, bytes>` values are unaffected by a custom `bytes_type`.** A
-///   `Custom` rule does not apply to map values (they stay `Vec<u8>`); only the
-///   built-in `BytesRepr::Bytes` applies to map values (see
-///   `buffa_build::Config::bytes_type_custom`). Reconciling this asymmetry is a
-///   planned follow-up.
+/// - **`repeated` elements and `map<K, bytes>` values must be crate-local.** A
+///   custom type used as the element of a `repeated` field — or as a
+///   `map<K, bytes>` value — needs codegen-emitted `ReflectElement` (vtable) and
+///   base64 `ProtoElemJson` (JSON) impls, which the orphan rule permits only when
+///   the type is local to the generating crate. A *foreign* custom type in that
+///   position fails to compile — wrap it in a crate-local newtype. Singular,
+///   optional, and oneof uses work with a foreign type directly. (A custom
+///   `bytes` map value is honored just like the built-in `bytes::Bytes`; only the
+///   `map<bytes, bytes>` carve-out keeps `Vec<u8>` values.)
 /// - **No `Arbitrary` impl required.** Under the `arbitrary` feature codegen
 ///   attaches a generic builder, so a custom type needs no native
 ///   `arbitrary::Arbitrary` impl.
