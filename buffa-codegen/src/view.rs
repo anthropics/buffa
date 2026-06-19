@@ -1396,9 +1396,16 @@ pub(crate) fn repeated_decode_arm(
         quote! { view.#ident.push(#dfn(&mut pcur)?); }
     };
 
-    // Fixed-size types can reserve the exact element count. For varints and
-    // bools, every element occupies at least one byte, so the payload length
-    // is a safe upper bound.
+    // Reserve the exact element count before decoding a packed payload.
+    //
+    // Fixed-width types divide the payload length by the element width. Varint
+    // types (and bool/enum) cannot derive the count from the length alone — a
+    // varint is 1-10 bytes — so we count terminator bytes (those with the
+    // continuation bit clear), which is the exact element count for a
+    // well-formed payload and a harmless under-count for a truncated one. The
+    // earlier `payload.len()` upper bound over-reserved by up to ~10x for
+    // multi-byte varints (e.g. negative int32/int64, which always encode to 10
+    // bytes), so the count is never larger and usually far smaller.
     let reserve_divisor: usize = match ty {
         Type::TYPE_FIXED32 | Type::TYPE_SFIXED32 | Type::TYPE_FLOAT => 4,
         Type::TYPE_FIXED64 | Type::TYPE_SFIXED64 | Type::TYPE_DOUBLE => 8,
@@ -1407,7 +1414,7 @@ pub(crate) fn repeated_decode_arm(
     let reserve_stmt = if reserve_divisor > 1 {
         quote! { view.#ident.reserve(payload.len() / #reserve_divisor); }
     } else {
-        quote! { view.#ident.reserve(payload.len()); }
+        quote! { view.#ident.reserve(::buffa::encoding::count_varints(payload)); }
     };
 
     let unpacked_elem = if ty == Type::TYPE_ENUM {
