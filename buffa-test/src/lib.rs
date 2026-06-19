@@ -112,6 +112,69 @@ pub mod vtable_bytes_repr {
     buffa::include_proto!("vtable_bytes_repr");
 }
 
+/// `repeated_type` + a crate-local `CustomList<T>` collection used for every
+/// `repeated` field. `CustomList<T>` is a thin `Vec<T>`-backed `ProtoList<T>`
+/// impl — the point is to exercise the generic codegen path (merge via
+/// `ProtoList::push`/`reserve`, encode via the `Deref` slice, clear via
+/// `ProtoList::clear`, view→owned via `FromIterator`), independent of any
+/// external collection crate. A real consumer would back this with e.g.
+/// `smallvec::SmallVec`.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod repeated_type {
+    /// A `Vec`-backed collection implementing `buffa::ProtoList<T>`. `Default`
+    /// is hand-written (not derived) so it does not require `T: Default`, which
+    /// the supertrait bound would otherwise force on every element type.
+    #[derive(Clone, PartialEq, Debug)]
+    pub struct CustomList<T>(pub ::buffa::alloc::vec::Vec<T>);
+
+    impl<T> ::core::default::Default for CustomList<T> {
+        fn default() -> Self {
+            CustomList(::buffa::alloc::vec::Vec::new())
+        }
+    }
+
+    impl<T> ::core::ops::Deref for CustomList<T> {
+        type Target = [T];
+        fn deref(&self) -> &[T] {
+            &self.0
+        }
+    }
+
+    impl<T> ::core::iter::FromIterator<T> for CustomList<T> {
+        fn from_iter<I: ::core::iter::IntoIterator<Item = T>>(iter: I) -> Self {
+            CustomList(::buffa::alloc::vec::Vec::from_iter(iter))
+        }
+    }
+
+    impl<T> ::core::convert::From<::buffa::alloc::vec::Vec<T>> for CustomList<T> {
+        fn from(v: ::buffa::alloc::vec::Vec<T>) -> Self {
+            CustomList(v)
+        }
+    }
+
+    impl<T> ::buffa::ProtoList<T> for CustomList<T>
+    where
+        T: ::core::clone::Clone
+            + ::core::cmp::PartialEq
+            + ::core::fmt::Debug
+            + ::core::marker::Send
+            + ::core::marker::Sync,
+    {
+        fn push(&mut self, value: T) {
+            self.0.push(value);
+        }
+        fn clear(&mut self) {
+            self.0.clear();
+        }
+        // Left as the advisory no-op (the default would do): exercises the
+        // decode path tolerating a collection that ignores the capacity hint,
+        // which is the recommended form for a bounded/inline collection.
+        fn reserve(&mut self, _additional: usize) {}
+    }
+
+    buffa::include_proto!("repeated_type");
+}
+
 /// Crate-local `ProtoString` newtypes wrapping foreign small-string types, used
 /// by the `string_types` fixture. They mirror `buffa_smolstr::SmolStr`: a thin
 /// newtype with an inline, allocation-free `from_wire`. Direct use of the

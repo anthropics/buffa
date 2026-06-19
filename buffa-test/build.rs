@@ -48,6 +48,18 @@ fn main() {
         .compile()
         .expect("buffa_build failed for vtable_bytes_repr.proto");
 
+    // repeated_type: a crate-LOCAL `CustomList<T>` collection (a `ProtoList<T>`
+    // impl) used for every `repeated` field, via the `*`-templated knob. The
+    // crate compiling is most of the test — the merge (`push`/`reserve`),
+    // encode (`.iter()`), clear, and view→owned (`collect`) paths must all emit
+    // the generic `ProtoList` surface for the custom collection.
+    buffa_build::Config::new()
+        .files(&["protos/repeated_type.proto"])
+        .includes(&["protos/"])
+        .repeated_type_custom("crate::repeated_type::CustomList<*>")
+        .compile()
+        .expect("buffa_build failed for repeated_type.proto");
+
     // Comprehensive proto3 semantics: implicit vs explicit presence for all
     // scalar types, open-enum contexts, default packing, synthetic oneofs.
     buffa_build::Config::new()

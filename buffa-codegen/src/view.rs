@@ -1888,7 +1888,16 @@ pub(crate) fn repeated_to_owned(
                     .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?
             }
         }
-        _ => quote! { self.#ident.to_vec() },
+        // Scalar elements. The default `Vec` uses `to_vec()` (byte-identical to
+        // a build without the knob); a custom collection collects the copied
+        // scalars via `FromIterator`, since `to_vec()` would force a `Vec`.
+        _ => {
+            if crate::impl_message::field_repeated_repr(ctx, proto_fqn, field_name).is_default() {
+                quote! { self.#ident.to_vec() }
+            } else {
+                quote! { self.#ident.iter().copied().collect() }
+            }
+        }
     }
 }
 

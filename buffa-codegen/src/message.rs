@@ -1518,6 +1518,14 @@ fn classify_field(
     };
     let string_type = || string_repr.type_path(resolver, ctx, nesting);
 
+    // Configurable owned collection for `repeated` (non-map) fields (default
+    // `Vec<T>`). Map fields keep their configured map collection.
+    let repeated_repr = if is_repeated && !is_map {
+        ctx.repeated_repr(&field_fqn)
+    } else {
+        crate::RepeatedRepr::Vec
+    };
+
     let mut inner_opt_type: Option<TokenStream> = None;
     let rust_type = if let Some(entry) = map_entry {
         map_rust_type_from_entry(scope, entry, &map_value_bytes_repr, resolver)?
@@ -1529,10 +1537,7 @@ fn classify_field(
         } else {
             scalar_or_message_type_nested(ctx, field, current_package, nesting, features, resolver)?
         };
-        {
-            let vec = resolver.vec_at(ctx, nesting);
-            quote! { #vec<#elem> }
-        }
+        repeated_repr.type_path(&elem, resolver, ctx, nesting)?
     } else if field_type == Type::TYPE_MESSAGE || field_type == Type::TYPE_GROUP {
         let inner = resolve_message_type(scope, field)?;
         {
@@ -1573,8 +1578,7 @@ fn classify_field(
     let is_self_ref = field.type_name.as_deref() == Some(self_fqn.as_str()) && !is_map;
     let struct_field_type = if is_self_ref {
         if is_repeated {
-            let vec = resolver.vec_at(ctx, nesting);
-            quote! { #vec<Self> }
+            repeated_repr.type_path(&quote! { Self }, resolver, ctx, nesting)?
         } else {
             let mf = resolver.message_field_at(ctx, nesting);
             quote! { #mf<Self> }
