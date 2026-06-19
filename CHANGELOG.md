@@ -379,7 +379,7 @@ up the new `FooOwnedView` wrappers, `HasMessageView` impls, and
 - **`buffa-types` `reflect` feature.** Well-known types (`Timestamp`,
   `Duration`, `Struct`/`Value`, `Any`, wrappers, …) now implement
   `ReflectMessage`, so messages that embed WKTs reflect end to end.
-- **Pluggable owned types for `string` and `bytes` fields (#127, #156).**
+- **Pluggable owned types for `string` and `bytes` fields (#127, #156, #206).**
   Generated `string` / `bytes` fields can use a custom in-memory type chosen at
   code-generation time, with no change to the wire format. `buffa_build::Config`
   gains `string_type(StringRepr)` / `string_type_in` and the convenience
@@ -392,26 +392,40 @@ up the new `FooOwnedView` wrappers, `HasMessageView` impls, and
   wins. Only the owned struct field type changes — view types still borrow
   `&str` / `&[u8]`, and `map` keys/values keep their default type.
 
-  The chosen type must satisfy the new blanket marker traits `buffa::ProtoString`
-  / `buffa::ProtoBytes` (nothing to implement by hand) — bounded on
+  The chosen type must implement the marker traits `buffa::ProtoString` /
+  `buffa::ProtoBytes`. Each requires a `from_wire(WirePayload<'_>) -> Result<Self,
+  DecodeError>` constructor (alongside the supertraits
   `Clone + PartialEq + Default + Debug + Send + Sync`, `Deref` to `str` / `[u8]`,
-  `AsRef`, and `From<String>` / `From<Vec<u8>>`. `buffa::decode_bytes_to::<B>` is
-  the new generic constructor (the `bytes` twin of `decode_string_to`). A custom
-  type needs no native `Arbitrary` impl (a generic builder handles it). A custom
-  type used as the element of a **`repeated`** field must be **crate-local**:
-  codegen emits `ReflectElement` (vtable) and, for bytes, base64 `ProtoElemJson`
-  (JSON) impls for it, which the orphan rule forbids for a foreign type — wrap a
-  foreign type in a local newtype for that case. Singular / optional / oneof /
-  map uses work with foreign types directly.
+  `AsRef`, and `From<String>` / `From<Vec<u8>>`). `from_wire` lets each
+  representation own validation and borrow-vs-own:
+  [`WirePayload`](https://docs.rs/buffa) is `Borrowed(&[u8])` (zero-copy) or
+  `Owned(Bytes)`, with `as_slice()` and `into_bytes()`. buffa ships the built-in
+  impls for `String`, `Vec<u8>`, and `bytes::Bytes`; a foreign type (e.g.
+  `smol_str::SmolStr`) is wrapped in a local newtype that implements the trait —
+  the new **`buffa-smolstr`** crate is the template (an inline, allocation-free
+  `from_wire`). A custom type needs no native `Arbitrary` impl (a generic builder
+  handles it). A custom type used as the element of a **`repeated`** field must be
+  **crate-local**: codegen emits `ReflectElement` (vtable) and, for bytes, base64
+  `ProtoElemJson` (JSON) impls for it, which the orphan rule forbids for a foreign
+  type. Singular / optional / oneof / map uses work through the newtype too.
 
-  **BREAKING (unreleased only):** the earlier unreleased `string_type` preset API
-  is removed — `StringRepr::{SmolStr, EcoString, CompactString}`, the
-  `buffa` / `buffa-descriptor` `smol_str` / `ecow` / `compact_str` Cargo features,
-  and the `::buffa::{smol_str, ecow, compact_str}` re-exports. Migrate to
-  `string_type_custom("::smol_str::SmolStr")` (etc.) and depend on the type's
-  crate directly, the same arrangement `serde` already uses. Default output
-  (`String` / `Vec<u8>`) is byte-for-byte unchanged. `buffa-build` /
-  `buffa-codegen` only — there is no `protoc-gen-buffa` plugin option yet.
+  Why `from_wire` rather than a blanket `From`-based impl: the decode path was
+  first built as a blanket impl over `From<String>` / `From<Vec<u8>>` to learn the
+  tradeoff, but that path *always* pays `decode_string`'s allocate-and-copy and a
+  transient heap allocation even for a short string that an inline type
+  (`smol_str`) could store without touching the heap. `from_wire` hands the
+  representation the raw payload so it can inline, validate lazily, or take
+  ownership zero-copy — so it never disadvantages a custom type.
+
+  **BREAKING (unreleased only):** the earlier unreleased `string_type` shapes are
+  removed — both the `StringRepr::{SmolStr, EcoString, CompactString}` presets
+  (with the `buffa` / `buffa-descriptor` `smol_str` / `ecow` / `compact_str`
+  features and `::buffa::{smol_str, …}` re-exports) and the later blanket
+  `From`-based `ProtoString` / `ProtoBytes`. Pointing `string_type_custom` at a
+  foreign type directly no longer compiles; use `buffa-smolstr` (or a local
+  newtype implementing `from_wire`). Default output (`String` / `Vec<u8>`) is
+  byte-for-byte unchanged. `buffa-build` / `buffa-codegen` only — there is no
+  `protoc-gen-buffa` plugin option yet.
 - **Generated `FooOwnedView` wrapper types.** When views are generated, each
   message now also gets a `FooOwnedView` — re-exported at the package root
   next to `Foo` and `FooView` (canonical path `__buffa::view::FooOwnedView`):
