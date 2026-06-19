@@ -367,11 +367,17 @@ pub const FIXED64_ENCODED_LEN: usize = 8;
 // Generated `write_to` bodies pair every payload write with a tag write.
 // These helpers fuse the two so each field arm is one call; the presence
 // check (`if !x.is_empty()`, `if let Some(v)`, …) stays in generated code
-// where the per-field semantics are visible. All are `#[inline]` shims over
-// the `Tag::encode` + `encode_*` primitives and monomorphize to the same
-// machine code as the previous two-statement expansion. They are shared by
-// owned and view `write_to` impls (duck-typed: `&String` / `&str` and
-// `&Vec<u8>` / `&[u8]` both coerce to the borrowed parameter).
+// where the per-field semantics are visible. They are `#[inline(always)]`
+// shims over the `Tag::encode` + `encode_*` primitives: with the field number a
+// literal at every call site, forced inlining lets the optimizer const-fold the
+// tag to constant byte store(s) — recovering the codegen the pre-fusion
+// two-statement expansion produced. The fold relies on `Tag::encode` /
+// `encode_varint` continuing to inline at constant input. Plain `#[inline]` was
+// not sufficient: the inliner declined it for the larger string/bytes variants,
+// silently reintroducing a per-call runtime tag varint (~6-9% on encode-heavy
+// paths). They are shared by owned and view `write_to` impls (duck-typed:
+// `&String` / `&str` and `&Vec<u8>` / `&[u8]` both coerce to the borrowed
+// parameter).
 
 /// Stamp a fused `put_<type>_field` writer over an existing `encode_<type>`.
 macro_rules! put_field_fn {
@@ -382,7 +388,14 @@ macro_rules! put_field_fn {
             "Fused tag+payload sibling of [`", stringify!($encode), "`]; ",
             "exists so generated `write_to` bodies are one call per field."
         )]
-        #[inline]
+        // `#[inline(always)]`, applied uniformly by the macro. It is load-bearing
+        // for the larger string/bytes variants — the inliner declined the plain
+        // `#[inline]` hint there, leaving `field_number` a runtime arg that
+        // re-encodes the tag varint per call — and harmless for the small scalar
+        // variants (already inlined). With the field number a literal at the call
+        // site, inlining const-folds the tag to constant byte store(s): one byte
+        // for field numbers 1-15, a few for larger numbers.
+        #[inline(always)]
         pub fn $name(field_number: u32, value: $value, buf: &mut impl BufMut) {
             Tag::new(field_number, $wire).encode(buf);
             $encode(value, buf);
@@ -459,20 +472,20 @@ put_field_fn!(
 ///
 /// The arguments are `(field_number, len)` — both `u32`, so transposing them
 /// compiles but emits a structurally-valid-but-wrong header.
-#[inline]
+#[inline(always)]
 pub fn put_len_delimited_header(field_number: u32, len: u32, buf: &mut impl BufMut) {
     Tag::new(field_number, WireType::LengthDelimited).encode(buf);
     encode_varint(len as u64, buf);
 }
 
 /// Write a group field's `StartGroup` tag.
-#[inline]
+#[inline(always)]
 pub fn put_group_start(field_number: u32, buf: &mut impl BufMut) {
     Tag::new(field_number, WireType::StartGroup).encode(buf);
 }
 
 /// Write a group field's `EndGroup` tag.
-#[inline]
+#[inline(always)]
 pub fn put_group_end(field_number: u32, buf: &mut impl BufMut) {
     Tag::new(field_number, WireType::EndGroup).encode(buf);
 }
