@@ -108,6 +108,7 @@ name = "buffa-smolstr"
 version = "0.7.1"
 dependencies = [
  "buffa",
+ "serde",
  "smol_str",
 ]
 
@@ -119,13 +120,13 @@ dependencies = [
  "buffa",
  "buffa-build",
  "buffa-descriptor",
+ "buffa-smolstr",
  "buffa-types",
  "bytes",
  "compact_str",
  "ecow",
  "serde",
  "serde_json",
- "smol_str",
 ]
 
 [[package]]
