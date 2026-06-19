@@ -218,6 +218,11 @@ pub enum StringRepr {
     ///   map uses work with a foreign type directly.
     /// - A path that does not parse as a Rust type surfaces as
     ///   [`CodeGenError::InvalidTypePath`] at generation (`.compile()`) time.
+    /// - The per-element impls are deduplicated within a single generation, but
+    ///   the *same* crate-local type used as a `repeated` element across two
+    ///   separate `compile()` invocations in one crate emits the impl twice (a
+    ///   duplicate-impl `E0119`). Generate from a single `compile()`, or use
+    ///   distinct element types.
     Custom(String),
 }
 
@@ -289,6 +294,11 @@ pub enum BytesRepr {
     ///   to map values.
     /// - A path that does not parse as a Rust type surfaces as
     ///   [`CodeGenError::InvalidTypePath`] at generation (`.compile()`) time.
+    /// - The per-element impls are deduplicated within a single generation, but
+    ///   the *same* crate-local type used as a `repeated` element across two
+    ///   separate `compile()` invocations in one crate emits the impl twice (a
+    ///   duplicate-impl `E0119`). Generate from a single `compile()`, or use
+    ///   distinct element types.
     Custom(String),
 }
 

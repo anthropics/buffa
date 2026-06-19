@@ -69,14 +69,14 @@ impl AsRef<str> for SmolStr {
 impl From<String> for SmolStr {
     #[inline]
     fn from(s: String) -> Self {
-        SmolStr(smol_str::SmolStr::from(s))
+        Self(smol_str::SmolStr::from(s))
     }
 }
 
 impl From<&str> for SmolStr {
     #[inline]
     fn from(s: &str) -> Self {
-        SmolStr(smol_str::SmolStr::from(s))
+        Self(smol_str::SmolStr::from(s))
     }
 }
 
@@ -87,7 +87,7 @@ impl ProtoString for SmolStr {
     #[inline]
     fn from_wire(payload: WirePayload<'_>) -> Result<Self, DecodeError> {
         let s = core::str::from_utf8(payload.as_slice()).map_err(|_| DecodeError::InvalidUtf8)?;
-        Ok(SmolStr(smol_str::SmolStr::from(s)))
+        Ok(Self(smol_str::SmolStr::from(s)))
     }
 }
 
