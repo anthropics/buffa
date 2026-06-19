@@ -26,6 +26,7 @@ pub(super) fn varint_field(num: u32, v: u64) -> Vec<u8> {
 mod any_type_url;
 mod arbitrary_bytes;
 mod basic;
+mod box_type;
 mod bytes_type;
 mod closed_enum;
 mod collision;

@@ -908,6 +908,19 @@ impl<'a> CodeGenContext<'a> {
             .find(|(prefix, _)| matches_proto_prefix(prefix, field_fqn))
             .map_or(crate::StringRepr::default(), |(_, repr)| repr.clone())
     }
+
+    /// Resolve the [`PointerRepr`](crate::PointerRepr) for a singular message
+    /// field at the given proto path. Last matching rule wins (proto-segment
+    /// prefix match); fields matching no rule use
+    /// [`PointerRepr::Box`](crate::PointerRepr::Box).
+    pub fn pointer_repr(&self, field_fqn: &str) -> crate::PointerRepr {
+        self.config
+            .pointer_fields
+            .iter()
+            .rev()
+            .find(|(prefix, _)| matches_proto_prefix(prefix, field_fqn))
+            .map_or(crate::PointerRepr::default(), |(_, repr)| repr.clone())
+    }
 }
 
 /// Scope-local context for code generation within a message.

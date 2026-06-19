@@ -10,6 +10,18 @@ fn main() {
         .compile()
         .expect("buffa_build failed for basic.proto");
 
+    // box_type: a crate-LOCAL `CustomBox<T>` pointer (a `ProtoBox<T>` impl) for
+    // singular message fields, via the `*`-templated knob. The crate compiling
+    // is most of the test — the field type, decode (`get_or_insert_default`),
+    // clear, and view→owned (`some`) paths must all emit `MessageField<T,
+    // CustomBox<T>>` and the generic `ProtoBox` surface.
+    buffa_build::Config::new()
+        .files(&["protos/box_type.proto"])
+        .includes(&["protos/"])
+        .box_type_custom("crate::box_type::CustomBox<*>")
+        .compile()
+        .expect("buffa_build failed for box_type.proto");
+
     // views(false) + vtable: owned-message vtable reflection is self-contained,
     // so it must compile without view generation (only owned impls emitted).
     buffa_build::Config::new()

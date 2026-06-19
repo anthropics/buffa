@@ -16,6 +16,44 @@ pub mod debug_redact {
     buffa::include_proto!("debug_redact");
 }
 
+/// `box_type` + a crate-local `CustomBox<T>` pointer for singular message
+/// fields. `CustomBox<T>` is a thin `Box<T>`-backed `ProtoBox<T>` impl — the
+/// point is to exercise the generic codegen path (`MessageField<T,
+/// CustomBox<T>>`, decode via `get_or_insert_default`, view→owned via `some`),
+/// independent of any external smallbox crate. A real consumer would back this
+/// with e.g. `smallbox::SmallBox`.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod box_type {
+    /// A `Box`-backed pointer implementing `buffa::ProtoBox<T>`. No `Send`/`Sync`
+    /// or `Default` bound is needed (`ProtoBox` requires neither).
+    #[derive(Clone, PartialEq, Debug)]
+    pub struct CustomBox<T>(pub ::buffa::alloc::boxed::Box<T>);
+
+    impl<T> ::core::ops::Deref for CustomBox<T> {
+        type Target = T;
+        fn deref(&self) -> &T {
+            &self.0
+        }
+    }
+
+    impl<T> ::core::ops::DerefMut for CustomBox<T> {
+        fn deref_mut(&mut self) -> &mut T {
+            &mut self.0
+        }
+    }
+
+    impl<T> ::buffa::ProtoBox<T> for CustomBox<T> {
+        fn new(value: T) -> Self {
+            CustomBox(::buffa::alloc::boxed::Box::new(value))
+        }
+        fn into_inner(self) -> T {
+            *self.0
+        }
+    }
+
+    buffa::include_proto!("box_type");
+}
+
 /// `string_type` + vtable reflection with a crate-local newtype string used as
 /// a `repeated` element. Because the type is local, codegen may emit the
 /// `ReflectElement` and `ProtoElemJson` impls for it — the orphan rule forbids

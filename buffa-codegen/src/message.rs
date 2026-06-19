@@ -1359,6 +1359,8 @@ fn custom_deser_oneof_group(
         };
 
         let qualified_enum: TokenStream = quote! { #oneof_prefix #enum_ident };
+        let variant_fqn = format!(".{proto_fqn}.{oneof_name}.{proto_name}");
+        let variant_pointer_repr = ctx.pointer_repr(&variant_fqn);
         let arm = crate::oneof::oneof_variant_deser_arm(&crate::oneof::OneofVariantDeserInput {
             variant_ident: &variant_ident,
             variant_type: &variant_type,
@@ -1366,15 +1368,12 @@ fn custom_deser_oneof_group(
             proto_name,
             field_type,
             null_forward: crate::oneof::null_is_valid_value(field),
-            is_boxed: crate::oneof::variant_boxed(
-                ctx,
-                field_type,
-                &format!(".{proto_fqn}.{oneof_name}.{proto_name}"),
-            ),
+            is_boxed: crate::oneof::variant_boxed(ctx, field_type, &variant_fqn),
+            pointer_repr: &variant_pointer_repr,
             enum_ident: &qualified_enum,
             result_var: &var_ident,
             oneof_name,
-        });
+        })?;
         arms.push(arm);
     }
 
@@ -1518,6 +1517,9 @@ fn classify_field(
     };
     let string_type = || string_repr.type_path(resolver, ctx, nesting);
 
+    // Configurable owned pointer for singular message fields (default `Box`).
+    let pointer_repr = ctx.pointer_repr(&field_fqn);
+
     let mut inner_opt_type: Option<TokenStream> = None;
     let rust_type = if let Some(entry) = map_entry {
         map_rust_type_from_entry(scope, entry, &map_value_bytes_repr, resolver)?
@@ -1535,10 +1537,8 @@ fn classify_field(
         }
     } else if field_type == Type::TYPE_MESSAGE || field_type == Type::TYPE_GROUP {
         let inner = resolve_message_type(scope, field)?;
-        {
-            let mf = resolver.message_field_at(ctx, nesting);
-            quote! { #mf<#inner> }
-        }
+        let mf = resolver.message_field_at(ctx, nesting);
+        pointer_repr.type_path(&mf, &inner)?
     } else if is_optional {
         let inner = if field_type == Type::TYPE_ENUM {
             resolve_enum_type(scope, field, resolver)?
@@ -1577,7 +1577,7 @@ fn classify_field(
             quote! { #vec<Self> }
         } else {
             let mf = resolver.message_field_at(ctx, nesting);
-            quote! { #mf<Self> }
+            pointer_repr.type_path(&mf, &quote! { Self })?
         }
     } else {
         rust_type.clone()

@@ -462,6 +462,8 @@ pub fn generate_message_impl(
                     fields,
                     oneof_prefix,
                     proto_fqn,
+                    current_package,
+                    nesting,
                     features,
                     preserve_unknown_fields,
                 )?;
@@ -1024,6 +1026,17 @@ pub(crate) fn field_string_repr(
 ) -> crate::StringRepr {
     let field_fqn = format!(".{}.{}", proto_fqn, field_name);
     ctx.string_repr(&field_fqn)
+}
+
+/// Resolve the [`PointerRepr`](crate::PointerRepr) for a singular message field.
+/// Returns [`PointerRepr::Box`](crate::PointerRepr::Box) for fields with no rule.
+pub(crate) fn field_pointer_repr(
+    ctx: &CodeGenContext,
+    proto_fqn: &str,
+    field_name: &str,
+) -> crate::PointerRepr {
+    let field_fqn = format!(".{}.{}", proto_fqn, field_name);
+    ctx.pointer_repr(&field_fqn)
 }
 
 fn scalar_clear_stmt(
@@ -2434,21 +2447,31 @@ fn oneof_merge_arm(
     bytes_repr: &crate::BytesRepr,
     string_repr: crate::StringRepr,
     boxed: bool,
+    // `Some((msg_ty, ptr_ty))` for a boxed message/group variant with a custom
+    // pointer; `None` for the default `Box` or a non-message variant.
+    custom_box: Option<&(TokenStream, TokenStream)>,
 ) -> TokenStream {
     let wire_type = wire_type_token(ty);
     let wire_check = wire_type_check(&quote! { tag }, &wire_type);
     // Message/group variants merge into the existing value. When boxed, the
-    // binding is `&mut Box<M>` (deref once); when stored inline it is `&mut M`,
-    // and the freshly decoded value is moved in without a `Box`.
+    // binding is `&mut **existing` — `DerefMut` through any `ProtoBox` (`Box` or
+    // custom) yields `&mut M`; when stored inline it is `&mut M`.
     let existing_ref = if boxed {
         quote! { &mut **existing }
     } else {
         quote! { existing }
     };
-    let wrapped_val = if boxed {
-        quote! { ::buffa::alloc::boxed::Box::new(val) }
-    } else {
-        quote! { val }
+    // The freshly-decoded value's wrapping. A custom pointer constructs via the
+    // trait (fully-qualified, so an inherent `new` can't shadow it); the default
+    // `Box` keeps `Box::new` (byte-identical). The matching `val` ascription
+    // types the value so the trait `new`'s element type is determined.
+    let (wrapped_val, val_ascription) = match (custom_box, boxed) {
+        (Some((msg_ty, ptr_ty)), _) => (
+            quote! { <#ptr_ty as ::buffa::ProtoBox<#msg_ty>>::new(val) },
+            quote! { : #msg_ty },
+        ),
+        (None, true) => (quote! { ::buffa::alloc::boxed::Box::new(val) }, quote! {}),
+        (None, false) => (quote! { val }, quote! {}),
     };
     match ty {
         Type::TYPE_STRING => {
@@ -2520,7 +2543,7 @@ fn oneof_merge_arm(
                 ) = self.#field_ident {
                     ::buffa::Message::merge_length_delimited(#existing_ref, buf, ctx)?;
                 } else {
-                    let mut val = ::core::default::Default::default();
+                    let mut val #val_ascription = ::core::default::Default::default();
                     ::buffa::Message::merge_length_delimited(&mut val, buf, ctx)?;
                     self.#field_ident = ::core::option::Option::Some(
                         #enum_ident::#variant_ident(#wrapped_val)
@@ -2536,7 +2559,7 @@ fn oneof_merge_arm(
                 ) = self.#field_ident {
                     ::buffa::Message::merge_group(#existing_ref, buf, ctx, #field_number)?;
                 } else {
-                    let mut val = ::core::default::Default::default();
+                    let mut val #val_ascription = ::core::default::Default::default();
                     ::buffa::Message::merge_group(&mut val, buf, ctx, #field_number)?;
                     self.#field_ident = ::core::option::Option::Some(
                         #enum_ident::#variant_ident(#wrapped_val)
@@ -2570,6 +2593,8 @@ fn generate_oneof_impls(
     fields: &[&FieldDescriptorProto],
     oneof_prefix: &TokenStream,
     proto_fqn: &str,
+    current_package: &str,
+    nesting: usize,
     features: &ResolvedFeatures,
     preserve_unknown_fields: bool,
 ) -> Result<(TokenStream, TokenStream, Vec<TokenStream>), CodeGenError> {
@@ -2600,11 +2625,26 @@ fn generate_oneof_impls(
         let field_features = crate::features::resolve_field(ctx, field, features);
         let bytes_repr = field_bytes_repr(ctx, proto_fqn, field_name);
         let string_repr = field_string_repr(ctx, proto_fqn, field_name);
-        let boxed = crate::oneof::variant_boxed(
-            ctx,
-            ty,
-            &format!(".{proto_fqn}.{oneof_name}.{field_name}"),
-        );
+        let variant_fqn = format!(".{proto_fqn}.{oneof_name}.{field_name}");
+        let boxed = crate::oneof::variant_boxed(ctx, ty, &variant_fqn);
+        // A boxed message/group variant with a custom pointer needs the inner
+        // message type (to type the decoded value) and the pointer type (to
+        // construct it). Resolve both here; `None` means the default `Box`.
+        let custom_box = if boxed
+            && matches!(ty, Type::TYPE_MESSAGE | Type::TYPE_GROUP)
+            && !matches!(ctx.pointer_repr(&variant_fqn), crate::PointerRepr::Box)
+        {
+            let msg_ty = field
+                .type_name
+                .as_deref()
+                .and_then(|tn| ctx.rust_type_relative(tn, current_package, nesting))
+                .map(|p| crate::idents::rust_path_to_tokens(&p))
+                .ok_or(CodeGenError::MissingField("oneof variant type_name"))?;
+            let ptr_ty = ctx.pointer_repr(&variant_fqn).pointer_type(&msg_ty)?;
+            Some((msg_ty, ptr_ty))
+        } else {
+            None
+        };
         merge_arm_list.push(oneof_merge_arm(
             &field_ident,
             &qualified_enum,
@@ -2616,6 +2656,7 @@ fn generate_oneof_impls(
             &bytes_repr,
             string_repr,
             boxed,
+            custom_box.as_ref(),
         ));
     }
 

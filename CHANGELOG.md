@@ -8,6 +8,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **Pluggable owned pointer for message fields** (#156). A new
+  `buffa::ProtoBox<T>` trait (`Deref<Target=T> + DerefMut { new, into_inner }`)
+  selects the smart pointer that a singular message field's `MessageField` wraps
+  — and the pointer of a **boxed oneof message/group variant** — via
+  `buffa_build`'s `box_type` / `box_type_custom` knobs (the custom path takes a
+  `*`-templated type, e.g. `"::my_crate::SmallBox<*>"`). A oneof variant opted
+  into inline storage via `unbox_oneof` takes precedence and gets no pointer;
+  recursive variants stay pointered and so accept a custom pointer. The
+  default stays `Box<T>` and generated output is byte-identical. Only
+  exclusively-owned pointers qualify (`Rc`/`Arc` are excluded — the decoder
+  merges in place via `DerefMut`); inline pointers like `SmallBox` avoid the
+  per-field heap allocation. **Source-breaking note:** `MessageField<T>` gained
+  a defaulted pointer type parameter (`MessageField<T, P = Box<T>>`), so a
+  *standalone* `MessageField::some(x)` / `none()` with no pinning context now
+  needs a type annotation (`MessageField::<T>::some(x)`); struct-literal and
+  typed-assignment construction are unaffected. Added `MessageField::from_pointer`
+  (the generic counterpart to the `Box`-only `from_box`).
+
 - **Docker-free conformance runs** (#192). `task conformance-tools-local`
   builds `conformance_test_runner` from the pinned protobuf tag into
   `.local/bin/` and `task conformance-local` executes the same seven runs

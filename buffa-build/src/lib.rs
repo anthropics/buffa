@@ -39,7 +39,7 @@ pub use buffa_codegen::FeatureGateNames;
 #[doc(inline)]
 pub use buffa_codegen::ReflectMode;
 #[doc(inline)]
-pub use buffa_codegen::{BytesRepr, StringRepr};
+pub use buffa_codegen::{BytesRepr, PointerRepr, StringRepr};
 
 /// How to produce a `FileDescriptorSet` from `.proto` files.
 #[derive(Debug, Clone, Default)]
@@ -974,6 +974,71 @@ impl Config {
     #[must_use]
     pub fn string_type_custom(self, path: &str) -> Self {
         self.string_type(StringRepr::Custom(path.to_string()))
+    }
+
+    /// Map the matching message fields to a [`PointerRepr`] other than the
+    /// default `Box`. Rules are matched with proto-segment-aware prefix logic;
+    /// the **last** matching rule wins, so add a broad rule first and narrower
+    /// overrides after.
+    ///
+    /// Applies to singular (and proto2 optional/required) message fields and to
+    /// **boxed** oneof message/group variants (matched by the variant's path).
+    /// A oneof variant opted into inline storage via [`unbox_oneof_in`](Self::unbox_oneof_in)
+    /// takes precedence and gets no pointer; recursive variants stay boxed and so
+    /// accept a custom pointer. Repeated message fields use a collection, not a
+    /// pointer. For [`PointerRepr::Custom`], the pointer must implement
+    /// `buffa::ProtoBox<T>` and be a crate-local newtype; the path is a
+    /// **template** with a `*` placeholder for the message type (e.g.
+    /// `"::my_crate::SmallBox<*>"`).
+    ///
+    /// Only the in-memory pointer changes: the wire format is unchanged and view
+    /// types are unaffected.
+    #[must_use]
+    pub fn box_type_in(mut self, repr: PointerRepr, paths: &[impl AsRef<str>]) -> Self {
+        self.codegen_config
+            .pointer_fields
+            .extend(paths.iter().map(|p| (p.as_ref().to_string(), repr.clone())));
+        self
+    }
+
+    /// Map every message field (and boxed oneof variant) to the given [`PointerRepr`].
+    /// Convenience for `.box_type_in(repr, &["."])`. Call before any
+    /// [`box_type_in`](Self::box_type_in) overrides, since the last matching rule
+    /// wins. An inline pointer inflates each parent struct, so prefer narrow
+    /// rules over a blanket default.
+    #[must_use]
+    pub fn box_type(mut self, repr: PointerRepr) -> Self {
+        self.codegen_config
+            .pointer_fields
+            .push((".".to_string(), repr));
+        self
+    }
+
+    /// Map the matching singular message fields to a custom pointer implementing
+    /// `buffa::ProtoBox<T>`, named by a Rust type-path **template** with a `*`
+    /// placeholder for the message type (e.g. `"::my_crate::SmallBox<*>"`).
+    /// Shorthand for
+    /// [`box_type_in`](Self::box_type_in)`(PointerRepr::Custom(template), paths)`.
+    ///
+    /// # Limitations
+    ///
+    /// - The template must contain at least one `*`; a template that omits it,
+    ///   or whose substitution does not parse as a Rust type, is reported as a
+    ///   codegen error from [`compile`](Self::compile).
+    /// - The pointer must be exclusively owned (`Rc`/`Arc` are unusable — the
+    ///   decoder needs `DerefMut`) and a crate-local newtype (a foreign pointer
+    ///   cannot implement the buffa-owned `ProtoBox`).
+    #[must_use]
+    pub fn box_type_custom_in(self, template: &str, paths: &[impl AsRef<str>]) -> Self {
+        self.box_type_in(PointerRepr::Custom(template.to_string()), paths)
+    }
+
+    /// Map every message field (and boxed oneof variant) to the given custom pointer template.
+    /// Convenience for `.box_type_custom_in(template, &["."])`; see it for the
+    /// limitations (the `*` placeholder, `Rc`/`Arc` exclusion, newtype rule).
+    #[must_use]
+    pub fn box_type_custom(self, template: &str) -> Self {
+        self.box_type(PointerRepr::Custom(template.to_string()))
     }
 
     /// Add a custom attribute to generated types (messages and enums)

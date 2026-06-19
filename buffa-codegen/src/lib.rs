@@ -185,6 +185,27 @@ pub(crate) fn parse_custom_type_path(path: &str) -> Result<proc_macro2::TokenStr
     Ok(quote::quote! { #ty })
 }
 
+/// Build a custom wrapper type from a `*`-templated path and a resolved inner
+/// type, validating the result as a Rust type.
+///
+/// `*` cannot be a parsed placeholder (it is not valid in Rust type position),
+/// so substitution is textual — every `*` in `template` is replaced by `inner`'s
+/// token text before the whole string is parsed. Used by the pluggable pointer
+/// knob, where the wrapped type sits inside extra generic parameters (e.g.
+/// `"smallbox::SmallBox<*, S4>"`). The template must contain at least one `*`.
+pub(crate) fn parse_wildcard_type_path(
+    template: &str,
+    inner: &proc_macro2::TokenStream,
+) -> Result<proc_macro2::TokenStream, CodeGenError> {
+    if !template.contains('*') {
+        return Err(CodeGenError::MissingWildcard(template.to_string()));
+    }
+    let substituted = template.replace('*', &inner.to_string());
+    let ty: syn::Type = syn::parse_str(&substituted)
+        .map_err(|_| CodeGenError::InvalidTypePath(format!("{template} (as {substituted})")))?;
+    Ok(quote::quote! { #ty })
+}
+
 /// The Rust type a proto `string` field maps to in generated owned structs.
 ///
 /// The default is [`String`](StringRepr::String).
@@ -338,6 +359,149 @@ impl BytesRepr {
     }
 }
 
+/// The owned smart pointer a singular message field's [`MessageField`] wraps in
+/// generated owned structs.
+///
+/// The default is [`Box`](PointerRepr::Box). [`Custom`](PointerRepr::Custom)
+/// substitutes any pointer that satisfies the `buffa::ProtoBox<T>` bound — for
+/// example a `smallbox`-style pointer that stores small messages inline.
+/// Because the pointer *wraps* the message type, its path is a **template**
+/// containing a `*` placeholder for the message type (e.g.
+/// `"::smallbox::SmallBox<*, ::smallbox::space::S4>"` or
+/// `"::my_crate::SmallBox<*>"`).
+///
+/// Because `buffa::ProtoBox` is buffa-owned, a *foreign* pointer cannot
+/// implement it directly (orphan rule) — the template must name a crate-local
+/// newtype, mirroring the `ProtoString` newtype expectation.
+///
+/// Select a representation through `buffa_build`'s `box_type_custom` builder
+/// method. The wire format is identical regardless of the pointer; view types
+/// are unaffected. Applies to singular message fields and **boxed** oneof
+/// message/group variants (a variant opted into inline storage via
+/// `unboxed_oneof_fields` takes precedence and gets no pointer). Repeated
+/// message fields use a collection, not a pointer.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum PointerRepr {
+    /// `::buffa::alloc::boxed::Box<T>` (inside `MessageField<T>`) — the default.
+    /// Keeps generated output byte-identical to a build without the knob (the
+    /// `MessageField` pointer type parameter defaults to `Box`).
+    #[default]
+    Box,
+    /// A custom pointer named by a Rust type-path **template** with a `*`
+    /// placeholder for the message type. Must satisfy `buffa::ProtoBox<T>` and
+    /// be a crate-local newtype.
+    ///
+    /// # Limitations
+    ///
+    /// - The template must contain at least one `*`; a template that omits it
+    ///   surfaces as [`CodeGenError::MissingWildcard`], and one whose
+    ///   substitution does not parse as [`CodeGenError::InvalidTypePath`], at
+    ///   generation (`.compile()`) time.
+    /// - `Rc` / `Arc` and other shared/COW pointers are unusable: the decoder
+    ///   merges in place (needs `DerefMut`), so only an exclusively-owned
+    ///   pointer (heap `Box`, inline `SmallBox`) can implement `ProtoBox`.
+    /// - An inline pointer inflates the parent struct per field, so select it
+    ///   per field/prefix, never as a blanket default.
+    /// - On a **boxed oneof variant** under the `arbitrary` feature, the custom
+    ///   pointer must implement `arbitrary::Arbitrary` (the oneof enum derives it
+    ///   and stores the pointer directly in the variant). The singular-field path
+    ///   needs no such impl — `MessageField` constructs the pointer itself.
+    Custom(String),
+}
+
+impl PointerRepr {
+    /// The owned `MessageField<...>` type emitted for a singular message field
+    /// with this representation, given the resolved inner message type tokens
+    /// and the `MessageField` path from the resolver.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CodeGenError::MissingWildcard`] if a custom template omits `*`,
+    /// or [`CodeGenError::InvalidTypePath`] if it does not parse once the message
+    /// type is substituted.
+    pub(crate) fn type_path(
+        &self,
+        message_field: &proc_macro2::TokenStream,
+        inner: &proc_macro2::TokenStream,
+    ) -> Result<proc_macro2::TokenStream, CodeGenError> {
+        use quote::quote;
+        match self {
+            PointerRepr::Box => Ok(quote! { #message_field<#inner> }),
+            PointerRepr::Custom(template) => {
+                let ptr = parse_wildcard_type_path(template, inner)?;
+                Ok(quote! { #message_field<#inner, #ptr> })
+            }
+        }
+    }
+
+    /// The fully-qualified `::buffa::MessageField::<...>` path for a
+    /// `::some(value)` construction of a singular message field with this
+    /// representation: `<inner>` for `Box` (the pointer param defaults), or
+    /// `<inner, ptr>` for a custom pointer. The view→owned conversion uses this
+    /// so the constructed `MessageField` matches the field's declared type.
+    ///
+    /// # Errors
+    ///
+    /// As [`type_path`](Self::type_path) for a custom template.
+    pub(crate) fn some_path(
+        &self,
+        inner: &proc_macro2::TokenStream,
+    ) -> Result<proc_macro2::TokenStream, CodeGenError> {
+        use quote::quote;
+        match self {
+            PointerRepr::Box => Ok(quote! { ::buffa::MessageField::<#inner> }),
+            PointerRepr::Custom(template) => {
+                let ptr = parse_wildcard_type_path(template, inner)?;
+                Ok(quote! { ::buffa::MessageField::<#inner, #ptr> })
+            }
+        }
+    }
+
+    /// The bare pointer type wrapping `inner` for a **boxed oneof variant**
+    /// (`Box<inner>` by default, or the custom pointer). Unlike
+    /// [`type_path`](Self::type_path) this is the pointer alone, not wrapped in
+    /// `MessageField`, because a oneof enum stores the pointer directly in the
+    /// variant.
+    ///
+    /// # Errors
+    ///
+    /// As [`type_path`](Self::type_path) for a custom template.
+    pub(crate) fn pointer_type(
+        &self,
+        inner: &proc_macro2::TokenStream,
+    ) -> Result<proc_macro2::TokenStream, CodeGenError> {
+        use quote::quote;
+        match self {
+            PointerRepr::Box => Ok(quote! { ::buffa::alloc::boxed::Box<#inner> }),
+            PointerRepr::Custom(template) => parse_wildcard_type_path(template, inner),
+        }
+    }
+
+    /// Construct the pointer from a value expression for a boxed oneof variant:
+    /// `Box::new(value)` (byte-identical default) or the fully-qualified
+    /// `<Ptr as ProtoBox<inner>>::new(value)` for a custom pointer (so an
+    /// inherent `new` on the pointer can't shadow the trait method).
+    ///
+    /// # Errors
+    ///
+    /// As [`type_path`](Self::type_path) for a custom template.
+    pub(crate) fn pointer_new(
+        &self,
+        inner: &proc_macro2::TokenStream,
+        value: &proc_macro2::TokenStream,
+    ) -> Result<proc_macro2::TokenStream, CodeGenError> {
+        use quote::quote;
+        match self {
+            PointerRepr::Box => Ok(quote! { ::buffa::alloc::boxed::Box::new(#value) }),
+            PointerRepr::Custom(template) => {
+                let ptr = parse_wildcard_type_path(template, inner)?;
+                Ok(quote! { <#ptr as ::buffa::ProtoBox<#inner>>::new(#value) })
+            }
+        }
+    }
+}
+
 /// How much reflection support generated types get.
 ///
 /// Selected through `buffa_build`'s `reflect_mode` builder method (or the
@@ -482,6 +646,15 @@ pub struct CodeGenConfig {
     /// `string` variants. Map keys and values always stay `String`, mirroring
     /// the bytes path (where map values always stay `Vec<u8>`).
     pub string_fields: Vec<(String, StringRepr)>,
+    /// Ordered (proto-path-prefix, [`PointerRepr`]) rules selecting the owned
+    /// smart pointer for singular message fields (the pointer inside
+    /// `MessageField<T>`). Later rules win, same proto-segment-aware prefix
+    /// matching as [`bytes_fields`](Self::bytes_fields). Fields matching no rule
+    /// use `Box<T>`.
+    ///
+    /// Applies to singular (and proto2 optional/required) message fields only —
+    /// not repeated message fields (a collection) or oneof message variants.
+    pub pointer_fields: Vec<(String, PointerRepr)>,
     /// Fully-qualified proto paths whose message-typed oneof variants should
     /// **not** be wrapped in `Box<T>`. By default every message/group oneof
     /// variant is boxed (so recursive types compile); entries here opt matching
@@ -855,6 +1028,7 @@ impl Default for CodeGenConfig {
             extern_paths: Vec::new(),
             bytes_fields: Vec::new(),
             string_fields: Vec::new(),
+            pointer_fields: Vec::new(),
             unboxed_oneof_fields: Vec::new(),
             strict_utf8_mapping: false,
             allow_message_set: false,
@@ -2487,6 +2661,12 @@ pub enum CodeGenError {
     /// A resolved type path string could not be parsed as a Rust type.
     #[error("invalid Rust type path: '{0}'")]
     InvalidTypePath(String),
+    /// A `box_type_custom` pointer template did not contain the `*` placeholder.
+    ///
+    /// The custom pointer wraps the message type, so the template must mark where
+    /// it goes with `*`, e.g. `"::smallbox::SmallBox<*, smallbox::space::S4>"`.
+    #[error("box_type template must contain a `*` placeholder for the message type: '{0}'")]
+    MissingWildcard(String),
     /// The accumulated `TokenStream` failed to parse as valid Rust syntax.
     #[error("generated code failed to parse as Rust: {0}")]
     InvalidSyntax(String),

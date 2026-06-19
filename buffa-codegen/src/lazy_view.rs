@@ -667,10 +667,13 @@ fn build_lazy_to_owned_fields(
             } else {
                 let owned_path = resolve_owned_path(scope, field)?;
                 let owned_ty = rust_path_to_tokens(&owned_path);
+                let some_path =
+                    crate::impl_message::field_pointer_repr(scope.ctx, scope.proto_fqn, name)
+                        .some_path(&owned_ty)?;
                 quote! {
                     match self.#ident.get()? {
                         ::core::option::Option::Some(v) => {
-                            ::buffa::MessageField::<#owned_ty>::some(v.to_owned_message()?)
+                            #some_path::some(v.to_owned_message()?)
                         }
                         ::core::option::Option::None => ::buffa::MessageField::none(),
                     }

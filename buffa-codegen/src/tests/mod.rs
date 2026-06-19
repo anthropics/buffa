@@ -59,6 +59,7 @@ mod idiomatic_imports;
 mod json_codegen;
 mod naming;
 mod owned_view_codegen;
+mod pointer_repr;
 mod proto2;
 mod reexports;
 mod reflect_view;
