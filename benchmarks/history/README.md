@@ -17,10 +17,13 @@ when a tag changed the size of its benchmark dataset. Median nanoseconds per
 iteration are stored alongside, and each number is the **median across several
 cores** with its spread recorded (see below).
 
-The benchmark set grows over time: the four core message types (`ApiResponse`,
-`LogRecord`, `AnalyticsEvent`, `GoogleMessage1`) are present from v0.1.0,
-`MediaFrame` joins at v0.4.0, and `PackedTile` later still. Each benchmark's
-series simply starts at the release that introduced it.
+The matrix is **dense**: every message shape is measured against every release
+(v0.1.0–v0.7.1), not just from the release that first added it to the suite. A
+shape is a property of the protobuf schema, not of any buffa version — buffa
+v0.1.0 could always decode a `MediaFrame`, we just never asked it to — so the
+canonical shapes and datasets are fed to each release's own codegen and every
+shape gets a full-history curve. Each release's per-message-isolated harness lives
+on its `historical-benchmark/vX.Y.Z` branch.
 
 ## How the numbers are produced
 
@@ -71,20 +74,17 @@ each run file records it in `build_profile`.
   layout-noise harness below still exists to *verify* the floor on a quiesced box;
   a surprising delta should clear the measured envelope before being attributed to
   the library.
-- **Adding or removing a benchmark message contaminates the *other* messages'
-  numbers.** All message decoders compile into one binary, so rustc's inlining is
-  a global decision; at `codegen-units=1` (which maximises this coupling, since
-  there is one unit) introducing a new message reshuffles inlining for the
-  unchanged decoders. This was proven by disassembly: v0.7.1's
-  `MediaFrameView::decode_view` reads −11.6% purely because v0.7.1 added the
-  `PackedTile` benchmark message — remove `PackedTile` and the machine code is
-  byte-identical to v0.7.0 (see `annotations.md`). **So per-message deltas across a
-  transition that changed the message set (v0.3.0→v0.4.0 added `MediaFrame`,
-  v0.7.0→v0.7.1 added `PackedTile`) are coupling artifacts, not code changes.** The
-  clean fix — not yet applied — is to build each message's decoder in its own
-  binary (separate target), which isolates it from the others and also matches
-  what a consumer who uses only that message links. Until then, treat
-  message-set-change transitions as suspect.
+- **Cross-message inliner coupling — resolved by per-message isolation.** If all
+  message decoders share one binary, rustc's inlining is a global decision and
+  adding a message reshuffles inlining for the *unchanged* decoders (worst at
+  `codegen-units=1`, since there is one unit). That produced a false v0.7.1
+  regression in an earlier sparse history — `MediaFrameView::decode_view` read
+  −11.6% purely because v0.7.1 added the `PackedTile` benchmark message, proven by
+  disassembly (remove `PackedTile`, the machine code is byte-identical to v0.7.0).
+  The current matrix removes this at the source: **each shape is built with only
+  its own decoder compiled** (its own feature/proto, `--bench <shape>`), so no
+  other message can perturb it. Isolated, `media_frame/decode_view` is flat across
+  the whole series. This is also why every shape can span the full history.
 - **The compiler is held constant.** Every binary is built with one explicitly
   pinned toolchain (recorded in each run file's `toolchain`), forced via
   `RUSTUP_TOOLCHAIN` so it does not depend on the working directory's

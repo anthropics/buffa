@@ -2,10 +2,10 @@
   "version": "v0.7.0",
   "commit": "dbc32972e16dfed909a6a42042d71987a4b43387",
   "commit_date": "2026-05-28T21:15:54-04:00",
-  "measured_at": "2026-06-19T20:54:01Z",
+  "measured_at": "2026-06-19T23:47:11Z",
   "toolchain": "1.96.0",
   "criterion": "0.5.1",
-  "build_profile": "lto=true, codegen-units=1",
+  "build_profile": "lto=true, codegen-units=1, per-message-isolated (dense)",
   "machine": {
     "instance_type": "c7i.metal-24xl",
     "kernel": "Linux 6.8.0-1057-aws #60~22.04.1-Ubuntu SMP Wed May 27 08:16:59 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux",
@@ -15,305 +15,257 @@
     "pin_core": "distinct-physical-per-instance"
   },
   "benchmarks": {
-    "buffa/analytics_event/build_encode": {
-      "median_ns": 908.72,
-      "throughput_mib_s": 261.32,
-      "samples": 4,
-      "throughput_spread_pct": 1.5
-    },
-    "buffa/analytics_event/build_encode_view": {
-      "median_ns": 282.05,
-      "throughput_mib_s": 841.93,
-      "samples": 4,
-      "throughput_spread_pct": 1.47
-    },
     "buffa/analytics_event/compute_size": {
-      "median_ns": 122180.0,
-      "throughput_mib_s": 1231.5648,
+      "median_ns": 119200.0,
+      "throughput_mib_s": 1262.4384,
       "samples": 4,
-      "throughput_spread_pct": 1.68
+      "throughput_spread_pct": 2.1
     },
     "buffa/analytics_event/decode": {
-      "median_ns": 1217650.0,
-      "throughput_mib_s": 123.585,
+      "median_ns": 1185450.0,
+      "throughput_mib_s": 126.945,
       "samples": 4,
-      "throughput_spread_pct": 1.98
+      "throughput_spread_pct": 0.23
     },
     "buffa/analytics_event/decode_view": {
-      "median_ns": 769745.0,
-      "throughput_mib_s": 195.49,
+      "median_ns": 739125.0,
+      "throughput_mib_s": 203.59,
       "samples": 4,
-      "throughput_spread_pct": 2.32
+      "throughput_spread_pct": 0.48
     },
     "buffa/analytics_event/encode": {
-      "median_ns": 375675.0,
-      "throughput_mib_s": 400.555,
+      "median_ns": 379285.0,
+      "throughput_mib_s": 396.755,
       "samples": 4,
-      "throughput_spread_pct": 1.28
-    },
-    "buffa/analytics_event/encode_view": {
-      "median_ns": 337970.0,
-      "throughput_mib_s": 445.245,
-      "samples": 4,
-      "throughput_spread_pct": 0.69
+      "throughput_spread_pct": 2.72
     },
     "buffa/analytics_event/json_decode": {
-      "median_ns": 1787800.0,
-      "throughput_mib_s": 166.885,
+      "median_ns": 1702750.0,
+      "throughput_mib_s": 175.235,
       "samples": 4,
-      "throughput_spread_pct": 1.52
+      "throughput_spread_pct": 3.96
     },
     "buffa/analytics_event/json_encode": {
-      "median_ns": 557005.0,
-      "throughput_mib_s": 535.64,
+      "median_ns": 612515.0,
+      "throughput_mib_s": 487.095,
+      "samples": 4,
+      "throughput_spread_pct": 0.59
+    },
+    "buffa/analytics_event/merge": {
+      "median_ns": 1034450.0,
+      "throughput_mib_s": 145.465,
+      "samples": 4,
+      "throughput_spread_pct": 10.35
+    },
+    "buffa/api_response/compute_size": {
+      "median_ns": 816.38,
+      "throughput_mib_s": 7528.9088,
+      "samples": 4,
+      "throughput_spread_pct": 0.11
+    },
+    "buffa/api_response/decode": {
+      "median_ns": 10777.0,
+      "throughput_mib_s": 570.33,
+      "samples": 4,
+      "throughput_spread_pct": 0.3
+    },
+    "buffa/api_response/decode_view": {
+      "median_ns": 5620.05,
+      "throughput_mib_s": 1093.6832,
+      "samples": 4,
+      "throughput_spread_pct": 1.7
+    },
+    "buffa/api_response/encode": {
+      "median_ns": 3161.2,
+      "throughput_mib_s": 1944.4224,
+      "samples": 4,
+      "throughput_spread_pct": 2.58
+    },
+    "buffa/api_response/json_decode": {
+      "median_ns": 22579.5,
+      "throughput_mib_s": 468.885,
+      "samples": 4,
+      "throughput_spread_pct": 1.32
+    },
+    "buffa/api_response/json_encode": {
+      "median_ns": 18218.5,
+      "throughput_mib_s": 581.12,
+      "samples": 4,
+      "throughput_spread_pct": 7.68
+    },
+    "buffa/api_response/merge": {
+      "median_ns": 7807.9,
+      "throughput_mib_s": 787.21,
+      "samples": 4,
+      "throughput_spread_pct": 0.39
+    },
+    "buffa/google_message1_proto3/compute_size": {
+      "median_ns": 46.532,
+      "throughput_mib_s": 4672.8704,
+      "samples": 4,
+      "throughput_spread_pct": 0.58
+    },
+    "buffa/google_message1_proto3/decode": {
+      "median_ns": 412.355,
+      "throughput_mib_s": 527.31,
+      "samples": 4,
+      "throughput_spread_pct": 2.91
+    },
+    "buffa/google_message1_proto3/decode_view": {
+      "median_ns": 272.945,
+      "throughput_mib_s": 796.63,
+      "samples": 4,
+      "throughput_spread_pct": 1.2
+    },
+    "buffa/google_message1_proto3/encode": {
+      "median_ns": 102.245,
+      "throughput_mib_s": 2126.6944,
+      "samples": 4,
+      "throughput_spread_pct": 0.35
+    },
+    "buffa/google_message1_proto3/json_decode": {
+      "median_ns": 969.75,
+      "throughput_mib_s": 405.195,
+      "samples": 4,
+      "throughput_spread_pct": 3.62
+    },
+    "buffa/google_message1_proto3/json_encode": {
+      "median_ns": 745.16,
+      "throughput_mib_s": 527.325,
+      "samples": 4,
+      "throughput_spread_pct": 5.48
+    },
+    "buffa/google_message1_proto3/merge": {
+      "median_ns": 290.32,
+      "throughput_mib_s": 748.965,
+      "samples": 4,
+      "throughput_spread_pct": 0.84
+    },
+    "buffa/log_record/compute_size": {
+      "median_ns": 3197.35,
+      "throughput_mib_s": 9502.6688,
+      "samples": 4,
+      "throughput_spread_pct": 1.13
+    },
+    "buffa/log_record/decode": {
+      "median_ns": 62790.0,
+      "throughput_mib_s": 483.885,
+      "samples": 4,
+      "throughput_spread_pct": 1.13
+    },
+    "buffa/log_record/decode_view": {
+      "median_ns": 25154.0,
+      "throughput_mib_s": 1207.9616,
+      "samples": 4,
+      "throughput_spread_pct": 1.12
+    },
+    "buffa/log_record/encode": {
+      "median_ns": 9890.2,
+      "throughput_mib_s": 3072.0512,
+      "samples": 4,
+      "throughput_spread_pct": 1.4
+    },
+    "buffa/log_record/json_decode": {
+      "median_ns": 78378.0,
+      "throughput_mib_s": 476.16,
+      "samples": 4,
+      "throughput_spread_pct": 1.37
+    },
+    "buffa/log_record/json_encode": {
+      "median_ns": 42469.5,
+      "throughput_mib_s": 878.765,
+      "samples": 4,
+      "throughput_spread_pct": 1.88
+    },
+    "buffa/log_record/merge": {
+      "median_ns": 44256.5,
+      "throughput_mib_s": 686.525,
+      "samples": 4,
+      "throughput_spread_pct": 0.77
+    },
+    "buffa/media_frame/compute_size": {
+      "median_ns": 2044.8,
+      "throughput_mib_s": 260213.76,
+      "samples": 4,
+      "throughput_spread_pct": 0.76
+    },
+    "buffa/media_frame/decode": {
+      "median_ns": 45263.5,
+      "throughput_mib_s": 11755.008,
+      "samples": 4,
+      "throughput_spread_pct": 1.1
+    },
+    "buffa/media_frame/decode_view": {
+      "median_ns": 11523.5,
+      "throughput_mib_s": 46172.16,
+      "samples": 4,
+      "throughput_spread_pct": 1.26
+    },
+    "buffa/media_frame/encode": {
+      "median_ns": 20617.5,
+      "throughput_mib_s": 25807.36,
+      "samples": 4,
+      "throughput_spread_pct": 3.57
+    },
+    "buffa/media_frame/json_decode": {
+      "median_ns": 585285.0,
+      "throughput_mib_s": 1216.4608,
+      "samples": 4,
+      "throughput_spread_pct": 0.91
+    },
+    "buffa/media_frame/json_encode": {
+      "median_ns": 738500.0,
+      "throughput_mib_s": 964.105,
+      "samples": 4,
+      "throughput_spread_pct": 0.31
+    },
+    "buffa/media_frame/merge": {
+      "median_ns": 35282.0,
+      "throughput_mib_s": 15081.472,
       "samples": 4,
       "throughput_spread_pct": 3.0
     },
-    "buffa/analytics_event/merge": {
-      "median_ns": 1004750.0,
-      "throughput_mib_s": 149.77,
-      "samples": 4,
-      "throughput_spread_pct": 0.88
-    },
-    "buffa/api_response/build_encode": {
-      "median_ns": 190.24,
-      "throughput_mib_s": 611.605,
-      "samples": 4,
-      "throughput_spread_pct": 4.23
-    },
-    "buffa/api_response/build_encode_view": {
-      "median_ns": 94.8805,
-      "throughput_mib_s": 1226.24,
-      "samples": 4,
-      "throughput_spread_pct": 1.95
-    },
-    "buffa/api_response/compute_size": {
-      "median_ns": 817.335,
-      "throughput_mib_s": 7520.0512,
-      "samples": 4,
-      "throughput_spread_pct": 1.3
-    },
-    "buffa/api_response/decode": {
-      "median_ns": 11833.5,
-      "throughput_mib_s": 519.39,
-      "samples": 4,
-      "throughput_spread_pct": 0.29
-    },
-    "buffa/api_response/decode_view": {
-      "median_ns": 7440.5,
-      "throughput_mib_s": 826.08,
-      "samples": 4,
-      "throughput_spread_pct": 1.48
-    },
-    "buffa/api_response/encode": {
-      "median_ns": 3097.35,
-      "throughput_mib_s": 1984.4608,
-      "samples": 4,
-      "throughput_spread_pct": 0.89
-    },
-    "buffa/api_response/encode_view": {
-      "median_ns": 3146.2,
-      "throughput_mib_s": 1953.6384,
-      "samples": 4,
-      "throughput_spread_pct": 1.16
-    },
-    "buffa/api_response/json_decode": {
-      "median_ns": 21641.5,
-      "throughput_mib_s": 489.195,
-      "samples": 4,
-      "throughput_spread_pct": 7.67
-    },
-    "buffa/api_response/json_encode": {
-      "median_ns": 17342.0,
-      "throughput_mib_s": 610.535,
-      "samples": 4,
-      "throughput_spread_pct": 4.49
-    },
-    "buffa/api_response/merge": {
-      "median_ns": 9334.15,
-      "throughput_mib_s": 658.485,
-      "samples": 4,
-      "throughput_spread_pct": 0.28
-    },
-    "buffa/google_message1_proto3/build_encode": {
-      "median_ns": 100.98,
-      "throughput_mib_s": 670.53,
-      "samples": 4,
-      "throughput_spread_pct": 6.27
-    },
-    "buffa/google_message1_proto3/build_encode_view": {
-      "median_ns": 75.895,
-      "throughput_mib_s": 892.17,
-      "samples": 4,
-      "throughput_spread_pct": 0.68
-    },
-    "buffa/google_message1_proto3/compute_size": {
-      "median_ns": 46.5875,
-      "throughput_mib_s": 4667.2896,
-      "samples": 4,
-      "throughput_spread_pct": 1.42
-    },
-    "buffa/google_message1_proto3/decode": {
-      "median_ns": 377.9,
-      "throughput_mib_s": 575.385,
+    "buffa/packed_tile/compute_size": {
+      "median_ns": 194505.0,
+      "throughput_mib_s": 1477.7344,
       "samples": 4,
       "throughput_spread_pct": 1.15
     },
-    "buffa/google_message1_proto3/decode_view": {
-      "median_ns": 286.225,
-      "throughput_mib_s": 759.685,
-      "samples": 4,
-      "throughput_spread_pct": 2.36
-    },
-    "buffa/google_message1_proto3/encode": {
-      "median_ns": 103.875,
-      "throughput_mib_s": 2093.2608,
-      "samples": 4,
-      "throughput_spread_pct": 2.76
-    },
-    "buffa/google_message1_proto3/encode_view": {
-      "median_ns": 105.605,
-      "throughput_mib_s": 2059.008,
-      "samples": 4,
-      "throughput_spread_pct": 23.3
-    },
-    "buffa/google_message1_proto3/json_decode": {
-      "median_ns": 908.685,
-      "throughput_mib_s": 432.4,
-      "samples": 4,
-      "throughput_spread_pct": 0.87
-    },
-    "buffa/google_message1_proto3/json_encode": {
-      "median_ns": 570.825,
-      "throughput_mib_s": 688.34,
-      "samples": 4,
-      "throughput_spread_pct": 1.02
-    },
-    "buffa/google_message1_proto3/merge": {
-      "median_ns": 296.52,
-      "throughput_mib_s": 733.32,
-      "samples": 4,
-      "throughput_spread_pct": 1.86
-    },
-    "buffa/log_record/build_encode": {
-      "median_ns": 2012.0,
-      "throughput_mib_s": 337.955,
-      "samples": 4,
-      "throughput_spread_pct": 4.68
-    },
-    "buffa/log_record/build_encode_view": {
-      "median_ns": 291.22,
-      "throughput_mib_s": 2334.9248,
-      "samples": 4,
-      "throughput_spread_pct": 5.04
-    },
-    "buffa/log_record/compute_size": {
-      "median_ns": 3230.85,
-      "throughput_mib_s": 9404.0576,
-      "samples": 4,
-      "throughput_spread_pct": 0.67
-    },
-    "buffa/log_record/decode": {
-      "median_ns": 69433.0,
-      "throughput_mib_s": 437.59,
-      "samples": 4,
-      "throughput_spread_pct": 1.06
-    },
-    "buffa/log_record/decode_view": {
-      "median_ns": 26240.0,
-      "throughput_mib_s": 1157.9904,
-      "samples": 4,
-      "throughput_spread_pct": 2.76
-    },
-    "buffa/log_record/encode": {
-      "median_ns": 9973.95,
-      "throughput_mib_s": 3046.4,
-      "samples": 4,
-      "throughput_spread_pct": 2.63
-    },
-    "buffa/log_record/encode_view": {
-      "median_ns": 8785.55,
-      "throughput_mib_s": 3458.4064,
-      "samples": 4,
-      "throughput_spread_pct": 1.71
-    },
-    "buffa/log_record/json_decode": {
-      "median_ns": 81032.5,
-      "throughput_mib_s": 460.555,
-      "samples": 4,
-      "throughput_spread_pct": 2.99
-    },
-    "buffa/log_record/json_encode": {
-      "median_ns": 41026.5,
-      "throughput_mib_s": 909.675,
-      "samples": 4,
-      "throughput_spread_pct": 2.48
-    },
-    "buffa/log_record/merge": {
-      "median_ns": 44214.0,
-      "throughput_mib_s": 687.18,
-      "samples": 4,
-      "throughput_spread_pct": 0.88
-    },
-    "buffa/media_frame/build_encode": {
-      "median_ns": 663.88,
-      "throughput_mib_s": 13731.328,
-      "samples": 4,
-      "throughput_spread_pct": 6.12
-    },
-    "buffa/media_frame/build_encode_view": {
-      "median_ns": 267.31,
-      "throughput_mib_s": 34100.224,
-      "samples": 4,
-      "throughput_spread_pct": 2.24
-    },
-    "buffa/media_frame/compute_size": {
-      "median_ns": 2047.1,
-      "throughput_mib_s": 259921.92,
-      "samples": 4,
-      "throughput_spread_pct": 2.36
-    },
-    "buffa/media_frame/decode": {
-      "median_ns": 51071.5,
-      "throughput_mib_s": 10418.688,
-      "samples": 4,
-      "throughput_spread_pct": 2.96
-    },
-    "buffa/media_frame/decode_view": {
-      "median_ns": 12702.5,
-      "throughput_mib_s": 41886.72,
+    "buffa/packed_tile/decode": {
+      "median_ns": 1341850.0,
+      "throughput_mib_s": 214.2,
       "samples": 4,
       "throughput_spread_pct": 0.51
     },
-    "buffa/media_frame/encode": {
-      "median_ns": 20695.0,
-      "throughput_mib_s": 25711.104,
+    "buffa/packed_tile/decode_view": {
+      "median_ns": 1696650.0,
+      "throughput_mib_s": 169.415,
       "samples": 4,
-      "throughput_spread_pct": 1.15
+      "throughput_spread_pct": 3.16
     },
-    "buffa/media_frame/encode_view": {
-      "median_ns": 19524.0,
-      "throughput_mib_s": 27252.736,
+    "buffa/packed_tile/encode": {
+      "median_ns": 612995.0,
+      "throughput_mib_s": 468.895,
       "samples": 4,
-      "throughput_spread_pct": 2.94
+      "throughput_spread_pct": 1.04
     },
-    "buffa/media_frame/json_decode": {
-      "median_ns": 572175.0,
-      "throughput_mib_s": 1244.3648,
+    "buffa/packed_tile/json_decode": {
+      "median_ns": 4137200.0,
+      "throughput_mib_s": 189.81,
       "samples": 4,
-      "throughput_spread_pct": 0.67
+      "throughput_spread_pct": 0.72
     },
-    "buffa/media_frame/json_encode": {
-      "median_ns": 725840.0,
-      "throughput_mib_s": 980.915,
+    "buffa/packed_tile/json_encode": {
+      "median_ns": 2165250.0,
+      "throughput_mib_s": 362.675,
       "samples": 4,
-      "throughput_spread_pct": 0.44
+      "throughput_spread_pct": 0.66
     },
-    "buffa/media_frame/merge": {
-      "median_ns": 37437.5,
-      "throughput_mib_s": 14212.608,
+    "buffa/packed_tile/merge": {
+      "median_ns": 1152450.0,
+      "throughput_mib_s": 249.41,
       "samples": 4,
-      "throughput_spread_pct": 3.08
+      "throughput_spread_pct": 2.31
     }
   }
 }
