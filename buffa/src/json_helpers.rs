@@ -1238,11 +1238,12 @@ proto_elem_json_delegate!(bool, proto_bool);
 proto_elem_json_delegate!(alloc::string::String, proto_string);
 proto_elem_json_delegate!(alloc::vec::Vec<u8>, bytes);
 
-// A custom `string_type`/`bytes_type` element used in a `repeated` / `map`
-// field gets its `ProtoElemJson` impl emitted by codegen into the generating
-// crate (where the type is local), forwarding to the generic `proto_string` /
-// `bytes` with-modules. buffa cannot provide a blanket impl: the element types
-// are foreign and `proto_seq` needs a concrete `ProtoElemJson` bound.
+// Only a custom `bytes` element used in a `repeated` / `map` field gets a
+// codegen-emitted `ProtoElemJson` impl (forwarding to the `bytes` base64
+// with-module) into the generating crate, where the type is local. A custom
+// `string` element does NOT: `repeated_serde_module` returns `None` for
+// `TYPE_STRING`, so a repeated string serializes through the element's own
+// native `Serialize`/`Deserialize` rather than `proto_seq`/`ProtoElemJson`.
 
 // bytes::Bytes — for codegen's `use_bytes_type()` with `repeated bytes`.
 // Serialize: `Bytes: Deref<Target=[u8]>` → `bytes::serialize(&[u8], s)`.

@@ -733,6 +733,11 @@ impl Config {
     /// `[features.utf8_validation = NONE]` on its key, which normalizes the
     /// string key to `bytes` — `strict_utf8_mapping` alone does not trigger it.
     ///
+    /// Note the asymmetry with a **custom** `bytes` representation: the built-in
+    /// `Bytes` here applies to `map<K, bytes>` values, but a
+    /// [`bytes_type_custom`](Self::bytes_type_custom) rule does **not** — custom
+    /// map values stay `Vec<u8>`. Reconciling this is a planned follow-up.
+    ///
     /// [`strict_utf8_mapping`]: Self::strict_utf8_mapping
     ///
     /// # Example
@@ -890,9 +895,11 @@ impl Config {
     /// *first*, then `string_type_in` for narrower overrides — a broad rule
     /// added after a specific one will shadow it.
     ///
-    /// For [`StringRepr::Custom`], the downstream crate must depend on the crate
-    /// providing the type (buffa does not re-export it); the type must satisfy
-    /// `buffa::ProtoString`.
+    /// For [`StringRepr::Custom`], the type must implement `buffa::ProtoString`,
+    /// and the downstream crate must depend on the crate providing it (buffa does
+    /// not re-export it). A foreign type cannot implement `ProtoString` directly
+    /// (orphan rule) — point at a local newtype, or the `buffa-smolstr` crate for
+    /// `smol_str::SmolStr`.
     ///
     /// Only the owned Rust type changes: the wire format is unchanged, view
     /// types still borrow `&str`, and `map<_, string>` keys and values stay
@@ -901,10 +908,9 @@ impl Config {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use buffa_build::StringRepr;
     /// buffa_build::Config::new()
-    ///     .string_type(StringRepr::Custom("::smol_str::SmolStr".to_string()))  // broad default first
-    ///     .string_type_custom_in("::compact_str::CompactString", &[".my.pkg.Msg.body"]) // narrow override
+    ///     .string_type_custom("::buffa_smolstr::SmolStr")  // broad default first
+    ///     .string_type_custom_in("::my_crate::CompactStr", &[".my.pkg.Msg.body"]) // narrow override
     ///     .files(&["proto/my_service.proto"])
     ///     .includes(&["proto/"])
     ///     .compile()
@@ -932,9 +938,10 @@ impl Config {
         self
     }
 
-    /// Map the matching `string` fields to a custom type named by its
-    /// fully-qualified Rust path (e.g. `"::smol_str::SmolStr"`). The type must
-    /// satisfy `buffa::ProtoString`, and the downstream crate must depend on the
+    /// Map the matching `string` fields to a custom type that implements
+    /// `buffa::ProtoString`, named by its fully-qualified Rust path (e.g.
+    /// `"::buffa_smolstr::SmolStr"`, or a local newtype — a foreign type cannot
+    /// implement the trait directly). The downstream crate must depend on the
     /// crate providing it. Shorthand for
     /// [`string_type_in`](Self::string_type_in)`(StringRepr::Custom(path), paths)`.
     ///

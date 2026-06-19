@@ -331,6 +331,8 @@ impl ProtoString for CompactStr {
 }
 ```
 
+If you see a `ProtoString` / `ProtoBytes` bound error pointing at *generated* code, your newtype is missing one of the supertraits — check the full bound list (`Clone + PartialEq + Default + Debug + Send + Sync`, `Deref`, `AsRef`, the `From` conversions, and `from_wire`).
+
 Key points:
 
 - **Point `string_type_custom` at your newtype, not the foreign type.** `string_type_custom("::smol_str::SmolStr")` no longer compiles — use `::buffa_smolstr::SmolStr` or your own newtype path. Add the newtype's crate (e.g. `buffa-smolstr`) to your `Cargo.toml`.
