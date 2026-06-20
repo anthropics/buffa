@@ -162,11 +162,9 @@ pub(crate) fn effective_type_in_map_entry(
 /// `from_i32`, and executes `on_known` with the decoded value bound as `__v`.
 /// Unknown values are silently discarded.
 ///
-/// Retained for the remaining silent-drop cases: view packed-repeated
-/// (no per-element tag → no borrowable span) and map-entry (spec
-/// requires the whole entry go to unknown fields — deferred).
-/// All other paths (owned + view singular/optional/repeated-unpacked/oneof)
-/// use [`closed_enum_decode_with_unknown`].
+/// Retained for view packed-repeated closed enums, where there is no
+/// per-element tag to borrow. Other decode paths either route the value itself
+/// to unknown fields or, for map values, route the whole map entry.
 pub(crate) fn closed_enum_decode(buf_expr: &TokenStream, on_known: TokenStream) -> TokenStream {
     quote! {
         let __raw = ::buffa::types::decode_int32(#buf_expr)?;
@@ -3192,13 +3190,19 @@ fn map_merge_arm(
         &quote! { tag },
         &quote! { ::buffa::encoding::WireType::LengthDelimited },
     );
+    let unknown_fields_arg = if ctx.config.preserve_unknown_fields {
+        quote! { ::core::option::Option::Some((#field_number, &mut self.__buffa_unknown_fields)) }
+    } else {
+        quote! { ::core::option::Option::None }
+    };
     Ok(quote! {
         #field_number => {
             #wire_check
-            ::buffa::map_codec::merge_entry::<#key_codec, #val_codec, _>(
+            ::buffa::map_codec::merge_entry_with_unknowns::<#key_codec, #val_codec, _>(
                 &mut self.#ident,
                 buf,
                 ctx,
+                #unknown_fields_arg,
             )?;
         }
     })

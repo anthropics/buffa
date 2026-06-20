@@ -4,6 +4,24 @@
 use super::varint_field;
 use buffa::Message;
 
+fn priority_map_entry_wire(key: &str, values: &[u64]) -> (Vec<u8>, Vec<u8>) {
+    use buffa::encoding::{encode_varint, Tag, WireType};
+
+    let mut entry = Vec::new();
+    Tag::new(1, WireType::LengthDelimited).encode(&mut entry);
+    buffa::types::encode_string(key, &mut entry);
+    for value in values {
+        Tag::new(2, WireType::Varint).encode(&mut entry);
+        encode_varint(*value, &mut entry);
+    }
+
+    let mut wire = varint_field(1, 2); // ViewCoverage.level = HIGH.
+    Tag::new(3, WireType::LengthDelimited).encode(&mut wire);
+    encode_varint(entry.len() as u64, &mut wire);
+    wire.extend_from_slice(&entry);
+    (entry, wire)
+}
+
 #[test]
 fn test_closed_enum_optional_unknown_to_unknown_fields() {
     use crate::proto2::ClosedEnumContexts;
@@ -173,6 +191,28 @@ fn test_closed_enum_negative_unknown_value_sign_extension() {
     // Round-trip: re-encoded bytes must match exactly (single field).
     let re = msg.encode_to_vec();
     assert_eq!(re, wire);
+}
+
+#[test]
+fn test_closed_enum_map_unknown_value_preserves_whole_entry() {
+    use crate::proto2::{Priority, ViewCoverage};
+
+    // Field 3 is map<string, Priority>. The entry has key "bad", an unknown
+    // enum value, then a known value. The unknown occurrence taints the whole
+    // map entry, so the later known value must not insert "bad" -> HIGH.
+    let (entry, wire) = priority_map_entry_wire("bad", &[99, 2]);
+    let msg = ViewCoverage::decode(&mut wire.as_slice()).unwrap();
+
+    assert_eq!(msg.level, Priority::HIGH);
+    assert!(msg.priorities.is_empty());
+    let unknowns: Vec<_> = msg.__buffa_unknown_fields.iter().collect();
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(unknowns[0].number, 3);
+    assert!(matches!(
+        &unknowns[0].data,
+        buffa::UnknownFieldData::LengthDelimited(payload) if payload == &entry
+    ));
+    assert_eq!(msg.encode_to_vec(), wire);
 }
 
 // ── View decoder: same semantics ──────────────────────────────────────

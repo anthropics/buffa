@@ -1454,6 +1454,7 @@ pub(crate) fn map_decode_arm(
     field: &FieldDescriptorProto,
 ) -> Result<TokenStream, CodeGenError> {
     let MessageScope { ctx, features, .. } = scope;
+    let preserve_unknown_fields = ctx.config.preserve_unknown_fields;
     let field_name = field
         .name
         .as_deref()
@@ -1479,8 +1480,21 @@ pub(crate) fn map_decode_arm(
         _ => quote! { ::core::default::Default::default() },
     };
 
-    let decode_key = map_view_entry_decode(scope, key_fd, &format_ident!("key"))?;
-    let decode_val = map_view_entry_decode(scope, val_fd, &format_ident!("val"))?;
+    let decode_key = map_view_entry_decode(scope, key_fd, &format_ident!("key"), None)?;
+    let decode_val = map_view_entry_decode(
+        scope,
+        val_fd,
+        &format_ident!("val"),
+        Some(quote! { __entry_unknown = true; }),
+    )?;
+    let preserve_unknown_entry = if preserve_unknown_fields {
+        quote! {
+            let __span_len = before_tag.len() - cur.len();
+            view.__buffa_unknown_fields.push_record(before_tag, __span_len, ctx)?;
+        }
+    } else {
+        quote! {}
+    };
 
     Ok(quote! {
         #field_number => {
@@ -1489,6 +1503,7 @@ pub(crate) fn map_decode_arm(
             let mut entry_cur: &'a [u8] = entry_bytes;
             let mut key = #key_default;
             let mut val = #val_default;
+            let mut __entry_unknown = false;
             while !entry_cur.is_empty() {
                 let entry_tag = ::buffa::encoding::Tag::decode(&mut entry_cur)?;
                 match entry_tag.field_number() {
@@ -1497,7 +1512,11 @@ pub(crate) fn map_decode_arm(
                     _ => { ::buffa::encoding::skip_field_depth(entry_tag, &mut entry_cur, ctx.depth())?; }
                 }
             }
-            view.#ident.push(key, val);
+            if __entry_unknown {
+                #preserve_unknown_entry
+            } else {
+                view.#ident.push(key, val);
+            }
         }
     })
 }
@@ -1510,6 +1529,7 @@ fn map_view_entry_decode(
     scope: MessageScope<'_>,
     fd: &FieldDescriptorProto,
     var: &proc_macro2::Ident,
+    closed_enum_unknown: Option<TokenStream>,
 ) -> Result<TokenStream, CodeGenError> {
     let MessageScope {
         ctx,
@@ -1526,7 +1546,15 @@ fn map_view_entry_decode(
         Type::TYPE_BYTES => quote! { #var = ::buffa::types::borrow_bytes(&mut entry_cur)?; },
         Type::TYPE_ENUM => {
             if is_closed_enum(features) {
-                closed_enum_decode(&quote! { &mut entry_cur }, quote! { #var = __v; })
+                if let Some(on_unknown) = closed_enum_unknown {
+                    closed_enum_decode_with_unknown(
+                        &quote! { &mut entry_cur },
+                        quote! { #var = __v; },
+                        on_unknown,
+                    )
+                } else {
+                    closed_enum_decode(&quote! { &mut entry_cur }, quote! { #var = __v; })
+                }
             } else {
                 quote! { #var = ::buffa::EnumValue::from(::buffa::types::decode_int32(&mut entry_cur)?); }
             }

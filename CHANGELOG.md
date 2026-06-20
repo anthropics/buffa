@@ -231,6 +231,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **Closed-enum map values now preserve unknown entries correctly.** For
+  proto2 `map<K, ClosedEnum>` fields, an unknown enum value now prevents the
+  map entry from being inserted and routes the whole original map-entry record
+  to unknown fields. This fixes the previous default-valued entry synthesis
+  (`key -> E::default()`) and applies to owned and view decode paths.
+
 - **`DecodeOptions::decode_length_delimited_reader` no longer allocates the
   wire-declared length up front.** The method previously allocated a zeroed
   buffer of the declared length before reading, so a source that declared a
