@@ -160,7 +160,6 @@ tasks:
       tests, then conformance suite.  Stops on first failure.
     cmds:
       - task: lint
-      - task: lint-md
       - task: test
       - task: conformance
 
@@ -186,10 +185,11 @@ tasks:
       - cargo test -p buffa-codegen --test codegen_integration
 
   lint:
-    desc: Run rustfmt check and clippy (all targets) with warnings as errors.
+    desc: Run rustfmt check, clippy (all targets, warnings as errors), and markdownlint.
     cmds:
       - cargo fmt --all --check
       - cargo clippy --workspace --all-targets -- -D warnings
+      - task: lint-md
 
   lint-md:
     desc: >-
