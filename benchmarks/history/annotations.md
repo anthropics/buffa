@@ -22,15 +22,26 @@ a given number can be trusted, rather than reading it off the chart.
 
 ## Headline cross-release findings (v0.1.0 → v0.7.1)
 
-Improvements that clear the band:
+Read these as **directional**. As "Code layout is the dominant noise source"
+below shows, clearing the ±5% band is necessary but *not sufficient* for a
+movement to be real — layout artifacts can exceed 24%. The reliable test is
+persistence: a change that steps to a new level and *holds* across later releases
+is real; one that alternates and reverts is layout. Apply that test before
+attributing any single number to buffa's code.
 
-- **PackedTile `decode_view` +43%** and **MediaFrame `json_encode` +40%** — the
-  largest gains. JSON encoding improved broadly across shapes over the series, and
-  the packed-tile view-decode path got substantially faster.
+Improvements:
+
+- **PackedTile `decode_view` +43%** and **MediaFrame `json_encode`'s ~27% step at
+  v0.6.0** are the clearest gains — both are large and persist across the releases
+  after them. (MediaFrame's full-range "+40%" mixes that real step with layout
+  noise.)
 - ApiResponse `decode_view` +10%, AnalyticsEvent `merge` +10%, LogRecord
-  `decode_view` +6% — eager-view decode and merge improved for several shapes.
+  `decode_view` +6% — smaller eager-view / merge gains; directional only.
+- Note: JSON encode did **not** improve broadly. The string/scalar-heavy shapes
+  (LogRecord, ApiResponse) only *flap* on `json_encode` — that is code layout, not
+  a gain (see below).
 
-Regressions that clear the band:
+Regressions:
 
 - **AnalyticsEvent `encode` −14%** and **`compute_size` −10%** — the deeply
   nested, repeated-submessage shape lost ground on the owned encode and size
@@ -42,6 +53,43 @@ Regressions that clear the band:
 Everything else is flat within the band: buffa's core binary `decode`/`encode`/
 `merge` for the flat and string-heavy shapes has held steady across eight
 releases, which is the reassuring headline.
+
+## Code layout is the dominant noise source
+
+Per-message isolation removed cross-message coupling, but a subtler effect is now
+the limiting factor on resolution: the **placement** of otherwise-identical code.
+The clearest case is `json_encode` for the string/scalar-heavy shapes, which
+*flaps* — LogRecord and ApiResponse both run ~24% faster at v0.5.0 and v0.7.0 and
+slower at the releases between, in lockstep, which no real code change would do.
+
+Disassembling the fast (v0.5.0) and slow (v0.6.0) isolated LogRecord binaries
+settled it: **2390 of 2393 functions are byte-identical** after normalising
+addresses. The only three that differ are `__rust_alloc_zeroed`, a `raw_vec`
+error path, and `main` — none in the encode path. `serialize_str` and
+`format_escaped_str`, the string-escaping hot loop that dominates this shape, are
+identical instruction-for-instruction, just located at different addresses. A
+trivial source change between releases shifts a few glue functions' sizes, which
+shifts every later function's address, so the *same* hot loop lands at a different
+alignment / cache-line packing and runs up to 24% faster or slower **with no code
+change**. It reproduces across campaigns because, for a given binary, the layout
+is fixed — deterministic, but not meaningful.
+
+What this means for reading the history:
+
+- **Clearing the ±5% band is not sufficient.** Layout artifacts routinely exceed
+  it (this one was 24%); the band catches typical noise, not this.
+- **Trust persistent steps, not flaps.** A change that steps and holds is real
+  (MediaFrame `json_encode` from v0.6.0); a value that alternates and reverts is
+  layout (LogRecord/ApiResponse `json_encode`).
+- **Weight by operation.** `compute_size`, `decode`, and `decode_view` are
+  layout-stable; the `encode` and JSON paths have tight, alignment-sensitive hot
+  loops and are the least trustworthy. The "Measurement spread" table in
+  [REPORT.md](REPORT.md) ranks them.
+
+Eliminating this would mean averaging over many build layouts per cell (BOLT-style)
+or pinning alignment with compiler flags — neither is in place. So treat this
+history as a reliable detector of **large, persistent** shifts and a poor
+instrument for sub-~10% changes on the layout-sensitive operations.
 
 ## Why this replaced the earlier (sparse, coupled) history
 
@@ -59,11 +107,12 @@ only at the release that added it to the suite.
 
 ## Caveats
 
-These are medians of fifteen cores with per-benchmark spread recorded. The
-headline movers above reproduced across two independent metal campaigns (an
-earlier median-of-four run and this median-of-fifteen one), which is the main
-evidence they are real rather than run artifacts; a delta inside the ±5% band is
-noise. The matrix covers the seven portable operations (decode, merge, encode,
+These are medians of fifteen cores with per-benchmark spread recorded.
+Reproduction across the two metal campaigns (median-of-four and median-of-fifteen)
+rules out random run noise — but **not** layout artifacts, which are deterministic
+per binary and reproduce just as cleanly (the `json_encode` flap above did). The
+real-versus-layout test is persistence across *releases*, not reproduction across
+*runs*. The matrix covers the seven portable operations (decode, merge, encode,
 compute_size, decode_view, json_encode, json_decode) — the bespoke
 `encode_view`/`build_encode` benchmarks use newer, view-encode APIs that did not
 exist in older releases, so they are not part of the dense matrix and remain only
