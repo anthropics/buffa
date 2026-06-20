@@ -22,6 +22,7 @@ exclude = [
     "examples/addressbook",
     "examples/bsr-quickstart",
     "examples/conflicts",
+    "examples/custom-types",
     "examples/envelope",
     "examples/logging",
 ]
