@@ -33,8 +33,7 @@ fn benchmark_decode<M: Message + Default>(c: &mut Criterion, name: &str, dataset
     group.bench_function("decode", |b| {
         b.iter(|| {
             for payload in &dataset.payload {
-                let msg = M::decode_from_slice(payload).unwrap();
-                criterion::black_box(&msg);
+                criterion::black_box(M::decode_from_slice(payload).unwrap());
             }
         });
     });
@@ -58,8 +57,7 @@ fn benchmark_decode<M: Message + Default>(c: &mut Criterion, name: &str, dataset
             .collect();
         b.iter(|| {
             for msg in &messages {
-                let encoded = msg.encode_to_vec();
-                criterion::black_box(&encoded);
+                criterion::black_box(msg.encode_to_vec());
             }
         });
     });
@@ -111,8 +109,7 @@ fn benchmark_json<M: Message + Default + Serialize + DeserializeOwned>(
     group.bench_function("json_encode", |b| {
         b.iter(|| {
             for msg in &messages {
-                let json = serde_json::to_string(msg).unwrap();
-                criterion::black_box(&json);
+                criterion::black_box(serde_json::to_string(msg).unwrap());
             }
         });
     });
@@ -121,7 +118,7 @@ fn benchmark_json<M: Message + Default + Serialize + DeserializeOwned>(
         b.iter(|| {
             for json in &json_strings {
                 let msg: M = serde_json::from_str(json).unwrap();
-                criterion::black_box(&msg);
+                criterion::black_box(msg);
             }
         });
     });

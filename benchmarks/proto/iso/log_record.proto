@@ -1,0 +1,28 @@
+syntax = "proto3";
+package bench;
+
+message LogRecord {
+  int64 timestamp_nanos = 1;
+  string service_name = 2;
+  string instance_id = 3;
+
+  enum Severity {
+    UNSPECIFIED = 0;
+    DEBUG = 1;
+    INFO = 2;
+    WARN = 3;
+    ERROR = 4;
+  }
+  Severity severity = 4;
+  string message = 5;
+  map<string, string> labels = 6;
+  string trace_id = 7;
+  string span_id = 8;
+
+  message Context {
+    string file = 1;
+    int32 line = 2;
+    string function = 3;
+  }
+  optional Context source = 9;
+}

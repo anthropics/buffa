@@ -1,0 +1,11 @@
+syntax = "proto3";
+package bench;
+
+message MediaFrame {
+  string frame_id = 1;
+  int64 timestamp_nanos = 2;
+  string content_type = 3;
+  bytes body = 4;                     // primary payload, ~1-10 KB
+  repeated bytes chunks = 5;          // 2-6 sub-chunks, ~200-2000 bytes each
+  map<string, bytes> attachments = 6; // 0-4 named sub-blobs
+}

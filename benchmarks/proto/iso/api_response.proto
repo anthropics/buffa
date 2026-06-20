@@ -1,0 +1,13 @@
+syntax = "proto3";
+package bench;
+
+message ApiResponse {
+  int64 request_id = 1;
+  int32 status_code = 2;
+  string message = 3;
+  double latency_ms = 4;
+  bool cached = 5;
+  optional string trace_id = 6;
+  optional int64 retry_after_ms = 7;
+  repeated string tags = 8;
+}

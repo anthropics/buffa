@@ -296,6 +296,28 @@ tasks:
     cmds:
       - cargo bench -- --baseline {{.CLI_ARGS}}
 
+  bench-iso:
+    desc: >-
+      Run ONE message's benchmarks in isolation — only that message's decoder is
+      compiled, so no other shape's codegen can perturb it via inlining. Built at
+      the reproducible profile (lto=true, codegen-units=1) used for the per-shape
+      benchmark history. Takes a bare message name only (no extra criterion args):
+      task bench-iso -- media_frame
+    dir: benchmarks/buffa
+    env:
+      CARGO_PROFILE_BENCH_LTO: "true"
+      CARGO_PROFILE_BENCH_CODEGEN_UNITS: "1"
+    cmds:
+      - cargo bench --no-default-features --features "iso,{{.CLI_ARGS}}" --bench {{.CLI_ARGS}}
+
+  check-iso-protos:
+    desc: >-
+      Assert benchmarks/proto/iso/*.proto stay field-identical to the message
+      blocks in bench_messages.proto (the shape source for the prost/cross-impl
+      harnesses and dataset generation). Run after editing any benchmark message.
+    cmds:
+      - python3 benchmarks/proto/check-iso-protos.py
+
   bench-prost:
     desc: >-
       Run prost benchmarks natively (same machine as `task bench`, so

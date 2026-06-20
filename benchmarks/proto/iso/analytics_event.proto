@@ -1,0 +1,26 @@
+syntax = "proto3";
+package bench;
+
+message AnalyticsEvent {
+  string event_id = 1;
+  int64 timestamp = 2;
+  string user_id = 3;
+
+  message Property {
+    string key = 1;
+    oneof value {
+      string string_value = 2;
+      int64 int_value = 3;
+      double double_value = 4;
+      bool bool_value = 5;
+    }
+  }
+  repeated Property properties = 4;
+
+  message Nested {
+    string name = 1;
+    repeated Property attributes = 2;
+    repeated Nested children = 3;
+  }
+  repeated Nested sections = 5;
+}
