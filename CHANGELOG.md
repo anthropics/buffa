@@ -8,6 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **Custom owned `string` types for `map` keys and values** (#156). A `string_type`
+  rule (`string_type_custom` / `string_type_custom_in`) now also applies to a
+  `map<string, V>` key and a `map<K, string>` value — one rule on the map field
+  path covers both slots of a `map<string, string>` — mirroring how `bytes_type`
+  already reaches `map<K, bytes>` values. The element decodes/encodes through the
+  new sealed `buffa::map_codec::ProtoStringMap<S>` codec; no new build knob. The
+  wire format is unchanged and view types still borrow `&str`. Requirements on
+  the custom type when used in a map: `Hash + Eq` (or `Ord` for
+  `map_type(BTreeMap)`) for a key; `serde::Serialize` / `Deserialize` for JSON;
+  and — because the map paths have no per-key generic shim — a crate-local
+  newtype (vtable reflection emits `ReflectMapKey` / `ReflectElement` for it) and
+  its own `Arbitrary` impl under `generate_arbitrary`. Custom-string-keyed maps
+  whose value needs proto3-JSON encoding (int64/float/bytes) serialize through a
+  new `proto_str_key_map` `with`-module (the existing `proto_map` requires
+  `Display + FromStr`, which a `ProtoString` need not implement).
+
 - **Pluggable owned map container for `map<K, V>` fields** (#156). A new
   `buffa::MapStorage` trait (with associated `Key` / `Value` types) selects the
   owned map collection, via `buffa_build`'s `map_type` / `map_type_custom` knobs.

@@ -5,7 +5,9 @@ package vtable_string_repr;
 // Built with `string_type(SmolStr)` + `reflect_mode(VTable)` to exercise the
 // `ReflectElement for SmolStr` impl on the repeated-string element path. The
 // owned `items` field is `Vec<SmolStr>`; singular `name` is `SmolStr` (reflects
-// via deref, no `ReflectElement`); the map stays `String`-keyed/valued.
+// via deref, no `ReflectElement`). The custom rule is scoped to `name`/`items`,
+// so `attrs` stays a `String`-keyed/valued control (custom string map keys are
+// covered separately by `string_map.proto`).
 message Labels {
   string name = 1;
   repeated string items = 2;

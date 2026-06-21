@@ -1445,6 +1445,13 @@ struct FieldInfo {
     /// features — that field is TYPE_MESSAGE so the overlay doesn't fire.
     /// See `map_serde_module`.
     map_value_enum_closed: Option<bool>,
+    /// `true` when the map **key** is proto `string` *and* a custom
+    /// `string_type` representation is configured for the field. The JSON
+    /// `proto_map` module stringifies keys via `Display` / `FromStr`, which a
+    /// `ProtoString` newtype need not implement, so such a key routes through
+    /// `proto_str_key_map` (serde-based key handling) instead. See
+    /// `map_serde_module`.
+    map_key_custom_string: bool,
     /// The bare inner type `T` when `is_optional = true` (`rust_type` is `Option<T>`).
     /// `None` for all non-optional fields.
     inner_opt_type: Option<TokenStream>,
@@ -1511,15 +1518,25 @@ fn classify_field(
     let bytes_type = || bytes_repr.type_path(resolver, ctx, nesting);
 
     // Configurable owned representation for `string` fields (default `String`).
-    // Map keys/values are unaffected — they always use `String`. (The bytes
-    // path now propagates `bytes_fields` to map values via
-    // `map_value_use_bytes`; the string path has no equivalent yet.)
+    // The same `string_type` rule (keyed on the field path) also covers a map's
+    // `string` key/value slots — see `map_string_repr` below. (The bytes path
+    // propagates `bytes_fields` to map values via `map_value_bytes_repr`.)
     let string_repr = if field_type == Type::TYPE_STRING {
         ctx.string_repr(&field_fqn)
     } else {
         crate::StringRepr::String
     };
     let string_type = || string_repr.type_path(resolver, ctx, nesting);
+
+    // String representation for a map field's `string` slots (key and/or value).
+    // The outer map field's `field_type` is MESSAGE (synthetic entry), so the
+    // `string_repr` above is `String`; this looks the rule up on the same field
+    // path. It is a no-op for any non-`string` slot inside `map_rust_type_from_entry`.
+    let map_string_repr = if is_map {
+        ctx.string_repr(&field_fqn)
+    } else {
+        crate::StringRepr::String
+    };
 
     // Configurable owned map collection for `map` fields (default `HashMap`).
     let map_repr = if is_map {
@@ -1541,7 +1558,14 @@ fn classify_field(
 
     let mut inner_opt_type: Option<TokenStream> = None;
     let rust_type = if let Some(entry) = map_entry {
-        map_rust_type_from_entry(scope, entry, &map_value_bytes_repr, &map_repr, resolver)?
+        map_rust_type_from_entry(
+            scope,
+            entry,
+            &map_value_bytes_repr,
+            &map_string_repr,
+            &map_repr,
+            resolver,
+        )?
     } else if is_repeated {
         let elem = if field_type == Type::TYPE_BYTES {
             bytes_type()?
@@ -1618,6 +1642,9 @@ fn classify_field(
         None
     };
 
+    let map_key_custom_string = map_key_type == Some(Type::TYPE_STRING)
+        && matches!(map_string_repr, crate::StringRepr::Custom(_));
+
     Ok(FieldInfo {
         rust_type,
         struct_field_type,
@@ -1632,6 +1659,7 @@ fn classify_field(
         map_key_type,
         map_value_type,
         map_value_enum_closed,
+        map_key_custom_string,
         inner_opt_type,
     })
 }
@@ -1872,6 +1900,7 @@ fn map_rust_type_from_entry(
     scope: MessageScope<'_>,
     entry: &DescriptorProto,
     value_bytes_repr: &crate::BytesRepr,
+    string_repr: &crate::StringRepr,
     map_repr: &crate::MapRepr,
     resolver: &crate::imports::ImportResolver,
 ) -> Result<TokenStream, CodeGenError> {
@@ -1893,21 +1922,24 @@ fn map_rust_type_from_entry(
         .find(|f| f.number == Some(2))
         .ok_or(CodeGenError::MissingField("map_entry.value"))?;
 
-    let key_type = scalar_or_message_type_nested(
-        ctx,
-        key_field,
-        current_package,
-        nesting,
-        features,
-        resolver,
-    )?;
-    let value_type = if crate::impl_message::effective_type_in_map_entry(ctx, value_field, features)
-        == Type::TYPE_BYTES
-        && !value_bytes_repr.is_default()
+    // A custom `string_type` applies to whichever slot is proto `string`; the
+    // same outer-field-path rule covers both slots of a `map<string, string>`.
+    let key_type = if crate::impl_message::effective_type_in_map_entry(ctx, key_field, features)
+        == Type::TYPE_STRING
+        && !string_repr.is_default()
     {
+        string_repr.type_path(resolver, ctx, nesting)?
+    } else {
+        scalar_or_message_type_nested(ctx, key_field, current_package, nesting, features, resolver)?
+    };
+    let value_effective =
+        crate::impl_message::effective_type_in_map_entry(ctx, value_field, features);
+    let value_type = if value_effective == Type::TYPE_BYTES && !value_bytes_repr.is_default() {
         // Custom / Bytes map-value representation (Vec<u8> falls through to the
         // default scalar path below).
         value_bytes_repr.type_path(resolver, ctx, nesting)?
+    } else if value_effective == Type::TYPE_STRING && !string_repr.is_default() {
+        string_repr.type_path(resolver, ctx, nesting)?
     } else {
         scalar_or_message_type_nested(
             ctx,
@@ -2148,7 +2180,13 @@ fn map_serde_module(info: &FieldInfo) -> Option<&'static str> {
     let is_string_key = matches!(info.map_key_type, Some(Type::TYPE_STRING));
     if value_needs_proto_json(value_ty) {
         // Value needs special encoding (int64 quoted, bytes base64, etc.).
-        Some("::buffa::json_helpers::proto_map")
+        // A custom-`ProtoString` key lacks the `Display`/`FromStr` that
+        // `proto_map` requires, so route it through the serde-keyed twin.
+        Some(if info.map_key_custom_string {
+            "::buffa::json_helpers::proto_str_key_map"
+        } else {
+            "::buffa::json_helpers::proto_map"
+        })
     } else if is_string_key {
         // String key + simple value: derive is proto-JSON compliant, zero overhead.
         None
