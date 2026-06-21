@@ -191,7 +191,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   indices `< len`, so the single `assume_init` in `consume_next` is sound. This
   invariant is private to the `size_cache` module (no external code can break
   it — worst case is a panic, never UB) and is checked mechanically in CI by a
-  Miri job over the `size_cache` tests. No API or wire-format change. (#218)
+  Miri job over the `size_cache` tests. No API or wire-format change. (#223)
 
 - Generated decode arms (owned merge, view decode, lazy record arms,
   map-entry loops) emit a single `::buffa::encoding::check_wire_type` call
