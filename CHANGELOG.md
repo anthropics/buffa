@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - **`buffa::SizeCachePool` — opt-in reuse of the encode size-cache spill
-  allocation** (#NNN). Every `encode` / `encoded_len` builds a fresh
+  allocation** (#225). Every `encode` / `encoded_len` builds a fresh
   `SizeCache`; its inline storage is free, but a message with more than the
   inline capacity of nested length-delimited sub-messages (deeply nested,
   repeated-sub-message shapes) spills to a heap `Vec` on every encode.
