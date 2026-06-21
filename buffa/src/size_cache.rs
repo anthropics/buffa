@@ -292,11 +292,11 @@ impl SizeCache {
 ///   inline-free, so `max_capacity = N` retains up to `N * 4` bytes per buffer
 ///   and keeps the allocation warm for messages with up to `N + 16` nested
 ///   sub-messages. Set it at or above your steady-state spill size — below it,
-///   every encode regrows the buffer and `give` shrinks it back, which is worse
+///   every encode regrows the buffer and `release` shrinks it back, which is worse
 ///   than not pooling. A few hundred is a sensible starting point.
 ///
 /// Passing `0` for either bound disables retention (the pool then always
-/// allocates a fresh cache per `take`).
+/// allocates a fresh cache per `acquire`).
 ///
 /// # Example: a thread-local pool
 ///
@@ -354,13 +354,13 @@ impl SizeCachePool {
 
     /// Check out a cache, reusing a pooled spill buffer if one is available.
     ///
-    /// Pair with [`give`](Self::give) to return it. The convenience methods
+    /// Pair with [`release`](Self::release) to return it. The convenience methods
     /// ([`encode`](Self::encode), [`encode_view`](Self::encode_view),
-    /// [`encoded_len`](Self::encoded_len)) do the take/return for you; use
-    /// `take`/`give` directly only for manual `compute_size` / `write_to`.
+    /// [`encoded_len`](Self::encoded_len)) do the acquire/return for you; use
+    /// `acquire`/`release` directly only for manual `compute_size` / `write_to`.
     #[inline]
     #[must_use]
-    pub fn take(&mut self) -> SizeCache {
+    pub fn acquire(&mut self) -> SizeCache {
         match self.free.pop() {
             Some(buf) => SizeCache::with_spill_buffer(buf),
             None => SizeCache::new(),
@@ -373,7 +373,7 @@ impl SizeCachePool {
     /// `max_capacity` of `0`, is dropped rather than retained — the free-list
     /// never holds a zero-capacity buffer that would yield no reuse.
     #[inline]
-    pub fn give(&mut self, cache: SizeCache) {
+    pub fn release(&mut self, cache: SizeCache) {
         if self.free.len() >= self.max_buffers {
             return;
         }
@@ -384,7 +384,7 @@ impl SizeCachePool {
             buf.shrink_to(self.max_capacity);
         }
         // After the shrink: skip never-spilled (cap 0) and shrunk-to-0 buffers —
-        // a zero-capacity slot in the free-list yields no reuse on `take`.
+        // a zero-capacity slot in the free-list yields no reuse on `acquire`.
         if buf.capacity() == 0 {
             return;
         }
@@ -397,9 +397,9 @@ impl SizeCachePool {
     #[inline]
     #[must_use]
     pub fn encoded_len<M: crate::Message>(&mut self, msg: &M) -> u32 {
-        let mut cache = self.take();
+        let mut cache = self.acquire();
         let len = msg.compute_size(&mut cache);
-        self.give(cache);
+        self.release(cache);
         len
     }
 
@@ -408,9 +408,9 @@ impl SizeCachePool {
     /// The pooled equivalent of [`Message::encode`](crate::Message::encode).
     #[inline]
     pub fn encode<M: crate::Message>(&mut self, msg: &M, buf: &mut impl bytes::BufMut) {
-        let mut cache = self.take();
+        let mut cache = self.acquire();
         msg.encode_with_cache(&mut cache, buf);
-        self.give(cache);
+        self.release(cache);
     }
 
     /// Encode a borrowed message view into `buf`, reusing a pooled spill buffer.
@@ -422,9 +422,9 @@ impl SizeCachePool {
         view: &V,
         buf: &mut impl bytes::BufMut,
     ) {
-        let mut cache = self.take();
+        let mut cache = self.acquire();
         view.encode_with_cache(&mut cache, buf);
-        self.give(cache);
+        self.release(cache);
     }
 }
 
@@ -589,12 +589,12 @@ mod tests {
     /// Drive a cache from the pool through enough reserves to force a spill,
     /// fill the slots, then return it.
     fn spill_and_return(pool: &mut SizeCachePool, slots: usize) {
-        let mut c = pool.take();
+        let mut c = pool.acquire();
         for i in 0..slots {
             let s = c.reserve();
             c.set(s, i as u32);
         }
-        pool.give(c);
+        pool.release(c);
     }
 
     #[test]
@@ -628,8 +628,8 @@ mod tests {
         spill_and_return(&mut pool, INLINE_CAP + 5);
         assert_eq!(pool.free.len(), 1, "spilled buffer retained");
         let grown = pool.free[0].capacity();
-        // Next take hands back the grown buffer.
-        let c = pool.take();
+        // Next acquire hands back the grown buffer.
+        let c = pool.acquire();
         assert!(c.spill.capacity() >= grown, "spill capacity reused");
         assert_eq!(c.len, 0);
     }
@@ -637,10 +637,10 @@ mod tests {
     #[test]
     fn pool_does_not_retain_non_spilling_caches() {
         let mut pool = SizeCachePool::new(4, 1024);
-        let mut c = pool.take();
+        let mut c = pool.acquire();
         let s = c.reserve(); // stays inline, no heap buffer
         c.set(s, 1);
-        pool.give(c);
+        pool.release(c);
         assert!(pool.free.is_empty(), "empty (cap 0) buffers are not pooled");
     }
 
@@ -664,11 +664,11 @@ mod tests {
     }
 
     #[test]
-    fn pool_take_give_default_is_empty() {
+    fn pool_acquire_release_default_is_empty() {
         let mut pool = SizeCachePool::new(2, 64);
-        let c = pool.take(); // empty pool -> fresh cache
+        let c = pool.acquire(); // empty pool -> fresh cache
         assert_eq!(c.len, 0);
-        pool.give(c); // never spilled -> dropped
+        pool.release(c); // never spilled -> dropped
         assert!(pool.free.is_empty());
     }
 
@@ -692,7 +692,7 @@ mod tests {
             "max_capacity 0 retains no (zero-capacity) buffers"
         );
         // And the pool still yields a usable cache.
-        let mut c = pool.take();
+        let mut c = pool.acquire();
         let s = c.reserve();
         c.set(s, 9);
         assert_eq!(c.consume_next(), 9);
