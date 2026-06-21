@@ -106,6 +106,33 @@ jobs:
       - name: Check (MSRV 1.87)
         run: cargo check --workspace --all-targets
 
+  # ── Miri: proves the SizeCache `unsafe` reads no uninitialized memory ─────
+  # SizeCache stores its inline slots as `MaybeUninit<u32>` to avoid zeroing the
+  # whole array on every encode; `consume_next` reads them via `assume_init`.
+  # Miri tracks per-byte init state, so this job mechanically verifies the
+  # soundness invariant (slots < len are initialized) on every reserve / set /
+  # consume / clear / spill path the size_cache tests exercise. Scoped to that
+  # module to keep the (interpreted, slow) run fast.
+  miri:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # rust-toolchain.toml pins the dev toolchain and overrides `rustup default`,
+    # so RUSTUP_TOOLCHAIN is needed to actually run on nightly (where Miri lives).
+    env:
+      RUSTUP_TOOLCHAIN: nightly
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+          components: miri
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1 (sha-pinned)
+
+      - name: Miri (size_cache soundness)
+        run: cargo miri test -p buffa size_cache
+
   # ── no_std and 32-bit compilation checks ─────────────────────────────────
   check-nostd:
     runs-on: ubuntu-latest

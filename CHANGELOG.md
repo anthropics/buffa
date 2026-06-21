@@ -181,6 +181,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `SizeCache` no longer zeroes its inline slot array on construction. A fresh
+  cache is built for every `encode`/`compute_size`, and because it is passed by
+  `&mut` to an out-of-line `compute_size` the compiler cannot elide the unused
+  tail, so the previous `[0u32; N]` initializer emitted `N/4` SSE stores on
+  every encode (confirmed by disassembly). The inline storage is now
+  `[MaybeUninit<u32>; N]`, written only for the slots actually used; a slot is
+  always written by `reserve` before `len` advances past it and read only at
+  indices `< len`, so the single `assume_init` in `consume_next` is sound. This
+  invariant is private to the `size_cache` module (no external code can break
+  it — worst case is a panic, never UB) and is checked mechanically in CI by a
+  Miri job over the `size_cache` tests. No API or wire-format change. (#218)
+
 - Generated decode arms (owned merge, view decode, lazy record arms,
   map-entry loops) emit a single `::buffa::encoding::check_wire_type` call
   instead of a seven-line inline wire-type guard (~1,100 sites across a
