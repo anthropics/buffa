@@ -8,6 +8,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **`buffa::SizeCachePool` — opt-in reuse of the encode size-cache spill
+  allocation** (#NNN). Every `encode` / `encoded_len` builds a fresh
+  `SizeCache`; its inline storage is free, but a message with more than the
+  inline capacity of nested length-delimited sub-messages (deeply nested,
+  repeated-sub-message shapes) spills to a heap `Vec` on every encode.
+  `SizeCachePool` is a caller-owned free-list of those spill buffers — keep one
+  in a `thread_local!` or a request/connection context and call `pool.encode`,
+  `pool.encode_view`, or `pool.encoded_len` to reuse one allocation across many
+  encodes. buffa holds no global state; only the spill `Vec` is pooled (each
+  cache's inline array stays on the stack), so routing small messages through a
+  pool costs only a `Vec` pop/push of an empty buffer — no allocation, no
+  thread-local, no synchronization — and the pool is `alloc`-only (`no_std`-OK).
+  Bounded by `max_buffers` (free-list length) and `max_capacity` (per-buffer
+  capacity, shrunk on return). Also adds `SizeCache::with_spill_buffer` /
+  `into_spill_buffer` to source/sink the spill buffer for manual reuse. Additive
+  and non-breaking; the default `encode` path is unchanged.
+
 - **Pluggable owned map container for `map<K, V>` fields** (#156). A new
   `buffa::MapStorage` trait (with associated `Key` / `Value` types) selects the
   owned map collection, via `buffa_build`'s `map_type` / `map_type_custom` knobs.

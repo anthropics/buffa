@@ -254,7 +254,7 @@ pub use message::{
 };
 pub use message_field::{DefaultInstance, MessageField, ProtoBox};
 pub use oneof::Oneof;
-pub use size_cache::SizeCache;
+pub use size_cache::{SizeCache, SizeCachePool};
 pub use types::{ProtoBytes, ProtoList, ProtoString, WirePayload};
 pub use unknown_fields::{UnknownField, UnknownFieldData, UnknownFields};
 
