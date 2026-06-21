@@ -97,5 +97,5 @@
   <text x="650" y="149" class="legend-text">MediaFrame</text>
   <rect x="632" y="160" width="12" height="12" rx="2" fill="#B279A2"/>
   <text x="650" y="171" class="legend-text">PackedTile</text>
-  <text x="56" y="406.0" class="footnote">Shaded band: ±5% run-to-run noise floor — a line staying inside it did not change beyond noise.</text>
+  <text x="56" y="406.0" class="footnote">Shaded band: ±5% run-to-run noise floor — a line staying inside it moved by less than the noise floor.</text>
 </svg>
