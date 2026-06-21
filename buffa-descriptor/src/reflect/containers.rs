@@ -310,9 +310,13 @@ impl<T: ReflectElement> ReflectList for Vec<T> {
 /// Owned map storage. Keys are unique by construction (no dedup needed). Vtable
 /// reflection requires `std` (the descriptor pool uses `OnceLock`), so the
 /// owned-map impl is `std`-gated and targets `std::collections::HashMap` — the
-/// concrete type generated code uses for `map` fields under `std`.
+/// concrete type generated code uses for `map` fields under `std`. The impl is
+/// generic over the hasher `S` so it covers both the buffa default (`foldhash`)
+/// and any user-selected hasher reached via `MapRepr::Custom`.
 #[cfg(feature = "std")]
-impl<K: ReflectMapKey, V: ReflectElement> ReflectMap for std::collections::HashMap<K, V> {
+impl<K: ReflectMapKey, V: ReflectElement, S: core::hash::BuildHasher> ReflectMap
+    for std::collections::HashMap<K, V, S>
+{
     fn len(&self) -> usize {
         Self::len(self)
     }

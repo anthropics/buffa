@@ -181,6 +181,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **Default `map<K,V>` hasher is now `foldhash::fast::RandomState`** on `std`
+  builds (previously `std::hash::RandomState` / SipHash-1-3). The container
+  remains `std::collections::HashMap`; only the `S` type parameter changes.
+  This brings the `std` build in line with `no_std` (which already used
+  `foldhash` via `hashbrown`'s default) and matches the hasher class used by
+  Google's `protobuf-v4` (upb / Wyhash). On the LogRecord benchmark — a
+  string-and-map-heavy shape — this is roughly a 12% owned-decode speedup.
+  `foldhash::fast` is per-instance seeded (from ASLR addresses and process
+  start time, not a CSPRNG) and does not advertise HashDoS resistance; treat
+  the default as not hardened against adversarial hash flooding. Consumers
+  decoding `map` fields with attacker-controlled keys who need a hardened
+  bound can select `MapRepr::BTreeMap` (no hashing) or supply a SipHash-backed
+  map via `MapRepr::Custom`. The `MapStorage` and
+  `ReflectMap` impls are now generic over the hasher `S`, so a custom-hasher
+  `std::collections::HashMap` works without a newtype. **Migration:** the
+  concrete map field type changes, so code that names
+  `std::collections::HashMap<K,V>` (default `S`) for a generated field no
+  longer type-checks — use the `buffa::Map<K,V>` alias instead. Construct
+  empty maps with `buffa::Map::default()` (`HashMap::new()` /
+  `HashMap::with_capacity()` are unavailable on `std` builds because they are
+  pinned to std's default hasher; use `default()` on both `std` and `no_std`
+  for portability). Array-literal construction via `Map::from([...])` /
+  `.into()` is likewise unavailable; use `[...].into_iter().collect()`.
+  `buffa::Map` and `buffa::foldhash` are now re-exported at the crate root.
+
 - Generated decode arms (owned merge, view decode, lazy record arms,
   map-entry loops) emit a single `::buffa::encoding::check_wire_type` call
   instead of a seven-line inline wire-type guard (~1,100 sites across a
