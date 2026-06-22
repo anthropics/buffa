@@ -45,6 +45,7 @@ bytes = { workspace = true }
 foldhash = { workspace = true }
 hashbrown = { workspace = true }
 once_cell = { workspace = true, features = ["alloc"] }
+rustversion = { workspace = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }

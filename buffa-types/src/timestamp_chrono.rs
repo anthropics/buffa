@@ -86,7 +86,10 @@ impl TryFrom<Timestamp> for chrono::DateTime<chrono::Utc> {
         if ts.nanos < 0 || ts.nanos > NANOS_MAX {
             return Err(TimestampError::InvalidNanos);
         }
-        Self::from_timestamp(ts.seconds, ts.nanos.cast_unsigned()).ok_or(TimestampError::Overflow)
+        // MSRV: `i32::cast_unsigned` requires 1.87. The range check above
+        // guarantees `nanos` is non-negative, so the `as` cast is value-preserving.
+        #[allow(clippy::cast_sign_loss)]
+        Self::from_timestamp(ts.seconds, ts.nanos as u32).ok_or(TimestampError::Overflow)
     }
 }
 

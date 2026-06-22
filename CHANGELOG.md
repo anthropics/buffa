@@ -181,6 +181,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **MSRV lowered from 1.87 to 1.75**, and the
+  [README MSRV policy](README.md#minimum-supported-rust-version) revised:
+  `rust-version` now declares the lowest toolchain the released code actually
+  compiles on (verified in CI), with bumps capped at roughly twelve months
+  behind stable. The 1.75 floor is set by return-position `impl Trait` in
+  traits, used by `MapStorage::storage_iter`. Reaching it required only
+  mechanical respellings of newer stdlib conveniences — `Option::is_none_or`,
+  `i32::cast_unsigned`, `f64::abs` in `const fn` — and
+  gating the six `#[diagnostic::on_unimplemented]` hints behind
+  `rustversion::attr(since(1.78), …)` so they remain active on modern
+  toolchains. Adds `rustversion` as a dependency of `buffa` and
+  `buffa-descriptor`.
+
 - `SizeCache` no longer zeroes its inline slot array on construction. A fresh
   cache is built for every `encode`/`compute_size`, and because it is passed by
   `&mut` to an out-of-line `compute_size` the compiler cannot elide the unused

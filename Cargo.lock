@@ -76,6 +76,7 @@ dependencies = [
  "foldhash",
  "hashbrown 0.15.5",
  "once_cell",
+ "rustversion",
  "serde",
  "serde_json",
  "thiserror",
@@ -110,6 +111,7 @@ version = "0.7.1"
 dependencies = [
  "arbitrary",
  "buffa",
+ "rustversion",
  "serde",
  "serde_json",
 ]

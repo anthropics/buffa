@@ -713,7 +713,9 @@ fn scalar_from_f64(sc: ScalarType, v: f64) -> Option<Value> {
 /// represents integers (`±2^53`). Beyond that the value is approximate and
 /// `as i64` saturates rather than rounding to nearest, producing silent
 /// corruption.
-const fn integral_in_safe_range(v: f64) -> bool {
+fn integral_in_safe_range(v: f64) -> bool {
+    // MSRV: `f64::abs` is not const-stable until 1.85, and no caller needs
+    // const evaluation here.
     v.abs() <= (1u64 << 53) as f64
 }
 
