@@ -1,6 +1,6 @@
 # custom-types — pluggable owned types end to end
 
-This example shows how to replace every owned representation in a generated message — strings, bytes, repeated collections, the message-field pointer, and the map container — with crate-local types, and then round-trip the result through both binary and proto3 JSON. It is the copy-paste reference for an integrator who wants to bring their own storage (for example `flexstr`, `smallvec`, or `smallbox`) into a buffa-generated schema.
+This example shows how to replace every owned representation in a generated message — strings, bytes, repeated collections, the map container, and the message-field pointer — with crate-local types, and then round-trip the result through both binary and proto3 JSON. It is the copy-paste reference for an integrator who wants to bring their own storage (for example `flexstr`, `smallvec`, `indexmap`, or `smallbox`) into a buffa-generated schema.
 
 Run it with:
 
@@ -13,12 +13,12 @@ cargo run -p example-custom-types
 The example is three small files, and they are easiest to read in this order:
 
 - [`build.rs`](build.rs) wires each `buffa_build::Config` knob to a type defined in this crate.
-- [`src/types.rs`](src/types.rs) defines the four newtypes those knobs point at.
+- [`src/types.rs`](src/types.rs) defines the five newtypes those knobs point at.
 - [`src/main.rs`](src/main.rs) builds a `Record`, encodes and decodes it, and proves at compile time that every field has the custom type.
 
 ## Pointing the knobs at crate-local types
 
-Every override is set in `build.rs`. The string and bytes knobs take a complete type path; the repeated and box knobs take a *template* with a literal `*` that codegen substitutes for the element or pointee type; and the map knob uses the built-in `BTreeMap` preset rather than a custom container.
+Every override is set in `build.rs`. The string and bytes knobs take a complete type path; the repeated and box knobs take a *template* with a literal `*` that codegen substitutes for the element or pointee type; and the map knob takes a bare path that codegen applies as `path<K, V>`.
 
 ```rust
 buffa_build::Config::new()
@@ -28,9 +28,11 @@ buffa_build::Config::new()
     .bytes_type_custom("crate::types::SmallBytes")
     .repeated_type_custom("crate::types::SmallVec<*>")
     .box_type_custom("crate::types::SmallBox<*>")
-    .map_type(MapRepr::BTreeMap)
+    .map_type_custom("crate::types::IndexMap")
     .compile()?;
 ```
+
+If all you want from a custom map is deterministic key order, the built-in `MapRepr::BTreeMap` preset gives that without a newtype — `.map_type(MapRepr::BTreeMap)` instead of `.map_type_custom(...)`.
 
 [`proto/record.proto`](proto/record.proto) is a single `Record` message with one field per knob — including a `repeated int64`, a `map<int64, string>`, and a oneof with a message variant, so the non-trivial proto3 JSON paths are exercised too.
 
@@ -64,6 +66,7 @@ Under `generate_json(true)`, the four traits have different serde requirements, 
 | `FlexStr` (`ProtoString`) | Yes — `#[serde(transparent)]` | A singular `string` routes through buffa's with-module, but a `repeated string` element or a map value serializes through the type's native serde. |
 | `SmallBytes` (`ProtoBytes`) | No | Codegen routes all bytes positions through buffa's base64 with-module, which only needs `AsRef<[u8]>` / `From<Vec<u8>>`. |
 | `SmallVec<T>` (`ProtoList`) | Yes — `#[serde(transparent)]` | A repeated field whose element type is proto-JSON-compliant on its own (string, int32, message, …) is serialized through the collection's native serde. |
+| `IndexMap<K, V>` (`MapStorage`) | Yes — `#[serde(transparent)]` | An integer-keyed map routes through buffa's `string_key_map` with-module (which only needs `MapStorage`), but a string-keyed map serializes through the container's native serde. |
 | `SmallBox<T>` (`ProtoBox`) | `Serialize` only | An optional message field goes through `MessageField`'s blanket serde, and every deserialize path constructs via `ProtoBox::new` — so only the oneof *serialize* arm reaches the pointer's own `Serialize`. |
 
 ## The compile-time guard
@@ -76,7 +79,7 @@ fn assert_field_types(r: &Record) {
     let _: &SmallBytes = &r.payload;
     let _: &SmallVec<i64> = &r.samples;
     let _: &SmallVec<FlexStr> = &r.tags;
-    let _: &BTreeMap<i64, FlexStr> = &r.attributes;
+    let _: &IndexMap<i64, FlexStr> = &r.attributes;
     let _: &buffa::MessageField<Metadata, SmallBox<Metadata>> = &r.metadata;
 }
 ```

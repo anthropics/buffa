@@ -32,8 +32,8 @@ message Record {
   // wraps the custom string element.
   repeated string tags = 4;
 
-  // map<int64, string> — generated as the `map_type` container with an
-  // `i64` key and the custom string value. The int64 key forces the
+  // map<int64, string> — generated as the `map_type_custom` container with
+  // an `i64` key and the custom string value. The int64 key forces the
   // non-trivial JSON path (proto3 JSON serializes integer map keys as
   // quoted strings).
   map<int64, string> attributes = 5;

@@ -308,10 +308,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **`examples/custom-types` — end-to-end pluggable owned types.** A runnable
   example crate that compiles a `.proto` with every owned-type knob
   (`string_type_custom`, `bytes_type_custom`, `repeated_type_custom`,
-  `box_type_custom`, `map_type(BTreeMap)`) pointed at crate-local newtypes
-  wrapping `flexstr`, `smallvec`, and `smallbox`, then round-trips a record
-  through binary and JSON. The newtypes are the copy-paste template for
-  bridging a foreign storage type past the orphan rule. (#214)
+  `map_type_custom`, `box_type_custom`) pointed at crate-local newtypes
+  wrapping `flexstr`, `smallvec`, `indexmap`, and `smallbox`, then round-trips
+  a record through binary and JSON. The newtypes are the copy-paste template
+  for bridging a foreign storage type past the orphan rule. (#214)
 
 ### Fixed
 

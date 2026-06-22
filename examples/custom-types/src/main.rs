@@ -17,11 +17,9 @@ mod proto {
     include!(concat!(env!("OUT_DIR"), "/_include.rs"));
 }
 
-use std::collections::BTreeMap;
-
 use buffa::Message;
 use proto::buffa::examples::customtypes::v1::{Metadata, Record};
-use types::{FlexStr, SmallBox, SmallBytes, SmallVec};
+use types::{FlexStr, IndexMap, SmallBox, SmallBytes, SmallVec};
 
 /// Compile-time proof that each generated field uses the custom type.
 /// Coercing a field reference to the named type is a no-op at runtime; the
@@ -33,7 +31,7 @@ fn assert_field_types(r: &Record) {
     let _: &SmallBytes = &r.payload;
     let _: &SmallVec<i64> = &r.samples;
     let _: &SmallVec<FlexStr> = &r.tags;
-    let _: &BTreeMap<i64, FlexStr> = &r.attributes;
+    let _: &IndexMap<i64, FlexStr> = &r.attributes;
     let _: &buffa::MessageField<Metadata, SmallBox<Metadata>> = &r.metadata;
 }
 
@@ -51,7 +49,9 @@ fn build_record() -> Record {
         payload: b"hello, custom types".to_vec().into(),
         samples: SmallVec::from(vec![1, 1, 2, 3, 5]),
         tags: ["alpha", "beta"].into_iter().map(FlexStr::from).collect(),
-        attributes: BTreeMap::from([(7, "lucky".into()), (42, "answer".into())]),
+        attributes: [(42, "answer".into()), (7, "lucky".into())]
+            .into_iter()
+            .collect(),
         metadata: metadata("iain", 3).into(),
         // `From<Metadata> for Option<Source>` wraps via `ProtoBox::new`, so
         // callers never construct the pointer themselves.
@@ -76,8 +76,10 @@ fn main() {
     assert_eq!(record, from_json);
     println!("json   : round-trip OK\n{json}");
 
-    // BTreeMap gives deterministic key order, unlike the default HashMap.
-    let keys: Vec<i64> = record.attributes.keys().copied().collect();
-    assert_eq!(keys, vec![7, 42]);
-    println!("map    : ordered keys {keys:?}");
+    // IndexMap preserves insertion order — neither key-sorted (BTreeMap) nor
+    // hash-random (the default HashMap) — so encode and JSON are deterministic
+    // in the order entries were added.
+    let keys: Vec<i64> = record.attributes.0.keys().copied().collect();
+    assert_eq!(keys, vec![42, 7]);
+    println!("map    : insertion-order keys {keys:?}");
 }
