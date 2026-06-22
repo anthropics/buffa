@@ -11,3 +11,10 @@ message PackedTile {
   repeated Cell cells = 1;          // 64 small cells per tile
   repeated uint64 checksums = 2;    // one larger packed varint field
 }
+
+// Control for the packed-varint reservation: every element is a negative
+// (10-byte) varint, the worst case for the old byte-length reserve.
+message PackedSigned {
+  repeated int32 deltas = 1;       // negative -> 10-byte varints each
+  repeated int64 wide_deltas = 2;  // negative -> 10-byte varints each
+}
