@@ -155,6 +155,12 @@ pub type Map<K, V> = crate::__private::HashMap<K, V>;
 ///
 /// This trait is used only as a generic bound; it is **not object-safe** (the
 /// [`storage_iter`](Self::storage_iter) RPITIT precludes `dyn MapStorage`).
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot be used as a buffa custom map type",
+    note = "buffa owns `MapStorage`, so a foreign type can't implement it directly (orphan rule). \
+            Wrap it in a crate-local newtype and implement `MapStorage` on the newtype. \
+            See the `buffa-smolstr` crate for a template."
+)]
 pub trait MapStorage {
     /// The map key type.
     type Key;
