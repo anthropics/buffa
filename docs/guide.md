@@ -297,6 +297,12 @@ When several entries could match a reference, the most specific one wins: an exa
 
 ### String and bytes field representations
 
+> **Runnable example:** [`examples/custom-types/`](../examples/custom-types/) —
+> a standalone crate that wires every owned-type knob (`string_type_custom`,
+> `bytes_type_custom`, `repeated_type_custom`, `map_type_custom`,
+> `box_type_custom`) to a crate-local newtype and round-trips the result
+> through binary and JSON. The newtypes there are the copy-paste template.
+
 By default every proto `string` field is generated as `String` and every `bytes` field as `Vec<u8>`. For schemas dominated by many short strings — log labels, identifiers, header-like maps — a small-string type can avoid most of those heap allocations. The `string_type` / `bytes_type` options select an alternative owned representation, with the same path-prefix rules as `use_bytes_type_in` (rules accumulate, last match wins):
 
 ```rust,ignore
