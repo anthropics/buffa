@@ -305,7 +305,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `decode_view_ctx` / `merge_into_view` instead of the removed inherent
   `_decode_ctx` / `_merge_into_view` helpers. (#198)
 
+- **`examples/custom-types` — end-to-end pluggable owned types.** A runnable
+  example crate that compiles a `.proto` with every owned-type knob
+  (`string_type_custom`, `bytes_type_custom`, `repeated_type_custom`,
+  `box_type_custom`, `map_type(BTreeMap)`) pointed at crate-local newtypes
+  wrapping `flexstr`, `smallvec`, and `smallbox`, then round-trips a record
+  through binary and JSON. The newtypes are the copy-paste template for
+  bridging a foreign storage type past the orphan rule. (#214)
+
 ### Fixed
+
+- **`box_type_custom` and `repeated_type_custom` now compile under
+  `generate_json(true)`.** Two `json_helpers` functions were still hard-wired
+  to the default representations: `skip_if::is_unset_message_field` only
+  accepted `&MessageField<T>` (default `Box<T>` pointer), and
+  `proto_seq::deserialize` only returned `Vec<T>`. So any JSON-enabled message
+  with a custom-boxed optional sub-message, or a custom repeated collection of
+  a 64-bit / float / bytes element, failed to compile. The former is now
+  generic over `P: ProtoBox<T>` and the latter over `C: From<Vec<T>>`; both
+  are inferred from the field type, so default-representation code is
+  unchanged. (#214)
 
 - **`DecodeOptions::decode_reader` no longer overflows when
   `max_message_size` is `usize::MAX`.** The internal `read_limited` helper

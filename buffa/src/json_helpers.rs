@@ -264,9 +264,12 @@ pub mod proto_seq {
         seq.end()
     }
 
-    pub fn deserialize<'de, T: ProtoElemJson, D: Deserializer<'de>>(
-        d: D,
-    ) -> Result<Vec<T>, D::Error> {
+    pub fn deserialize<'de, T, C, D>(d: D) -> Result<C, D::Error>
+    where
+        T: ProtoElemJson,
+        C: From<Vec<T>>,
+        D: Deserializer<'de>,
+    {
         struct V<T>(core::marker::PhantomData<T>);
         impl<'de, T: ProtoElemJson> serde::de::Visitor<'de> for V<T> {
             type Value = Vec<T>;
@@ -290,6 +293,7 @@ pub mod proto_seq {
             }
         }
         d.deserialize_any(V::<T>(core::marker::PhantomData))
+            .map(C::from)
     }
 }
 
@@ -1844,7 +1848,9 @@ pub mod skip_if {
     {
         m.storage_len() == 0
     }
-    pub fn is_unset_message_field<T: Default>(v: &crate::MessageField<T>) -> bool {
+    pub fn is_unset_message_field<T: Default, P: crate::ProtoBox<T>>(
+        v: &crate::MessageField<T, P>,
+    ) -> bool {
         v.is_unset()
     }
     pub fn is_default_enum_value<E: crate::Enumeration>(v: &crate::EnumValue<E>) -> bool {
