@@ -307,6 +307,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **Extension JSON serialization no longer scans previously seen unknown-field
+  numbers linearly for every record.** The serialize-side extension registry
+  still emits each registered extension at most once in first-seen unknown-field
+  order, but duplicate detection now uses a set instead of a `Vec`, avoiding
+  quadratic work for messages with many distinct unknown field numbers.
+
 - **`DecodeOptions::decode_reader` no longer overflows when
   `max_message_size` is `usize::MAX`.** The internal `read_limited` helper
   computed `max_message_size as u64 + 1` to read one sentinel byte past the
