@@ -13,7 +13,7 @@ cargo run -p example-custom-types
 The example is three small files, and they are easiest to read in this order:
 
 - [`build.rs`](build.rs) wires each `buffa_build::Config` knob to a type defined in this crate.
-- [`src/types.rs`](src/types.rs) defines the five newtypes those knobs point at.
+- [`src/types/`](src/types) defines the five newtypes those knobs point at — one file per knob.
 - [`src/main.rs`](src/main.rs) builds a `Record`, encodes and decodes it, and proves at compile time that every field has the custom type.
 
 ## Pointing the knobs at crate-local types
@@ -55,11 +55,11 @@ impl buffa::ProtoString for FlexStr {
 }
 ```
 
-The remaining trait surface (`Deref<Target = str>`, `AsRef<str>`, `From<String>`, `From<&str>`) is `ProtoString`'s supertrait set, and each impl is a one-line forward to the inner type. The `assert_transparent!` macro in [`src/types.rs`](src/types.rs) freezes the zero-cost guarantee — if a second field ever sneaks into the wrapper, the build fails.
+The remaining trait surface (`Deref<Target = str>`, `AsRef<str>`, `From<String>`, `From<&str>`) is `ProtoString`'s supertrait set, and each impl is a one-line forward to the inner type. The `assert_transparent!` macro in [`src/types/mod.rs`](src/types/mod.rs) freezes the zero-cost guarantee — if a second field ever sneaks into the wrapper, the build fails.
 
 ## What each newtype needs for JSON
 
-Under `generate_json(true)`, the four traits have different serde requirements, and getting them wrong is the most common stumbling point. The comments on each newtype in [`src/types.rs`](src/types.rs) explain the specific case; the summary is:
+Under `generate_json(true)`, the five traits have different serde requirements, and getting them wrong is the most common stumbling point. The doc comment on each newtype explains its specific case; the summary is:
 
 | Newtype | Needs its own `Serialize`/`Deserialize`? | Why |
 | --- | --- | --- |
