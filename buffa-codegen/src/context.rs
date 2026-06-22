@@ -251,24 +251,16 @@ impl<'a> CodeGenContext<'a> {
         let unboxed_oneof_variants =
             crate::oneof::resolve_unboxed_variants(files, &config.unboxed_oneof_fields);
 
-        // Pre-pass: collect every locally-emitted package and its top-level
-        // message names, so a message-nesting module can be deconflicted against
-        // sub-package modules (which may be declared in other files). Files
-        // resolved to an extern crate are skipped: they emit no local module, so
-        // their package cannot collide and must not trigger a spurious rename.
+        // Pre-pass: collect every package and top-level message name in the
+        // descriptor set so nested-types module deconfliction (issue #135) is
+        // identical whether the package is generated locally or referenced via
+        // `extern_path`. Skipping extern packages here made cross-crate refs
+        // use plain `snake_case` (e.g. `money::Currency`) while the owning
+        // crate emits deconflicted modules (e.g. `money_::Currency`).
         let mut all_packages: HashSet<String> = HashSet::new();
         let mut pkg_message_names: HashMap<String, Vec<String>> = HashMap::new();
         for file in files {
             let package = file.package.as_deref().unwrap_or("");
-            let is_extern = file
-                .name
-                .as_deref()
-                .and_then(|n| resolve_file_extern(n, file_extern_paths))
-                .is_some()
-                || resolve_extern_prefix(package, effective_extern_paths).is_some();
-            if is_extern {
-                continue;
-            }
             all_packages.insert(package.to_string());
             for msg in &file.message_type {
                 if let Some(name) = &msg.name {
@@ -357,9 +349,13 @@ impl<'a> CodeGenContext<'a> {
                     // message no local module is emitted, so the nested module is
                     // the resolved path's parent plus the plain `snake_case` name.
                     let parent_mod = if is_extern {
+                        let snake = nested_module_names
+                            .get(&fqn)
+                            .cloned()
+                            .unwrap_or_else(|| to_snake_case(name));
                         match rust_path.rsplit_once("::") {
-                            Some((parent, _)) => format!("{parent}::{}", to_snake_case(name)),
-                            None => to_snake_case(name),
+                            Some((parent, _)) => format!("{parent}::{snake}"),
+                            None => snake,
                         }
                     } else {
                         let snake = nested_module_names
@@ -2337,6 +2333,26 @@ mod tests {
         assert_eq!(
             ctx.rust_type(".my.common.Outer.Inner"),
             Some("::common_protos::outer::Inner")
+        );
+    }
+
+    #[test]
+    fn test_extern_path_nested_enum_uses_deconflicted_module() {
+        // Mirrors pb.lyft.Money.Currency vs sub-package pb.lyft.money.
+        let money = msg_with_nested_and_enums("Money", vec![], vec![enum_desc("Currency")]);
+        let files = [
+            make_file("lyft_money.proto", "pb.lyft", vec![money], vec![]),
+            make_file("money.proto", "pb.lyft.money", vec![msg("Money")], vec![]),
+            make_file("users.proto", "pb.lyft.users", vec![msg("DailyTotalFares")], vec![]),
+        ];
+        let config = CodeGenConfig {
+            extern_paths: vec![(".pb.lyft".into(), "::idl_pb_lyft::pb::lyft".into())],
+            ..Default::default()
+        };
+        let ctx = CodeGenContext::for_generate(&files, &["users.proto".to_string()], &config);
+        assert_eq!(
+            ctx.rust_type(".pb.lyft.Money.Currency"),
+            Some("::idl_pb_lyft::pb::lyft::money_::Currency")
         );
     }
 
