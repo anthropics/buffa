@@ -1500,18 +1500,19 @@ pub(crate) fn map_decode_arm(
 
     let push = quote! { view.#ident.push(key, val); };
     let (entry_unknown_decl, entry_finish) = if val_is_closed_enum {
-        let preserve = if preserve_unknown_fields {
+        let finish = if preserve_unknown_fields {
             quote! {
-                let __span_len = before_tag.len() - cur.len();
-                view.__buffa_unknown_fields.push_record(before_tag, __span_len, ctx)?;
+                if __entry_unknown {
+                    let __span_len = before_tag.len() - cur.len();
+                    view.__buffa_unknown_fields.push_record(before_tag, __span_len, ctx)?;
+                } else {
+                    #push
+                }
             }
         } else {
-            quote! {}
+            quote! { if !__entry_unknown { #push } }
         };
-        (
-            quote! { let mut __entry_unknown = false; },
-            quote! { if __entry_unknown { #preserve } else { #push } },
-        )
+        (quote! { let mut __entry_unknown = false; }, finish)
     } else {
         (quote! {}, push)
     };

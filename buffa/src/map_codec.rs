@@ -1111,12 +1111,13 @@ mod tests {
         ));
 
         // Non-contiguous Buf takes the buffering fallback and produces the
-        // same outcome.
+        // same outcome. Split *inside* the entry payload so that after the
+        // length prefix is consumed, the first chunk is shorter than
+        // `entry_len` and the contiguous fast path is bypassed.
         let mut map: Map<i32, E> = Map::default();
         let mut unknown_fields = crate::UnknownFields::new();
-        let (a, b) = wire.split_at(1);
+        let (a, b) = wire.split_at(3);
         let mut chained = bytes::Buf::chain(a, b);
-        assert!(chained.chunk().len() < entry.len());
         merge_entry_with_unknowns::<Int32, ClosedEnum<E>, _>(
             &mut map,
             &mut chained,
