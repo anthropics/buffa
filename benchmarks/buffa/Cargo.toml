@@ -3,6 +3,7 @@ name = "bench-buffa"
 version = "0.1.0"
 edition = "2021"
 publish = false
+autobenches = false  # all bench targets are listed explicitly; keep benches/common.rs (shared include) from being auto-discovered
 
 # Disable lib benchmarks so `cargo bench -- --save-baseline X` only hits
 # the criterion binary (not the libtest harness which rejects criterion args).
@@ -21,10 +22,56 @@ buffa-build = { path = "../../buffa-build" }
 [dev-dependencies]
 criterion = "0.5"
 
+[features]
+default = ["api_response", "log_record", "analytics_event", "google_message1", "media_frame", "packed_tile", "reflect", "lazy"]
+api_response = []
+log_record = []
+analytics_event = []
+google_message1 = []
+media_frame = []
+packed_tile = []
+reflect = []
+lazy = []
+# `iso` gates the per-message isolated targets out of the default `task bench` run.
+iso = []
+
 [[bench]]
 name = "protobuf"
 harness = false
+required-features = ["api_response", "log_record", "analytics_event", "google_message1", "media_frame", "packed_tile", "lazy"]
 
 [[bench]]
 name = "reflect"
 harness = false
+required-features = ["api_response", "log_record", "analytics_event", "google_message1", "media_frame", "packed_tile", "reflect", "lazy"]
+
+[[bench]]
+name = "api_response"
+harness = false
+required-features = ["iso", "api_response"]
+
+[[bench]]
+name = "log_record"
+harness = false
+required-features = ["iso", "log_record"]
+
+[[bench]]
+name = "analytics_event"
+harness = false
+required-features = ["iso", "analytics_event"]
+
+[[bench]]
+name = "google_message1"
+harness = false
+required-features = ["iso", "google_message1"]
+
+[[bench]]
+name = "media_frame"
+harness = false
+required-features = ["iso", "media_frame"]
+
+[[bench]]
+name = "packed_tile"
+harness = false
+required-features = ["iso", "packed_tile"]
+

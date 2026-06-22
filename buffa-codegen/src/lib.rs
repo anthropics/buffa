@@ -1635,6 +1635,18 @@ enum CustomElemKind {
     Bytes,
 }
 
+/// The custom owned types collected generation-wide that need a codegen-emitted
+/// reflection / JSON impl, split by the trait each needs.
+#[derive(Default)]
+struct CustomElements {
+    /// Types needing `ReflectElement` (+ `ProtoElemJson` for bytes): custom
+    /// `repeated` elements, custom `map` *values* (`string` or `bytes`).
+    elements: std::collections::BTreeMap<String, CustomElemKind>,
+    /// Custom `string` types used as a `map` *key*: need `ReflectMapKey` (vtable
+    /// reflection only — the bridge path keys maps by the borrowed `&str` view).
+    map_keys: std::collections::BTreeSet<String>,
+}
+
 /// Collect the distinct custom owned types that need a codegen-emitted element
 /// impl (`ReflectElement` / `ProtoElemJson`), keyed by Rust type path, across
 /// the whole request. These are custom `string`/`bytes` types used as the
@@ -1647,7 +1659,7 @@ fn collect_custom_elements(
     ctx: &context::CodeGenContext,
     file_descriptors: &[FileDescriptorProto],
     files_to_generate: &[String],
-) -> std::collections::BTreeMap<String, CustomElemKind> {
+) -> CustomElements {
     use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
 
     fn walk(
@@ -1655,7 +1667,7 @@ fn collect_custom_elements(
         messages: &[crate::generated::descriptor::DescriptorProto],
         scope: &str,
         parent_features: &crate::features::ResolvedFeatures,
-        out: &mut std::collections::BTreeMap<String, CustomElemKind>,
+        out: &mut CustomElements,
     ) {
         for msg in messages {
             let name = msg.name.as_deref().unwrap_or("");
@@ -1675,10 +1687,12 @@ fn collect_custom_elements(
                 let field_name = field.name.as_deref().unwrap_or("");
                 let field_fqn = format!(".{fqn}.{field_name}");
 
-                // `map<K, bytes>` value: a custom value type needs the element
-                // impls (reflected via ReflectMap → ReflectElement, JSON via
-                // proto_map → ProtoElemJson). Keyed on the outer map field path,
-                // with the `map<bytes, bytes>` carve-out.
+                // `map` slots: a custom value type needs the element impls
+                // (reflected via ReflectMap → ReflectElement, JSON via
+                // proto_map → ProtoElemJson for bytes), and a custom `string`
+                // key needs ReflectMapKey. All keyed on the outer map field
+                // path (the same `string_type` rule covers both slots), with the
+                // `map<bytes, bytes>` value carve-out.
                 if let Some(entry) = crate::message::find_map_entry(msg, field) {
                     let key_ty = crate::message::map_entry_key_type(ctx, entry, &msg_features);
                     let val_ty = crate::message::map_entry_value_type(ctx, entry, &msg_features);
@@ -1687,7 +1701,15 @@ fn collect_custom_elements(
                             ctx, key_ty, val_ty, &fqn, field_name,
                         )
                     {
-                        out.entry(path).or_insert(CustomElemKind::Bytes);
+                        out.elements.entry(path).or_insert(CustomElemKind::Bytes);
+                    }
+                    if let crate::StringRepr::Custom(path) = ctx.string_repr(&field_fqn) {
+                        if key_ty == Some(Type::TYPE_STRING) {
+                            out.map_keys.insert(path.clone());
+                        }
+                        if val_ty == Some(Type::TYPE_STRING) {
+                            out.elements.entry(path).or_insert(CustomElemKind::String);
+                        }
                     }
                     continue;
                 }
@@ -1697,12 +1719,12 @@ fn collect_custom_elements(
                 match ty {
                     Type::TYPE_STRING => {
                         if let crate::StringRepr::Custom(path) = ctx.string_repr(&field_fqn) {
-                            out.entry(path).or_insert(CustomElemKind::String);
+                            out.elements.entry(path).or_insert(CustomElemKind::String);
                         }
                     }
                     Type::TYPE_BYTES => {
                         if let crate::BytesRepr::Custom(path) = ctx.bytes_repr(&field_fqn) {
-                            out.entry(path).or_insert(CustomElemKind::Bytes);
+                            out.elements.entry(path).or_insert(CustomElemKind::Bytes);
                         }
                     }
                     _ => {}
@@ -1712,7 +1734,7 @@ fn collect_custom_elements(
         }
     }
 
-    let mut out = std::collections::BTreeMap::new();
+    let mut out = CustomElements::default();
     for file_name in files_to_generate {
         let Some(file) = file_descriptors
             .iter()
@@ -1736,17 +1758,18 @@ fn collect_custom_elements(
 /// reflection.
 fn render_custom_elem_impls(
     ctx: &context::CodeGenContext,
-    elems: &std::collections::BTreeMap<String, CustomElemKind>,
+    elems: &CustomElements,
 ) -> Result<TokenStream, CodeGenError> {
     let json_gate = ctx.config.feature_gates().json;
     let reflect_gate = ctx.config.feature_gates().reflect;
     let mut out = TokenStream::new();
-    for (path, kind) in elems {
+    for (path, kind) in &elems.elements {
         let ty = parse_custom_type_path(path)?;
         // `ProtoElemJson` is only needed for the `bytes` element path (proto3
         // JSON base64). A repeated `string` element serializes through the
-        // native `Vec<T>` serde derive, and `map` string keys/values stay
-        // `String`, so a String-kind `ProtoElemJson` impl would be dead code.
+        // native `Vec<T>` serde derive, and custom `string` map keys/values go
+        // through serde too (the derive / `string_key_map` / `proto_str_key_map`
+        // paths), so a String-kind `ProtoElemJson` impl would be dead code.
         if ctx.config.generate_json && *kind == CustomElemKind::Bytes {
             out.extend(feature_gates::cfg_block(
                 quote! {
@@ -1788,6 +1811,27 @@ fn render_custom_elem_impls(
                     impl ::buffa_descriptor::reflect::ReflectElement for #ty {
                         fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
                             #value_ref
+                        }
+                    }
+                },
+                reflect_gate,
+            ));
+        }
+    }
+    // A custom `string` type used as a `map` key needs `ReflectMapKey` for
+    // vtable reflection (the bridge path keys maps by the borrowed `&str` view,
+    // which already implements it). Like the element impls above, this compiles
+    // only when the type is local to the generating crate (the orphan rule).
+    if ctx.config.generate_reflection_vtable {
+        for path in &elems.map_keys {
+            let ty = parse_custom_type_path(path)?;
+            out.extend(feature_gates::cfg_block(
+                quote! {
+                    impl ::buffa_descriptor::reflect::ReflectMapKey for #ty {
+                        fn as_map_key_ref(&self) -> ::buffa_descriptor::reflect::MapKeyRef<'_> {
+                            ::buffa_descriptor::reflect::MapKeyRef::String(
+                                ::core::convert::AsRef::<str>::as_ref(self),
+                            )
                         }
                     }
                 },

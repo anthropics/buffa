@@ -129,3 +129,22 @@ GitHub Actions CI (`.github/workflows/ci.yml`) runs on every push to `main` and 
 - **check-nostd** — no_std (host + bare-metal ARM) and 32-bit compilation checks
 - **check-generated-code** — regenerates bootstrap descriptor types and fails if the checked-in code is stale
 - **conformance** — builds the tools and conformance Docker images, runs the full protobuf conformance suite
+
+## Benchmarks
+
+`task bench` runs the combined benchmark suite for the dev loop — all message shapes in one binary, with criterion comparing against your previous run. `task bench-prost` / `task bench-prost-bytes` run the prost equivalents on the same machine for buffa-vs-prost comparison.
+
+For the per-shape performance history (`benchmarks/history/`), each message is measured **in isolation** — built with only its own decoder compiled — so that adding or removing a benchmark message cannot perturb another's numbers through the compiler's global inlining decisions. Run one shape isolated with `task bench-iso -- <message>` (for example `task bench-iso -- media_frame`); it builds only that message at the reproducible, layout-normalized profile (`lto=true, codegen-units=1`, plus 64-byte block alignment via `-align-all-nofallthru-blocks=6`, which removes the build-time code-layout lottery — see `benchmarks/history/annotations.md`). The available shapes are the per-message features in `benchmarks/buffa/Cargo.toml`.
+
+Isolation needs one proto file per message, so each shape is also defined under `benchmarks/proto/iso/`. These mirror the message blocks in `bench_messages.proto`, which stays the single shape source for every other consumer (prost, the cross-implementation harnesses, dataset generation). `task check-iso-protos` asserts the two stay field-identical — run it after editing any benchmark message.
+
+### Reproducible benchmark roots per release
+
+The history is reproducible because every release has a committed branch carrying the exact harness used to measure it. **When you tag a release `vX.Y.Z`, create and push `historical-benchmark/vX.Y.Z` from that tag:**
+
+```sh
+git branch historical-benchmark/vX.Y.Z vX.Y.Z
+git push origin historical-benchmark/vX.Y.Z
+```
+
+Releases cut from `main` already carry the isolated harness, so this branch is just a stable pointer to measure from. The pre-isolation back-catalogue (v0.1.0–v0.7.1) has the harness retrofitted onto each of these branches instead. Either way, `historical-benchmark/*` is the source of truth for rebuilding any cell of the per-shape history — see `benchmarks/history/DESIGN.md`.

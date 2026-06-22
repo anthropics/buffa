@@ -265,11 +265,11 @@ fn test_view_coverage_owned_round_trip() {
     use crate::proto2::view_coverage::Payload;
     use crate::proto2::{Priority, ViewCoverage};
 
-    let mut by_id = std::collections::HashMap::new();
+    let mut by_id = buffa::Map::default();
     by_id.insert(1, "one".to_string());
     by_id.insert(2, "two".to_string());
 
-    let mut priorities = std::collections::HashMap::new();
+    let mut priorities = buffa::Map::default();
     priorities.insert("low".to_string(), Priority::LOW);
     priorities.insert("high".to_string(), Priority::HIGH);
 
@@ -311,10 +311,10 @@ fn test_view_coverage_via_view() {
     use crate::proto2::{Priority, ViewCoverage};
     use buffa::MessageView;
 
-    let mut by_id = std::collections::HashMap::new();
+    let mut by_id = buffa::Map::default();
     by_id.insert(7, "seven".to_string());
 
-    let mut priorities = std::collections::HashMap::new();
+    let mut priorities = buffa::Map::default();
     priorities.insert("med".to_string(), Priority::MEDIUM);
 
     let original = ViewCoverage {

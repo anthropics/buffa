@@ -8,7 +8,7 @@ use bench_buffa::bench::__buffa::lazy_view::{
 };
 use bench_buffa::bench::__buffa::view::{
     analytics_event::PropertyView, AnalyticsEventView, ApiResponseView, LogRecordView,
-    MediaFrameView, PackedTileView,
+    MediaFrameView, PackedSignedView, PackedTileView,
 };
 use bench_buffa::bench::__buffa::{oneof, view::oneof as view_oneof};
 use bench_buffa::bench::*;
@@ -33,8 +33,7 @@ fn benchmark_decode<M: Message + Default>(c: &mut Criterion, name: &str, dataset
     group.bench_function("decode", |b| {
         b.iter(|| {
             for payload in &dataset.payload {
-                let msg = M::decode_from_slice(payload).unwrap();
-                criterion::black_box(&msg);
+                criterion::black_box(M::decode_from_slice(payload).unwrap());
             }
         });
     });
@@ -58,8 +57,7 @@ fn benchmark_decode<M: Message + Default>(c: &mut Criterion, name: &str, dataset
             .collect();
         b.iter(|| {
             for msg in &messages {
-                let encoded = msg.encode_to_vec();
-                criterion::black_box(&encoded);
+                criterion::black_box(msg.encode_to_vec());
             }
         });
     });
@@ -111,8 +109,7 @@ fn benchmark_json<M: Message + Default + Serialize + DeserializeOwned>(
     group.bench_function("json_encode", |b| {
         b.iter(|| {
             for msg in &messages {
-                let json = serde_json::to_string(msg).unwrap();
-                criterion::black_box(&json);
+                criterion::black_box(serde_json::to_string(msg).unwrap());
             }
         });
     });
@@ -121,7 +118,7 @@ fn benchmark_json<M: Message + Default + Serialize + DeserializeOwned>(
         b.iter(|| {
             for json in &json_strings {
                 let msg: M = serde_json::from_str(json).unwrap();
-                criterion::black_box(&msg);
+                criterion::black_box(msg);
             }
         });
     });
@@ -667,6 +664,34 @@ fn bench_packed_tile(c: &mut Criterion) {
     );
 }
 
+// Control for the packed-varint reservation: every element is a negative
+// (10-byte) varint, the worst case for the old byte-length reserve.
+fn bench_packed_signed(c: &mut Criterion) {
+    benchmark_decode::<PackedSigned>(
+        c,
+        "buffa/packed_signed",
+        include_bytes!("../../datasets/packed_signed.pb"),
+    );
+}
+
+fn bench_packed_signed_view(c: &mut Criterion) {
+    let dataset = load_dataset(include_bytes!("../../datasets/packed_signed.pb"));
+    let bytes = total_payload_bytes(&dataset);
+    let mut group = c.benchmark_group("buffa/packed_signed");
+    group.throughput(Throughput::Bytes(bytes));
+
+    group.bench_function("decode_view", |b| {
+        b.iter(|| {
+            for payload in &dataset.payload {
+                let view = PackedSignedView::decode_view(payload).unwrap();
+                criterion::black_box(&view);
+            }
+        });
+    });
+
+    group.finish();
+}
+
 fn bench_api_response_json(c: &mut Criterion) {
     benchmark_json::<ApiResponse>(
         c,
@@ -715,6 +740,7 @@ criterion_group!(
     bench_google_message1,
     bench_media_frame,
     bench_packed_tile,
+    bench_packed_signed,
 );
 
 criterion_group!(
@@ -725,6 +751,7 @@ criterion_group!(
     bench_google_message1_view,
     bench_media_frame_view,
     bench_packed_tile_view,
+    bench_packed_signed_view,
     bench_api_response_view_encode,
     bench_log_record_view_encode,
     bench_analytics_event_view_encode,
