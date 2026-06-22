@@ -65,6 +65,7 @@ bytes = { version = "1", default-features = false }
 # `DateTime::<Utc>::from_timestamp` in 0.4.31. Verified mechanically:
 # 0.4.31 fails to compile this crate's `chrono` feature, 0.4.34 succeeds.
 chrono = { version = "0.4.34", default-features = false }
+foldhash = { version = "0.1", default-features = false }
 hashbrown = { version = "0.15", default-features = false, features = ["default-hasher"] }
 once_cell = { version = "1", default-features = false }
 serde = { version = "1", default-features = false }

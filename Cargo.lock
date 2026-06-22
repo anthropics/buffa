@@ -73,6 +73,7 @@ dependencies = [
  "arbitrary",
  "base64",
  "bytes",
+ "foldhash",
  "hashbrown 0.15.5",
  "once_cell",
  "serde",

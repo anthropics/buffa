@@ -168,7 +168,7 @@ fn vtable_for_each_set_visits_set_fields() {
 
 #[test]
 fn vtable_map_field() {
-    let mut stock = std::collections::HashMap::new();
+    let mut stock = buffa::Map::default();
     stock.insert("apples".to_string(), 3);
     stock.insert("oranges".to_string(), 7);
     let inv = Inventory {
