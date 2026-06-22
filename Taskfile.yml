@@ -403,6 +403,32 @@ tasks:
     cmds:
       - python3 benchmarks/charts/generate.py benchmarks/results/
 
+  bench-history-report:
+    desc: >-
+      Regenerate the per-release benchmark history report and charts from the
+      committed data in benchmarks/history/runs/. See benchmarks/history/README.md
+      for how the run data is produced and how to add a release.
+    cmds:
+      - python3 benchmarks/history/generate.py
+
+  bench-layout-variants:
+    desc: >-
+      Build the protobuf bench binary at several codegen-units settings into
+      <dir> (default ./cgu-variants), for the layout-noise harness. A/B the
+      variants on a quiesced box (bench-on-metal.sh --binary cgu1.bench ...),
+      then run bench-layout-envelope on the captured outputs. Override the
+      sweep with CGUS="1 4 16". See benchmarks/history/README.md.
+    cmds:
+      - benchmarks/history/build-cgu-variants.sh {{.CLI_ARGS}}
+
+  bench-layout-envelope:
+    desc: >-
+      Compute the build-layout-noise envelope from labelled criterion captures
+      of the codegen-units variants. Usage:
+      task bench-layout-envelope -- --run cgu1=cgu1.txt --run cgu16=cgu16.txt
+    cmds:
+      - python3 benchmarks/history/layout_envelope.py {{.CLI_ARGS}}
+
   # ── Compatibility tests ──────────────────────────────────────────────
 
   protoc-compat:

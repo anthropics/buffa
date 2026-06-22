@@ -111,8 +111,9 @@
 //!
 //! Generated code uses `::buffa::alloc::string::String` etc. rather than
 //! relying on the prelude, so it compiles unchanged on bare-metal targets.
-//! Map fields use `hashbrown::HashMap` under `no_std`; with the `std` feature
-//! enabled they use `std::collections::HashMap` for ecosystem interop.
+//! Map fields use `std::collections::HashMap` (`hashbrown::HashMap` under
+//! `no_std`) with the [`foldhash`] hasher on both paths — see [`Map`] for
+//! the rationale and the opt-out.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -239,7 +240,14 @@ pub mod view;
 pub use enumeration::{EnumValue, Enumeration};
 pub use error::{DecodeError, EncodeError};
 pub use extension::{Extension, ExtensionCodec, ExtensionSet};
-pub use map_codec::MapStorage;
+/// Re-exported so downstream code that needs to name the hasher type behind
+/// [`Map`] (in an explicit signature, or to `with_capacity_and_hasher` without
+/// inference) does so against buffa's `foldhash` version rather than a
+/// separately-resolved one. This couples buffa's public-API semver to
+/// `foldhash`'s major version. Most callers should not need this — `Map` and
+/// `Default::default()` keep the hasher fully inferred.
+pub use foldhash;
+pub use map_codec::{Map, MapStorage};
 pub use message::{
     DecodeContext, DecodeOptions, Message, MessageName, DEFAULT_UNKNOWN_FIELD_LIMIT,
     RECURSION_LIMIT,
@@ -270,21 +278,25 @@ pub mod __private {
     /// that downstream crates do not need a direct `once_cell` dependency.
     pub use once_cell::race::OnceBox;
 
-    /// Re-exported for use in generated `map<K, V>` field types.
+    /// The concrete `map<K, V>` field type generated code uses by default.
     ///
     /// Generated code refers to this as `::buffa::__private::HashMap<K, V>`
-    /// so that downstream crates do not need a direct `hashbrown` dependency.
-    /// On `no_std` builds this is `hashbrown::HashMap`; on `std` builds it is
-    /// `std::collections::HashMap` for full stdlib interoperability.
+    /// so that downstream crates do not need a direct dependency on the
+    /// hasher or container crate.
     ///
-    /// Note: these are distinct concrete types even though `std::collections::HashMap`
-    /// is backed by `hashbrown` internally.  Code that needs to interoperate
-    /// across the `std`/`no_std` feature boundary should use the re-exported
-    /// type rather than either concrete type directly.
+    /// On `std` builds this is `std::collections::HashMap` parameterized with
+    /// [`foldhash::fast::RandomState`] as the hasher; on `no_std` builds it is
+    /// `hashbrown::HashMap` (which defaults to the same `foldhash` hasher).
+    /// The table implementation is identical either way — `std::collections::HashMap`
+    /// is itself a thin wrapper around hashbrown's SwissTable — so the only
+    /// load-bearing choice here is the hasher.
+    ///
+    /// See [`Map`](crate::Map) for the hasher rationale and construction
+    /// guidance.
     #[cfg(not(feature = "std"))]
-    pub use hashbrown::HashMap;
+    pub type HashMap<K, V> = hashbrown::HashMap<K, V>;
     #[cfg(feature = "std")]
-    pub use std::collections::HashMap;
+    pub type HashMap<K, V> = std::collections::HashMap<K, V, foldhash::fast::RandomState>;
 
     // ── Type-agnostic `Arbitrary` builders for configurable owned types ──────
     //

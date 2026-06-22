@@ -286,7 +286,7 @@ fn test_json_nested_round_trip() {
 fn test_proto2_closed_enum_json_round_trip() {
     use crate::p2json::{ClosedEnumJson, Tier};
 
-    let mut by_name = std::collections::HashMap::new();
+    let mut by_name = buffa::Map::default();
     by_name.insert("alice".to_string(), Tier::PRO);
     by_name.insert("bob".to_string(), Tier::FREE);
 

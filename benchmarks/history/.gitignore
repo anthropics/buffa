@@ -1,0 +1,5 @@
+# Python bytecode from the history tooling.
+__pycache__/
+*.pyc
+# Layout-noise variant binaries (built locally, run on a quiesced box).
+cgu-variants/

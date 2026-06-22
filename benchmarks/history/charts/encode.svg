@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="776" height="420" viewBox="0 0 776 420">
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .title { font-size: 15px; font-weight: 600; fill: #24292f; }
+    .axis-label { font-size: 11px; fill: #57606a; }
+    .legend-text { font-size: 12px; fill: #24292f; }
+    .grid { stroke: #d0d7de; stroke-width: 0.5; }
+    .baseline { stroke: #8c959f; stroke-width: 1; stroke-dasharray: 4 3; }
+    .noise-band { fill: #b1bac4; opacity: 0.18; }
+    .footnote { font-size: 11px; fill: #57606a; }
+  </style>
+  <rect width="100%" height="100%" fill="white"/>
+  <rect x="56" y="97.3" width="560" height="106.7" class="noise-band"/>
+  <text x="336.0" y="26" text-anchor="middle" class="title">Binary encode — throughput vs each message’s first release (%)</text>
+  <line x1="56" y1="364.0" x2="616" y2="364.0" class="grid"/>
+  <text x="48" y="368.0" text-anchor="end" class="axis-label">80%</text>
+  <line x1="56" y1="310.7" x2="616" y2="310.7" class="grid"/>
+  <text x="48" y="314.7" text-anchor="end" class="axis-label">85%</text>
+  <line x1="56" y1="257.3" x2="616" y2="257.3" class="grid"/>
+  <text x="48" y="261.3" text-anchor="end" class="axis-label">90%</text>
+  <line x1="56" y1="204.0" x2="616" y2="204.0" class="grid"/>
+  <text x="48" y="208.0" text-anchor="end" class="axis-label">95%</text>
+  <line x1="56" y1="150.7" x2="616" y2="150.7" class="grid"/>
+  <text x="48" y="154.7" text-anchor="end" class="axis-label">100%</text>
+  <line x1="56" y1="97.3" x2="616" y2="97.3" class="grid"/>
+  <text x="48" y="101.3" text-anchor="end" class="axis-label">105%</text>
+  <line x1="56" y1="44.0" x2="616" y2="44.0" class="grid"/>
+  <text x="48" y="48.0" text-anchor="end" class="axis-label">110%</text>
+  <line x1="56" y1="150.7" x2="616" y2="150.7" class="baseline"/>
+  <text x="56.0" y="382" text-anchor="middle" class="axis-label">v0.1.0</text>
+  <text x="136.0" y="382" text-anchor="middle" class="axis-label">v0.2.0</text>
+  <text x="216.0" y="382" text-anchor="middle" class="axis-label">v0.3.0</text>
+  <text x="296.0" y="382" text-anchor="middle" class="axis-label">v0.4.0</text>
+  <text x="376.0" y="382" text-anchor="middle" class="axis-label">v0.5.0</text>
+  <text x="456.0" y="382" text-anchor="middle" class="axis-label">v0.6.0</text>
+  <text x="536.0" y="382" text-anchor="middle" class="axis-label">v0.7.0</text>
+  <text x="616.0" y="382" text-anchor="middle" class="axis-label">v0.7.1</text>
+  <path d="M56.0,150.7 L136.0,150.5 L216.0,158.3 L296.0,130.0 L376.0,133.3 L456.0,129.6 L536.0,133.2 L616.0,134.3" fill="none" stroke="#4C78A8" stroke-width="2"/>
+  <circle cx="56.0" cy="150.7" r="3" fill="#4C78A8"/>
+  <circle cx="136.0" cy="150.5" r="3" fill="#4C78A8"/>
+  <circle cx="216.0" cy="158.3" r="3" fill="#4C78A8"/>
+  <circle cx="296.0" cy="130.0" r="3" fill="#4C78A8"/>
+  <circle cx="376.0" cy="133.3" r="3" fill="#4C78A8"/>
+  <circle cx="456.0" cy="129.6" r="3" fill="#4C78A8"/>
+  <circle cx="536.0" cy="133.2" r="3" fill="#4C78A8"/>
+  <circle cx="616.0" cy="134.3" r="3" fill="#4C78A8"/>
+  <path d="M56.0,150.7 L136.0,151.0 L216.0,162.2 L296.0,183.5 L376.0,150.0 L456.0,134.2 L536.0,140.2 L616.0,141.0" fill="none" stroke="#F58518" stroke-width="2"/>
+  <circle cx="56.0" cy="150.7" r="3" fill="#F58518"/>
+  <circle cx="136.0" cy="151.0" r="3" fill="#F58518"/>
+  <circle cx="216.0" cy="162.2" r="3" fill="#F58518"/>
+  <circle cx="296.0" cy="183.5" r="3" fill="#F58518"/>
+  <circle cx="376.0" cy="150.0" r="3" fill="#F58518"/>
+  <circle cx="456.0" cy="134.2" r="3" fill="#F58518"/>
+  <circle cx="536.0" cy="140.2" r="3" fill="#F58518"/>
+  <circle cx="616.0" cy="141.0" r="3" fill="#F58518"/>
+  <path d="M56.0,150.7 L136.0,145.7 L216.0,136.5 L296.0,260.8 L376.0,261.0 L456.0,262.3 L536.0,256.8 L616.0,263.1" fill="none" stroke="#54A24B" stroke-width="2"/>
+  <circle cx="56.0" cy="150.7" r="3" fill="#54A24B"/>
+  <circle cx="136.0" cy="145.7" r="3" fill="#54A24B"/>
+  <circle cx="216.0" cy="136.5" r="3" fill="#54A24B"/>
+  <circle cx="296.0" cy="260.8" r="3" fill="#54A24B"/>
+  <circle cx="376.0" cy="261.0" r="3" fill="#54A24B"/>
+  <circle cx="456.0" cy="262.3" r="3" fill="#54A24B"/>
+  <circle cx="536.0" cy="256.8" r="3" fill="#54A24B"/>
+  <circle cx="616.0" cy="263.1" r="3" fill="#54A24B"/>
+  <path d="M56.0,150.7 L136.0,156.0 L216.0,143.5 L296.0,142.2 L376.0,104.3 L456.0,99.0 L536.0,102.8 L616.0,101.0" fill="none" stroke="#E45756" stroke-width="2"/>
+  <circle cx="56.0" cy="150.7" r="3" fill="#E45756"/>
+  <circle cx="136.0" cy="156.0" r="3" fill="#E45756"/>
+  <circle cx="216.0" cy="143.5" r="3" fill="#E45756"/>
+  <circle cx="296.0" cy="142.2" r="3" fill="#E45756"/>
+  <circle cx="376.0" cy="104.3" r="3" fill="#E45756"/>
+  <circle cx="456.0" cy="99.0" r="3" fill="#E45756"/>
+  <circle cx="536.0" cy="102.8" r="3" fill="#E45756"/>
+  <circle cx="616.0" cy="101.0" r="3" fill="#E45756"/>
+  <path d="M56.0,150.7 L136.0,149.8 L216.0,148.8 L296.0,147.9 L376.0,152.7 L456.0,150.6 L536.0,153.7 L616.0,151.4" fill="none" stroke="#72B7B2" stroke-width="2"/>
+  <circle cx="56.0" cy="150.7" r="3" fill="#72B7B2"/>
+  <circle cx="136.0" cy="149.8" r="3" fill="#72B7B2"/>
+  <circle cx="216.0" cy="148.8" r="3" fill="#72B7B2"/>
+  <circle cx="296.0" cy="147.9" r="3" fill="#72B7B2"/>
+  <circle cx="376.0" cy="152.7" r="3" fill="#72B7B2"/>
+  <circle cx="456.0" cy="150.6" r="3" fill="#72B7B2"/>
+  <circle cx="536.0" cy="153.7" r="3" fill="#72B7B2"/>
+  <circle cx="616.0" cy="151.4" r="3" fill="#72B7B2"/>
+  <path d="M56.0,150.7 L136.0,148.9 L216.0,152.6 L296.0,157.7 L376.0,153.9 L456.0,149.0 L536.0,150.4 L616.0,153.3" fill="none" stroke="#B279A2" stroke-width="2"/>
+  <circle cx="56.0" cy="150.7" r="3" fill="#B279A2"/>
+  <circle cx="136.0" cy="148.9" r="3" fill="#B279A2"/>
+  <circle cx="216.0" cy="152.6" r="3" fill="#B279A2"/>
+  <circle cx="296.0" cy="157.7" r="3" fill="#B279A2"/>
+  <circle cx="376.0" cy="153.9" r="3" fill="#B279A2"/>
+  <circle cx="456.0" cy="149.0" r="3" fill="#B279A2"/>
+  <circle cx="536.0" cy="150.4" r="3" fill="#B279A2"/>
+  <circle cx="616.0" cy="153.3" r="3" fill="#B279A2"/>
+  <rect x="632" y="50" width="12" height="12" rx="2" fill="#4C78A8"/>
+  <text x="650" y="61" class="legend-text">ApiResponse</text>
+  <rect x="632" y="72" width="12" height="12" rx="2" fill="#F58518"/>
+  <text x="650" y="83" class="legend-text">LogRecord</text>
+  <rect x="632" y="94" width="12" height="12" rx="2" fill="#54A24B"/>
+  <text x="650" y="105" class="legend-text">AnalyticsEvent</text>
+  <rect x="632" y="116" width="12" height="12" rx="2" fill="#E45756"/>
+  <text x="650" y="127" class="legend-text">GoogleMessage1</text>
+  <rect x="632" y="138" width="12" height="12" rx="2" fill="#72B7B2"/>
+  <text x="650" y="149" class="legend-text">MediaFrame</text>
+  <rect x="632" y="160" width="12" height="12" rx="2" fill="#B279A2"/>
+  <text x="650" y="171" class="legend-text">PackedTile</text>
+  <text x="56" y="406.0" class="footnote">Shaded band: ±5% run-to-run noise floor — a line staying inside it moved by less than the noise floor.</text>
+</svg>

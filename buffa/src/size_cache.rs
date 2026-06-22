@@ -25,6 +25,7 @@
 //! uphold the same ordering.
 
 use alloc::vec::Vec;
+use core::mem::MaybeUninit;
 
 /// Number of nested-message sizes stored inline (no heap allocation).
 ///
@@ -50,12 +51,52 @@ const INLINE_CAP: usize = 16;
 /// retain the spill allocation. `SizeCache` is intentionally not `Clone`
 /// — it is transient encode state, not data. Reuse via
 /// [`clear()`](Self::clear).
-#[derive(Debug)]
+///
+/// # Safety invariant
+///
+/// The inline slots are `MaybeUninit` to avoid zeroing the whole array on every
+/// construction (see the field comment). The invariant that keeps the single
+/// `unsafe` read in [`consume_next`](Self::consume_next) sound is:
+///
+/// > every inline slot at an index `< len` has been initialized.
+///
+/// It is established in exactly one place — [`reserve`](Self::reserve) writes
+/// the slot at index `len` *before* incrementing `len` — and `len` only ever
+/// grows via `reserve` (which does that write) or resets to `0` via
+/// [`clear`](Self::clear). `consume_next` only reads a slot after checking
+/// `idx < len`. Because all three methods and the fields are private to this
+/// module, no external code (generated or hand-written) can break the
+/// invariant: the worst a misuse can do is trip the `idx >= len` overrun panic
+/// or read a wrong-but-initialized size — never undefined behavior.
 pub struct SizeCache {
-    inline: [u32; INLINE_CAP],
+    // `MaybeUninit` avoids zeroing the whole array on construction. A fresh
+    // cache is built per encode and handed by `&mut` to an out-of-line
+    // `compute_size`, so the compiler cannot prove the unused tail is never
+    // read and an `[0; INLINE_CAP]` initializer emits `INLINE_CAP / 4` SSE
+    // stores on *every* encode (confirmed by disassembly). With `MaybeUninit`
+    // only the slots actually used are written. See the type's safety invariant.
+    inline: [MaybeUninit<u32>; INLINE_CAP],
     spill: Vec<u32>,
     len: u32,
     cursor: u32,
+}
+
+impl core::fmt::Debug for SizeCache {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // Only the first `len` inline slots are initialized; show those (plus the
+        // spill) so the dump is meaningful without reading uninitialized memory.
+        let inline_init = (self.len as usize).min(INLINE_CAP);
+        // SAFETY: per the type invariant, every inline slot at an index < len is
+        // initialized, so this prefix is sound to view as `&[u32]`.
+        let inline =
+            unsafe { core::slice::from_raw_parts(self.inline.as_ptr().cast::<u32>(), inline_init) };
+        f.debug_struct("SizeCache")
+            .field("len", &self.len)
+            .field("cursor", &self.cursor)
+            .field("inline", &inline)
+            .field("spill", &self.spill)
+            .finish()
+    }
 }
 
 impl Default for SizeCache {
@@ -71,7 +112,7 @@ impl SizeCache {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            inline: [0u32; INLINE_CAP],
+            inline: [MaybeUninit::uninit(); INLINE_CAP],
             spill: Vec::new(),
             len: 0,
             cursor: 0,
@@ -97,9 +138,12 @@ impl SizeCache {
         debug_assert!(self.len < u32::MAX, "SizeCache slot count overflow");
         let idx = self.len as usize;
         if idx < INLINE_CAP {
-            // Placeholder so a buggy caller that reserves-without-set reads
-            // a deterministic 0, including after `clear()` reuse.
-            self.inline[idx] = 0;
+            // Placeholder so a buggy caller that reserves-without-set reads a
+            // deterministic 0, including after `clear()` reuse. This write is
+            // ALSO load-bearing for soundness: it establishes the type
+            // invariant (slots `< len` are initialized) that makes the
+            // `assume_init` in `consume_next` sound. Do not remove it.
+            self.inline[idx] = MaybeUninit::new(0);
         } else {
             self.spill.push(0);
         }
@@ -124,7 +168,7 @@ impl SizeCache {
             self.len
         );
         if idx < INLINE_CAP {
-            self.inline[idx] = size;
+            self.inline[idx] = MaybeUninit::new(size);
         } else {
             self.spill[idx - INLINE_CAP] = size;
         }
@@ -150,7 +194,11 @@ impl SizeCache {
         }
         self.cursor += 1;
         if idx < INLINE_CAP {
-            self.inline[idx]
+            // SAFETY: `idx < self.len` (checked above) and, per the type
+            // invariant, every inline slot at an index `< len` was initialized
+            // by `reserve` before `len` advanced past it (and possibly
+            // overwritten by `set`), so this slot is initialized.
+            unsafe { self.inline[idx].assume_init() }
         } else {
             self.spill[idx - INLINE_CAP]
         }
@@ -294,5 +342,33 @@ mod tests {
     fn next_past_end_panics() {
         let mut c = SizeCache::new();
         c.consume_next();
+    }
+
+    /// Exercises the inline/spill boundary with out-of-order `set` and a
+    /// `clear`-and-reuse cycle. Run under `cargo +nightly miri test` this is the
+    /// mechanical check that `consume_next`'s `assume_init` never reads
+    /// uninitialized memory: every `reserve`d slot below `len` must be init.
+    #[test]
+    fn miri_soundness_interleaved_reserve_set_consume() {
+        let mut c = SizeCache::new();
+        // Two full inline tiers' worth, crossing the spill boundary.
+        let n = INLINE_CAP * 2 + 3;
+        let slots: Vec<usize> = (0..n).map(|_| c.reserve()).collect();
+        // Fill out of order (reverse) to decouple set order from reserve order.
+        for (i, &s) in slots.iter().enumerate().rev() {
+            c.set(s, (i as u32).wrapping_mul(3).wrapping_add(1));
+        }
+        for i in 0..n {
+            assert_eq!(c.consume_next(), (i as u32).wrapping_mul(3).wrapping_add(1));
+        }
+        // Reuse: a shorter run must not read stale/uninit tail slots.
+        c.clear();
+        let a = c.reserve();
+        let b = c.reserve();
+        c.set(b, 20);
+        // `a` reserved-but-not-set -> deterministic 0 (placeholder write).
+        assert_eq!(c.consume_next(), 0);
+        assert_eq!(c.consume_next(), 20);
+        let _ = a;
     }
 }

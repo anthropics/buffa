@@ -37,11 +37,46 @@ use crate::types;
 use crate::{DecodeContext, EnumValue, Enumeration, Message, SizeCache};
 use core::hash::Hash;
 
-/// The `HashMap` type generated map fields use (`std` or `hashbrown`).
+/// The default owned `HashMap` type generated `map<K, V>` fields use.
 ///
-/// An alias for the deliberately unstable `__private::HashMap`; it appears
-/// in these helpers' signatures only so generated call sites type-check.
-/// Like the rest of this module it is not a stable consumer-facing surface.
+/// On `std` builds this resolves to `std::collections::HashMap<K, V,
+/// foldhash::fast::RandomState>`; on `no_std` builds it is
+/// `hashbrown::HashMap<K, V>` (which defaults to the same `foldhash` hasher).
+/// This alias is the recommended way to name a generated map field's type in
+/// downstream code, so that the concrete hasher and container stay an
+/// implementation detail.
+///
+/// Re-exported at the crate root as `buffa::Map`, alongside [`MapStorage`]:
+/// `use buffa::Map;`.
+///
+/// # Construction
+///
+/// Use [`Map::default`] to construct an empty map. The inherent
+/// `HashMap::new()` and `HashMap::with_capacity()` are only defined for the
+/// std default hasher, so they are unavailable on `Map` under `std` (and would
+/// be non-portable across the `std`/`no_std` boundary). For literals, use
+/// `[(k, v), ..].into_iter().collect()` rather than `Map::from([...])` —
+/// `From<[_; N]>` is likewise hasher-pinned in std. To preallocate, use
+/// `std::collections::HashMap::with_capacity_and_hasher(n, Default::default())`.
+///
+/// # Hasher and HashDoS
+///
+/// `foldhash::fast` is per-instance seeded — each `Map::default()` derives a
+/// fresh seed from the stack pointer mixed with a thread-local counter,
+/// layered on a process-wide seed derived from ASLR addresses and process
+/// start time. That nondeterminism means a single static collision set will
+/// not transfer across processes, but the seed is **not** drawn from a
+/// CSPRNG (unlike `std::hash::RandomState`, which seeds SipHash from
+/// `getrandom`), and `foldhash::fast` does not advertise HashDoS resistance.
+/// Treat this default as **not hardened** against adversarial hash flooding.
+///
+/// This is the same trade-off Google's `protobuf-v4`/upb makes (Wyhash).
+/// Consumers decoding `map` fields with attacker-controlled keys who need a
+/// hardened bound should select `MapRepr::BTreeMap` (no hashing, O(log n)
+/// worst case) or supply a SipHash-backed map via `MapRepr::Custom`. The
+/// [`MapStorage`] impl is generic over the hasher, so
+/// `std::collections::HashMap<K, V, std::hash::RandomState>` works without a
+/// newtype — only a foreign *container* type (e.g. `IndexMap`) needs one.
 pub type Map<K, V> = crate::__private::HashMap<K, V>;
 
 /// The owned collection backing a proto `map<K, V>` field.
@@ -140,30 +175,44 @@ pub trait MapStorage {
         Self::Value: 'a;
 }
 
-impl<K: Eq + Hash, V> MapStorage for crate::__private::HashMap<K, V> {
-    type Key = K;
-    type Value = V;
-    #[inline]
-    fn storage_len(&self) -> usize {
-        self.len()
-    }
-    #[inline]
-    fn storage_insert(&mut self, key: K, value: V) {
-        self.insert(key, value);
-    }
-    #[inline]
-    fn storage_clear(&mut self) {
-        self.clear();
-    }
-    #[inline]
-    fn storage_iter<'a>(&'a self) -> impl Iterator<Item = (&'a K, &'a V)>
-    where
-        K: 'a,
-        V: 'a,
-    {
-        self.iter()
-    }
+/// Implements [`MapStorage`] for both the `std` and `no_std` `HashMap` types,
+/// generic over the hasher `S`. The buffa default `S` is `foldhash` on both
+/// paths (see [`Map`]); the `S` parameter lets `MapRepr::Custom` users reach
+/// any `BuildHasher` without a newtype. The `S: Default` bound is required so
+/// generated owned messages can `Default`-construct the field — the read-only
+/// `ReflectMap` impl in `buffa-descriptor` relaxes to `S: BuildHasher`.
+macro_rules! map_storage_hashmap {
+    ($($ty:tt)*) => {
+        impl<K: Eq + Hash, V, S: core::hash::BuildHasher + Default> MapStorage for $($ty)*<K, V, S> {
+            type Key = K;
+            type Value = V;
+            #[inline]
+            fn storage_len(&self) -> usize {
+                self.len()
+            }
+            #[inline]
+            fn storage_insert(&mut self, key: K, value: V) {
+                self.insert(key, value);
+            }
+            #[inline]
+            fn storage_clear(&mut self) {
+                self.clear();
+            }
+            #[inline]
+            fn storage_iter<'a>(&'a self) -> impl Iterator<Item = (&'a K, &'a V)>
+            where
+                K: 'a,
+                V: 'a,
+            {
+                self.iter()
+            }
+        }
+    };
 }
+#[cfg(feature = "std")]
+map_storage_hashmap!(std::collections::HashMap);
+#[cfg(not(feature = "std"))]
+map_storage_hashmap!(hashbrown::HashMap);
 
 impl<K: Ord, V> MapStorage for crate::alloc::collections::BTreeMap<K, V> {
     type Key = K;
