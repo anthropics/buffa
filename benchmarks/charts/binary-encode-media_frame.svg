@@ -25,27 +25,27 @@
   <line x1="140.0" y1="80" x2="140.0" y2="232" class="grid"/>
   <text x="140.0" y="247" text-anchor="middle" class="axis-label">0.0</text>
   <line x1="256.0" y1="80" x2="256.0" y2="232" class="grid"/>
-  <text x="256.0" y="247" text-anchor="middle" class="axis-label">10.0</text>
+  <text x="256.0" y="247" text-anchor="middle" class="axis-label">6.0</text>
   <line x1="372.0" y1="80" x2="372.0" y2="232" class="grid"/>
-  <text x="372.0" y="247" text-anchor="middle" class="axis-label">20.0</text>
+  <text x="372.0" y="247" text-anchor="middle" class="axis-label">12.0</text>
   <line x1="488.0" y1="80" x2="488.0" y2="232" class="grid"/>
-  <text x="488.0" y="247" text-anchor="middle" class="axis-label">30.0</text>
+  <text x="488.0" y="247" text-anchor="middle" class="axis-label">18.0</text>
   <line x1="604.0" y1="80" x2="604.0" y2="232" class="grid"/>
-  <text x="604.0" y="247" text-anchor="middle" class="axis-label">40.0</text>
+  <text x="604.0" y="247" text-anchor="middle" class="axis-label">24.0</text>
   <line x1="720.0" y1="80" x2="720.0" y2="232" class="grid"/>
-  <text x="720.0" y="247" text-anchor="middle" class="axis-label">50.0</text>
+  <text x="720.0" y="247" text-anchor="middle" class="axis-label">30.0</text>
   <text x="430.0" y="262" text-anchor="middle" class="axis-label">GiB/s</text>
   <text x="130" y="160.0" text-anchor="end" class="label">MediaFrame</text>
-  <rect x="140" y="80.0" width="486.6" height="22" rx="2" fill="#4C78A8"/>
-  <text x="630.6" y="95.0" class="value">41.95</text>
-  <rect x="140" y="106.0" width="525.3" height="22" rx="2" fill="#72B7B2"/>
-  <text x="669.3" y="121.0" class="value">45.28</text>
-  <rect x="140" y="132.0" width="540.2" height="22" rx="2" fill="#A0CBE8"/>
-  <text x="684.2" y="147.0" class="value">46.57</text>
-  <rect x="140" y="158.0" width="417.5" height="22" rx="2" fill="#F58518"/>
-  <text x="561.5" y="173.0" class="value">35.99</text>
-  <rect x="140" y="184.0" width="119.2" height="22" rx="2" fill="#E45756"/>
-  <text x="263.2" y="199.0" class="value">10.28</text>
-  <rect x="140" y="210.0" width="19.0" height="22" rx="2" fill="#54A24B"/>
-  <text x="163.0" y="225.0" class="value">1.64</text>
+  <rect x="140" y="80.0" width="483.6" height="22" rx="2" fill="#4C78A8"/>
+  <text x="627.6" y="95.0" class="value">25.02</text>
+  <rect x="140" y="106.0" width="510.1" height="22" rx="2" fill="#72B7B2"/>
+  <text x="654.1" y="121.0" class="value">26.38</text>
+  <rect x="140" y="132.0" width="513.2" height="22" rx="2" fill="#A0CBE8"/>
+  <text x="657.2" y="147.0" class="value">26.54</text>
+  <rect x="140" y="158.0" width="485.3" height="22" rx="2" fill="#F58518"/>
+  <text x="629.3" y="173.0" class="value">25.10</text>
+  <rect x="140" y="184.0" width="124.8" height="22" rx="2" fill="#E45756"/>
+  <text x="268.8" y="199.0" class="value">6.45</text>
+  <rect x="140" y="210.0" width="45.7" height="22" rx="2" fill="#54A24B"/>
+  <text x="189.7" y="225.0" class="value">2.37</text>
 </svg>
