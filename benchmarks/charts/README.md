@@ -54,6 +54,45 @@ numbers are stable and the implementations are compared on an equal footing.
   That cross-message inliner coupling is constant across the comparison, so it does
   not bias one implementation against another; the history isolates per message
   because *there* the coupling varies across releases.
+- **protobuf-v4 wraps upb (C); the Rust profile flags only partly reach it.** The
+  bench profile's `lto=true`, `codegen-units=1`, and block-alignment apply to Rust
+  LLVM IR; `upb.c` is compiled separately by `cc` and linked without cross-language
+  LTO (the upstream `build.rs` has a `// TODO: enable lto` for this). The `cc` crate
+  inherits cargo's `-O3` but does not auto-define `NDEBUG`, and the upstream
+  `build.rs` doesn't either, so the metal script and Dockerfile set `CFLAGS=-DNDEBUG`
+  explicitly — without it every `UPB_ASSERT` is a live `assert()` and every
+  `UPB_ASSUME` is `assert()` instead of `__builtin_unreachable()`.
+
+## Why protobuf-v4 encode is ~3× slower
+
+The encode harness is identical across implementations (pre-decode outside the timed
+loop, fresh allocation per iteration, `black_box` the result), and `serialize()` is
+the only public encode API on the `protobuf` v4 crate, so the gap is what every Rust
+consumer of that crate sees today. Two architectural costs account for it:
+
+- **`serialize()` allocates a fresh upb arena, encodes back-to-front into it, then
+  copies the arena buffer into a `Vec<u8>`.** `upb_Encode` has no capacity hint
+  (`upb_ByteSize` exists but is implemented as a second full encode), so it starts
+  from a small block and `encode_growbuffer` doubles on overflow — each growth is a
+  `memmove` of the bytes written so far. The Rust wrapper then `.to_vec()`s the final
+  arena slice. For a message dominated by a large `bytes` field (MediaFrame), `perf`
+  shows ~55–60% of self-time in libc `memcpy`/`memmove` plus arena alloc/free, and
+  the result is roughly three times the copy work of buffa's and prost's
+  `Vec::with_capacity(encoded_len())` followed by a single in-place write. There is
+  no `serialize_into(&mut Vec)` or arena-reuse path in the public API; the
+  lower-level `upb::wire::encode` lives under `protobuf::__internal`. This boundary
+  copy — moving bytes from C-managed arena memory into a Rust-owned `Vec` — is
+  exactly the FFI tax a pure-Rust implementation avoids by construction.
+- **upb's encoder is table-driven, where buffa's and prost's are monomorphized
+  generated code.** For scalar-heavy messages (ApiResponse, GoogleMessage1), `perf`
+  shows ~75% of time inside `upb_Encode`'s mini-table walk (`encode_message` /
+  `encode_scalar` / `encode_array`) versus the fully-inlined per-field code that
+  Rust codegen produces. That is a deliberate upb design choice (one encoder for all
+  message shapes, small binary), not a benchmark artefact.
+
+Decode is a different story: upb's decoder is competitive with the generated Rust
+decoders on most shapes, because the arena already holds the parsed message and
+there is no C→Rust output copy on the hot path.
 
 ## Files
 

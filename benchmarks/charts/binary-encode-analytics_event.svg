@@ -38,19 +38,19 @@
   <line x1="664.5" y1="237" x2="670.5" y2="227" stroke="#57606a" stroke-width="1"/>
   <line x1="670.5" y1="237" x2="676.5" y2="227" stroke="#57606a" stroke-width="1"/>
   <text x="130" y="160.0" text-anchor="end" class="label">AnalyticsEvent</text>
-  <rect x="140" y="80.0" width="417.7" height="22" rx="2" fill="#4C78A8"/>
-  <text x="561.7" y="95.0" class="value">409</text>
-  <rect x="140" y="106.0" width="435.3" height="22" rx="2" fill="#72B7B2"/>
-  <text x="579.3" y="121.0" class="value">426</text>
+  <rect x="140" y="80.0" width="419.2" height="22" rx="2" fill="#4C78A8"/>
+  <text x="563.2" y="95.0" class="value">411</text>
+  <rect x="140" y="106.0" width="440.1" height="22" rx="2" fill="#72B7B2"/>
+  <text x="584.1" y="121.0" class="value">431</text>
   <rect x="140" y="132.0" width="580.0" height="22" rx="2" fill="#A0CBE8"/>
   <polygon points="663.5,155.0 669.5,131.0 675.5,131.0 669.5,155.0" fill="white"/>
   <line x1="663.5" y1="155.0" x2="669.5" y2="131.0" stroke="#57606a" stroke-width="1"/>
   <line x1="669.5" y1="155.0" x2="675.5" y2="131.0" stroke="#57606a" stroke-width="1"/>
-  <text x="724.0" y="147.0" class="value">12,971</text>
-  <rect x="140" y="158.0" width="240.8" height="22" rx="2" fill="#F58518"/>
-  <text x="384.8" y="173.0" class="value">236</text>
-  <rect x="140" y="184.0" width="319.1" height="22" rx="2" fill="#E45756"/>
-  <text x="463.1" y="199.0" class="value">312</text>
+  <text x="724.0" y="147.0" class="value">13,268</text>
+  <rect x="140" y="158.0" width="241.8" height="22" rx="2" fill="#F58518"/>
+  <text x="385.8" y="173.0" class="value">237</text>
+  <rect x="140" y="184.0" width="315.7" height="22" rx="2" fill="#E45756"/>
+  <text x="459.7" y="199.0" class="value">309</text>
   <rect x="140" y="210.0" width="107.0" height="22" rx="2" fill="#54A24B"/>
   <text x="251.0" y="225.0" class="value">104</text>
 </svg>

@@ -30,6 +30,10 @@ export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-1.96.0}"
 export CARGO_PROFILE_BENCH_LTO=true
 export CARGO_PROFILE_BENCH_CODEGEN_UNITS=1
 export RUSTFLAGS="${RUSTFLAGS:--Cllvm-args=-align-all-nofallthru-blocks=6}"
+# protobuf-v4 wraps upb (C); the cc crate does not auto-define NDEBUG, and the
+# upstream build.rs doesn't either, so without this every UPB_ASSERT is a live
+# assert() and every UPB_ASSUME is assert() instead of __builtin_unreachable().
+export CFLAGS="${CFLAGS:-} -DNDEBUG"
 PASSES="${PASSES:-5}"          # sequential one-at-a-time passes per impl
 WARMUP="${WARMUP:-1}"
 MEASURE="${MEASURE:-3}"

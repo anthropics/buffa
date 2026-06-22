@@ -30,10 +30,10 @@
   <text x="720.0" y="169" text-anchor="middle" class="axis-label">200</text>
   <text x="430.0" y="184" text-anchor="middle" class="axis-label">MiB/s</text>
   <text x="130" y="121.0" text-anchor="end" class="label">AnalyticsEvent</text>
-  <rect x="140" y="80.0" width="349.9" height="22" rx="2" fill="#4C78A8"/>
-  <text x="493.9" y="95.0" class="value">120</text>
-  <rect x="140" y="106.0" width="159.3" height="22" rx="2" fill="#B279A2"/>
-  <text x="303.3" y="121.0" class="value">54</text>
-  <rect x="140" y="132.0" width="555.5" height="22" rx="2" fill="#72B7B2"/>
-  <text x="699.5" y="147.0" class="value">191</text>
+  <rect x="140" y="80.0" width="371.1" height="22" rx="2" fill="#4C78A8"/>
+  <text x="515.1" y="95.0" class="value">127</text>
+  <rect x="140" y="106.0" width="156.7" height="22" rx="2" fill="#B279A2"/>
+  <text x="300.7" y="121.0" class="value">54</text>
+  <rect x="140" y="132.0" width="560.1" height="22" rx="2" fill="#72B7B2"/>
+  <text x="704.1" y="147.0" class="value">193</text>
 </svg>
