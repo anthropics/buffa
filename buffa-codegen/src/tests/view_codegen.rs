@@ -490,14 +490,15 @@ fn test_view_packed_scalar_reserves_capacity() {
     )
     .expect("should generate");
     let content = &joined(&files);
-    // Varint kinds reserve payload.len() (upper bound: ≥1 byte/element).
+    // Varint kinds reserve the exact element count via count_varints (a
+    // varint is 1-10 bytes, so the byte length is not the count).
     assert!(
-        content.contains("view.ids.reserve(payload.len());"),
-        "varint packed view must reserve using the payload length: {content}"
+        content.contains("view.ids.reserve(::buffa::encoding::count_varints(payload));"),
+        "varint packed view must reserve the counted element count: {content}"
     );
     assert!(
-        content.contains("view.flags.reserve(payload.len());"),
-        "bool packed view must reserve using the payload length: {content}"
+        content.contains("view.flags.reserve(::buffa::encoding::count_varints(payload));"),
+        "bool packed view must reserve the counted element count: {content}"
     );
     // 4-byte fixed kinds reserve payload.len() / 4.
     assert!(

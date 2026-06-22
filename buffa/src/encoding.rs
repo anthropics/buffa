@@ -177,6 +177,26 @@ pub fn encode_varint(mut value: u64, buf: &mut impl BufMut) {
     }
 }
 
+/// Count the varints in a packed payload, i.e. the number of bytes whose
+/// continuation bit is clear (`b < 0x80`).
+///
+/// Every varint ends in exactly one such terminator byte, so for a well-formed
+/// packed payload this is the exact element count, computed in a single pass.
+/// The result is always `<= payload.len()` — equal only when every value is
+/// single-byte — so it never over-counts the way the raw byte length does for
+/// multi-byte varints. A truncated final varint (no terminator) makes the
+/// result one short, which is harmless when sizing a buffer: it costs at most
+/// one extra reallocation, and decoding then errors on the malformed bytes
+/// anyway.
+///
+/// Generated `decode_view` code uses this to size a packed varint field's
+/// backing storage in a single allocation.
+#[must_use]
+#[inline]
+pub fn count_varints(payload: &[u8]) -> usize {
+    payload.iter().filter(|&&b| b < 0x80).count()
+}
+
 /// Decode a varint from a buffer.
 ///
 /// Uses a chunk-based strategy for performance:
@@ -1280,6 +1300,35 @@ mod tests {
             let decoded = decode_varint(&mut buf.as_slice()).unwrap();
             assert_eq!(v, decoded);
         }
+    }
+
+    #[test]
+    fn test_count_varints() {
+        // Empty payload: no elements.
+        assert_eq!(count_varints(&[]), 0);
+        // Single-byte values: count == byte count.
+        assert_eq!(count_varints(&[0x01, 0x02, 0x7F]), 3);
+        // Build a packed payload of varints of mixed widths and confirm the
+        // count matches the number encoded — never the byte length.
+        let values: &[u64] = &[0, 1, 127, 128, 300, 16_384, u64::MAX];
+        let mut payload = Vec::new();
+        for &v in values {
+            encode_varint(v, &mut payload);
+        }
+        assert!(payload.len() > values.len(), "payload should be multi-byte");
+        assert_eq!(count_varints(&payload), values.len());
+        // Never exceeds the byte-length upper bound.
+        assert!(count_varints(&payload) <= payload.len());
+        // A negative int32/int64 sign-extends to all-ones = a 10-byte varint,
+        // i.e. one element in 10 bytes — the worst case the old `payload.len()`
+        // bound over-reserved 10x.
+        let mut neg64 = Vec::new();
+        encode_varint(u64::MAX, &mut neg64);
+        assert_eq!(neg64.len(), 10);
+        assert_eq!(count_varints(&neg64), 1);
+        // Truncated final varint (no terminator) under-counts by one, not over.
+        assert_eq!(count_varints(&[0x80, 0x80]), 0);
+        assert_eq!(count_varints(&[0x05, 0x80]), 1);
     }
 
     // --- 32-bit specific tests ---

@@ -8,6 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **Custom owned `string` types for `map` keys and values** (#156). A `string_type`
+  rule (`string_type_custom` / `string_type_custom_in`) now also applies to a
+  `map<string, V>` key and a `map<K, string>` value — one rule on the map field
+  path covers both slots of a `map<string, string>` — mirroring how `bytes_type`
+  already reaches `map<K, bytes>` values. The element decodes/encodes through the
+  new sealed `buffa::map_codec::ProtoStringMap<S>` codec; no new build knob. The
+  wire format is unchanged and view types still borrow `&str`. Requirements on
+  the custom type when used in a map: `Hash + Eq` (or `Ord` for
+  `map_type(BTreeMap)`) for a key; `serde::Serialize` / `Deserialize` for JSON;
+  and — because the map paths have no per-key generic shim — a crate-local
+  newtype (vtable reflection emits `ReflectMapKey` / `ReflectElement` for it) and
+  its own `Arbitrary` impl under `generate_arbitrary`. Custom-string-keyed maps
+  whose value needs proto3-JSON encoding (int64/float/bytes) serialize through a
+  new `proto_str_key_map` `with`-module (the existing `proto_map` requires
+  `Display + FromStr`, which a `ProtoString` need not implement).
+
 - **Pluggable owned map container for `map<K, V>` fields** (#156). A new
   `buffa::MapStorage` trait (with associated `Key` / `Value` types) selects the
   owned map collection, via `buffa_build`'s `map_type` / `map_type_custom` knobs.
@@ -180,6 +196,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   and digits); anything else is rejected at generation time.
 
 ### Changed
+
+- `SizeCache` no longer zeroes its inline slot array on construction. A fresh
+  cache is built for every `encode`/`compute_size`, and because it is passed by
+  `&mut` to an out-of-line `compute_size` the compiler cannot elide the unused
+  tail, so the previous `[0u32; N]` initializer emitted `N/4` SSE stores on
+  every encode (confirmed by disassembly). The inline storage is now
+  `[MaybeUninit<u32>; N]`, written only for the slots actually used; a slot is
+  always written by `reserve` before `len` advances past it and read only at
+  indices `< len`, so the single `assume_init` in `consume_next` is sound. This
+  invariant is private to the `size_cache` module (no external code can break
+  it — worst case is a panic, never UB) and is checked mechanically in CI by a
+  Miri job over the `size_cache` tests. No API or wire-format change. (#223)
+
+- **Default `map<K,V>` hasher is now `foldhash::fast::RandomState`** on `std`
+  builds (previously `std::hash::RandomState` / SipHash-1-3). The container
+  remains `std::collections::HashMap`; only the `S` type parameter changes.
+  This brings the `std` build in line with `no_std` (which already used
+  `foldhash` via `hashbrown`'s default) and matches the hasher class used by
+  Google's `protobuf-v4` (upb / Wyhash). On the LogRecord benchmark — a
+  string-and-map-heavy shape — this is roughly a 12% owned-decode speedup.
+  `foldhash::fast` is per-instance seeded (from ASLR addresses and process
+  start time, not a CSPRNG) and does not advertise HashDoS resistance; treat
+  the default as not hardened against adversarial hash flooding. Consumers
+  decoding `map` fields with attacker-controlled keys who need a hardened
+  bound can select `MapRepr::BTreeMap` (no hashing) or supply a SipHash-backed
+  map via `MapRepr::Custom`. The `MapStorage` and
+  `ReflectMap` impls are now generic over the hasher `S`, so a custom-hasher
+  `std::collections::HashMap` works without a newtype. **Migration:** the
+  concrete map field type changes, so code that names
+  `std::collections::HashMap<K,V>` (default `S`) for a generated field no
+  longer type-checks — use the `buffa::Map<K,V>` alias instead. Construct
+  empty maps with `buffa::Map::default()` (`HashMap::new()` /
+  `HashMap::with_capacity()` are unavailable on `std` builds because they are
+  pinned to std's default hasher; use `default()` on both `std` and `no_std`
+  for portability). Array-literal construction via `Map::from([...])` /
+  `.into()` is likewise unavailable; use `[...].into_iter().collect()`.
+  `buffa::Map` and `buffa::foldhash` are now re-exported at the crate root.
 
 - Generated decode arms (owned merge, view decode, lazy record arms,
   map-entry loops) emit a single `::buffa::encoding::check_wire_type` call

@@ -162,7 +162,7 @@ fn owned_vtable_matches_bridge_for_every_field() {
     }
 
     // Map fields (Inventory.stock: map<string, int32>) — separate message.
-    let mut stock = std::collections::HashMap::new();
+    let mut stock = buffa::Map::default();
     stock.insert("apples".to_string(), 3);
     stock.insert("oranges".to_string(), 7);
     let inv = Inventory {

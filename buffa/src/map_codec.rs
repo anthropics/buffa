@@ -37,11 +37,46 @@ use crate::types;
 use crate::{DecodeContext, EnumValue, Enumeration, Message, SizeCache};
 use core::hash::Hash;
 
-/// The `HashMap` type generated map fields use (`std` or `hashbrown`).
+/// The default owned `HashMap` type generated `map<K, V>` fields use.
 ///
-/// An alias for the deliberately unstable `__private::HashMap`; it appears
-/// in these helpers' signatures only so generated call sites type-check.
-/// Like the rest of this module it is not a stable consumer-facing surface.
+/// On `std` builds this resolves to `std::collections::HashMap<K, V,
+/// foldhash::fast::RandomState>`; on `no_std` builds it is
+/// `hashbrown::HashMap<K, V>` (which defaults to the same `foldhash` hasher).
+/// This alias is the recommended way to name a generated map field's type in
+/// downstream code, so that the concrete hasher and container stay an
+/// implementation detail.
+///
+/// Re-exported at the crate root as `buffa::Map`, alongside [`MapStorage`]:
+/// `use buffa::Map;`.
+///
+/// # Construction
+///
+/// Use [`Map::default`] to construct an empty map. The inherent
+/// `HashMap::new()` and `HashMap::with_capacity()` are only defined for the
+/// std default hasher, so they are unavailable on `Map` under `std` (and would
+/// be non-portable across the `std`/`no_std` boundary). For literals, use
+/// `[(k, v), ..].into_iter().collect()` rather than `Map::from([...])` —
+/// `From<[_; N]>` is likewise hasher-pinned in std. To preallocate, use
+/// `std::collections::HashMap::with_capacity_and_hasher(n, Default::default())`.
+///
+/// # Hasher and HashDoS
+///
+/// `foldhash::fast` is per-instance seeded — each `Map::default()` derives a
+/// fresh seed from the stack pointer mixed with a thread-local counter,
+/// layered on a process-wide seed derived from ASLR addresses and process
+/// start time. That nondeterminism means a single static collision set will
+/// not transfer across processes, but the seed is **not** drawn from a
+/// CSPRNG (unlike `std::hash::RandomState`, which seeds SipHash from
+/// `getrandom`), and `foldhash::fast` does not advertise HashDoS resistance.
+/// Treat this default as **not hardened** against adversarial hash flooding.
+///
+/// This is the same trade-off Google's `protobuf-v4`/upb makes (Wyhash).
+/// Consumers decoding `map` fields with attacker-controlled keys who need a
+/// hardened bound should select `MapRepr::BTreeMap` (no hashing, O(log n)
+/// worst case) or supply a SipHash-backed map via `MapRepr::Custom`. The
+/// [`MapStorage`] impl is generic over the hasher, so
+/// `std::collections::HashMap<K, V, std::hash::RandomState>` works without a
+/// newtype — only a foreign *container* type (e.g. `IndexMap`) needs one.
 pub type Map<K, V> = crate::__private::HashMap<K, V>;
 
 /// The owned collection backing a proto `map<K, V>` field.
@@ -140,30 +175,44 @@ pub trait MapStorage {
         Self::Value: 'a;
 }
 
-impl<K: Eq + Hash, V> MapStorage for crate::__private::HashMap<K, V> {
-    type Key = K;
-    type Value = V;
-    #[inline]
-    fn storage_len(&self) -> usize {
-        self.len()
-    }
-    #[inline]
-    fn storage_insert(&mut self, key: K, value: V) {
-        self.insert(key, value);
-    }
-    #[inline]
-    fn storage_clear(&mut self) {
-        self.clear();
-    }
-    #[inline]
-    fn storage_iter<'a>(&'a self) -> impl Iterator<Item = (&'a K, &'a V)>
-    where
-        K: 'a,
-        V: 'a,
-    {
-        self.iter()
-    }
+/// Implements [`MapStorage`] for both the `std` and `no_std` `HashMap` types,
+/// generic over the hasher `S`. The buffa default `S` is `foldhash` on both
+/// paths (see [`Map`]); the `S` parameter lets `MapRepr::Custom` users reach
+/// any `BuildHasher` without a newtype. The `S: Default` bound is required so
+/// generated owned messages can `Default`-construct the field — the read-only
+/// `ReflectMap` impl in `buffa-descriptor` relaxes to `S: BuildHasher`.
+macro_rules! map_storage_hashmap {
+    ($($ty:tt)*) => {
+        impl<K: Eq + Hash, V, S: core::hash::BuildHasher + Default> MapStorage for $($ty)*<K, V, S> {
+            type Key = K;
+            type Value = V;
+            #[inline]
+            fn storage_len(&self) -> usize {
+                self.len()
+            }
+            #[inline]
+            fn storage_insert(&mut self, key: K, value: V) {
+                self.insert(key, value);
+            }
+            #[inline]
+            fn storage_clear(&mut self) {
+                self.clear();
+            }
+            #[inline]
+            fn storage_iter<'a>(&'a self) -> impl Iterator<Item = (&'a K, &'a V)>
+            where
+                K: 'a,
+                V: 'a,
+            {
+                self.iter()
+            }
+        }
+    };
 }
+#[cfg(feature = "std")]
+map_storage_hashmap!(std::collections::HashMap);
+#[cfg(not(feature = "std"))]
+map_storage_hashmap!(hashbrown::HashMap);
 
 impl<K: Ord, V> MapStorage for crate::alloc::collections::BTreeMap<K, V> {
     type Key = K;
@@ -435,6 +484,49 @@ impl<B: crate::types::ProtoBytes> MapCodec for ProtoBytesMap<B> {
     #[inline]
     fn encode(value: &Self::Value, buf: &mut impl BufMut) {
         types::encode_bytes(value.as_ref(), buf);
+    }
+}
+
+/// `string` codec for a custom [`ProtoString`](crate::types::ProtoString)
+/// map key or value representation (via `string_type_custom`). Decodes through
+/// [`from_wire`](crate::types::ProtoString::from_wire) (UTF-8 validation
+/// included); encodes the borrowed `&str`. Generic over the type, so the codec
+/// itself stays sealed in buffa while the concrete representation is a
+/// downstream (crate-local) type.
+///
+/// Unlike [`ProtoBytesMap`], which is value-only (proto forbids `bytes` map
+/// keys), this codec serves **both** map slots — `string` is a legal key and
+/// value type. Used as a *key*, the type additionally needs the container's
+/// `Eq + Hash` (`HashMap`) or `Ord` (`BTreeMap`) bound; that is enforced at the
+/// generated map field type via the [`MapStorage`] impls, not here.
+pub struct ProtoStringMap<S>(core::marker::PhantomData<S>);
+
+impl<S: crate::types::ProtoString> sealed::Sealed for ProtoStringMap<S> {}
+
+impl<S: crate::types::ProtoString> MapValueDecode for ProtoStringMap<S> {
+    type Value = S;
+    const WIRE_TYPE: WireType = WireType::LengthDelimited;
+
+    #[inline]
+    fn merge(
+        value: &mut Self::Value,
+        buf: &mut impl Buf,
+        _ctx: DecodeContext<'_>,
+    ) -> Result<(), DecodeError> {
+        *value = crate::types::decode_string_to::<S>(buf)?;
+        Ok(())
+    }
+}
+
+impl<S: crate::types::ProtoString> MapCodec for ProtoStringMap<S> {
+    #[inline]
+    fn encoded_len(value: &Self::Value) -> u32 {
+        types::string_encoded_len(value.as_ref()) as u32
+    }
+
+    #[inline]
+    fn encode(value: &Self::Value, buf: &mut impl BufMut) {
+        types::encode_string(value.as_ref(), buf);
     }
 }
 
@@ -732,6 +824,32 @@ mod tests {
         let wire = encode_field::<Str, Int32>(&map, 5, 1);
         let back = decode_field::<Str, Int32>(&wire);
         assert_eq!(back, map);
+    }
+
+    #[test]
+    fn proto_string_map_codec_matches_str() {
+        // `ProtoStringMap<String>` (the custom-string codec, monomorphized on the
+        // built-in `String`) must produce byte-identical output to the canonical
+        // `Str` codec and round-trip through it — proving the custom-string map
+        // key/value path is wire-compatible with the default.
+        let mut map: Map<String, i32> = Map::default();
+        map.insert("a".into(), 1);
+        map.insert("bee".into(), -7);
+
+        let str_wire = encode_field::<Str, Int32>(&map, 5, 1);
+        let custom_wire = encode_field::<ProtoStringMap<String>, Int32>(&map, 5, 1);
+        // Map iteration order is unspecified, so compare via decode, not bytes.
+        assert_eq!(
+            decode_field::<ProtoStringMap<String>, Int32>(&str_wire),
+            map
+        );
+        assert_eq!(decode_field::<Str, Int32>(&custom_wire), map);
+
+        // As a value codec too: `map<int32, string>`.
+        let mut vmap: Map<i32, String> = Map::default();
+        vmap.insert(1, "x".into());
+        let vwire = encode_field::<Int32, ProtoStringMap<String>>(&vmap, 3, 1);
+        assert_eq!(decode_field::<Int32, ProtoStringMap<String>>(&vwire), vmap);
     }
 
     #[test]

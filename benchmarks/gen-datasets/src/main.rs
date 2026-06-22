@@ -204,6 +204,20 @@ fn gen_packed_tile(rng: &mut impl Rng) -> PackedTile {
     }
 }
 
+fn gen_packed_signed(rng: &mut impl Rng) -> PackedSigned {
+    // All-negative values so every element is a 10-byte varint: the worst case
+    // for the byte-length reservation the count-based reserve replaces.
+    PackedSigned {
+        deltas: (0..rng.random_range(64..=128))
+            .map(|_| -rng.random_range(1..=1_000_000i32))
+            .collect(),
+        wide_deltas: (0..rng.random_range(32..=64))
+            .map(|_| -rng.random_range(1..=1_000_000_000_000i64))
+            .collect(),
+        ..Default::default()
+    }
+}
+
 fn write_dataset<M: Message>(name: &str, message_name: &str, output_dir: &Path, payloads: Vec<M>) {
     let encoded_payloads: Vec<Vec<u8>> = payloads.iter().map(|m| m.encode_to_vec()).collect();
 
@@ -273,6 +287,15 @@ fn main() {
         output_dir,
         (0..NUM_PAYLOADS)
             .map(|_| gen_packed_tile(&mut rng))
+            .collect(),
+    );
+
+    write_dataset(
+        "packed_signed",
+        "bench.PackedSigned",
+        output_dir,
+        (0..NUM_PAYLOADS)
+            .map(|_| gen_packed_signed(&mut rng))
             .collect(),
     );
 
