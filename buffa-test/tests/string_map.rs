@@ -13,34 +13,33 @@
 //!   senum string→enum    : `map_enum`
 //!
 //! The checks below pin the field types and the binary / JSON / text / view→owned
-//! / reflection round-trips. `MapStr` is `Hash + Eq + Ord` (HashMap key) and
+//! / reflection round-trips. `MapStr` is `Hash + Eq + Ord` (map key) and
 //! derives serde + (under the feature) `Arbitrary`.
 
-use buffa::Message;
+use buffa::{Map, Message};
 use buffa_test::string_map::{Color, Inner, MapStr, Maps};
-use std::collections::HashMap;
 
 fn s(v: &str) -> MapStr {
     MapStr(v.to_string())
 }
 
 fn sample() -> Maps {
-    let mut ss = HashMap::new();
+    let mut ss = Map::default();
     ss.insert(s("alpha"), s("first"));
     ss.insert(s("beta"), s("second"));
 
-    let mut si64 = HashMap::new();
+    let mut si64 = Map::default();
     si64.insert(s("big"), 9_000_000_000i64);
     si64.insert(s("neg"), -42i64);
 
-    let mut sf64 = HashMap::new();
+    let mut sf64 = Map::default();
     sf64.insert(s("half"), 0.5f64);
 
-    let mut i32s = HashMap::new();
+    let mut i32s = Map::default();
     i32s.insert(7i32, s("seven"));
     i32s.insert(-1i32, s("minus-one"));
 
-    let mut smsg = HashMap::new();
+    let mut smsg = Map::default();
     smsg.insert(
         s("one"),
         Inner {
@@ -49,7 +48,7 @@ fn sample() -> Maps {
         },
     );
 
-    let mut senum = HashMap::new();
+    let mut senum = Map::default();
     senum.insert(s("red"), buffa::EnumValue::Known(Color::COLOR_RED));
     senum.insert(s("blue"), buffa::EnumValue::Known(Color::COLOR_BLUE));
 
@@ -69,12 +68,12 @@ fn field_types_use_custom_string() {
     // Fails to compile if codegen emitted `String` for any custom `string` map
     // slot. The key type is the custom `MapStr` (so it had to be `Hash + Eq`).
     let m = Maps::default();
-    let _: &HashMap<MapStr, MapStr> = &m.ss;
-    let _: &HashMap<MapStr, i64> = &m.si64;
-    let _: &HashMap<MapStr, f64> = &m.sf64;
-    let _: &HashMap<i32, MapStr> = &m.i32s;
-    let _: &HashMap<MapStr, Inner> = &m.smsg;
-    let _: &HashMap<MapStr, buffa::EnumValue<Color>> = &m.senum;
+    let _: &Map<MapStr, MapStr> = &m.ss;
+    let _: &Map<MapStr, i64> = &m.si64;
+    let _: &Map<MapStr, f64> = &m.sf64;
+    let _: &Map<i32, MapStr> = &m.i32s;
+    let _: &Map<MapStr, Inner> = &m.smsg;
+    let _: &Map<MapStr, buffa::EnumValue<Color>> = &m.senum;
 }
 
 #[test]
