@@ -79,6 +79,29 @@ jobs:
       - uses: actions/checkout@v4
       - run: npx --yes markdownlint-cli@0.47.0 '**/*.md' --ignore target --ignore .claude
 
+  # ── Changelog check ──────────────────────────────────────────────────────
+  # CHANGELOG.md is generated from .changes/ via changie. Fail if it has been
+  # edited directly or is stale relative to the per-version source files.
+  check-changelog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install changie
+        env:
+          CHANGIE_VERSION: 1.24.2
+        run: |
+          curl -fsSL "https://github.com/miniscruff/changie/releases/download/v${CHANGIE_VERSION}/changie_${CHANGIE_VERSION}_linux_amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin changie
+          changie --version
+      - name: Verify CHANGELOG.md is in sync
+        run: |
+          changie merge
+          git diff --exit-code -- CHANGELOG.md || {
+            echo '::error file=CHANGELOG.md::CHANGELOG.md is out of sync. Do not edit it directly — add a fragment via `task changelog-new` (see CONTRIBUTING.md), or run `task changelog-merge` if you edited a .changes/ file.'
+            exit 1
+          }
+
   # ── MSRV check ───────────────────────────────────────────────────────────
   msrv-check:
     runs-on: ubuntu-latest

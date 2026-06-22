@@ -131,8 +131,8 @@ tasks:
         msg: >-
           gh CLI must be authenticated. Run: gh auth login
     cmds:
-      - rm -rf .local/bin .local/include
-      - mkdir -p .local
+      - rm -rf .local/bin/protoc .local/include
+      - mkdir -p .local/bin
       - gh release download 'v{{.PROTO_VER}}'
           --repo protocolbuffers/protobuf
           --pattern 'protoc-*-{{.PROTOC_OS}}-{{.PROTOC_ARCH}}.zip'
@@ -142,6 +142,61 @@ tasks:
       - rm -f /tmp/protoc-install.zip
       - chmod +x .local/bin/protoc
       - .local/bin/protoc --version
+
+  install-changie:
+    desc: >-
+      Download changie (changelog fragment manager) into .local/bin/ via
+      gh release download. The changelog-* tasks depend on this, so a direct
+      install is rarely needed.
+    vars:
+      CHANGIE_VERSION: 1.24.2
+      CHANGIE_OS:
+        sh: uname -s | sed 's/Linux/linux/;s/Darwin/darwin/'
+      CHANGIE_ARCH:
+        sh: uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'
+    status:
+      - .local/bin/changie --version 2>/dev/null | grep -qF "v{{.CHANGIE_VERSION}}"
+    preconditions:
+      - sh: gh auth status
+        msg: >-
+          gh CLI must be authenticated. Run: gh auth login
+    cmds:
+      - mkdir -p .local/bin
+      - gh release download 'v{{.CHANGIE_VERSION}}'
+          --repo miniscruff/changie
+          --pattern 'changie_*_{{.CHANGIE_OS}}_{{.CHANGIE_ARCH}}.tar.gz'
+          --output - | tar -xz -C .local/bin changie
+      - .local/bin/changie --version
+
+  changelog-new:
+    desc: >-
+      Create a new changelog fragment under .changes/unreleased/. Prompts
+      for kind (Added, Changed, Fixed, etc.) and a multi-line body. Run
+      this in your PR instead of editing CHANGELOG.md directly. Pass flags
+      after `--` for non-interactive use, e.g.:
+        task changelog-new -- -k Fixed -b "One-line body."
+    deps: [install-changie]
+    cmds:
+      - .local/bin/changie new {{.CLI_ARGS}}
+
+  changelog-batch:
+    desc: >-
+      Roll all .changes/unreleased/ fragments into .changes/<version>.md
+      and delete the fragments. Usage: task changelog-batch -- 0.8.0
+      Release-time only — run from the cut-release flow, then edit the
+      generated section to add any release-notes prose before changelog-merge.
+    deps: [install-changie]
+    cmds:
+      - .local/bin/changie batch {{.CLI_ARGS}}
+
+  changelog-merge:
+    desc: >-
+      Regenerate CHANGELOG.md from .changes/header.tpl.md and the per-version
+      .changes/*.md files. CHANGELOG.md is a generated artifact — never edit
+      it directly; edit the source files and re-run this task.
+    deps: [install-changie]
+    cmds:
+      - .local/bin/changie merge
 
   test-local:
     desc: >-
