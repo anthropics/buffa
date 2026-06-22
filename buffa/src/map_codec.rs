@@ -37,11 +37,46 @@ use crate::types;
 use crate::{DecodeContext, EnumValue, Enumeration, Message, SizeCache};
 use core::hash::Hash;
 
-/// The `HashMap` type generated map fields use (`std` or `hashbrown`).
+/// The default owned `HashMap` type generated `map<K, V>` fields use.
 ///
-/// An alias for the deliberately unstable `__private::HashMap`; it appears
-/// in these helpers' signatures only so generated call sites type-check.
-/// Like the rest of this module it is not a stable consumer-facing surface.
+/// On `std` builds this resolves to `std::collections::HashMap<K, V,
+/// foldhash::fast::RandomState>`; on `no_std` builds it is
+/// `hashbrown::HashMap<K, V>` (which defaults to the same `foldhash` hasher).
+/// This alias is the recommended way to name a generated map field's type in
+/// downstream code, so that the concrete hasher and container stay an
+/// implementation detail.
+///
+/// Re-exported at the crate root as `buffa::Map`, alongside [`MapStorage`]:
+/// `use buffa::Map;`.
+///
+/// # Construction
+///
+/// Use [`Map::default`] to construct an empty map. The inherent
+/// `HashMap::new()` and `HashMap::with_capacity()` are only defined for the
+/// std default hasher, so they are unavailable on `Map` under `std` (and would
+/// be non-portable across the `std`/`no_std` boundary). For literals, use
+/// `[(k, v), ..].into_iter().collect()` rather than `Map::from([...])` —
+/// `From<[_; N]>` is likewise hasher-pinned in std. To preallocate, use
+/// `std::collections::HashMap::with_capacity_and_hasher(n, Default::default())`.
+///
+/// # Hasher and HashDoS
+///
+/// `foldhash::fast` is per-instance seeded — each `Map::default()` derives a
+/// fresh seed from the stack pointer mixed with a thread-local counter,
+/// layered on a process-wide seed derived from ASLR addresses and process
+/// start time. That nondeterminism means a single static collision set will
+/// not transfer across processes, but the seed is **not** drawn from a
+/// CSPRNG (unlike `std::hash::RandomState`, which seeds SipHash from
+/// `getrandom`), and `foldhash::fast` does not advertise HashDoS resistance.
+/// Treat this default as **not hardened** against adversarial hash flooding.
+///
+/// This is the same trade-off Google's `protobuf-v4`/upb makes (Wyhash).
+/// Consumers decoding `map` fields with attacker-controlled keys who need a
+/// hardened bound should select `MapRepr::BTreeMap` (no hashing, O(log n)
+/// worst case) or supply a SipHash-backed map via `MapRepr::Custom`. The
+/// [`MapStorage`] impl is generic over the hasher, so
+/// `std::collections::HashMap<K, V, std::hash::RandomState>` works without a
+/// newtype — only a foreign *container* type (e.g. `IndexMap`) needs one.
 pub type Map<K, V> = crate::__private::HashMap<K, V>;
 
 /// The owned collection backing a proto `map<K, V>` field.
@@ -140,30 +175,44 @@ pub trait MapStorage {
         Self::Value: 'a;
 }
 
-impl<K: Eq + Hash, V> MapStorage for crate::__private::HashMap<K, V> {
-    type Key = K;
-    type Value = V;
-    #[inline]
-    fn storage_len(&self) -> usize {
-        self.len()
-    }
-    #[inline]
-    fn storage_insert(&mut self, key: K, value: V) {
-        self.insert(key, value);
-    }
-    #[inline]
-    fn storage_clear(&mut self) {
-        self.clear();
-    }
-    #[inline]
-    fn storage_iter<'a>(&'a self) -> impl Iterator<Item = (&'a K, &'a V)>
-    where
-        K: 'a,
-        V: 'a,
-    {
-        self.iter()
-    }
+/// Implements [`MapStorage`] for both the `std` and `no_std` `HashMap` types,
+/// generic over the hasher `S`. The buffa default `S` is `foldhash` on both
+/// paths (see [`Map`]); the `S` parameter lets `MapRepr::Custom` users reach
+/// any `BuildHasher` without a newtype. The `S: Default` bound is required so
+/// generated owned messages can `Default`-construct the field — the read-only
+/// `ReflectMap` impl in `buffa-descriptor` relaxes to `S: BuildHasher`.
+macro_rules! map_storage_hashmap {
+    ($($ty:tt)*) => {
+        impl<K: Eq + Hash, V, S: core::hash::BuildHasher + Default> MapStorage for $($ty)*<K, V, S> {
+            type Key = K;
+            type Value = V;
+            #[inline]
+            fn storage_len(&self) -> usize {
+                self.len()
+            }
+            #[inline]
+            fn storage_insert(&mut self, key: K, value: V) {
+                self.insert(key, value);
+            }
+            #[inline]
+            fn storage_clear(&mut self) {
+                self.clear();
+            }
+            #[inline]
+            fn storage_iter<'a>(&'a self) -> impl Iterator<Item = (&'a K, &'a V)>
+            where
+                K: 'a,
+                V: 'a,
+            {
+                self.iter()
+            }
+        }
+    };
 }
+#[cfg(feature = "std")]
+map_storage_hashmap!(std::collections::HashMap);
+#[cfg(not(feature = "std"))]
+map_storage_hashmap!(hashbrown::HashMap);
 
 impl<K: Ord, V> MapStorage for crate::alloc::collections::BTreeMap<K, V> {
     type Key = K;
@@ -212,8 +261,22 @@ pub trait MapValueDecode: sealed::Sealed {
     type Value: Default;
     /// The wire type every payload of this codec carries.
     const WIRE_TYPE: WireType;
+    /// Whether [`merge`](Self::merge) can report
+    /// [`MapValueDecodeStatus::Unknown`].
+    ///
+    /// This is false for ordinary scalar/message codecs and true for closed
+    /// enum codecs. [`merge_entry_with_unknowns`] uses it to avoid buffering
+    /// map-entry payloads unless a value can actually force whole-entry
+    /// unknown-field preservation.
+    const MAY_RETURN_UNKNOWN: bool = false;
 
     /// Merge one payload from `buf` into `value`.
+    ///
+    /// Returns [`MapValueDecodeStatus::Known`] in the normal case, or
+    /// [`MapValueDecodeStatus::Unknown`] when this codec is a closed enum and
+    /// the payload's numeric value is not a declared variant — letting the
+    /// caller route the whole map entry to unknown fields instead of inserting
+    /// it.
     ///
     /// `ctx` carries the remaining recursion and unknown-field budgets
     /// (used by message values; scalar codecs ignore it).
@@ -225,7 +288,20 @@ pub trait MapValueDecode: sealed::Sealed {
         value: &mut Self::Value,
         buf: &mut impl Buf,
         ctx: DecodeContext<'_>,
-    ) -> Result<(), DecodeError>;
+    ) -> Result<MapValueDecodeStatus, DecodeError>;
+}
+
+/// Result of decoding one map-entry key/value payload.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MapValueDecodeStatus {
+    /// The payload decoded to a normal map key/value.
+    Known,
+    /// The payload was an unknown value for a closed enum.
+    ///
+    /// Proto2 map semantics require the whole outer map-entry record to be
+    /// treated as unknown in this case, not inserted with a default value.
+    Unknown,
 }
 
 /// Full (encode + size + decode) map key/value codec for non-message types.
@@ -264,9 +340,9 @@ macro_rules! scalar_codec {
                 value: &mut Self::Value,
                 buf: &mut impl Buf,
                 _ctx: DecodeContext<'_>,
-            ) -> Result<(), DecodeError> {
+            ) -> Result<MapValueDecodeStatus, DecodeError> {
                 *value = $decode(buf)?;
-                Ok(())
+                Ok(MapValueDecodeStatus::Known)
             }
         }
 
@@ -420,9 +496,9 @@ impl<B: crate::types::ProtoBytes> MapValueDecode for ProtoBytesMap<B> {
         value: &mut Self::Value,
         buf: &mut impl Buf,
         _ctx: DecodeContext<'_>,
-    ) -> Result<(), DecodeError> {
+    ) -> Result<MapValueDecodeStatus, DecodeError> {
         *value = crate::types::decode_bytes_to::<B>(buf)?;
-        Ok(())
+        Ok(MapValueDecodeStatus::Known)
     }
 }
 
@@ -435,6 +511,49 @@ impl<B: crate::types::ProtoBytes> MapCodec for ProtoBytesMap<B> {
     #[inline]
     fn encode(value: &Self::Value, buf: &mut impl BufMut) {
         types::encode_bytes(value.as_ref(), buf);
+    }
+}
+
+/// `string` codec for a custom [`ProtoString`](crate::types::ProtoString)
+/// map key or value representation (via `string_type_custom`). Decodes through
+/// [`from_wire`](crate::types::ProtoString::from_wire) (UTF-8 validation
+/// included); encodes the borrowed `&str`. Generic over the type, so the codec
+/// itself stays sealed in buffa while the concrete representation is a
+/// downstream (crate-local) type.
+///
+/// Unlike [`ProtoBytesMap`], which is value-only (proto forbids `bytes` map
+/// keys), this codec serves **both** map slots — `string` is a legal key and
+/// value type. Used as a *key*, the type additionally needs the container's
+/// `Eq + Hash` (`HashMap`) or `Ord` (`BTreeMap`) bound; that is enforced at the
+/// generated map field type via the [`MapStorage`] impls, not here.
+pub struct ProtoStringMap<S>(core::marker::PhantomData<S>);
+
+impl<S: crate::types::ProtoString> sealed::Sealed for ProtoStringMap<S> {}
+
+impl<S: crate::types::ProtoString> MapValueDecode for ProtoStringMap<S> {
+    type Value = S;
+    const WIRE_TYPE: WireType = WireType::LengthDelimited;
+
+    #[inline]
+    fn merge(
+        value: &mut Self::Value,
+        buf: &mut impl Buf,
+        _ctx: DecodeContext<'_>,
+    ) -> Result<MapValueDecodeStatus, DecodeError> {
+        *value = crate::types::decode_string_to::<S>(buf)?;
+        Ok(MapValueDecodeStatus::Known)
+    }
+}
+
+impl<S: crate::types::ProtoString> MapCodec for ProtoStringMap<S> {
+    #[inline]
+    fn encoded_len(value: &Self::Value) -> u32 {
+        types::string_encoded_len(value.as_ref()) as u32
+    }
+
+    #[inline]
+    fn encode(value: &Self::Value, buf: &mut impl BufMut) {
+        types::encode_string(value.as_ref(), buf);
     }
 }
 
@@ -453,9 +572,9 @@ impl<E: Enumeration> MapValueDecode for OpenEnum<E> {
         value: &mut Self::Value,
         buf: &mut impl Buf,
         _ctx: DecodeContext<'_>,
-    ) -> Result<(), DecodeError> {
+    ) -> Result<MapValueDecodeStatus, DecodeError> {
         *value = EnumValue::from(types::decode_int32(buf)?);
-        Ok(())
+        Ok(MapValueDecodeStatus::Known)
     }
 }
 
@@ -473,11 +592,9 @@ impl<E: Enumeration> MapCodec for OpenEnum<E> {
 
 /// Closed-enum codec: values decode into the bare enum `E`.
 ///
-/// Unknown numeric values are dropped, leaving the entry's value at its
-/// previous (default) state — matching the long-standing generated-code
-/// behaviour for closed-enum map values (the proto2 spec's
-/// route-entire-entry-to-unknown-fields semantics are a known gap; see
-/// DESIGN.md).
+/// Unknown numeric values report [`MapValueDecodeStatus::Unknown`], letting
+/// [`merge_entry_with_unknowns`] route the whole map-entry record to unknown
+/// fields instead of inserting a default-valued entry.
 pub struct ClosedEnum<E>(core::marker::PhantomData<E>);
 
 impl<E: Enumeration + Default> sealed::Sealed for ClosedEnum<E> {}
@@ -485,18 +602,21 @@ impl<E: Enumeration + Default> sealed::Sealed for ClosedEnum<E> {}
 impl<E: Enumeration + Default> MapValueDecode for ClosedEnum<E> {
     type Value = E;
     const WIRE_TYPE: WireType = WireType::Varint;
+    const MAY_RETURN_UNKNOWN: bool = true;
 
     #[inline]
     fn merge(
         value: &mut Self::Value,
         buf: &mut impl Buf,
         _ctx: DecodeContext<'_>,
-    ) -> Result<(), DecodeError> {
+    ) -> Result<MapValueDecodeStatus, DecodeError> {
         let raw = types::decode_int32(buf)?;
         if let Some(v) = E::from_i32(raw) {
             *value = v;
+            Ok(MapValueDecodeStatus::Known)
+        } else {
+            Ok(MapValueDecodeStatus::Unknown)
         }
-        Ok(())
     }
 }
 
@@ -527,8 +647,9 @@ impl<M: Message + Default> MapValueDecode for Msg<M> {
         value: &mut Self::Value,
         buf: &mut impl Buf,
         ctx: DecodeContext<'_>,
-    ) -> Result<(), DecodeError> {
-        Message::merge_length_delimited(value, buf, ctx)
+    ) -> Result<MapValueDecodeStatus, DecodeError> {
+        Message::merge_length_delimited(value, buf, ctx)?;
+        Ok(MapValueDecodeStatus::Known)
     }
 }
 
@@ -628,21 +749,81 @@ pub fn write_message_field<KC: MapCodec, M: Message, C>(
     }
 }
 
-/// Decode one length-prefixed map entry from `buf` and insert it.
+fn merge_entry_contents<KC, VC>(
+    key: &mut KC::Value,
+    val: &mut VC::Value,
+    buf: &mut impl Buf,
+    ctx: DecodeContext<'_>,
+) -> Result<MapValueDecodeStatus, DecodeError>
+where
+    KC: MapValueDecode,
+    VC: MapValueDecode,
+{
+    // Track the *value* field's status with last-wins semantics: only the
+    // final field-2 occurrence decides whether the entry is unknown, matching
+    // the protobuf reference implementation. Map keys are never closed enums,
+    // so the key codec always returns `Known` and is ignored here.
+    let mut val_status = MapValueDecodeStatus::Known;
+    while buf.has_remaining() {
+        let entry_tag = Tag::decode(buf)?;
+        match entry_tag.field_number() {
+            1 => {
+                check_wire_type(entry_tag, KC::WIRE_TYPE)?;
+                KC::merge(key, buf, ctx)?;
+            }
+            2 => {
+                check_wire_type(entry_tag, VC::WIRE_TYPE)?;
+                val_status = VC::merge(val, buf, ctx)?;
+            }
+            _ => {
+                skip_field_depth(entry_tag, buf, ctx.depth())?;
+            }
+        }
+    }
+    Ok(val_status)
+}
+
+/// Decode one length-prefixed map entry from `buf`.
+///
+/// Closed-enum entries with unknown values are skipped. Use
+/// [`merge_entry_with_unknowns`] when generated code has a parent
+/// `UnknownFields` set available and needs to preserve those skipped entries.
+pub fn merge_entry<KC, VC, C>(
+    map: &mut C,
+    buf: &mut impl Buf,
+    ctx: DecodeContext<'_>,
+) -> Result<(), DecodeError>
+where
+    KC: MapValueDecode,
+    VC: MapValueDecode,
+    C: MapStorage<Key = KC::Value, Value = VC::Value>,
+{
+    merge_entry_with_unknowns::<KC, VC, C>(map, buf, ctx, None)
+}
+
+/// Decode one length-prefixed map entry from `buf`, inserting it unless the
+/// value is an unknown closed-enum number — in which case the whole entry is
+/// optionally preserved as an unknown-field record.
 ///
 /// Implements proto map-entry semantics: missing key/value fields take
 /// their type defaults, repeated occurrences within one entry last-win,
-/// unknown entry fields are skipped, and a short or over-long entry payload
-/// is corrected against the length prefix.
+/// and unknown entry fields are skipped.
+///
+/// If the *final* value-field occurrence in the entry is an unknown
+/// closed-enum number, the entry is not inserted. When `unknown_fields` is
+/// `Some((field_number, fields))`, the whole original map-entry payload is
+/// preserved verbatim as a length-delimited unknown field with the outer map
+/// field number.
 ///
 /// # Errors
 ///
 /// Returns a [`DecodeError`] on malformed lengths, payloads, or wire-type
 /// mismatches inside the entry.
-pub fn merge_entry<KC, VC, C>(
+pub fn merge_entry_with_unknowns<KC, VC, C>(
     map: &mut C,
     buf: &mut impl Buf,
     ctx: DecodeContext<'_>,
+    unknown_fields: Option<(u32, &mut crate::UnknownFields)>,
 ) -> Result<(), DecodeError>
 where
     KC: MapValueDecode,
@@ -654,9 +835,55 @@ where
     if buf.remaining() < entry_len {
         return Err(DecodeError::UnexpectedEof);
     }
-    let entry_limit = buf.remaining() - entry_len;
     let mut key: KC::Value = Default::default();
     let mut val: VC::Value = Default::default();
+
+    if unknown_fields.is_some() && (KC::MAY_RETURN_UNKNOWN || VC::MAY_RETURN_UNKNOWN) {
+        // Fast path for contiguous bufs (the common `&[u8]` / `Bytes` case):
+        // decode from a borrowed slice and only allocate when the entry
+        // actually turns out to be unknown.
+        if buf.chunk().len() >= entry_len {
+            let preserved = {
+                let entry_slice = &buf.chunk()[..entry_len];
+                let mut entry_cur = entry_slice;
+                let status =
+                    merge_entry_contents::<KC, VC>(&mut key, &mut val, &mut entry_cur, ctx)?;
+                matches!(status, MapValueDecodeStatus::Unknown).then(|| entry_slice.to_vec())
+            };
+            buf.advance(entry_len);
+            match preserved {
+                None => map.storage_insert(key, val),
+                Some(payload) => {
+                    if let Some((field_number, unknown_fields)) = unknown_fields {
+                        ctx.register_unknown_field()?;
+                        unknown_fields.push(crate::UnknownField {
+                            number: field_number,
+                            data: crate::UnknownFieldData::LengthDelimited(payload),
+                        });
+                    }
+                }
+            }
+            return Ok(());
+        }
+        // Non-contiguous fallback: buffer the payload up front so it can be
+        // preserved verbatim if decoding reports `Unknown`.
+        let entry_payload = buf.copy_to_bytes(entry_len);
+        let mut entry_cur = entry_payload.clone();
+        let status = merge_entry_contents::<KC, VC>(&mut key, &mut val, &mut entry_cur, ctx)?;
+        if matches!(status, MapValueDecodeStatus::Known) {
+            map.storage_insert(key, val);
+        } else if let Some((field_number, unknown_fields)) = unknown_fields {
+            ctx.register_unknown_field()?;
+            unknown_fields.push(crate::UnknownField {
+                number: field_number,
+                data: crate::UnknownFieldData::LengthDelimited(entry_payload.to_vec()),
+            });
+        }
+        return Ok(());
+    }
+
+    let entry_limit = buf.remaining() - entry_len;
+    let mut val_status = MapValueDecodeStatus::Known;
     while buf.remaining() > entry_limit {
         let entry_tag = Tag::decode(buf)?;
         match entry_tag.field_number() {
@@ -666,14 +893,13 @@ where
             }
             2 => {
                 check_wire_type(entry_tag, VC::WIRE_TYPE)?;
-                VC::merge(&mut val, buf, ctx)?;
+                val_status = VC::merge(&mut val, buf, ctx)?;
             }
             _ => {
                 skip_field_depth(entry_tag, buf, ctx.depth())?;
             }
         }
     }
-    // Correct the buffer position if the entry was not fully consumed.
     if buf.remaining() != entry_limit {
         let remaining = buf.remaining();
         if remaining > entry_limit {
@@ -682,7 +908,9 @@ where
             return Err(DecodeError::UnexpectedEof);
         }
     }
-    map.storage_insert(key, val);
+    if matches!(val_status, MapValueDecodeStatus::Known) {
+        map.storage_insert(key, val);
+    }
     Ok(())
 }
 
@@ -732,6 +960,32 @@ mod tests {
         let wire = encode_field::<Str, Int32>(&map, 5, 1);
         let back = decode_field::<Str, Int32>(&wire);
         assert_eq!(back, map);
+    }
+
+    #[test]
+    fn proto_string_map_codec_matches_str() {
+        // `ProtoStringMap<String>` (the custom-string codec, monomorphized on the
+        // built-in `String`) must produce byte-identical output to the canonical
+        // `Str` codec and round-trip through it — proving the custom-string map
+        // key/value path is wire-compatible with the default.
+        let mut map: Map<String, i32> = Map::default();
+        map.insert("a".into(), 1);
+        map.insert("bee".into(), -7);
+
+        let str_wire = encode_field::<Str, Int32>(&map, 5, 1);
+        let custom_wire = encode_field::<ProtoStringMap<String>, Int32>(&map, 5, 1);
+        // Map iteration order is unspecified, so compare via decode, not bytes.
+        assert_eq!(
+            decode_field::<ProtoStringMap<String>, Int32>(&str_wire),
+            map
+        );
+        assert_eq!(decode_field::<Str, Int32>(&custom_wire), map);
+
+        // As a value codec too: `map<int32, string>`.
+        let mut vmap: Map<i32, String> = Map::default();
+        vmap.insert(1, "x".into());
+        let vwire = encode_field::<Int32, ProtoStringMap<String>>(&vmap, 3, 1);
+        assert_eq!(decode_field::<Int32, ProtoStringMap<String>>(&vwire), vmap);
     }
 
     #[test]
@@ -910,8 +1164,117 @@ mod tests {
         let back = decode_field::<Int32, OpenEnum<E>>(&wire);
         assert_eq!(back.get(&1), Some(&EnumValue::Unknown(42)));
 
-        // Closed codec drops the unknown value, keeping the default.
+        // Closed codec drops the whole map entry instead of inserting the
+        // default enum value.
         let back = decode_field::<Int32, ClosedEnum<E>>(&wire);
-        assert_eq!(back.get(&1), Some(&E::A));
+        assert!(!back.contains_key(&1));
+    }
+
+    #[test]
+    fn closed_enum_unknown_preserves_whole_entry_when_requested() {
+        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+        #[repr(i32)]
+        enum E {
+            #[default]
+            A = 0,
+            B = 1,
+        }
+        impl Enumeration for E {
+            fn from_i32(value: i32) -> Option<Self> {
+                match value {
+                    0 => Some(E::A),
+                    1 => Some(E::B),
+                    _ => None,
+                }
+            }
+            fn to_i32(&self) -> i32 {
+                *self as i32
+            }
+            fn proto_name(&self) -> &'static str {
+                match self {
+                    E::A => "A",
+                    E::B => "B",
+                }
+            }
+        }
+
+        let mut entry = Vec::new();
+        Tag::new(1, WireType::Varint).encode(&mut entry);
+        types::encode_int32(7, &mut entry);
+        Tag::new(2, WireType::Varint).encode(&mut entry);
+        types::encode_int32(99, &mut entry);
+
+        let mut wire = Vec::new();
+        encode_varint(entry.len() as u64, &mut wire);
+        wire.extend_from_slice(&entry);
+
+        let mut map: Map<i32, E> = Map::default();
+        let mut unknown_fields = crate::UnknownFields::new();
+        let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
+        merge_entry_with_unknowns::<Int32, ClosedEnum<E>, _>(
+            &mut map,
+            &mut wire.as_slice(),
+            DecodeContext::new(10, &limit),
+            Some((5, &mut unknown_fields)),
+        )
+        .unwrap();
+
+        assert!(map.is_empty());
+        let unknowns: Vec<_> = unknown_fields.iter().collect();
+        assert_eq!(unknowns.len(), 1);
+        assert_eq!(unknowns[0].number, 5);
+        assert!(matches!(
+            &unknowns[0].data,
+            crate::UnknownFieldData::LengthDelimited(payload) if payload == &entry
+        ));
+
+        // Non-contiguous Buf takes the buffering fallback and produces the
+        // same outcome. Split *inside* the entry payload so that after the
+        // length prefix is consumed, the first chunk is shorter than
+        // `entry_len` and the contiguous fast path is bypassed.
+        let mut map: Map<i32, E> = Map::default();
+        let mut unknown_fields = crate::UnknownFields::new();
+        let (a, b) = wire.split_at(3);
+        let mut chained = bytes::Buf::chain(a, b);
+        merge_entry_with_unknowns::<Int32, ClosedEnum<E>, _>(
+            &mut map,
+            &mut chained,
+            DecodeContext::new(10, &limit),
+            Some((5, &mut unknown_fields)),
+        )
+        .unwrap();
+        assert!(map.is_empty());
+        let unknowns: Vec<_> = unknown_fields.iter().collect();
+        assert_eq!(unknowns.len(), 1);
+        assert!(matches!(
+            &unknowns[0].data,
+            crate::UnknownFieldData::LengthDelimited(payload) if payload == &entry
+        ));
+
+        // Last-wins: an unknown value followed by a known one inserts the
+        // known value and records nothing in unknown fields.
+        let mut entry = Vec::new();
+        Tag::new(1, WireType::Varint).encode(&mut entry);
+        types::encode_int32(7, &mut entry);
+        Tag::new(2, WireType::Varint).encode(&mut entry);
+        types::encode_int32(99, &mut entry);
+        Tag::new(2, WireType::Varint).encode(&mut entry);
+        types::encode_int32(1, &mut entry);
+
+        let mut wire = Vec::new();
+        encode_varint(entry.len() as u64, &mut wire);
+        wire.extend_from_slice(&entry);
+
+        let mut map: Map<i32, E> = Map::default();
+        let mut unknown_fields = crate::UnknownFields::new();
+        merge_entry_with_unknowns::<Int32, ClosedEnum<E>, _>(
+            &mut map,
+            &mut wire.as_slice(),
+            DecodeContext::new(10, &limit),
+            Some((5, &mut unknown_fields)),
+        )
+        .unwrap();
+        assert_eq!(map.get(&7), Some(&E::B));
+        assert_eq!(unknown_fields.iter().count(), 0);
     }
 }

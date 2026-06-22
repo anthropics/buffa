@@ -20,8 +20,8 @@ use crate::impl_message::{
     closed_enum_decode, closed_enum_decode_with_unknown, decode_fn_token, effective_type,
     effective_type_in_map_entry, field_string_repr, find_map_entry_fields,
     is_explicit_presence_scalar, is_packed_type, is_real_oneof_member, is_required_field,
-    is_supported_field_type, map_value_bytes_repr, validated_field_number, wire_type_check,
-    wire_type_token,
+    is_supported_field_type, map_string_repr, map_value_bytes_repr, validated_field_number,
+    wire_type_check, wire_type_token,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident, rust_path_to_tokens};
 use crate::oneof::{is_null_value_field, serde_helper_path};
@@ -1396,9 +1396,16 @@ pub(crate) fn repeated_decode_arm(
         quote! { view.#ident.push(#dfn(&mut pcur)?); }
     };
 
-    // Fixed-size types can reserve the exact element count. For varints and
-    // bools, every element occupies at least one byte, so the payload length
-    // is a safe upper bound.
+    // Reserve the exact element count before decoding a packed payload.
+    //
+    // Fixed-width types divide the payload length by the element width. Varint
+    // types (and bool/enum) cannot derive the count from the length alone — a
+    // varint is 1-10 bytes — so we count terminator bytes (those with the
+    // continuation bit clear), which is the exact element count for a
+    // well-formed payload and a harmless under-count for a truncated one. The
+    // earlier `payload.len()` upper bound over-reserved by up to ~10x for
+    // multi-byte varints (e.g. negative int32/int64, which always encode to 10
+    // bytes), so the count is never larger and usually far smaller.
     let reserve_divisor: usize = match ty {
         Type::TYPE_FIXED32 | Type::TYPE_SFIXED32 | Type::TYPE_FLOAT => 4,
         Type::TYPE_FIXED64 | Type::TYPE_SFIXED64 | Type::TYPE_DOUBLE => 8,
@@ -1407,7 +1414,7 @@ pub(crate) fn repeated_decode_arm(
     let reserve_stmt = if reserve_divisor > 1 {
         quote! { view.#ident.reserve(payload.len() / #reserve_divisor); }
     } else {
-        quote! { view.#ident.reserve(payload.len()); }
+        quote! { view.#ident.reserve(::buffa::encoding::count_varints(payload)); }
     };
 
     let unpacked_elem = if ty == Type::TYPE_ENUM {
@@ -1454,6 +1461,7 @@ pub(crate) fn map_decode_arm(
     field: &FieldDescriptorProto,
 ) -> Result<TokenStream, CodeGenError> {
     let MessageScope { ctx, features, .. } = scope;
+    let preserve_unknown_fields = ctx.config.preserve_unknown_fields;
     let field_name = field
         .name
         .as_deref()
@@ -1479,8 +1487,42 @@ pub(crate) fn map_decode_arm(
         _ => quote! { ::core::default::Default::default() },
     };
 
-    let decode_key = map_view_entry_decode(scope, key_fd, &format_ident!("key"))?;
-    let decode_val = map_view_entry_decode(scope, val_fd, &format_ident!("val"))?;
+    // Only closed-enum map values can render the whole entry unknown; emit the
+    // `__entry_unknown` flag and the preserve-span branch only in that case so
+    // generated code for ordinary maps stays unchanged. Within a closed-enum
+    // entry, repeated value occurrences follow last-wins: a known value resets
+    // the flag, an unknown value sets it.
+    let val_features = crate::features::resolve_field(ctx, val_fd, features);
+    let val_is_closed_enum = effective_type_in_map_entry(ctx, val_fd, features) == Type::TYPE_ENUM
+        && is_closed_enum(&val_features);
+    let closed_enum_hooks = val_is_closed_enum.then(|| {
+        (
+            quote! { __entry_unknown = false; },
+            quote! { __entry_unknown = true; },
+        )
+    });
+    let decode_key = map_view_entry_decode(scope, key_fd, &format_ident!("key"), None)?;
+    let decode_val =
+        map_view_entry_decode(scope, val_fd, &format_ident!("val"), closed_enum_hooks)?;
+
+    let push = quote! { view.#ident.push(key, val); };
+    let (entry_unknown_decl, entry_finish) = if val_is_closed_enum {
+        let finish = if preserve_unknown_fields {
+            quote! {
+                if __entry_unknown {
+                    let __span_len = before_tag.len() - cur.len();
+                    view.__buffa_unknown_fields.push_record(before_tag, __span_len, ctx)?;
+                } else {
+                    #push
+                }
+            }
+        } else {
+            quote! { if !__entry_unknown { #push } }
+        };
+        (quote! { let mut __entry_unknown = false; }, finish)
+    } else {
+        (quote! {}, push)
+    };
 
     Ok(quote! {
         #field_number => {
@@ -1489,6 +1531,7 @@ pub(crate) fn map_decode_arm(
             let mut entry_cur: &'a [u8] = entry_bytes;
             let mut key = #key_default;
             let mut val = #val_default;
+            #entry_unknown_decl
             while !entry_cur.is_empty() {
                 let entry_tag = ::buffa::encoding::Tag::decode(&mut entry_cur)?;
                 match entry_tag.field_number() {
@@ -1497,7 +1540,7 @@ pub(crate) fn map_decode_arm(
                     _ => { ::buffa::encoding::skip_field_depth(entry_tag, &mut entry_cur, ctx.depth())?; }
                 }
             }
-            view.#ident.push(key, val);
+            #entry_finish
         }
     })
 }
@@ -1510,6 +1553,7 @@ fn map_view_entry_decode(
     scope: MessageScope<'_>,
     fd: &FieldDescriptorProto,
     var: &proc_macro2::Ident,
+    closed_enum_hooks: Option<(TokenStream, TokenStream)>,
 ) -> Result<TokenStream, CodeGenError> {
     let MessageScope {
         ctx,
@@ -1526,7 +1570,15 @@ fn map_view_entry_decode(
         Type::TYPE_BYTES => quote! { #var = ::buffa::types::borrow_bytes(&mut entry_cur)?; },
         Type::TYPE_ENUM => {
             if is_closed_enum(features) {
-                closed_enum_decode(&quote! { &mut entry_cur }, quote! { #var = __v; })
+                if let Some((on_known, on_unknown)) = closed_enum_hooks {
+                    closed_enum_decode_with_unknown(
+                        &quote! { &mut entry_cur },
+                        quote! { #var = __v; #on_known },
+                        on_unknown,
+                    )
+                } else {
+                    closed_enum_decode(&quote! { &mut entry_cur }, quote! { #var = __v; })
+                }
             } else {
                 quote! { #var = ::buffa::EnumValue::from(::buffa::types::decode_int32(&mut entry_cur)?); }
             }
@@ -1926,8 +1978,16 @@ pub(crate) fn map_to_owned_expr(
     let key_ty = effective_type_in_map_entry(ctx, key_fd, features);
     let val_ty = effective_type_in_map_entry(ctx, val_fd, features);
 
+    // A custom `string_type` on the outer map field promotes a `string` key /
+    // value to the configured owned type, matching the owned-side map type. The
+    // view always yields `&str`, so the custom type constructs from a fresh
+    // `String` (via its required `From<String>`), mirroring the bytes path.
+    let key_string_repr = map_string_repr(ctx, key_ty, proto_fqn, field_name);
     let key_conv = match key_ty {
-        Type::TYPE_STRING => quote! { k.to_string() },
+        Type::TYPE_STRING => match key_string_repr {
+            crate::StringRepr::String => quote! { k.to_string() },
+            crate::StringRepr::Custom(_) => quote! { ::core::convert::Into::into(k.to_string()) },
+        },
         // utf8_validation = NONE on a string map key: &[u8] → Vec<u8>.
         Type::TYPE_BYTES => quote! { k.to_vec() },
         _ => quote! { *k },
@@ -1939,8 +1999,12 @@ pub(crate) fn map_to_owned_expr(
     // `bytes_from_source`; a custom type constructs from a fresh `Vec<u8>`.
     let value_bytes_repr =
         map_value_bytes_repr(ctx, Some(key_ty), Some(val_ty), proto_fqn, field_name);
+    let val_string_repr = map_string_repr(ctx, val_ty, proto_fqn, field_name);
     let val_conv = match val_ty {
-        Type::TYPE_STRING => quote! { v.to_string() },
+        Type::TYPE_STRING => match val_string_repr {
+            crate::StringRepr::String => quote! { v.to_string() },
+            crate::StringRepr::Custom(_) => quote! { ::core::convert::Into::into(v.to_string()) },
+        },
         Type::TYPE_BYTES => match value_bytes_repr {
             crate::BytesRepr::Vec => quote! { v.to_vec() },
             crate::BytesRepr::Bytes => {

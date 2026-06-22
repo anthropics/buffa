@@ -137,7 +137,7 @@ fn bridge_map_fields() {
         .expect("Inventory registered");
     let inv_md = p.message_by_name("basic.Inventory").unwrap();
 
-    let mut stock = std::collections::HashMap::new();
+    let mut stock = buffa::Map::default();
     stock.insert("apples".to_string(), 3);
     stock.insert("oranges".to_string(), 7);
     let inv = Inventory {

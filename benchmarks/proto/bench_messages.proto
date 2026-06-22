@@ -95,7 +95,7 @@ message MediaFrame {
 // fields (the map-tile / telemetry shape from issue #171). Per-payload
 // decode cost is dominated by many small vector allocations rather than a
 // few large ones, which pins the packed-decode pre-allocation path: varint
-// fields reserve from the payload byte length (upper bound), fixed-width
+// fields reserve the counted element count (terminator bytes), fixed-width
 // fields reserve the exact element count.
 // Target payload: ~5-8KB (64 cells, ~16 packed varints each).
 message PackedTile {
@@ -107,4 +107,15 @@ message PackedTile {
   }
   repeated Cell cells = 1;          // 64 small cells per tile
   repeated uint64 checksums = 2;    // one larger packed varint field
+}
+
+// Control for the packed-varint reservation path's worst case: negative
+// `int32`/`int64` always encode to 10 bytes per element, so reserving from the
+// payload byte length over-allocated ~10x. Reserving from the counted varint
+// terminators instead allocates the exact element count. This message exists to
+// make that allocation delta measurable: a `decode_view` over it before the fix
+// reserved ~10x the needed capacity per field.
+message PackedSigned {
+  repeated int32 deltas = 1;     // negative -> 10-byte varints each
+  repeated int64 wide_deltas = 2;  // negative -> 10-byte varints each
 }

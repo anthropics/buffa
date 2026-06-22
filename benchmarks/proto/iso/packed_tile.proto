@@ -1,0 +1,13 @@
+syntax = "proto3";
+package bench;
+
+message PackedTile {
+  message Cell {
+    uint32 id = 1;
+    repeated uint32 geometry = 2;   // packed varints, 12-20 elems
+    repeated float samples = 3;     // packed fixed32-width, 4-8 elems
+    repeated double positions = 4;  // packed fixed64-width, 2-4 elems
+  }
+  repeated Cell cells = 1;          // 64 small cells per tile
+  repeated uint64 checksums = 2;    // one larger packed varint field
+}

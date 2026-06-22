@@ -173,12 +173,12 @@ impl ReflectElement for Value {
     }
 }
 
-// A custom `string_type`/`bytes_type` element used in a `repeated` field under
-// vtable reflection gets its `ReflectElement` impl emitted by codegen into the
+// A custom `string_type`/`bytes_type` element used in a `repeated` field or a
+// `map` slot under vtable reflection gets its `ReflectElement` impl (and, for a
+// custom `string` map key, its `ReflectMapKey` impl) emitted by codegen into the
 // generating crate (where the type is local, so the orphan rule permits it).
-// Only the repeated case needs the impl: singular fields reflect via
-// `&self.field` (any repr derefs to `str`/`[u8]`), and `map` string keys/values
-// always stay `String`.
+// Singular fields need no such impl: they reflect via `&self.field` (any repr
+// derefs to `str`/`[u8]`).
 
 // ── Map key impls (spec-valid key set) ──────────────────────────────────────
 
@@ -310,9 +310,13 @@ impl<T: ReflectElement> ReflectList for Vec<T> {
 /// Owned map storage. Keys are unique by construction (no dedup needed). Vtable
 /// reflection requires `std` (the descriptor pool uses `OnceLock`), so the
 /// owned-map impl is `std`-gated and targets `std::collections::HashMap` — the
-/// concrete type generated code uses for `map` fields under `std`.
+/// concrete type generated code uses for `map` fields under `std`. The impl is
+/// generic over the hasher `S` so it covers both the buffa default (`foldhash`)
+/// and any user-selected hasher reached via `MapRepr::Custom`.
 #[cfg(feature = "std")]
-impl<K: ReflectMapKey, V: ReflectElement> ReflectMap for std::collections::HashMap<K, V> {
+impl<K: ReflectMapKey, V: ReflectElement, S: core::hash::BuildHasher> ReflectMap
+    for std::collections::HashMap<K, V, S>
+{
     fn len(&self) -> usize {
         Self::len(self)
     }

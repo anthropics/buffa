@@ -971,7 +971,7 @@ impl DecodeOptions {
         use std::io::Read as _;
         let mut buf = alloc::vec::Vec::new();
         reader
-            .take(self.max_message_size as u64 + 1)
+            .take((self.max_message_size as u64).saturating_add(1))
             .read_to_end(&mut buf)?;
         if buf.len() > self.max_message_size {
             return Err(std::io::Error::new(
@@ -1668,6 +1668,17 @@ mod tests {
             let bytes = src.encode_to_vec();
             let msg: FlatMsg = DecodeOptions::new()
                 .with_max_message_size(bytes.len())
+                .decode_reader(&mut bytes.as_slice())
+                .unwrap();
+            assert_eq!(msg.value, 42);
+        }
+
+        #[test]
+        fn decode_reader_usize_max_limit_does_not_overflow() {
+            let src = FlatMsg { value: 42 };
+            let bytes = src.encode_to_vec();
+            let msg: FlatMsg = DecodeOptions::new()
+                .with_max_message_size(usize::MAX)
                 .decode_reader(&mut bytes.as_slice())
                 .unwrap();
             assert_eq!(msg.value, 42);
