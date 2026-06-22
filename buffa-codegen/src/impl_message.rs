@@ -1073,6 +1073,29 @@ pub(crate) fn field_string_repr(
     ctx.string_repr(&field_fqn)
 }
 
+/// Resolve the [`StringRepr`](crate::StringRepr) for one slot (key or value) of
+/// a `map` field, given that slot's effective proto `Type`.
+///
+/// `string` is the only allocating type valid in *either* map slot (`bytes`
+/// keys are forbidden, so the bytes carve-out in [`map_value_bytes_repr`] is
+/// value-only — strings need no such asymmetry). A non-`string` slot returns
+/// [`StringRepr::String`](crate::StringRepr::String), so the custom type is a
+/// no-op there. The rule is keyed on the outer map field's path, like the
+/// singular path, so one `string_type` rule covers both slots of a
+/// `map<string, string>`.
+pub(crate) fn map_string_repr(
+    ctx: &CodeGenContext,
+    slot_ty: Type,
+    proto_fqn: &str,
+    field_name: &str,
+) -> crate::StringRepr {
+    if slot_ty == Type::TYPE_STRING {
+        field_string_repr(ctx, proto_fqn, field_name)
+    } else {
+        crate::StringRepr::String
+    }
+}
+
 /// Resolve the [`MapRepr`](crate::MapRepr) for a `map` field.
 ///
 /// `proto_fqn` is the fully-qualified message name (no leading dot). Matched
@@ -2831,10 +2854,12 @@ pub(crate) fn find_map_entry_fields<'a>(
 /// map's own key/value Rust types pin the parameter, so no type-path
 /// resolution is needed here. For a `bytes` value, `bytes_repr` selects the
 /// codec: `Vec` → `BytesVec`, `Bytes` → `BytesBuf`, `Custom(path)` →
-/// `ProtoBytesMap<path>`.
+/// `ProtoBytesMap<path>`. For a `string` key or value, `string_repr` selects
+/// `Str` (default) or `ProtoStringMap<path>` (custom).
 fn map_codec_token(
     ty: Type,
     bytes_repr: &crate::BytesRepr,
+    string_repr: &crate::StringRepr,
     features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
     Ok(match ty {
@@ -2851,7 +2876,13 @@ fn map_codec_token(
         Type::TYPE_FLOAT => quote! { ::buffa::map_codec::Float },
         Type::TYPE_DOUBLE => quote! { ::buffa::map_codec::Double },
         Type::TYPE_BOOL => quote! { ::buffa::map_codec::Bool },
-        Type::TYPE_STRING => quote! { ::buffa::map_codec::Str },
+        Type::TYPE_STRING => match string_repr {
+            crate::StringRepr::String => quote! { ::buffa::map_codec::Str },
+            crate::StringRepr::Custom(path) => {
+                let ty = crate::parse_custom_type_path(path)?;
+                quote! { ::buffa::map_codec::ProtoStringMap<#ty> }
+            }
+        },
         Type::TYPE_BYTES => match bytes_repr {
             crate::BytesRepr::Vec => quote! { ::buffa::map_codec::BytesVec },
             crate::BytesRepr::Bytes => quote! { ::buffa::map_codec::BytesBuf },
@@ -2906,13 +2937,24 @@ fn map_entry_ctx(
     // `map_value_bytes_repr`. Keys are always built-in, so they pass `Vec`.
     let value_bytes_repr =
         map_value_bytes_repr(ctx, Some(key_ty), Some(val_ty), proto_fqn, field_name);
+    // `string_type` on `map<string, V>` / `map<K, string>` → the matching slot
+    // encodes/decodes with the custom representation, keyed on the outer map
+    // field path (the same rule the singular string path uses). The repr is a
+    // no-op for a non-`string` slot (`map_string_repr` returns `String`).
+    let key_string_repr = map_string_repr(ctx, key_ty, proto_fqn, field_name);
+    let val_string_repr = map_string_repr(ctx, val_ty, proto_fqn, field_name);
     Ok(MapEntryCtx {
         field_number,
         ident: make_field_ident(field_name),
         outer_tag_len: tag_encoded_len(field_number, 2),
         val_ty,
-        key_codec: map_codec_token(key_ty, &crate::BytesRepr::Vec, &key_features)?,
-        val_codec: map_codec_token(val_ty, &value_bytes_repr, &val_features)?,
+        key_codec: map_codec_token(
+            key_ty,
+            &crate::BytesRepr::Vec,
+            &key_string_repr,
+            &key_features,
+        )?,
+        val_codec: map_codec_token(val_ty, &value_bytes_repr, &val_string_repr, &val_features)?,
     })
 }
 

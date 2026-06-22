@@ -487,6 +487,49 @@ impl<B: crate::types::ProtoBytes> MapCodec for ProtoBytesMap<B> {
     }
 }
 
+/// `string` codec for a custom [`ProtoString`](crate::types::ProtoString)
+/// map key or value representation (via `string_type_custom`). Decodes through
+/// [`from_wire`](crate::types::ProtoString::from_wire) (UTF-8 validation
+/// included); encodes the borrowed `&str`. Generic over the type, so the codec
+/// itself stays sealed in buffa while the concrete representation is a
+/// downstream (crate-local) type.
+///
+/// Unlike [`ProtoBytesMap`], which is value-only (proto forbids `bytes` map
+/// keys), this codec serves **both** map slots — `string` is a legal key and
+/// value type. Used as a *key*, the type additionally needs the container's
+/// `Eq + Hash` (`HashMap`) or `Ord` (`BTreeMap`) bound; that is enforced at the
+/// generated map field type via the [`MapStorage`] impls, not here.
+pub struct ProtoStringMap<S>(core::marker::PhantomData<S>);
+
+impl<S: crate::types::ProtoString> sealed::Sealed for ProtoStringMap<S> {}
+
+impl<S: crate::types::ProtoString> MapValueDecode for ProtoStringMap<S> {
+    type Value = S;
+    const WIRE_TYPE: WireType = WireType::LengthDelimited;
+
+    #[inline]
+    fn merge(
+        value: &mut Self::Value,
+        buf: &mut impl Buf,
+        _ctx: DecodeContext<'_>,
+    ) -> Result<(), DecodeError> {
+        *value = crate::types::decode_string_to::<S>(buf)?;
+        Ok(())
+    }
+}
+
+impl<S: crate::types::ProtoString> MapCodec for ProtoStringMap<S> {
+    #[inline]
+    fn encoded_len(value: &Self::Value) -> u32 {
+        types::string_encoded_len(value.as_ref()) as u32
+    }
+
+    #[inline]
+    fn encode(value: &Self::Value, buf: &mut impl BufMut) {
+        types::encode_string(value.as_ref(), buf);
+    }
+}
+
 /// Open-enum codec: values decode into [`EnumValue<E>`], preserving unknown
 /// numbers.
 pub struct OpenEnum<E>(core::marker::PhantomData<E>);
@@ -781,6 +824,32 @@ mod tests {
         let wire = encode_field::<Str, Int32>(&map, 5, 1);
         let back = decode_field::<Str, Int32>(&wire);
         assert_eq!(back, map);
+    }
+
+    #[test]
+    fn proto_string_map_codec_matches_str() {
+        // `ProtoStringMap<String>` (the custom-string codec, monomorphized on the
+        // built-in `String`) must produce byte-identical output to the canonical
+        // `Str` codec and round-trip through it — proving the custom-string map
+        // key/value path is wire-compatible with the default.
+        let mut map: Map<String, i32> = Map::default();
+        map.insert("a".into(), 1);
+        map.insert("bee".into(), -7);
+
+        let str_wire = encode_field::<Str, Int32>(&map, 5, 1);
+        let custom_wire = encode_field::<ProtoStringMap<String>, Int32>(&map, 5, 1);
+        // Map iteration order is unspecified, so compare via decode, not bytes.
+        assert_eq!(
+            decode_field::<ProtoStringMap<String>, Int32>(&str_wire),
+            map
+        );
+        assert_eq!(decode_field::<Str, Int32>(&custom_wire), map);
+
+        // As a value codec too: `map<int32, string>`.
+        let mut vmap: Map<i32, String> = Map::default();
+        vmap.insert(1, "x".into());
+        let vwire = encode_field::<Int32, ProtoStringMap<String>>(&vmap, 3, 1);
+        assert_eq!(decode_field::<Int32, ProtoStringMap<String>>(&vwire), vmap);
     }
 
     #[test]

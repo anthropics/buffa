@@ -173,12 +173,12 @@ impl ReflectElement for Value {
     }
 }
 
-// A custom `string_type`/`bytes_type` element used in a `repeated` field under
-// vtable reflection gets its `ReflectElement` impl emitted by codegen into the
+// A custom `string_type`/`bytes_type` element used in a `repeated` field or a
+// `map` slot under vtable reflection gets its `ReflectElement` impl (and, for a
+// custom `string` map key, its `ReflectMapKey` impl) emitted by codegen into the
 // generating crate (where the type is local, so the orphan rule permits it).
-// Only the repeated case needs the impl: singular fields reflect via
-// `&self.field` (any repr derefs to `str`/`[u8]`), and `map` string keys/values
-// always stay `String`.
+// Singular fields need no such impl: they reflect via `&self.field` (any repr
+// derefs to `str`/`[u8]`).
 
 // ── Map key impls (spec-valid key set) ──────────────────────────────────────
 
