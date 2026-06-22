@@ -307,6 +307,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **`DecodeOptions::decode_reader` no longer overflows when
+  `max_message_size` is `usize::MAX`.** The internal `read_limited` helper
+  computed `max_message_size as u64 + 1` to read one sentinel byte past the
+  limit; on 64-bit targets this overflowed — a debug panic, or in release a
+  wrap to zero that silently decoded an empty default message. The addition
+  now saturates, so `usize::MAX` correctly means an unbounded read. 32-bit
+  targets and finite limits are unaffected. (#219)
+
 - **Closed-enum map values now preserve unknown entries correctly.** For
   proto2 `map<K, ClosedEnum>` fields, an unknown enum value now prevents the
   map entry from being inserted and routes the whole original map-entry record
