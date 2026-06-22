@@ -181,6 +181,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `MapValueDecode::merge` now returns `Result<MapValueDecodeStatus, _>`
+  instead of `Result<(), _>`, and a new `merge_entry_with_unknowns` carries
+  the closed-enum-map preservation path. The trait is sealed, so downstream
+  implementations are unaffected; direct callers of `merge` (rare) must
+  handle the new return value. (#218)
+
 - Generated decode arms (owned merge, view decode, lazy record arms,
   map-entry loops) emit a single `::buffa::encoding::check_wire_type` call
   instead of a seven-line inline wire-type guard (~1,100 sites across a
@@ -236,6 +242,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   map entry from being inserted and routes the whole original map-entry record
   to unknown fields. This fixes the previous default-valued entry synthesis
   (`key -> E::default()`) and applies to owned and view decode paths.
+  Regenerate code with the matching `buffa-codegen` to get preservation;
+  with an older codegen, runtime-only upgrades change unknown closed-enum
+  map entries from default-insert to drop. (#218)
 
 - **`DecodeOptions::decode_length_delimited_reader` no longer allocates the
   wire-declared length up front.** The method previously allocated a zeroed

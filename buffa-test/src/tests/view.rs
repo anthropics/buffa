@@ -600,13 +600,14 @@ fn test_view_encode_closed_enum_map_unknown_value_preserved() {
     use crate::proto2::Priority;
     use buffa::encoding::{encode_varint, Tag, WireType};
 
+    // Final value occurrence is unknown → whole entry preserved.
     let mut entry = Vec::new();
     Tag::new(1, WireType::LengthDelimited).encode(&mut entry);
     buffa::types::encode_string("bad", &mut entry);
     Tag::new(2, WireType::Varint).encode(&mut entry);
-    encode_varint(99, &mut entry);
-    Tag::new(2, WireType::Varint).encode(&mut entry);
     encode_varint(2, &mut entry);
+    Tag::new(2, WireType::Varint).encode(&mut entry);
+    encode_varint(99, &mut entry);
 
     let mut wire = Vec::new();
     Tag::new(1, WireType::Varint).encode(&mut wire);
@@ -630,6 +631,32 @@ fn test_view_encode_closed_enum_map_unknown_value_preserved() {
         buffa::UnknownFieldData::LengthDelimited(payload) if payload == &entry
     ));
     assert_eq!(view.encode_to_vec(), wire);
+}
+
+#[test]
+fn test_view_closed_enum_map_last_value_known_inserts_entry() {
+    use crate::proto2::__buffa::view::ViewCoverageView;
+    use crate::proto2::Priority;
+    use buffa::encoding::{encode_varint, Tag, WireType};
+
+    // Unknown then known: last-wins inserts the known value.
+    let mut entry = Vec::new();
+    Tag::new(1, WireType::LengthDelimited).encode(&mut entry);
+    buffa::types::encode_string("ok", &mut entry);
+    Tag::new(2, WireType::Varint).encode(&mut entry);
+    encode_varint(99, &mut entry);
+    Tag::new(2, WireType::Varint).encode(&mut entry);
+    encode_varint(2, &mut entry);
+
+    let mut wire = Vec::new();
+    Tag::new(3, WireType::LengthDelimited).encode(&mut wire);
+    encode_varint(entry.len() as u64, &mut wire);
+    wire.extend_from_slice(&entry);
+
+    let view = ViewCoverageView::decode_view(&wire).unwrap();
+    let entries: Vec<_> = view.priorities.iter().collect();
+    assert_eq!(entries, [&("ok", Priority::HIGH)]);
+    assert!(view.__buffa_unknown_fields.is_empty());
 }
 
 // ── OwnedView::reborrow() ────────────────────────────────────────────────────

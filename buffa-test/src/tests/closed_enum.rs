@@ -197,10 +197,9 @@ fn test_closed_enum_negative_unknown_value_sign_extension() {
 fn test_closed_enum_map_unknown_value_preserves_whole_entry() {
     use crate::proto2::{Priority, ViewCoverage};
 
-    // Field 3 is map<string, Priority>. The entry has key "bad", an unknown
-    // enum value, then a known value. The unknown occurrence taints the whole
-    // map entry, so the later known value must not insert "bad" -> HIGH.
-    let (entry, wire) = priority_map_entry_wire("bad", &[99, 2]);
+    // Field 3 is map<string, Priority>. The entry's *final* value occurrence
+    // is unknown, so the whole entry is routed to unknown fields verbatim.
+    let (entry, wire) = priority_map_entry_wire("bad", &[2, 99]);
     let msg = ViewCoverage::decode(&mut wire.as_slice()).unwrap();
 
     assert_eq!(msg.level, Priority::HIGH);
@@ -213,6 +212,20 @@ fn test_closed_enum_map_unknown_value_preserves_whole_entry() {
         buffa::UnknownFieldData::LengthDelimited(payload) if payload == &entry
     ));
     assert_eq!(msg.encode_to_vec(), wire);
+}
+
+#[test]
+fn test_closed_enum_map_last_value_known_inserts_entry() {
+    use crate::proto2::{Priority, ViewCoverage};
+
+    // Repeated value occurrences within a map entry are last-wins (proto map
+    // semantics). An unknown enum value followed by a known one inserts the
+    // entry with the known value, matching the C++ reference implementation.
+    let (_, wire) = priority_map_entry_wire("ok", &[99, 2]);
+    let msg = ViewCoverage::decode(&mut wire.as_slice()).unwrap();
+
+    assert_eq!(msg.priorities.get("ok"), Some(&Priority::HIGH));
+    assert_eq!(msg.__buffa_unknown_fields.iter().count(), 0);
 }
 
 // ── View decoder: same semantics ──────────────────────────────────────

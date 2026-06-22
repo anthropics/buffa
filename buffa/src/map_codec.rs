@@ -223,6 +223,12 @@ pub trait MapValueDecode: sealed::Sealed {
 
     /// Merge one payload from `buf` into `value`.
     ///
+    /// Returns [`MapValueDecodeStatus::Known`] in the normal case, or
+    /// [`MapValueDecodeStatus::Unknown`] when this codec is a closed enum and
+    /// the payload's numeric value is not a declared variant — letting the
+    /// caller route the whole map entry to unknown fields instead of inserting
+    /// it.
+    ///
     /// `ctx` carries the remaining recursion and unknown-field budgets
     /// (used by message values; scalar codecs ignore it).
     ///
@@ -238,6 +244,7 @@ pub trait MapValueDecode: sealed::Sealed {
 
 /// Result of decoding one map-entry key/value payload.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MapValueDecodeStatus {
     /// The payload decoded to a normal map key/value.
     Known,
@@ -246,15 +253,6 @@ pub enum MapValueDecodeStatus {
     /// Proto2 map semantics require the whole outer map-entry record to be
     /// treated as unknown in this case, not inserted with a default value.
     Unknown,
-}
-
-impl MapValueDecodeStatus {
-    #[inline]
-    fn record(&mut self, status: Self) {
-        if matches!(status, Self::Unknown) {
-            *self = Self::Unknown;
-        }
-    }
 }
 
 /// Full (encode + size + decode) map key/value codec for non-message types.
@@ -669,24 +667,28 @@ where
     KC: MapValueDecode,
     VC: MapValueDecode,
 {
-    let mut status = MapValueDecodeStatus::Known;
+    // Track the *value* field's status with last-wins semantics: only the
+    // final field-2 occurrence decides whether the entry is unknown, matching
+    // the protobuf reference implementation. Map keys are never closed enums,
+    // so the key codec always returns `Known` and is ignored here.
+    let mut val_status = MapValueDecodeStatus::Known;
     while buf.has_remaining() {
         let entry_tag = Tag::decode(buf)?;
         match entry_tag.field_number() {
             1 => {
                 check_wire_type(entry_tag, KC::WIRE_TYPE)?;
-                status.record(KC::merge(key, buf, ctx)?);
+                KC::merge(key, buf, ctx)?;
             }
             2 => {
                 check_wire_type(entry_tag, VC::WIRE_TYPE)?;
-                status.record(VC::merge(val, buf, ctx)?);
+                val_status = VC::merge(val, buf, ctx)?;
             }
             _ => {
                 skip_field_depth(entry_tag, buf, ctx.depth())?;
             }
         }
     }
-    Ok(status)
+    Ok(val_status)
 }
 
 /// Decode one length-prefixed map entry from `buf`.
@@ -707,17 +709,19 @@ where
     merge_entry_with_unknowns::<KC, VC, C>(map, buf, ctx, None)
 }
 
-/// Decode one length-prefixed map entry from `buf`, insert it, and optionally
-/// preserve unknown closed-enum map values as whole map-entry records.
+/// Decode one length-prefixed map entry from `buf`, inserting it unless the
+/// value is an unknown closed-enum number — in which case the whole entry is
+/// optionally preserved as an unknown-field record.
 ///
 /// Implements proto map-entry semantics: missing key/value fields take
 /// their type defaults, repeated occurrences within one entry last-win,
 /// and unknown entry fields are skipped.
 ///
-/// If a closed-enum value payload is unknown, the entry is not inserted. When
-/// `unknown_fields` is `Some((field_number, fields))`, the whole original
-/// map-entry payload is preserved as a length-delimited unknown field with the
-/// outer map field number.
+/// If the *final* value-field occurrence in the entry is an unknown
+/// closed-enum number, the entry is not inserted. When `unknown_fields` is
+/// `Some((field_number, fields))`, the whole original map-entry payload is
+/// preserved verbatim as a length-delimited unknown field with the outer map
+/// field number.
 ///
 /// # Errors
 ///
@@ -743,6 +747,34 @@ where
     let mut val: VC::Value = Default::default();
 
     if unknown_fields.is_some() && (KC::MAY_RETURN_UNKNOWN || VC::MAY_RETURN_UNKNOWN) {
+        // Fast path for contiguous bufs (the common `&[u8]` / `Bytes` case):
+        // decode from a borrowed slice and only allocate when the entry
+        // actually turns out to be unknown.
+        if buf.chunk().len() >= entry_len {
+            let preserved = {
+                let entry_slice = &buf.chunk()[..entry_len];
+                let mut entry_cur = entry_slice;
+                let status =
+                    merge_entry_contents::<KC, VC>(&mut key, &mut val, &mut entry_cur, ctx)?;
+                matches!(status, MapValueDecodeStatus::Unknown).then(|| entry_slice.to_vec())
+            };
+            buf.advance(entry_len);
+            match preserved {
+                None => map.storage_insert(key, val),
+                Some(payload) => {
+                    if let Some((field_number, unknown_fields)) = unknown_fields {
+                        ctx.register_unknown_field()?;
+                        unknown_fields.push(crate::UnknownField {
+                            number: field_number,
+                            data: crate::UnknownFieldData::LengthDelimited(payload),
+                        });
+                    }
+                }
+            }
+            return Ok(());
+        }
+        // Non-contiguous fallback: buffer the payload up front so it can be
+        // preserved verbatim if decoding reports `Unknown`.
         let entry_payload = buf.copy_to_bytes(entry_len);
         let mut entry_cur = entry_payload.clone();
         let status = merge_entry_contents::<KC, VC>(&mut key, &mut val, &mut entry_cur, ctx)?;
@@ -759,17 +791,17 @@ where
     }
 
     let entry_limit = buf.remaining() - entry_len;
-    let mut status = MapValueDecodeStatus::Known;
+    let mut val_status = MapValueDecodeStatus::Known;
     while buf.remaining() > entry_limit {
         let entry_tag = Tag::decode(buf)?;
         match entry_tag.field_number() {
             1 => {
                 check_wire_type(entry_tag, KC::WIRE_TYPE)?;
-                status.record(KC::merge(&mut key, buf, ctx)?);
+                KC::merge(&mut key, buf, ctx)?;
             }
             2 => {
                 check_wire_type(entry_tag, VC::WIRE_TYPE)?;
-                status.record(VC::merge(&mut val, buf, ctx)?);
+                val_status = VC::merge(&mut val, buf, ctx)?;
             }
             _ => {
                 skip_field_depth(entry_tag, buf, ctx.depth())?;
@@ -784,7 +816,7 @@ where
             return Err(DecodeError::UnexpectedEof);
         }
     }
-    if matches!(status, MapValueDecodeStatus::Known) {
+    if matches!(val_status, MapValueDecodeStatus::Known) {
         map.storage_insert(key, val);
     }
     Ok(())
@@ -1077,5 +1109,53 @@ mod tests {
             &unknowns[0].data,
             crate::UnknownFieldData::LengthDelimited(payload) if payload == &entry
         ));
+
+        // Non-contiguous Buf takes the buffering fallback and produces the
+        // same outcome.
+        let mut map: Map<i32, E> = Map::default();
+        let mut unknown_fields = crate::UnknownFields::new();
+        let (a, b) = wire.split_at(1);
+        let mut chained = bytes::Buf::chain(a, b);
+        assert!(chained.chunk().len() < entry.len());
+        merge_entry_with_unknowns::<Int32, ClosedEnum<E>, _>(
+            &mut map,
+            &mut chained,
+            DecodeContext::new(10, &limit),
+            Some((5, &mut unknown_fields)),
+        )
+        .unwrap();
+        assert!(map.is_empty());
+        let unknowns: Vec<_> = unknown_fields.iter().collect();
+        assert_eq!(unknowns.len(), 1);
+        assert!(matches!(
+            &unknowns[0].data,
+            crate::UnknownFieldData::LengthDelimited(payload) if payload == &entry
+        ));
+
+        // Last-wins: an unknown value followed by a known one inserts the
+        // known value and records nothing in unknown fields.
+        let mut entry = Vec::new();
+        Tag::new(1, WireType::Varint).encode(&mut entry);
+        types::encode_int32(7, &mut entry);
+        Tag::new(2, WireType::Varint).encode(&mut entry);
+        types::encode_int32(99, &mut entry);
+        Tag::new(2, WireType::Varint).encode(&mut entry);
+        types::encode_int32(1, &mut entry);
+
+        let mut wire = Vec::new();
+        encode_varint(entry.len() as u64, &mut wire);
+        wire.extend_from_slice(&entry);
+
+        let mut map: Map<i32, E> = Map::default();
+        let mut unknown_fields = crate::UnknownFields::new();
+        merge_entry_with_unknowns::<Int32, ClosedEnum<E>, _>(
+            &mut map,
+            &mut wire.as_slice(),
+            DecodeContext::new(10, &limit),
+            Some((5, &mut unknown_fields)),
+        )
+        .unwrap();
+        assert_eq!(map.get(&7), Some(&E::B));
+        assert_eq!(unknown_fields.iter().count(), 0);
     }
 }

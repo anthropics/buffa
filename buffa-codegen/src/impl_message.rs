@@ -2876,6 +2876,7 @@ struct MapEntryCtx {
     ident: Ident,
     outer_tag_len: u32,
     val_ty: Type,
+    val_is_closed_enum: bool,
     key_codec: TokenStream,
     val_codec: TokenStream,
 }
@@ -2909,6 +2910,7 @@ fn map_entry_ctx(
         ident: make_field_ident(field_name),
         outer_tag_len: tag_encoded_len(field_number, 2),
         val_ty,
+        val_is_closed_enum: val_ty == Type::TYPE_ENUM && is_closed_enum(&val_features),
         key_codec: map_codec_token(key_ty, &crate::BytesRepr::Vec, &key_features)?,
         val_codec: map_codec_token(val_ty, &value_bytes_repr, &val_features)?,
     })
@@ -3190,20 +3192,32 @@ fn map_merge_arm(
         &quote! { tag },
         &quote! { ::buffa::encoding::WireType::LengthDelimited },
     );
-    let unknown_fields_arg = if ctx.config.preserve_unknown_fields {
-        quote! { ::core::option::Option::Some((#field_number, &mut self.__buffa_unknown_fields)) }
-    } else {
-        quote! { ::core::option::Option::None }
-    };
-    Ok(quote! {
-        #field_number => {
-            #wire_check
+    // Only closed-enum map values can produce an unknown entry that needs the
+    // parent message's `UnknownFields`; every other value type stays on the
+    // simpler `merge_entry` path so the generated code is unchanged for the
+    // common case.
+    let merge_call = if m.val_is_closed_enum && ctx.config.preserve_unknown_fields {
+        quote! {
             ::buffa::map_codec::merge_entry_with_unknowns::<#key_codec, #val_codec, _>(
                 &mut self.#ident,
                 buf,
                 ctx,
-                #unknown_fields_arg,
+                ::core::option::Option::Some((#field_number, &mut self.__buffa_unknown_fields)),
             )?;
+        }
+    } else {
+        quote! {
+            ::buffa::map_codec::merge_entry::<#key_codec, #val_codec, _>(
+                &mut self.#ident,
+                buf,
+                ctx,
+            )?;
+        }
+    };
+    Ok(quote! {
+        #field_number => {
+            #wire_check
+            #merge_call
         }
     })
 }
