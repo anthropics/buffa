@@ -983,7 +983,8 @@ let view = DecodeOptions::new()
 | Option | Default | Description |
 |--------|---------|-------------|
 | `.with_recursion_limit(n)` | 100 | Max nesting depth for sub-messages |
-| `.with_max_message_size(n)` | 2 GiB - 1 | Max total input size in bytes |
+| `.with_max_message_size(n)` | 2 GiB - 1 | Max total input size in bytes, clamped to 2 GiB - 1 |
+| `.without_reader_size_limit()` | off | Remove only the EOF-bounded `decode_reader` size cap (`std`); slice, `Buf`, view, and length-delimited decode paths stay capped |
 | `.with_unknown_field_limit(n)` | 1,000,000 | Max unknown fields materialized per decode |
 
 The unknown-field limit exists because unknown fields can occupy far more

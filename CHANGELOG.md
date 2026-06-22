@@ -226,6 +226,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `rustversion::attr(since(1.78), …)` so they remain active on modern
   toolchains. Adds `rustversion` as a dependency of `buffa` and
   `buffa-descriptor`.
+
+- `DecodeOptions::with_max_message_size` now clamps values above the protobuf
+  2 GiB - 1 message-size limit (with a debug assertion to catch accidental
+  sentinel use). `DecodeOptions::without_reader_size_limit` is the explicit
+  `std`-only opt-out for EOF-bounded `decode_reader` input; slice, `Buf`,
+  view, and length-delimited decode paths keep their configured cap, and
+  length-delimited declared lengths never exceed 2 GiB - 1. Callers that
+  used `with_max_message_size(usize::MAX)` for unbounded reader input should
+  switch to `without_reader_size_limit`; in release builds, the old spelling
+  now caps at 2 GiB - 1. (#231)
+
 - `MapValueDecode::merge` now returns `Result<MapValueDecodeStatus, _>`
   instead of `Result<(), _>`, and a new `merge_entry_with_unknowns` carries
   the closed-enum-map preservation path. The trait is sealed, so downstream
@@ -338,13 +349,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   are inferred from the field type, so default-representation code is
   unchanged. (#214)
 
-- **`DecodeOptions::decode_reader` no longer overflows when
-  `max_message_size` is `usize::MAX`.** The internal `read_limited` helper
-  computed `max_message_size as u64 + 1` to read one sentinel byte past the
-  limit; on 64-bit targets this overflowed — a debug panic, or in release a
-  wrap to zero that silently decoded an empty default message. The addition
-  now saturates, so `usize::MAX` correctly means an unbounded read. 32-bit
-  targets and finite limits are unaffected. (#219)
+- **`DecodeOptions::decode_reader` no longer overflows when the read size is
+  unbounded.** The internal `read_limited` helper computed
+  `max_message_size as u64 + 1` to read one sentinel byte past the limit; on
+  64-bit targets this overflowed — a debug panic, or in release a wrap to zero
+  that silently decoded an empty default message. The addition now saturates in
+  the bounded path, and unbounded reads are spelled explicitly via
+  `DecodeOptions::without_reader_size_limit`. 32-bit targets and finite
+  limits are unaffected. (#219)
 
 - **Closed-enum map values now preserve unknown entries correctly.** For
   proto2 `map<K, ClosedEnum>` fields, an unknown enum value now prevents the
