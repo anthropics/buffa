@@ -641,7 +641,7 @@ Runtime types for all edition features exist in `editions.rs`. Editions 2023 and
 Full proto2 support:
 
 - `optional`, `required`, `repeated`
-- Closed enums with bare `E` type; unknown wire values routed to `unknown_fields` (singular, optional, repeated unpacked, oneof — per proto spec). Remaining gap: view packed-repeated (no per-element span to borrow) and map values (spec requires the entire entry to go to unknown fields — needs re-encode).
+- Closed enums with bare `E` type; unknown wire values routed to `unknown_fields` (singular, optional, repeated unpacked, oneof, and map values — per proto spec). Remaining gap: view packed-repeated (no per-element span to borrow).
 - Custom default values via `[default = ...]` annotations on **required** fields: messages with such defaults get a hand-written `impl Default` instead of derive. Escape sequences (`\n`, `\t`, `\"`, `\xNN`) are handled by protoc pre-unescaping the descriptor string. Custom defaults on **optional** fields are ignored — `Default::default()` returns `None`, and buffa doesn't generate proto2-style getter methods (`fn field_name(&self) -> T` that unwraps to the custom default).
 - Groups (both generated types and wire format)
 - Custom `Serialize`/`Deserialize` on generated enums using proto names for JSON, with closed-enum serde helpers (`closed_enum`, `opt_closed_enum`, `repeated_closed_enum`, `map_closed_enum`)

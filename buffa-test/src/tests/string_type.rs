@@ -28,7 +28,7 @@ fn test_string_type_field_types_are_configured() {
     let _: &crate::reprs::CompactStr = &m.compact;
     let _: &crate::reprs::EcoStr = &m.eco;
     // Map keys/values are unaffected — always String.
-    let _: &std::collections::HashMap<String, String> = &m.by_key;
+    let _: &buffa::Map<String, String> = &m.by_key;
     // The oneof string variant payload must also honor the configured repr.
     let _: ::buffa_smolstr::SmolStr = match Choice::Named("x".into()) {
         Choice::Named(s) => s,

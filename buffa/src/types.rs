@@ -723,20 +723,28 @@ pub fn string_encoded_len(value: &str) -> usize {
 ///
 /// # Limitations
 ///
-/// - **`repeated` elements must be crate-local.** A custom type used as the
-///   element of a `repeated` field needs a codegen-emitted `ReflectElement`
-///   impl (for vtable reflection), which the orphan rule permits only when the
-///   type is local to the generating crate. A *foreign* custom type in that
-///   position fails to compile — wrap it in a crate-local newtype. Singular,
-///   optional, oneof, and map uses work with a foreign type directly.
-/// - **JSON of a `repeated` custom string** serializes through the element's
-///   native `serde`, so a custom string used as a `repeated` element under JSON
-///   must derive `Serialize` / `Deserialize` (and, for an external type, enable
-///   its `serde` feature). Singular / optional / oneof custom strings use the
-///   `proto_string` with-module and need no `serde` impl.
-/// - **No `Arbitrary` impl required.** Under the `arbitrary` feature codegen
-///   attaches a generic builder, so a custom type needs no native
-///   `arbitrary::Arbitrary` impl.
+/// These apply to a custom type used as a `repeated` element or in a `map` slot
+/// (`map<string, V>` key, `map<K, string>` value). Singular / optional / oneof
+/// uses have none of them and work with a foreign type directly. See the user
+/// guide's "String and bytes field representations" section for the full table.
+///
+/// - **Must be crate-local.** A custom type in a `repeated` element or `map`
+///   slot needs codegen-emitted `ReflectElement` / `ReflectMapKey` impls (for
+///   vtable reflection), which the orphan rule permits only when the type is
+///   local to the generating crate. A *foreign* custom type in those positions
+///   fails to compile — wrap it in a crate-local newtype.
+/// - **JSON needs native `serde`.** A custom string used as a `repeated` element
+///   or in a `map` serializes through its own `serde`, so it must derive
+///   `Serialize` / `Deserialize` (and, for an external type, enable its `serde`
+///   feature). Singular / optional / oneof custom strings use the `proto_string`
+///   with-module and need no `serde` impl.
+/// - **A `map` key needs `Hash + Eq`** (default / `HashMap` container) or `Ord`
+///   (`map_type(BTreeMap)`); the bound is enforced at the generated field type.
+/// - **No `Arbitrary` impl required, except in a `map`.** Under the `arbitrary`
+///   feature, singular / optional / `repeated` fields get a generic builder, so
+///   a custom type needs no native `arbitrary::Arbitrary` impl. The `map`
+///   arbitrary path currently has no per-key shim, so a custom string used as a
+///   `map` key or value must derive `Arbitrary` itself.
 pub trait ProtoString:
     Clone
     + PartialEq

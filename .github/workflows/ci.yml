@@ -106,6 +106,48 @@ jobs:
       - name: Check (MSRV 1.87)
         run: cargo check --workspace --all-targets
 
+  # ── Miri: proves the SizeCache `unsafe` reads no uninitialized memory ─────
+  # SizeCache stores its inline slots as `MaybeUninit<u32>` to avoid zeroing the
+  # whole array on every encode; `consume_next` reads them via `assume_init`.
+  # Miri tracks per-byte init state, so this job mechanically verifies the
+  # soundness invariant (slots < len are initialized) on every reserve / set /
+  # consume / clear / spill path the size_cache tests exercise. Scoped to that
+  # module to keep the (interpreted, slow) run fast — ~15-30s steady state, so
+  # it runs on every PR as a blocking gate rather than on a nightly schedule.
+  #
+  # The nightly is PINNED (not floating): a required check must not be broken by
+  # an unrelated bad nightly. Bump MIRI_TOOLCHAIN occasionally; the sysroot
+  # cache key follows it. `cargo +<toolchain>` overrides rust-toolchain.toml.
+  miri:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MIRI_TOOLCHAIN: nightly-2026-02-27
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.MIRI_TOOLCHAIN }}
+          components: miri
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1 (sha-pinned)
+
+      # The Miri std sysroot (~100 MB) is the only slow part of a cold run
+      # (~1-3 min to build); rust-cache does not cover it. Cache it keyed on the
+      # pinned toolchain so steady-state runs skip the build.
+      - name: Cache Miri sysroot
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/miri
+          key: miri-sysroot-${{ runner.os }}-${{ env.MIRI_TOOLCHAIN }}
+
+      - name: Miri setup (build/restore sysroot)
+        run: cargo +${{ env.MIRI_TOOLCHAIN }} miri setup
+
+      - name: Miri (size_cache soundness)
+        run: cargo +${{ env.MIRI_TOOLCHAIN }} miri test -p buffa size_cache
+
   # ── no_std and 32-bit compilation checks ─────────────────────────────────
   check-nostd:
     runs-on: ubuntu-latest

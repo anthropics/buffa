@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package string_map;
+
+// Compiled with `.string_type_custom("crate::string_map::MapStr")`, so every
+// `string` map key and value uses the crate-local custom `ProtoString` newtype
+// instead of `String`. Each field pins one JSON serde-dispatch path for a custom
+// string key/value (see `map_serde_module`):
+//
+//   ss    string→string  : derive (None) — both slots custom, serialized as
+//                          JSON object key + string value via the newtype serde.
+//   si64  string→int64   : proto_str_key_map — value needs proto3-JSON quoting,
+//                          custom key lacks Display/FromStr so it cannot use
+//                          proto_map.
+//   sf64  string→double  : proto_str_key_map (float NaN/Inf token path).
+//   i32s  int32→string   : string_key_map — non-string key + custom string value.
+//   smsg  string→message : derive (None) — custom key + message value.
+//   senum string→enum    : map_enum — custom key + open-enum value.
+//
+// Compiling the crate exercises the owned codegen surface (the `ProtoStringMap`
+// codec for both key and value, view→owned `Into` conversion, vtable reflect,
+// and the generic arbitrary map builder); the runtime tests add binary / JSON /
+// view→owned round-trips. The key type is `Hash + Eq` (a HashMap container),
+// enforced at the generated field type.
+message Maps {
+  map<string, string> ss = 1;
+  map<string, int64> si64 = 2;
+  map<string, double> sf64 = 3;
+  map<int32, string> i32s = 4;
+  map<string, Inner> smsg = 5;
+  map<string, Color> senum = 6;
+}
+
+message Inner {
+  int32 v = 1;
+}
+
+enum Color {
+  COLOR_UNKNOWN = 0;
+  COLOR_RED = 1;
+  COLOR_BLUE = 2;
+}
