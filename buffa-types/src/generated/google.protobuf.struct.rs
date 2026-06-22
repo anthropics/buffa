@@ -196,6 +196,7 @@ impl ::buffa::Message for Struct {
             += ::buffa::map_codec::message_field_len::<
                 ::buffa::map_codec::Str,
                 _,
+                _,
             >(&self.fields, 1u32, __cache);
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
@@ -209,6 +210,7 @@ impl ::buffa::Message for Struct {
         use ::buffa::Enumeration as _;
         ::buffa::map_codec::write_message_field::<
             ::buffa::map_codec::Str,
+            _,
             _,
         >(&self.fields, 1u32, __cache, buf);
         self.__buffa_unknown_fields.write_to(buf);
@@ -232,6 +234,7 @@ impl ::buffa::Message for Struct {
                 ::buffa::map_codec::merge_entry::<
                     ::buffa::map_codec::Str,
                     ::buffa::map_codec::Msg<_>,
+                    _,
                 >(&mut self.fields, buf, ctx)?;
             }
             _ => {

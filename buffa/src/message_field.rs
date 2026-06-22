@@ -6,7 +6,7 @@
 
 use alloc::boxed::Box;
 use core::fmt;
-use core::ops::Deref;
+use core::ops::{Deref, DerefMut};
 
 /// Provides access to a lazily-initialized, immutable default instance of a
 /// type.
@@ -78,12 +78,113 @@ macro_rules! impl_default_instance {
     };
 }
 
+/// The owned smart pointer backing a singular message field inside
+/// [`MessageField`].
+///
+/// The default is [`Box<T>`]; `buffa_build`'s `box_type_custom` knob substitutes
+/// any pointer that implements `ProtoBox<T>` — for example a `smallbox`-style
+/// pointer that stores small messages inline and avoids a heap allocation. The
+/// wire format is unchanged; only the in-memory ownership of the boxed message
+/// changes, and view types are unaffected.
+///
+/// There is intentionally no blanket impl — the built-in `Box<T>` impl below is
+/// the only one buffa provides. Because `ProtoBox` is buffa-owned, a *foreign*
+/// pointer cannot implement it directly (orphan rule); wrap it in a crate-local
+/// newtype, like the `ProtoString` newtype pattern.
+///
+/// # Why `DerefMut` (and why `Rc` / `Arc` are excluded)
+///
+/// The decoder merges a message field in place — it calls
+/// [`get_or_insert_default`](MessageField::get_or_insert_default) to obtain a
+/// `&mut T` and decodes into it. That requires `DerefMut`, which `Rc<T>` and
+/// `Arc<T>` cannot provide while shared. So this knob selects an **allocation
+/// strategy** (inline vs heap) for an exclusively-owned message, never a shared
+/// or copy-on-write pointer. A custom pointer that is not exclusively owned will
+/// fail to implement `ProtoBox` at its definition site, not silently misbehave.
+///
+/// # Thread-safety
+///
+/// `ProtoBox` deliberately does **not** require `Send`/`Sync` (unlike
+/// `ProtoString`/`ProtoBytes`/`ProtoList`). `MessageField<T>` is the universal
+/// message-field wrapper and has generic helpers; bounding the pointer
+/// `Send + Sync` would tighten `T: Send + Sync` onto all of them. It is also
+/// unnecessary: a generated message implements [`Message`](crate::Message),
+/// whose `Send + Sync` supertraits already require every field — and thus the
+/// pointer — to be `Send + Sync`, so a non-`Send` custom pointer is rejected at
+/// the message's `impl Message`, just less locally.
+///
+/// # Caveat
+///
+/// An inline pointer (e.g. `SmallBox`) inflates the *parent* struct by its
+/// inline-storage size for every such field, so it should be selected per field
+/// or prefix, never as a blanket default.
+///
+/// # Examples
+///
+/// A minimal crate-local newtype wrapping a foreign pointer (the `Clone` derive
+/// is only needed if the enclosing message derives `Clone`):
+///
+/// ```rust,ignore
+/// #[derive(Clone)]
+/// pub struct SmallBox<T>(pub smallbox::SmallBox<T, smallbox::space::S4>);
+///
+/// impl<T> core::ops::Deref for SmallBox<T> {
+///     type Target = T;
+///     fn deref(&self) -> &T { &self.0 }
+/// }
+/// impl<T> core::ops::DerefMut for SmallBox<T> {
+///     fn deref_mut(&mut self) -> &mut T { &mut self.0 }
+/// }
+/// impl<T> buffa::ProtoBox<T> for SmallBox<T> {
+///     fn new(value: T) -> Self { SmallBox(smallbox::smallbox!(value)) }
+///     fn into_inner(self) -> T { self.0.into_inner() }
+/// }
+/// ```
+///
+/// Then point a field at it: `box_type_custom("::my_crate::SmallBox<*>")`.
+pub trait ProtoBox<T>: Deref<Target = T> + DerefMut {
+    /// Box a freshly-decoded or constructed message value.
+    fn new(value: T) -> Self;
+
+    /// Unwrap the pointer, returning the owned message value (the
+    /// [`take`](MessageField::take) / [`into_option`](MessageField::into_option)
+    /// path).
+    fn into_inner(self) -> T;
+}
+
+impl<T> ProtoBox<T> for Box<T> {
+    #[inline]
+    fn new(value: T) -> Self {
+        Box::new(value)
+    }
+
+    #[inline]
+    fn into_inner(self) -> T {
+        *self
+    }
+}
+
+// The default pointer must always satisfy the bound; freeze that invariant
+// against future changes to the trait's supertraits.
+const _: fn() = || {
+    fn assert_proto_box<P: ProtoBox<T>, T>() {}
+    assert_proto_box::<Box<u32>, u32>();
+};
+
 /// A wrapper for optional message fields that provides transparent access
 /// to a default instance when the field is not set.
 ///
 /// This type is used for singular message fields in generated code. It avoids
 /// the ergonomic pain of `Option<Box<M>>` while still being heap-allocated
 /// only when set (no allocation for unset fields).
+///
+/// The pointer type `P` is pluggable (default [`Box<T>`]); see [`ProtoBox`].
+/// Because `P` has a default, a *standalone* construction with no pinning
+/// context needs a type annotation — write `let f: MessageField<Foo> =
+/// MessageField::some(x);` (or `MessageField::<Foo>::some(x)`). In the common
+/// cases — a struct-literal field (`Outer { inner: MessageField::some(x), .. }`)
+/// or an assignment to a typed field — `P` is inferred from the target and no
+/// annotation is needed.
 ///
 /// # Access patterns
 ///
@@ -101,29 +202,43 @@ macro_rules! impl_default_instance {
 /// // Clear:
 /// msg.inner = MessageField::none();
 /// ```
-pub struct MessageField<T: Default> {
-    inner: Option<Box<T>>,
+pub struct MessageField<T: Default, P = Box<T>> {
+    inner: Option<P>,
+    _marker: core::marker::PhantomData<T>,
 }
 
-impl<T: Default> MessageField<T> {
+impl<T: Default, P: ProtoBox<T>> MessageField<T, P> {
     /// Create a `MessageField` with no value set.
     #[inline]
     pub const fn none() -> Self {
-        Self { inner: None }
+        Self {
+            inner: None,
+            _marker: core::marker::PhantomData,
+        }
     }
 
     /// Create a `MessageField` with a value.
     #[inline]
     pub fn some(value: T) -> Self {
         Self {
-            inner: Some(Box::new(value)),
+            inner: Some(<P as ProtoBox<T>>::new(value)),
+            _marker: core::marker::PhantomData,
         }
     }
 
-    /// Create a `MessageField` from a boxed value.
+    /// Create a `MessageField` from an already-constructed pointer, without
+    /// unwrapping and re-boxing the value.
+    ///
+    /// Prefer this over `MessageField::some(p.into_inner())` when you already
+    /// hold a `P` — for an inline pointer (e.g. `SmallBox`) the latter would
+    /// move the value out and re-store it, defeating the point. The generic
+    /// counterpart to [`from_box`](Self::from_box) (which is `Box`-only).
     #[inline]
-    pub fn from_box(value: Box<T>) -> Self {
-        Self { inner: Some(value) }
+    pub fn from_pointer(value: P) -> Self {
+        Self {
+            inner: Some(value),
+            _marker: core::marker::PhantomData,
+        }
     }
 
     /// Returns `true` if the field has a value set.
@@ -153,13 +268,17 @@ impl<T: Default> MessageField<T> {
     /// Take the inner value, leaving the field unset.
     #[inline]
     pub fn take(&mut self) -> Option<T> {
-        self.inner.take().map(|b| *b)
+        self.inner.take().map(<P as ProtoBox<T>>::into_inner)
     }
 
     /// Get a mutable reference to the value, initializing to the default if unset.
     #[inline]
     pub fn get_or_insert_default(&mut self) -> &mut T {
-        self.inner.get_or_insert_default()
+        // `&mut P` coerces to `&mut T` via `P: DerefMut<Target = T>`. Uses
+        // `ProtoBox::new` rather than `Option::get_or_insert_default` so no
+        // `P: Default` bound is needed (a custom pointer need not be `Default`).
+        self.inner
+            .get_or_insert_with(|| <P as ProtoBox<T>>::new(T::default()))
     }
 
     /// Call `f` with a mutable reference to the inner value, initializing to
@@ -194,7 +313,7 @@ impl<T: Default> MessageField<T> {
     /// field unset without consuming the enclosing struct, see [`take`](Self::take).
     #[inline]
     pub fn into_option(self) -> Option<T> {
-        self.inner.map(|b| *b)
+        self.inner.map(<P as ProtoBox<T>>::into_inner)
     }
 
     /// Consume the field, returning `Ok(T)` if set or `Err(err)` if unset.
@@ -208,7 +327,7 @@ impl<T: Default> MessageField<T> {
     #[inline]
     pub fn ok_or<E>(self, err: E) -> Result<T, E> {
         match self.inner {
-            Some(b) => Ok(*b),
+            Some(b) => Ok(<P as ProtoBox<T>>::into_inner(b)),
             None => Err(err),
         }
     }
@@ -227,43 +346,62 @@ impl<T: Default> MessageField<T> {
     #[inline]
     pub fn ok_or_else<E, F: FnOnce() -> E>(self, err: F) -> Result<T, E> {
         match self.inner {
-            Some(b) => Ok(*b),
+            Some(b) => Ok(<P as ProtoBox<T>>::into_inner(b)),
             None => Err(err()),
         }
     }
 }
 
-impl<T: Default> Default for MessageField<T> {
+impl<T: Default> MessageField<T, Box<T>> {
+    /// Create a `MessageField` from a boxed value.
+    ///
+    /// Specific to the default `Box<T>` pointer; for a custom [`ProtoBox`]
+    /// pointer construct with [`some`](Self::some).
+    #[inline]
+    pub fn from_box(value: Box<T>) -> Self {
+        Self {
+            inner: Some(value),
+            _marker: core::marker::PhantomData,
+        }
+    }
+}
+
+impl<T: Default, P: ProtoBox<T>> Default for MessageField<T, P> {
     #[inline]
     fn default() -> Self {
         Self::none()
     }
 }
 
-impl<T: DefaultInstance> Deref for MessageField<T> {
+impl<T: DefaultInstance, P: ProtoBox<T>> Deref for MessageField<T, P> {
     type Target = T;
 
     #[inline]
     fn deref(&self) -> &T {
         match &self.inner {
+            // `&P` coerces to `&T` via `P: Deref<Target = T>`.
             Some(value) => value,
             None => T::default_instance(),
         }
     }
 }
 
-impl<T: Default + Clone> Clone for MessageField<T> {
+impl<T: Default + Clone, P: ProtoBox<T> + Clone> Clone for MessageField<T, P> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
+            _marker: core::marker::PhantomData,
         }
     }
 }
 
-impl<T: DefaultInstance + PartialEq> PartialEq for MessageField<T> {
+impl<T: DefaultInstance + PartialEq, P: ProtoBox<T>> PartialEq for MessageField<T, P> {
     fn eq(&self, other: &Self) -> bool {
+        // Compare the pointed-to `T` values (via `**`), not the pointers, so no
+        // `P: PartialEq` bound is needed and a set-to-default field equals an
+        // unset one.
         match (&self.inner, &other.inner) {
-            (Some(a), Some(b)) => a == b,
+            (Some(a), Some(b)) => **a == **b,
             (None, None) => true,
             // An unset field equals a set-to-default field. Use default_instance()
             // to avoid allocating a temporary value for the comparison.
@@ -273,18 +411,19 @@ impl<T: DefaultInstance + PartialEq> PartialEq for MessageField<T> {
     }
 }
 
-impl<T: DefaultInstance + Eq + PartialEq> Eq for MessageField<T> {}
+impl<T: DefaultInstance + Eq + PartialEq, P: ProtoBox<T>> Eq for MessageField<T, P> {}
 
-impl<T: Default + fmt::Debug> fmt::Debug for MessageField<T> {
+impl<T: Default + fmt::Debug, P: ProtoBox<T>> fmt::Debug for MessageField<T, P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.inner {
-            Some(value) => f.debug_tuple("MessageField::Set").field(value).finish(),
+            // Format the pointed-to `T` (via `&**`), so no `P: Debug` bound.
+            Some(value) => f.debug_tuple("MessageField::Set").field(&**value).finish(),
             None => f.write_str("MessageField::Unset"),
         }
     }
 }
 
-impl<T: Default> From<Option<T>> for MessageField<T> {
+impl<T: Default, P: ProtoBox<T>> From<Option<T>> for MessageField<T, P> {
     fn from(opt: Option<T>) -> Self {
         match opt {
             Some(v) => Self::some(v),
@@ -293,14 +432,14 @@ impl<T: Default> From<Option<T>> for MessageField<T> {
     }
 }
 
-impl<T: Default> From<T> for MessageField<T> {
+impl<T: Default, P: ProtoBox<T>> From<T> for MessageField<T, P> {
     fn from(value: T) -> Self {
         Self::some(value)
     }
 }
 
 #[cfg(feature = "json")]
-impl<T: Default + serde::Serialize> serde::Serialize for MessageField<T> {
+impl<T: Default + serde::Serialize, P: ProtoBox<T>> serde::Serialize for MessageField<T, P> {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         match self.inner.as_deref() {
             Some(v) => s.serialize_some(v),
@@ -310,7 +449,9 @@ impl<T: Default + serde::Serialize> serde::Serialize for MessageField<T> {
 }
 
 #[cfg(feature = "json")]
-impl<'de, T: Default + serde::Deserialize<'de>> serde::Deserialize<'de> for MessageField<T> {
+impl<'de, T: Default + serde::Deserialize<'de>, P: ProtoBox<T>> serde::Deserialize<'de>
+    for MessageField<T, P>
+{
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         Option::<T>::deserialize(d).map(|opt| match opt {
             Some(v) => Self::some(v),
@@ -320,7 +461,9 @@ impl<'de, T: Default + serde::Deserialize<'de>> serde::Deserialize<'de> for Mess
 }
 
 #[cfg(feature = "arbitrary")]
-impl<'a, T: Default + arbitrary::Arbitrary<'a>> arbitrary::Arbitrary<'a> for MessageField<T> {
+impl<'a, T: Default + arbitrary::Arbitrary<'a>, P: ProtoBox<T>> arbitrary::Arbitrary<'a>
+    for MessageField<T, P>
+{
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         Ok(if bool::arbitrary(u)? {
             MessageField::some(T::arbitrary(u)?)
@@ -362,7 +505,7 @@ mod tests {
 
     #[test]
     fn test_set_derefs_to_value() {
-        let field = MessageField::some(Inner {
+        let field: MessageField<Inner> = MessageField::some(Inner {
             value: 42,
             name: "hello".into(),
         });
@@ -390,7 +533,7 @@ mod tests {
 
     #[test]
     fn test_take() {
-        let mut field = MessageField::some(Inner {
+        let mut field: MessageField<Inner> = MessageField::some(Inner {
             value: 7,
             name: "taken".into(),
         });
@@ -401,7 +544,7 @@ mod tests {
 
     #[test]
     fn test_clone() {
-        let field = MessageField::some(Inner {
+        let field: MessageField<Inner> = MessageField::some(Inner {
             value: 99,
             name: "clone".into(),
         });
@@ -423,7 +566,7 @@ mod tests {
 
     #[test]
     fn test_modify_updates_already_set_field() {
-        let mut field = MessageField::some(Inner {
+        let mut field: MessageField<Inner> = MessageField::some(Inner {
             value: 1,
             name: "original".into(),
         });
@@ -486,7 +629,7 @@ mod tests {
 
         #[test]
         fn set_serializes_as_inner_json() {
-            let f = MessageField::some(Msg { value: 42 });
+            let f: MessageField<Msg> = MessageField::some(Msg { value: 42 });
             let json = serde_json::to_string(&f).unwrap();
             assert_eq!(json, r#"{"value":42}"#);
         }
@@ -506,7 +649,7 @@ mod tests {
 
         #[test]
         fn round_trip_set_field() {
-            let original = MessageField::some(Msg { value: 99 });
+            let original: MessageField<Msg> = MessageField::some(Msg { value: 99 });
             let json = serde_json::to_string(&original).unwrap();
             let recovered: MessageField<Msg> = serde_json::from_str(&json).unwrap();
             assert_eq!(
@@ -518,7 +661,7 @@ mod tests {
 
     #[test]
     fn test_into_option_unboxes() {
-        let field = MessageField::some(Inner {
+        let field: MessageField<Inner> = MessageField::some(Inner {
             value: 5,
             name: "x".into(),
         });
@@ -532,7 +675,7 @@ mod tests {
 
     #[test]
     fn test_ok_or() {
-        let set = MessageField::some(Inner {
+        let set: MessageField<Inner> = MessageField::some(Inner {
             value: 1,
             name: "set".into(),
         });
@@ -545,7 +688,7 @@ mod tests {
 
     #[test]
     fn test_ok_or_else() {
-        let set = MessageField::some(Inner {
+        let set: MessageField<Inner> = MessageField::some(Inner {
             value: 2,
             name: "set".into(),
         });
@@ -557,7 +700,7 @@ mod tests {
 
     #[test]
     fn test_ok_or_else_closure_not_called_when_set() {
-        let set = MessageField::some(Inner::default());
+        let set: MessageField<Inner> = MessageField::some(Inner::default());
         let _ = set.ok_or_else(|| -> &str { panic!("closure must not run") });
     }
 

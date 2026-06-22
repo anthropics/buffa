@@ -1359,6 +1359,8 @@ fn custom_deser_oneof_group(
         };
 
         let qualified_enum: TokenStream = quote! { #oneof_prefix #enum_ident };
+        let variant_fqn = format!(".{proto_fqn}.{oneof_name}.{proto_name}");
+        let variant_pointer_repr = ctx.pointer_repr(&variant_fqn);
         let arm = crate::oneof::oneof_variant_deser_arm(&crate::oneof::OneofVariantDeserInput {
             variant_ident: &variant_ident,
             variant_type: &variant_type,
@@ -1366,15 +1368,12 @@ fn custom_deser_oneof_group(
             proto_name,
             field_type,
             null_forward: crate::oneof::null_is_valid_value(field),
-            is_boxed: crate::oneof::variant_boxed(
-                ctx,
-                field_type,
-                &format!(".{proto_fqn}.{oneof_name}.{proto_name}"),
-            ),
+            is_boxed: crate::oneof::variant_boxed(ctx, field_type, &variant_fqn),
+            pointer_repr: &variant_pointer_repr,
             enum_ident: &qualified_enum,
             result_var: &var_ident,
             oneof_name,
-        });
+        })?;
         arms.push(arm);
     }
 
@@ -1429,6 +1428,10 @@ struct FieldInfo {
     /// [`StringRepr::String`] for non-string fields and for string fields with
     /// no matching `string_fields` rule.
     string_repr: crate::StringRepr,
+    /// The owned Rust map collection for a `map` field (`HashMap` / `BTreeMap` /
+    /// custom), resolved by `map_repr`. [`MapRepr::HashMap`](crate::MapRepr::HashMap)
+    /// when the field is not a map or has no matching rule.
+    map_repr: crate::MapRepr,
     /// Proto2 `required` (or editions `LEGACY_REQUIRED`). Required fields
     /// must always appear in JSON output regardless of value, matching the
     /// binary encoder's always-encode semantics.
@@ -1442,6 +1445,13 @@ struct FieldInfo {
     /// features — that field is TYPE_MESSAGE so the overlay doesn't fire.
     /// See `map_serde_module`.
     map_value_enum_closed: Option<bool>,
+    /// `true` when the map **key** is proto `string` *and* a custom
+    /// `string_type` representation is configured for the field. The JSON
+    /// `proto_map` module stringifies keys via `Display` / `FromStr`, which a
+    /// `ProtoString` newtype need not implement, so such a key routes through
+    /// `proto_str_key_map` (serde-based key handling) instead. See
+    /// `map_serde_module`.
+    map_key_custom_string: bool,
     /// The bare inner type `T` when `is_optional = true` (`rust_type` is `Option<T>`).
     /// `None` for all non-optional fields.
     inner_opt_type: Option<TokenStream>,
@@ -1508,9 +1518,9 @@ fn classify_field(
     let bytes_type = || bytes_repr.type_path(resolver, ctx, nesting);
 
     // Configurable owned representation for `string` fields (default `String`).
-    // Map keys/values are unaffected — they always use `String`. (The bytes
-    // path now propagates `bytes_fields` to map values via
-    // `map_value_use_bytes`; the string path has no equivalent yet.)
+    // The same `string_type` rule (keyed on the field path) also covers a map's
+    // `string` key/value slots — see `map_string_repr` below. (The bytes path
+    // propagates `bytes_fields` to map values via `map_value_bytes_repr`.)
     let string_repr = if field_type == Type::TYPE_STRING {
         ctx.string_repr(&field_fqn)
     } else {
@@ -1518,9 +1528,44 @@ fn classify_field(
     };
     let string_type = || string_repr.type_path(resolver, ctx, nesting);
 
+    // String representation for a map field's `string` slots (key and/or value).
+    // The outer map field's `field_type` is MESSAGE (synthetic entry), so the
+    // `string_repr` above is `String`; this looks the rule up on the same field
+    // path. It is a no-op for any non-`string` slot inside `map_rust_type_from_entry`.
+    let map_string_repr = if is_map {
+        ctx.string_repr(&field_fqn)
+    } else {
+        crate::StringRepr::String
+    };
+
+    // Configurable owned map collection for `map` fields (default `HashMap`).
+    let map_repr = if is_map {
+        ctx.map_repr(&field_fqn)
+    } else {
+        crate::MapRepr::HashMap
+    };
+
+    // Configurable owned pointer for singular message fields (default `Box`).
+    let pointer_repr = ctx.pointer_repr(&field_fqn);
+
+    // Configurable owned collection for `repeated` (non-map) fields (default
+    // `Vec<T>`). Map fields keep their configured map collection.
+    let repeated_repr = if is_repeated && !is_map {
+        ctx.repeated_repr(&field_fqn)
+    } else {
+        crate::RepeatedRepr::Vec
+    };
+
     let mut inner_opt_type: Option<TokenStream> = None;
     let rust_type = if let Some(entry) = map_entry {
-        map_rust_type_from_entry(scope, entry, &map_value_bytes_repr, resolver)?
+        map_rust_type_from_entry(
+            scope,
+            entry,
+            &map_value_bytes_repr,
+            &map_string_repr,
+            &map_repr,
+            resolver,
+        )?
     } else if is_repeated {
         let elem = if field_type == Type::TYPE_BYTES {
             bytes_type()?
@@ -1529,16 +1574,11 @@ fn classify_field(
         } else {
             scalar_or_message_type_nested(ctx, field, current_package, nesting, features, resolver)?
         };
-        {
-            let vec = resolver.vec_at(ctx, nesting);
-            quote! { #vec<#elem> }
-        }
+        repeated_repr.type_path(&elem, resolver, ctx, nesting)?
     } else if field_type == Type::TYPE_MESSAGE || field_type == Type::TYPE_GROUP {
         let inner = resolve_message_type(scope, field)?;
-        {
-            let mf = resolver.message_field_at(ctx, nesting);
-            quote! { #mf<#inner> }
-        }
+        let mf = resolver.message_field_at(ctx, nesting);
+        pointer_repr.type_path(&mf, &inner)?
     } else if is_optional {
         let inner = if field_type == Type::TYPE_ENUM {
             resolve_enum_type(scope, field, resolver)?
@@ -1573,11 +1613,10 @@ fn classify_field(
     let is_self_ref = field.type_name.as_deref() == Some(self_fqn.as_str()) && !is_map;
     let struct_field_type = if is_self_ref {
         if is_repeated {
-            let vec = resolver.vec_at(ctx, nesting);
-            quote! { #vec<Self> }
+            repeated_repr.type_path(&quote! { Self }, resolver, ctx, nesting)?
         } else {
             let mf = resolver.message_field_at(ctx, nesting);
-            quote! { #mf<Self> }
+            pointer_repr.type_path(&mf, &quote! { Self })?
         }
     } else {
         rust_type.clone()
@@ -1603,6 +1642,9 @@ fn classify_field(
         None
     };
 
+    let map_key_custom_string = map_key_type == Some(Type::TYPE_STRING)
+        && matches!(map_string_repr, crate::StringRepr::Custom(_));
+
     Ok(FieldInfo {
         rust_type,
         struct_field_type,
@@ -1613,9 +1655,11 @@ fn classify_field(
         bytes_repr,
         map_value_bytes_repr,
         string_repr,
+        map_repr,
         map_key_type,
         map_value_type,
         map_value_enum_closed,
+        map_key_custom_string,
         inner_opt_type,
     })
 }
@@ -1856,6 +1900,8 @@ fn map_rust_type_from_entry(
     scope: MessageScope<'_>,
     entry: &DescriptorProto,
     value_bytes_repr: &crate::BytesRepr,
+    string_repr: &crate::StringRepr,
+    map_repr: &crate::MapRepr,
     resolver: &crate::imports::ImportResolver,
 ) -> Result<TokenStream, CodeGenError> {
     let MessageScope {
@@ -1876,21 +1922,24 @@ fn map_rust_type_from_entry(
         .find(|f| f.number == Some(2))
         .ok_or(CodeGenError::MissingField("map_entry.value"))?;
 
-    let key_type = scalar_or_message_type_nested(
-        ctx,
-        key_field,
-        current_package,
-        nesting,
-        features,
-        resolver,
-    )?;
-    let value_type = if crate::impl_message::effective_type_in_map_entry(ctx, value_field, features)
-        == Type::TYPE_BYTES
-        && !value_bytes_repr.is_default()
+    // A custom `string_type` applies to whichever slot is proto `string`; the
+    // same outer-field-path rule covers both slots of a `map<string, string>`.
+    let key_type = if crate::impl_message::effective_type_in_map_entry(ctx, key_field, features)
+        == Type::TYPE_STRING
+        && !string_repr.is_default()
     {
+        string_repr.type_path(resolver, ctx, nesting)?
+    } else {
+        scalar_or_message_type_nested(ctx, key_field, current_package, nesting, features, resolver)?
+    };
+    let value_effective =
+        crate::impl_message::effective_type_in_map_entry(ctx, value_field, features);
+    let value_type = if value_effective == Type::TYPE_BYTES && !value_bytes_repr.is_default() {
         // Custom / Bytes map-value representation (Vec<u8> falls through to the
         // default scalar path below).
         value_bytes_repr.type_path(resolver, ctx, nesting)?
+    } else if value_effective == Type::TYPE_STRING && !string_repr.is_default() {
+        string_repr.type_path(resolver, ctx, nesting)?
     } else {
         scalar_or_message_type_nested(
             ctx,
@@ -1902,8 +1951,7 @@ fn map_rust_type_from_entry(
         )?
     };
 
-    let hm = resolver.hashmap_at(ctx, nesting);
-    Ok(quote! { #hm<#key_type, #value_type> })
+    map_repr.type_path(&key_type, &value_type, resolver, ctx, nesting)
 }
 
 /// Resolve the Rust type for a scalar, message, or enum field.
@@ -2132,7 +2180,13 @@ fn map_serde_module(info: &FieldInfo) -> Option<&'static str> {
     let is_string_key = matches!(info.map_key_type, Some(Type::TYPE_STRING));
     if value_needs_proto_json(value_ty) {
         // Value needs special encoding (int64 quoted, bytes base64, etc.).
-        Some("::buffa::json_helpers::proto_map")
+        // A custom-`ProtoString` key lacks the `Display`/`FromStr` that
+        // `proto_map` requires, so route it through the serde-keyed twin.
+        Some(if info.map_key_custom_string {
+            "::buffa::json_helpers::proto_str_key_map"
+        } else {
+            "::buffa::json_helpers::proto_map"
+        })
     } else if is_string_key {
         // String key + simple value: derive is proto-JSON compliant, zero overhead.
         None
@@ -2228,7 +2282,15 @@ fn skip_serializing_predicate(
         // semantics (impl_message.rs is_proto2_required check).
         None
     } else if info.is_map {
-        Some("::buffa::__private::HashMap::is_empty")
+        // The default `HashMap` keeps `HashMap::is_empty` (byte-identical
+        // output). A `BTreeMap` or custom map is empty-checked through the
+        // generic `MapStorage` surface, since `HashMap::is_empty` would not
+        // typecheck against a different container.
+        if info.map_repr.is_default() {
+            Some("::buffa::__private::HashMap::is_empty")
+        } else {
+            Some("::buffa::json_helpers::skip_if::is_empty_map")
+        }
     } else if info.is_repeated {
         Some("::buffa::json_helpers::skip_if::is_empty_vec")
     } else if info.is_optional {

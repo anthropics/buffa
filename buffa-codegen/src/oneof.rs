@@ -239,6 +239,10 @@ struct VariantInfo {
     /// Owned string representation for a `string` variant (default `String`).
     /// Drives both the variant type and the `arbitrary` shim selection.
     string_repr: crate::StringRepr,
+    /// Owned pointer for a *boxed* message/group variant (default `Box`).
+    /// Only consulted when `is_boxed` (an unboxed/inline variant has no
+    /// pointer); a custom pointer is selected by the variant's path.
+    pointer_repr: crate::PointerRepr,
     /// Variant's field carries `[debug_redact = true]`; the enum's `Debug`
     /// impl prints a placeholder instead of the payload.
     debug_redact: bool,
@@ -350,6 +354,7 @@ fn collect_variant_info(
                 custom_attrs,
                 bytes_repr,
                 string_repr,
+                pointer_repr: ctx.pointer_repr(&dotted_fqn),
                 debug_redact: crate::message::is_debug_redacted(field),
             })
         })
@@ -423,12 +428,16 @@ pub fn generate_oneof_enum(
                 // never bytes — so there's no shim to lose here. Lock the
                 // invariant in case is_boxed_variant ever broadens.
                 debug_assert!(v.bytes_repr.is_default(), "boxed oneof variant cannot be bytes_fields-typed");
-                quote! { #attrs #ident(::buffa::alloc::boxed::Box<#ty>) }
+                // Default `Box<T>` is byte-identical; a custom pointer wraps the
+                // message type. `unboxed_oneof_fields` wins — an unboxed variant
+                // (the `else` arm) is stored inline and gets no pointer.
+                let ptr = v.pointer_repr.pointer_type(ty)?;
+                Ok(quote! { #attrs #ident(#ptr) })
             } else {
-                quote! { #attrs #ident(#arbitrary_field_attr #ty) }
+                Ok(quote! { #attrs #ident(#arbitrary_field_attr #ty) })
             }
         })
-        .collect();
+        .collect::<Result<Vec<_>, CodeGenError>>()?;
 
     // For boxed (message/group) variants, generate `From<T>` so callers can
     // write `Kind::from(msg)` instead of `Kind::Variant(Box::new(msg))`.
@@ -462,9 +471,10 @@ pub fn generate_oneof_enum(
             // type in the impl header. `crate::…` is treated as local for
             // orphan purposes (it IS the current crate) so only `::` gates.
             let ty_is_extern = ty_str.trim_start().starts_with("::");
-            // Unboxed variants store the value inline; boxed ones wrap it.
+            // Unboxed variants store the value inline; boxed ones wrap it in the
+            // configured pointer (`Box` by default).
             let wrapped = if v.is_boxed {
-                quote! { ::buffa::alloc::boxed::Box::new(v) }
+                v.pointer_repr.pointer_new(ty, &quote! { v })?
             } else {
                 quote! { v }
             };
@@ -490,9 +500,9 @@ pub fn generate_oneof_enum(
                     }
                 }
             };
-            quote! { #from_oneof #from_option }
+            Ok(quote! { #from_oneof #from_option })
         })
-        .collect();
+        .collect::<Result<Vec<_>, CodeGenError>>()?;
 
     let serde_impls = if ctx.config.generate_json {
         crate::feature_gates::cfg_block(
@@ -689,6 +699,9 @@ pub(crate) struct OneofVariantDeserInput<'a> {
     /// [`variant_boxed`]): message/group types are boxed unless opted out
     /// via `config.unboxed_oneof_fields`.
     pub is_boxed: bool,
+    /// Owned pointer for a boxed variant (default `Box`); only consulted when
+    /// `is_boxed`.
+    pub pointer_repr: &'a crate::PointerRepr,
     pub enum_ident: &'a TokenStream,
     /// The identifier of the `Option<EnumIdent>` accumulator
     /// (e.g. `result` or `__oneof_foo`).
@@ -707,7 +720,9 @@ pub(crate) struct OneofVariantDeserInput<'a> {
 /// - Helper path dispatch (for types needing serde helpers like int64)
 /// - NullableDeserializeSeed wrapping (null -> variant not set)
 /// - Duplicate oneof field detection
-pub(crate) fn oneof_variant_deser_arm(input: &OneofVariantDeserInput<'_>) -> TokenStream {
+pub(crate) fn oneof_variant_deser_arm(
+    input: &OneofVariantDeserInput<'_>,
+) -> Result<TokenStream, CodeGenError> {
     let OneofVariantDeserInput {
         variant_ident,
         variant_type,
@@ -716,14 +731,16 @@ pub(crate) fn oneof_variant_deser_arm(input: &OneofVariantDeserInput<'_>) -> Tok
         field_type,
         null_forward,
         is_boxed,
+        pointer_repr,
         enum_ident,
         result_var,
         oneof_name,
     } = input;
     let dup_err_msg = format!("multiple oneof fields set for '{oneof_name}'");
-    // For boxed variants, the deserialized inner value must be wrapped.
+    // For boxed variants, the deserialized inner value must be wrapped in the
+    // configured pointer (`Box` by default).
     let wrapped_v = if *is_boxed {
-        quote! { ::buffa::alloc::boxed::Box::new(v) }
+        pointer_repr.pointer_new(variant_type, &quote! { v })?
     } else {
         quote! { v }
     };
@@ -783,19 +800,19 @@ pub(crate) fn oneof_variant_deser_arm(input: &OneofVariantDeserInput<'_>) -> Tok
 
     // Accept both json_name and proto_name.
     if json_name == proto_name {
-        quote! {
+        Ok(quote! {
             #json_name => {
                 #deser
                 #set_result
             }
-        }
+        })
     } else {
-        quote! {
+        Ok(quote! {
             #json_name | #proto_name => {
                 #deser
                 #set_result
             }
-        }
+        })
     }
 }
 

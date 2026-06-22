@@ -185,6 +185,79 @@ pub(crate) fn parse_custom_type_path(path: &str) -> Result<proc_macro2::TokenStr
     Ok(quote::quote! { #ty })
 }
 
+/// Parse a custom **map** container path, which is applied as `path<K, V>`.
+///
+/// The path must therefore be a bare type path with no `<...>` parameters of its
+/// own (and, unlike the box/repeated knobs, no `*` placeholder — a map's key and
+/// value are appended positionally). Reject anything else with a message that
+/// names the convention, rather than letting `Foo<Bar><K, V>` surface as an
+/// opaque whole-file parse error later.
+pub(crate) fn parse_custom_map_path(path: &str) -> Result<proc_macro2::TokenStream, CodeGenError> {
+    let ty: syn::Type = syn::parse_str(path).map_err(|_| {
+        CodeGenError::InvalidTypePath(format!(
+            "{path} (map custom path takes no `<K, V>` parameters and no `*` placeholder)"
+        ))
+    })?;
+    let syn::Type::Path(tp) = &ty else {
+        return Err(CodeGenError::InvalidTypePath(format!(
+            "{path} (map custom path must be a plain type path)"
+        )));
+    };
+    if tp
+        .path
+        .segments
+        .iter()
+        .any(|s| !matches!(s.arguments, syn::PathArguments::None))
+    {
+        return Err(CodeGenError::InvalidTypePath(format!(
+            "{path} (map custom path must not include `<K, V>`; the key and value are appended automatically)"
+        )));
+    }
+    Ok(quote::quote! { #ty })
+}
+
+/// Build a custom wrapper type from a `*`-templated path and a resolved inner
+/// type, validating the result as a Rust type.
+///
+/// `*` cannot be a parsed placeholder (it is not valid in Rust type position),
+/// so substitution is textual — every `*` in `template` is replaced by `inner`'s
+/// token text before the whole string is parsed. Used by the pluggable pointer
+/// knob, where the wrapped type sits inside extra generic parameters (e.g.
+/// `"smallbox::SmallBox<*, S4>"`). The template must contain at least one `*`.
+pub(crate) fn parse_wildcard_type_path(
+    template: &str,
+    inner: &proc_macro2::TokenStream,
+) -> Result<proc_macro2::TokenStream, CodeGenError> {
+    if !template.contains('*') {
+        return Err(CodeGenError::MissingWildcard(template.to_string()));
+    }
+    let substituted = template.replace('*', &inner.to_string());
+    let ty: syn::Type = syn::parse_str(&substituted)
+        .map_err(|_| CodeGenError::InvalidTypePath(format!("{template} (as {substituted})")))?;
+    Ok(quote::quote! { #ty })
+}
+
+/// Build a custom collection type from a `*`-templated path and the resolved
+/// element type, validating the result as a Rust type.
+///
+/// `*` cannot be a parsed placeholder (it is not valid in Rust type position),
+/// so substitution is textual — every `*` in `template` is replaced by the
+/// element's token text before the whole string is parsed. The template must
+/// contain at least one `*`, otherwise the element type would have nowhere to
+/// go and the field would silently drop its element type.
+pub(crate) fn parse_custom_list_path(
+    template: &str,
+    elem: &proc_macro2::TokenStream,
+) -> Result<proc_macro2::TokenStream, CodeGenError> {
+    if !template.contains('*') {
+        return Err(CodeGenError::MissingListPlaceholder(template.to_string()));
+    }
+    let substituted = template.replace('*', &elem.to_string());
+    let ty: syn::Type = syn::parse_str(&substituted)
+        .map_err(|_| CodeGenError::InvalidTypePath(template.to_string()))?;
+    Ok(quote::quote! { #ty })
+}
+
 /// The Rust type a proto `string` field maps to in generated owned structs.
 ///
 /// The default is [`String`](StringRepr::String).
@@ -338,6 +411,334 @@ impl BytesRepr {
     }
 }
 
+/// The owned Rust collection a proto `map<K, V>` field maps to in generated
+/// owned structs.
+///
+/// The default is [`HashMap`](MapRepr::HashMap) (`std::collections::HashMap`, or
+/// `hashbrown::HashMap` under `no_std`). [`BTreeMap`](MapRepr::BTreeMap) selects
+/// the buffa-provided `alloc::collections::BTreeMap` for deterministic iteration
+/// order with no extra dependency or consumer code.
+/// [`Custom`](MapRepr::Custom) substitutes any map that satisfies the
+/// `buffa::map_codec::MapStorage` bound — for example a crate-local newtype
+/// wrapping `indexmap::IndexMap`.
+///
+/// Unlike the `repeated` knob (which wraps the element type and needs a `*`
+/// placeholder template), a map type is always `path<K, V>` with both
+/// parameters positional and buffa-resolved, so a custom path is a plain type
+/// path (e.g. `"::my_crate::OrderedMap"`) with no placeholder.
+///
+/// Select a representation through `buffa_build`'s `map_type` /
+/// `map_type_custom` builder methods. The wire format is identical regardless of
+/// the collection; only the in-memory owned type changes.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum MapRepr {
+    /// `::buffa::__private::HashMap<K, V>` — the default. Generated output is
+    /// byte-identical to a build without the knob.
+    #[default]
+    HashMap,
+    /// `::buffa::alloc::collections::BTreeMap<K, V>` — buffa-provided, no extra
+    /// dependency, deterministic key order (so encoded bytes are stable across
+    /// runs). The key type must be `Ord`, which every proto map key type
+    /// (integers, bool, string) satisfies.
+    BTreeMap,
+    /// A custom map named by a fully-qualified Rust type path (e.g.
+    /// `"::my_crate::OrderedMap"`). The named type must satisfy
+    /// `buffa::map_codec::MapStorage` and be a **crate-local newtype** (a foreign
+    /// map cannot implement the buffa-owned reflection / serde traits).
+    ///
+    /// # Limitations
+    ///
+    /// - The path is a plain type path applied as `path<K, V>` — it must **not**
+    ///   include the `<K, V>` parameters or a `*` placeholder. A path that does
+    ///   not parse as a Rust type surfaces as [`CodeGenError::InvalidTypePath`]
+    ///   at generation (`.compile()`) time.
+    /// - The newtype must implement `buffa::map_codec::MapStorage` plus the
+    ///   derive / `FromIterator` / `ReflectMap` / serde / `arbitrary` bounds
+    ///   listed on that trait's docs (the canonical list). JSON and `arbitrary`
+    ///   now work for every proto map key/value type regardless of the container.
+    ///   The buffa-provided [`BTreeMap`](MapRepr::BTreeMap) already satisfies every
+    ///   bound, so prefer it unless you need a specific foreign map.
+    Custom(String),
+}
+
+impl MapRepr {
+    /// The owned Rust map type emitted for a `map<K, V>` field with this
+    /// representation, given the already-resolved key and value type tokens.
+    ///
+    /// `ctx` and `nesting` route the default `HashMap` through the package-root
+    /// import registry; `BTreeMap` and a custom path are emitted fully
+    /// qualified.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CodeGenError::InvalidTypePath`] if a custom path does not parse
+    /// as a Rust type.
+    pub(crate) fn type_path(
+        &self,
+        key: &proc_macro2::TokenStream,
+        value: &proc_macro2::TokenStream,
+        resolver: &imports::ImportResolver,
+        ctx: &context::CodeGenContext,
+        nesting: usize,
+    ) -> Result<proc_macro2::TokenStream, CodeGenError> {
+        use quote::quote;
+        match self {
+            MapRepr::HashMap => {
+                let hm = resolver.hashmap_at(ctx, nesting);
+                Ok(quote! { #hm<#key, #value> })
+            }
+            MapRepr::BTreeMap => Ok(quote! { ::buffa::alloc::collections::BTreeMap<#key, #value> }),
+            MapRepr::Custom(path) => {
+                let ty = parse_custom_map_path(path)?;
+                Ok(quote! { #ty<#key, #value> })
+            }
+        }
+    }
+
+    /// Whether this is the default `HashMap` representation, whose generated
+    /// output is byte-identical to a build without the knob.
+    pub(crate) fn is_default(&self) -> bool {
+        matches!(self, MapRepr::HashMap)
+    }
+}
+
+/// The owned smart pointer a singular message field's [`MessageField`] wraps in
+/// generated owned structs.
+///
+/// The default is [`Box`](PointerRepr::Box). [`Custom`](PointerRepr::Custom)
+/// substitutes any pointer that satisfies the `buffa::ProtoBox<T>` bound — for
+/// example a `smallbox`-style pointer that stores small messages inline.
+/// Because the pointer *wraps* the message type, its path is a **template**
+/// containing a `*` placeholder for the message type (e.g.
+/// `"::smallbox::SmallBox<*, ::smallbox::space::S4>"` or
+/// `"::my_crate::SmallBox<*>"`).
+///
+/// Because `buffa::ProtoBox` is buffa-owned, a *foreign* pointer cannot
+/// implement it directly (orphan rule) — the template must name a crate-local
+/// newtype, mirroring the `ProtoString` newtype expectation.
+///
+/// Select a representation through `buffa_build`'s `box_type_custom` builder
+/// method. The wire format is identical regardless of the pointer; view types
+/// are unaffected. Applies to singular message fields and **boxed** oneof
+/// message/group variants (a variant opted into inline storage via
+/// `unboxed_oneof_fields` takes precedence and gets no pointer). Repeated
+/// message fields use a collection, not a pointer.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum PointerRepr {
+    /// `::buffa::alloc::boxed::Box<T>` (inside `MessageField<T>`) — the default.
+    /// Keeps generated output byte-identical to a build without the knob (the
+    /// `MessageField` pointer type parameter defaults to `Box`).
+    #[default]
+    Box,
+    /// A custom pointer named by a Rust type-path **template** with a `*`
+    /// placeholder for the message type. Must satisfy `buffa::ProtoBox<T>` and
+    /// be a crate-local newtype.
+    ///
+    /// # Limitations
+    ///
+    /// - The template must contain at least one `*`; a template that omits it
+    ///   surfaces as [`CodeGenError::MissingWildcard`], and one whose
+    ///   substitution does not parse as [`CodeGenError::InvalidTypePath`], at
+    ///   generation (`.compile()`) time.
+    /// - `Rc` / `Arc` and other shared/COW pointers are unusable: the decoder
+    ///   merges in place (needs `DerefMut`), so only an exclusively-owned
+    ///   pointer (heap `Box`, inline `SmallBox`) can implement `ProtoBox`.
+    /// - An inline pointer inflates the parent struct per field, so select it
+    ///   per field/prefix, never as a blanket default.
+    /// - On a **boxed oneof variant** under the `arbitrary` feature, the custom
+    ///   pointer must implement `arbitrary::Arbitrary` (the oneof enum derives it
+    ///   and stores the pointer directly in the variant). The singular-field path
+    ///   needs no such impl — `MessageField` constructs the pointer itself.
+    Custom(String),
+}
+
+impl PointerRepr {
+    /// The owned `MessageField<...>` type emitted for a singular message field
+    /// with this representation, given the resolved inner message type tokens
+    /// and the `MessageField` path from the resolver.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CodeGenError::MissingWildcard`] if a custom template omits `*`,
+    /// or [`CodeGenError::InvalidTypePath`] if it does not parse once the message
+    /// type is substituted.
+    pub(crate) fn type_path(
+        &self,
+        message_field: &proc_macro2::TokenStream,
+        inner: &proc_macro2::TokenStream,
+    ) -> Result<proc_macro2::TokenStream, CodeGenError> {
+        use quote::quote;
+        match self {
+            PointerRepr::Box => Ok(quote! { #message_field<#inner> }),
+            PointerRepr::Custom(template) => {
+                let ptr = parse_wildcard_type_path(template, inner)?;
+                Ok(quote! { #message_field<#inner, #ptr> })
+            }
+        }
+    }
+
+    /// The fully-qualified `::buffa::MessageField::<...>` path for a
+    /// `::some(value)` construction of a singular message field with this
+    /// representation: `<inner>` for `Box` (the pointer param defaults), or
+    /// `<inner, ptr>` for a custom pointer. The view→owned conversion uses this
+    /// so the constructed `MessageField` matches the field's declared type.
+    ///
+    /// # Errors
+    ///
+    /// As [`type_path`](Self::type_path) for a custom template.
+    pub(crate) fn some_path(
+        &self,
+        inner: &proc_macro2::TokenStream,
+    ) -> Result<proc_macro2::TokenStream, CodeGenError> {
+        use quote::quote;
+        match self {
+            PointerRepr::Box => Ok(quote! { ::buffa::MessageField::<#inner> }),
+            PointerRepr::Custom(template) => {
+                let ptr = parse_wildcard_type_path(template, inner)?;
+                Ok(quote! { ::buffa::MessageField::<#inner, #ptr> })
+            }
+        }
+    }
+
+    /// The bare pointer type wrapping `inner` for a **boxed oneof variant**
+    /// (`Box<inner>` by default, or the custom pointer). Unlike
+    /// [`type_path`](Self::type_path) this is the pointer alone, not wrapped in
+    /// `MessageField`, because a oneof enum stores the pointer directly in the
+    /// variant.
+    ///
+    /// # Errors
+    ///
+    /// As [`type_path`](Self::type_path) for a custom template.
+    pub(crate) fn pointer_type(
+        &self,
+        inner: &proc_macro2::TokenStream,
+    ) -> Result<proc_macro2::TokenStream, CodeGenError> {
+        use quote::quote;
+        match self {
+            PointerRepr::Box => Ok(quote! { ::buffa::alloc::boxed::Box<#inner> }),
+            PointerRepr::Custom(template) => parse_wildcard_type_path(template, inner),
+        }
+    }
+
+    /// Construct the pointer from a value expression for a boxed oneof variant:
+    /// `Box::new(value)` (byte-identical default) or the fully-qualified
+    /// `<Ptr as ProtoBox<inner>>::new(value)` for a custom pointer (so an
+    /// inherent `new` on the pointer can't shadow the trait method).
+    ///
+    /// # Errors
+    ///
+    /// As [`type_path`](Self::type_path) for a custom template.
+    pub(crate) fn pointer_new(
+        &self,
+        inner: &proc_macro2::TokenStream,
+        value: &proc_macro2::TokenStream,
+    ) -> Result<proc_macro2::TokenStream, CodeGenError> {
+        use quote::quote;
+        match self {
+            PointerRepr::Box => Ok(quote! { ::buffa::alloc::boxed::Box::new(#value) }),
+            PointerRepr::Custom(template) => {
+                let ptr = parse_wildcard_type_path(template, inner)?;
+                Ok(quote! { <#ptr as ::buffa::ProtoBox<#inner>>::new(#value) })
+            }
+        }
+    }
+}
+
+/// The owned Rust collection a proto `repeated` field maps to in generated
+/// owned structs.
+///
+/// The default is [`Vec`](RepeatedRepr::Vec) (`Vec<T>`).
+/// [`Custom`](RepeatedRepr::Custom) substitutes any collection that satisfies
+/// the `buffa::ProtoList<T>` bound — for example a crate-local newtype wrapping
+/// a `SmallVec`-backed inline collection. Unlike the scalar `string`/`bytes`
+/// knobs the custom collection *wraps* the element type, so its path is a
+/// **template** containing a `*` placeholder where the element type is
+/// substituted (e.g. `"::my_crate::SmallList<*>"`).
+///
+/// Because `buffa::ProtoList` is buffa-owned, a *foreign* collection cannot
+/// implement it directly (orphan rule) — the template must always name a
+/// crate-local newtype, mirroring the `ProtoString` newtype expectation.
+///
+/// Select a representation through `buffa_build`'s `repeated_type_custom`
+/// builder method. The wire format is identical regardless of the collection;
+/// view types keep borrowing `&[T]`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum RepeatedRepr {
+    /// `::buffa::alloc::vec::Vec<T>` — the default. Keeps the `Vec`-specialized
+    /// fast paths (in-place `push`/`reserve`/`clear`, native `Arbitrary`)
+    /// instead of the generic `ProtoList` ones, so generated output for the
+    /// default is byte-identical to a build without the knob.
+    #[default]
+    Vec,
+    /// A custom collection named by a Rust type-path **template** with a `*`
+    /// placeholder for the element type (e.g. `"::my_crate::SmallList<*>"`). The
+    /// named type must satisfy `buffa::ProtoList<T>` and be a **crate-local
+    /// newtype** (a foreign collection cannot implement the buffa-owned
+    /// `ProtoList`).
+    ///
+    /// # Limitations
+    ///
+    /// - The template must contain at least one `*`; the element type is
+    ///   substituted for every `*` before the result is parsed as a Rust type.
+    ///   A template that omits `*` surfaces as
+    ///   [`CodeGenError::MissingListPlaceholder`], and one whose substitution
+    ///   does not parse as [`CodeGenError::InvalidTypePath`], at generation
+    ///   (`.compile()`) time.
+    /// - A custom collection always needs a crate-local newtype — this is not
+    ///   limited to the reflection path. The generated decode and clear code
+    ///   require `Field: ProtoList`, so even a binary-only build cannot use a
+    ///   foreign collection directly.
+    /// - Under reflection / vtable the newtype must implement
+    ///   `buffa_descriptor`'s `ReflectList` (a `Vec`-backed newtype can delegate
+    ///   to the inner `Vec<T>: ReflectList`). Under JSON it must implement
+    ///   `serde::Serialize` / `Deserialize`; under the `arbitrary` feature,
+    ///   `arbitrary::Arbitrary` (derivable on a newtype).
+    /// - A `repeated <self-type>` field becomes `Collection<Self>`, so the
+    ///   collection must be heap-backed; an inline collection (`SmallVec<[Self;
+    ///   N]>`) would be infinitely sized and fail to compile.
+    Custom(String),
+}
+
+impl RepeatedRepr {
+    /// The owned Rust collection type emitted for a `repeated` field with this
+    /// representation, given the already-resolved element type tokens.
+    ///
+    /// `ctx` and `nesting` route the default `Vec` through the package-root
+    /// import registry; a custom template has its `*` placeholders replaced by
+    /// `elem` and the result is parsed and emitted fully qualified.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CodeGenError::MissingListPlaceholder`] if a custom template
+    /// omits `*`, or [`CodeGenError::InvalidTypePath`] if it does not parse as a
+    /// Rust type once the element is substituted.
+    pub(crate) fn type_path(
+        &self,
+        elem: &proc_macro2::TokenStream,
+        resolver: &imports::ImportResolver,
+        ctx: &context::CodeGenContext,
+        nesting: usize,
+    ) -> Result<proc_macro2::TokenStream, CodeGenError> {
+        use quote::quote;
+        match self {
+            RepeatedRepr::Vec => {
+                let vec = resolver.vec_at(ctx, nesting);
+                Ok(quote! { #vec<#elem> })
+            }
+            RepeatedRepr::Custom(template) => parse_custom_list_path(template, elem),
+        }
+    }
+
+    /// Whether this is the default `Vec` representation, which keeps the
+    /// `Vec`-specialized fast paths instead of the generic `ProtoList` ones.
+    pub(crate) fn is_default(&self) -> bool {
+        matches!(self, RepeatedRepr::Vec)
+    }
+}
+
 /// How much reflection support generated types get.
 ///
 /// Selected through `buffa_build`'s `reflect_mode` builder method (or the
@@ -482,6 +883,34 @@ pub struct CodeGenConfig {
     /// `string` variants. Map keys and values always stay `String`, mirroring
     /// the bytes path (where map values always stay `Vec<u8>`).
     pub string_fields: Vec<(String, StringRepr)>,
+    /// Ordered (proto-path-prefix, [`MapRepr`]) rules selecting the owned Rust
+    /// map collection for `map` fields. Later rules win, with the same
+    /// proto-segment-aware prefix matching as [`bytes_fields`](Self::bytes_fields)
+    /// (`"."` matches every field). Fields matching no rule use `HashMap<K, V>`.
+    ///
+    /// Independent of the element/value representation: a `map` field's key and
+    /// value types are chosen by the usual scalar/string/bytes/message rules,
+    /// and this knob only changes the surrounding collection.
+    pub map_fields: Vec<(String, MapRepr)>,
+    /// Ordered (proto-path-prefix, [`PointerRepr`]) rules selecting the owned
+    /// smart pointer for singular message fields (the pointer inside
+    /// `MessageField<T>`). Later rules win, same proto-segment-aware prefix
+    /// matching as [`bytes_fields`](Self::bytes_fields). Fields matching no rule
+    /// use `Box<T>`.
+    ///
+    /// Applies to singular (and proto2 optional/required) message fields only —
+    /// not repeated message fields (a collection) or oneof message variants.
+    pub pointer_fields: Vec<(String, PointerRepr)>,
+    /// Ordered (proto-path-prefix, [`RepeatedRepr`]) rules selecting the owned
+    /// Rust collection for `repeated` fields. Later rules win, with the same
+    /// proto-segment-aware prefix matching as [`bytes_fields`](Self::bytes_fields)
+    /// (`"."` matches every field). Fields matching no rule use `Vec<T>`.
+    ///
+    /// Applies only to `repeated` fields (not `map`, whose collection stays
+    /// the configured map type). The element type is chosen by the usual
+    /// scalar/string/bytes/message rules and substituted into the collection
+    /// template.
+    pub repeated_fields: Vec<(String, RepeatedRepr)>,
     /// Fully-qualified proto paths whose message-typed oneof variants should
     /// **not** be wrapped in `Box<T>`. By default every message/group oneof
     /// variant is boxed (so recursive types compile); entries here opt matching
@@ -855,6 +1284,9 @@ impl Default for CodeGenConfig {
             extern_paths: Vec::new(),
             bytes_fields: Vec::new(),
             string_fields: Vec::new(),
+            map_fields: Vec::new(),
+            pointer_fields: Vec::new(),
+            repeated_fields: Vec::new(),
             unboxed_oneof_fields: Vec::new(),
             strict_utf8_mapping: false,
             allow_message_set: false,
@@ -1203,6 +1635,18 @@ enum CustomElemKind {
     Bytes,
 }
 
+/// The custom owned types collected generation-wide that need a codegen-emitted
+/// reflection / JSON impl, split by the trait each needs.
+#[derive(Default)]
+struct CustomElements {
+    /// Types needing `ReflectElement` (+ `ProtoElemJson` for bytes): custom
+    /// `repeated` elements, custom `map` *values* (`string` or `bytes`).
+    elements: std::collections::BTreeMap<String, CustomElemKind>,
+    /// Custom `string` types used as a `map` *key*: need `ReflectMapKey` (vtable
+    /// reflection only — the bridge path keys maps by the borrowed `&str` view).
+    map_keys: std::collections::BTreeSet<String>,
+}
+
 /// Collect the distinct custom owned types that need a codegen-emitted element
 /// impl (`ReflectElement` / `ProtoElemJson`), keyed by Rust type path, across
 /// the whole request. These are custom `string`/`bytes` types used as the
@@ -1215,7 +1659,7 @@ fn collect_custom_elements(
     ctx: &context::CodeGenContext,
     file_descriptors: &[FileDescriptorProto],
     files_to_generate: &[String],
-) -> std::collections::BTreeMap<String, CustomElemKind> {
+) -> CustomElements {
     use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
 
     fn walk(
@@ -1223,7 +1667,7 @@ fn collect_custom_elements(
         messages: &[crate::generated::descriptor::DescriptorProto],
         scope: &str,
         parent_features: &crate::features::ResolvedFeatures,
-        out: &mut std::collections::BTreeMap<String, CustomElemKind>,
+        out: &mut CustomElements,
     ) {
         for msg in messages {
             let name = msg.name.as_deref().unwrap_or("");
@@ -1243,10 +1687,12 @@ fn collect_custom_elements(
                 let field_name = field.name.as_deref().unwrap_or("");
                 let field_fqn = format!(".{fqn}.{field_name}");
 
-                // `map<K, bytes>` value: a custom value type needs the element
-                // impls (reflected via ReflectMap → ReflectElement, JSON via
-                // proto_map → ProtoElemJson). Keyed on the outer map field path,
-                // with the `map<bytes, bytes>` carve-out.
+                // `map` slots: a custom value type needs the element impls
+                // (reflected via ReflectMap → ReflectElement, JSON via
+                // proto_map → ProtoElemJson for bytes), and a custom `string`
+                // key needs ReflectMapKey. All keyed on the outer map field
+                // path (the same `string_type` rule covers both slots), with the
+                // `map<bytes, bytes>` value carve-out.
                 if let Some(entry) = crate::message::find_map_entry(msg, field) {
                     let key_ty = crate::message::map_entry_key_type(ctx, entry, &msg_features);
                     let val_ty = crate::message::map_entry_value_type(ctx, entry, &msg_features);
@@ -1255,7 +1701,15 @@ fn collect_custom_elements(
                             ctx, key_ty, val_ty, &fqn, field_name,
                         )
                     {
-                        out.entry(path).or_insert(CustomElemKind::Bytes);
+                        out.elements.entry(path).or_insert(CustomElemKind::Bytes);
+                    }
+                    if let crate::StringRepr::Custom(path) = ctx.string_repr(&field_fqn) {
+                        if key_ty == Some(Type::TYPE_STRING) {
+                            out.map_keys.insert(path.clone());
+                        }
+                        if val_ty == Some(Type::TYPE_STRING) {
+                            out.elements.entry(path).or_insert(CustomElemKind::String);
+                        }
                     }
                     continue;
                 }
@@ -1265,12 +1719,12 @@ fn collect_custom_elements(
                 match ty {
                     Type::TYPE_STRING => {
                         if let crate::StringRepr::Custom(path) = ctx.string_repr(&field_fqn) {
-                            out.entry(path).or_insert(CustomElemKind::String);
+                            out.elements.entry(path).or_insert(CustomElemKind::String);
                         }
                     }
                     Type::TYPE_BYTES => {
                         if let crate::BytesRepr::Custom(path) = ctx.bytes_repr(&field_fqn) {
-                            out.entry(path).or_insert(CustomElemKind::Bytes);
+                            out.elements.entry(path).or_insert(CustomElemKind::Bytes);
                         }
                     }
                     _ => {}
@@ -1280,7 +1734,7 @@ fn collect_custom_elements(
         }
     }
 
-    let mut out = std::collections::BTreeMap::new();
+    let mut out = CustomElements::default();
     for file_name in files_to_generate {
         let Some(file) = file_descriptors
             .iter()
@@ -1304,17 +1758,18 @@ fn collect_custom_elements(
 /// reflection.
 fn render_custom_elem_impls(
     ctx: &context::CodeGenContext,
-    elems: &std::collections::BTreeMap<String, CustomElemKind>,
+    elems: &CustomElements,
 ) -> Result<TokenStream, CodeGenError> {
     let json_gate = ctx.config.feature_gates().json;
     let reflect_gate = ctx.config.feature_gates().reflect;
     let mut out = TokenStream::new();
-    for (path, kind) in elems {
+    for (path, kind) in &elems.elements {
         let ty = parse_custom_type_path(path)?;
         // `ProtoElemJson` is only needed for the `bytes` element path (proto3
         // JSON base64). A repeated `string` element serializes through the
-        // native `Vec<T>` serde derive, and `map` string keys/values stay
-        // `String`, so a String-kind `ProtoElemJson` impl would be dead code.
+        // native `Vec<T>` serde derive, and custom `string` map keys/values go
+        // through serde too (the derive / `string_key_map` / `proto_str_key_map`
+        // paths), so a String-kind `ProtoElemJson` impl would be dead code.
         if ctx.config.generate_json && *kind == CustomElemKind::Bytes {
             out.extend(feature_gates::cfg_block(
                 quote! {
@@ -1356,6 +1811,27 @@ fn render_custom_elem_impls(
                     impl ::buffa_descriptor::reflect::ReflectElement for #ty {
                         fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
                             #value_ref
+                        }
+                    }
+                },
+                reflect_gate,
+            ));
+        }
+    }
+    // A custom `string` type used as a `map` key needs `ReflectMapKey` for
+    // vtable reflection (the bridge path keys maps by the borrowed `&str` view,
+    // which already implements it). Like the element impls above, this compiles
+    // only when the type is local to the generating crate (the orphan rule).
+    if ctx.config.generate_reflection_vtable {
+        for path in &elems.map_keys {
+            let ty = parse_custom_type_path(path)?;
+            out.extend(feature_gates::cfg_block(
+                quote! {
+                    impl ::buffa_descriptor::reflect::ReflectMapKey for #ty {
+                        fn as_map_key_ref(&self) -> ::buffa_descriptor::reflect::MapKeyRef<'_> {
+                            ::buffa_descriptor::reflect::MapKeyRef::String(
+                                ::core::convert::AsRef::<str>::as_ref(self),
+                            )
                         }
                     }
                 },
@@ -2487,6 +2963,20 @@ pub enum CodeGenError {
     /// A resolved type path string could not be parsed as a Rust type.
     #[error("invalid Rust type path: '{0}'")]
     InvalidTypePath(String),
+    /// A `box_type_custom` pointer template did not contain the `*` placeholder.
+    ///
+    /// The custom pointer wraps the message type, so the template must mark where
+    /// it goes with `*`, e.g. `"::smallbox::SmallBox<*, smallbox::space::S4>"`.
+    #[error("box_type template must contain a `*` placeholder for the message type: '{0}'")]
+    MissingWildcard(String),
+    /// A `repeated_type_custom` collection template did not contain the `*`
+    /// element placeholder.
+    ///
+    /// Unlike the scalar `string_type_custom` / `bytes_type_custom` knobs (which
+    /// take a complete type path), a collection template wraps the element type
+    /// and must mark where it goes with `*`, e.g. `"::my_crate::SmallList<*>"`.
+    #[error("repeated_type template must contain a `*` element placeholder: '{0}'")]
+    MissingListPlaceholder(String),
     /// The accumulated `TokenStream` failed to parse as valid Rust syntax.
     #[error("generated code failed to parse as Rust: {0}")]
     InvalidSyntax(String),

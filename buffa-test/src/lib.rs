@@ -16,6 +16,44 @@ pub mod debug_redact {
     buffa::include_proto!("debug_redact");
 }
 
+/// `box_type` + a crate-local `CustomBox<T>` pointer for singular message
+/// fields. `CustomBox<T>` is a thin `Box<T>`-backed `ProtoBox<T>` impl — the
+/// point is to exercise the generic codegen path (`MessageField<T,
+/// CustomBox<T>>`, decode via `get_or_insert_default`, view→owned via `some`),
+/// independent of any external smallbox crate. A real consumer would back this
+/// with e.g. `smallbox::SmallBox`.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod box_type {
+    /// A `Box`-backed pointer implementing `buffa::ProtoBox<T>`. No `Send`/`Sync`
+    /// or `Default` bound is needed (`ProtoBox` requires neither).
+    #[derive(Clone, PartialEq, Debug)]
+    pub struct CustomBox<T>(pub ::buffa::alloc::boxed::Box<T>);
+
+    impl<T> ::core::ops::Deref for CustomBox<T> {
+        type Target = T;
+        fn deref(&self) -> &T {
+            &self.0
+        }
+    }
+
+    impl<T> ::core::ops::DerefMut for CustomBox<T> {
+        fn deref_mut(&mut self) -> &mut T {
+            &mut self.0
+        }
+    }
+
+    impl<T> ::buffa::ProtoBox<T> for CustomBox<T> {
+        fn new(value: T) -> Self {
+            CustomBox(::buffa::alloc::boxed::Box::new(value))
+        }
+        fn into_inner(self) -> T {
+            *self.0
+        }
+    }
+
+    buffa::include_proto!("box_type");
+}
+
 /// `string_type` + vtable reflection with a crate-local newtype string used as
 /// a `repeated` element. Because the type is local, codegen may emit the
 /// `ReflectElement` and `ProtoElemJson` impls for it — the orphan rule forbids
@@ -110,6 +148,69 @@ pub mod vtable_bytes_repr {
     }
 
     buffa::include_proto!("vtable_bytes_repr");
+}
+
+/// `repeated_type` + a crate-local `CustomList<T>` collection used for every
+/// `repeated` field. `CustomList<T>` is a thin `Vec<T>`-backed `ProtoList<T>`
+/// impl — the point is to exercise the generic codegen path (merge via
+/// `ProtoList::push`/`reserve`, encode via the `Deref` slice, clear via
+/// `ProtoList::clear`, view→owned via `FromIterator`), independent of any
+/// external collection crate. A real consumer would back this with e.g.
+/// `smallvec::SmallVec`.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod repeated_type {
+    /// A `Vec`-backed collection implementing `buffa::ProtoList<T>`. `Default`
+    /// is hand-written (not derived) so it does not require `T: Default`, which
+    /// the supertrait bound would otherwise force on every element type.
+    #[derive(Clone, PartialEq, Debug)]
+    pub struct CustomList<T>(pub ::buffa::alloc::vec::Vec<T>);
+
+    impl<T> ::core::default::Default for CustomList<T> {
+        fn default() -> Self {
+            CustomList(::buffa::alloc::vec::Vec::new())
+        }
+    }
+
+    impl<T> ::core::ops::Deref for CustomList<T> {
+        type Target = [T];
+        fn deref(&self) -> &[T] {
+            &self.0
+        }
+    }
+
+    impl<T> ::core::iter::FromIterator<T> for CustomList<T> {
+        fn from_iter<I: ::core::iter::IntoIterator<Item = T>>(iter: I) -> Self {
+            CustomList(::buffa::alloc::vec::Vec::from_iter(iter))
+        }
+    }
+
+    impl<T> ::core::convert::From<::buffa::alloc::vec::Vec<T>> for CustomList<T> {
+        fn from(v: ::buffa::alloc::vec::Vec<T>) -> Self {
+            CustomList(v)
+        }
+    }
+
+    impl<T> ::buffa::ProtoList<T> for CustomList<T>
+    where
+        T: ::core::clone::Clone
+            + ::core::cmp::PartialEq
+            + ::core::fmt::Debug
+            + ::core::marker::Send
+            + ::core::marker::Sync,
+    {
+        fn push(&mut self, value: T) {
+            self.0.push(value);
+        }
+        fn clear(&mut self) {
+            self.0.clear();
+        }
+        // Left as the advisory no-op (the default would do): exercises the
+        // decode path tolerating a collection that ignores the capacity hint,
+        // which is the recommended form for a bounded/inline collection.
+        fn reserve(&mut self, _additional: usize) {}
+    }
+
+    buffa::include_proto!("repeated_type");
 }
 
 /// Crate-local `ProtoString` newtypes wrapping foreign small-string types, used
@@ -220,6 +321,157 @@ pub mod vtable_no_views {
 )]
 pub mod proto3sem {
     buffa::include_proto!("test.proto3sem");
+}
+
+/// `map_type` fixture: every `map` field uses the buffa-provided `BTreeMap<K, V>`
+/// (selected with `.map_type(MapRepr::BTreeMap)`) instead of `HashMap`. No
+/// consumer code is needed — `BTreeMap` already satisfies `MapStorage`,
+/// `ReflectMap`, serde, and the derive bounds — so this module is just the
+/// generated code, exercised by `tests/map_type.rs`.
+pub mod map_type {
+    buffa::include_proto!("map_type");
+}
+
+/// `string_map` fixture: a crate-local `MapStr` newtype (a `ProtoString` impl,
+/// selected with `.string_type_custom(...)`) is used for every `string` map key
+/// and value. `MapStr` is `Hash + Eq + Ord + serde`, so it satisfies the
+/// `HashMap` key bound and every JSON dispatch path. The type is crate-local
+/// because vtable reflection emits `impl ReflectMapKey` / `impl ReflectElement`
+/// for it (a foreign type would be an orphan-rule error — exactly as for a
+/// custom `repeated` element). The fields cover all six custom-string-key/value
+/// JSON dispatch modules; exercised by `tests/string_map.rs`.
+#[allow(clippy::derivable_impls, non_camel_case_types)]
+pub mod string_map {
+    /// `String`-backed newtype satisfying `buffa::ProtoString`, plus the
+    /// `Hash + Eq + Ord` a map key needs and `Serialize`/`Deserialize` the JSON
+    /// paths need.
+    #[derive(
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Default,
+        Debug,
+        ::serde::Serialize,
+        ::serde::Deserialize,
+    )]
+    // A custom string used in a `map` under `generate_arbitrary` must impl
+    // `Arbitrary` (unlike singular/repeated string fields, which get a generic
+    // builder): the map arbitrary path has no per-key shim. Deriving it on the
+    // newtype is the one-line requirement.
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+    pub struct MapStr(pub ::buffa::alloc::string::String);
+
+    impl ::core::ops::Deref for MapStr {
+        type Target = str;
+        fn deref(&self) -> &str {
+            &self.0
+        }
+    }
+    impl ::core::convert::AsRef<str> for MapStr {
+        fn as_ref(&self) -> &str {
+            &self.0
+        }
+    }
+    impl ::core::convert::From<::buffa::alloc::string::String> for MapStr {
+        fn from(s: ::buffa::alloc::string::String) -> Self {
+            MapStr(s)
+        }
+    }
+    impl ::core::convert::From<&str> for MapStr {
+        fn from(s: &str) -> Self {
+            MapStr(::buffa::alloc::string::String::from(s))
+        }
+    }
+    impl ::buffa::ProtoString for MapStr {
+        fn from_wire(
+            payload: ::buffa::WirePayload<'_>,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::str::from_utf8(payload.as_slice())
+                .map(|s| MapStr(::buffa::alloc::string::String::from(s)))
+                .map_err(|_| ::buffa::DecodeError::InvalidUtf8)
+        }
+    }
+
+    buffa::include_proto!("string_map");
+}
+
+/// `map_type_custom` fixture: a crate-local `CustomMap<K, V>` newtype used for
+/// every `map` field (via `.map_type_custom(...)`). `CustomMap` is a thin
+/// `BTreeMap`-backed `MapStorage` impl — the point is to exercise the
+/// `MapRepr::Custom` codegen path and the consumer-provided trait surface
+/// (`MapStorage`, a `ReflectMap` impl delegating to the inner map, and
+/// `FromIterator` for the view→owned `.collect()`), independent of buffa's
+/// built-in container impls. A real consumer would back this with a foreign map
+/// such as `indexmap::IndexMap`; `BTreeMap` is used here so the derives
+/// (`Clone` / `PartialEq` / `Debug`) need no extra key bounds.
+#[allow(clippy::derivable_impls)]
+pub mod map_type_custom {
+    use ::buffa::alloc::collections::BTreeMap;
+    use ::buffa_descriptor::reflect::{
+        MapKey, MapKeyRef, ReflectElement, ReflectMap, ReflectMapKey, ValueRef,
+    };
+
+    /// A `BTreeMap`-backed map implementing `buffa::MapStorage`. `Default`
+    /// is hand-written (not derived) so it does not require `K: Default` /
+    /// `V: Default`.
+    #[derive(Clone, PartialEq, Debug)]
+    pub struct CustomMap<K, V>(pub BTreeMap<K, V>);
+
+    impl<K, V> ::core::default::Default for CustomMap<K, V> {
+        fn default() -> Self {
+            CustomMap(BTreeMap::new())
+        }
+    }
+
+    impl<K: ::core::cmp::Ord, V> ::core::iter::FromIterator<(K, V)> for CustomMap<K, V> {
+        fn from_iter<I: ::core::iter::IntoIterator<Item = (K, V)>>(iter: I) -> Self {
+            CustomMap(BTreeMap::from_iter(iter))
+        }
+    }
+
+    impl<K: ::core::cmp::Ord, V> ::buffa::MapStorage for CustomMap<K, V> {
+        type Key = K;
+        type Value = V;
+        fn storage_len(&self) -> usize {
+            self.0.len()
+        }
+        fn storage_insert(&mut self, key: K, value: V) {
+            self.0.insert(key, value);
+        }
+        fn storage_clear(&mut self) {
+            self.0.clear();
+        }
+        fn storage_iter<'a>(&'a self) -> impl ::core::iter::Iterator<Item = (&'a K, &'a V)>
+        where
+            K: 'a,
+            V: 'a,
+        {
+            self.0.iter()
+        }
+    }
+
+    // The vtable reflect path needs `ReflectMap`; delegate every method to the
+    // inner `BTreeMap`'s impl (the "Vec/BTreeMap/HashMap-backed newtype can
+    // delegate" claim in the `MapStorage` docs, verified by compilation).
+    impl<K: ReflectMapKey, V: ReflectElement> ReflectMap for CustomMap<K, V> {
+        fn len(&self) -> usize {
+            ReflectMap::len(&self.0)
+        }
+        fn get(&self, key: &MapKey) -> ::core::option::Option<ValueRef<'_>> {
+            ReflectMap::get(&self.0, key)
+        }
+        fn get_str(&self, key: &str) -> ::core::option::Option<ValueRef<'_>> {
+            ReflectMap::get_str(&self.0, key)
+        }
+        fn for_each(&self, f: &mut dyn FnMut(MapKeyRef<'_>, ValueRef<'_>)) {
+            ReflectMap::for_each(&self.0, f)
+        }
+    }
+
+    buffa::include_proto!("map_type_custom");
 }
 
 #[allow(

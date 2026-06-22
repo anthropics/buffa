@@ -173,12 +173,12 @@ impl ReflectElement for Value {
     }
 }
 
-// A custom `string_type`/`bytes_type` element used in a `repeated` field under
-// vtable reflection gets its `ReflectElement` impl emitted by codegen into the
+// A custom `string_type`/`bytes_type` element used in a `repeated` field or a
+// `map` slot under vtable reflection gets its `ReflectElement` impl (and, for a
+// custom `string` map key, its `ReflectMapKey` impl) emitted by codegen into the
 // generating crate (where the type is local, so the orphan rule permits it).
-// Only the repeated case needs the impl: singular fields reflect via
-// `&self.field` (any repr derefs to `str`/`[u8]`), and `map` string keys/values
-// always stay `String`.
+// Singular fields need no such impl: they reflect via `&self.field` (any repr
+// derefs to `str`/`[u8]`).
 
 // ── Map key impls (spec-valid key set) ──────────────────────────────────────
 
@@ -310,13 +310,55 @@ impl<T: ReflectElement> ReflectList for Vec<T> {
 /// Owned map storage. Keys are unique by construction (no dedup needed). Vtable
 /// reflection requires `std` (the descriptor pool uses `OnceLock`), so the
 /// owned-map impl is `std`-gated and targets `std::collections::HashMap` — the
-/// concrete type generated code uses for `map` fields under `std`.
+/// concrete type generated code uses for `map` fields under `std`. The impl is
+/// generic over the hasher `S` so it covers both the buffa default (`foldhash`)
+/// and any user-selected hasher reached via `MapRepr::Custom`.
 #[cfg(feature = "std")]
-impl<K: ReflectMapKey, V: ReflectElement> ReflectMap for std::collections::HashMap<K, V> {
+impl<K: ReflectMapKey, V: ReflectElement, S: core::hash::BuildHasher> ReflectMap
+    for std::collections::HashMap<K, V, S>
+{
     fn len(&self) -> usize {
         Self::len(self)
     }
 
+    fn get(&self, key: &MapKey) -> Option<ValueRef<'_>> {
+        let want = key.as_ref();
+        self.iter()
+            .find(|(k, _)| k.as_map_key_ref() == want)
+            .map(|(_, v)| v.as_value_ref())
+    }
+
+    fn get_str(&self, key: &str) -> Option<ValueRef<'_>> {
+        self.iter()
+            .find(|(k, _)| matches!(k.as_map_key_ref(), MapKeyRef::String(s) if s == key))
+            .map(|(_, v)| v.as_value_ref())
+    }
+
+    fn for_each(&self, f: &mut dyn FnMut(MapKeyRef<'_>, ValueRef<'_>)) {
+        for (k, v) in self {
+            f(k.as_map_key_ref(), v.as_value_ref());
+        }
+    }
+}
+
+/// `BTreeMap` is an `alloc` collection, so buffa-descriptor (which owns
+/// `ReflectMap`) can implement it directly — no orphan-rule problem and no new
+/// dependency. This is the asymmetry versus a *foreign* map such as
+/// `indexmap::IndexMap`, which would be a foreign type for both buffa-descriptor
+/// and the consumer crate and so needs a crate-local newtype. `BTreeMap` is the
+/// container `buffa_build`'s `map_type(MapRepr::BTreeMap)` selects, and like the
+/// `HashMap` impl above it is `std`-gated (vtable reflection requires `std`).
+#[cfg(feature = "std")]
+impl<K: ReflectMapKey, V: ReflectElement> ReflectMap for alloc::collections::BTreeMap<K, V> {
+    fn len(&self) -> usize {
+        Self::len(self)
+    }
+
+    // `get`/`get_str` are deliberate O(n) linear scans (not BTreeMap's native
+    // O(log n) lookup), mirroring the `HashMap` impl above: reflective lookup
+    // compares through the `MapKey` abstraction rather than the concrete key
+    // type, so an ordered/hashed probe isn't available without a key conversion.
+    // Reflection is not a hot path; keep parity with `HashMap` here.
     fn get(&self, key: &MapKey) -> Option<ValueRef<'_>> {
         let want = key.as_ref();
         self.iter()

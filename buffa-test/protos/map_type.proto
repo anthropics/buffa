@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package map_type;
+
+// Compiled with `.map_type(MapRepr::BTreeMap)`, so every `map` field uses the
+// buffa-provided `BTreeMap<K, V>` instead of `HashMap<K, V>`. Covers a
+// scalar-valued map (`scores`) and a message-valued map (`items`, the two-pass
+// size/write helpers and the view→owned message conversion). Compiling the
+// crate exercises the generic `MapStorage` codegen surface; the runtime tests
+// add binary / JSON / view→owned round-trips and a deterministic-order check.
+message Maps {
+  map<string, int32> scores = 1;
+  map<string, Item> items = 2;
+  // Non-string key + int64 value: previously the JSON with-module cliff
+  // (string_key_map / proto_map are now generic over the container).
+  map<int64, int64> big_scores = 3;
+  // Non-string key + bytes value (promoted to `Bytes` by `bytes_type`):
+  // exercises proto_map under JSON and the generic arbitrary_proto_bytes_map
+  // shim, both with a non-HashMap container.
+  map<int32, bytes> blobs = 4;
+}
+
+message Item {
+  int32 id = 1;
+}

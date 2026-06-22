@@ -20,8 +20,8 @@ use crate::impl_message::{
     closed_enum_decode, closed_enum_decode_with_unknown, decode_fn_token, effective_type,
     effective_type_in_map_entry, field_string_repr, find_map_entry_fields,
     is_explicit_presence_scalar, is_packed_type, is_real_oneof_member, is_required_field,
-    is_supported_field_type, map_value_bytes_repr, validated_field_number, wire_type_check,
-    wire_type_token,
+    is_supported_field_type, map_string_repr, map_value_bytes_repr, validated_field_number,
+    wire_type_check, wire_type_token,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident, rust_path_to_tokens};
 use crate::oneof::{is_null_value_field, serde_helper_path};
@@ -1852,9 +1852,14 @@ pub(crate) fn singular_to_owned(
             // Use rust_path_to_tokens, not syn::parse_str: the latter chokes
             // on keyword segments like `super::super::type::LatLng`.
             let owned_ty = crate::message::rust_path_to_tokens(&owned_path);
+            // The `some` path carries the field's configured pointer (Box by
+            // default) so the constructed `MessageField` matches the field type;
+            // `none()` infers the pointer from the assignment target.
+            let some_path = crate::impl_message::field_pointer_repr(ctx, proto_fqn, field_name)
+                .some_path(&owned_ty)?;
             quote! {
                 match self.#ident.as_option() {
-                    Some(v) => ::buffa::MessageField::<#owned_ty>::some(
+                    Some(v) => #some_path::some(
                         v.to_owned_from_source(__buffa_src)?,
                     ),
                     None => ::buffa::MessageField::none(),
@@ -1895,7 +1900,16 @@ pub(crate) fn repeated_to_owned(
                     .collect::<::core::result::Result<_, ::buffa::DecodeError>>()?
             }
         }
-        _ => quote! { self.#ident.to_vec() },
+        // Scalar elements. The default `Vec` uses `to_vec()` (byte-identical to
+        // a build without the knob); a custom collection collects the copied
+        // scalars via `FromIterator`, since `to_vec()` would force a `Vec`.
+        _ => {
+            if crate::impl_message::field_repeated_repr(ctx, proto_fqn, field_name).is_default() {
+                quote! { self.#ident.to_vec() }
+            } else {
+                quote! { self.#ident.iter().copied().collect() }
+            }
+        }
     }
 }
 
@@ -1919,8 +1933,16 @@ pub(crate) fn map_to_owned_expr(
     let key_ty = effective_type_in_map_entry(ctx, key_fd, features);
     let val_ty = effective_type_in_map_entry(ctx, val_fd, features);
 
+    // A custom `string_type` on the outer map field promotes a `string` key /
+    // value to the configured owned type, matching the owned-side map type. The
+    // view always yields `&str`, so the custom type constructs from a fresh
+    // `String` (via its required `From<String>`), mirroring the bytes path.
+    let key_string_repr = map_string_repr(ctx, key_ty, proto_fqn, field_name);
     let key_conv = match key_ty {
-        Type::TYPE_STRING => quote! { k.to_string() },
+        Type::TYPE_STRING => match key_string_repr {
+            crate::StringRepr::String => quote! { k.to_string() },
+            crate::StringRepr::Custom(_) => quote! { ::core::convert::Into::into(k.to_string()) },
+        },
         // utf8_validation = NONE on a string map key: &[u8] → Vec<u8>.
         Type::TYPE_BYTES => quote! { k.to_vec() },
         _ => quote! { *k },
@@ -1932,8 +1954,12 @@ pub(crate) fn map_to_owned_expr(
     // `bytes_from_source`; a custom type constructs from a fresh `Vec<u8>`.
     let value_bytes_repr =
         map_value_bytes_repr(ctx, Some(key_ty), Some(val_ty), proto_fqn, field_name);
+    let val_string_repr = map_string_repr(ctx, val_ty, proto_fqn, field_name);
     let val_conv = match val_ty {
-        Type::TYPE_STRING => quote! { v.to_string() },
+        Type::TYPE_STRING => match val_string_repr {
+            crate::StringRepr::String => quote! { v.to_string() },
+            crate::StringRepr::Custom(_) => quote! { ::core::convert::Into::into(v.to_string()) },
+        },
         Type::TYPE_BYTES => match value_bytes_repr {
             crate::BytesRepr::Vec => quote! { v.to_vec() },
             crate::BytesRepr::Bytes => {
@@ -1987,13 +2013,19 @@ pub(crate) fn oneof_variant_to_owned(
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
             // The owned variant is boxed unless opted out; `v` derefs through
             // the view's own `Box` either way, so only the wrapper differs.
+            // `owned` is a typed expression (`to_owned_from_source` returns the
+            // concrete owned type), so the custom pointer's `ProtoBox::new`
+            // infers its element type from it — no type token needed here, unlike
+            // the binary merge where the value starts as `Default::default()`.
             let owned = quote! { v.to_owned_from_source(__buffa_src)? };
-            if crate::oneof::variant_boxed(
-                ctx,
-                ty,
-                &format!(".{proto_fqn}.{oneof_name}.{field_name}"),
-            ) {
-                quote! { ::buffa::alloc::boxed::Box::new(#owned) }
+            let variant_fqn = format!(".{proto_fqn}.{oneof_name}.{field_name}");
+            if crate::oneof::variant_boxed(ctx, ty, &variant_fqn) {
+                if matches!(ctx.pointer_repr(&variant_fqn), crate::PointerRepr::Box) {
+                    quote! { ::buffa::alloc::boxed::Box::new(#owned) }
+                } else {
+                    // Trait-qualified so an inherent `new` can't shadow it.
+                    quote! { ::buffa::ProtoBox::new(#owned) }
+                }
             } else {
                 owned
             }

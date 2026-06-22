@@ -379,7 +379,7 @@ fn test_bytes_type_map_value_uses_bytes() {
     };
     // Type assertion: map value is bytes::Bytes, not Vec<u8>, under
     // use_bytes_type().
-    let _: &std::collections::HashMap<String, bytes::Bytes> = &msg.by_key;
+    let _: &buffa::Map<String, bytes::Bytes> = &msg.by_key;
 
     let wire = msg.encode_to_vec();
     let view = BytesContextsView::decode_view(&wire).expect("decode_view");
@@ -389,7 +389,7 @@ fn test_bytes_type_map_value_uses_bytes() {
     // Owned binary decode (impl_message::map_merge_arm's decode_bytes_to_bytes
     // arm), distinct from the view→owned path above.
     let decoded = BytesContexts::decode(&mut wire.as_slice()).expect("decode");
-    let _: &std::collections::HashMap<String, bytes::Bytes> = &decoded.by_key;
+    let _: &buffa::Map<String, bytes::Bytes> = &decoded.by_key;
     assert_eq!(decoded.by_key.get("k").map(|b| &b[..]), Some(&b"v"[..]));
 }
 
@@ -442,7 +442,7 @@ fn test_bytes_type_map_bytes_key_value_stays_vec() {
         ..Default::default()
     };
     // Both key and value are Vec<u8> here, NOT bytes::Bytes.
-    let _: &std::collections::HashMap<Vec<u8>, Vec<u8>> = &msg.raw_blobs;
+    let _: &buffa::Map<Vec<u8>, Vec<u8>> = &msg.raw_blobs;
 
     // Wire round-trip into the owned type.
     let wire = msg.encode_to_vec();

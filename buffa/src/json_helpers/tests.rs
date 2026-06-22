@@ -103,7 +103,7 @@ struct MapI32I64Holder(#[serde(with = "proto_map")] crate::__private::HashMap<i3
 
 #[test]
 fn proto_map_int64_value_quoted() {
-    let mut m = crate::__private::HashMap::new();
+    let mut m = crate::__private::HashMap::default();
     m.insert(1i32, 42i64);
     m.insert(2i32, i64::MAX);
     let h = MapI32I64Holder(m);
@@ -135,7 +135,7 @@ struct MapBoolF64Holder(#[serde(with = "proto_map")] crate::__private::HashMap<b
 
 #[test]
 fn proto_map_bool_key_float_nan_value() {
-    let mut m = crate::__private::HashMap::new();
+    let mut m = crate::__private::HashMap::default();
     m.insert(true, f64::NAN);
     let h = MapBoolF64Holder(m);
     let json = serde_json::to_string(&h).unwrap();
@@ -188,7 +188,7 @@ struct MapStrEnumHolder(
 
 #[test]
 fn proto_map_enum_value_roundtrip() {
-    let mut m = crate::__private::HashMap::new();
+    let mut m = crate::__private::HashMap::default();
     m.insert("a".into(), crate::EnumValue::Known(Color::Green));
     m.insert("b".into(), crate::EnumValue::Unknown(-1));
     let h = MapStrEnumHolder(m);
@@ -1425,7 +1425,9 @@ fn repeated_closed_enum_works_without_deserialize_impl() {
 fn map_closed_enum_works_without_deserialize_impl() {
     let json = r#"{"a":"ZERO","b":1}"#;
     let mut d = serde_json::Deserializer::from_str(json);
-    let got = map_closed_enum::deserialize::<String, BareEnum, _>(&mut d).unwrap();
+    let got =
+        map_closed_enum::deserialize::<crate::__private::HashMap<String, BareEnum>, _>(&mut d)
+            .unwrap();
     assert_eq!(got.get("a"), Some(&BareEnum::Zero));
     assert_eq!(got.get("b"), Some(&BareEnum::One));
 }
@@ -1462,7 +1464,9 @@ fn closed_enum_lenient_drops_unknown_without_deserialize_impl() {
         // map: unknown / undecodable entries dropped
         let mut d =
             serde_json::Deserializer::from_str(r#"{"a":"ZERO","b":"UNKNOWN","c":1.5,"d":true}"#);
-        let map = map_closed_enum::deserialize::<String, BareEnum, _>(&mut d).unwrap();
+        let map =
+            map_closed_enum::deserialize::<crate::__private::HashMap<String, BareEnum>, _>(&mut d)
+                .unwrap();
         assert_eq!(map.len(), 1);
         assert_eq!(map.get("a"), Some(&BareEnum::Zero));
     });
@@ -1496,7 +1500,7 @@ struct BytesKeyBytesValWrapper {
 
 #[test]
 fn bytes_key_map_roundtrip() {
-    let mut m = crate::__private::HashMap::new();
+    let mut m = crate::__private::HashMap::default();
     m.insert(b"key1".to_vec(), 42);
     let w = BytesKeyWrapper { m };
     let json = serde_json::to_string(&w).unwrap();
@@ -1508,7 +1512,7 @@ fn bytes_key_map_roundtrip() {
 
 #[test]
 fn bytes_key_bytes_val_map_roundtrip() {
-    let mut m = crate::__private::HashMap::new();
+    let mut m = crate::__private::HashMap::default();
     m.insert(b"k".to_vec(), b"v".to_vec());
     let w = BytesKeyBytesValWrapper { m };
     let json = serde_json::to_string(&w).unwrap();

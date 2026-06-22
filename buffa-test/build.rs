@@ -10,6 +10,18 @@ fn main() {
         .compile()
         .expect("buffa_build failed for basic.proto");
 
+    // box_type: a crate-LOCAL `CustomBox<T>` pointer (a `ProtoBox<T>` impl) for
+    // singular message fields, via the `*`-templated knob. The crate compiling
+    // is most of the test — the field type, decode (`get_or_insert_default`),
+    // clear, and view→owned (`some`) paths must all emit `MessageField<T,
+    // CustomBox<T>>` and the generic `ProtoBox` surface.
+    buffa_build::Config::new()
+        .files(&["protos/box_type.proto"])
+        .includes(&["protos/"])
+        .box_type_custom("crate::box_type::CustomBox<*>")
+        .compile()
+        .expect("buffa_build failed for box_type.proto");
+
     // views(false) + vtable: owned-message vtable reflection is self-contained,
     // so it must compile without view generation (only owned impls emitted).
     buffa_build::Config::new()
@@ -24,12 +36,21 @@ fn main() {
     // field exercises the codegen-emitted `ReflectElement` (and, with json,
     // `ProtoElemJson`) impl for the element path (`Vec<LocalStr>`). A foreign
     // type here would be an orphan-rule error — only local types are reflectable
-    // in a repeated field. Singular string fields reflect via deref; map string
-    // keys/values stay `String`.
+    // in a repeated field. Singular string fields reflect via deref. The rule is
+    // scoped to the singular + repeated fields so the `map<string, string> attrs`
+    // field stays the `String`-keyed control here (`LocalStr` is not `Hash`, so
+    // it could not be a map key); custom string map keys/values get their own
+    // dedicated fixture in `string_map.proto`.
     buffa_build::Config::new()
         .files(&["protos/vtable_string_repr.proto"])
         .includes(&["protos/"])
-        .string_type_custom("crate::vtable_string_repr::LocalStr")
+        .string_type_custom_in(
+            "crate::vtable_string_repr::LocalStr",
+            &[
+                ".vtable_string_repr.Labels.name",
+                ".vtable_string_repr.Labels.items",
+            ],
+        )
         .generate_json(true)
         .reflect_mode(buffa_build::ReflectMode::VTable)
         .compile()
@@ -47,6 +68,76 @@ fn main() {
         .reflect_mode(buffa_build::ReflectMode::VTable)
         .compile()
         .expect("buffa_build failed for vtable_bytes_repr.proto");
+
+    // map_type: every `map` field uses the buffa-provided `BTreeMap<K, V>`
+    // instead of `HashMap`, via `.map_type(MapRepr::BTreeMap)`. The crate
+    // compiling is most of the test — the merge (`storage_insert`), size/write
+    // (`storage_iter`/`storage_len`), JSON skip (`is_empty_map`), reflect `has`
+    // (`MapStorage::storage_len`), and view→owned (`.collect()`) paths must all
+    // emit code that works for the non-`HashMap` container. JSON + vtable
+    // reflection enabled so those surfaces are compiled.
+    buffa_build::Config::new()
+        .files(&["protos/map_type.proto"])
+        .includes(&["protos/"])
+        .map_type(buffa_build::MapRepr::BTreeMap)
+        .bytes_type(buffa_build::BytesRepr::Bytes)
+        .generate_json(true)
+        .generate_arbitrary(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for map_type.proto");
+
+    // map_type_custom: a crate-LOCAL `CustomMap<K, V>` newtype (a `MapStorage`
+    // impl wrapping BTreeMap) used for every `map` field, via the
+    // `map_type_custom` knob. Exercises the `MapRepr::Custom` codegen path and
+    // the consumer-implemented `MapStorage` / `ReflectMap` (delegating to the
+    // inner map) / `FromIterator` surface — the worked example for a downstream
+    // user. Vtable reflection on so the consumer `ReflectMap` delegation and the
+    // `MapStorage::storage_len` reflect `has`-arm are compiled. JSON is left off
+    // (a custom container's JSON support is covered by the BTreeMap built-in
+    // fixture; see the `MapStorage` docs for the with-module caveat).
+    buffa_build::Config::new()
+        .files(&["protos/map_type_custom.proto"])
+        .includes(&["protos/"])
+        .map_type_custom("crate::map_type_custom::CustomMap")
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for map_type_custom.proto");
+
+    // string_map: a crate-LOCAL `MapStr` newtype (a `ProtoString` impl) used for
+    // every `string` map key AND value, via `.string_type_custom`. `MapStr` is
+    // Hash + Eq + Ord + serde, so it is a valid HashMap key and serializes on
+    // every JSON path. The type is crate-local because vtable reflection emits
+    // `impl ReflectMapKey` (key) / `impl ReflectElement` (value) for it — a
+    // foreign type would be an orphan-rule error, exactly as for a custom
+    // `repeated` element. The crate compiling is most of the test — the
+    // `ProtoStringMap` codec (key + value), the binary/text merge `.into()`
+    // conversion, the JSON dispatch (derive / proto_str_key_map / string_key_map
+    // / map_enum), the view→owned `Into` conversion, vtable reflect, and the
+    // generic arbitrary map builder must all emit code that works for the custom
+    // string. Runtime round-trips live in `tests/string_map.rs`.
+    buffa_build::Config::new()
+        .files(&["protos/string_map.proto"])
+        .includes(&["protos/"])
+        .string_type_custom("crate::string_map::MapStr")
+        .generate_json(true)
+        .generate_text(true)
+        .generate_arbitrary(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for string_map.proto with string_type");
+
+    // repeated_type: a crate-LOCAL `CustomList<T>` collection (a `ProtoList<T>`
+    // impl) used for every `repeated` field, via the `*`-templated knob. The
+    // crate compiling is most of the test — the merge (`push`/`reserve`),
+    // encode (`.iter()`), clear, and view→owned (`collect`) paths must all emit
+    // the generic `ProtoList` surface for the custom collection.
+    buffa_build::Config::new()
+        .files(&["protos/repeated_type.proto"])
+        .includes(&["protos/"])
+        .repeated_type_custom("crate::repeated_type::CustomList<*>")
+        .compile()
+        .expect("buffa_build failed for repeated_type.proto");
 
     // Comprehensive proto3 semantics: implicit vs explicit presence for all
     // scalar types, open-enum contexts, default packing, synthetic oneofs.

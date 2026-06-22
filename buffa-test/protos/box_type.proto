@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package box_type;
+
+// Compiled with `box_type_custom("crate::box_type::CustomBox<*>")` so the
+// singular message fields use the crate-local `CustomBox<T>` pointer (a
+// `ProtoBox<T>` impl) inside `MessageField` instead of `Box<T>`. Exercises the
+// decode (`get_or_insert_default`), encode (deref), clear, and view→owned
+// (`some`) paths through the generic `ProtoBox` surface. `count` is a plain
+// scalar (no pointer); `self_ref` is a self-referential singular message field.
+message Outer {
+  Inner inner = 1;
+  Inner maybe = 2;
+  int32 count = 3;
+  Outer self_ref = 4;
+}
+
+message Inner {
+  int32 id = 1;
+  string name = 2;
+}
+
+// Oneof message/group variants are boxed in the generated enum; the same
+// `box_type_custom` rule pointers them with `CustomBox`. `nested` is a
+// *recursive* variant — it must stay pointered (can't be inlined), and a custom
+// pointer satisfies that since a pointer is always sized. `scalar` is a
+// non-message variant (no pointer).
+message WithOneof {
+  oneof kind {
+    Inner msg = 1;
+    WithOneof nested = 2;
+    int32 scalar = 3;
+  }
+}
