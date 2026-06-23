@@ -127,6 +127,37 @@ impl SizeCache {
         self.cursor = 0;
     }
 
+    /// Construct a cache that reuses a caller-supplied spill buffer.
+    ///
+    /// The inline storage is always stack-allocated; only the spill `Vec` ever
+    /// heap-allocates, and only for messages with more than 16 nested
+    /// length-delimited sub-messages. Handing in a previously-grown buffer makes
+    /// such an encode allocation-free for the cache. The buffer is cleared (its
+    /// capacity retained). Most callers should reach for a [`SizeCachePool`]
+    /// rather than thread buffers by hand.
+    #[inline]
+    #[must_use]
+    pub fn with_spill_buffer(mut spill: Vec<u32>) -> Self {
+        spill.clear();
+        Self {
+            inline: [MaybeUninit::uninit(); INLINE_CAP],
+            spill,
+            len: 0,
+            cursor: 0,
+        }
+    }
+
+    /// Reclaim the spill buffer for reuse, consuming the cache.
+    ///
+    /// The returned `Vec` retains whatever capacity the cache grew to; feed it
+    /// back into [`with_spill_buffer`](Self::with_spill_buffer) — or let a
+    /// [`SizeCachePool`] manage it — so the next encode reuses the allocation.
+    #[inline]
+    #[must_use]
+    pub fn into_spill_buffer(self) -> Vec<u32> {
+        self.spill
+    }
+
     /// Reserve a slot for a nested message's size. Call immediately before
     /// recursing into `child.compute_size(cache)`, then fill the slot with
     /// [`set`](Self::set) after the recursion returns. This reserves the slot
@@ -213,6 +244,187 @@ impl SizeCache {
              compute_size produced {len} (traversal-order mismatch)",
             idx + 1,
         )
+    }
+}
+
+/// A caller-owned free-list of spill buffers that amortizes the [`SizeCache`]
+/// spill allocation across many encodes.
+///
+/// # When you need it
+///
+/// Every `encode` / `encoded_len` builds a fresh [`SizeCache`]. The inline
+/// storage is free (stack, no zeroing), so for messages with at most 16 nested
+/// length-delimited sub-messages there is nothing to pool. Messages that exceed
+/// that — deeply nested, repeated-sub-message shapes — spill to a heap `Vec` on
+/// *every* encode. Routing those through a pool reuses one allocation instead.
+///
+/// ## vs. reusing a single [`SizeCache`]
+///
+/// For plain sequential reuse you don't strictly need a pool: hold one
+/// [`SizeCache`] and call [`encode_with_cache`](crate::Message::encode_with_cache)
+/// with [`clear`](SizeCache::clear) between encodes. The pool adds two things
+/// that bare reuse cannot: it **shrinks an oversized buffer back on return**
+/// (`max_capacity`), so one giant message does not pin peak memory for the
+/// lifetime of the cache, and it supports **multiple caches checked out at once**
+/// (`max_buffers`), so re-entrant or nested encodes each get their own buffer.
+/// If neither matters, a single reused `SizeCache` is simpler.
+///
+/// # Bring your own — buffa holds no global state
+///
+/// You own the pool and decide its scope and lifetime: keep one in a
+/// `thread_local!` for implicit per-thread reuse, or in a request/connection
+/// context for reuse that is freed at that boundary. Only the spill `Vec` is
+/// pooled; each cache's inline storage stays on the stack, so routing a *small*
+/// message through the pool is just a `Vec` pop/push of an empty buffer — no
+/// allocation, no thread-local access, no synchronization. The pool is
+/// `alloc`-only, so it works in `no_std` builds.
+///
+/// # Bounds
+///
+/// Two limits keep memory in check, both set at construction:
+///
+/// - `max_buffers` — how many spill buffers the free-list retains. `1` suffices
+///   for sequential reuse (one cache in flight at a time, e.g. a `thread_local!`
+///   pool — see [`sequential`](Self::sequential)); raise it only for re-entrant
+///   or nested encodes that hold several caches at once.
+/// - `max_capacity` — the cap, in **`u32` slots**, on each retained buffer's
+///   capacity. One slot holds one nested sub-message's size; the first 16 are
+///   inline-free, so `max_capacity = N` retains up to `N * 4` bytes per buffer
+///   and keeps the allocation warm for messages with up to `N + 16` nested
+///   sub-messages. Set it at or above your steady-state spill size — below it,
+///   every encode regrows the buffer and `release` shrinks it back, which is worse
+///   than not pooling. A few hundred is a sensible starting point.
+///
+/// Passing `0` for either bound disables retention (the pool then always
+/// allocates a fresh cache per `acquire`).
+///
+/// # Example: a thread-local pool
+///
+/// ```
+/// use core::cell::RefCell;
+/// use buffa::{Message, SizeCachePool};
+///
+/// thread_local! {
+///     // `const fn new` allows const-initialized thread-locals.
+///     static POOL: RefCell<SizeCachePool> = const { RefCell::new(SizeCachePool::sequential(512)) };
+/// }
+///
+/// fn encode_pooled<M: Message>(msg: &M) -> Vec<u8> {
+///     let mut buf = Vec::new();
+///     POOL.with_borrow_mut(|pool| pool.encode(msg, &mut buf));
+///     buf
+/// }
+/// ```
+#[derive(Debug)]
+pub struct SizeCachePool {
+    free: Vec<Vec<u32>>,
+    max_buffers: usize,
+    max_capacity: usize,
+}
+
+impl SizeCachePool {
+    /// Create an empty pool. No heap allocation until the first encode spills.
+    ///
+    /// `max_buffers` bounds the retained free-list length; `max_capacity` bounds
+    /// each retained buffer's element capacity so a single large message cannot
+    /// pin its peak allocation. For sequential (non-re-entrant) reuse —
+    /// e.g. a `thread_local!` encode buffer — `max_buffers = 1` is enough.
+    #[inline]
+    #[must_use]
+    pub const fn new(max_buffers: usize, max_capacity: usize) -> Self {
+        Self {
+            free: Vec::new(),
+            max_buffers,
+            max_capacity,
+        }
+    }
+
+    /// Create a pool for sequential reuse — one cache checked out at a time.
+    ///
+    /// Equivalent to [`new(1, max_capacity)`](Self::new); the right choice for a
+    /// `thread_local!` or per-request pool where encodes do not nest. Takes only
+    /// the `max_capacity` slot cap (see the [type docs](Self#bounds)), avoiding
+    /// the two-`usize` ordering ambiguity of [`new`](Self::new) for the common
+    /// case.
+    #[inline]
+    #[must_use]
+    pub const fn sequential(max_capacity: usize) -> Self {
+        Self::new(1, max_capacity)
+    }
+
+    /// Check out a cache, reusing a pooled spill buffer if one is available.
+    ///
+    /// Pair with [`release`](Self::release) to return it. The convenience methods
+    /// ([`encode`](Self::encode), [`encode_view`](Self::encode_view),
+    /// [`encoded_len`](Self::encoded_len)) do the acquire/return for you; use
+    /// `acquire`/`release` directly only for manual `compute_size` / `write_to`.
+    #[inline]
+    #[must_use]
+    pub fn acquire(&mut self) -> SizeCache {
+        match self.free.pop() {
+            Some(buf) => SizeCache::with_spill_buffer(buf),
+            None => SizeCache::new(),
+        }
+    }
+
+    /// Return a cache's spill buffer to the pool, honoring both bounds.
+    ///
+    /// A cache that never spilled, or whose buffer shrank to nothing under a
+    /// `max_capacity` of `0`, is dropped rather than retained — the free-list
+    /// never holds a zero-capacity buffer that would yield no reuse.
+    #[inline]
+    pub fn release(&mut self, cache: SizeCache) {
+        if self.free.len() >= self.max_buffers {
+            return;
+        }
+        let mut buf = cache.into_spill_buffer();
+        // Clear first so `shrink_to` is not floored by the live length.
+        buf.clear();
+        if buf.capacity() > self.max_capacity {
+            buf.shrink_to(self.max_capacity);
+        }
+        // After the shrink: skip never-spilled (cap 0) and shrunk-to-0 buffers —
+        // a zero-capacity slot in the free-list yields no reuse on `acquire`.
+        if buf.capacity() == 0 {
+            return;
+        }
+        self.free.push(buf);
+    }
+
+    /// Compute a message's encoded length, reusing a pooled spill buffer.
+    ///
+    /// The pooled equivalent of [`Message::encoded_len`](crate::Message::encoded_len).
+    #[inline]
+    #[must_use]
+    pub fn encoded_len<M: crate::Message>(&mut self, msg: &M) -> u32 {
+        let mut cache = self.acquire();
+        let len = msg.compute_size(&mut cache);
+        self.release(cache);
+        len
+    }
+
+    /// Encode a message into `buf`, reusing a pooled spill buffer.
+    ///
+    /// The pooled equivalent of [`Message::encode`](crate::Message::encode).
+    #[inline]
+    pub fn encode<M: crate::Message>(&mut self, msg: &M, buf: &mut impl bytes::BufMut) {
+        let mut cache = self.acquire();
+        msg.encode_with_cache(&mut cache, buf);
+        self.release(cache);
+    }
+
+    /// Encode a borrowed message view into `buf`, reusing a pooled spill buffer.
+    ///
+    /// The pooled equivalent of [`ViewEncode::encode`](crate::ViewEncode::encode).
+    #[inline]
+    pub fn encode_view<'a, V: crate::ViewEncode<'a>>(
+        &mut self,
+        view: &V,
+        buf: &mut impl bytes::BufMut,
+    ) {
+        let mut cache = self.acquire();
+        view.encode_with_cache(&mut cache, buf);
+        self.release(cache);
     }
 }
 
@@ -370,5 +582,119 @@ mod tests {
         assert_eq!(c.consume_next(), 0);
         assert_eq!(c.consume_next(), 20);
         let _ = a;
+    }
+
+    // ── SizeCachePool ────────────────────────────────────────────────────
+
+    /// Drive a cache from the pool through enough reserves to force a spill,
+    /// fill the slots, then return it.
+    fn spill_and_return(pool: &mut SizeCachePool, slots: usize) {
+        let mut c = pool.acquire();
+        for i in 0..slots {
+            let s = c.reserve();
+            c.set(s, i as u32);
+        }
+        pool.release(c);
+    }
+
+    #[test]
+    fn with_spill_buffer_clears_and_retains_capacity() {
+        let mut donor = Vec::with_capacity(40);
+        donor.extend_from_slice(&[7, 7, 7]);
+        let cap = donor.capacity();
+        let c = SizeCache::with_spill_buffer(donor);
+        assert_eq!(c.len, 0);
+        assert!(c.spill.is_empty());
+        assert!(c.spill.capacity() >= cap, "retains donor capacity");
+    }
+
+    #[test]
+    fn into_spill_buffer_roundtrips_through_with_spill_buffer() {
+        let mut c = SizeCache::new();
+        for _ in 0..(INLINE_CAP + 5) {
+            c.reserve();
+        }
+        let buf = c.into_spill_buffer();
+        let grown = buf.capacity();
+        assert!(grown >= 5);
+        let c2 = SizeCache::with_spill_buffer(buf);
+        assert!(c2.spill.capacity() >= grown, "allocation reused");
+        assert_eq!(c2.len, 0);
+    }
+
+    #[test]
+    fn pool_reuses_spill_allocation() {
+        let mut pool = SizeCachePool::new(4, 1024);
+        spill_and_return(&mut pool, INLINE_CAP + 5);
+        assert_eq!(pool.free.len(), 1, "spilled buffer retained");
+        let grown = pool.free[0].capacity();
+        // Next acquire hands back the grown buffer.
+        let c = pool.acquire();
+        assert!(c.spill.capacity() >= grown, "spill capacity reused");
+        assert_eq!(c.len, 0);
+    }
+
+    #[test]
+    fn pool_does_not_retain_non_spilling_caches() {
+        let mut pool = SizeCachePool::new(4, 1024);
+        let mut c = pool.acquire();
+        let s = c.reserve(); // stays inline, no heap buffer
+        c.set(s, 1);
+        pool.release(c);
+        assert!(pool.free.is_empty(), "empty (cap 0) buffers are not pooled");
+    }
+
+    #[test]
+    fn pool_respects_max_buffers() {
+        let mut pool = SizeCachePool::new(1, 1024);
+        for _ in 0..3 {
+            spill_and_return(&mut pool, INLINE_CAP + 2);
+        }
+        assert!(pool.free.len() <= 1, "free-list bounded by max_buffers");
+    }
+
+    #[test]
+    fn pool_shrinks_oversized_buffer_on_return() {
+        let mut pool = SizeCachePool::new(4, 8);
+        spill_and_return(&mut pool, INLINE_CAP + 100);
+        assert!(
+            pool.free[0].capacity() <= 8,
+            "oversized buffer shrunk to cap"
+        );
+    }
+
+    #[test]
+    fn pool_acquire_release_default_is_empty() {
+        let mut pool = SizeCachePool::new(2, 64);
+        let c = pool.acquire(); // empty pool -> fresh cache
+        assert_eq!(c.len, 0);
+        pool.release(c); // never spilled -> dropped
+        assert!(pool.free.is_empty());
+    }
+
+    #[test]
+    fn pool_sequential_caps_buffers_at_one() {
+        let mut pool = SizeCachePool::sequential(1024);
+        assert_eq!(pool.max_buffers, 1);
+        for _ in 0..3 {
+            spill_and_return(&mut pool, INLINE_CAP + 2);
+        }
+        assert_eq!(pool.free.len(), 1, "sequential retains exactly one buffer");
+    }
+
+    #[test]
+    fn pool_max_capacity_zero_disables_retention() {
+        let mut pool = SizeCachePool::new(4, 0);
+        // Even a spilled buffer shrinks to 0 and must not be parked empty.
+        spill_and_return(&mut pool, INLINE_CAP + 50);
+        assert!(
+            pool.free.is_empty(),
+            "max_capacity 0 retains no (zero-capacity) buffers"
+        );
+        // And the pool still yields a usable cache.
+        let mut c = pool.acquire();
+        let s = c.reserve();
+        c.set(s, 9);
+        assert_eq!(c.consume_next(), 9);
     }
 }

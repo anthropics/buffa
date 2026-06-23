@@ -332,6 +332,72 @@ pub mod map_type {
     buffa::include_proto!("map_type");
 }
 
+/// `string_map` fixture: a crate-local `MapStr` newtype (a `ProtoString` impl,
+/// selected with `.string_type_custom(...)`) is used for every `string` map key
+/// and value. `MapStr` is `Hash + Eq + Ord + serde`, so it satisfies the
+/// `HashMap` key bound and every JSON dispatch path. The type is crate-local
+/// because vtable reflection emits `impl ReflectMapKey` / `impl ReflectElement`
+/// for it (a foreign type would be an orphan-rule error — exactly as for a
+/// custom `repeated` element). The fields cover all six custom-string-key/value
+/// JSON dispatch modules; exercised by `tests/string_map.rs`.
+#[allow(clippy::derivable_impls, non_camel_case_types)]
+pub mod string_map {
+    /// `String`-backed newtype satisfying `buffa::ProtoString`, plus the
+    /// `Hash + Eq + Ord` a map key needs and `Serialize`/`Deserialize` the JSON
+    /// paths need.
+    #[derive(
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Default,
+        Debug,
+        ::serde::Serialize,
+        ::serde::Deserialize,
+    )]
+    // A custom string used in a `map` under `generate_arbitrary` must impl
+    // `Arbitrary` (unlike singular/repeated string fields, which get a generic
+    // builder): the map arbitrary path has no per-key shim. Deriving it on the
+    // newtype is the one-line requirement.
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+    pub struct MapStr(pub ::buffa::alloc::string::String);
+
+    impl ::core::ops::Deref for MapStr {
+        type Target = str;
+        fn deref(&self) -> &str {
+            &self.0
+        }
+    }
+    impl ::core::convert::AsRef<str> for MapStr {
+        fn as_ref(&self) -> &str {
+            &self.0
+        }
+    }
+    impl ::core::convert::From<::buffa::alloc::string::String> for MapStr {
+        fn from(s: ::buffa::alloc::string::String) -> Self {
+            MapStr(s)
+        }
+    }
+    impl ::core::convert::From<&str> for MapStr {
+        fn from(s: &str) -> Self {
+            MapStr(::buffa::alloc::string::String::from(s))
+        }
+    }
+    impl ::buffa::ProtoString for MapStr {
+        fn from_wire(
+            payload: ::buffa::WirePayload<'_>,
+        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
+            ::core::str::from_utf8(payload.as_slice())
+                .map(|s| MapStr(::buffa::alloc::string::String::from(s)))
+                .map_err(|_| ::buffa::DecodeError::InvalidUtf8)
+        }
+    }
+
+    buffa::include_proto!("string_map");
+}
+
 /// `map_type_custom` fixture: a crate-local `CustomMap<K, V>` newtype used for
 /// every `map` field (via `.map_type_custom(...)`). `CustomMap` is a thin
 /// `BTreeMap`-backed `MapStorage` impl — the point is to exercise the

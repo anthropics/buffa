@@ -383,6 +383,76 @@ pub mod proto_map {
     }
 }
 
+/// Serde with-module for `map<string, V>` fields whose **value** needs
+/// proto3-JSON encoding ([`ProtoElemJson`]: int64→quoted, float→NaN token,
+/// bytes→base64) and whose **key** is a custom
+/// [`ProtoString`](crate::types::ProtoString) type.
+///
+/// This is the string-key twin of [`proto_map`]. [`proto_map`] stringifies its
+/// key via `Display` / `FromStr`, which a `ProtoString` newtype need not
+/// implement; here the key is already a JSON string, so it is serialized and
+/// deserialized through its own `serde` impls (a custom string type used in a
+/// map is required to derive `Serialize` / `Deserialize`). The value path is
+/// identical to [`proto_map`], and JSON `null` likewise deserializes to an empty
+/// map.
+pub mod proto_str_key_map {
+    use super::{ProtoElemJson, ProtoElemSeed, ProtoJson};
+    use crate::map_codec::MapStorage;
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<C, S>(m: &C, s: S) -> Result<S::Ok, S::Error>
+    where
+        C: MapStorage,
+        C::Key: serde::Serialize,
+        C::Value: ProtoElemJson,
+        S: Serializer,
+    {
+        use serde::ser::SerializeMap;
+        let mut map = s.serialize_map(Some(m.storage_len()))?;
+        for (k, v) in m.storage_iter() {
+            map.serialize_entry(k, &ProtoJson(v))?;
+        }
+        map.end()
+    }
+
+    pub fn deserialize<'de, C, D>(d: D) -> Result<C, D::Error>
+    where
+        C: MapStorage + Default,
+        C::Key: serde::Deserialize<'de>,
+        C::Value: ProtoElemJson,
+        D: Deserializer<'de>,
+    {
+        struct Vis<C>(core::marker::PhantomData<C>);
+        impl<'de, C> serde::de::Visitor<'de> for Vis<C>
+        where
+            C: MapStorage + Default,
+            C::Key: serde::Deserialize<'de>,
+            C::Value: ProtoElemJson,
+        {
+            type Value = C;
+            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.write_str("a JSON object with string keys, or null")
+            }
+            fn visit_unit<E>(self) -> Result<Self::Value, E> {
+                Ok(C::default())
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let mut out = C::default();
+                while let Some(k) = map.next_key::<C::Key>()? {
+                    let v =
+                        map.next_value_seed(ProtoElemSeed::<C::Value>(core::marker::PhantomData))?;
+                    out.storage_insert(k, v);
+                }
+                Ok(out)
+            }
+        }
+        d.deserialize_any(Vis::<C>(core::marker::PhantomData))
+    }
+}
+
 // ── bool ─────────────────────────────────────────────────────────────────────
 
 /// Serde with-module for `bool` fields that accepts JSON `null` as `false`.

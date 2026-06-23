@@ -331,15 +331,17 @@ impl ProtoString for CompactStr {
 }
 ```
 
-If you see a `ProtoString` / `ProtoBytes` bound error pointing at *generated* code, your newtype is missing one of the supertraits — check the full bound list (`Clone + PartialEq + Default + Debug + Send + Sync`, `Deref`, `AsRef`, the `From` conversions, and `from_wire`).
+If you see a `ProtoString` / `ProtoBytes` bound error pointing at *generated* code, your newtype is missing one of the supertraits — check the full bound list (`Clone + PartialEq + Default + Debug + Send + Sync`, `Deref`, `AsRef`, the `From` conversions, and `from_wire`). If instead you see an *orphan-rule* error (`E0117` / `E0210`) in generated code mentioning `ReflectElement` or `ReflectMapKey`, you used a **foreign** custom type as a `repeated` element or `map` key/value under vtable reflection — wrap it in a crate-local newtype (see the `map`/`repeated` key points below).
 
 Key points:
 
 - **Point `string_type_custom` at your newtype, not the foreign type.** `string_type_custom("::smol_str::SmolStr")` no longer compiles — use `::buffa_smolstr::SmolStr` or your own newtype path. Add the newtype's crate (e.g. `buffa-smolstr`) to your `Cargo.toml`.
-- **Only the owned struct field type changes.** The wire format is identical regardless of representation, view types still borrow `&str` / `&[u8]`, and `map` keys/values keep their default type.
-- **A custom type needs no `Arbitrary` impl.** Under `generate_arbitrary`, codegen attaches a generic builder.
-- **JSON of an `optional` or `repeated` custom string** serializes through the element's native `serde`, so such a newtype must derive `Serialize` / `Deserialize` (`buffa-smolstr`'s `serde` feature does this). Singular and oneof string fields use buffa's `proto_string` with-module and need no `serde` impl.
-- **A custom type used as a `repeated` element must be crate-local.** Codegen emits per-element `ReflectElement` (vtable reflection) and base64 `ProtoElemJson` (JSON, bytes only) impls for it, which the orphan rule forbids for a foreign type — the newtype satisfies this since it is local. Singular / optional / oneof / map uses have no such restriction.
+- **Only the owned struct field type changes.** The wire format is identical regardless of representation, and view types still borrow `&str` / `&[u8]`.
+- **The rule also covers `map` `string` slots.** A `string_type` rule on a `map<string, V>` / `map<K, string>` field applies to the key and/or value — one rule on the field path covers both slots of a `map<string, string>`. The `map` container itself stays the configured type (the `map_type` knob); only the `string` element type changes. (`bytes` is value-only here, since proto forbids `bytes` map keys.) Because the rule is keyed on the field path, a `map<string, string>` is all-or-nothing: you cannot give the key a custom type and leave the value `String` (or vice versa) on the same field. Asymmetric cases where only one slot is `string` (`map<string, int64>`, `map<int32, string>`) are unaffected.
+- **A custom type needs no `Arbitrary` impl — except in a `map`.** Under `generate_arbitrary`, singular / optional / repeated fields get a generic builder. The `map` arbitrary path currently has no per-key shim, so a custom string used as a `map` key or value must itself derive `Arbitrary` (a one-line derive on the newtype).
+- **JSON of an `optional` or `repeated` custom string, or any custom string in a `map`,** serializes through the element's native `serde`, so such a newtype must derive `Serialize` / `Deserialize` (`buffa-smolstr`'s `serde` feature does this). Singular and oneof string fields use buffa's `proto_string` with-module and need no `serde` impl.
+- **A custom string used as a `map` key needs `Hash + Eq`** (for the default / `HashMap` container) or `Ord` (for `map_type(BTreeMap)`). The bound is enforced at the generated map field type, so a missing impl is a clear compile error at that field.
+- **A custom type used as a `repeated` element, or as a `map` key/value, must be crate-local.** Codegen emits per-element `ReflectElement` (vtable reflection), `ReflectMapKey` (vtable, for a custom `string` map key), and base64 `ProtoElemJson` (JSON, bytes only) impls for it, which the orphan rule forbids for a foreign type — a local newtype satisfies this. Singular / optional / oneof uses have no such restriction.
 
 `string_type` / `bytes_type` are `buffa-build` / `buffa-codegen` options only — there is no `protoc-gen-buffa` plugin equivalent yet.
 

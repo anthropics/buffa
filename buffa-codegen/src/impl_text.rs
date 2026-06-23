@@ -27,7 +27,7 @@ use crate::idents::rust_path_to_tokens;
 use crate::impl_message::{
     effective_type, effective_type_in_map_entry, field_bytes_repr, field_string_repr,
     find_map_entry_fields, is_explicit_presence_scalar, is_non_default_expr, is_real_oneof_member,
-    is_required_field, is_supported_field_type, map_value_bytes_repr,
+    is_required_field, is_supported_field_type, map_string_repr, map_value_bytes_repr,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident};
 use crate::CodeGenError;
@@ -1030,9 +1030,13 @@ fn map_merge_arm(
     let val_ty = effective_type_in_map_entry(ctx, val_fd, features);
     let val_features = crate::features::resolve_field(ctx, val_fd, features);
 
-    // Key read (never enum, never message per proto spec).
+    // Key read (never enum, never message per proto spec). A custom `string_type`
+    // on the map field promotes the `string` key to the configured owned type.
     let key_read = match key_ty {
-        Type::TYPE_STRING => quote! { __d.read_string()?.into_owned() },
+        Type::TYPE_STRING => text_string_into(
+            map_string_repr(ctx, key_ty, proto_fqn, proto_name),
+            quote! { __d.read_string()?.into_owned() },
+        ),
         Type::TYPE_INT32 | Type::TYPE_SINT32 | Type::TYPE_SFIXED32 => quote! { __d.read_i32()? },
         Type::TYPE_INT64 | Type::TYPE_SINT64 | Type::TYPE_SFIXED64 => quote! { __d.read_i64()? },
         Type::TYPE_UINT32 | Type::TYPE_FIXED32 => quote! { __d.read_u32()? },
@@ -1064,7 +1068,10 @@ fn map_merge_arm(
             let read = enum_read(closed, &enum_ty, &format_ident!("__d"));
             quote! { #read? }
         }
-        Type::TYPE_STRING => quote! { __d.read_string()?.into_owned() },
+        Type::TYPE_STRING => text_string_into(
+            map_string_repr(ctx, val_ty, proto_fqn, proto_name),
+            quote! { __d.read_string()?.into_owned() },
+        ),
         Type::TYPE_BYTES => text_bytes_into(&value_bytes_repr, quote! { __d.read_bytes()? }),
         Type::TYPE_INT32 | Type::TYPE_SINT32 | Type::TYPE_SFIXED32 => quote! { __d.read_i32()? },
         Type::TYPE_INT64 | Type::TYPE_SINT64 | Type::TYPE_SFIXED64 => quote! { __d.read_i64()? },

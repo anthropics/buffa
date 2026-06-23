@@ -4,6 +4,24 @@
 use super::varint_field;
 use buffa::Message;
 
+fn priority_map_entry_wire(key: &str, values: &[u64]) -> (Vec<u8>, Vec<u8>) {
+    use buffa::encoding::{encode_varint, Tag, WireType};
+
+    let mut entry = Vec::new();
+    Tag::new(1, WireType::LengthDelimited).encode(&mut entry);
+    buffa::types::encode_string(key, &mut entry);
+    for value in values {
+        Tag::new(2, WireType::Varint).encode(&mut entry);
+        encode_varint(*value, &mut entry);
+    }
+
+    let mut wire = varint_field(1, 2); // ViewCoverage.level = HIGH.
+    Tag::new(3, WireType::LengthDelimited).encode(&mut wire);
+    encode_varint(entry.len() as u64, &mut wire);
+    wire.extend_from_slice(&entry);
+    (entry, wire)
+}
+
 #[test]
 fn test_closed_enum_optional_unknown_to_unknown_fields() {
     use crate::proto2::ClosedEnumContexts;
@@ -173,6 +191,41 @@ fn test_closed_enum_negative_unknown_value_sign_extension() {
     // Round-trip: re-encoded bytes must match exactly (single field).
     let re = msg.encode_to_vec();
     assert_eq!(re, wire);
+}
+
+#[test]
+fn test_closed_enum_map_unknown_value_preserves_whole_entry() {
+    use crate::proto2::{Priority, ViewCoverage};
+
+    // Field 3 is map<string, Priority>. The entry's *final* value occurrence
+    // is unknown, so the whole entry is routed to unknown fields verbatim.
+    let (entry, wire) = priority_map_entry_wire("bad", &[2, 99]);
+    let msg = ViewCoverage::decode(&mut wire.as_slice()).unwrap();
+
+    assert_eq!(msg.level, Priority::HIGH);
+    assert!(msg.priorities.is_empty());
+    let unknowns: Vec<_> = msg.__buffa_unknown_fields.iter().collect();
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(unknowns[0].number, 3);
+    assert!(matches!(
+        &unknowns[0].data,
+        buffa::UnknownFieldData::LengthDelimited(payload) if payload == &entry
+    ));
+    assert_eq!(msg.encode_to_vec(), wire);
+}
+
+#[test]
+fn test_closed_enum_map_last_value_known_inserts_entry() {
+    use crate::proto2::{Priority, ViewCoverage};
+
+    // Repeated value occurrences within a map entry are last-wins (proto map
+    // semantics). An unknown enum value followed by a known one inserts the
+    // entry with the known value, matching the C++ reference implementation.
+    let (_, wire) = priority_map_entry_wire("ok", &[99, 2]);
+    let msg = ViewCoverage::decode(&mut wire.as_slice()).unwrap();
+
+    assert_eq!(msg.priorities.get("ok"), Some(&Priority::HIGH));
+    assert_eq!(msg.__buffa_unknown_fields.iter().count(), 0);
 }
 
 // ── View decoder: same semantics ──────────────────────────────────────

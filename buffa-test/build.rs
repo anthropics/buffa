@@ -36,12 +36,21 @@ fn main() {
     // field exercises the codegen-emitted `ReflectElement` (and, with json,
     // `ProtoElemJson`) impl for the element path (`Vec<LocalStr>`). A foreign
     // type here would be an orphan-rule error — only local types are reflectable
-    // in a repeated field. Singular string fields reflect via deref; map string
-    // keys/values stay `String`.
+    // in a repeated field. Singular string fields reflect via deref. The rule is
+    // scoped to the singular + repeated fields so the `map<string, string> attrs`
+    // field stays the `String`-keyed control here (`LocalStr` is not `Hash`, so
+    // it could not be a map key); custom string map keys/values get their own
+    // dedicated fixture in `string_map.proto`.
     buffa_build::Config::new()
         .files(&["protos/vtable_string_repr.proto"])
         .includes(&["protos/"])
-        .string_type_custom("crate::vtable_string_repr::LocalStr")
+        .string_type_custom_in(
+            "crate::vtable_string_repr::LocalStr",
+            &[
+                ".vtable_string_repr.Labels.name",
+                ".vtable_string_repr.Labels.items",
+            ],
+        )
         .generate_json(true)
         .reflect_mode(buffa_build::ReflectMode::VTable)
         .compile()
@@ -94,6 +103,29 @@ fn main() {
         .reflect_mode(buffa_build::ReflectMode::VTable)
         .compile()
         .expect("buffa_build failed for map_type_custom.proto");
+
+    // string_map: a crate-LOCAL `MapStr` newtype (a `ProtoString` impl) used for
+    // every `string` map key AND value, via `.string_type_custom`. `MapStr` is
+    // Hash + Eq + Ord + serde, so it is a valid HashMap key and serializes on
+    // every JSON path. The type is crate-local because vtable reflection emits
+    // `impl ReflectMapKey` (key) / `impl ReflectElement` (value) for it — a
+    // foreign type would be an orphan-rule error, exactly as for a custom
+    // `repeated` element. The crate compiling is most of the test — the
+    // `ProtoStringMap` codec (key + value), the binary/text merge `.into()`
+    // conversion, the JSON dispatch (derive / proto_str_key_map / string_key_map
+    // / map_enum), the view→owned `Into` conversion, vtable reflect, and the
+    // generic arbitrary map builder must all emit code that works for the custom
+    // string. Runtime round-trips live in `tests/string_map.rs`.
+    buffa_build::Config::new()
+        .files(&["protos/string_map.proto"])
+        .includes(&["protos/"])
+        .string_type_custom("crate::string_map::MapStr")
+        .generate_json(true)
+        .generate_text(true)
+        .generate_arbitrary(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for string_map.proto with string_type");
 
     // repeated_type: a crate-LOCAL `CustomList<T>` collection (a `ProtoList<T>`
     // impl) used for every `repeated` field, via the `*`-templated knob. The
