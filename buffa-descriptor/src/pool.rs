@@ -232,7 +232,8 @@ impl DescriptorPool {
             .filter(|f| {
                 f.name
                     .as_deref()
-                    .is_none_or(|n| !self.file_by_name.contains_key(n))
+                    // MSRV: `Option::is_none_or` requires 1.82.
+                    .map_or(true, |n| !self.file_by_name.contains_key(n))
             })
             .collect();
         if new_files.is_empty() {
