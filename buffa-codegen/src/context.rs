@@ -2343,7 +2343,12 @@ mod tests {
         let files = [
             make_file("lyft_money.proto", "pb.lyft", vec![money], vec![]),
             make_file("money.proto", "pb.lyft.money", vec![msg("Money")], vec![]),
-            make_file("users.proto", "pb.lyft.users", vec![msg("DailyTotalFares")], vec![]),
+            make_file(
+                "users.proto",
+                "pb.lyft.users",
+                vec![msg("DailyTotalFares")],
+                vec![],
+            ),
         ];
         let config = CodeGenConfig {
             extern_paths: vec![(".pb.lyft".into(), "::idl_pb_lyft::pb::lyft".into())],
