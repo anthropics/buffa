@@ -47,6 +47,9 @@ COPY stress/googleapis/buf.gen.yaml .
 RUN mkdir -p /workspace/gen
 
 # Generate against the googleapis BSR module.
+# NOTE: this RUN must succeed even when buf fails, so the report stage can
+# still build and summarize the failure. report.sh reads the recorded
+# "Generate exit code: N" line and exits non-zero on our behalf.
 RUN set -eu; \
     if buf generate buf.build/googleapis/googleapis > /generate.log 2>&1; then \
         status=0; \
@@ -54,8 +57,7 @@ RUN set -eu; \
         status=$?; \
     fi; \
     echo "Generate exit code: ${status}" >> /generate.log; \
-    cat /generate.log; \
-    exit "${status}"
+    cat /generate.log
 
 # ── Stage 3: compile the generated code ─────────────────────────────────
 FROM rust:1.85-slim AS compiler
@@ -85,6 +87,8 @@ COPY --from=builder /build/target/x86_64-unknown-linux-musl/release/protoc-gen-b
 RUN apt-get update && apt-get install -y python3 protobuf-compiler && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p src stress-crate && python3 gen_lib_rs.py gen/ "../gen/" > src/lib.rs
 # Add the stress crate as a workspace member and compile.
+# NOTE: like the generate step, this RUN records cargo's exit code but does
+# not propagate it — report.sh is the single source of pass/fail.
 RUN set -eu; \
     cp Cargo.stress.toml stress-crate/Cargo.toml; \
     mv src stress-crate/src; \
@@ -97,8 +101,7 @@ RUN set -eu; \
         status=$?; \
     fi; \
     echo "Compile exit code: ${status}" >> /compile.log; \
-    cat /compile.log; \
-    exit "${status}"
+    cat /compile.log
 
 # ── Stage 4: report results ────────────────────────────────────────────
 FROM alpine:3.21

@@ -57,13 +57,14 @@ else
 fi
 echo ""
 
-# If /out is mounted, copy results there.
+# If /out is mounted, copy results there. Tolerate missing artifacts so a
+# failed-generation run still reaches the final exit with the right status.
 if [ -d /out ]; then
     echo "Copying results to /out ..."
-    cp -r /results/gen /out/gen 2>/dev/null
-    cp /results/generate.log /out/generate.log
-    cp /results/compile.log /out/compile.log
-    cp /results/lib.rs /out/lib.rs
+    cp -r /results/gen /out/gen 2>/dev/null || true
+    cp /results/generate.log /out/generate.log 2>/dev/null || true
+    cp /results/compile.log /out/compile.log 2>/dev/null || true
+    cp /results/lib.rs /out/lib.rs 2>/dev/null || true
     echo "Done."
 fi
 
