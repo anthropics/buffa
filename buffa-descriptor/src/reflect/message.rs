@@ -32,11 +32,14 @@ use crate::{DescriptorPool, FieldDescriptor, MessageDescriptor, OneofDescriptor}
 /// Implemented by [`DynamicMessage`] (map-backed) and, in vtable mode, by
 /// generated message structs. See the module documentation for the dyn-safety
 /// contract.
-#[diagnostic::on_unimplemented(
-    message = "`{Self}` does not implement `ReflectMessage`, which vtable-mode reflection requires on this embedded type",
-    note = "if `{Self}` comes from another buffa-generated crate via an extern path (well-known types resolve to `buffa-types` by default), enable that crate's reflection feature, e.g. `buffa-types = {{ version = \"...\", features = [\"reflect\"] }}`",
-    note = "view reflection cannot degrade across modes: every view type embedded in a vtable-mode view must itself be vtable-grade (owned messages degrade through `Reflectable::reflect()` instead)",
-    note = "if `{Self}` is generated in this crate, its `build.rs` config must use `reflect_mode(ReflectMode::VTable)`"
+#[rustversion::attr(
+    since(1.78),
+    diagnostic::on_unimplemented(
+        message = "`{Self}` does not implement `ReflectMessage`, which vtable-mode reflection requires on this embedded type",
+        note = "if `{Self}` comes from another buffa-generated crate via an extern path (well-known types resolve to `buffa-types` by default), enable that crate's reflection feature, e.g. `buffa-types = {{ version = \"...\", features = [\"reflect\"] }}`",
+        note = "view reflection cannot degrade across modes: every view type embedded in a vtable-mode view must itself be vtable-grade (owned messages degrade through `Reflectable::reflect()` instead)",
+        note = "if `{Self}` is generated in this crate, its `build.rs` config must use `reflect_mode(ReflectMode::VTable)`"
+    )
 )]
 pub trait ReflectMessage {
     /// The descriptor for this message type.
@@ -216,10 +219,13 @@ impl<'a> core::ops::Deref for ReflectCow<'a> {
 /// reflection mode is enabled. The body varies by mode: bridge mode boxes a
 /// [`DynamicMessage`], vtable mode borrows the struct directly. The call site
 /// is always `foo.reflect()` — flipping modes requires no diff.
-#[diagnostic::on_unimplemented(
-    message = "`{Self}` does not implement `Reflectable` — no reflection is enabled for this message type",
-    note = "if `{Self}` comes from another buffa-generated crate via an extern path (well-known types resolve to `buffa-types` by default), enable that crate's reflection feature, e.g. `buffa-types = {{ version = \"...\", features = [\"reflect\"] }}`",
-    note = "if `{Self}` is generated in this crate, enable reflection in its `build.rs` config: `generate_reflection(true)` (vtable) or `reflect_mode(ReflectMode::Bridge)` for the smaller bridge impl — either emits `Reflectable`"
+#[rustversion::attr(
+    since(1.78),
+    diagnostic::on_unimplemented(
+        message = "`{Self}` does not implement `Reflectable` — no reflection is enabled for this message type",
+        note = "if `{Self}` comes from another buffa-generated crate via an extern path (well-known types resolve to `buffa-types` by default), enable that crate's reflection feature, e.g. `buffa-types = {{ version = \"...\", features = [\"reflect\"] }}`",
+        note = "if `{Self}` is generated in this crate, enable reflection in its `build.rs` config: `generate_reflection(true)` (vtable) or `reflect_mode(ReflectMode::Bridge)` for the smaller bridge impl — either emits `Reflectable`"
+    )
 )]
 pub trait Reflectable {
     /// A read-only reflective handle over `self`.

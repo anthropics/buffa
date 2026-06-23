@@ -214,6 +214,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **MSRV lowered from 1.87 to 1.75**, and the
+  [README MSRV policy](README.md#minimum-supported-rust-version) revised:
+  `rust-version` now declares the lowest toolchain the released code actually
+  compiles on (verified in CI), with bumps capped at roughly twelve months
+  behind stable. The 1.75 floor is set by return-position `impl Trait` in
+  traits, used by `MapStorage::storage_iter`. Reaching it required only
+  mechanical respellings of newer stdlib conveniences — `Option::is_none_or`,
+  `i32::cast_unsigned`, `f64::abs` in `const fn` — and
+  gating the six `#[diagnostic::on_unimplemented]` hints behind
+  `rustversion::attr(since(1.78), …)` so they remain active on modern
+  toolchains. Adds `rustversion` as a dependency of `buffa` and
+  `buffa-descriptor`.
+- `MapValueDecode::merge` now returns `Result<MapValueDecodeStatus, _>`
+  instead of `Result<(), _>`, and a new `merge_entry_with_unknowns` carries
+  the closed-enum-map preservation path. The trait is sealed, so downstream
+  implementations are unaffected; direct callers of `merge` (rare) must
+  handle the new return value. (#218)
+
 - `SizeCache` no longer zeroes its inline slot array on construction. A fresh
   cache is built for every `encode`/`compute_size`, and because it is passed by
   `&mut` to an out-of-line `compute_size` the compiler cannot elide the unused
@@ -299,7 +317,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `decode_view_ctx` / `merge_into_view` instead of the removed inherent
   `_decode_ctx` / `_merge_into_view` helpers. (#198)
 
+- **`examples/custom-types` — end-to-end pluggable owned types.** A runnable
+  example crate that compiles a `.proto` with every owned-type knob
+  (`string_type_custom`, `bytes_type_custom`, `repeated_type_custom`,
+  `map_type_custom`, `box_type_custom`) pointed at crate-local newtypes
+  wrapping `flexstr`, `smallvec`, `indexmap`, and `smallbox`, then round-trips
+  a record through binary and JSON. The newtypes are the copy-paste template
+  for bridging a foreign storage type past the orphan rule. (#214)
+
 ### Fixed
+
+- **`box_type_custom` and `repeated_type_custom` now compile under
+  `generate_json(true)`.** Two `json_helpers` functions were still hard-wired
+  to the default representations: `skip_if::is_unset_message_field` only
+  accepted `&MessageField<T>` (default `Box<T>` pointer), and
+  `proto_seq::deserialize` only returned `Vec<T>`. So any JSON-enabled message
+  with a custom-boxed optional sub-message, or a custom repeated collection of
+  a 64-bit / float / bytes element, failed to compile. The former is now
+  generic over `P: ProtoBox<T>` and the latter over `C: From<Vec<T>>`; both
+  are inferred from the field type, so default-representation code is
+  unchanged. (#214)
+
+- **`DecodeOptions::decode_reader` no longer overflows when
+  `max_message_size` is `usize::MAX`.** The internal `read_limited` helper
+  computed `max_message_size as u64 + 1` to read one sentinel byte past the
+  limit; on 64-bit targets this overflowed — a debug panic, or in release a
+  wrap to zero that silently decoded an empty default message. The addition
+  now saturates, so `usize::MAX` correctly means an unbounded read. 32-bit
+  targets and finite limits are unaffected. (#219)
+
+- **Closed-enum map values now preserve unknown entries correctly.** For
+  proto2 `map<K, ClosedEnum>` fields, an unknown enum value now prevents the
+  map entry from being inserted and routes the whole original map-entry record
+  to unknown fields. This fixes the previous default-valued entry synthesis
+  (`key -> E::default()`) and applies to owned and view decode paths.
+  Regenerate code with the matching `buffa-codegen` to get preservation;
+  with an older codegen, runtime-only upgrades change unknown closed-enum
+  map entries from default-insert to drop. (#218)
 
 - **`DecodeOptions::decode_length_delimited_reader` no longer allocates the
   wire-declared length up front.** The method previously allocated a zeroed

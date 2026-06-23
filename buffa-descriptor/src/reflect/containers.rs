@@ -69,11 +69,14 @@ use super::value::{MapKey, MapKeyRef, ReflectList, ReflectMap, Value, ValueRef};
 /// representation used as a repeated element must be wrapped in a crate-local
 /// newtype. Singular / optional / oneof custom elements need no such impl
 /// (they reflect through `Deref`).
-#[diagnostic::on_unimplemented(
-    message = "`{Self}` does not implement `ReflectElement`, which vtable-mode reflection requires on repeated-field and map-value element types",
-    note = "if `{Self}` comes from another buffa-generated crate via an extern path (well-known types resolve to `buffa-types` by default), enable that crate's reflection feature, e.g. `buffa-types = {{ version = \"...\", features = [\"reflect\"] }}`",
-    note = "if `{Self}` is a message generated in this crate, enable reflection in its `build.rs` config — either reflection mode emits this impl",
-    note = "if `{Self}` is a custom `string_type`/`bytes_type` used as a `repeated` element, it must be a crate-local type (e.g. a newtype) so codegen can emit `impl ReflectElement` for it"
+#[rustversion::attr(
+    since(1.78),
+    diagnostic::on_unimplemented(
+        message = "`{Self}` does not implement `ReflectElement`, which vtable-mode reflection requires on repeated-field and map-value element types",
+        note = "if `{Self}` comes from another buffa-generated crate via an extern path (well-known types resolve to `buffa-types` by default), enable that crate's reflection feature, e.g. `buffa-types = {{ version = \"...\", features = [\"reflect\"] }}`",
+        note = "if `{Self}` is a message generated in this crate, enable reflection in its `build.rs` config — either reflection mode emits this impl",
+        note = "if `{Self}` is a custom `string_type`/`bytes_type` used as a `repeated` element, it must be a crate-local type (e.g. a newtype) so codegen can emit `impl ReflectElement` for it"
+    )
 )]
 pub trait ReflectElement: core::fmt::Debug {
     /// Borrow this element as a [`ValueRef`].

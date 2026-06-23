@@ -1461,6 +1461,7 @@ pub(crate) fn map_decode_arm(
     field: &FieldDescriptorProto,
 ) -> Result<TokenStream, CodeGenError> {
     let MessageScope { ctx, features, .. } = scope;
+    let preserve_unknown_fields = ctx.config.preserve_unknown_fields;
     let field_name = field
         .name
         .as_deref()
@@ -1486,8 +1487,42 @@ pub(crate) fn map_decode_arm(
         _ => quote! { ::core::default::Default::default() },
     };
 
-    let decode_key = map_view_entry_decode(scope, key_fd, &format_ident!("key"))?;
-    let decode_val = map_view_entry_decode(scope, val_fd, &format_ident!("val"))?;
+    // Only closed-enum map values can render the whole entry unknown; emit the
+    // `__entry_unknown` flag and the preserve-span branch only in that case so
+    // generated code for ordinary maps stays unchanged. Within a closed-enum
+    // entry, repeated value occurrences follow last-wins: a known value resets
+    // the flag, an unknown value sets it.
+    let val_features = crate::features::resolve_field(ctx, val_fd, features);
+    let val_is_closed_enum = effective_type_in_map_entry(ctx, val_fd, features) == Type::TYPE_ENUM
+        && is_closed_enum(&val_features);
+    let closed_enum_hooks = val_is_closed_enum.then(|| {
+        (
+            quote! { __entry_unknown = false; },
+            quote! { __entry_unknown = true; },
+        )
+    });
+    let decode_key = map_view_entry_decode(scope, key_fd, &format_ident!("key"), None)?;
+    let decode_val =
+        map_view_entry_decode(scope, val_fd, &format_ident!("val"), closed_enum_hooks)?;
+
+    let push = quote! { view.#ident.push(key, val); };
+    let (entry_unknown_decl, entry_finish) = if val_is_closed_enum {
+        let finish = if preserve_unknown_fields {
+            quote! {
+                if __entry_unknown {
+                    let __span_len = before_tag.len() - cur.len();
+                    view.__buffa_unknown_fields.push_record(before_tag, __span_len, ctx)?;
+                } else {
+                    #push
+                }
+            }
+        } else {
+            quote! { if !__entry_unknown { #push } }
+        };
+        (quote! { let mut __entry_unknown = false; }, finish)
+    } else {
+        (quote! {}, push)
+    };
 
     Ok(quote! {
         #field_number => {
@@ -1496,6 +1531,7 @@ pub(crate) fn map_decode_arm(
             let mut entry_cur: &'a [u8] = entry_bytes;
             let mut key = #key_default;
             let mut val = #val_default;
+            #entry_unknown_decl
             while !entry_cur.is_empty() {
                 let entry_tag = ::buffa::encoding::Tag::decode(&mut entry_cur)?;
                 match entry_tag.field_number() {
@@ -1504,7 +1540,7 @@ pub(crate) fn map_decode_arm(
                     _ => { ::buffa::encoding::skip_field_depth(entry_tag, &mut entry_cur, ctx.depth())?; }
                 }
             }
-            view.#ident.push(key, val);
+            #entry_finish
         }
     })
 }
@@ -1517,6 +1553,7 @@ fn map_view_entry_decode(
     scope: MessageScope<'_>,
     fd: &FieldDescriptorProto,
     var: &proc_macro2::Ident,
+    closed_enum_hooks: Option<(TokenStream, TokenStream)>,
 ) -> Result<TokenStream, CodeGenError> {
     let MessageScope {
         ctx,
@@ -1533,7 +1570,15 @@ fn map_view_entry_decode(
         Type::TYPE_BYTES => quote! { #var = ::buffa::types::borrow_bytes(&mut entry_cur)?; },
         Type::TYPE_ENUM => {
             if is_closed_enum(features) {
-                closed_enum_decode(&quote! { &mut entry_cur }, quote! { #var = __v; })
+                if let Some((on_known, on_unknown)) = closed_enum_hooks {
+                    closed_enum_decode_with_unknown(
+                        &quote! { &mut entry_cur },
+                        quote! { #var = __v; #on_known },
+                        on_unknown,
+                    )
+                } else {
+                    closed_enum_decode(&quote! { &mut entry_cur }, quote! { #var = __v; })
+                }
             } else {
                 quote! { #var = ::buffa::EnumValue::from(::buffa::types::decode_int32(&mut entry_cur)?); }
             }

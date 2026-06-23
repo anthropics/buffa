@@ -296,6 +296,34 @@ tasks:
     cmds:
       - cargo bench -- --baseline {{.CLI_ARGS}}
 
+  bench-iso:
+    desc: >-
+      Run ONE message's benchmarks in isolation — only that message's decoder is
+      compiled, so no other shape's codegen can perturb it via inlining. Built at
+      the reproducible, layout-normalized profile used for the per-shape benchmark
+      history: lto=true, codegen-units=1, and 64-byte block alignment
+      (-align-all-nofallthru-blocks=6), which removes the build-time code-layout
+      lottery that otherwise swings the JSON path ~20% (see
+      benchmarks/history/annotations.md). Takes a bare message name only (no extra
+      criterion args): task bench-iso -- media_frame. Note: an *official* history
+      measurement also pins the toolchain (RUSTUP_TOOLCHAIN); see the runbook in
+      benchmarks/history/README.md.
+    dir: benchmarks/buffa
+    env:
+      CARGO_PROFILE_BENCH_LTO: "true"
+      CARGO_PROFILE_BENCH_CODEGEN_UNITS: "1"
+      RUSTFLAGS: "-Cllvm-args=-align-all-nofallthru-blocks=6"
+    cmds:
+      - cargo bench --no-default-features --features "iso,{{.CLI_ARGS}}" --bench {{.CLI_ARGS}}
+
+  check-iso-protos:
+    desc: >-
+      Assert benchmarks/proto/iso/*.proto stay field-identical to the message
+      blocks in bench_messages.proto (the shape source for the prost/cross-impl
+      harnesses and dataset generation). Run after editing any benchmark message.
+    cmds:
+      - python3 benchmarks/proto/check-iso-protos.py
+
   bench-prost:
     desc: >-
       Run prost benchmarks natively (same machine as `task bench`, so

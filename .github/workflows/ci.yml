@@ -83,17 +83,25 @@ jobs:
   msrv-check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # rust-toolchain.toml pins the dev toolchain and overrides `rustup
-    # default`, so without this the job would silently check on the pinned
-    # toolchain instead of the MSRV. RUSTUP_TOOLCHAIN outranks the file.
-    env:
-      RUSTUP_TOOLCHAIN: '1.87'
     steps:
       - uses: actions/checkout@v4
 
+      - uses: dtolnay/rust-toolchain@stable
+
+      # The checked-in Cargo.lock is written by the pinned dev toolchain and
+      # may resolve transitive deps (e.g. getrandom, clap_lex) to versions
+      # whose manifests cargo 1.75 cannot parse (edition2024). Regenerate with
+      # stable cargo's MSRV-aware resolver so transitive deps satisfy
+      # rust-version = 1.75; cargo writes a v3 lockfile because the workspace
+      # rust-version is below 1.78.
+      - name: Regenerate MSRV-compatible lockfile
+        env:
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
+        run: rm -f Cargo.lock && cargo generate-lockfile
+
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: '1.87'
+          toolchain: '1.75'
 
       - name: Install protoc
         run: |
@@ -103,8 +111,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1 (sha-pinned)
 
-      - name: Check (MSRV 1.87)
-        run: cargo check --workspace --all-targets
+      # rust-toolchain.toml pins the dev toolchain and overrides `rustup
+      # default`, so RUSTUP_TOOLCHAIN is set explicitly to outrank the file.
+      - name: Check (MSRV 1.75)
+        env:
+          RUSTUP_TOOLCHAIN: '1.75'
+        run: cargo check --workspace --all-targets --locked
 
   # ── Miri: proves the SizeCache `unsafe` reads no uninitialized memory ─────
   # SizeCache stores its inline slots as `MaybeUninit<u32>` to avoid zeroing the

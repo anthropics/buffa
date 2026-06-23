@@ -1,5 +1,17 @@
 //! Generated protobuf types for buffa benchmarks.
+//!
+//! Built per-message-isolated: `--no-default-features --features iso,<msg>`
+//! emits only that message's codec (used by the per-message bench targets); the
+//! default feature set emits all messages plus reflect + lazy views for the
+//! combined `protobuf`/`reflect` benches.
 
+#[cfg(any(
+    feature = "api_response",
+    feature = "log_record",
+    feature = "analytics_event",
+    feature = "media_frame",
+    feature = "packed_tile"
+))]
 #[allow(
     clippy::derivable_impls,
     clippy::enum_variant_names,
@@ -26,6 +38,7 @@ pub mod benchmarks {
     buffa::include_proto!("benchmarks");
 }
 
+#[cfg(feature = "google_message1")]
 #[allow(
     clippy::derivable_impls,
     clippy::enum_variant_names,

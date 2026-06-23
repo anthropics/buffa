@@ -162,11 +162,9 @@ pub(crate) fn effective_type_in_map_entry(
 /// `from_i32`, and executes `on_known` with the decoded value bound as `__v`.
 /// Unknown values are silently discarded.
 ///
-/// Retained for the remaining silent-drop cases: view packed-repeated
-/// (no per-element tag → no borrowable span) and map-entry (spec
-/// requires the whole entry go to unknown fields — deferred).
-/// All other paths (owned + view singular/optional/repeated-unpacked/oneof)
-/// use [`closed_enum_decode_with_unknown`].
+/// Retained for view packed-repeated closed enums, where there is no
+/// per-element tag to borrow. Other decode paths either route the value itself
+/// to unknown fields or, for map values, route the whole map entry.
 pub(crate) fn closed_enum_decode(buf_expr: &TokenStream, on_known: TokenStream) -> TokenStream {
     quote! {
         let __raw = ::buffa::types::decode_int32(#buf_expr)?;
@@ -2909,6 +2907,7 @@ struct MapEntryCtx {
     ident: Ident,
     outer_tag_len: u32,
     val_ty: Type,
+    val_is_closed_enum: bool,
     key_codec: TokenStream,
     val_codec: TokenStream,
 }
@@ -2948,6 +2947,7 @@ fn map_entry_ctx(
         ident: make_field_ident(field_name),
         outer_tag_len: tag_encoded_len(field_number, 2),
         val_ty,
+        val_is_closed_enum: val_ty == Type::TYPE_ENUM && is_closed_enum(&val_features),
         key_codec: map_codec_token(
             key_ty,
             &crate::BytesRepr::Vec,
@@ -3234,14 +3234,32 @@ fn map_merge_arm(
         &quote! { tag },
         &quote! { ::buffa::encoding::WireType::LengthDelimited },
     );
-    Ok(quote! {
-        #field_number => {
-            #wire_check
+    // Only closed-enum map values can produce an unknown entry that needs the
+    // parent message's `UnknownFields`; every other value type stays on the
+    // simpler `merge_entry` path so the generated code is unchanged for the
+    // common case.
+    let merge_call = if m.val_is_closed_enum && ctx.config.preserve_unknown_fields {
+        quote! {
+            ::buffa::map_codec::merge_entry_with_unknowns::<#key_codec, #val_codec, _>(
+                &mut self.#ident,
+                buf,
+                ctx,
+                ::core::option::Option::Some((#field_number, &mut self.__buffa_unknown_fields)),
+            )?;
+        }
+    } else {
+        quote! {
             ::buffa::map_codec::merge_entry::<#key_codec, #val_codec, _>(
                 &mut self.#ident,
                 buf,
                 ctx,
             )?;
+        }
+    };
+    Ok(quote! {
+        #field_number => {
+            #wire_check
+            #merge_call
         }
     })
 }
