@@ -142,6 +142,15 @@ macro_rules! impl_default_instance {
 /// ```
 ///
 /// Then point a field at it: `box_type_custom("::my_crate::SmallBox<*>")`.
+#[rustversion::attr(
+    since(1.78),
+    diagnostic::on_unimplemented(
+        message = "`{Self}` cannot be used as a buffa custom box type",
+        note = "buffa owns `ProtoBox`, so a foreign type can't implement it directly (orphan rule). \
+                Wrap it in a crate-local newtype and implement `ProtoBox` on the newtype. \
+                See the `custom-types` example in the buffa repository for a template."
+    )
+)]
 pub trait ProtoBox<T>: Deref<Target = T> + DerefMut {
     /// Box a freshly-decoded or constructed message value.
     fn new(value: T) -> Self;
