@@ -2339,9 +2339,10 @@ mod tests {
     }
 
     #[test]
-    fn test_extern_path_nested_enum_uses_deconflicted_module() {
-        // Mirrors pb.lyft.Money.Currency vs sub-package pb.lyft.money.
-        let money = msg_with_nested_and_enums("Money", vec![], vec![enum_desc("Currency")]);
+    fn test_extern_path_nested_types_use_deconflicted_module() {
+        // Mirrors pb.lyft.Money.{Currency,Breakdown} vs sub-package pb.lyft.money.
+        let money =
+            msg_with_nested_and_enums("Money", vec![msg("Breakdown")], vec![enum_desc("Currency")]);
         let files = [
             make_file("lyft_money.proto", "pb.lyft", vec![money], vec![]),
             make_file("money.proto", "pb.lyft.money", vec![msg("Money")], vec![]),
@@ -2360,6 +2361,10 @@ mod tests {
         assert_eq!(
             ctx.rust_type(".pb.lyft.Money.Currency"),
             Some("::idl_pb_lyft::pb::lyft::money_::Currency")
+        );
+        assert_eq!(
+            ctx.rust_type(".pb.lyft.Money.Breakdown"),
+            Some("::idl_pb_lyft::pb::lyft::money_::Breakdown")
         );
     }
 
