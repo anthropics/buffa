@@ -176,118 +176,135 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
         return Ok(PluginConfig { codegen });
     }
 
-    for param in params.split(',') {
-        let param = param.trim();
-        if let Some((key, value)) = param.split_once('=') {
-            match key.trim() {
-                "views" => codegen.generate_views = value.trim() == "true",
-                "lazy_views" => codegen.lazy_views = value.trim() == "true",
-                "unknown_fields" => codegen.preserve_unknown_fields = value.trim() != "false",
-                "json" => codegen.generate_json = value.trim() == "true",
-                "text" => codegen.generate_text = value.trim() == "true",
-                "arbitrary" => codegen.generate_arbitrary = value.trim() == "true",
-                // `gate_impls=true` wraps generated impls in `#[cfg(feature = ...)]`
-                // instead of emitting them unconditionally. For library crates whose
-                // generated code is itself a public dependency surface; most plugin
-                // invocations want the default (off).
-                "gate_impls" => codegen.gate_impls_on_crate_features = value.trim() == "true",
-                // `json_feature=serde` (etc.) renames the crate feature a
-                // gated impl kind is conditioned on. Inert without
-                // `gate_impls=true`. An empty value is a hard error —
-                // `#[cfg(feature = "")]` is permanently false and would
-                // silently drop the gated impls. (A non-empty value that is
-                // not a valid Cargo feature name is rejected by `generate`
-                // when the gate is active.)
-                key @ ("json_feature" | "views_feature" | "text_feature" | "reflect_feature") => {
-                    let value = value.trim();
-                    if value.is_empty() {
-                        return Err(format!(
-                            "'{key}' requires a non-empty feature name \
+    for param in params.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        let (key, value) = param
+            .split_once('=')
+            .ok_or_else(|| format!("plugin option '{param}' must use key=value syntax"))?;
+        match key.trim() {
+            "views" => codegen.generate_views = parse_bool("views", value)?,
+            "lazy_views" => codegen.lazy_views = parse_bool("lazy_views", value)?,
+            "unknown_fields" => {
+                codegen.preserve_unknown_fields = parse_bool("unknown_fields", value)?
+            }
+            "json" => codegen.generate_json = parse_bool("json", value)?,
+            "text" => codegen.generate_text = parse_bool("text", value)?,
+            "arbitrary" => codegen.generate_arbitrary = parse_bool("arbitrary", value)?,
+            // `gate_impls=true` wraps generated impls in `#[cfg(feature = ...)]`
+            // instead of emitting them unconditionally. For library crates whose
+            // generated code is itself a public dependency surface; most plugin
+            // invocations want the default (off).
+            "gate_impls" => codegen.gate_impls_on_crate_features = parse_bool("gate_impls", value)?,
+            // `json_feature=serde` (etc.) renames the crate feature a
+            // gated impl kind is conditioned on. Inert without
+            // `gate_impls=true`. An empty value is a hard error —
+            // `#[cfg(feature = "")]` is permanently false and would
+            // silently drop the gated impls. (A non-empty value that is
+            // not a valid Cargo feature name is rejected by `generate`
+            // when the gate is active.)
+            key @ ("json_feature" | "views_feature" | "text_feature" | "reflect_feature") => {
+                let value = value.trim();
+                if value.is_empty() {
+                    return Err(format!(
+                        "'{key}' requires a non-empty feature name \
                              (an empty name would silently disable the gated impls)"
+                    ));
+                }
+                let names = &mut codegen.feature_gate_names;
+                let slot = match key {
+                    "json_feature" => &mut names.json,
+                    "views_feature" => &mut names.views,
+                    "text_feature" => &mut names.text,
+                    _ => &mut names.reflect,
+                };
+                *slot = value.to_string();
+            }
+            "allow_message_set" => {
+                codegen.allow_message_set = parse_bool("allow_message_set", value)?
+            }
+            "strict_utf8" | "strict_utf8_mapping" => {
+                codegen.strict_utf8_mapping = parse_bool(key.trim(), value)?
+            }
+            "register_types" => codegen.emit_register_fn = parse_bool("register_types", value)?,
+            // `with_setters=false` opts out of builder-style setter
+            // methods. Like `register_types`, the default is on, so the
+            // accepted spelling is the negation.
+            "with_setters" => codegen.generate_with_setters = parse_bool("with_setters", value)?,
+            // `reflection=true` selects the fast vtable mode (same as
+            // `reflect_mode=vtable`); `reflect_mode=bridge` opts into the
+            // smaller round-trip implementation.
+            "reflection" => {
+                let mode = if parse_bool("reflection", value)? {
+                    buffa_codegen::ReflectMode::VTable
+                } else {
+                    buffa_codegen::ReflectMode::Off
+                };
+                mode.apply(&mut codegen);
+            }
+            // `reflect_mode=off|bridge|vtable` is the fuller form of
+            // `reflection=`. `vtable` additionally emits `impl ReflectMessage`
+            // on owned + view types and makes `reflect()` borrow `self`.
+            "reflect_mode" => match value.trim() {
+                "off" => buffa_codegen::ReflectMode::Off.apply(&mut codegen),
+                "bridge" => buffa_codegen::ReflectMode::Bridge.apply(&mut codegen),
+                "vtable" => buffa_codegen::ReflectMode::VTable.apply(&mut codegen),
+                other => {
+                    return Err(format!(
+                        "invalid reflect_mode '{other}', expected off, bridge, or vtable"
+                    ));
+                }
+            },
+            "file_per_package" => codegen.file_per_package = parse_bool("file_per_package", value)?,
+            // Experimental: `use`-backed short type names at the package
+            // root. Requires file_per_package=true (rejected by codegen
+            // otherwise).
+            "idiomatic_imports" => {
+                codegen.idiomatic_imports = parse_bool("idiomatic_imports", value)?
+            }
+            // `type_name_prefix=Rpc` prepends a prefix to every generated
+            // message/enum type name (and their view types). The value is
+            // passed through verbatim; buffa-codegen rejects anything that
+            // is not PascalCase at generation time (same rule as the
+            // builder API).
+            "type_name_prefix" => codegen.type_name_prefix = value.to_string(),
+            "extern_path" => {
+                // value is "<proto_path>=<rust_path>"
+                if let Some((proto, rust)) = value.split_once('=') {
+                    let proto = proto.trim();
+                    let rust = rust.trim();
+                    if proto.is_empty() || rust.is_empty() {
+                        return Err(format!(
+                            "invalid extern_path format '{value}', \
+                                 expected 'extern_path=.proto.pkg=::rust::path' \
+                                 (or a type FQN, 'extern_path=.proto.pkg.Type=::rust::path::Type')"
                         ));
                     }
-                    let names = &mut codegen.feature_gate_names;
-                    let slot = match key {
-                        "json_feature" => &mut names.json,
-                        "views_feature" => &mut names.views,
-                        "text_feature" => &mut names.text,
-                        _ => &mut names.reflect,
-                    };
-                    *slot = value.to_string();
-                }
-                "allow_message_set" => codegen.allow_message_set = value.trim() == "true",
-                "strict_utf8" | "strict_utf8_mapping" => {
-                    codegen.strict_utf8_mapping = value.trim() == "true"
-                }
-                "register_types" => codegen.emit_register_fn = value.trim() != "false",
-                // `with_setters=false` opts out of builder-style setter
-                // methods. Like `register_types`, the default is on, so the
-                // accepted spelling is the negation.
-                "with_setters" => codegen.generate_with_setters = value.trim() != "false",
-                // `reflection=true` selects the fast vtable mode (same as
-                // `reflect_mode=vtable`); `reflect_mode=bridge` opts into the
-                // smaller round-trip implementation.
-                "reflection" => {
-                    let mode = if value.trim() == "true" {
-                        buffa_codegen::ReflectMode::VTable
-                    } else {
-                        buffa_codegen::ReflectMode::Off
-                    };
-                    mode.apply(&mut codegen);
-                }
-                // `reflect_mode=off|bridge|vtable` is the fuller form of
-                // `reflection=`. `vtable` additionally emits `impl ReflectMessage`
-                // on owned + view types and makes `reflect()` borrow `self`.
-                "reflect_mode" => match value.trim() {
-                    "off" => buffa_codegen::ReflectMode::Off.apply(&mut codegen),
-                    "bridge" => buffa_codegen::ReflectMode::Bridge.apply(&mut codegen),
-                    "vtable" => buffa_codegen::ReflectMode::VTable.apply(&mut codegen),
-                    other => {
-                        eprintln!(
-                            "protoc-gen-buffa: invalid reflect_mode '{}', \
-                             expected off, bridge, or vtable",
-                            other
-                        );
+                    let mut proto = proto.to_string();
+                    // Normalize: accept both ".my.pkg" and "my.pkg".
+                    if !proto.starts_with('.') {
+                        proto.insert(0, '.');
                     }
-                },
-                "file_per_package" => codegen.file_per_package = value.trim() == "true",
-                // Experimental: `use`-backed short type names at the package
-                // root. Requires file_per_package=true (rejected by codegen
-                // otherwise).
-                "idiomatic_imports" => codegen.idiomatic_imports = value.trim() == "true",
-                // `type_name_prefix=Rpc` prepends a prefix to every generated
-                // message/enum type name (and their view types). The value is
-                // passed through verbatim; buffa-codegen rejects anything that
-                // is not PascalCase at generation time (same rule as the
-                // builder API).
-                "type_name_prefix" => codegen.type_name_prefix = value.to_string(),
-                "extern_path" => {
-                    // value is "<proto_path>=<rust_path>"
-                    if let Some((proto, rust)) = value.split_once('=') {
-                        let mut proto = proto.trim().to_string();
-                        // Normalize: accept both ".my.pkg" and "my.pkg".
-                        if !proto.starts_with('.') {
-                            proto.insert(0, '.');
-                        }
-                        codegen.extern_paths.push((proto, rust.trim().to_string()));
-                    } else {
-                        eprintln!(
-                            "protoc-gen-buffa: invalid extern_path format '{}', \
+                    codegen.extern_paths.push((proto, rust.to_string()));
+                } else {
+                    return Err(format!(
+                        "invalid extern_path format '{}', \
                              expected 'extern_path=.proto.pkg=::rust::path' \
                              (or a type FQN, 'extern_path=.proto.pkg.Type=::rust::path::Type')",
-                            value
-                        );
-                    }
+                        value
+                    ));
                 }
-                "mod_file" => {
-                    return Err("the mod_file option was removed in 0.2; use \
+            }
+            "mod_file" => {
+                return Err("the mod_file option was removed in 0.2; use \
                          protoc-gen-buffa-packaging instead. See CHANGELOG \
                          for migration."
-                        .to_string());
-                }
-                other => {
-                    eprintln!("protoc-gen-buffa: unknown parameter '{}'", other);
-                }
+                    .to_string());
+            }
+            other => {
+                return Err(format!(
+                    "unknown plugin option '{other}'; see \
+                     <https://github.com/anthropics/buffa/blob/main/docs/guide.md#plugin-options> \
+                     for the supported options"
+                ))
             }
         }
     }
@@ -295,9 +312,26 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
     Ok(PluginConfig { codegen })
 }
 
+fn parse_bool(key: &str, value: &str) -> Result<bool, String> {
+    match value.trim() {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        other => Err(format!(
+            "invalid boolean value for '{key}': '{other}', expected true or false"
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn parse_err(params: &str) -> String {
+        match parse_config(params) {
+            Ok(_) => panic!("expected parse_config({params:?}) to fail"),
+            Err(err) => err,
+        }
+    }
 
     #[test]
     fn empty_params_returns_defaults() {
@@ -411,18 +445,48 @@ mod tests {
     }
 
     #[test]
-    fn unknown_param_is_ignored() {
-        // Should not panic; unknown params produce an eprintln warning.
-        let config = parse_config("unknown_key=value").unwrap();
-        let defaults = CodeGenConfig::default();
-        assert_eq!(config.codegen.generate_views, defaults.generate_views);
+    fn unknown_param_errors() {
+        let err = parse_err("unknown_key=value");
+        assert!(err.contains("unknown_key"));
     }
 
     #[test]
-    fn invalid_extern_path_is_ignored() {
-        // Missing "=" in the value — should not panic.
-        let config = parse_config("extern_path=no_equals_sign").unwrap();
-        assert!(config.codegen.extern_paths.is_empty());
+    fn missing_equals_errors() {
+        let err = parse_err("json");
+        assert!(err.contains("key=value"));
+    }
+
+    #[test]
+    fn invalid_bool_errors() {
+        let err = parse_err("json=yes");
+        assert!(err.contains("json"));
+        assert!(err.contains("true or false"));
+    }
+
+    #[test]
+    fn invalid_bool_for_default_on_option_errors() {
+        let err = parse_err("unknown_fields=yes");
+        assert!(err.contains("unknown_fields"));
+        assert!(err.contains("true or false"));
+    }
+
+    #[test]
+    fn invalid_reflect_mode_errors() {
+        let err = parse_err("reflect_mode=fast");
+        assert!(err.contains("reflect_mode"));
+        assert!(err.contains("off, bridge, or vtable"));
+    }
+
+    #[test]
+    fn invalid_extern_path_errors() {
+        let err = parse_err("extern_path=no_equals_sign");
+        assert!(err.contains("extern_path"));
+    }
+
+    #[test]
+    fn empty_extern_path_side_errors() {
+        let err = parse_err("extern_path=.my.common=");
+        assert!(err.contains("extern_path"));
     }
 
     #[test]

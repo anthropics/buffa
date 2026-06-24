@@ -655,6 +655,7 @@ pub trait MessageName {
 pub struct DecodeOptions {
     recursion_limit: u32,
     max_message_size: usize,
+    unbounded_reader_size: bool,
     unknown_field_limit: usize,
 }
 
@@ -679,6 +680,7 @@ impl DecodeOptions {
         Self {
             recursion_limit: RECURSION_LIMIT,
             max_message_size: DEFAULT_MAX_MESSAGE_SIZE,
+            unbounded_reader_size: false,
             unknown_field_limit: DEFAULT_UNKNOWN_FIELD_LIMIT,
         }
     }
@@ -701,6 +703,15 @@ impl DecodeOptions {
     /// If the input buffer or length-delimited payload exceeds this size,
     /// decoding returns [`DecodeError::MessageTooLarge`].
     ///
+    /// Values above the protobuf message-size limit (2 GiB - 1) are clamped to
+    /// that limit. Debug builds assert on out-of-range values so accidental
+    /// `usize::MAX` sentinels are caught during development. On `std` builds,
+    /// use `without_reader_size_limit` when EOF-bounded `decode_reader` input
+    /// intentionally has no byte cap.
+    ///
+    /// Calling this re-enables the reader byte cap, overriding any prior
+    /// `without_reader_size_limit`.
+    ///
     /// This is checked at the top-level decode entry point. Individual
     /// sub-messages are still bounded by the internal 2 GiB limit
     /// regardless of this setting.
@@ -708,7 +719,35 @@ impl DecodeOptions {
     /// Default: 2 GiB - 1 (0x7FFF_FFFF).
     #[must_use]
     pub fn with_max_message_size(mut self, max_bytes: usize) -> Self {
-        self.max_message_size = max_bytes;
+        debug_assert!(
+            max_bytes <= DEFAULT_MAX_MESSAGE_SIZE,
+            "DecodeOptions::with_max_message_size clamps values above the protobuf 2 GiB limit; \
+             on std builds, use DecodeOptions::without_reader_size_limit for intentionally \
+             unbounded reader input — there is no unbounded slice/Buf path"
+        );
+        self.max_message_size = max_bytes.min(DEFAULT_MAX_MESSAGE_SIZE);
+        self.unbounded_reader_size = false;
+        self
+    }
+
+    /// Remove the byte cap for EOF-bounded [`decode_reader`](Self::decode_reader)
+    /// input.
+    ///
+    /// This is only used by the `std::io::Read` entry point that reads until
+    /// EOF. Slice-, [`Buf`]-, and view-based entry points remain bounded by
+    /// the configured [`with_max_message_size`](Self::with_max_message_size)
+    /// (itself capped at the protobuf 2 GiB - 1 maximum), and length-delimited
+    /// paths keep the same hard cap because their declared length is
+    /// attacker-controlled.
+    ///
+    /// An unbounded reader can exhaust memory if the source does not end or is
+    /// larger than available allocation capacity. Prefer
+    /// [`with_max_message_size`](Self::with_max_message_size) for untrusted
+    /// input.
+    #[cfg(feature = "std")]
+    #[must_use]
+    pub fn without_reader_size_limit(mut self) -> Self {
+        self.unbounded_reader_size = true;
         self
     }
 
@@ -749,9 +788,21 @@ impl DecodeOptions {
         self.unknown_field_limit
     }
 
-    /// Returns the configured maximum message size in bytes.
+    /// Returns the configured maximum message size in bytes for bounded decode
+    /// entry points.
+    ///
+    /// This returns the configured (clamped) value even when
+    /// `without_reader_size_limit` is enabled for EOF-bounded reader input —
+    /// the slice/`Buf`/view paths still honor it. Use
+    /// `is_reader_size_unbounded` (std only) to inspect the reader flag.
     pub fn max_message_size(&self) -> usize {
         self.max_message_size
+    }
+
+    /// Returns whether EOF-bounded reader input has no byte cap.
+    #[cfg(feature = "std")]
+    pub fn is_reader_size_unbounded(&self) -> bool {
+        self.unbounded_reader_size
     }
 
     /// Decode a message from a buffer.
@@ -770,6 +821,10 @@ impl DecodeOptions {
         if data.len() > self.max_message_size {
             return Err(DecodeError::MessageTooLarge);
         }
+        self.decode_from_slice_unchecked_size(data)
+    }
+
+    fn decode_from_slice_unchecked_size<M: Message>(&self, data: &[u8]) -> Result<M, DecodeError> {
         let limit = core::cell::Cell::new(self.unknown_field_limit);
         let mut msg = M::default();
         msg.merge(
@@ -900,16 +955,17 @@ impl DecodeOptions {
 
     /// Decode a message by reading all bytes from a [`std::io::Read`] source.
     ///
-    /// Reads until EOF, enforces `max_message_size`, then decodes the
-    /// buffered bytes. Returns `std::io::Error` to be compatible with
-    /// `Read`-based error handling.
+    /// Reads until EOF, enforces the configured reader size limit unless
+    /// [`without_reader_size_limit`](Self::without_reader_size_limit) was
+    /// selected, then decodes the buffered bytes. Returns `std::io::Error` to
+    /// be compatible with `Read`-based error handling.
     #[cfg(feature = "std")]
     pub fn decode_reader<M: Message>(
         &self,
         reader: &mut impl std::io::Read,
     ) -> Result<M, std::io::Error> {
         let bytes = self.read_limited(reader)?;
-        self.decode_from_slice::<M>(&bytes)
+        self.decode_from_slice_unchecked_size::<M>(&bytes)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 
@@ -962,7 +1018,7 @@ impl DecodeOptions {
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 
-    /// Read all bytes from a reader up to `max_message_size`.
+    /// Read all bytes from a reader up to the configured reader limit.
     #[cfg(feature = "std")]
     fn read_limited(
         &self,
@@ -970,6 +1026,10 @@ impl DecodeOptions {
     ) -> Result<alloc::vec::Vec<u8>, std::io::Error> {
         use std::io::Read as _;
         let mut buf = alloc::vec::Vec::new();
+        if self.unbounded_reader_size {
+            reader.read_to_end(&mut buf)?;
+            return Ok(buf);
+        }
         reader
             .take((self.max_message_size as u64).saturating_add(1))
             .read_to_end(&mut buf)?;
@@ -1325,6 +1385,20 @@ mod tests {
         assert_eq!(opts.unknown_field_limit(), 2048);
     }
 
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "protobuf 2 GiB limit")]
+    fn decode_options_max_message_size_above_protobuf_limit_debug_asserts() {
+        let _ = DecodeOptions::new().with_max_message_size(DEFAULT_MAX_MESSAGE_SIZE + 1);
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn decode_options_max_message_size_above_protobuf_limit_saturates() {
+        let opts = DecodeOptions::new().with_max_message_size(DEFAULT_MAX_MESSAGE_SIZE + 1);
+        assert_eq!(opts.max_message_size(), DEFAULT_MAX_MESSAGE_SIZE);
+    }
+
     #[test]
     fn test_decode_options_default_impl() {
         // DecodeOptions::default() ≡ DecodeOptions::new().
@@ -1674,13 +1748,56 @@ mod tests {
         }
 
         #[test]
-        fn decode_reader_usize_max_limit_does_not_overflow() {
+        fn decode_options_reader_size_unbounded_getter_tracks_builder_order() {
+            let opts = DecodeOptions::new();
+            assert!(!opts.is_reader_size_unbounded());
+
+            let opts = opts.without_reader_size_limit();
+            assert!(opts.is_reader_size_unbounded());
+
+            let opts = opts.with_max_message_size(1024);
+            assert!(!opts.is_reader_size_unbounded());
+        }
+
+        #[test]
+        fn decode_reader_without_size_limit_does_not_overflow() {
             let src = FlatMsg { value: 42 };
             let bytes = src.encode_to_vec();
             let msg: FlatMsg = DecodeOptions::new()
-                .with_max_message_size(usize::MAX)
+                .without_reader_size_limit()
                 .decode_reader(&mut bytes.as_slice())
                 .unwrap();
+            assert_eq!(msg.value, 42);
+        }
+
+        #[test]
+        fn decode_reader_with_max_message_size_after_without_limit_reenables_limit() {
+            let src = FlatMsg { value: 42 };
+            let bytes = src.encode_to_vec();
+            let opts = DecodeOptions::new()
+                .without_reader_size_limit()
+                .with_max_message_size(1);
+            assert!(!opts.is_reader_size_unbounded());
+
+            let err = opts
+                .decode_reader::<FlatMsg>(&mut bytes.as_slice())
+                .unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        }
+
+        #[test]
+        fn decode_reader_without_size_limit_keeps_slice_limit() {
+            let src = FlatMsg { value: 42 };
+            let bytes = src.encode_to_vec();
+            let opts = DecodeOptions::new()
+                .with_max_message_size(1)
+                .without_reader_size_limit();
+            assert!(opts.is_reader_size_unbounded());
+
+            let slice_result: Result<FlatMsg, _> = opts.decode_from_slice(&bytes);
+            assert_eq!(slice_result, Err(DecodeError::MessageTooLarge));
+
+            let msg: FlatMsg = opts.decode_reader(&mut bytes.as_slice()).unwrap();
             assert_eq!(msg.value, 42);
         }
 
@@ -1762,6 +1879,27 @@ mod tests {
                 .decode_length_delimited_reader::<FlatMsg>(&mut stream.as_slice())
                 .unwrap_err();
             assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+        }
+
+        #[test]
+        fn decode_length_delimited_without_reader_size_limit_keeps_protobuf_cap() {
+            let mut stream = Vec::new();
+            encode_varint(0x8000_0000, &mut stream);
+            let result: Result<FlatMsg, _> = DecodeOptions::new()
+                .without_reader_size_limit()
+                .decode_length_delimited(&mut stream.as_slice());
+            assert_eq!(result, Err(DecodeError::MessageTooLarge));
+        }
+
+        #[test]
+        fn decode_length_delimited_reader_without_size_limit_keeps_protobuf_cap() {
+            let mut stream = Vec::new();
+            encode_varint(0x8000_0000, &mut stream);
+            let err = DecodeOptions::new()
+                .without_reader_size_limit()
+                .decode_length_delimited_reader::<FlatMsg>(&mut stream.as_slice())
+                .unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
         }
 
         #[test]

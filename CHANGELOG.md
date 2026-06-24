@@ -214,6 +214,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- (**breaking**) **`protoc-gen-buffa` now rejects malformed plugin parameters**
+  instead of stderr-warning or silently defaulting (#235). An unknown option
+  key, a missing `=`, a non-`true`/`false` boolean value, an invalid
+  `reflect_mode`, or a malformed `extern_path` now fails generation via
+  `CodeGeneratorResponse.error`. Previously the default-on options
+  (`unknown_fields`, `register_types`, `with_setters`) treated any value other
+  than `false` as on, and unknown keys were silently ignored — typos produced
+  generated code that did not match the requested config. Migration: re-run
+  generation; if it newly fails, the named option was already being ignored.
+  The accepted spellings have always been the only documented ones.
+
 - **MSRV lowered from 1.87 to 1.75**, and the
   [README MSRV policy](README.md#minimum-supported-rust-version) revised:
   `rust-version` now declares the lowest toolchain the released code actually
@@ -226,6 +237,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `rustversion::attr(since(1.78), …)` so they remain active on modern
   toolchains. Adds `rustversion` as a dependency of `buffa` and
   `buffa-descriptor`.
+
+- `DecodeOptions::with_max_message_size` now clamps values above the protobuf
+  2 GiB - 1 message-size limit (with a debug assertion to catch accidental
+  sentinel use). `DecodeOptions::without_reader_size_limit` is the explicit
+  `std`-only opt-out for EOF-bounded `decode_reader` input; slice, `Buf`,
+  view, and length-delimited decode paths keep their configured cap, and
+  length-delimited declared lengths never exceed 2 GiB - 1. Callers that
+  used `with_max_message_size(usize::MAX)` for unbounded reader input should
+  switch to `without_reader_size_limit`; in release builds, the old spelling
+  now caps at 2 GiB - 1. (#231)
+
 - `MapValueDecode::merge` now returns `Result<MapValueDecodeStatus, _>`
   instead of `Result<(), _>`, and a new `merge_entry_with_unknowns` carries
   the closed-enum-map preservation path. The trait is sealed, so downstream
@@ -332,6 +354,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   still emits each registered extension at most once in first-seen unknown-field
   order, but duplicate detection now uses a set instead of a `Vec`, avoiding
   quadratic work for messages with many distinct unknown field numbers.
+- **`extern_path` references to nested types now use the owning crate's
+  deconflicted module name** (#232). When the owning crate renames a
+  message's nested-types module to avoid colliding with a sibling sub-package
+  (the [#135] deconfliction, e.g. `Money`'s nested types land in `money_`
+  because sub-package `pb.lyft.money` also exists), a consumer referencing
+  `.pb.lyft.Money.Currency` via `extern_path` previously emitted the
+  un-deconflicted `…::money::Currency` and failed to compile. The consumer
+  now computes the same deconflicted name. **Caveat:** the consumer's
+  descriptor set must include the colliding sub-package file (importing any
+  type from it suffices); otherwise the consumer cannot see the collision and
+  emits the un-deconflicted path.
 
 - **`box_type_custom` and `repeated_type_custom` now compile under
   `generate_json(true)`.** Two `json_helpers` functions were still hard-wired
@@ -344,13 +377,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   are inferred from the field type, so default-representation code is
   unchanged. (#214)
 
-- **`DecodeOptions::decode_reader` no longer overflows when
-  `max_message_size` is `usize::MAX`.** The internal `read_limited` helper
-  computed `max_message_size as u64 + 1` to read one sentinel byte past the
-  limit; on 64-bit targets this overflowed — a debug panic, or in release a
-  wrap to zero that silently decoded an empty default message. The addition
-  now saturates, so `usize::MAX` correctly means an unbounded read. 32-bit
-  targets and finite limits are unaffected. (#219)
+- **`DecodeOptions::decode_reader` no longer overflows when the read size is
+  unbounded.** The internal `read_limited` helper computed
+  `max_message_size as u64 + 1` to read one sentinel byte past the limit; on
+  64-bit targets this overflowed — a debug panic, or in release a wrap to zero
+  that silently decoded an empty default message. The addition now saturates in
+  the bounded path, and unbounded reads are spelled explicitly via
+  `DecodeOptions::without_reader_size_limit`. 32-bit targets and finite
+  limits are unaffected. (#219)
 
 - **Closed-enum map values now preserve unknown entries correctly.** For
   proto2 `map<K, ClosedEnum>` fields, an unknown enum value now prevents the
