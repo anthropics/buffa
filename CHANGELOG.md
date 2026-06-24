@@ -327,6 +327,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **`extern_path` references to nested types now use the owning crate's
+  deconflicted module name** (#232). When the owning crate renames a
+  message's nested-types module to avoid colliding with a sibling sub-package
+  (the [#135] deconfliction, e.g. `Money`'s nested types land in `money_`
+  because sub-package `pb.lyft.money` also exists), a consumer referencing
+  `.pb.lyft.Money.Currency` via `extern_path` previously emitted the
+  un-deconflicted `…::money::Currency` and failed to compile. The consumer
+  now computes the same deconflicted name. **Caveat:** the consumer's
+  descriptor set must include the colliding sub-package file (importing any
+  type from it suffices); otherwise the consumer cannot see the collision and
+  emits the un-deconflicted path.
+
 - **`box_type_custom` and `repeated_type_custom` now compile under
   `generate_json(true)`.** Two `json_helpers` functions were still hard-wired
   to the default representations: `skip_if::is_unset_message_field` only
