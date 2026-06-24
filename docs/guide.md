@@ -583,6 +583,10 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `gate_impls=true` | Wrap json/views/text impls in `#[cfg(feature = ...)]` for library crates whose generated code is a public dependency surface (default: emitted unconditionally) |
 | `json_feature=<name>` | Rename the crate feature a gated impl kind is conditioned on (also `views_feature=`, `text_feature=`, `reflect_feature=`); inert without `gate_impls=true` |
 | `with_setters=false` | Disable `with_<name>()` builder-style setters for explicit-presence fields (default: emitted) |
+| `lazy_views=true` | Generate the lazy view family alongside the strict views (default: false) — see [Lazy views](#lazy-views--lazy_viewstrue) |
+| `register_types=false` | Disable the per-package `register_types()` helper that populates a `MessageRegistry` (default: emitted) |
+| `allow_message_set=true` | Permit `option message_set_wire_format = true;` instead of rejecting it (default: false) |
+| `strict_utf8=true` | Map `string` fields to `Vec<u8>`/`&[u8]` (no UTF-8 validation) instead of `String`/`&str`. Alias: `strict_utf8_mapping`. |
 | `type_name_prefix=<prefix>` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to every generated message/enum type name (`message User` → `struct RpcUser`) |
 | `reflection=true` | Emit reflection support (vtable mode) plus an embedded per-package descriptor pool — see [Runtime reflection](#runtime-reflection) |
 | `reflect_mode=off\|bridge\|vtable` | Finer-grained reflection selector; `reflection=true` is shorthand for `vtable` |

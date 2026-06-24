@@ -299,7 +299,13 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                          for migration."
                     .to_string());
             }
-            other => return Err(format!("unknown plugin option '{other}'")),
+            other => {
+                return Err(format!(
+                    "unknown plugin option '{other}'; see \
+                     <https://github.com/anthropics/buffa/blob/main/docs/guide.md#plugin-options> \
+                     for the supported options"
+                ))
+            }
         }
     }
 

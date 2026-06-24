@@ -214,6 +214,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- (**breaking**) **`protoc-gen-buffa` now rejects malformed plugin parameters**
+  instead of stderr-warning or silently defaulting (#235). An unknown option
+  key, a missing `=`, a non-`true`/`false` boolean value, an invalid
+  `reflect_mode`, or a malformed `extern_path` now fails generation via
+  `CodeGeneratorResponse.error`. Previously the default-on options
+  (`unknown_fields`, `register_types`, `with_setters`) treated any value other
+  than `false` as on, and unknown keys were silently ignored — typos produced
+  generated code that did not match the requested config. Migration: re-run
+  generation; if it newly fails, the named option was already being ignored.
+  The accepted spellings have always been the only documented ones.
+
 - **MSRV lowered from 1.87 to 1.75**, and the
   [README MSRV policy](README.md#minimum-supported-rust-version) revised:
   `rust-version` now declares the lowest toolchain the released code actually
