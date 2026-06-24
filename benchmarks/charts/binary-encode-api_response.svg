@@ -25,27 +25,27 @@
   <line x1="140.0" y1="80" x2="140.0" y2="232" class="grid"/>
   <text x="140.0" y="247" text-anchor="middle" class="axis-label">0</text>
   <line x1="256.0" y1="80" x2="256.0" y2="232" class="grid"/>
-  <text x="256.0" y="247" text-anchor="middle" class="axis-label">600</text>
+  <text x="256.0" y="247" text-anchor="middle" class="axis-label">400</text>
   <line x1="372.0" y1="80" x2="372.0" y2="232" class="grid"/>
-  <text x="372.0" y="247" text-anchor="middle" class="axis-label">1,200</text>
+  <text x="372.0" y="247" text-anchor="middle" class="axis-label">800</text>
   <line x1="488.0" y1="80" x2="488.0" y2="232" class="grid"/>
-  <text x="488.0" y="247" text-anchor="middle" class="axis-label">1,800</text>
+  <text x="488.0" y="247" text-anchor="middle" class="axis-label">1,200</text>
   <line x1="604.0" y1="80" x2="604.0" y2="232" class="grid"/>
-  <text x="604.0" y="247" text-anchor="middle" class="axis-label">2,400</text>
+  <text x="604.0" y="247" text-anchor="middle" class="axis-label">1,600</text>
   <line x1="720.0" y1="80" x2="720.0" y2="232" class="grid"/>
-  <text x="720.0" y="247" text-anchor="middle" class="axis-label">3,000</text>
+  <text x="720.0" y="247" text-anchor="middle" class="axis-label">2,000</text>
   <text x="430.0" y="262" text-anchor="middle" class="axis-label">MiB/s</text>
   <text x="130" y="160.0" text-anchor="end" class="label">ApiResponse</text>
-  <rect x="140" y="80.0" width="505.8" height="22" rx="2" fill="#4C78A8"/>
-  <text x="649.8" y="95.0" class="value">2,616</text>
-  <rect x="140" y="106.0" width="481.4" height="22" rx="2" fill="#72B7B2"/>
-  <text x="625.4" y="121.0" class="value">2,489</text>
-  <rect x="140" y="132.0" width="504.9" height="22" rx="2" fill="#A0CBE8"/>
-  <text x="648.9" y="147.0" class="value">2,611</text>
-  <rect x="140" y="158.0" width="345.6" height="22" rx="2" fill="#F58518"/>
-  <text x="489.6" y="173.0" class="value">1,787</text>
-  <rect x="140" y="184.0" width="200.8" height="22" rx="2" fill="#E45756"/>
-  <text x="344.8" y="199.0" class="value">1,038</text>
-  <rect x="140" y="210.0" width="108.1" height="22" rx="2" fill="#54A24B"/>
-  <text x="252.1" y="225.0" class="value">559</text>
+  <rect x="140" y="80.0" width="567.3" height="22" rx="2" fill="#4C78A8"/>
+  <text x="711.3" y="95.0" class="value">1,956</text>
+  <rect x="140" y="106.0" width="563.1" height="22" rx="2" fill="#72B7B2"/>
+  <text x="707.1" y="121.0" class="value">1,941</text>
+  <rect x="140" y="132.0" width="564.6" height="22" rx="2" fill="#A0CBE8"/>
+  <text x="708.6" y="147.0" class="value">1,946</text>
+  <rect x="140" y="158.0" width="567.4" height="22" rx="2" fill="#F58518"/>
+  <text x="711.4" y="173.0" class="value">1,956</text>
+  <rect x="140" y="184.0" width="183.2" height="22" rx="2" fill="#E45756"/>
+  <text x="327.2" y="199.0" class="value">631</text>
+  <rect x="140" y="210.0" width="111.3" height="22" rx="2" fill="#54A24B"/>
+  <text x="255.3" y="225.0" class="value">383</text>
 </svg>
