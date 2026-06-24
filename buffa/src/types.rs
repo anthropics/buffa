@@ -745,6 +745,15 @@ pub fn string_encoded_len(value: &str) -> usize {
 ///   a custom type needs no native `arbitrary::Arbitrary` impl. The `map`
 ///   arbitrary path currently has no per-key shim, so a custom string used as a
 ///   `map` key or value must derive `Arbitrary` itself.
+#[rustversion::attr(
+    since(1.78),
+    diagnostic::on_unimplemented(
+        message = "`{Self}` cannot be used as a buffa custom string type",
+        note = "buffa owns `ProtoString`, so a foreign type can't implement it directly (orphan rule). \
+                Wrap it in a crate-local newtype and implement `ProtoString` on the newtype. \
+                See the `buffa-smolstr` crate for a template."
+    )
+)]
 pub trait ProtoString:
     Clone
     + PartialEq
@@ -943,6 +952,15 @@ pub fn decode_bytes_to_bytes(buf: &mut impl Buf) -> Result<Bytes, DecodeError> {
 /// - **No `Arbitrary` impl required.** Under the `arbitrary` feature codegen
 ///   attaches a generic builder, so a custom type needs no native
 ///   `arbitrary::Arbitrary` impl.
+#[rustversion::attr(
+    since(1.78),
+    diagnostic::on_unimplemented(
+        message = "`{Self}` cannot be used as a buffa custom bytes type",
+        note = "buffa owns `ProtoBytes`, so a foreign type can't implement it directly (orphan rule). \
+                Wrap it in a crate-local newtype and implement `ProtoBytes` on the newtype. \
+                See the `custom-types` example in the buffa repository for a template."
+    )
+)]
 pub trait ProtoBytes:
     Clone
     + PartialEq
@@ -1120,6 +1138,15 @@ pub fn decode_bytes_to<B: ProtoBytes>(buf: &mut impl Buf) -> Result<B, DecodeErr
 /// ```
 ///
 /// Then point a field at it: `repeated_type_custom("::my_crate::SmallList<*>")`.
+#[rustversion::attr(
+    since(1.78),
+    diagnostic::on_unimplemented(
+        message = "`{Self}` cannot be used as a buffa custom list type",
+        note = "buffa owns `ProtoList`, so a foreign type can't implement it directly (orphan rule). \
+                Wrap it in a crate-local newtype and implement `ProtoList` on the newtype. \
+                See the `custom-types` example in the buffa repository for a template."
+    )
+)]
 pub trait ProtoList<T>:
     Default
     + Clone

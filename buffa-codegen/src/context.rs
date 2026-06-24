@@ -1138,7 +1138,8 @@ pub(crate) fn resolve_extern_prefix(
             // `"."` is the catch-all root; stripping it leaves no leading dot.
             if proto_prefix == "." || rest.starts_with('.') {
                 let prefix_len = proto_prefix.len();
-                if best.is_none_or(|(_, _, best_len)| prefix_len > best_len) {
+                // MSRV: `Option::is_none_or` requires 1.82.
+                if best.map_or(true, |(_, _, best_len)| prefix_len > best_len) {
                     best = Some((proto_prefix, rust_prefix, prefix_len));
                 }
             }
@@ -1187,7 +1188,8 @@ fn resolve_extern_type(fqn: &str, extern_paths: &[(String, String)]) -> Option<S
             || fqn
                 .strip_prefix(proto_prefix.as_str())
                 .is_some_and(|rest| rest.starts_with('.'));
-        if matches && best.is_none_or(|(_, _, best_len)| proto_prefix.len() > best_len) {
+        // MSRV: `Option::is_none_or` requires 1.82.
+        if matches && best.map_or(true, |(_, _, best_len)| proto_prefix.len() > best_len) {
             best = Some((proto_prefix, rust_prefix, proto_prefix.len()));
         }
     }

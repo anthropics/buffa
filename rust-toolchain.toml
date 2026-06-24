@@ -7,7 +7,7 @@
 #
 # Keep in sync with the pinned dtolnay/rust-toolchain versions in
 # .github/workflows/ci.yml (lint-and-test, check-nostd); bump together. The
-# MSRV check (rust-version in Cargo.toml, currently 1.87) deliberately opts
+# MSRV check (rust-version in Cargo.toml, currently 1.75) deliberately opts
 # out of this file via RUSTUP_TOOLCHAIN in its CI job.
 #
 # The channel must be the full X.Y.Z version: rustup treats "1.95" and

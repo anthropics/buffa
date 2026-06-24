@@ -390,9 +390,11 @@ Compatibility is tested against protoc v21.12, v22.5, v25.5, v27.3, v29.5, and v
 
 ## Minimum supported Rust version
 
-The current MSRV is 1.87.
+The current MSRV is **1.75**.
 
-buffa's MSRV tracks the release ~12 months behind the latest stable, re-evaluated each time a release is cut. Defaulting to the year-old release maximizes compatibility for downstream crates; we move it forward sooner only when a valuable dependency or language feature requires it, and never past the current stable. While buffa is pre-1.0, an MSRV bump is a minor (0.x) release and is noted in the CHANGELOG.
+buffa is a foundational codec crate, so its `rust-version` is set to the lowest toolchain the released code actually compiles on, not to a calendar target. CI verifies the workspace builds at the MSRV and at stable on every change. With cargo's MSRV-aware resolver (`resolver = "3"`, Rust 1.84+), a downstream project on an older toolchain will automatically resolve to the newest buffa release whose `rust-version` fits — so an accurate declaration matters more than a conservative one.
+
+We reserve the right to raise the MSRV in any minor release when a language feature, standard-library API, or dependency makes it worthwhile, but never further than roughly twelve months behind the current stable. An MSRV bump is recorded in the CHANGELOG. We do not add workarounds for rustc or cargo bugs that are already fixed in stable; if you hit one on an older toolchain, the answer is to upgrade.
 
 ## License
 
