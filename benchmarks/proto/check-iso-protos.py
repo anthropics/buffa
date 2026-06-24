@@ -29,7 +29,7 @@ def blocks(text):
 want = blocks(src)
 name_to_file = {"ApiResponse": "api_response", "LogRecord": "log_record",
                 "AnalyticsEvent": "analytics_event", "MediaFrame": "media_frame",
-                "PackedTile": "packed_tile"}
+                "PackedTile": "packed_tile", "PackedSigned": "packed_tile"}
 errs = []
 for msg, fn in name_to_file.items():
     iso = (here / "iso" / f"{fn}.proto")

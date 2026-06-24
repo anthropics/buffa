@@ -355,12 +355,15 @@ pub trait MessageView<'a>: Sized {
 /// Hand-written impls cannot accidentally introduce undefined behaviour
 /// without writing `unsafe` themselves: the canonical body is just `this`,
 /// which the type checker accepts iff the variance permits the coercion.
-#[diagnostic::on_unimplemented(
-    message = "`{Self}` does not implement `ViewReborrow` — required by `OwnedView::reborrow`",
-    note = "for a generated view type, this impl is emitted automatically by codegen",
-    note = "for a hand-written view type `MyView<'a>`, add:\n    impl ViewReborrow for MyView<'static> {{\n        type Reborrowed<'b> = MyView<'b>;\n        fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {{ this }}\n    }}",
-    note = "your `MessageView` impl must be parametric over the lifetime — `impl<'a> MessageView<'a> for MyView<'a>` — so that both `Self: MessageView<'static>` and `Reborrowed<'b>: MessageView<'b>` hold",
-    note = "`MyView` must be covariant in its lifetime — fields like `&'a T` and `MessageFieldView<...>` are covariant; `Cell<&'a T>` and `&'a mut T` are not, and the trait body `{{ this }}` will fail to compile for invariant types"
+#[rustversion::attr(
+    since(1.78),
+    diagnostic::on_unimplemented(
+        message = "`{Self}` does not implement `ViewReborrow` — required by `OwnedView::reborrow`",
+        note = "for a generated view type, this impl is emitted automatically by codegen",
+        note = "for a hand-written view type `MyView<'a>`, add:\n    impl ViewReborrow for MyView<'static> {{\n        type Reborrowed<'b> = MyView<'b>;\n        fn reborrow<'b>(this: &'b Self) -> &'b Self::Reborrowed<'b> {{ this }}\n    }}",
+        note = "your `MessageView` impl must be parametric over the lifetime — `impl<'a> MessageView<'a> for MyView<'a>` — so that both `Self: MessageView<'static>` and `Reborrowed<'b>: MessageView<'b>` hold",
+        note = "`MyView` must be covariant in its lifetime — fields like `&'a T` and `MessageFieldView<...>` are covariant; `Cell<&'a T>` and `&'a mut T` are not, and the trait body `{{ this }}` will fail to compile for invariant types"
+    )
 )]
 pub trait ViewReborrow: MessageView<'static> {
     /// The same view type with its lifetime shortened to `'b`.
@@ -433,14 +436,17 @@ macro_rules! impl_view_reborrow {
 /// Implementations are generated alongside the view and owned-view wrapper
 /// (and are therefore gated with them). Hand-written implementations are only
 /// needed for hand-written view types and must follow the same shape.
-#[diagnostic::on_unimplemented(
-    message = "`{Self}` does not implement `HasMessageView` — its message-view family was not generated or is not enabled",
-    note = "the `HasMessageView` impl is emitted next to each message's view types: \
-            regenerate the crate that defines `{Self}` with buffa 0.7.0 or newer and \
-            views enabled — `generate_views(true)` (on by default) in a buffa-build / \
-            buffa-codegen config, or `views=true` for protoc-gen-buffa",
-    note = "if the defining crate feature-gates its generated impls, enabling its views \
-            feature is enough — no regeneration needed"
+#[rustversion::attr(
+    since(1.78),
+    diagnostic::on_unimplemented(
+        message = "`{Self}` does not implement `HasMessageView` — its message-view family was not generated or is not enabled",
+        note = "the `HasMessageView` impl is emitted next to each message's view types: \
+                regenerate the crate that defines `{Self}` with buffa 0.7.0 or newer and \
+                views enabled — `generate_views(true)` (on by default) in a buffa-build / \
+                buffa-codegen config, or `views=true` for protoc-gen-buffa",
+        note = "if the defining crate feature-gates its generated impls, enabling its views \
+                feature is enough — no regeneration needed"
+    )
 )]
 pub trait HasMessageView: crate::Message + Sized {
     /// The zero-copy view of `Self`, borrowing from a buffer with lifetime
@@ -545,9 +551,12 @@ pub fn bytes_from_source(source: Option<&Bytes>, slice: &[u8]) -> Bytes {
 /// };
 /// let bytes = view.encode_to_vec();
 /// ```
-#[diagnostic::on_unimplemented(
-    message = "`{Self}` does not implement `ViewEncode` — view types were not generated for this message",
-    note = "ViewEncode is implemented on every generated `*View<'a>` type; enable `generate_views(true)` (on by default) in your buffa-build / buffa-codegen config"
+#[rustversion::attr(
+    since(1.78),
+    diagnostic::on_unimplemented(
+        message = "`{Self}` does not implement `ViewEncode` — view types were not generated for this message",
+        note = "ViewEncode is implemented on every generated `*View<'a>` type; enable `generate_views(true)` (on by default) in your buffa-build / buffa-codegen config"
+    )
 )]
 pub trait ViewEncode<'a>: MessageView<'a> {
     /// Compute the encoded byte size of this view, recording nested

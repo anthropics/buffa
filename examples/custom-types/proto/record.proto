@@ -1,0 +1,50 @@
+// A small schema that exercises every owned-type override knob: string,
+// bytes, repeated, map, and the message-field pointer (oneof variant +
+// optional message). Paired with build.rs, which points each at a
+// crate-local newtype defined in src/types.rs.
+
+syntax = "proto3";
+
+package buffa.examples.customtypes.v1;
+
+// A nested message used both as an optional field and as a oneof variant,
+// so the custom pointer type (`box_type_custom`) is exercised on both
+// boxing sites.
+message Metadata {
+  string author = 1;
+  int64 revision = 2;
+}
+
+message Record {
+  // Singular string — generated as the `string_type_custom` type.
+  string id = 1;
+
+  // Singular bytes — generated as the `bytes_type_custom` type.
+  bytes payload = 2;
+
+  // Packed repeated scalar — generated as the `repeated_type_custom`
+  // collection over `i64`. The int64 element type also routes JSON through
+  // `proto_seq` (quoted-string numbers), exercising the custom collection
+  // on the non-derive JSON path.
+  repeated int64 samples = 3;
+
+  // Repeated string — composes two overrides: the custom collection
+  // wraps the custom string element.
+  repeated string tags = 4;
+
+  // map<int64, string> — generated as the `map_type_custom` container with
+  // an `i64` key and the custom string value. The int64 key forces the
+  // non-trivial JSON path (proto3 JSON serializes integer map keys as
+  // quoted strings).
+  map<int64, string> attributes = 5;
+
+  // Optional sub-message — boxed through the `box_type_custom` pointer.
+  optional Metadata metadata = 6;
+
+  // Oneof with both a scalar and a message variant. The message variant
+  // is boxed through the same custom pointer.
+  oneof source {
+    string url = 7;
+    Metadata embedded = 8;
+  }
+}

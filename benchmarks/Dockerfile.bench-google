@@ -31,6 +31,11 @@ COPY benchmarks/proto/      benchmarks/proto/
 COPY benchmarks/datasets/   benchmarks/datasets/
 COPY benchmarks/google/     benchmarks/google/
 
+# protobuf-v4 wraps upb (C); the cc crate does not auto-define NDEBUG, and the
+# upstream build.rs doesn't either, so without this every UPB_ASSERT is a live
+# assert() and every UPB_ASSUME is assert() instead of __builtin_unreachable().
+ENV CFLAGS="-DNDEBUG"
+
 RUN cargo install cargo-criterion \
     && cargo bench --manifest-path benchmarks/google/Cargo.toml --no-run
 

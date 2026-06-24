@@ -214,6 +214,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **MSRV lowered from 1.87 to 1.75**, and the
+  [README MSRV policy](README.md#minimum-supported-rust-version) revised:
+  `rust-version` now declares the lowest toolchain the released code actually
+  compiles on (verified in CI), with bumps capped at roughly twelve months
+  behind stable. The 1.75 floor is set by return-position `impl Trait` in
+  traits, used by `MapStorage::storage_iter`. Reaching it required only
+  mechanical respellings of newer stdlib conveniences — `Option::is_none_or`,
+  `i32::cast_unsigned`, `f64::abs` in `const fn` — and
+  gating the six `#[diagnostic::on_unimplemented]` hints behind
+  `rustversion::attr(since(1.78), …)` so they remain active on modern
+  toolchains. Adds `rustversion` as a dependency of `buffa` and
+  `buffa-descriptor`.
 - `MapValueDecode::merge` now returns `Result<MapValueDecodeStatus, _>`
   instead of `Result<(), _>`, and a new `merge_entry_with_unknowns` carries
   the closed-enum-map preservation path. The trait is sealed, so downstream
@@ -305,7 +317,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `decode_view_ctx` / `merge_into_view` instead of the removed inherent
   `_decode_ctx` / `_merge_into_view` helpers. (#198)
 
+- **`examples/custom-types` — end-to-end pluggable owned types.** A runnable
+  example crate that compiles a `.proto` with every owned-type knob
+  (`string_type_custom`, `bytes_type_custom`, `repeated_type_custom`,
+  `map_type_custom`, `box_type_custom`) pointed at crate-local newtypes
+  wrapping `flexstr`, `smallvec`, `indexmap`, and `smallbox`, then round-trips
+  a record through binary and JSON. The newtypes are the copy-paste template
+  for bridging a foreign storage type past the orphan rule. (#214)
+
 ### Fixed
+
+- **`box_type_custom` and `repeated_type_custom` now compile under
+  `generate_json(true)`.** Two `json_helpers` functions were still hard-wired
+  to the default representations: `skip_if::is_unset_message_field` only
+  accepted `&MessageField<T>` (default `Box<T>` pointer), and
+  `proto_seq::deserialize` only returned `Vec<T>`. So any JSON-enabled message
+  with a custom-boxed optional sub-message, or a custom repeated collection of
+  a 64-bit / float / bytes element, failed to compile. The former is now
+  generic over `P: ProtoBox<T>` and the latter over `C: From<Vec<T>>`; both
+  are inferred from the field type, so default-representation code is
+  unchanged. (#214)
 
 - **`DecodeOptions::decode_reader` no longer overflows when
   `max_message_size` is `usize::MAX`.** The internal `read_limited` helper

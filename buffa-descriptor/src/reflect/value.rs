@@ -400,7 +400,8 @@ impl MapValue {
         debug_assert!(
             self.entries
                 .first()
-                .is_none_or(|(k, _)| matches!(k, MapKey::String(_))),
+                // MSRV: `Option::is_none_or` requires 1.82.
+                .map_or(true, |(k, _)| matches!(k, MapKey::String(_))),
             "get_str called on a non-string-keyed MapValue"
         );
         self.entries
