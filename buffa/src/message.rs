@@ -722,7 +722,8 @@ impl DecodeOptions {
         debug_assert!(
             max_bytes <= DEFAULT_MAX_MESSAGE_SIZE,
             "DecodeOptions::with_max_message_size clamps values above the protobuf 2 GiB limit; \
-             use DecodeOptions::without_reader_size_limit (std only) for intentionally unbounded reader input"
+             on std builds, use DecodeOptions::without_reader_size_limit for intentionally \
+             unbounded reader input — there is no unbounded slice/Buf path"
         );
         self.max_message_size = max_bytes.min(DEFAULT_MAX_MESSAGE_SIZE);
         self.unbounded_reader_size = false;
@@ -733,9 +734,11 @@ impl DecodeOptions {
     /// input.
     ///
     /// This is only used by the `std::io::Read` entry point that reads until
-    /// EOF. Slice- and [`Buf`]-based entry points remain bounded by the
-    /// protobuf 2 GiB - 1 maximum, and length-delimited paths keep the same
-    /// hard cap because their declared length is attacker-controlled.
+    /// EOF. Slice-, [`Buf`]-, and view-based entry points remain bounded by
+    /// the configured [`with_max_message_size`](Self::with_max_message_size)
+    /// (itself capped at the protobuf 2 GiB - 1 maximum), and length-delimited
+    /// paths keep the same hard cap because their declared length is
+    /// attacker-controlled.
     ///
     /// An unbounded reader can exhaust memory if the source does not end or is
     /// larger than available allocation capacity. Prefer
@@ -788,9 +791,10 @@ impl DecodeOptions {
     /// Returns the configured maximum message size in bytes for bounded decode
     /// entry points.
     ///
-    /// This returns the clamped protobuf limit even if
-    /// `without_reader_size_limit` is enabled for EOF-bounded reader input.
-    /// Use `is_reader_size_unbounded` (std only) to inspect that flag.
+    /// This returns the configured (clamped) value even when
+    /// `without_reader_size_limit` is enabled for EOF-bounded reader input —
+    /// the slice/`Buf`/view paths still honor it. Use
+    /// `is_reader_size_unbounded` (std only) to inspect the reader flag.
     pub fn max_message_size(&self) -> usize {
         self.max_message_size
     }
