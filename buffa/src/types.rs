@@ -595,9 +595,12 @@ pub fn decode_string(buf: &mut impl Buf) -> Result<String, DecodeError> {
     let chunk = buf.chunk();
     if chunk.len() >= len {
         // Field is contiguous in the source: validate against the source
-        // chunk (so the slack-buffer fast path can read past `len` when the
-        // wire buffer continues), then own. Advance the cursor regardless of
-        // validity, matching the consume-before-validate behaviour below.
+        // chunk, then own. `validate_str_in` itself checks
+        // `chunk.len() >= len + SLACK` and takes the slack-buffer fast path
+        // when satisfied (the common case — the chunk continues past this
+        // field whenever more wire data follows), else the safe path. Advance
+        // the cursor regardless of validity, matching the
+        // consume-before-validate behaviour below.
         //
         // SAFETY: `chunk.len() >= len` was just checked.
         let r = unsafe { validate_str_in(chunk, len) }.map(alloc::borrow::ToOwned::to_owned);
@@ -646,8 +649,10 @@ pub fn merge_string(value: &mut String, buf: &mut impl Buf) -> Result<(), Decode
     let chunk = buf.chunk();
     if chunk.len() >= len {
         // Field is contiguous in the source: validate against the source
-        // chunk (slack-buffer fast path), then copy into `value` reusing its
-        // allocation. Advance the cursor regardless of validity.
+        // chunk, then copy into `value` reusing its allocation.
+        // `validate_str_in` itself checks `chunk.len() >= len + SLACK` and
+        // takes the slack-buffer fast path when satisfied, else the safe
+        // path. Advance the cursor regardless of validity.
         //
         // SAFETY: `chunk.len() >= len` was just checked.
         let r: Result<(), DecodeError> = match unsafe { validate_str_in(chunk, len) } {
