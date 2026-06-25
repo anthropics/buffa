@@ -461,6 +461,47 @@ pub trait HasMessageView: crate::Message + Sized {
         + Sync
         + 'static;
 
+    /// Decode a borrowed [`View`](Self::View) from a byte slice.
+    ///
+    /// Convenience for generic code: lets a caller bounded only on
+    /// `M: HasMessageView` write `M::decode_view(buf)` instead of the
+    /// associated-type path
+    /// `<M as HasMessageView>::View::decode_view(buf)`. The returned view
+    /// borrows from `buf`. Reading the returned view (e.g.
+    /// [`to_owned_message`](MessageView::to_owned_message)) requires
+    /// [`MessageView`] in scope.
+    ///
+    /// Like the underlying [`MessageView::decode_view`], this does not
+    /// enforce `max_message_size`; use
+    /// [`decode_view_with_options`](Self::decode_view_with_options) for that.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeError`] if the buffer contains invalid protobuf data.
+    #[inline]
+    fn decode_view(buf: &[u8]) -> Result<Self::View<'_>, DecodeError> {
+        <Self::View<'_> as MessageView<'_>>::decode_view(buf)
+    }
+
+    /// Decode a borrowed [`View`](Self::View) under custom
+    /// [`DecodeOptions`](crate::DecodeOptions) (recursion limit, max message
+    /// size, unknown-field limit).
+    ///
+    /// Convenience for generic code; equivalent to
+    /// [`DecodeOptions::decode_view::<M::View<'_>>`](crate::DecodeOptions::decode_view).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeError`] if the buffer is invalid or exceeds the
+    /// configured limits.
+    #[inline]
+    fn decode_view_with_options<'a>(
+        buf: &'a [u8],
+        opts: &crate::DecodeOptions,
+    ) -> Result<Self::View<'a>, DecodeError> {
+        opts.decode_view(buf)
+    }
+
     /// Decode a [`ViewHandle`](Self::ViewHandle) from a [`Bytes`] buffer.
     ///
     /// Convenience for generic code; equivalent to decoding an

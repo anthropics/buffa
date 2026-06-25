@@ -196,6 +196,33 @@ mod view_family {
         assert_eq!(len, encoded.len());
     }
 
+    /// Generic `M::decode_view(buf)` over a `&[u8]` — exercises the
+    /// `HasMessageView::decode_view` default so callers don't need the
+    /// associated-type path `<M as HasMessageView>::View::decode_view`.
+    fn decode_view_generic<M: buffa::HasMessageView>(buf: &[u8]) -> M {
+        use buffa::MessageView as _;
+        M::decode_view(buf)
+            .expect("decode_view")
+            .to_owned_message()
+            .expect("to_owned")
+    }
+
+    #[test]
+    fn test_has_message_view_decode_view_slice() {
+        use buffa::{HasMessageView as _, MessageView as _};
+        let msg = sample_person();
+        let encoded = msg.encode_to_vec();
+        let decoded: Person = decode_view_generic(&encoded);
+        assert_eq!(decoded, msg);
+
+        let opts = buffa::DecodeOptions::default();
+        let via_opts = Person::decode_view_with_options(&encoded, &opts)
+            .expect("decode_view_with_options")
+            .to_owned_message()
+            .expect("to_owned");
+        assert_eq!(via_opts, msg);
+    }
+
     #[test]
     fn test_has_message_view_generic_roundtrip_with_oneof() {
         use crate::view_json::__buffa::oneof::with_oneof::Value as ValueOneof;

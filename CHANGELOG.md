@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **`HasMessageView::decode_view` / `decode_view_with_options`** — defaulted
+  methods so generic code bounded on `M: HasMessageView` can write
+  `M::decode_view(buf)` instead of the associated-type path
+  `<M as HasMessageView>::View::decode_view(buf)`. Additive; the existing
+  `MessageView::decode_view` is unchanged.
+- **`MessageField::unwrap` / `expect` and `From<MessageField<T, P>> for
+  Option<T>`** — consume a `MessageField` directly (`field.unwrap()`,
+  `field.expect("…")`, `field.into()`) without the `.into_option().unwrap()`
+  round-trip. Both are `#[track_caller]` and panic on an unset field; prefer
+  `ok_or` / `ok_or_else` for fallible contexts. Additive.
 - **`buffa::SizeCachePool` — opt-in reuse of the encode size-cache spill
   allocation** (#225). Every `encode` / `encoded_len` builds a fresh
   `SizeCache`; its inline storage is free, but a message with more than the

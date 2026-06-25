@@ -325,6 +325,44 @@ impl<T: Default, P: ProtoBox<T>> MessageField<T, P> {
         self.inner.map(<P as ProtoBox<T>>::into_inner)
     }
 
+    /// Consume the field, returning the inner value.
+    ///
+    /// Equivalent in effect to `into_option().unwrap()`, with a clearer
+    /// panic message. Prefer [`ok_or`](Self::ok_or) /
+    /// [`ok_or_else`](Self::ok_or_else) when an unset field should produce
+    /// an error rather than a panic.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the field is unset.
+    #[inline]
+    #[track_caller]
+    pub fn unwrap(self) -> T {
+        match self.inner {
+            Some(b) => <P as ProtoBox<T>>::into_inner(b),
+            None => panic!("called `MessageField::unwrap()` on an unset field"),
+        }
+    }
+
+    /// Consume the field, returning the inner value, with a custom panic
+    /// message if unset.
+    ///
+    /// Mirrors [`Option::expect`]. Prefer [`ok_or`](Self::ok_or) /
+    /// [`ok_or_else`](Self::ok_or_else) when an unset field should produce
+    /// an error rather than a panic.
+    ///
+    /// # Panics
+    ///
+    /// Panics with `msg` if the field is unset.
+    #[inline]
+    #[track_caller]
+    pub fn expect(self, msg: &str) -> T {
+        match self.inner {
+            Some(b) => <P as ProtoBox<T>>::into_inner(b),
+            None => panic!("{msg}"),
+        }
+    }
+
     /// Consume the field, returning `Ok(T)` if set or `Err(err)` if unset.
     ///
     /// Mirrors [`Option::ok_or`]. Useful for enforcing presence of
@@ -441,6 +479,15 @@ impl<T: Default, P: ProtoBox<T>> From<Option<T>> for MessageField<T, P> {
     }
 }
 
+impl<T: Default, P: ProtoBox<T>> From<MessageField<T, P>> for Option<T> {
+    /// Unbox a `MessageField` into an `Option<T>`; equivalent to
+    /// [`MessageField::into_option`].
+    #[inline]
+    fn from(field: MessageField<T, P>) -> Self {
+        field.into_option()
+    }
+}
+
 impl<T: Default, P: ProtoBox<T>> From<T> for MessageField<T, P> {
     fn from(value: T) -> Self {
         Self::some(value)
@@ -538,6 +585,45 @@ mod tests {
         let b: MessageField<Inner> = MessageField::some(Inner::default());
         // An unset field and a set-to-default field are equal.
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_unwrap_set() {
+        let field: MessageField<Inner> = MessageField::some(Inner {
+            value: 7,
+            name: "x".into(),
+        });
+        let inner = field.unwrap();
+        assert_eq!(inner.value, 7);
+    }
+
+    #[test]
+    #[should_panic(expected = "called `MessageField::unwrap()` on an unset field")]
+    fn test_unwrap_unset_panics() {
+        let field: MessageField<Inner> = MessageField::none();
+        let _ = field.unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "address is required")]
+    fn test_expect_unset_panics_with_message() {
+        let field: MessageField<Inner> = MessageField::none();
+        let _ = field.expect("address is required");
+    }
+
+    #[test]
+    fn test_from_message_field_for_option_roundtrips() {
+        let inner = Inner {
+            value: 3,
+            name: "rt".into(),
+        };
+        let field: MessageField<Inner> = Some(inner.clone()).into();
+        let back: Option<Inner> = field.into();
+        assert_eq!(back, Some(inner));
+
+        let none_field: MessageField<Inner> = MessageField::none();
+        let none_back: Option<Inner> = none_field.into();
+        assert_eq!(none_back, None);
     }
 
     #[test]
