@@ -174,7 +174,7 @@ let decoded: MyMessage = serde_json::from_str(&json).unwrap();
 
 ## Performance
 
-Throughput comparison across five representative message types, measured on an Intel Xeon Platinum 8488C (x86_64) at buffa v0.7.1. Cross-implementation benchmarks run in Docker for toolchain consistency (`task bench-cross`). Higher is better.
+Throughput comparison across five representative message shapes, measured at buffa v0.8.0 on a quiesced bare-metal Intel Xeon Platinum 8488C (turbo disabled, `performance` governor, one core per implementation, median of five passes; full methodology in [`benchmarks/charts/README.md`](benchmarks/charts/README.md)). Higher is better.
 
 ### Binary decode
 

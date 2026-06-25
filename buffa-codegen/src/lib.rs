@@ -334,7 +334,7 @@ impl StringRepr {
 /// The Rust type a proto `bytes` field maps to in generated owned structs.
 ///
 /// The default is [`Vec`](BytesRepr::Vec) (`Vec<u8>`). [`Bytes`](BytesRepr::Bytes)
-/// uses [`bytes::Bytes`](::bytes::Bytes), which decodes zero-copy from a
+/// uses `bytes::Bytes`, which decodes zero-copy from a
 /// `Bytes`-backed buffer. [`Custom`](BytesRepr::Custom) substitutes any type
 /// named by its fully-qualified Rust path that satisfies the `buffa::ProtoBytes`
 /// bound; the downstream crate must itself depend on the providing crate.
@@ -503,8 +503,8 @@ impl MapRepr {
     }
 }
 
-/// The owned smart pointer a singular message field's [`MessageField`] wraps in
-/// generated owned structs.
+/// The owned smart pointer a singular message field's `buffa::MessageField`
+/// wraps in generated owned structs.
 ///
 /// The default is [`Box`](PointerRepr::Box). [`Custom`](PointerRepr::Custom)
 /// substitutes any pointer that satisfies the `buffa::ProtoBox<T>` bound — for

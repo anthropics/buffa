@@ -893,7 +893,7 @@ impl<'a> CodeGenContext<'a> {
     /// `field_fqn` is the fully-qualified proto field path, e.g.
     /// `".my.pkg.MyMessage.name"`. Rules in `config.string_fields` are matched
     /// with the same proto-segment-aware prefix logic as
-    /// [`use_bytes_type`](Self::use_bytes_type); the **last** matching rule wins,
+    /// [`bytes_repr`](Self::bytes_repr); the **last** matching rule wins,
     /// letting a specific override follow a broad default. Fields matching no
     /// rule use [`StringRepr::String`](crate::StringRepr::String).
     pub fn string_repr(&self, field_fqn: &str) -> crate::StringRepr {

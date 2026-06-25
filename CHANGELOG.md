@@ -6,18 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-25
+
+The headline of this release is that the owned representation of every field
+kind is now pluggable end to end: `string`, `bytes`, `repeated`, singular
+message, and `map` fields each accept a crate-local type via a small
+`from_wire`-style trait (`ProtoString`, `ProtoBytes`, `ProtoList`, `ProtoBox`,
+`MapStorage`), so an inline-string or small-vector representation can avoid
+the per-field heap allocation without giving up the generated codec. Alongside
+that, UTF-8 validation on the decode path now defaults to
+[`smoothutf8`](https://docs.rs/smoothutf8) with the slack-buffer fast path —
+view decode is +15–22% on the string-heavy benchmark messages — and an opt-in
+`FooLazyView` family lets a caller decode a few fields of a large message
+without recursing into untouched sub-trees. There are eight breaking changes,
+all on the trait surface or generated-code shape; **regenerate code with the
+matching `buffa-codegen`**, then the convenience entry points (`decode`,
+`decode_from_slice`, `merge_from_slice`, `DecodeOptions`) are unchanged.
+
 ### Added
 
-- **`WirePayload::to_str`** — borrow the payload as a `&str` if valid UTF-8,
-  using buffa's UTF-8 validator (so it picks up `fast-utf8`). Convenience for
-  `ProtoString::from_wire` implementations; `buffa-smolstr` now uses it.
-- **`HasMessageView::decode_view` / `decode_view_with_options`** — defaulted
-  methods so generic code bounded on `M: HasMessageView` can write
+- **`WirePayload::to_str`** (#241) — borrow the payload as a `&str` if valid
+  UTF-8, using buffa's UTF-8 validator (so it picks up `fast-utf8`).
+  Convenience for `ProtoString::from_wire` implementations; `buffa-smolstr`
+  now uses it.
+- **`HasMessageView::decode_view` / `decode_view_with_options`** (#240) —
+  defaulted methods so generic code bounded on `M: HasMessageView` can write
   `M::decode_view(buf)` instead of the associated-type path
   `<M as HasMessageView>::View::decode_view(buf)`. Additive; the existing
   `MessageView::decode_view` is unchanged.
 - **`MessageField::unwrap` / `expect` and `From<MessageField<T, P>> for
-  Option<T>`** — consume a `MessageField` directly (`field.unwrap()`,
+  Option<T>`** (#240) — consume a `MessageField` directly (`field.unwrap()`,
   `field.expect("…")`, `field.into()`) without the `.into_option().unwrap()`
   round-trip. Both are `#[track_caller]` and panic on an unset field; prefer
   `ok_or` / `ok_or_else` for fallible contexts. Additive.
@@ -38,7 +56,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `into_spill_buffer` to source/sink the spill buffer for manual reuse. Additive
   and non-breaking; the default `encode` path is unchanged.
 
-- **Custom owned `string` types for `map` keys and values** (#156). A `string_type`
+- **Custom owned `string` types for `map` keys and values** (#222). A `string_type`
   rule (`string_type_custom` / `string_type_custom_in`) now also applies to a
   `map<string, V>` key and a `map<K, string>` value — one rule on the map field
   path covers both slots of a `map<string, string>` — mirroring how `bytes_type`
@@ -54,7 +72,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   new `proto_str_key_map` `with`-module (the existing `proto_map` requires
   `Display + FromStr`, which a `ProtoString` need not implement).
 
-- **Pluggable owned map container for `map<K, V>` fields** (#156). A new
+- **Pluggable owned map container for `map<K, V>` fields** (#210). A new
   `buffa::MapStorage` trait (with associated `Key` / `Value` types) selects the
   owned map collection, via `buffa_build`'s `map_type` / `map_type_custom` knobs.
   The default stays `HashMap`; `BTreeMap` is a zero-dependency built-in giving
@@ -65,7 +83,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   unchanged; only the in-memory collection changes, and view types are
   unaffected.
 
-- **Pluggable owned pointer for message fields** (#156). A new
+- **Pluggable owned `string` / `bytes` types via `from_wire`** (#206). A new
+  `buffa::ProtoString` / `buffa::ProtoBytes` trait selects the owned
+  representation of `string` / `bytes` fields, via `buffa_build`'s
+  `string_type_custom` / `bytes_type_custom` knobs. Each trait has one method,
+  `from_wire(WirePayload<'_>) -> Result<Self, DecodeError>`, so a representation
+  decides validation and borrow-vs-own itself — an inline-capable type avoids
+  the transient `String` / `Vec<u8>` allocation a `From<String>` decode path
+  would force. The built-in `String` and `Vec<u8>` are the default
+  implementations; `buffa-smolstr` is the worked newtype example for a foreign
+  type. **Breaking removal:** the curated `string_type` presets (the
+  named-crate enum that previously selected `compact_str` / `ecow` /
+  `smol_str`) are dropped — use `string_type_custom` with a crate-local
+  newtype instead. The wire format is unchanged.
+
+- **Pluggable owned collection for `repeated` fields** (#208). A new
+  `buffa::ProtoList<T>` trait (`Deref<Target = [T]> + FromIterator<T> +
+  From<Vec<T>> + Default { push, reserve }`) selects the owned collection
+  for `repeated` fields, via `buffa_build`'s `repeated_type` /
+  `repeated_type_custom` knobs. The default stays `Vec<T>` and generated
+  output is byte-identical; the custom path takes a `*`-templated type
+  (e.g. `"::my_crate::SmallVecRepeated<*>"`). The collection must be
+  growable — the decoder appends one element per wire element with no
+  capacity check, so a fixed-capacity collection would panic on oversized
+  input rather than return a decode error. View types are unaffected.
+
+- **Pluggable owned pointer for message fields** (#209). A new
   `buffa::ProtoBox<T>` trait (`Deref<Target=T> + DerefMut { new, into_inner }`)
   selects the smart pointer that a singular message field's `MessageField` wraps
   — and the pointer of a **boxed oneof message/group variant** — via
@@ -83,13 +126,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   typed-assignment construction are unaffected. Added `MessageField::from_pointer`
   (the generic counterpart to the `Box`-only `from_box`).
 
+- **`idiomatic_imports` option** (#189). `buffa_build::Config::idiomatic_imports(true)`
+  (also `CodeGenConfig` and `protoc-gen-buffa`'s `idiomatic_imports=true`)
+  emits a `use`-backed short-name re-export at the package root under
+  `file_per_package` layout, so a generated type is reachable as
+  `pkg::Foo` instead of `pkg::foo_module::Foo`. Off by default; the file
+  layout and the wire format are unchanged.
+
+- **`#[diagnostic::on_unimplemented]` hints on the custom-type traits** (#229).
+  `ProtoString`, `ProtoBytes`, `ProtoList`, `ProtoBox`, and `MapStorage` now
+  carry diagnostic hints so a `*_type_custom` knob pointed at a foreign type
+  produces a "wrap it in a crate-local newtype" message instead of the raw
+  orphan-rule / unimplemented-trait error. Gated behind
+  `rustversion::attr(since(1.78), …)` for the MSRV.
+
+- **`examples/custom-types` — end-to-end pluggable owned types** (#234). A
+  runnable example crate that compiles a `.proto` with every owned-type knob
+  (`string_type_custom`, `bytes_type_custom`, `repeated_type_custom`,
+  `map_type_custom`, `box_type_custom`) pointed at crate-local newtypes
+  wrapping `flexstr`, `smallvec`, `indexmap`, and `smallbox`, then round-trips
+  a record through binary and JSON. The newtypes are the copy-paste template
+  for bridging a foreign storage type past the orphan rule.
+
 - **Docker-free conformance runs** (#192). `task conformance-tools-local`
   builds `conformance_test_runner` from the pinned protobuf tag into
   `.local/bin/` and `task conformance-local` executes the same seven runs
   as the Docker path with the same failure lists — for dev environments
   without a Docker daemon or GHCR access.
 
-- **Opt-in lazy views: the additive `FooLazyView` family** (#165). With
+- **Opt-in lazy views: the additive `FooLazyView` family** (#188). With
   `Config::lazy_views(true)` (plugin: `lazy_views=true`), each message
   additionally generates a `FooLazyView<'a>` implementing the new
   `buffa::LazyMessageView` trait — the eager `FooView` family is unchanged
@@ -113,7 +178,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   reflection/`OwnedView`/text surface. A dedicated `BUFFA_VIA_LAZY`
   conformance runner mode covers the lazy decoder against the full corpus.
 
-- **Customizable feature-gate names** (#169). `CodeGenConfig::feature_gate_names`
+- **Customizable feature-gate names** (#183). `CodeGenConfig::feature_gate_names`
   (exposed as `buffa_build::Config::{json,views,text,reflect}_feature_name` and
   `protoc-gen-buffa`'s `{json,views,text,reflect}_feature=` options) renames the
   crate features that `gate_impls_on_crate_features` conditions the generated
@@ -123,7 +188,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   an error when its gate is active — the alternative is a permanently-false
   `#[cfg]` that silently compiles the gated impls away.
 
-- **`buffa-build` / `buffa-codegen`: `oneof_attribute`** (#166) — attach Rust
+- **`buffa-build` / `buffa-codegen`: `oneof_attribute`** (#167) — attach Rust
   attributes to generated oneof enums only (not message structs, not regular
   enums), matched against the oneof's fully-qualified path
   (`.pkg.Message.oneof_name`) with the same prefix rules as `type_attribute`.
@@ -131,36 +196,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   the case where a oneof needs a different attribute set than the
   surrounding types.
 
-- **Zero-copy views enforce the unknown-field limit and coalesce adjacent
-  unknown records.** View decoding previously stored one borrowed span (16
-  bytes) per unknown wire record with no bound beyond the input size. Spans
-  for adjacent unknown records now coalesce into a single span — a
-  contiguous run of unknown fields costs one `Vec` slot regardless of field
-  count, and re-encodes byte-identically — and each *new* span (one per
-  unknown run) is counted against the same unknown-field limit that bounds
-  owned-message decoding, configured via
-  `DecodeOptions::with_unknown_field_limit` and honored by
-  `DecodeOptions::decode_view`. As part of this, the view decode path now
-  threads `DecodeContext<'_>`: `MessageView::decode_view_with_limit(buf,
-  depth)` is replaced by `decode_view_with_ctx(buf, ctx)`, and generated
-  views' hidden `_decode_depth` helpers become `_decode_ctx` (**breaking**
-  for code generated by earlier releases, which must be regenerated —
-  consistent with the owned-path change below).
-
-- **View-to-owned conversion is now fallible and honors the decode-time
-  limit.** `MessageView::to_owned_message` and `to_owned_from_source` (and
-  the `OwnedView` wrapper) now return `Result<Owned, DecodeError>`
-  (**breaking**): generated conversions previously swallowed unknown-field
-  re-materialization errors via `unwrap_or_default()`, silently dropping
-  every unknown field. `UnknownFieldsView::to_owned` also now re-materializes
-  under the unknown-field allowance that remained when the view recorded its
-  first unknown field — so a tight `with_unknown_field_limit` configured at
-  `decode_view` time carries through conversion, where each owned
-  `UnknownField` counts individually (unlike the coalesced spans the view
-  stores). Views built manually via `push_raw` fall back to the default
-  limit.
-
-- **Unknown-field decode limit bounds decoder memory amplification.**
+- **Unknown-field decode limit bounds decoder memory amplification** (#184).
   Unknown wire data can occupy ~20× more memory decoded than encoded:
   every 2-byte unknown varint field materializes a ~40-byte
   `UnknownField`, so a 64 MiB payload of minimal unknown fields (flat or
@@ -191,7 +227,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   Contributed by @yordis.
 
 - **New `buffa-yaml` crate: YAML serialization with protobuf-JSON semantics**
-  (Phase 1 of protoyaml support, #101). A thin carrier layer that routes
+  (Phase 1 of protoyaml support, #155). A thin carrier layer that routes
   buffa's generated protobuf-JSON serde impls through `serde_norway`, so YAML
   I/O gets the full protobuf JSON mapping: `camelCase`/`snake_case` field
   names, quoted `int64`/`uint64`, base64 bytes, enum string names, and
@@ -201,7 +237,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   carrier-agnostic `Location { line, column }`. Requires message types
   generated with `json = true`. Contributed by @rsd-darshan.
 
-- **Proto2 required-field presence on views** (#170). Generated view types
+- **Proto2 required-field presence on views** (#200). Generated view types
   (`FooView` and `FooLazyView`) for messages with proto2/editions
   `LEGACY_REQUIRED` singular fields now expose `has_<field>()` accessors
   that distinguish a field absent on the wire from one explicitly encoded
@@ -215,7 +251,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   default value. Messages without required fields are byte-identical to
   before. `MessageFieldView::is_set` / `is_unset` are now `const fn`.
 
-- **`type_name_prefix` option** (#46). `buffa_build::Config::type_name_prefix("Rpc")`
+- **`type_name_prefix` option** (#199). `buffa_build::Config::type_name_prefix("Rpc")`
   (also `CodeGenConfig::type_name_prefix` and `protoc-gen-buffa`'s
   `type_name_prefix=` option) prepends a prefix to every generated message
   struct and enum type name — `message User {}` generates `struct RpcUser`,
@@ -247,6 +283,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   should add `fast-utf8` to their feature list to keep the faster validator,
   or omit it to stay on `core::str::from_utf8`. A `no_std` build with
   `fast-utf8` adds only `smoothutf8` (zero-dependency, formally verified).
+  (#241)
 - (**breaking**) **`protoc-gen-buffa` now rejects malformed plugin parameters**
   instead of stderr-warning or silently defaulting (#235). An unknown option
   key, a missing `=`, a non-`true`/`false` boolean value, an invalid
@@ -269,7 +306,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   gating the six `#[diagnostic::on_unimplemented]` hints behind
   `rustversion::attr(since(1.78), …)` so they remain active on modern
   toolchains. Adds `rustversion` as a dependency of `buffa` and
-  `buffa-descriptor`.
+  `buffa-descriptor`. (#228)
 
 - `DecodeOptions::with_max_message_size` now clamps values above the protobuf
   2 GiB - 1 message-size limit (with a debug assertion to catch accidental
@@ -279,7 +316,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   length-delimited declared lengths never exceed 2 GiB - 1. Callers that
   used `with_max_message_size(usize::MAX)` for unbounded reader input should
   switch to `without_reader_size_limit`; in release builds, the old spelling
-  now caps at 2 GiB - 1. (#231)
+  now caps at 2 GiB - 1. (#236)
 
 - `MapValueDecode::merge` now returns `Result<MapValueDecodeStatus, _>`
   instead of `Result<(), _>`, and a new `merge_entry_with_unknowns` carries
@@ -323,6 +360,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   for portability). Array-literal construction via `Map::from([...])` /
   `.into()` is likewise unavailable; use `[...].into_iter().collect()`.
   `buffa::Map` and `buffa::foldhash` are now re-exported at the crate root.
+  (#224)
 
 - Generated decode arms (owned merge, view decode, lazy record arms,
   map-entry loops) emit a single `::buffa::encoding::check_wire_type` call
@@ -340,7 +378,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Generated `write_to` bodies use new fused `put_*_field` runtime writers
   (one call per field arm) instead of separate tag-encode + payload-encode
   pairs (~870 sites); owned and view impls share them. Wire output is
-  byte-identical. (#195)
+  byte-identical. The fused writers are `#[inline(always)]` so the field
+  number reaching `Tag::new` const-folds and the inlined `encode_varint`
+  collapses to a single byte store for tags below 128 — restoring the encode
+  fast path that the call boundary had blocked. (#195, #207)
 
 - `DefaultInstance` / `DefaultViewInstance` / `ViewReborrow` impls are
   emitted via new public runtime macros (`impl_default_instance!`,
@@ -352,14 +393,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `buffa::json_helpers` adapter newtypes (`ProtoJson`, `BytesJson`,
   `MapKeyJson`, sequence variants, ...) instead of ~65 per-site local `_W*`
   wrapper structs. JSON output is unchanged. (#197)
-- **Breaking:** the decode-path `Message` trait methods (`merge`,
-  `merge_field`, `merge_to_limit`, `merge_group`, `merge_length_delimited`),
-  `encoding::decode_unknown_field`, and `message_set::merge_item` now take a
-  `DecodeContext<'_>` — carrying the remaining recursion depth and the
-  shared unknown-field allowance — in place of the bare `depth: u32`. Code
-  generated with earlier releases must be regenerated. Callers of the
-  convenience methods (`decode`, `decode_from_slice`, `merge_from_slice`,
-  `DecodeOptions`) are unaffected.
 
 - **Breaking:** `MessageView` gains a required `merge_view_field` method,
   and the per-view decode tag loop is now a provided trait method
@@ -372,13 +405,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `decode_view_ctx` / `merge_into_view` instead of the removed inherent
   `_decode_ctx` / `_merge_into_view` helpers. (#198)
 
-- **`examples/custom-types` — end-to-end pluggable owned types.** A runnable
-  example crate that compiles a `.proto` with every owned-type knob
-  (`string_type_custom`, `bytes_type_custom`, `repeated_type_custom`,
-  `map_type_custom`, `box_type_custom`) pointed at crate-local newtypes
-  wrapping `flexstr`, `smallvec`, `indexmap`, and `smallbox`, then round-trips
-  a record through binary and JSON. The newtypes are the copy-paste template
-  for bridging a foreign storage type past the orphan rule. (#214)
+- **Breaking:** the decode-path `Message` trait methods (`merge`,
+  `merge_field`, `merge_to_limit`, `merge_group`, `merge_length_delimited`),
+  `encoding::decode_unknown_field`, and `message_set::merge_item` now take a
+  `DecodeContext<'_>` — carrying the remaining recursion depth and the
+  shared unknown-field allowance — in place of the bare `depth: u32`. Code
+  generated with earlier releases must be regenerated. Callers of the
+  convenience methods (`decode`, `decode_from_slice`, `merge_from_slice`,
+  `DecodeOptions`) are unaffected. (#184)
+
+- (**breaking**) **Zero-copy views enforce the unknown-field limit and
+  coalesce adjacent unknown records** (#184). View decoding previously stored
+  one borrowed span (16 bytes) per unknown wire record with no bound beyond
+  the input size. Spans for adjacent unknown records now coalesce into a
+  single span — a contiguous run of unknown fields costs one `Vec` slot
+  regardless of field count, and re-encodes byte-identically — and each *new*
+  span (one per unknown run) is counted against the same unknown-field limit
+  that bounds owned-message decoding, configured via
+  `DecodeOptions::with_unknown_field_limit` and honored by
+  `DecodeOptions::decode_view`. As part of this, the view decode path now
+  threads `DecodeContext<'_>`: `MessageView::decode_view_with_limit(buf,
+  depth)` is replaced by `decode_view_with_ctx(buf, ctx)`, and generated
+  views' hidden `_decode_depth` helpers become `_decode_ctx` — code
+  generated by earlier releases must be regenerated, consistent with the
+  owned-path change above.
+
+- (**breaking**) **View-to-owned conversion is now fallible and honors the
+  decode-time limit** (#184). `MessageView::to_owned_message` and
+  `to_owned_from_source` (and the `OwnedView` wrapper) now return
+  `Result<Owned, DecodeError>`: generated conversions previously swallowed
+  unknown-field re-materialization errors via `unwrap_or_default()`, silently
+  dropping every unknown field. `UnknownFieldsView::to_owned` also now
+  re-materializes under the unknown-field allowance that remained when the
+  view recorded its first unknown field — so a tight `with_unknown_field_limit`
+  configured at `decode_view` time carries through conversion, where each
+  owned `UnknownField` counts individually (unlike the coalesced spans the
+  view stores). Views built manually via `push_raw` fall back to the default
+  limit.
 
 ### Fixed
 
@@ -387,8 +450,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   still emits each registered extension at most once in first-seen unknown-field
   order, but duplicate detection now uses a set instead of a `Vec`, avoiding
   quadratic work for messages with many distinct unknown field numbers.
+  (#237)
 - **`extern_path` references to nested types now use the owning crate's
-  deconflicted module name** (#232). When the owning crate renames a
+  deconflicted module name** (#233). When the owning crate renames a
   message's nested-types module to avoid colliding with a sibling sub-package
   (the [#135] deconfliction, e.g. `Money`'s nested types land in `money_`
   because sub-package `pb.lyft.money` also exists), a consumer referencing
@@ -408,7 +472,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   a 64-bit / float / bytes element, failed to compile. The former is now
   generic over `P: ProtoBox<T>` and the latter over `C: From<Vec<T>>`; both
   are inferred from the field type, so default-representation code is
-  unchanged. (#214)
+  unchanged. (#234)
 
 - **`DecodeOptions::decode_reader` no longer overflows when the read size is
   unbounded.** The internal `read_limited` helper computed
@@ -428,6 +492,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   with an older codegen, runtime-only upgrades change unknown closed-enum
   map entries from default-insert to drop. (#218)
 
+- **Packed varint views reserve by element count, not byte length** (#216).
+  Decoding a packed varint repeated field into a view previously reserved
+  `payload.len()` slots — the upper bound for one-byte varints, but a 10×
+  over-reservation for negative `int32` / `int64` (every element is a
+  10-byte varint). The reservation is now the exact element count, computed
+  by a single pass that counts terminator bytes (most-significant-bit clear)
+  before decoding. View memory for packed-signed-heavy messages drops
+  proportionally; the wire format and owned decode are unchanged.
+
 - **`DecodeOptions::decode_length_delimited_reader` no longer allocates the
   wire-declared length up front.** The method previously allocated a zeroed
   buffer of the declared length before reading, so a source that declared a
@@ -436,7 +509,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   incrementally as bytes are actually delivered (initial capacity capped at
   64 KiB), so peak allocation tracks delivered data. Truncated streams
   report `UnexpectedEof` exactly as before; behavior for well-formed
-  streams is unchanged.
+  streams is unchanged. (#185)
 
 ## [0.7.1] - 2026-06-10
 
