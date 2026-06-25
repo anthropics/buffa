@@ -74,6 +74,7 @@ serde = { version = "1", default-features = false }
 serde_json = { version = "1", default-features = false, features = ["alloc"] }
 serde_norway = { version = "0.9" }
 arbitrary = { version = "1", default-features = false, features = ["derive"] }
+smoothutf8 = { version = "0.1", default-features = false }
 thiserror = { version = "2", default-features = false }
 # Optional `string` field representations that will be selectable via
 # `buffa_build`'s forthcoming `string_type` knob. Declared

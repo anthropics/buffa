@@ -86,8 +86,7 @@ impl ProtoString for SmolStr {
     /// the transient `String` a `From<String>` decode path would allocate.
     #[inline]
     fn from_wire(payload: WirePayload<'_>) -> Result<Self, DecodeError> {
-        let s = core::str::from_utf8(payload.as_slice()).map_err(|_| DecodeError::InvalidUtf8)?;
-        Ok(Self(smol_str::SmolStr::from(s)))
+        Ok(Self(smol_str::SmolStr::from(payload.to_str()?)))
     }
 }
 

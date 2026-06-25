@@ -15,14 +15,20 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["std"]
+default = ["std", "fast-utf8"]
 std = [
     "bytes/std",
     "foldhash/std",
     "thiserror/std",
     "serde?/std",
     "serde_json?/std",
+    "smoothutf8?/simdutf8",
 ]
+# Replace `core::str::from_utf8` at the decode hot path with `smoothutf8`
+# (portable, formally verified, `no_std`). With `std` also on, smoothutf8's
+# `simdutf8` delegation is enabled for inputs >=128 bytes. Named abstractly
+# (what you get, not how) so the public knob isn't tied to the backing crate.
+fast-utf8 = ["dep:smoothutf8"]
 # `json` and `text` are independently enableable. Both share the
 # `type_registry` module (gated `any(json, text)`) but carry per-format
 # entry types (`JsonAnyEntry` vs `TextAnyEntry`) — no struct-literal `#[cfg]`
@@ -48,4 +54,5 @@ once_cell = { workspace = true, features = ["alloc"] }
 rustversion = { workspace = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+smoothutf8 = { workspace = true, optional = true }
 thiserror = { workspace = true }

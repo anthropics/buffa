@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **`WirePayload::to_str`** — borrow the payload as a `&str` if valid UTF-8,
+  using buffa's UTF-8 validator (so it picks up `fast-utf8`). Convenience for
+  `ProtoString::from_wire` implementations; `buffa-smolstr` now uses it.
 - **`HasMessageView::decode_view` / `decode_view_with_options`** — defaulted
   methods so generic code bounded on `M: HasMessageView` can write
   `M::decode_view(buf)` instead of the associated-type path
@@ -224,6 +227,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **UTF-8 validation on the decode path now uses
+  [`smoothutf8`](https://docs.rs/smoothutf8)** (default-on `fast-utf8`
+  feature). The view-decode hot path (`borrow_str`) and the contiguous-input
+  branch of the owned-decode helpers (`decode_string`, `merge_string`) take
+  `verify_with_slack` against the source buffer whenever at least 8 readable
+  bytes follow the field — so the slack-buffer fast path is reached for every
+  string field except one ending in the last 8 bytes of the wire buffer. The
+  non-contiguous fallback and `WirePayload::to_str` take the safe
+  `smoothutf8::to_str`, with `simdutf8` delegation for inputs of 128 bytes or
+  more when `std` is also on. Measured on bare metal: view decode +15–22% and
+  owned merge +7–15% on the string-heavy benchmark messages, neutral on
+  bytes-dominated shapes. Default builds gain `smoothutf8` (and `simdutf8`
+  under
+  `std`) as new dependencies; consumers already on `default-features = false`
+  should add `fast-utf8` to their feature list to keep the faster validator,
+  or omit it to stay on `core::str::from_utf8`. A `no_std` build with
+  `fast-utf8` adds only `smoothutf8` (zero-dependency, formally verified).
 - (**breaking**) **`protoc-gen-buffa` now rejects malformed plugin parameters**
   instead of stderr-warning or silently defaulting (#235). An unknown option
   key, a missing `=`, a non-`true`/`false` boolean value, an invalid

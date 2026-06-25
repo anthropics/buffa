@@ -68,8 +68,10 @@ dependencies = [
  "foldhash",
  "hashbrown 0.15.5",
  "once_cell",
+ "rustversion",
  "serde",
  "serde_json",
+ "smoothutf8",
  "thiserror",
 ]
 
@@ -100,6 +102,7 @@ name = "buffa-descriptor"
 version = "0.7.1"
 dependencies = [
  "buffa",
+ "rustversion",
  "serde",
  "serde_json",
 ]
@@ -624,6 +627,21 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
+]
+
+[[package]]
+name = "simdutf8"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
+
+[[package]]
+name = "smoothutf8"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c038f4b87448b59ad444cc635982c920155805901ed6f86e679018eb1ec2b885"
+dependencies = [
+ "simdutf8",
 ]
 
 [[package]]

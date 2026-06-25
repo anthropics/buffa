@@ -50,6 +50,80 @@ use bytes::{Buf, BufMut, Bytes};
 use crate::encoding::{decode_varint, encode_varint, varint_len, Tag, WireType};
 use crate::error::DecodeError;
 
+/// Validate UTF-8 and return the borrowed `&str`.
+///
+/// With the `fast-utf8` feature (on by default) this dispatches to
+/// [`smoothutf8::to_str`], which is faster than [`core::str::from_utf8`] on
+/// the short ASCII strings typical of protobuf field values and (when `std`
+/// is also enabled) delegates inputs of 128 bytes or more to `simdutf8`.
+/// Without the feature, it is exactly `core::str::from_utf8`. Either way the
+/// check is the full Unicode §3.9 well-formedness rule, so the
+/// `from_utf8_unchecked` calls that consume the result are sound.
+// The explicit `return`s are required by the mutually-exclusive `#[cfg]` arms.
+#[allow(clippy::needless_return)]
+#[inline(always)]
+pub(crate) fn validate_str(bytes: &[u8]) -> Result<&str, DecodeError> {
+    #[cfg(feature = "fast-utf8")]
+    return smoothutf8::to_str(bytes).ok_or(DecodeError::InvalidUtf8);
+    #[cfg(not(feature = "fast-utf8"))]
+    return core::str::from_utf8(bytes).map_err(|_| DecodeError::InvalidUtf8);
+}
+
+/// Validate `buf[..len]` as UTF-8, where `buf` is a surrounding wire-buffer
+/// slice that may extend past the field.
+///
+/// When at least [`smoothutf8::SLACK`] readable bytes follow `len`
+/// (`buf.len() >= len + SLACK`), this takes [`smoothutf8::verify_with_slack`],
+/// which skips the per-string tail copy that dominates on inputs shorter than
+/// 16 bytes. The slack check is a runtime branch; in a protobuf decode it is
+/// almost always taken — only a string ending within `SLACK` bytes of the
+/// buffer's end falls back to the safe path.
+///
+/// This is the per-field-conditional integration of `verify_with_slack`. The
+/// preferred shape — pad the wire buffer once at ingest with `SLACK` zero
+/// bytes and call `verify_with_slack` unconditionally — requires the caller
+/// (typically connectrpc-rs) to append the padding before `.freeze()`; that
+/// is a follow-up. Until then the per-field branch costs one `cmp/jbe` that
+/// is taken for every field except one ending in the last `SLACK` bytes of
+/// the buffer, so a 1-bit predictor handles it.
+///
+/// # Safety
+///
+/// The caller must have established `len <= buf.len()` (the EOF check that
+/// precedes every call site does).
+// The explicit `return`s are required by the mutually-exclusive `#[cfg]` arms.
+#[allow(clippy::needless_return)]
+#[inline(always)]
+pub(crate) unsafe fn validate_str_in(buf: &[u8], len: usize) -> Result<&str, DecodeError> {
+    debug_assert!(len <= buf.len());
+    // SAFETY: caller established `len <= buf.len()`; that bound also makes
+    // `len + SLACK` non-overflowing (`buf.len() <= isize::MAX`).
+    let field = unsafe { buf.get_unchecked(..len) };
+    #[cfg(feature = "fast-utf8")]
+    {
+        // `len + SLACK` cannot overflow: `len <= buf.len() <= isize::MAX`.
+        let ok = if buf.len() >= len + smoothutf8::SLACK {
+            // SAFETY: `len + SLACK <= buf.len()` was just checked above,
+            // satisfying `verify_with_slack`'s precondition that
+            // `range.end + SLACK` bytes of `buf` are readable; `0 <= len`
+            // satisfies `range.start <= range.end`.
+            unsafe { smoothutf8::verify_with_slack(buf, 0..len) }
+        } else {
+            smoothutf8::verify(field)
+        };
+        return if ok {
+            // SAFETY: `verify`/`verify_with_slack` confirmed `field` is
+            // well-formed UTF-8; their correctness is mechanically verified
+            // against the same Unicode §3.9 rule as `core::str::from_utf8`.
+            Ok(unsafe { core::str::from_utf8_unchecked(field) })
+        } else {
+            Err(DecodeError::InvalidUtf8)
+        };
+    }
+    #[cfg(not(feature = "fast-utf8"))]
+    return core::str::from_utf8(field).map_err(|_| DecodeError::InvalidUtf8);
+}
+
 // ---------------------------------------------------------------------------
 // ZigZag encoding (for sint32/sint64)
 // ---------------------------------------------------------------------------
@@ -518,6 +592,21 @@ pub fn decode_string(buf: &mut impl Buf) -> Result<String, DecodeError> {
     if buf.remaining() < len {
         return Err(DecodeError::UnexpectedEof);
     }
+    let chunk = buf.chunk();
+    if chunk.len() >= len {
+        // Field is contiguous in the source: validate against the source
+        // chunk (so the slack-buffer fast path can read past `len` when the
+        // wire buffer continues), then own. Advance the cursor regardless of
+        // validity, matching the consume-before-validate behaviour below.
+        //
+        // SAFETY: `chunk.len() >= len` was just checked.
+        let r = unsafe { validate_str_in(chunk, len) }.map(alloc::borrow::ToOwned::to_owned);
+        buf.advance(len);
+        return r;
+    }
+    // Non-contiguous: own first (the source has no single slice to validate
+    // against), then validate the owned bytes via the safe path.
+    //
     // SAFETY: `copy_to_slice` writes exactly `len` bytes into the buffer,
     // and we verified `buf.remaining() >= len` above. The Vec has capacity
     // for `len` bytes. This avoids a redundant zero-initialization that
@@ -529,7 +618,9 @@ pub fn decode_string(buf: &mut impl Buf) -> Result<String, DecodeError> {
         v
     };
     buf.copy_to_slice(&mut bytes);
-    String::from_utf8(bytes).map_err(|_| DecodeError::InvalidUtf8)
+    validate_str(&bytes)?;
+    // SAFETY: `validate_str` just confirmed `bytes` is well-formed UTF-8.
+    Ok(unsafe { String::from_utf8_unchecked(bytes) })
 }
 
 /// Merge a length-delimited string into an existing `String`, reusing its
@@ -552,6 +643,30 @@ pub fn merge_string(value: &mut String, buf: &mut impl Buf) -> Result<(), Decode
     if buf.remaining() < len {
         return Err(DecodeError::UnexpectedEof);
     }
+    let chunk = buf.chunk();
+    if chunk.len() >= len {
+        // Field is contiguous in the source: validate against the source
+        // chunk (slack-buffer fast path), then copy into `value` reusing its
+        // allocation. Advance the cursor regardless of validity.
+        //
+        // SAFETY: `chunk.len() >= len` was just checked.
+        let r: Result<(), DecodeError> = match unsafe { validate_str_in(chunk, len) } {
+            Ok(s) => {
+                value.clear();
+                value.push_str(s);
+                Ok(())
+            }
+            Err(e) => {
+                value.clear(); // leave in a valid (empty) state on error
+                Err(e)
+            }
+        };
+        buf.advance(len);
+        return r;
+    }
+    // Non-contiguous: own first into `value`'s buffer, then validate via the
+    // safe path.
+    //
     // SAFETY: `as_mut_vec` requires that the vec contains valid UTF-8 when
     // the String is next used as a string. We validate UTF-8 below before
     // returning Ok, and clear the vec on validation failure.
@@ -569,7 +684,7 @@ pub fn merge_string(value: &mut String, buf: &mut impl Buf) -> Result<(), Decode
     }
     buf.copy_to_slice(vec);
     // Validate UTF-8 on the new content.
-    if core::str::from_utf8(vec).is_err() {
+    if validate_str(vec).is_err() {
         vec.clear(); // leave in a valid state on error
         return Err(DecodeError::InvalidUtf8);
     }
@@ -584,9 +699,11 @@ pub fn merge_string(value: &mut String, buf: &mut impl Buf) -> Result<(), Decode
 /// The decoder hands over `Borrowed` when the field's bytes are contiguous in
 /// the current input chunk (the common case for slice- and `Bytes`-backed
 /// sources) and `Owned` only otherwise (e.g. a field straddling a `Chain`
-/// boundary). A representation reads the bytes with [`as_slice`](Self::as_slice)
-/// (always zero-copy) or takes ownership with [`into_bytes`](Self::into_bytes)
-/// (zero-copy only for an `Owned` payload — see that method).
+/// boundary). A representation validates-and-borrows with
+/// [`to_str`](Self::to_str), reads the raw bytes with
+/// [`as_slice`](Self::as_slice) (always zero-copy), or takes ownership with
+/// [`into_bytes`](Self::into_bytes) (zero-copy only for an `Owned` payload —
+/// see that method).
 #[derive(Debug, Clone)]
 pub enum WirePayload<'a> {
     /// The field's bytes borrowed directly from the input buffer.
@@ -606,6 +723,22 @@ impl WirePayload<'_> {
             WirePayload::Borrowed(s) => s,
             WirePayload::Owned(b) => b,
         }
+    }
+
+    /// Borrow the payload as a `&str` if it is valid UTF-8.
+    ///
+    /// Convenience for [`ProtoString::from_wire`] implementations; uses
+    /// buffa's UTF-8 validator (so it picks up the `fast-utf8` feature when
+    /// enabled) and returns the same [`DecodeError::InvalidUtf8`] the
+    /// built-in `String` representation would.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeError::InvalidUtf8`] if the bytes are not valid UTF-8.
+    #[inline]
+    #[must_use = "the validated `&str` is the only way to use the payload as a string"]
+    pub fn to_str(&self) -> Result<&str, DecodeError> {
+        validate_str(self.as_slice())
     }
 
     /// Take ownership of the field's bytes as [`Bytes`].
@@ -770,7 +903,10 @@ pub trait ProtoString:
     ///
     /// This is the decode constructor: it owns the validation/ownership choice,
     /// so a representation can borrow-and-inline a short string (no transient
-    /// heap allocation) or validate UTF-8 only when it must. There is
+    /// heap allocation) or validate UTF-8 only when it must. Validate-and-borrow
+    /// with [`WirePayload::to_str`] (which uses buffa's UTF-8 validator and so
+    /// picks up the `fast-utf8` feature), or read raw bytes with
+    /// [`WirePayload::as_slice`]. There is
     /// intentionally no blanket impl — every representation provides its own
     /// optimal `from_wire`; the `From<String>`/`From<&str>` supertraits remain
     /// for the JSON, text, and view→owned paths.
@@ -787,9 +923,7 @@ pub trait ProtoString:
 impl ProtoString for String {
     #[inline]
     fn from_wire(payload: WirePayload<'_>) -> Result<Self, DecodeError> {
-        core::str::from_utf8(payload.as_slice())
-            .map(alloc::borrow::ToOwned::to_owned)
-            .map_err(|_| DecodeError::InvalidUtf8)
+        payload.to_str().map(alloc::borrow::ToOwned::to_owned)
     }
 }
 
@@ -1270,14 +1404,17 @@ pub fn borrow_str<'a>(buf: &mut &'a [u8]) -> Result<&'a str, DecodeError> {
     if buf.len() < len {
         return Err(DecodeError::UnexpectedEof);
     }
-    let bytes = &buf[..len];
-    // Advance the cursor unconditionally before UTF-8 validation.  This
-    // matches the behaviour of `decode_string` (where `copy_to_slice`
-    // consumes the bytes before `from_utf8`) and is correct for protobuf
-    // error recovery: the field payload has been consumed regardless of
-    // whether its contents were valid.
+    // Validate against the surrounding slice (so the slack-buffer fast path
+    // can read past `len` when the wire buffer continues), then advance the
+    // cursor unconditionally — matching `decode_string` (where `copy_to_slice`
+    // consumes the bytes before validation) and protobuf error-recovery
+    // semantics: the field payload has been consumed regardless of whether
+    // its contents were valid.
+    //
+    // SAFETY: `buf.len() >= len` was established by the EOF check above.
+    let s = unsafe { validate_str_in(buf, len) };
     *buf = &buf[len..];
-    core::str::from_utf8(bytes).map_err(|_| DecodeError::InvalidUtf8)
+    s
 }
 
 /// Borrow a `bytes` value directly from the input buffer (zero-copy).
@@ -1357,6 +1494,68 @@ pub fn borrow_group<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── UTF-8 validation shims ────────────────────────────────────────────
+
+    #[test]
+    fn validate_str_accepts_valid_rejects_invalid() {
+        assert_eq!(validate_str(b"hello").unwrap(), "hello");
+        assert_eq!(validate_str("héllo 🌍".as_bytes()).unwrap(), "héllo 🌍");
+        assert_eq!(validate_str(b""), Ok(""));
+        assert!(matches!(
+            validate_str(&[0xC0, 0x80]), // overlong NUL
+            Err(DecodeError::InvalidUtf8)
+        ));
+    }
+
+    #[test]
+    fn validate_str_in_slack_and_tail_paths_agree() {
+        // SAFETY: every call below has `len <= buf.len()`.
+        unsafe {
+            // 8-byte slack after the field → takes the slack-buffer fast path.
+            let with_slack = b"hello\x00\x00\x00\x00\x00\x00\x00\x00";
+            assert_eq!(validate_str_in(with_slack, 5).unwrap(), "hello");
+            // No slack (field fills the buffer) → safe fallback.
+            assert_eq!(validate_str_in(b"hello", 5).unwrap(), "hello");
+            // Invalid input rejected on both paths.
+            let bad_with_slack = b"\xC0\x80padpadpa";
+            assert!(matches!(
+                validate_str_in(bad_with_slack, 2),
+                Err(DecodeError::InvalidUtf8)
+            ));
+            assert!(matches!(
+                validate_str_in(&[0xC0, 0x80], 2),
+                Err(DecodeError::InvalidUtf8)
+            ));
+            // Slack region is *not* validated: trailing junk past `len` is ignored.
+            let junk_slack = b"ok\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF";
+            assert_eq!(validate_str_in(junk_slack, 2).unwrap(), "ok");
+        }
+    }
+
+    #[test]
+    fn borrow_str_uses_surrounding_buffer_for_slack() {
+        // Two length-delimited string fields back-to-back: the first has the
+        // second's bytes as slack, the second falls back to the safe path.
+        let mut wire = alloc::vec::Vec::new();
+        for s in ["hi", "tail-no-slack"] {
+            wire.push(s.len() as u8);
+            wire.extend_from_slice(s.as_bytes());
+        }
+        let mut cur: &[u8] = &wire;
+        assert_eq!(borrow_str(&mut cur).unwrap(), "hi");
+        assert_eq!(borrow_str(&mut cur).unwrap(), "tail-no-slack");
+        assert!(cur.is_empty());
+    }
+
+    #[test]
+    fn wire_payload_to_str() {
+        assert_eq!(WirePayload::Borrowed(b"abc").to_str().unwrap(), "abc");
+        assert!(matches!(
+            WirePayload::Borrowed(&[0xFF]).to_str(),
+            Err(DecodeError::InvalidUtf8)
+        ));
+    }
 
     /// A custom string representation that enforces an extra invariant in
     /// `from_wire`, to prove a representation can surface `DecodeError::Custom`
