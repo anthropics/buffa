@@ -38,12 +38,12 @@
   <text x="720.0" y="273" text-anchor="middle" class="axis-label">1,000</text>
   <text x="430.0" y="288" text-anchor="middle" class="axis-label">MiB/s</text>
   <text x="130" y="173.0" text-anchor="end" class="label">ApiResponse</text>
-  <rect x="140" y="80.0" width="346.6" height="22" rx="2" fill="#4C78A8"/>
-  <text x="490.6" y="95.0" class="value">597</text>
-  <rect x="140" y="106.0" width="528.1" height="22" rx="2" fill="#72B7B2"/>
-  <text x="672.1" y="121.0" class="value">910</text>
-  <rect x="140" y="132.0" width="540.9" height="22" rx="2" fill="#A0CBE8"/>
-  <text x="684.9" y="147.0" class="value">932</text>
+  <rect x="140" y="80.0" width="333.7" height="22" rx="2" fill="#4C78A8"/>
+  <text x="477.7" y="95.0" class="value">575</text>
+  <rect x="140" y="106.0" width="505.8" height="22" rx="2" fill="#72B7B2"/>
+  <text x="649.8" y="121.0" class="value">872</text>
+  <rect x="140" y="132.0" width="528.9" height="22" rx="2" fill="#A0CBE8"/>
+  <text x="672.9" y="147.0" class="value">911</text>
   <rect x="140" y="158.0" width="318.9" height="22" rx="2" fill="#F58518"/>
   <text x="462.9" y="173.0" class="value">549</text>
   <rect x="140" y="184.0" width="316.6" height="22" rx="2" fill="#EEAE62"/>

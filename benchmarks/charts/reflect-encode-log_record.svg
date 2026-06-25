@@ -28,8 +28,8 @@
   <text x="720.0" y="143" text-anchor="middle" class="axis-label">4,000</text>
   <text x="430.0" y="158" text-anchor="middle" class="axis-label">MiB/s</text>
   <text x="130" y="108.0" text-anchor="end" class="label">LogRecord</text>
-  <rect x="140" y="80.0" width="440.0" height="22" rx="2" fill="#4C78A8"/>
-  <text x="584.0" y="95.0" class="value">3,034</text>
-  <rect x="140" y="106.0" width="126.9" height="22" rx="2" fill="#B279A2"/>
-  <text x="270.9" y="121.0" class="value">875</text>
+  <rect x="140" y="80.0" width="443.0" height="22" rx="2" fill="#4C78A8"/>
+  <text x="587.0" y="95.0" class="value">3,055</text>
+  <rect x="140" y="106.0" width="128.3" height="22" rx="2" fill="#B279A2"/>
+  <text x="272.3" y="121.0" class="value">884</text>
 </svg>

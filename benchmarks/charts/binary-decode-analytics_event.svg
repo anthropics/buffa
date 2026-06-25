@@ -40,15 +40,15 @@
   <line x1="664.5" y1="263" x2="670.5" y2="253" stroke="#57606a" stroke-width="1"/>
   <line x1="670.5" y1="263" x2="676.5" y2="253" stroke="#57606a" stroke-width="1"/>
   <text x="130" y="173.0" text-anchor="end" class="label">AnalyticsEvent</text>
-  <rect x="140" y="80.0" width="231.9" height="22" rx="2" fill="#4C78A8"/>
-  <text x="375.9" y="95.0" class="value">136</text>
-  <rect x="140" y="106.0" width="382.7" height="22" rx="2" fill="#72B7B2"/>
-  <text x="526.7" y="121.0" class="value">225</text>
+  <rect x="140" y="80.0" width="209.4" height="22" rx="2" fill="#4C78A8"/>
+  <text x="353.4" y="95.0" class="value">123</text>
+  <rect x="140" y="106.0" width="383.0" height="22" rx="2" fill="#72B7B2"/>
+  <text x="527.0" y="121.0" class="value">225</text>
   <rect x="140" y="132.0" width="580.0" height="22" rx="2" fill="#A0CBE8"/>
   <polygon points="663.5,155.0 669.5,131.0 675.5,131.0 669.5,155.0" fill="white"/>
   <line x1="663.5" y1="155.0" x2="669.5" y2="131.0" stroke="#57606a" stroke-width="1"/>
   <line x1="669.5" y1="155.0" x2="675.5" y2="131.0" stroke="#57606a" stroke-width="1"/>
-  <text x="724.0" y="147.0" class="value">11,624</text>
+  <text x="724.0" y="147.0" class="value">11,873</text>
   <rect x="140" y="158.0" width="252.2" height="22" rx="2" fill="#F58518"/>
   <text x="396.2" y="173.0" class="value">148</text>
   <rect x="140" y="184.0" width="220.0" height="22" rx="2" fill="#EEAE62"/>

@@ -28,8 +28,8 @@
   <text x="720.0" y="143" text-anchor="middle" class="axis-label">40.0</text>
   <text x="430.0" y="158" text-anchor="middle" class="axis-label">GiB/s</text>
   <text x="130" y="108.0" text-anchor="end" class="label">MediaFrame</text>
-  <rect x="140" y="80.0" width="205.4" height="22" rx="2" fill="#4C78A8"/>
-  <text x="349.4" y="95.0" class="value">14.16</text>
-  <rect x="140" y="106.0" width="490.5" height="22" rx="2" fill="#72B7B2"/>
-  <text x="634.5" y="121.0" class="value">33.83</text>
+  <rect x="140" y="80.0" width="204.4" height="22" rx="2" fill="#4C78A8"/>
+  <text x="348.4" y="95.0" class="value">14.09</text>
+  <rect x="140" y="106.0" width="474.1" height="22" rx="2" fill="#72B7B2"/>
+  <text x="618.1" y="121.0" class="value">32.70</text>
 </svg>

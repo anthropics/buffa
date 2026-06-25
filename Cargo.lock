@@ -804,9 +804,9 @@ dependencies = [
 
 [[package]]
 name = "smoothutf8"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c038f4b87448b59ad444cc635982c920155805901ed6f86e679018eb1ec2b885"
+checksum = "36358427d32ecdb1624616deed99eccfef0a167fe5bf40ddb51efe6980bc1ec8"
 dependencies = [
  "simdutf8",
 ]

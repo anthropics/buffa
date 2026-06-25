@@ -37,6 +37,17 @@ export CFLAGS="${CFLAGS:-} -DNDEBUG"
 PASSES="${PASSES:-5}"          # sequential one-at-a-time passes per impl
 WARMUP="${WARMUP:-1}"
 MEASURE="${MEASURE:-3}"
+# The published number is the median across PASSES, so the per-pass criterion
+# CI width is not what bounds precision — the cross-pass spread is. With the
+# block-aligned build there is no layout lottery to average over either, so 50
+# samples (down from criterion's default 100), `--nresamples 1000` (down from
+# criterion's default 100,000 bootstrap CI resamples — pure waste since
+# cross_aggregate.py only reads the median, never the CI bounds), `--noplot`,
+# and `--discard-baseline` together cut the wall-clock to roughly the
+# warm-up + measurement time without moving the published median outside the
+# existing ~2-5% spread floor.
+SAMPLES="${SAMPLES:-50}"
+NRESAMPLES="${NRESAMPLES:-1000}"
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"   # repo root
 cd "$ROOT"
@@ -67,9 +78,9 @@ for rep in $(seq 1 "$PASSES"); do
   for c in buffa prost prost-bytes google; do
     [ -n "${BIN[$c]:-}" ] || continue
     d="$WORK/${c}_pass${rep}"; mkdir -p "$d"
-    ( cd "$d" && chrt -f 99 taskset -c "$CORE" "$ROOT/${BIN[$c]}" --bench --warm-up-time "$WARMUP" --measurement-time "$MEASURE" >out.txt 2>&1 )
+    ( cd "$d" && chrt -f 99 taskset -c "$CORE" "$ROOT/${BIN[$c]}" --bench --noplot --discard-baseline --sample-size "$SAMPLES" --nresamples "$NRESAMPLES" --warm-up-time "$WARMUP" --measurement-time "$MEASURE" >out.txt 2>&1 )
     if [ "$c" = buffa ] && [ -n "${BIN_REFLECT:-}" ]; then
-      ( cd "$d" && chrt -f 99 taskset -c "$CORE" "$ROOT/$BIN_REFLECT" --bench --warm-up-time "$WARMUP" --measurement-time "$MEASURE" >>out.txt 2>&1 )
+      ( cd "$d" && chrt -f 99 taskset -c "$CORE" "$ROOT/$BIN_REFLECT" --bench --noplot --discard-baseline --sample-size "$SAMPLES" --nresamples "$NRESAMPLES" --warm-up-time "$WARMUP" --measurement-time "$MEASURE" >>out.txt 2>&1 )
     fi
   done
   d="$WORK/go_pass${rep}"; mkdir -p "$d"

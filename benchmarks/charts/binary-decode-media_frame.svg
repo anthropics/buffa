@@ -38,12 +38,12 @@
   <text x="720.0" y="273" text-anchor="middle" class="axis-label">50.0</text>
   <text x="430.0" y="288" text-anchor="middle" class="axis-label">GiB/s</text>
   <text x="130" y="173.0" text-anchor="end" class="label">MediaFrame</text>
-  <rect x="140" y="80.0" width="120.9" height="22" rx="2" fill="#4C78A8"/>
-  <text x="264.9" y="95.0" class="value">10.42</text>
-  <rect x="140" y="106.0" width="469.8" height="22" rx="2" fill="#72B7B2"/>
-  <text x="613.8" y="121.0" class="value">40.50</text>
-  <rect x="140" y="132.0" width="470.0" height="22" rx="2" fill="#A0CBE8"/>
-  <text x="614.0" y="147.0" class="value">40.52</text>
+  <rect x="140" y="80.0" width="120.3" height="22" rx="2" fill="#4C78A8"/>
+  <text x="264.3" y="95.0" class="value">10.37</text>
+  <rect x="140" y="106.0" width="469.5" height="22" rx="2" fill="#72B7B2"/>
+  <text x="613.5" y="121.0" class="value">40.47</text>
+  <rect x="140" y="132.0" width="460.8" height="22" rx="2" fill="#A0CBE8"/>
+  <text x="604.8" y="147.0" class="value">39.73</text>
   <rect x="140" y="158.0" width="68.0" height="22" rx="2" fill="#F58518"/>
   <text x="212.0" y="173.0" class="value">5.86</text>
   <rect x="140" y="184.0" width="208.8" height="22" rx="2" fill="#EEAE62"/>
