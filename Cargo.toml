@@ -6,11 +6,13 @@ members = [
     "buffa-descriptor",
     "buffa-codegen",
     "buffa-build",
-    "buffa-smolstr",
     "buffa-test",
     "buffa-yaml",
     "protoc-gen-buffa",
     "protoc-gen-buffa-packaging",
+    # Example/reference crate, not published; kept as a workspace member so
+    # buffa-test can depend on it and it inherits the workspace version.
+    "examples/buffa-smolstr",
 ]
 exclude = [
     "benchmarks/gen-datasets",
@@ -56,7 +58,7 @@ buffa-types = { path = "buffa-types", version = "0.8.0" }
 buffa-descriptor = { path = "buffa-descriptor", version = "0.8.0", default-features = false }
 buffa-codegen = { path = "buffa-codegen", version = "0.8.0" }
 buffa-build = { path = "buffa-build", version = "0.8.0" }
-buffa-smolstr = { path = "buffa-smolstr", version = "0.8.0" }
+buffa-smolstr = { path = "examples/buffa-smolstr", version = "0.8.0" }
 buffa-test = { path = "buffa-test", version = "0.8.0" }
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
 bytes = { version = "1", default-features = false }

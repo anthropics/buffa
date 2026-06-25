@@ -819,7 +819,9 @@ pub fn string_encoded_len(value: &str) -> usize {
 /// with `buffa_build`'s `string_type` / `string_type_custom`. There is
 /// intentionally **no blanket impl**, and a foreign type cannot implement this
 /// trait (orphan rule) — wrap it in a local newtype that implements the trait;
-/// see the `buffa-smolstr` crate for the canonical template.
+/// see `examples/custom-types` in the buffa repository for the canonical
+/// template (and `buffa-smolstr` in the same repository for a self-contained
+/// `smol_str` newtype).
 ///
 /// The bounds are exactly what generated code requires of a string field:
 ///
@@ -889,7 +891,7 @@ pub fn string_encoded_len(value: &str) -> usize {
         message = "`{Self}` cannot be used as a buffa custom string type",
         note = "buffa owns `ProtoString`, so a foreign type can't implement it directly (orphan rule). \
                 Wrap it in a crate-local newtype and implement `ProtoString` on the newtype. \
-                See the `buffa-smolstr` crate for a template."
+                See `examples/custom-types` in the buffa repository for a template."
     )
 )]
 pub trait ProtoString:
@@ -1036,8 +1038,8 @@ pub fn decode_bytes_to_bytes(buf: &mut impl Buf) -> Result<Bytes, DecodeError> {
 /// `Bytes`-backed buffer). Select another representation with `buffa_build`'s
 /// `bytes_type` / `bytes_type_custom`. There is intentionally **no blanket
 /// impl**, and a foreign type cannot implement this trait (orphan rule) — wrap
-/// it in a local newtype that implements the trait; see the `buffa-smolstr`
-/// crate for the canonical template (the `bytes` side mirrors it).
+/// it in a local newtype that implements the trait; see
+/// `examples/custom-types` in the buffa repository for the canonical template.
 ///
 /// This is the `bytes`-side twin of [`ProtoString`]; the bounds are exactly what
 /// generated code requires of a `bytes` field:
@@ -1201,7 +1203,8 @@ pub fn decode_bytes_to<B: ProtoBytes>(buf: &mut impl Buf) -> Result<B, DecodeErr
 /// *foreign* collection (e.g. `smallvec::SmallVec`) cannot implement it
 /// directly (orphan rule). Always wrap a foreign collection in a **crate-local
 /// newtype** and implement `ProtoList` on the newtype, exactly like the
-/// `ProtoString` newtype pattern (see the `buffa-smolstr` crate). This holds
+/// `ProtoString` newtype pattern (see `examples/custom-types` in the buffa
+/// repository). This holds
 /// even for binary-only builds — the generated decode/clear paths require
 /// `Field: ProtoList`.
 ///

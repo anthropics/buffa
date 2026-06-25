@@ -1,4 +1,5 @@
-//! [`buffa::ProtoString`] support for [`smol_str::SmolStr`].
+//! [`buffa::ProtoString`] support for [`smol_str::SmolStr`] — **example only,
+//! not published to crates.io.**
 //!
 //! `SmolStr` is foreign to both `buffa` and this crate's consumers, so the
 //! orphan rule forbids implementing `ProtoString` for it directly. This crate
@@ -6,16 +7,18 @@
 //! including an `O(1)`, allocation-free [`from_wire`](buffa::ProtoString::from_wire)
 //! for short strings (inlined up to `smol_str`'s 23-byte capacity).
 //!
-//! Point `buffa_build`'s `string_type_custom` at the newtype path:
+//! It is the worked reference, not a dependency to take: copy this file into
+//! your own crate, swap `smol_str` for whatever inline-string type you depend
+//! on, and point `buffa_build`'s `string_type_custom` at your newtype's path:
 //!
 //! ```rust,ignore
 //! buffa_build::Config::new()
-//!     .string_type_custom("::buffa_smolstr::SmolStr")
+//!     .string_type_custom("::my_crate::MySmolStr")
 //!     .compile()?;
 //! ```
 //!
-//! It is also the template for the other preset crates and for downstream
-//! custom-type fixtures.
+//! See `examples/custom-types` for the end-to-end walkthrough covering all
+//! five pluggable-type knobs.
 
 use buffa::{DecodeError, ProtoString, WirePayload};
 

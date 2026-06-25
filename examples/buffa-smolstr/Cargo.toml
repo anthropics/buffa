@@ -5,6 +5,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 description = "buffa ProtoString support for smol_str::SmolStr (string_type preset)."
+# In-repo reference crate only — not published. It demonstrates the
+# `ProtoString` newtype pattern for a foreign type (`smol_str::SmolStr`);
+# consumers should write their own newtype against their own `smol_str`
+# version rather than depend on this crate's pin. See `examples/custom-types`
+# for the end-to-end walkthrough.
+publish = false
 
 [features]
 # Proto3 JSON support: derive Serialize/Deserialize so the newtype works in

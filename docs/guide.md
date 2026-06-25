@@ -196,7 +196,7 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.type_name_prefix(prefix)` | `""` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to every generated message/enum type name (`message User` → `struct RpcUser`); modules, oneof enums, extern-mapped types, and the wire format are unaffected. A crate referencing these types via `extern_path` must spell out the prefixed name (`::crate_a::RpcUser`) |
 | `.use_bytes_type()` | — | Use `bytes::Bytes` for all bytes fields, including `map<K, bytes>` values |
 | `.use_bytes_type_in(&[...])` | — | Use `bytes::Bytes` for matching bytes fields (same `map<K, bytes>` rule) |
-| `.string_type_custom(path)` | `String` | Use a custom owned string representation that implements `ProtoString`, named by Rust path (e.g. `"::buffa_smolstr::SmolStr"`), for all string fields (see [String and bytes field representations](#string-and-bytes-field-representations)) |
+| `.string_type_custom(path)` | `String` | Use a custom owned string representation that implements `ProtoString`, named by Rust path (e.g. `"::my_crate::SmolStr"`), for all string fields (see [String and bytes field representations](#string-and-bytes-field-representations)) |
 | `.string_type_custom_in(path, &[...])` | — | Use a custom string representation for matching string fields |
 | `.bytes_type(repr)` / `.bytes_type_in(repr, &[...])` | `Vec<u8>` | Owned `bytes` representation: `BytesRepr::{Vec, Bytes, Custom(path)}` (`use_bytes_type` is the `Bytes` alias) |
 | `.bytes_type_custom(path)` / `.bytes_type_custom_in(path, &[...])` | — | Use a custom `bytes` representation by Rust path |
@@ -309,9 +309,9 @@ By default every proto `string` field is generated as `String` and every `bytes`
 
 ```rust,ignore
 buffa_build::Config::new()
-    // Broad default first: every string field becomes the buffa-smolstr newtype…
-    .string_type_custom("::buffa_smolstr::SmolStr")
-    // …then narrower overrides, pointing at your own ProtoString newtype.
+    // Broad default first: every string field becomes your ProtoString newtype…
+    .string_type_custom("::my_crate::SmolStr")
+    // …then narrower overrides for specific fields.
     .string_type_custom_in("::my_crate::CompactStr", &[".my.pkg.LogRecord.message"])
     // bytes fields: the built-in zero-copy Bytes, or your own ProtoBytes newtype.
     .bytes_type_custom("::my_crate::SmallBytes")
