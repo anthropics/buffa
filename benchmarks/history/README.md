@@ -18,7 +18,7 @@ iteration are stored alongside, and each number is the **median across several
 cores** with its spread recorded (see below).
 
 The matrix is **dense**: every message shape is measured against every release
-(v0.1.0–v0.7.1), not just from the release that first added it to the suite. A
+(v0.1.0–v0.8.0), not just from the release that first added it to the suite. A
 shape is a property of the protobuf schema, not of any buffa version — buffa
 v0.1.0 could always decode a `MediaFrame`, we just never asked it to — so the
 canonical shapes and datasets are fed to each release's own codegen and every
