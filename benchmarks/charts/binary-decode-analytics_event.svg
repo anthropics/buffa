@@ -40,21 +40,21 @@
   <line x1="664.5" y1="263" x2="670.5" y2="253" stroke="#57606a" stroke-width="1"/>
   <line x1="670.5" y1="263" x2="676.5" y2="253" stroke="#57606a" stroke-width="1"/>
   <text x="130" y="173.0" text-anchor="end" class="label">AnalyticsEvent</text>
-  <rect x="140" y="80.0" width="213.3" height="22" rx="2" fill="#4C78A8"/>
-  <text x="357.3" y="95.0" class="value">125</text>
-  <rect x="140" y="106.0" width="329.5" height="22" rx="2" fill="#72B7B2"/>
-  <text x="473.5" y="121.0" class="value">193</text>
+  <rect x="140" y="80.0" width="231.9" height="22" rx="2" fill="#4C78A8"/>
+  <text x="375.9" y="95.0" class="value">136</text>
+  <rect x="140" y="106.0" width="382.7" height="22" rx="2" fill="#72B7B2"/>
+  <text x="526.7" y="121.0" class="value">225</text>
   <rect x="140" y="132.0" width="580.0" height="22" rx="2" fill="#A0CBE8"/>
   <polygon points="663.5,155.0 669.5,131.0 675.5,131.0 669.5,155.0" fill="white"/>
   <line x1="663.5" y1="155.0" x2="669.5" y2="131.0" stroke="#57606a" stroke-width="1"/>
   <line x1="669.5" y1="155.0" x2="675.5" y2="131.0" stroke="#57606a" stroke-width="1"/>
-  <text x="724.0" y="147.0" class="value">11,015</text>
-  <rect x="140" y="158.0" width="251.8" height="22" rx="2" fill="#F58518"/>
-  <text x="395.8" y="173.0" class="value">148</text>
-  <rect x="140" y="184.0" width="219.2" height="22" rx="2" fill="#EEAE62"/>
-  <text x="363.2" y="199.0" class="value">128</text>
-  <rect x="140" y="210.0" width="378.2" height="22" rx="2" fill="#E45756"/>
-  <text x="522.2" y="225.0" class="value">222</text>
+  <text x="724.0" y="147.0" class="value">11,624</text>
+  <rect x="140" y="158.0" width="252.2" height="22" rx="2" fill="#F58518"/>
+  <text x="396.2" y="173.0" class="value">148</text>
+  <rect x="140" y="184.0" width="220.0" height="22" rx="2" fill="#EEAE62"/>
+  <text x="364.0" y="199.0" class="value">129</text>
+  <rect x="140" y="210.0" width="377.9" height="22" rx="2" fill="#E45756"/>
+  <text x="521.9" y="225.0" class="value">222</text>
   <rect x="140" y="236.0" width="97.0" height="22" rx="2" fill="#54A24B"/>
   <text x="241.0" y="251.0" class="value">57</text>
 </svg>

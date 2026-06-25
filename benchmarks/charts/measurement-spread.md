@@ -4,7 +4,7 @@ Per-benchmark spread = (max−min)/median throughput across the 5 sequential one
 
 | Implementation | benchmarks | median | p90 | max |
 |---|--:|--:|--:|--:|
-| buffa | 70 | 2.3% | 7.4% | 27.9% |
-| prost | 30 | 2.5% | 4.4% | 7.5% |
-| prost (bytes) | 10 | 2.2% | 4.6% | 4.6% |
-| protobuf-v4 | 10 | 1.8% | 5.2% | 5.2% |
+| buffa | 70 | 2.3% | 6.3% | 13.8% |
+| prost | 30 | 1.8% | 4.1% | 7.7% |
+| prost (bytes) | 10 | 2.0% | 6.7% | 6.7% |
+| protobuf-v4 | 10 | 1.9% | 6.1% | 6.1% |

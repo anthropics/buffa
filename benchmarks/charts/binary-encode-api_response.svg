@@ -38,14 +38,14 @@
   <text x="130" y="160.0" text-anchor="end" class="label">ApiResponse</text>
   <rect x="140" y="80.0" width="567.3" height="22" rx="2" fill="#4C78A8"/>
   <text x="711.3" y="95.0" class="value">1,956</text>
-  <rect x="140" y="106.0" width="563.1" height="22" rx="2" fill="#72B7B2"/>
-  <text x="707.1" y="121.0" class="value">1,941</text>
-  <rect x="140" y="132.0" width="564.6" height="22" rx="2" fill="#A0CBE8"/>
-  <text x="708.6" y="147.0" class="value">1,946</text>
-  <rect x="140" y="158.0" width="567.4" height="22" rx="2" fill="#F58518"/>
-  <text x="711.4" y="173.0" class="value">1,956</text>
-  <rect x="140" y="184.0" width="183.2" height="22" rx="2" fill="#E45756"/>
-  <text x="327.2" y="199.0" class="value">631</text>
+  <rect x="140" y="106.0" width="565.0" height="22" rx="2" fill="#72B7B2"/>
+  <text x="709.0" y="121.0" class="value">1,948</text>
+  <rect x="140" y="132.0" width="553.8" height="22" rx="2" fill="#A0CBE8"/>
+  <text x="697.8" y="147.0" class="value">1,909</text>
+  <rect x="140" y="158.0" width="569.5" height="22" rx="2" fill="#F58518"/>
+  <text x="713.5" y="173.0" class="value">1,963</text>
+  <rect x="140" y="184.0" width="185.4" height="22" rx="2" fill="#E45756"/>
+  <text x="329.4" y="199.0" class="value">639</text>
   <rect x="140" y="210.0" width="111.3" height="22" rx="2" fill="#54A24B"/>
   <text x="255.3" y="225.0" class="value">383</text>
 </svg>
