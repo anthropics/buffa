@@ -236,10 +236,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   string field except one ending in the last 8 bytes of the wire buffer. The
   non-contiguous fallback and `WirePayload::to_str` take the safe
   `smoothutf8::to_str`, with `simdutf8` delegation for inputs of 128 bytes or
-  more when `std` is also on. Measured on bare metal: view decode +15–22% and
-  owned merge +7–15% on the string-heavy benchmark messages, neutral on
-  bytes-dominated shapes. Default builds gain `smoothutf8` (and `simdutf8`
-  under
+  more when `std` is also on. Measured on bare metal at the default x86-64
+  target: view decode +15–22% and owned merge +7–15% on the string-heavy
+  benchmark messages, neutral on bytes-dominated shapes. Consumers building
+  with `-C target-cpu=x86-64-v3` (Haswell+, 2013–) additionally get
+  smoothutf8's BMI2 shift-DFA and AVX2 ASCII prefix scan, which the smoothutf8
+  README measures at ~1.6–2.2× stdlib on mixed-content input. Default builds
+  gain `smoothutf8` (and `simdutf8` under
   `std`) as new dependencies; consumers already on `default-features = false`
   should add `fast-utf8` to their feature list to keep the faster validator,
   or omit it to stay on `core::str::from_utf8`. A `no_std` build with
