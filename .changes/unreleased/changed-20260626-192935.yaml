@@ -1,0 +1,8 @@
+kind: Changed
+body: |-
+    **`smoothutf8` bumped to 0.2.** With the default-on `fast-utf8`
+    feature, `wasm32` targets now run the portable shift-DFA validator
+    instead of delegating to `core::str::from_utf8`. The existing call
+    sites are unchanged (`verify_with_slack` is identical in 0.2); the new
+    `SlackBuf` safe wrapper is not yet adopted.
+time: 2026-06-26T19:29:35.543946322Z
