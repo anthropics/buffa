@@ -146,14 +146,20 @@ tasks:
   install-changie:
     desc: >-
       Download changie (changelog fragment manager) into .local/bin/ via
-      gh release download. The changelog-* tasks depend on this, so a direct
-      install is rarely needed.
+      gh release download, with checksum verification. The changelog-* tasks
+      depend on this, so a direct install is rarely needed.
     vars:
       CHANGIE_VERSION: 1.24.2
+      # SHA256 of the upstream release's checksums.txt — pinned in-repo so a
+      # replaced or tampered release asset is detected before execution. Bump
+      # together with CHANGIE_VERSION (and the matching pin in
+      # .github/workflows/ci.yml).
+      CHANGIE_CHECKSUMS_SHA256: 79c8ddf317bb0a5443e00ab75fe70f7790849e91846cae68b34e503f78aaecf1
       CHANGIE_OS:
         sh: uname -s | sed 's/Linux/linux/;s/Darwin/darwin/'
       CHANGIE_ARCH:
         sh: uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'
+      CHANGIE_TARBALL: changie_{{.CHANGIE_VERSION}}_{{.CHANGIE_OS}}_{{.CHANGIE_ARCH}}.tar.gz
     status:
       - .local/bin/changie --version 2>/dev/null | grep -qF "v{{.CHANGIE_VERSION}}"
     preconditions:
@@ -161,11 +167,16 @@ tasks:
         msg: >-
           gh CLI must be authenticated. Run: gh auth login
     cmds:
-      - mkdir -p .local/bin
+      - mkdir -p .local/bin .local/dl
       - gh release download 'v{{.CHANGIE_VERSION}}'
           --repo miniscruff/changie
-          --pattern 'changie_*_{{.CHANGIE_OS}}_{{.CHANGIE_ARCH}}.tar.gz'
-          --output - | tar -xz -C .local/bin changie
+          --pattern '{{.CHANGIE_TARBALL}}'
+          --pattern checksums.txt
+          --dir .local/dl --clobber
+      - echo '{{.CHANGIE_CHECKSUMS_SHA256}}  checksums.txt' | (cd .local/dl && shasum -a 256 -c -)
+      - (cd .local/dl && grep -F '{{.CHANGIE_TARBALL}}' checksums.txt | shasum -a 256 -c -)
+      - tar -xzf .local/dl/{{.CHANGIE_TARBALL}} -C .local/bin changie
+      - rm -rf .local/dl
       - .local/bin/changie --version
 
   changelog-new:

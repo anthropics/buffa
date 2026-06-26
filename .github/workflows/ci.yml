@@ -90,10 +90,17 @@ jobs:
       - name: Install changie
         env:
           CHANGIE_VERSION: 1.24.2
+          # SHA256 of changie_${CHANGIE_VERSION}_linux_amd64.tar.gz from the
+          # upstream release's checksums.txt. Bump together with the version.
+          CHANGIE_SHA256: 31535a9d8dc548d6d8f315762bfd5b1fba34e707b7600748c8bb8a609649007d
         run: |
-          curl -fsSL "https://github.com/miniscruff/changie/releases/download/v${CHANGIE_VERSION}/changie_${CHANGIE_VERSION}_linux_amd64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin changie
-          changie --version
+          curl -fsSL -o /tmp/changie.tar.gz \
+            "https://github.com/miniscruff/changie/releases/download/v${CHANGIE_VERSION}/changie_${CHANGIE_VERSION}_linux_amd64.tar.gz"
+          echo "${CHANGIE_SHA256}  /tmp/changie.tar.gz" | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/bin"
+          tar -xzf /tmp/changie.tar.gz -C "${RUNNER_TEMP}/bin" changie
+          echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/bin/changie" --version
       - name: Verify CHANGELOG.md is in sync
         run: |
           changie merge
