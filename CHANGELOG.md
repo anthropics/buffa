@@ -4,7 +4,7 @@ All notable changes to buffa will be documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with the [Rust 0.x convention](https://doc.rust-lang.org/cargo/reference/semver.html): breaking changes increment the minor version (0.1 → 0.2), additive changes increment the patch version.
 
-## [Unreleased]
+Entries for unreleased changes live as fragment files under [`.changes/unreleased/`](.changes/unreleased/); run `task changelog-new` to add one. This file is assembled at release time — do not edit it directly.
 
 ## [0.8.0] - 2026-06-25
 
@@ -511,6 +511,8 @@ matching `buffa-codegen`**, then the convenience entry points (`decode`,
   report `UnexpectedEof` exactly as before; behavior for well-formed
   streams is unchanged. (#185)
 
+[0.8.0]: https://github.com/anthropics/buffa/compare/v0.7.1...v0.8.0
+
 ## [0.7.1] - 2026-06-10
 
 This release is a patch bump under the
@@ -617,6 +619,8 @@ resolves there automatically.
   with the octal fix, such escapes never appear in protoc-emitted
   descriptors, so this only affects hand-built or corrupted
   `FileDescriptorSet` input.
+
+[0.7.1]: https://github.com/anthropics/buffa/compare/v0.7.0...v0.7.1
 
 ## [0.7.0] - 2026-05-28
 
@@ -841,6 +845,8 @@ up the new `FooOwnedView` wrappers, `HasMessageView` impls, and
   take effect: a type-FQN entry (including a typo'd one) that was a silent
   no-op before will now change the generated reference, and a wrong target
   surfaces as a compile error in the generated code.
+
+[0.7.0]: https://github.com/anthropics/buffa/compare/v0.6.0...v0.7.0
 
 ## [0.6.0] - 2026-05-15
 
@@ -1087,6 +1093,8 @@ up the new `FooOwnedView` wrappers, `HasMessageView` impls, and
   would now fail to resolve (it was previously a no-op import of an
   empty module). ([#107](https://github.com/anthropics/buffa/pull/107))
 
+[0.6.0]: https://github.com/anthropics/buffa/compare/v0.5.2...v0.6.0
+
 ## [0.5.2] - 2026-05-07
 
 ### Fixed
@@ -1112,6 +1120,8 @@ up the new `FooOwnedView` wrappers, `HasMessageView` impls, and
   range")` etc. — semantically identical, lint-clean regardless of which
   module wrapper covers it.
 
+[0.5.2]: https://github.com/anthropics/buffa/compare/v0.5.1...v0.5.2
+
 ## [0.5.1] - 2026-05-07
 
 ### Fixed
@@ -1126,6 +1136,8 @@ up the new `FooOwnedView` wrappers, `HasMessageView` impls, and
   false positives from generated code; the lint is now in the package
   stitcher's `#[allow(...)]` block alongside `dead_code`, `unused_imports`,
   etc.
+
+[0.5.1]: https://github.com/anthropics/buffa/compare/v0.5.0...v0.5.1
 
 ## [0.5.0] - 2026-05-05
 
@@ -1229,6 +1241,8 @@ and `__private::arbitrary_bytes`, none of which exist in `buffa` 0.4.0.
   consumers content-addressing serialized bytes (e.g. `hash(encode(msg))`)
   will see different hashes for affected message shapes.
   ([#75](https://github.com/anthropics/buffa/issues/75))
+
+[0.5.0]: https://github.com/anthropics/buffa/compare/v0.4.0...v0.5.0
 
 ## [0.4.0] - 2026-04-27
 
@@ -1367,6 +1381,8 @@ and `__private::arbitrary_bytes`, none of which exist in `buffa` 0.4.0.
   case) and `Foo` next to `FooView` (gh#32) — both now structurally
   resolved by the `__buffa::` namespacing above.
 
+[0.4.0]: https://github.com/anthropics/buffa/compare/v0.3.0...v0.4.0
+
 ## [0.3.0] - 2026-04-01
 
 ### Breaking changes
@@ -1458,6 +1474,8 @@ and `__private::arbitrary_bytes`, none of which exist in `buffa` 0.4.0.
   rustdoc treats them as literal text.
   ([#25](https://github.com/anthropics/buffa/pull/25))
 
+[0.3.0]: https://github.com/anthropics/buffa/compare/v0.2.0...v0.3.0
+
 ## [0.2.0] - 2026-03-16
 
 ### Breaking changes
@@ -1513,6 +1531,8 @@ and `__private::arbitrary_bytes`, none of which exist in `buffa` 0.4.0.
 API changes in this release. The version bump reflects the
 `protoc-gen-buffa` CLI change; library consumers upgrading from 0.1 should
 see no code changes required.
+
+[0.2.0]: https://github.com/anthropics/buffa/compare/v0.1.0...v0.2.0
 
 ## [0.1.0] - 2026-03-07
 
@@ -1583,14 +1603,4 @@ This release publishes:
 
 MSRV: Rust 1.85.
 
-[Unreleased]: https://github.com/anthropics/buffa/compare/v0.7.1...HEAD
-[0.7.1]: https://github.com/anthropics/buffa/compare/v0.7.0...v0.7.1
-[0.7.0]: https://github.com/anthropics/buffa/compare/v0.6.0...v0.7.0
-[0.6.0]: https://github.com/anthropics/buffa/compare/v0.5.2...v0.6.0
-[0.5.2]: https://github.com/anthropics/buffa/compare/v0.5.1...v0.5.2
-[0.5.1]: https://github.com/anthropics/buffa/compare/v0.5.0...v0.5.1
-[0.5.0]: https://github.com/anthropics/buffa/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/anthropics/buffa/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/anthropics/buffa/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/anthropics/buffa/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/anthropics/buffa/releases/tag/v0.1.0

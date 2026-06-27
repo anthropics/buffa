@@ -7,6 +7,26 @@ See [DESIGN.md](DESIGN.md) for the architectural overview and [README.md](README
 - **Rust toolchain** — pinned by `rust-toolchain.toml`; rustup installs it automatically on the first `cargo` invocation. This keeps local `cargo fmt`/`cargo clippy` output identical to the CI lint job (rustfmt formatting drifts across releases, so an unpinned toolchain can disagree with CI). Bump the pin together with the `lint-and-test` toolchain in `.github/workflows/ci.yml`.
 - **protoc v27+** — the test suite includes editions-syntax protos (`edition = "2023"`). The `editions_2024.proto` test requires protoc v30+ (where edition 2024 was stabilized) — it's skipped with a cargo warning on older versions. Ubuntu's apt `protobuf-compiler` (v21.12) is too old. Run `task install-protoc` to download the CI-matched version into `.local/` (requires `gh` authenticated), then use `task test-local`.
 
+## Changelog Entries
+
+`CHANGELOG.md` is a generated file — **do not edit it directly**. Each user-visible change adds a fragment file under `.changes/unreleased/` instead, so concurrent PRs never conflict on the changelog. Create one with:
+
+```sh
+task changelog-new
+```
+
+This prompts for a kind (`Breaking changes`, `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`) and a multi-line body, then writes `.changes/unreleased/<kind>-<timestamp>.yaml`. Commit that file with your change. The body is the full Keep a Changelog bullet text (the bullet marker and two-space hanging indent are added at batch time, so write the body flush-left); long-form prose with hard-wrapped continuation lines is fine — see existing fragments for the style.
+
+Non-interactive (the prompt requires a TTY, so use this form from scripts and agent sessions; `-b` accepts a multi-line body):
+
+```sh
+task changelog-new -- -k Fixed -b '**Short description of the fix** (#NNN).
+Further detail wraps onto continuation lines and is hung under the
+bullet automatically at batch time.'
+```
+
+At release time, `task changelog-batch -- <version>` rolls the fragments into `.changes/<version>.md` and `task changelog-merge` regenerates `CHANGELOG.md`. CI verifies that `CHANGELOG.md` matches `changie merge` output, so a direct edit will fail the `check-changelog` job.
+
 ## Change Size
 
 Keep each change to **≤ 250 lines net** (additions minus deletions, excluding test files) wherever possible. If a task naturally exceeds that, split it into focused, self-contained PRs or commits.
