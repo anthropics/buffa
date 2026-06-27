@@ -12,6 +12,7 @@ fn main() {
         ("ANALYTICS_EVENT", "../proto/iso/analytics_event.proto"),
         ("MEDIA_FRAME", "../proto/iso/media_frame.proto"),
         ("PACKED_TILE", "../proto/iso/packed_tile.proto"),
+        ("MESH", "../proto/iso/mesh.proto"),
         (
             "GOOGLE_MESSAGE1",
             "../proto/benchmark_message1_proto3.proto",
@@ -29,12 +30,17 @@ fn main() {
         buffa_build::ReflectMode::Off
     };
     let lazy = env::var("CARGO_FEATURE_LAZY").is_ok();
-    buffa_build::Config::new()
+    let mut cfg = buffa_build::Config::new()
         .files(&files)
         .includes(&["../proto/iso/", "../proto/"])
         .generate_json(true)
         .reflect_mode(mode)
-        .lazy_views(lazy)
-        .compile()
-        .expect("failed to compile benchmark protos");
+        .lazy_views(lazy);
+    // A/B knob for issue #248: under `--features inline_fields` every
+    // non-recursive singular message field is stored inline (no per-field
+    // heap allocation). The `mesh` benchmark is the target case.
+    if env::var("CARGO_FEATURE_INLINE_FIELDS").is_ok() {
+        cfg = cfg.unbox_message_fields();
+    }
+    cfg.compile().expect("failed to compile benchmark protos");
 }

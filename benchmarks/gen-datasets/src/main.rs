@@ -204,6 +204,27 @@ fn gen_packed_tile(rng: &mut impl Rng) -> PackedTile {
     }
 }
 
+fn gen_mesh(rng: &mut impl Rng) -> TriMesh {
+    let vert = |rng: &mut dyn rand::RngCore| tri_mesh::Vertex {
+        px: rng.random_range(-1.0..1.0),
+        py: rng.random_range(-1.0..1.0),
+        pz: rng.random_range(-1.0..1.0),
+        ..Default::default()
+    };
+    TriMesh {
+        faces: (0..256)
+            .map(|_| tri_mesh::Face {
+                a: buffa::MessageField::some(vert(rng)),
+                b: buffa::MessageField::some(vert(rng)),
+                c: buffa::MessageField::some(vert(rng)),
+                n: buffa::MessageField::some(vert(rng)),
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    }
+}
+
 fn gen_packed_signed(rng: &mut impl Rng) -> PackedSigned {
     // All-negative values so every element is a 10-byte varint: the worst case
     // for the byte-length reservation the count-based reserve replaces.
@@ -297,6 +318,13 @@ fn main() {
         (0..NUM_PAYLOADS)
             .map(|_| gen_packed_signed(&mut rng))
             .collect(),
+    );
+
+    write_dataset(
+        "mesh",
+        "bench.TriMesh",
+        output_dir,
+        (0..NUM_PAYLOADS).map(|_| gen_mesh(&mut rng)).collect(),
     );
 
     println!("Datasets written to {}", output_dir.display());
