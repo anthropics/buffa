@@ -118,6 +118,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "buffa-remote-derive"
+version = "0.8.0"
+dependencies = [
+ "buffa",
+ "ecow",
+ "proc-macro2",
+ "quote",
+ "smallvec",
+ "syn",
+]
+
+[[package]]
 name = "buffa-smolstr"
 version = "0.8.0"
 dependencies = [
@@ -791,6 +803,12 @@ name = "simdutf8"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
+
+[[package]]
+name = "smallvec"
+version = "1.15.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 
 [[package]]
 name = "smol_str"
