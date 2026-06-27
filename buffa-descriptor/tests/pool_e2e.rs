@@ -207,6 +207,87 @@ fn idempotent_re_add() {
 }
 
 #[test]
+fn failed_add_does_not_mutate_pool_and_retry_succeeds() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let mut p = DescriptorPool::decode(FDS_BYTES).unwrap();
+    let baseline_message_count = p.messages().len();
+    let baseline_file_count = p.files().len();
+
+    let broken = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("poison.proto".into()),
+            package: Some("poison.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("RetryMe".into()),
+                field: vec![FieldDescriptorProto {
+                    name: Some("broken".into()),
+                    number: Some(1),
+                    label: Some(Label::LABEL_OPTIONAL),
+                    r#type: Some(Type::TYPE_MESSAGE),
+                    type_name: Some(".poison.test.Missing".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    let err = p.add_file_descriptor_set(broken).unwrap_err();
+    assert!(
+        err.to_string().contains("unresolved type name"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        p.message_by_name("poison.test.RetryMe").is_none(),
+        "failed add must not register placeholder descriptors"
+    );
+    assert!(
+        p.file_by_name("poison.proto").is_none(),
+        "failed add must not record the file as loaded"
+    );
+    assert_eq!(p.messages().len(), baseline_message_count);
+    assert_eq!(p.files().len(), baseline_file_count);
+
+    let fixed = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("poison.proto".into()),
+            package: Some("poison.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("RetryMe".into()),
+                field: vec![FieldDescriptorProto {
+                    name: Some("ok".into()),
+                    number: Some(1),
+                    label: Some(Label::LABEL_OPTIONAL),
+                    r#type: Some(Type::TYPE_STRING),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    p.add_file_descriptor_set(fixed)
+        .expect("retry with a valid descriptor set succeeds");
+
+    let retry = p
+        .message_by_name("poison.test.RetryMe")
+        .expect("message loads after the corrected retry");
+    assert_eq!(retry.field(1).unwrap().name(), "ok");
+    assert_eq!(p.messages().len(), baseline_message_count + 1);
+    assert_eq!(p.files().len(), baseline_file_count + 1);
+}
+
+#[test]
 fn service_descriptor_links() {
     let p = pool();
     let svc = p

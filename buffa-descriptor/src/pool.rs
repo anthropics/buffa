@@ -154,7 +154,7 @@ enum Definition {
 /// or accumulated via [`DescriptorPool::add_file_descriptor_set`]. Once built,
 /// the pool is immutable — descriptor handles are pool indices and all data
 /// is stored in flat `Vec`s.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DescriptorPool {
     /// Original file descriptors, retained for raw access.
     files: Vec<FileDescriptorProto>,
@@ -224,11 +224,31 @@ impl DescriptorPool {
 
     /// Add the files in a `FileDescriptorSet` to the pool, registering and
     /// linking new types. Files already in the pool (by filename) are skipped.
+    /// If linking fails, the pool is left unchanged.
     ///
     /// # Errors
     ///
     /// Returns a [`PoolError`] on resolution failure.
     pub fn add_file_descriptor_set(&mut self, set: FileDescriptorSet) -> Result<(), PoolError> {
+        // Fast path for no-op re-adds without cloning the existing pool.
+        let has_new_files = set.file.iter().any(|f| {
+            f.name
+                .as_deref()
+                .map_or(true, |n| !self.file_by_name.contains_key(n))
+        });
+        if !has_new_files {
+            return Ok(());
+        }
+
+        // Build against a staged clone so fallible later passes cannot leave
+        // the live pool partially mutated.
+        let mut staged = self.clone();
+        staged.add_file_descriptor_set_staged(set)?;
+        *self = staged;
+        Ok(())
+    }
+
+    fn add_file_descriptor_set_staged(&mut self, set: FileDescriptorSet) -> Result<(), PoolError> {
         // Filter out files already present (idempotent re-add).
         let new_files: Vec<FileDescriptorProto> = set
             .file
