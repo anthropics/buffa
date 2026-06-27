@@ -9,14 +9,14 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
     let RemoteField {
         ident,
         generics,
-        remote_ty,
+        field_ty,
         accessor,
         ..
     } = &remote;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let from_vec = remote_field::qualified_call(
-        remote_ty,
+        field_ty,
         quote! { ::core::convert::From<::buffa::alloc::vec::Vec<u8>> },
         "from",
     );

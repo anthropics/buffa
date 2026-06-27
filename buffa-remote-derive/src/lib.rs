@@ -44,13 +44,70 @@
 //! workload. Hand-write `clear` to forward to the remote's own clearing
 //! method instead, in that case.
 //!
-//! # Scope
+//! # `ProtoBox` and `MapStorage`: inherent methods, not trait methods
 //!
-//! `ProtoBox` and `MapStorage` are deliberately not covered here — their
-//! reference newtypes call **inherent** methods on the remote type (e.g.
-//! `smallbox::SmallBox::into_inner()`, `indexmap::IndexMap::insert()`) rather
-//! than trait methods, so a derive covering them needs a different,
-//! attribute-driven design and ships separately.
+//! [`ProtoBox`](macro@ProtoBox) and [`MapStorage`](macro@MapStorage) follow a
+//! different shape from the three above. Their reference newtypes
+//! (`smallbox::SmallBox::into_inner()`, `indexmap::IndexMap::insert()`) call
+//! **inherent** methods on the remote type, not trait methods — `ProtoBox`'s
+//! and `MapStorage`'s own supertraits (`Deref`/`DerefMut`; none, for
+//! `MapStorage`) don't give a generic derive enough to call through to
+//! `new`/`into_inner`/`insert`/`clear`/`iter`/`len` the way `From`/
+//! `FromIterator`/`Extend` did for `ProtoString`/`ProtoBytes`/`ProtoList`.
+//!
+//! So these two derives default to the near-universal naming convention
+//! (`Type::new`/`Type::into_inner` for pointers — `Rc`, `Arc`,
+//! `smallbox::SmallBox` all use these names, though plain `std::boxed::Box`
+//! does not, since its `into_inner` is nightly-only; `len`/`insert`/`clear`/
+//! `iter` for maps — `HashMap`, `BTreeMap`, `indexmap::IndexMap`,
+//! `dashmap::DashMap` all use these names), with an attribute escape hatch
+//! when a remote type names them differently. If a default doesn't match —
+//! the remote names its insert method `put`, say — the compiler reports
+//! `no function or associated item named 'insert' found for struct '...'`;
+//! that's the signal to add the matching override, named below.
+//!
+//! ```rust
+//! #[derive(buffa_remote_derive::ProtoBox)]
+//! #[buffa(remote = smallbox::SmallBox<T, smallbox::space::S4>)]
+//! pub struct SmallBox<T>(pub smallbox::SmallBox<T, smallbox::space::S4>);
+//! ```
+//!
+//! ```rust
+//! #[derive(Clone, PartialEq, Debug, buffa_remote_derive::MapStorage)]
+//! #[buffa(remote = indexmap::IndexMap<K, V>)]
+//! pub struct MyIndexMap<K: core::hash::Hash + Eq, V>(pub indexmap::IndexMap<K, V>);
+//!
+//! impl<K: core::hash::Hash + Eq, V> Default for MyIndexMap<K, V> {
+//!     fn default() -> Self {
+//!         Self(indexmap::IndexMap::new())
+//!     }
+//! }
+//! impl<K: core::hash::Hash + Eq, V> FromIterator<(K, V)> for MyIndexMap<K, V> {
+//!     fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
+//!         Self(indexmap::IndexMap::from_iter(iter))
+//!     }
+//! }
+//! ```
+//!
+//! `Default` and `FromIterator<(Key, Value)>` are required by the message
+//! codec that drives every `MapStorage` field, not by this derive — `cargo`
+//! won't suggest them, since the derive itself compiles fine without them; the
+//! failure shows up later, in generated message code, as `the trait bound
+//! '...: Default' is not satisfied`. They aren't generated here for the same
+//! reason `ProtoList`'s `Default` isn't (see above): a derived impl would
+//! force `K: Default`/`V: Default`, which `MapStorage` does not require.
+//!
+//! To override a default, name the method explicitly:
+//! `#[buffa(remote = ..., into_inner = MyType::unwrap)]` for `ProtoBox`, or
+//! any of `len`/`insert`/`clear`/`iter` for `MapStorage`. The override path is
+//! called the same way the default is — as a free function taking the
+//! receiver as its first argument (`Type::method(&self.0, ...)`) — so it
+//! **must** accept the same receiver as the method it replaces: `new` takes
+//! the value by ownership and returns `Self`; `into_inner` takes `self` by
+//! ownership; `insert`/`clear` take `&mut self`; `len`/`iter` take `&self`.
+//! `iter` additionally must yield `(&Key, &Value)` pairs, matching
+//! `storage_iter`'s contract. A receiver or item-type mismatch is a type error
+//! at the generated call site, not a special diagnostic from this macro.
 //!
 //! # Why a `remote` attribute that just repeats the field's type?
 //!
@@ -66,8 +123,10 @@
 use proc_macro::TokenStream;
 use syn::{parse_macro_input, DeriveInput};
 
+mod box_ptr;
 mod bytes;
 mod list;
+mod map;
 mod remote_field;
 mod string;
 
@@ -97,6 +156,29 @@ pub fn derive_proto_bytes(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(ProtoList, attributes(buffa))]
 pub fn derive_proto_list(input: TokenStream) -> TokenStream {
     expand(input, list::derive)
+}
+
+/// See the [crate-level docs](crate). Generates `Deref<Target = T>`,
+/// `DerefMut`, and `buffa::ProtoBox<T>` for a single-field,
+/// single-type-parameter newtype wrapping the type named by
+/// `#[buffa(remote = ...)]`. Calls the remote type's `new`/`into_inner`
+/// methods by the conventional names unless overridden with
+/// `#[buffa(remote = ..., new = path, into_inner = path)]`.
+#[proc_macro_derive(ProtoBox, attributes(buffa))]
+pub fn derive_proto_box(input: TokenStream) -> TokenStream {
+    expand(input, box_ptr::derive)
+}
+
+/// See the [crate-level docs](crate). Generates `buffa::MapStorage` for a
+/// single-field, two-type-parameter (`Key`, `Value`) newtype wrapping the
+/// type named by `#[buffa(remote = ...)]`. Calls the remote map's
+/// `len`/`insert`/`clear`/`iter` methods by their conventional names unless
+/// overridden with `#[buffa(remote = ..., insert = path, ...)]`. The newtype
+/// itself must implement `Default` and `FromIterator<(Key, Value)>` by hand —
+/// see the crate docs' example.
+#[proc_macro_derive(MapStorage, attributes(buffa))]
+pub fn derive_map_storage(input: TokenStream) -> TokenStream {
+    expand(input, map::derive)
 }
 
 fn expand(

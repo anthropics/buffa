@@ -9,19 +9,19 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
     let RemoteField {
         ident,
         generics,
-        remote_ty,
+        field_ty,
         accessor,
         ..
     } = &remote;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let from_string = remote_field::qualified_call(
-        remote_ty,
+        field_ty,
         quote! { ::core::convert::From<::buffa::alloc::string::String> },
         "from",
     );
     let from_str =
-        remote_field::qualified_call(remote_ty, quote! { ::core::convert::From<&str> }, "from");
+        remote_field::qualified_call(field_ty, quote! { ::core::convert::From<&str> }, "from");
 
     let ctor_from_string = remote.construct(quote! { #from_string(s) });
     let ctor_from_str = remote.construct(quote! { #from_str(s) });

@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{DeriveInput, GenericParam};
+use syn::DeriveInput;
 
 use crate::remote_field::{self, RemoteField};
 
@@ -9,21 +9,21 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
     let RemoteField {
         ident,
         generics,
-        remote_ty,
+        field_ty,
         accessor,
         ..
     } = &remote;
 
-    let element_ty = single_type_param(generics)?;
+    let element_ty = remote_field::single_type_param(generics)?;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let from_iter = remote_field::qualified_call(
-        remote_ty,
+        field_ty,
         quote! { ::core::iter::FromIterator<#element_ty> },
         "from_iter",
     );
     let from_vec = remote_field::qualified_call(
-        remote_ty,
+        field_ty,
         quote! { ::core::convert::From<::buffa::alloc::vec::Vec<#element_ty>> },
         "from",
     );
@@ -63,7 +63,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
                 + ::core::fmt::Debug
                 + ::core::marker::Send
                 + ::core::marker::Sync,
-            #remote_ty: ::core::iter::Extend<#element_ty>,
+            #field_ty: ::core::iter::Extend<#element_ty>,
             Self: ::core::default::Default,
         {
             #[inline]
@@ -83,27 +83,4 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
             }
         }
     })
-}
-
-/// Requires the struct to have exactly one type parameter — the list's
-/// element type — which keeps the generated `ProtoList<T>` bound
-/// unambiguous. A remote collection wrapped by more than one type parameter
-/// (e.g. a custom hasher parameter) is out of scope for this derive; hand-write
-/// the impl in that case.
-fn single_type_param(generics: &syn::Generics) -> syn::Result<syn::Ident> {
-    let type_params: Vec<_> = generics
-        .params
-        .iter()
-        .filter_map(|p| match p {
-            GenericParam::Type(t) => Some(t.ident.clone()),
-            _ => None,
-        })
-        .collect();
-    match type_params.as_slice() {
-        [single] => Ok(single.clone()),
-        _ => Err(syn::Error::new_spanned(
-            &generics.params,
-            "this derive requires exactly one type parameter, the list's element type",
-        )),
-    }
 }
