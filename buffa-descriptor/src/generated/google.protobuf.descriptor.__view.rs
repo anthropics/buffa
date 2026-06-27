@@ -642,6 +642,7 @@ impl<'a> ::buffa::MessageView<'a> for FileDescriptorProtoView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FileOptions,
+                        ::buffa::Inline<super::super::FileOptions>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -650,6 +651,7 @@ impl<'a> ::buffa::MessageView<'a> for FileDescriptorProtoView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::SourceCodeInfo,
+                        ::buffa::Inline<super::super::SourceCodeInfo>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -1429,6 +1431,7 @@ impl<'a> ::buffa::MessageView<'a> for DescriptorProtoView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::MessageOptions,
+                        ::buffa::Inline<super::super::MessageOptions>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -1980,6 +1983,7 @@ pub mod descriptor_proto {
                     Some(v) => {
                         ::buffa::MessageField::<
                             super::super::super::ExtensionRangeOptions,
+                            ::buffa::Inline<super::super::super::ExtensionRangeOptions>,
                         >::some(v.to_owned_from_source(__buffa_src)?)
                     }
                     None => ::buffa::MessageField::none(),
@@ -2679,6 +2683,7 @@ impl<'a> ::buffa::MessageView<'a> for ExtensionRangeOptionsView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FeatureSet,
+                        ::buffa::Inline<super::super::FeatureSet>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -3610,6 +3615,7 @@ impl<'a> ::buffa::MessageView<'a> for FieldDescriptorProtoView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FieldOptions,
+                        ::buffa::Inline<super::super::FieldOptions>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -4103,6 +4109,7 @@ impl<'a> ::buffa::MessageView<'a> for OneofDescriptorProtoView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::OneofOptions,
+                        ::buffa::Inline<super::super::OneofOptions>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -4497,6 +4504,7 @@ impl<'a> ::buffa::MessageView<'a> for EnumDescriptorProtoView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::EnumOptions,
+                        ::buffa::Inline<super::super::EnumOptions>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -5218,6 +5226,7 @@ impl<'a> ::buffa::MessageView<'a> for EnumValueDescriptorProtoView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::EnumValueOptions,
+                        ::buffa::Inline<super::super::EnumValueOptions>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -5572,6 +5581,7 @@ impl<'a> ::buffa::MessageView<'a> for ServiceDescriptorProtoView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::ServiceOptions,
+                        ::buffa::Inline<super::super::ServiceOptions>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -5957,6 +5967,7 @@ impl<'a> ::buffa::MessageView<'a> for MethodDescriptorProtoView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::MethodOptions,
+                        ::buffa::Inline<super::super::MethodOptions>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -6665,6 +6676,7 @@ impl<'a> ::buffa::MessageView<'a> for FileOptionsView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FeatureSet,
+                        ::buffa::Inline<super::super::FeatureSet>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -7486,6 +7498,7 @@ impl<'a> ::buffa::MessageView<'a> for MessageOptionsView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FeatureSet,
+                        ::buffa::Inline<super::super::FeatureSet>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -8244,6 +8257,7 @@ impl<'a> ::buffa::MessageView<'a> for FieldOptionsView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FeatureSet,
+                        ::buffa::Inline<super::super::FeatureSet>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -8252,6 +8266,7 @@ impl<'a> ::buffa::MessageView<'a> for FieldOptionsView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::field_options::FeatureSupport,
+                        ::buffa::Inline<super::super::field_options::FeatureSupport>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -9572,6 +9587,7 @@ impl<'a> ::buffa::MessageView<'a> for OneofOptionsView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FeatureSet,
+                        ::buffa::Inline<super::super::FeatureSet>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -9963,6 +9979,7 @@ impl<'a> ::buffa::MessageView<'a> for EnumOptionsView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FeatureSet,
+                        ::buffa::Inline<super::super::FeatureSet>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -10422,6 +10439,7 @@ impl<'a> ::buffa::MessageView<'a> for EnumValueOptionsView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FeatureSet,
+                        ::buffa::Inline<super::super::FeatureSet>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -10431,6 +10449,7 @@ impl<'a> ::buffa::MessageView<'a> for EnumValueOptionsView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::field_options::FeatureSupport,
+                        ::buffa::Inline<super::super::field_options::FeatureSupport>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -10860,6 +10879,7 @@ impl<'a> ::buffa::MessageView<'a> for ServiceOptionsView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FeatureSet,
+                        ::buffa::Inline<super::super::FeatureSet>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -11271,6 +11291,7 @@ impl<'a> ::buffa::MessageView<'a> for MethodOptionsView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::FeatureSet,
+                        ::buffa::Inline<super::super::FeatureSet>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -13608,6 +13629,7 @@ pub mod feature_set_defaults {
                     Some(v) => {
                         ::buffa::MessageField::<
                             super::super::super::FeatureSet,
+                            ::buffa::Inline<super::super::super::FeatureSet>,
                         >::some(v.to_owned_from_source(__buffa_src)?)
                     }
                     None => ::buffa::MessageField::none(),
@@ -13616,6 +13638,7 @@ pub mod feature_set_defaults {
                     Some(v) => {
                         ::buffa::MessageField::<
                             super::super::super::FeatureSet,
+                            ::buffa::Inline<super::super::super::FeatureSet>,
                         >::some(v.to_owned_from_source(__buffa_src)?)
                     }
                     None => ::buffa::MessageField::none(),

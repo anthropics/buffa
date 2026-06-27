@@ -1562,10 +1562,9 @@ fn classify_field(
     {
         return Err(CodeGenError::Other(format!(
             "message field `{field_fqn}` is recursive and cannot be stored \
-             inline: it would make the generated struct unsized. Remove \
-             `\"{field_fqn}\"` from box_type_in/unbox_message_fields_in, or \
-             use a broader prefix (or unbox_message_fields()) to keep this \
-             field boxed while inlining the rest."
+             inline: it would make the generated struct unsized. Remove the \
+             exact `box_type_in(PointerRepr::Inline, &[\"{field_fqn}\"])` rule \
+             — the default keeps recursive fields boxed automatically."
         )));
     }
 

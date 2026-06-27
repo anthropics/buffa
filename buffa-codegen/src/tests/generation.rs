@@ -1398,7 +1398,7 @@ fn test_message_nested_message_field() {
         "missing Outer: {content}"
     );
     assert!(
-        content.contains("pub inner: ::buffa::MessageField<Inner>"),
+        content.contains("pub inner: ::buffa::MessageField<Inner, ::buffa::Inline<Inner>>"),
         "missing MessageField: {content}"
     );
     // impl Message should use the two-pass size computation for sub-messages.

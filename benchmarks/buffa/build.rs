@@ -30,17 +30,12 @@ fn main() {
         buffa_build::ReflectMode::Off
     };
     let lazy = env::var("CARGO_FEATURE_LAZY").is_ok();
-    let mut cfg = buffa_build::Config::new()
+    buffa_build::Config::new()
         .files(&files)
         .includes(&["../proto/iso/", "../proto/"])
         .generate_json(true)
         .reflect_mode(mode)
-        .lazy_views(lazy);
-    // A/B knob for issue #248: under `--features inline_fields` every
-    // non-recursive singular message field is stored inline (no per-field
-    // heap allocation). The `mesh` benchmark is the target case.
-    if env::var("CARGO_FEATURE_INLINE_FIELDS").is_ok() {
-        cfg = cfg.unbox_message_fields();
-    }
-    cfg.compile().expect("failed to compile benchmark protos");
+        .lazy_views(lazy)
+        .compile()
+        .expect("failed to compile benchmark protos");
 }

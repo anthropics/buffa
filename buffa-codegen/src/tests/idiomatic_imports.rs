@@ -91,7 +91,8 @@ fn cross_package_field_gets_use_and_short_name() {
         pkg.content
     );
     assert!(
-        pkg.content.contains("pub d: MessageField<Dep>,"),
+        pkg.content
+            .contains("pub d: MessageField<Dep, ::buffa::Inline<Dep>>,"),
         "field should use the short names: {}",
         pkg.content
     );
@@ -126,8 +127,9 @@ fn flag_off_keeps_qualified_paths_in_fpp_mode() {
     .expect("should generate");
     let pkg = pkg_file(&files, "test.pkg.rs");
     assert!(
-        pkg.content
-            .contains("pub d: ::buffa::MessageField<super::other::Dep>,"),
+        pkg.content.contains(
+            "pub d: ::buffa::MessageField<super::other::Dep, ::buffa::Inline<super::other::Dep>>,"
+        ),
         "flag-off output must keep qualified paths: {}",
         pkg.content
     );
@@ -237,7 +239,8 @@ fn extern_reference_gets_use_directive() {
         pkg.content
     );
     assert!(
-        pkg.content.contains("pub at: MessageField<Timestamp>,"),
+        pkg.content
+            .contains("pub at: MessageField<Timestamp, ::buffa::Inline<Timestamp>>,"),
         "field should use the short names: {}",
         pkg.content
     );
@@ -288,7 +291,8 @@ fn package_item_collision_falls_down_ladder() {
         pkg.content
     );
     assert!(
-        pkg.content.contains("pub d: MessageField<other::Dep>,"),
+        pkg.content
+            .contains("pub d: MessageField<other::Dep, ::buffa::Inline<other::Dep>>,"),
         "collided leaf should be parent-qualified: {}",
         pkg.content
     );
@@ -338,8 +342,9 @@ fn reflection_pool_reexport_name_is_reserved() {
         pkg.content
     );
     assert!(
-        pkg.content
-            .contains("pub p: MessageField<other::descriptor_pool>,"),
+        pkg.content.contains(
+            "pub p: MessageField<other::descriptor_pool, ::buffa::Inline<other::descriptor_pool>>,"
+        ),
         "reference should fall to parent-module qualification: {}",
         pkg.content
     );
@@ -382,10 +387,11 @@ fn nested_and_oneof_scopes_stay_qualified() {
     .expect("should generate");
     let pkg = pkg_file(&files, "test.pkg.rs");
     // Nested-message struct (one module below root): no `use` visible
-    // there, so the field keeps its qualified path.
+    // there, so the field keeps its qualified path. The inline pointer's
+    // type argument carries the same qualified path.
     assert!(
         pkg.content
-            .contains("pub d: ::buffa::MessageField<super::super::other::Dep>,"),
+            .contains("::buffa::Inline<super::super::other::Dep>"),
         "nested-message field must stay qualified: {}",
         pkg.content
     );
@@ -473,8 +479,8 @@ fn output_is_stable_under_file_reordering() {
         "use block must not depend on file generation order"
     );
     for field in [
-        "pub t: MessageField<Thing>,",
-        "pub t: MessageField<other::Thing>,",
+        "pub t: MessageField<Thing, ::buffa::Inline<Thing>>,",
+        "pub t: MessageField<other::Thing, ::buffa::Inline<other::Thing>>,",
     ] {
         assert!(
             fwd.content.contains(field) && rev.content.contains(field),

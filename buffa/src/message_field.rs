@@ -81,13 +81,15 @@ macro_rules! impl_default_instance {
 /// The owned smart pointer backing a singular message field inside
 /// [`MessageField`].
 ///
-/// The default is [`Box<T>`]; the built-in [`Inline<T>`] stores the message
-/// directly in the parent struct (no heap) and is what `buffa_build`'s
-/// [`unbox_message_fields`][umf] selects. For anything else — for example a
-/// `smallbox`-style pointer that stores small messages inline but spills large
-/// ones to the heap — the `box_type_custom` knob substitutes any pointer that
-/// implements `ProtoBox<T>`. The wire format is unchanged; only the in-memory
-/// ownership of the boxed message changes, and view types are unaffected.
+/// The codegen default is [`Inline<T>`] — the message is stored directly in the
+/// parent struct (no heap), with recursive fields kept on `Box<T>`
+/// automatically. `buffa_build`'s [`box_type_in`][bti] selects [`Box<T>`] (or a
+/// custom pointer) for fields where reserving `size_of::<T>()` in the parent is
+/// wasteful. The `box_type_custom` knob substitutes any pointer that implements
+/// `ProtoBox<T>` — for example a `smallbox`-style pointer that stores small
+/// messages inline but spills large ones to the heap. The wire format is
+/// unchanged; only the in-memory ownership of the boxed message changes, and
+/// view types are unaffected.
 ///
 /// There is intentionally no blanket impl — the built-in [`Box<T>`] and
 /// [`Inline<T>`] impls below are the only ones buffa provides. Because
@@ -95,7 +97,7 @@ macro_rules! impl_default_instance {
 /// (orphan rule); wrap it in a crate-local newtype, like the `ProtoString`
 /// newtype pattern.
 ///
-/// [umf]: https://docs.rs/buffa-build/latest/buffa_build/struct.Config.html#method.unbox_message_fields
+/// [bti]: https://docs.rs/buffa-build/latest/buffa_build/struct.Config.html#method.box_type_in
 ///
 /// # Why `DerefMut` (and why `Rc` / `Arc` are excluded)
 ///
@@ -120,9 +122,10 @@ macro_rules! impl_default_instance {
 ///
 /// # Caveat
 ///
-/// An inline pointer (e.g. `SmallBox`) inflates the *parent* struct by its
-/// inline-storage size for every such field, so it should be selected per field
-/// or prefix, never as a blanket default.
+/// A *custom* inline pointer (e.g. `SmallBox`) inflates the parent struct by
+/// its inline-storage size for every such field. The built-in [`Inline<T>`]
+/// default is recursion-aware and is the intended blanket; reserve custom
+/// inline pointers for per-field or per-prefix overrides.
 ///
 /// # Examples
 ///
@@ -185,12 +188,11 @@ impl<T> ProtoBox<T> for Box<T> {
 /// the default `Box<T>` pointer at the cost of inflating the parent's size by
 /// `size_of::<T>()` even when the field is unset.
 ///
-/// Codegen selects this via [`PointerRepr::Inline`][pri] (or the
-/// [`unbox_message_fields`][umf] convenience), which is recursion-aware: a
-/// field that would form an infinite-size cycle is silently kept on `Box`.
+/// Codegen uses this by default via [`PointerRepr::Inline`][pri], which is
+/// recursion-aware: a field that would form an infinite-size cycle is silently
+/// kept on `Box`. Opt out per-field with `box_type_in(PointerRepr::Box, …)`.
 ///
 /// [pri]: https://docs.rs/buffa-codegen/latest/buffa_codegen/enum.PointerRepr.html#variant.Inline
-/// [umf]: https://docs.rs/buffa-build/latest/buffa_build/struct.Config.html#method.unbox_message_fields
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 #[repr(transparent)]
 pub struct Inline<T>(pub T);
@@ -242,12 +244,14 @@ const _: fn() = || {
 /// A wrapper for optional message fields that provides transparent access
 /// to a default instance when the field is not set.
 ///
-/// This type is used for singular message fields in generated code. It avoids
-/// the ergonomic pain of `Option<Box<M>>` while still being heap-allocated
-/// only when set (no allocation for unset fields).
-///
-/// The pointer type `P` is pluggable (default [`Box<T>`]; see [`ProtoBox`], and
-/// the built-in [`Inline<T>`] for no-heap storage).
+/// This type is used for singular message fields in generated code. The pointer
+/// type `P` is pluggable; see [`ProtoBox`]. Codegen emits [`Inline<T>`] by
+/// default — the message is stored directly in the parent struct (laid out as
+/// `Option<T>`), so `size_of::<T>()` is reserved whether set or not and there
+/// is no per-field heap allocation. Recursive fields and explicit opt-outs use
+/// `Box<T>` instead, which heap-allocates only when set. The struct's own
+/// `P = Box<T>` type-parameter default applies only to a hand-written
+/// `MessageField<T>` (e.g. in tests), not to generated fields.
 /// Because `P` has a default, a *standalone* construction with no pinning
 /// context needs a type annotation — write `let f: MessageField<Foo> =
 /// MessageField::some(x);` (or `MessageField::<Foo>::some(x)`). In the common
@@ -462,8 +466,10 @@ impl<T: Default, P: ProtoBox<T>> MessageField<T, P> {
 impl<T: Default> MessageField<T, Box<T>> {
     /// Create a `MessageField` from a boxed value.
     ///
-    /// Specific to the default `Box<T>` pointer; for a custom [`ProtoBox`]
-    /// pointer construct with [`some`](Self::some).
+    /// Specific to `Box<T>` (the struct's `P = Box<T>` type-parameter default,
+    /// used for recursive fields and explicit opt-outs); inline-backed
+    /// generated fields use [`some`](Self::some) or
+    /// [`from_pointer`](Self::from_pointer) instead.
     #[inline]
     pub fn from_box(value: Box<T>) -> Self {
         Self {

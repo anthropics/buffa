@@ -861,7 +861,7 @@ pub struct FileDescriptorProto {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub options: ::buffa::MessageField<FileOptions>,
+    pub options: ::buffa::MessageField<FileOptions, ::buffa::Inline<FileOptions>>,
     /// This field contains optional information about the original source code.
     /// You may safely remove this entire field without harming runtime
     /// functionality of the descriptors -- the information is needed only by
@@ -876,7 +876,10 @@ pub struct FileDescriptorProto {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub source_code_info: ::buffa::MessageField<SourceCodeInfo>,
+    pub source_code_info: ::buffa::MessageField<
+        SourceCodeInfo,
+        ::buffa::Inline<SourceCodeInfo>,
+    >,
     /// The syntax of the proto file.
     /// The supported values are "proto2", "proto3", and "editions".
     ///
@@ -1635,7 +1638,7 @@ pub struct DescriptorProto {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub options: ::buffa::MessageField<MessageOptions>,
+    pub options: ::buffa::MessageField<MessageOptions, ::buffa::Inline<MessageOptions>>,
     /// Field 9: `reserved_range`
     #[cfg_attr(
         feature = "json",
@@ -2240,7 +2243,10 @@ pub mod descriptor_proto {
                 skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
             )
         )]
-        pub options: ::buffa::MessageField<super::ExtensionRangeOptions>,
+        pub options: ::buffa::MessageField<
+            super::ExtensionRangeOptions,
+            ::buffa::Inline<super::ExtensionRangeOptions>,
+        >,
         #[cfg_attr(feature = "json", serde(skip))]
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -2746,7 +2752,7 @@ pub struct ExtensionRangeOptions {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub features: ::buffa::MessageField<FeatureSet>,
+    pub features: ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
     /// The verification state of the range.
     /// TODO: flip the default to DECLARATION once all empty ranges
     /// are marked as UNVERIFIED.
@@ -3056,7 +3062,7 @@ impl<'de> serde::Deserialize<'de> for ExtensionRangeOptions {
                     ::buffa::alloc::vec::Vec<extension_range_options::Declaration>,
                 > = None;
                 let mut __f_features: ::core::option::Option<
-                    ::buffa::MessageField<FeatureSet>,
+                    ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
                 > = None;
                 let mut __f_verification: ::core::option::Option<
                     ::core::option::Option<extension_range_options::VerificationState>,
@@ -3106,7 +3112,13 @@ impl<'de> serde::Deserialize<'de> for ExtensionRangeOptions {
                         }
                         "features" => {
                             __f_features = Some(
-                                map.next_value::<::buffa::MessageField<FeatureSet>>()?,
+                                map
+                                    .next_value::<
+                                        ::buffa::MessageField<
+                                            FeatureSet,
+                                            ::buffa::Inline<FeatureSet>,
+                                        >,
+                                    >()?,
                             );
                         }
                         "verification" => {
@@ -3909,7 +3921,7 @@ pub struct FieldDescriptorProto {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub options: ::buffa::MessageField<FieldOptions>,
+    pub options: ::buffa::MessageField<FieldOptions, ::buffa::Inline<FieldOptions>>,
     /// If true, this is a proto3 "optional". When a proto3 field is optional, it
     /// tracks presence regardless of field type.
     ///
@@ -4936,7 +4948,7 @@ pub struct OneofDescriptorProto {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub options: ::buffa::MessageField<OneofOptions>,
+    pub options: ::buffa::MessageField<OneofOptions, ::buffa::Inline<OneofOptions>>,
     #[cfg_attr(feature = "json", serde(skip))]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -5168,7 +5180,7 @@ pub struct EnumDescriptorProto {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub options: ::buffa::MessageField<EnumOptions>,
+    pub options: ::buffa::MessageField<EnumOptions, ::buffa::Inline<EnumOptions>>,
     /// Range of reserved numeric values. Reserved numeric values may not be used
     /// by enum values in the same enum declaration. Reserved ranges may not
     /// overlap.
@@ -5821,7 +5833,10 @@ pub struct EnumValueDescriptorProto {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub options: ::buffa::MessageField<EnumValueOptions>,
+    pub options: ::buffa::MessageField<
+        EnumValueOptions,
+        ::buffa::Inline<EnumValueOptions>,
+    >,
     #[cfg_attr(feature = "json", serde(skip))]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -6082,7 +6097,7 @@ pub struct ServiceDescriptorProto {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub options: ::buffa::MessageField<ServiceOptions>,
+    pub options: ::buffa::MessageField<ServiceOptions, ::buffa::Inline<ServiceOptions>>,
     #[cfg_attr(feature = "json", serde(skip))]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -6364,7 +6379,7 @@ pub struct MethodDescriptorProto {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub options: ::buffa::MessageField<MethodOptions>,
+    pub options: ::buffa::MessageField<MethodOptions, ::buffa::Inline<MethodOptions>>,
     /// Identifies if client streams multiple client messages
     ///
     /// Field 5: `client_streaming`
@@ -7054,7 +7069,7 @@ pub struct FileOptions {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub features: ::buffa::MessageField<FeatureSet>,
+    pub features: ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
     /// The parser stores options it doesn't recognize here.
     /// See the documentation for the "Options" section above.
     ///
@@ -8027,7 +8042,7 @@ impl<'de> serde::Deserialize<'de> for FileOptions {
                     ::core::option::Option<::buffa::alloc::string::String>,
                 > = None;
                 let mut __f_features: ::core::option::Option<
-                    ::buffa::MessageField<FeatureSet>,
+                    ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
                 > = None;
                 let mut __f_uninterpreted_option: ::core::option::Option<
                     ::buffa::alloc::vec::Vec<UninterpretedOption>,
@@ -8178,7 +8193,13 @@ impl<'de> serde::Deserialize<'de> for FileOptions {
                         }
                         "features" => {
                             __f_features = Some(
-                                map.next_value::<::buffa::MessageField<FeatureSet>>()?,
+                                map
+                                    .next_value::<
+                                        ::buffa::MessageField<
+                                            FeatureSet,
+                                            ::buffa::Inline<FeatureSet>,
+                                        >,
+                                    >()?,
                             );
                         }
                         "uninterpretedOption" | "uninterpreted_option" => {
@@ -8668,7 +8689,7 @@ pub struct MessageOptions {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub features: ::buffa::MessageField<FeatureSet>,
+    pub features: ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
     /// The parser stores options it doesn't recognize here. See above.
     ///
     /// Field 999: `uninterpreted_option`
@@ -9072,7 +9093,7 @@ impl<'de> serde::Deserialize<'de> for MessageOptions {
                     ::core::option::Option<bool>,
                 > = None;
                 let mut __f_features: ::core::option::Option<
-                    ::buffa::MessageField<FeatureSet>,
+                    ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
                 > = None;
                 let mut __f_uninterpreted_option: ::core::option::Option<
                     ::buffa::alloc::vec::Vec<UninterpretedOption>,
@@ -9109,7 +9130,13 @@ impl<'de> serde::Deserialize<'de> for MessageOptions {
                         }
                         "features" => {
                             __f_features = Some(
-                                map.next_value::<::buffa::MessageField<FeatureSet>>()?,
+                                map
+                                    .next_value::<
+                                        ::buffa::MessageField<
+                                            FeatureSet,
+                                            ::buffa::Inline<FeatureSet>,
+                                        >,
+                                    >()?,
                             );
                         }
                         "uninterpretedOption" | "uninterpreted_option" => {
@@ -9447,7 +9474,7 @@ pub struct FieldOptions {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub features: ::buffa::MessageField<FeatureSet>,
+    pub features: ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
     /// Field 22: `feature_support`
     #[cfg_attr(
         feature = "json",
@@ -9457,7 +9484,10 @@ pub struct FieldOptions {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub feature_support: ::buffa::MessageField<field_options::FeatureSupport>,
+    pub feature_support: ::buffa::MessageField<
+        field_options::FeatureSupport,
+        ::buffa::Inline<field_options::FeatureSupport>,
+    >,
     /// The parser stores options it doesn't recognize here. See above.
     ///
     /// Field 999: `uninterpreted_option`
@@ -10157,10 +10187,13 @@ impl<'de> serde::Deserialize<'de> for FieldOptions {
                     ::buffa::alloc::vec::Vec<field_options::EditionDefault>,
                 > = None;
                 let mut __f_features: ::core::option::Option<
-                    ::buffa::MessageField<FeatureSet>,
+                    ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
                 > = None;
                 let mut __f_feature_support: ::core::option::Option<
-                    ::buffa::MessageField<field_options::FeatureSupport>,
+                    ::buffa::MessageField<
+                        field_options::FeatureSupport,
+                        ::buffa::Inline<field_options::FeatureSupport>,
+                    >,
                 > = None;
                 let mut __f_uninterpreted_option: ::core::option::Option<
                     ::buffa::alloc::vec::Vec<UninterpretedOption>,
@@ -10296,14 +10329,23 @@ impl<'de> serde::Deserialize<'de> for FieldOptions {
                         }
                         "features" => {
                             __f_features = Some(
-                                map.next_value::<::buffa::MessageField<FeatureSet>>()?,
+                                map
+                                    .next_value::<
+                                        ::buffa::MessageField<
+                                            FeatureSet,
+                                            ::buffa::Inline<FeatureSet>,
+                                        >,
+                                    >()?,
                             );
                         }
                         "featureSupport" | "feature_support" => {
                             __f_feature_support = Some(
                                 map
                                     .next_value::<
-                                        ::buffa::MessageField<field_options::FeatureSupport>,
+                                        ::buffa::MessageField<
+                                            field_options::FeatureSupport,
+                                            ::buffa::Inline<field_options::FeatureSupport>,
+                                        >,
                                     >()?,
                             );
                         }
@@ -11816,7 +11858,7 @@ pub struct OneofOptions {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub features: ::buffa::MessageField<FeatureSet>,
+    pub features: ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
     /// The parser stores options it doesn't recognize here. See above.
     ///
     /// Field 999: `uninterpreted_option`
@@ -12032,7 +12074,7 @@ impl<'de> serde::Deserialize<'de> for OneofOptions {
                 mut map: A,
             ) -> ::core::result::Result<OneofOptions, A::Error> {
                 let mut __f_features: ::core::option::Option<
-                    ::buffa::MessageField<FeatureSet>,
+                    ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
                 > = None;
                 let mut __f_uninterpreted_option: ::core::option::Option<
                     ::buffa::alloc::vec::Vec<UninterpretedOption>,
@@ -12042,7 +12084,13 @@ impl<'de> serde::Deserialize<'de> for OneofOptions {
                     match key.as_str() {
                         "features" => {
                             __f_features = Some(
-                                map.next_value::<::buffa::MessageField<FeatureSet>>()?,
+                                map
+                                    .next_value::<
+                                        ::buffa::MessageField<
+                                            FeatureSet,
+                                            ::buffa::Inline<FeatureSet>,
+                                        >,
+                                    >()?,
                             );
                         }
                         "uninterpretedOption" | "uninterpreted_option" => {
@@ -12245,7 +12293,7 @@ pub struct EnumOptions {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub features: ::buffa::MessageField<FeatureSet>,
+    pub features: ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
     /// The parser stores options it doesn't recognize here. See above.
     ///
     /// Field 999: `uninterpreted_option`
@@ -12571,7 +12619,7 @@ impl<'de> serde::Deserialize<'de> for EnumOptions {
                     ::core::option::Option<bool>,
                 > = None;
                 let mut __f_features: ::core::option::Option<
-                    ::buffa::MessageField<FeatureSet>,
+                    ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
                 > = None;
                 let mut __f_uninterpreted_option: ::core::option::Option<
                     ::buffa::alloc::vec::Vec<UninterpretedOption>,
@@ -12597,7 +12645,13 @@ impl<'de> serde::Deserialize<'de> for EnumOptions {
                         }
                         "features" => {
                             __f_features = Some(
-                                map.next_value::<::buffa::MessageField<FeatureSet>>()?,
+                                map
+                                    .next_value::<
+                                        ::buffa::MessageField<
+                                            FeatureSet,
+                                            ::buffa::Inline<FeatureSet>,
+                                        >,
+                                    >()?,
                             );
                         }
                         "uninterpretedOption" | "uninterpreted_option" => {
@@ -12779,7 +12833,7 @@ pub struct EnumValueOptions {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub features: ::buffa::MessageField<FeatureSet>,
+    pub features: ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
     /// Indicate that fields annotated with this enum value should not be printed
     /// out when using debug formats, e.g. when the field contains sensitive
     /// credentials.
@@ -12805,7 +12859,10 @@ pub struct EnumValueOptions {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub feature_support: ::buffa::MessageField<field_options::FeatureSupport>,
+    pub feature_support: ::buffa::MessageField<
+        field_options::FeatureSupport,
+        ::buffa::Inline<field_options::FeatureSupport>,
+    >,
     /// The parser stores options it doesn't recognize here. See above.
     ///
     /// Field 999: `uninterpreted_option`
@@ -13120,13 +13177,16 @@ impl<'de> serde::Deserialize<'de> for EnumValueOptions {
                     ::core::option::Option<bool>,
                 > = None;
                 let mut __f_features: ::core::option::Option<
-                    ::buffa::MessageField<FeatureSet>,
+                    ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
                 > = None;
                 let mut __f_debug_redact: ::core::option::Option<
                     ::core::option::Option<bool>,
                 > = None;
                 let mut __f_feature_support: ::core::option::Option<
-                    ::buffa::MessageField<field_options::FeatureSupport>,
+                    ::buffa::MessageField<
+                        field_options::FeatureSupport,
+                        ::buffa::Inline<field_options::FeatureSupport>,
+                    >,
                 > = None;
                 let mut __f_uninterpreted_option: ::core::option::Option<
                     ::buffa::alloc::vec::Vec<UninterpretedOption>,
@@ -13141,7 +13201,13 @@ impl<'de> serde::Deserialize<'de> for EnumValueOptions {
                         }
                         "features" => {
                             __f_features = Some(
-                                map.next_value::<::buffa::MessageField<FeatureSet>>()?,
+                                map
+                                    .next_value::<
+                                        ::buffa::MessageField<
+                                            FeatureSet,
+                                            ::buffa::Inline<FeatureSet>,
+                                        >,
+                                    >()?,
                             );
                         }
                         "debugRedact" | "debug_redact" => {
@@ -13153,7 +13219,10 @@ impl<'de> serde::Deserialize<'de> for EnumValueOptions {
                             __f_feature_support = Some(
                                 map
                                     .next_value::<
-                                        ::buffa::MessageField<field_options::FeatureSupport>,
+                                        ::buffa::MessageField<
+                                            field_options::FeatureSupport,
+                                            ::buffa::Inline<field_options::FeatureSupport>,
+                                        >,
                                     >()?,
                             );
                         }
@@ -13322,7 +13391,7 @@ pub struct ServiceOptions {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub features: ::buffa::MessageField<FeatureSet>,
+    pub features: ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
     /// Note:  Field numbers 1 through 32 are reserved for Google's internal RPC
     ///   framework.  We apologize for hoarding these numbers to ourselves, but
     ///   we were already using them long before we decided to release Protocol
@@ -13590,7 +13659,7 @@ impl<'de> serde::Deserialize<'de> for ServiceOptions {
                 mut map: A,
             ) -> ::core::result::Result<ServiceOptions, A::Error> {
                 let mut __f_features: ::core::option::Option<
-                    ::buffa::MessageField<FeatureSet>,
+                    ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
                 > = None;
                 let mut __f_deprecated: ::core::option::Option<
                     ::core::option::Option<bool>,
@@ -13603,7 +13672,13 @@ impl<'de> serde::Deserialize<'de> for ServiceOptions {
                     match key.as_str() {
                         "features" => {
                             __f_features = Some(
-                                map.next_value::<::buffa::MessageField<FeatureSet>>()?,
+                                map
+                                    .next_value::<
+                                        ::buffa::MessageField<
+                                            FeatureSet,
+                                            ::buffa::Inline<FeatureSet>,
+                                        >,
+                                    >()?,
                             );
                         }
                         "deprecated" => {
@@ -13800,7 +13875,7 @@ pub struct MethodOptions {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub features: ::buffa::MessageField<FeatureSet>,
+    pub features: ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
     /// The parser stores options it doesn't recognize here. See above.
     ///
     /// Field 999: `uninterpreted_option`
@@ -14103,7 +14178,7 @@ impl<'de> serde::Deserialize<'de> for MethodOptions {
                     ::core::option::Option<method_options::IdempotencyLevel>,
                 > = None;
                 let mut __f_features: ::core::option::Option<
-                    ::buffa::MessageField<FeatureSet>,
+                    ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
                 > = None;
                 let mut __f_uninterpreted_option: ::core::option::Option<
                     ::buffa::alloc::vec::Vec<UninterpretedOption>,
@@ -14138,7 +14213,13 @@ impl<'de> serde::Deserialize<'de> for MethodOptions {
                         }
                         "features" => {
                             __f_features = Some(
-                                map.next_value::<::buffa::MessageField<FeatureSet>>()?,
+                                map
+                                    .next_value::<
+                                        ::buffa::MessageField<
+                                            FeatureSet,
+                                            ::buffa::Inline<FeatureSet>,
+                                        >,
+                                    >()?,
                             );
                         }
                         "uninterpretedOption" | "uninterpreted_option" => {
@@ -17800,7 +17881,10 @@ pub mod feature_set_defaults {
                 skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
             )
         )]
-        pub overridable_features: ::buffa::MessageField<super::FeatureSet>,
+        pub overridable_features: ::buffa::MessageField<
+            super::FeatureSet,
+            ::buffa::Inline<super::FeatureSet>,
+        >,
         /// Defaults of features that can't be overridden in this edition.
         ///
         /// Field 5: `fixed_features`
@@ -17812,7 +17896,10 @@ pub mod feature_set_defaults {
                 skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
             )
         )]
-        pub fixed_features: ::buffa::MessageField<super::FeatureSet>,
+        pub fixed_features: ::buffa::MessageField<
+            super::FeatureSet,
+            ::buffa::Inline<super::FeatureSet>,
+        >,
         #[cfg_attr(feature = "json", serde(skip))]
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,

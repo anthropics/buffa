@@ -703,9 +703,9 @@ use my_crate::pkg::__buffa::{oneof, view};
 // then: pkg::Foo, view::FooView, oneof::foo::Kind, view::oneof::foo::Kind
 ```
 
-### `MessageField<T>` — ergonomic optional messages
+### `MessageField<T, P>` — ergonomic optional messages
 
-`MessageField<T>` wraps `Option<Box<T>>` internally but implements `Deref` to a static default instance when unset, eliminating unwrap ceremony:
+`MessageField<T, P>` stores the message inline by default (`P = Inline<T>`, laid out as `Option<T>` — no per-field heap allocation; recursive fields and explicit opt-outs use `P = Box<T>`). It implements `Deref` to a static default instance when unset, eliminating unwrap ceremony:
 
 ```rust,ignore
 // Reading — no unwrap needed, derefs to default when unset

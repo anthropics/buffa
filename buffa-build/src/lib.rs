@@ -1049,9 +1049,15 @@ impl Config {
     }
 
     /// Map the matching message fields to a [`PointerRepr`] other than the
-    /// default `Box`. Rules are matched with proto-segment-aware prefix logic;
-    /// the **last** matching rule wins, so add a broad rule first and narrower
-    /// overrides after.
+    /// default `Inline`. Rules are matched with proto-segment-aware prefix
+    /// logic; the **last** matching rule wins, so add a broad rule first and
+    /// narrower overrides after. A leading dot is added to each path if
+    /// missing.
+    ///
+    /// The default `Inline` is recursion-aware (recursive fields stay on
+    /// `Box`), so this knob is for opting *out*: `PointerRepr::Box` for large
+    /// or rarely-set submessages where reserving `size_of::<T>()` in the parent
+    /// is wasteful, or `PointerRepr::Custom` for a third-party pointer.
     ///
     /// Applies to singular (and proto2 optional/required) message fields and to
     /// **boxed** oneof message/group variants (matched by the variant's path).
@@ -1069,15 +1075,25 @@ impl Config {
     pub fn box_type_in(mut self, repr: PointerRepr, paths: &[impl AsRef<str>]) -> Self {
         self.codegen_config
             .pointer_fields
-            .extend(paths.iter().map(|p| (p.as_ref().to_string(), repr.clone())));
+            .extend(paths.iter().map(|p| {
+                let p = p.as_ref();
+                // Normalize to the leading-dot form: matching and the
+                // exact-path Inline recursion error both depend on it.
+                let p = if p.starts_with('.') {
+                    p.to_string()
+                } else {
+                    format!(".{p}")
+                };
+                (p, repr.clone())
+            }));
         self
     }
 
     /// Map every message field (and boxed oneof variant) to the given [`PointerRepr`].
     /// Convenience for `.box_type_in(repr, &["."])`. Call before any
-    /// [`box_type_in`](Self::box_type_in) overrides, since the last matching rule
-    /// wins. An inline pointer inflates each parent struct, so prefer narrow
-    /// rules over a blanket default.
+    /// [`box_type_in`](Self::box_type_in) overrides, since the last matching
+    /// rule wins. `box_type(PointerRepr::Box)` restores the pre-0.9 boxed
+    /// default for every singular message field.
     #[must_use]
     pub fn box_type(mut self, repr: PointerRepr) -> Self {
         self.codegen_config
@@ -1111,57 +1127,6 @@ impl Config {
     #[must_use]
     pub fn box_type_custom(self, template: &str) -> Self {
         self.box_type(PointerRepr::Custom(template.to_string()))
-    }
-
-    /// Store the matching singular message fields inline (no heap allocation)
-    /// instead of boxing them. The field is emitted as
-    /// `MessageField<T, ::buffa::Inline<T>>`, laid out as `Option<T>` in the
-    /// parent struct. The singular-field counterpart to
-    /// [`unbox_oneof_in`](Self::unbox_oneof_in).
-    ///
-    /// Each path is a fully-qualified proto field path prefix, e.g.
-    /// `".my.pkg.MyMessage.inner"` for one field or `".my.pkg"` for a package
-    /// (same matching as [`box_type_in`](Self::box_type_in)). A leading dot is
-    /// added if missing.
-    ///
-    /// Recursion-aware: a field that would form an infinite-size cycle
-    /// (directly, mutually, or via an [`unbox_oneof_in`](Self::unbox_oneof_in)
-    /// variant) cannot be stored inline. A rule that names such a field
-    /// *exactly* is rejected at codegen time; a broader prefix rule silently
-    /// keeps recursive fields on `Box` and inlines the rest.
-    ///
-    /// Inlining reserves `size_of::<T>()` in the parent struct for every
-    /// matched field whether set or not, recursively, so a blanket apply can
-    /// inflate top-level message sizes — prefer narrow prefixes for large or
-    /// rarely-set submessages.
-    ///
-    /// Shorthand for [`box_type_in`](Self::box_type_in)`(PointerRepr::Inline,
-    /// paths)` with leading-dot normalization.
-    #[must_use]
-    pub fn unbox_message_fields_in(self, paths: &[impl AsRef<str>]) -> Self {
-        let normalized: Vec<String> = paths
-            .iter()
-            .map(|p| {
-                let p = p.as_ref();
-                if p.starts_with('.') {
-                    p.to_string()
-                } else {
-                    format!(".{p}")
-                }
-            })
-            .collect();
-        self.box_type_in(PointerRepr::Inline, &normalized)
-    }
-
-    /// Store every non-recursive singular message field inline instead of
-    /// boxing it. Convenience for `.unbox_message_fields_in(&["."])`; recursive
-    /// fields stay boxed. Inlining reserves `size_of::<T>()` in the parent for
-    /// every field whether set or not, so use narrow
-    /// [`unbox_message_fields_in`](Self::unbox_message_fields_in) rules instead
-    /// when large or rarely-set submessages are in scope.
-    #[must_use]
-    pub fn unbox_message_fields(self) -> Self {
-        self.box_type(PointerRepr::Inline)
     }
 
     /// Map the matching `repeated` fields to a [`RepeatedRepr`] other than the
@@ -1899,17 +1864,17 @@ mod tests {
     }
 
     #[test]
-    fn unbox_message_fields_in_normalizes_leading_dot() {
+    fn box_type_in_normalizes_leading_dot() {
         // Without normalization a dotless path would silently match nothing,
-        // and the exact-path recursion error would never fire for it.
+        // and the exact-path Inline recursion error would never fire for it.
         let config = Config::new()
-            .unbox_message_fields_in(&["my.pkg.Msg.inner", ".my.pkg.Other"])
+            .box_type_in(PointerRepr::Box, &["my.pkg.Msg.inner", ".my.pkg.Other"])
             .codegen_config;
         assert_eq!(
             config.pointer_fields,
             vec![
-                (".my.pkg.Msg.inner".to_string(), PointerRepr::Inline),
-                (".my.pkg.Other".to_string(), PointerRepr::Inline),
+                (".my.pkg.Msg.inner".to_string(), PointerRepr::Box),
+                (".my.pkg.Other".to_string(), PointerRepr::Box),
             ]
         );
     }

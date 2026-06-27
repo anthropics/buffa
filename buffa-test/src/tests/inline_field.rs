@@ -1,12 +1,14 @@
-//! `unbox_message_fields()`: built-in inline storage for singular message fields.
+//! `PointerRepr::Inline` default: built-in inline storage for singular message
+//! fields.
 //!
-//! `inline_field.proto` is compiled with `.unbox_message_fields()`, so every
+//! `inline_field.proto` is compiled with **no pointer config**, so every
 //! non-recursive singular message field is `MessageField<T, ::buffa::Inline<T>>`
 //! (laid out as `Option<T>` in the parent struct — no heap). The recursive
 //! `self_ref` field stays on `Box`. Compiling `crate::inline_field` is most of
 //! the test: an inlined `self_ref` would E0072, so the recursion guard is proven
-//! by `cargo build`. The runtime checks below pin the field types, assert the
-//! inline layout, and verify binary + view→owned round-trips.
+//! on the default config by `cargo build`. The runtime checks below pin the
+//! field types, assert the inline layout, and verify binary + view→owned
+//! round-trips.
 
 use crate::inline_field::{Inner, Outer};
 use buffa::{Inline, Message, MessageField};

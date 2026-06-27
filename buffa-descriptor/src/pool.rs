@@ -45,8 +45,12 @@ use buffa::MessageField;
 
 /// Clone a descriptor's raw `*Options` into a boxed `Option`, the form the
 /// linked descriptors store. `None` for the common no-options case; one
-/// allocation only when options are present.
-fn clone_options<T: Clone + Default>(opts: &MessageField<T>) -> Option<Box<T>> {
+/// allocation only when options are present. Generic over the source field's
+/// pointer (`Inline` for non-recursive fields under the default, `Box` for the
+/// recursive `FieldOptions.features` chain).
+fn clone_options<T: Clone + Default, P: buffa::ProtoBox<T>>(
+    opts: &MessageField<T, P>,
+) -> Option<Box<T>> {
     opts.as_option().cloned().map(Box::new)
 }
 

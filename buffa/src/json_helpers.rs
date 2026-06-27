@@ -1773,9 +1773,12 @@ impl<'de, T: serde::Deserialize<'de>> serde::de::DeserializeSeed<'de>
 /// maps `null` → `None` (field absent). For types like `google.protobuf.Value`
 /// where `null` is a valid value (`NullValue`), this function ensures `null`
 /// reaches `T::deserialize` and the field is set rather than absent.
-pub fn message_field_always_present<'de, T, D>(d: D) -> Result<crate::MessageField<T>, D::Error>
+pub fn message_field_always_present<'de, T, P, D>(
+    d: D,
+) -> Result<crate::MessageField<T, P>, D::Error>
 where
     T: Default + serde::Deserialize<'de>,
+    P: crate::ProtoBox<T>,
     D: serde::Deserializer<'de>,
 {
     T::deserialize(d).map(crate::MessageField::some)

@@ -515,6 +515,7 @@ impl<'a> ::buffa::MessageView<'a> for CodeGeneratorRequestView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::Version,
+                        ::buffa::Inline<super::super::Version>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -1448,6 +1449,9 @@ pub mod code_generator_response {
                     Some(v) => {
                         ::buffa::MessageField::<
                             super::super::super::super::GeneratedCodeInfo,
+                            ::buffa::Inline<
+                                super::super::super::super::GeneratedCodeInfo,
+                            >,
                         >::some(v.to_owned_from_source(__buffa_src)?)
                     }
                     None => ::buffa::MessageField::none(),

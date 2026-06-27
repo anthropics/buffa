@@ -112,9 +112,9 @@ message PackedTile {
 // Many small singular sub-messages per repeated element (issue #248). Each
 // `Face` holds four singular `Vertex` fields, so a boxed `MessageField<Vertex>`
 // costs four heap allocations per face on decode that an inline pointer
-// (`PointerRepr::Inline`) eliminates. None of the existing benchmark messages
-// has more than one singular message field per payload, so this is the
-// regression target for `unbox_message_fields()` and the eventual default flip.
+// (`PointerRepr::Inline`, the default) eliminates. None of the other benchmark
+// messages has more than one singular message field per payload, so this is the
+// regression target for the inline-by-default storage.
 // Target payload: ~18KB (256 faces).
 message TriMesh {
   message Vertex {

@@ -54,9 +54,9 @@ pub mod box_type {
     buffa::include_proto!("box_type");
 }
 
-/// `unbox_message_fields()`: the built-in inline pointer (`::buffa::Inline<T>`)
-/// for every non-recursive singular message field. The `self_ref` field is
-/// recursive and stays on `Box`.
+/// `PointerRepr::Inline` default: the built-in inline pointer
+/// (`::buffa::Inline<T>`) for every non-recursive singular message field. The
+/// `self_ref` field is recursive and stays on `Box`.
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod inline_field {
     buffa::include_proto!("inline_field");

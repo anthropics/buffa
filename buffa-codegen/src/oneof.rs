@@ -77,7 +77,7 @@ pub(crate) fn variant_boxed(ctx: &CodeGenContext, ty: Type, variant_fqn: &str) -
 /// boxing site consistent with the enum declaration and builds the message
 /// index a single time.
 pub(crate) fn resolve_unboxed_variants(
-    files: &[FileDescriptorProto],
+    index: &std::collections::HashMap<String, &DescriptorProto>,
     rules: &[String],
     pointer_fields: &[(String, crate::PointerRepr)],
 ) -> std::collections::HashSet<String> {
@@ -85,11 +85,10 @@ pub(crate) fn resolve_unboxed_variants(
     if rules.is_empty() {
         return resolved;
     }
-    let index = message_index(files);
-    for (msg_fqn, msg) in &index {
+    for (msg_fqn, msg) in index {
         for_each_message_variant(msg, msg_fqn, |variant_fqn, type_name| {
             if rule_matches(rules, &variant_fqn)
-                && !inline_is_recursive(&index, rules, pointer_fields, msg_fqn, type_name)
+                && !inline_is_recursive(index, rules, pointer_fields, msg_fqn, type_name)
             {
                 resolved.insert(variant_fqn);
             }
@@ -108,23 +107,20 @@ pub(crate) fn resolve_unboxed_variants(
 /// resulting set is the source of truth for
 /// [`CodeGenContext::pointer_repr`](crate::context::CodeGenContext::pointer_repr),
 /// which demotes any `Inline` not in this set to `Box`.
+///
+/// Runs unconditionally now that `Inline` is the default. Cost is `O(F·(V+E))`
+/// (a fresh DFS per candidate field); memoize per-target reachable sets if a
+/// very large schema makes this noticeable.
 pub(crate) fn resolve_inlined_fields(
-    files: &[FileDescriptorProto],
+    index: &std::collections::HashMap<String, &DescriptorProto>,
     rules: &[String],
     pointer_fields: &[(String, crate::PointerRepr)],
 ) -> std::collections::HashSet<String> {
     let mut resolved = std::collections::HashSet::new();
-    if !pointer_fields
-        .iter()
-        .any(|(_, r)| *r == crate::PointerRepr::Inline)
-    {
-        return resolved;
-    }
-    let index = message_index(files);
-    for (msg_fqn, msg) in &index {
+    for (msg_fqn, msg) in index {
         for_each_singular_message_field(msg, msg_fqn, |field_fqn, type_name| {
             if raw_pointer_repr(pointer_fields, &field_fqn) == crate::PointerRepr::Inline
-                && !inline_is_recursive(&index, rules, pointer_fields, msg_fqn, type_name)
+                && !inline_is_recursive(index, rules, pointer_fields, msg_fqn, type_name)
             {
                 resolved.insert(field_fqn);
             }
@@ -228,7 +224,7 @@ fn for_each_singular_message_field(
 
 /// Build a map from fully-qualified message name (no leading dot) to its
 /// descriptor, walking every file and its nested types.
-fn message_index(
+pub(crate) fn message_index(
     files: &[FileDescriptorProto],
 ) -> std::collections::HashMap<String, &DescriptorProto> {
     fn walk<'a>(

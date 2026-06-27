@@ -254,13 +254,14 @@ impl<'a> CodeGenContext<'a> {
         let mut enum_closedness = HashMap::new();
         let mut comment_map = HashMap::new();
         let mut nested_module_names = HashMap::new();
+        let msg_index = crate::oneof::message_index(files);
         let unboxed_oneof_variants = crate::oneof::resolve_unboxed_variants(
-            files,
+            &msg_index,
             &config.unboxed_oneof_fields,
             &config.pointer_fields,
         );
         let inlined_message_fields = crate::oneof::resolve_inlined_fields(
-            files,
+            &msg_index,
             &config.unboxed_oneof_fields,
             &config.pointer_fields,
         );
@@ -945,7 +946,7 @@ impl<'a> CodeGenContext<'a> {
     ///
     /// `Inline` is recursion-aware: a path whose raw rule resolves to
     /// [`PointerRepr::Inline`](crate::PointerRepr::Inline) but is absent from
-    /// the [`resolve_inlined_fields`](crate::oneof::resolve_inlined_fields) set
+    /// the precomputed `inlined_message_fields` set
     /// (a recursive singular field, or a non-singular path such as a oneof
     /// variant) is demoted to `Box` so the generated type stays sized.
     pub fn pointer_repr(&self, field_fqn: &str) -> crate::PointerRepr {

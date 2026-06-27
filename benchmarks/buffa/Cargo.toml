@@ -35,9 +35,6 @@ reflect = []
 lazy = []
 # `iso` gates the per-message isolated targets out of the default `task bench` run.
 iso = []
-# A/B knob for issue #248: store every non-recursive singular message field
-# inline (no per-field heap allocation). The `mesh` benchmark is the target.
-inline_fields = []
 
 [[bench]]
 name = "protobuf"
