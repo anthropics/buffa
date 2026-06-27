@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use buffa_descriptor::reflect::{
-    DynamicMessage, MapKey, MapValue, ReflectMessage, ReflectMessageMut, Value,
+    DynamicMessage, MapKey, MapValue, ReflectError, ReflectMessage, ReflectMessageMut, Value,
 };
 use buffa_descriptor::DescriptorPool;
 
@@ -431,4 +431,116 @@ fn debug_output_redacts_debug_redact_fields() {
         out.contains("org_123"),
         "unannotated field must still print: {out}"
     );
+}
+
+fn foreign_field_pool() -> Arc<DescriptorPool> {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let file = FileDescriptorProto {
+        name: Some("foreign.proto".into()),
+        package: Some("foreign.test".into()),
+        syntax: Some("proto3".into()),
+        message_type: vec![
+            DescriptorProto {
+                name: Some("Owner".into()),
+                field: vec![FieldDescriptorProto {
+                    name: Some("owned".into()),
+                    number: Some(1),
+                    label: Some(Label::LABEL_OPTIONAL),
+                    r#type: Some(Type::TYPE_STRING),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            DescriptorProto {
+                name: Some("Foreign".into()),
+                field: vec![FieldDescriptorProto {
+                    name: Some("alien".into()),
+                    number: Some(1),
+                    label: Some(Label::LABEL_OPTIONAL),
+                    r#type: Some(Type::TYPE_STRING),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+
+    Arc::new(
+        DescriptorPool::new(FileDescriptorSet {
+            file: vec![file],
+            ..Default::default()
+        })
+        .expect("pool builds from hand-built descriptor"),
+    )
+}
+
+#[test]
+fn try_set_and_try_clear_reject_foreign_field_descriptors() {
+    let p = foreign_field_pool();
+    let p2 = foreign_field_pool();
+    let owner_idx = p.message_index("foreign.test.Owner").unwrap();
+    let owner_md = p.message_by_name("foreign.test.Owner").unwrap();
+    let owner_field = owner_md.field(1).unwrap();
+    let foreign_same_pool = p
+        .message_by_name("foreign.test.Foreign")
+        .unwrap()
+        .field(1)
+        .unwrap();
+    let foreign_other_pool = p2
+        .message_by_name("foreign.test.Owner")
+        .unwrap()
+        .field(1)
+        .unwrap();
+
+    let mut msg = DynamicMessage::new(Arc::clone(&p), owner_idx);
+    msg.try_set(owner_field, Value::String("kept".into()))
+        .expect("owned field sets cleanly");
+
+    let err = msg
+        .try_set(foreign_same_pool, Value::String("wrong".into()))
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        ReflectError::FieldNotMember {
+            ref message,
+            ref field_name,
+            number,
+        } if message == "foreign.test.Owner" && field_name == "alien" && number == 1
+    ));
+    assert_eq!(msg.field_by_number(1), Some(&Value::String("kept".into())));
+
+    let err = msg.try_clear(foreign_other_pool).unwrap_err();
+    assert!(matches!(
+        err,
+        ReflectError::FieldNotMember {
+            ref message,
+            ref field_name,
+            number,
+        } if message == "foreign.test.Owner" && field_name == "owned" && number == 1
+    ));
+    assert_eq!(msg.field_by_number(1), Some(&Value::String("kept".into())));
+
+    msg.try_clear(owner_field)
+        .expect("owned field clears cleanly");
+    assert_eq!(msg.field_by_number(1), None);
+}
+
+#[test]
+#[should_panic(expected = "is not a member of foreign.test.Owner")]
+fn set_panics_on_foreign_field_descriptor() {
+    let p = foreign_field_pool();
+    let owner_idx = p.message_index("foreign.test.Owner").unwrap();
+    let foreign = p
+        .message_by_name("foreign.test.Foreign")
+        .unwrap()
+        .field(1)
+        .unwrap();
+
+    let mut msg = DynamicMessage::new(Arc::clone(&p), owner_idx);
+    msg.set(foreign, Value::String("boom".into()));
 }
