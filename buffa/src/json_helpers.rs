@@ -915,14 +915,131 @@ fn parse_int_from_str<I: TryFrom<i128>>(v: &str) -> Option<I> {
     if let Ok(n) = v.parse::<i128>() {
         return I::try_from(n).ok();
     }
-    // Fall back to parsing as f64 for exponential/float notation (e.g. "1e5").
-    // The f64 intermediate silently rounds values > 2^53, but the direct
-    // integer parse above handles those cases exactly.
-    let f: f64 = v.parse().ok()?;
-    if !is_exact_integer(f) {
+    let n = parse_exact_decimal_int(v)?;
+    I::try_from(n).ok()
+}
+
+/// Parse a decimal/exponential string as an exact integer.
+///
+/// Accepts the numeric string forms the JSON integer helpers intentionally
+/// support beyond plain integers: zero-fraction decimals like `"1.0"` and
+/// decimal scientific notation like `"1e5"` / `"1.0e2"`. Returns `None` if
+/// the value is not mathematically integral or would overflow `i128`.
+fn parse_exact_decimal_int(v: &str) -> Option<i128> {
+    let bytes = v.as_bytes();
+    if bytes.is_empty() {
         return None;
     }
-    I::try_from(f as i128).ok()
+
+    let mut i = 0usize;
+    let negative = match bytes[0] {
+        b'+' => {
+            i = 1;
+            false
+        }
+        b'-' => {
+            i = 1;
+            true
+        }
+        _ => false,
+    };
+
+    let int_start = i;
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+    let int_end = i;
+
+    let mut frac_start = i;
+    let mut frac_end = i;
+    if i < bytes.len() && bytes[i] == b'.' {
+        i += 1;
+        frac_start = i;
+        while i < bytes.len() && bytes[i].is_ascii_digit() {
+            i += 1;
+        }
+        frac_end = i;
+    }
+
+    if int_start == int_end && frac_start == frac_end {
+        return None;
+    }
+
+    let mut exponent = 0i64;
+    if i < bytes.len() && matches!(bytes[i], b'e' | b'E') {
+        i += 1;
+        let exp_negative = match bytes.get(i) {
+            Some(b'+') => {
+                i += 1;
+                false
+            }
+            Some(b'-') => {
+                i += 1;
+                true
+            }
+            _ => false,
+        };
+        let exp_start = i;
+        while i < bytes.len() && bytes[i].is_ascii_digit() {
+            exponent = exponent
+                .checked_mul(10)?
+                .checked_add(i64::from(bytes[i] - b'0'))?;
+            i += 1;
+        }
+        if i == exp_start {
+            return None;
+        }
+        if exp_negative {
+            exponent = exponent.checked_neg()?;
+        }
+    }
+
+    if i != bytes.len() {
+        return None;
+    }
+
+    // Trailing fractional zeros do not affect integrality and would only
+    // inflate the significand before we re-scale it.
+    while frac_end > frac_start && bytes[frac_end - 1] == b'0' {
+        frac_end -= 1;
+    }
+
+    let mut significand = 0i128;
+    let mut nonzero_digit_seen = false;
+    for &digit in bytes[int_start..int_end]
+        .iter()
+        .chain(bytes[frac_start..frac_end].iter())
+    {
+        if !nonzero_digit_seen && digit == b'0' {
+            continue;
+        }
+        nonzero_digit_seen = true;
+        significand = significand
+            .checked_mul(10)?
+            .checked_add(i128::from(digit - b'0'))?;
+    }
+
+    if !nonzero_digit_seen {
+        return Some(0);
+    }
+
+    let scale = exponent.checked_sub((frac_end - frac_start) as i64)?;
+    if scale >= 0 {
+        let pow10 = 10i128.checked_pow(u32::try_from(scale).ok()?)?;
+        significand = significand.checked_mul(pow10)?;
+    } else {
+        let divisor = 10i128.checked_pow(u32::try_from(scale.checked_abs()?).ok()?)?;
+        if significand % divisor != 0 {
+            return None;
+        }
+        significand /= divisor;
+    }
+
+    if negative {
+        significand.checked_neg()
+    } else {
+        Some(significand)
+    }
 }
 
 /// Try to interpret an f64 as an exact integer.
