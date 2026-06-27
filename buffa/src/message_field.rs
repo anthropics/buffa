@@ -81,16 +81,21 @@ macro_rules! impl_default_instance {
 /// The owned smart pointer backing a singular message field inside
 /// [`MessageField`].
 ///
-/// The default is [`Box<T>`]; `buffa_build`'s `box_type_custom` knob substitutes
-/// any pointer that implements `ProtoBox<T>` — for example a `smallbox`-style
-/// pointer that stores small messages inline and avoids a heap allocation. The
-/// wire format is unchanged; only the in-memory ownership of the boxed message
-/// changes, and view types are unaffected.
+/// The default is [`Box<T>`]; the built-in [`Inline<T>`] stores the message
+/// directly in the parent struct (no heap) and is what `buffa_build`'s
+/// [`unbox_message_fields`][umf] selects. For anything else — for example a
+/// `smallbox`-style pointer that stores small messages inline but spills large
+/// ones to the heap — the `box_type_custom` knob substitutes any pointer that
+/// implements `ProtoBox<T>`. The wire format is unchanged; only the in-memory
+/// ownership of the boxed message changes, and view types are unaffected.
 ///
-/// There is intentionally no blanket impl — the built-in `Box<T>` impl below is
-/// the only one buffa provides. Because `ProtoBox` is buffa-owned, a *foreign*
-/// pointer cannot implement it directly (orphan rule); wrap it in a crate-local
-/// newtype, like the `ProtoString` newtype pattern.
+/// There is intentionally no blanket impl — the built-in [`Box<T>`] and
+/// [`Inline<T>`] impls below are the only ones buffa provides. Because
+/// `ProtoBox` is buffa-owned, a *foreign* pointer cannot implement it directly
+/// (orphan rule); wrap it in a crate-local newtype, like the `ProtoString`
+/// newtype pattern.
+///
+/// [umf]: https://docs.rs/buffa-build/latest/buffa_build/struct.Config.html#method.unbox_message_fields
 ///
 /// # Why `DerefMut` (and why `Rc` / `Arc` are excluded)
 ///
@@ -173,11 +178,65 @@ impl<T> ProtoBox<T> for Box<T> {
     }
 }
 
-// The default pointer must always satisfy the bound; freeze that invariant
+/// A [`ProtoBox`] that stores the message inline (no heap allocation).
+///
+/// `MessageField<T, Inline<T>>` is laid out as `Option<T>` — set values live
+/// directly in the parent struct. This eliminates the per-field allocation of
+/// the default `Box<T>` pointer at the cost of inflating the parent's size by
+/// `size_of::<T>()` even when the field is unset.
+///
+/// Codegen selects this via [`PointerRepr::Inline`][pri] (or the
+/// [`unbox_message_fields`][umf] convenience), which is recursion-aware: a
+/// field that would form an infinite-size cycle is silently kept on `Box`.
+///
+/// [pri]: https://docs.rs/buffa-codegen/latest/buffa_codegen/enum.PointerRepr.html#variant.Inline
+/// [umf]: https://docs.rs/buffa-build/latest/buffa_build/struct.Config.html#method.unbox_message_fields
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+#[repr(transparent)]
+pub struct Inline<T>(pub T);
+
+impl<T> Deref for Inline<T> {
+    type Target = T;
+    #[inline]
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for Inline<T> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.0
+    }
+}
+
+impl<T> ProtoBox<T> for Inline<T> {
+    #[inline]
+    fn new(value: T) -> Self {
+        Inline(value)
+    }
+
+    #[inline]
+    fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+/// Convenience mirror of `Box`'s `From<T>`; codegen and [`MessageField::some`]
+/// use [`ProtoBox::new`] instead.
+impl<T> From<T> for Inline<T> {
+    #[inline]
+    fn from(value: T) -> Self {
+        Inline(value)
+    }
+}
+
+// The built-in pointers must always satisfy the bound; freeze that invariant
 // against future changes to the trait's supertraits.
 const _: fn() = || {
     fn assert_proto_box<P: ProtoBox<T>, T>() {}
     assert_proto_box::<Box<u32>, u32>();
+    assert_proto_box::<Inline<u32>, u32>();
 };
 
 /// A wrapper for optional message fields that provides transparent access
@@ -187,7 +246,8 @@ const _: fn() = || {
 /// the ergonomic pain of `Option<Box<M>>` while still being heap-allocated
 /// only when set (no allocation for unset fields).
 ///
-/// The pointer type `P` is pluggable (default [`Box<T>`]); see [`ProtoBox`].
+/// The pointer type `P` is pluggable (default [`Box<T>`]; see [`ProtoBox`], and
+/// the built-in [`Inline<T>`] for no-heap storage).
 /// Because `P` has a default, a *standalone* construction with no pinning
 /// context needs a type annotation — write `let f: MessageField<Foo> =
 /// MessageField::some(x);` (or `MessageField::<Foo>::some(x)`). In the common
@@ -542,6 +602,26 @@ mod tests {
     // Via the exported macro, which doubles as its unit test (hygiene and
     // `$crate` path resolution).
     crate::impl_default_instance!(Inner);
+
+    #[test]
+    fn inline_message_field_is_option_layout() {
+        // `Inline<T>` is `repr(transparent)`, so `MessageField<T, Inline<T>>`
+        // (which is `Option<Inline<T>>`) is laid out as `Option<T>`.
+        use core::mem::size_of;
+        assert_eq!(
+            size_of::<MessageField<Inner, Inline<Inner>>>(),
+            size_of::<Option<Inner>>()
+        );
+        // And the `ProtoBox` surface round-trips.
+        let mut f: MessageField<Inner, Inline<Inner>> = MessageField::some(Inner {
+            value: 7,
+            ..Default::default()
+        });
+        assert_eq!(f.value, 7);
+        f.get_or_insert_default().value = 9;
+        assert_eq!(f.take().map(|i| i.value), Some(9));
+        assert!(f.is_unset());
+    }
 
     #[test]
     fn impl_default_instance_macro_returns_singleton() {

@@ -1615,3 +1615,193 @@ fn prefix_unbox_rule_on_recursive_variant_skips_without_error() {
         "non-recursive sibling should be inline under the prefix rule: {content}"
     );
 }
+
+#[test]
+fn blanket_unbox_message_fields_skips_recursive_fields() {
+    // PointerRepr::Inline ("." blanket rule) stores every NON-recursive
+    // singular message field inline; recursive fields are silently kept on
+    // Box. Mirrors blanket_unbox_oneof_skips_recursive_variants for #248.
+    let mut config = no_views();
+    config
+        .pointer_fields
+        .push((".".to_string(), buffa_codegen::PointerRepr::Inline));
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Small { int32 value = 1; }
+        message Node {
+          Node child = 1;
+          Small leaf = 2;
+        }
+        "#,
+        &config,
+    );
+    assert!(
+        content.contains("pub child: ::buffa::MessageField<Self>,"),
+        "recursive singular field must stay on Box (default pointer) under the blanket rule: {content}"
+    );
+    assert!(
+        content.contains("pub leaf: ::buffa::MessageField<Small, ::buffa::Inline<Small>>"),
+        "non-recursive singular field should be inline under the blanket rule: {content}"
+    );
+}
+
+#[test]
+fn blanket_unbox_message_fields_keeps_mutually_recursive_boxed() {
+    // Mutual recursion: A.b -> B and B.a -> A form a cycle only when BOTH
+    // fields are inline. The blanket rule must keep both on Box; the
+    // non-recursive A.c field inlines.
+    let mut config = no_views();
+    config
+        .pointer_fields
+        .push((".".to_string(), buffa_codegen::PointerRepr::Inline));
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message A { B b = 1; C c = 2; }
+        message B { A a = 1; }
+        message C { int32 value = 1; }
+        "#,
+        &config,
+    );
+    assert!(
+        content.contains("pub b: ::buffa::MessageField<B>,"),
+        "mutually recursive field A.b must stay on Box: {content}"
+    );
+    assert!(
+        content.contains("pub a: ::buffa::MessageField<A>,"),
+        "mutually recursive field B.a must stay on Box: {content}"
+    );
+    assert!(
+        content.contains("pub c: ::buffa::MessageField<C, ::buffa::Inline<C>>"),
+        "non-recursive field A.c should be inline under the blanket rule: {content}"
+    );
+}
+
+#[test]
+fn exact_inline_rule_on_recursive_field_is_rejected() {
+    // An exact-path PointerRepr::Inline rule naming a recursive singular
+    // field is a hard codegen error — the user asked for an unsized struct.
+    let proto = dedent(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Node { Node child = 1; }
+        "#,
+    );
+    let dir = tempfile::tempdir().expect("temp dir");
+    let proto_path = dir.path().join("test.proto");
+    std::fs::write(&proto_path, &proto).expect("write proto");
+    let fds = compile_protos(
+        &[proto_path.to_str().unwrap()],
+        &[dir.path().to_str().unwrap()],
+    );
+
+    let mut config = no_views();
+    config.pointer_fields.push((
+        ".test.Node.child".to_string(),
+        buffa_codegen::PointerRepr::Inline,
+    ));
+    let result = buffa_codegen::generate(&fds.file, &["test.proto".into()], &config);
+    let err = result.expect_err("inlining a recursive singular field should error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("recursive") && msg.contains(".test.Node.child"),
+        "error should explain the recursion and name the field: {err}"
+    );
+}
+
+#[test]
+fn prefix_inline_rule_on_recursive_field_skips_without_error() {
+    // A non-blanket prefix rule (message scope, not exact field path) that
+    // matches a recursive field takes the silent-skip path: the recursive
+    // field stays on Box, siblings inline.
+    let mut config = no_views();
+    config
+        .pointer_fields
+        .push((".test.Node".to_string(), buffa_codegen::PointerRepr::Inline));
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Leaf { int32 value = 1; }
+        message Node {
+          Node child = 1;
+          Leaf leaf = 2;
+        }
+        "#,
+        &config,
+    );
+    assert!(
+        content.contains("pub child: ::buffa::MessageField<Self>,"),
+        "recursive field must stay on Box under a prefix rule: {content}"
+    );
+    assert!(
+        content.contains("pub leaf: ::buffa::MessageField<Leaf, ::buffa::Inline<Leaf>>"),
+        "non-recursive sibling should be inline under the prefix rule: {content}"
+    );
+}
+
+#[test]
+fn unbox_oneof_and_inline_field_detect_cross_kind_cycle() {
+    // A cycle through ONE inlined oneof variant and ONE inlined singular field
+    // (A.body.b -> B, B.a -> A) must be caught by both resolvers: the variant
+    // stays boxed and the field stays on Box. Either alone is non-recursive,
+    // so the recursion DFS must follow both edge kinds.
+    let mut config = no_views();
+    config.unboxed_oneof_fields.push(".".to_string());
+    config
+        .pointer_fields
+        .push((".".to_string(), buffa_codegen::PointerRepr::Inline));
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message A {
+          oneof body { B b = 1; }
+        }
+        message B { A a = 1; }
+        "#,
+        &config,
+    );
+    assert!(
+        content.contains("B(::buffa::alloc::boxed::Box<super::super::super::B>)"),
+        "oneof variant in a cross-kind cycle must stay boxed: {content}"
+    );
+    assert!(
+        content.contains("pub a: ::buffa::MessageField<A>,"),
+        "singular field in a cross-kind cycle must stay on Box: {content}"
+    );
+}
+
+#[test]
+fn boxed_oneof_variant_with_inline_pointer_is_demoted_to_box() {
+    // A blanket PointerRepr::Inline also matches boxed oneof variant paths,
+    // but the resolved-set check (singular fields only) demotes them: the
+    // variant stays Box-wrapped so unbox_oneof remains the sole inlining knob
+    // for oneofs and its recursion guard cannot be bypassed.
+    let mut config = no_views();
+    config
+        .pointer_fields
+        .push((".".to_string(), buffa_codegen::PointerRepr::Inline));
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Node {
+          oneof kind { Node child = 1; }
+        }
+        "#,
+        &config,
+    );
+    assert!(
+        content.contains("Child(::buffa::alloc::boxed::Box<"),
+        "boxed oneof variant must use Box even under a blanket Inline rule: {content}"
+    );
+    assert!(
+        !content.contains("Child(::buffa::Inline<"),
+        "boxed oneof variant must not use the Inline pointer: {content}"
+    );
+}

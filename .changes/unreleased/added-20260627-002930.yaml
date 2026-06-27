@@ -1,0 +1,3 @@
+kind: Added
+body: '`PointerRepr::Inline` and the `unbox_message_fields()` / `unbox_message_fields_in()` config knobs: store every non-recursive singular message field inline (no per-field heap allocation) via the new `buffa::Inline<T>` pointer. Recursion-aware — fields that would form a cycle silently stay on `Box`. (#248)'
+time: 2026-06-27T00:29:30.000000000Z

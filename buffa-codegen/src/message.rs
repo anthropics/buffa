@@ -1546,7 +1546,28 @@ fn classify_field(
     };
 
     // Configurable owned pointer for singular message fields (default `Box`).
+    // `Inline` is recursion-aware: a recursive field is silently demoted to
+    // `Box` under a prefix/blanket rule, but an *exact-path* `Inline` rule
+    // naming a recursive field is a hard error — the user asked for something
+    // impossible. Mirrors the `unbox_oneof_in` exact-path check in `oneof.rs`.
     let pointer_repr = ctx.pointer_repr(&field_fqn);
+    if pointer_repr != crate::PointerRepr::Inline
+        && ctx
+            .config
+            .pointer_fields
+            .iter()
+            .rev()
+            .find(|(prefix, _)| crate::context::matches_proto_prefix(prefix, &field_fqn))
+            .is_some_and(|(p, r)| *p == field_fqn && *r == crate::PointerRepr::Inline)
+    {
+        return Err(CodeGenError::Other(format!(
+            "message field `{field_fqn}` is recursive and cannot be stored \
+             inline: it would make the generated struct unsized. Remove \
+             `\"{field_fqn}\"` from box_type_in/unbox_message_fields_in, or \
+             use a broader prefix (or unbox_message_fields()) to keep this \
+             field boxed while inlining the rest."
+        )));
+    }
 
     // Configurable owned collection for `repeated` (non-map) fields (default
     // `Vec<T>`). Map fields keep their configured map collection.

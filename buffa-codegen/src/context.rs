@@ -95,6 +95,12 @@ pub struct CodeGenContext<'a> {
     /// Built once by [`resolve_unboxed_variants`](crate::oneof::resolve_unboxed_variants);
     /// never contains recursive variants. See [`oneof_unboxed`](Self::oneof_unboxed).
     unboxed_oneof_variants: HashSet<String>,
+    /// Singular message-field paths (leading-dot form) whose resolved
+    /// [`PointerRepr`](crate::PointerRepr) is `Inline`. Built once by
+    /// [`resolve_inlined_fields`](crate::oneof::resolve_inlined_fields); never
+    /// contains recursive fields. [`pointer_repr`](Self::pointer_repr) demotes
+    /// any raw `Inline` not in this set to `Box`.
+    inlined_message_fields: HashSet<String>,
     /// Non-fatal diagnostics accumulated during generation (e.g. an enum whose
     /// idiomatic CamelCase aliases were suppressed by a naming conflict).
     ///
@@ -248,8 +254,16 @@ impl<'a> CodeGenContext<'a> {
         let mut enum_closedness = HashMap::new();
         let mut comment_map = HashMap::new();
         let mut nested_module_names = HashMap::new();
-        let unboxed_oneof_variants =
-            crate::oneof::resolve_unboxed_variants(files, &config.unboxed_oneof_fields);
+        let unboxed_oneof_variants = crate::oneof::resolve_unboxed_variants(
+            files,
+            &config.unboxed_oneof_fields,
+            &config.pointer_fields,
+        );
+        let inlined_message_fields = crate::oneof::resolve_inlined_fields(
+            files,
+            &config.unboxed_oneof_fields,
+            &config.pointer_fields,
+        );
 
         // Pre-pass: collect every package and top-level message name in the
         // descriptor set so nested-types module deconfliction (issue #135) is
@@ -416,6 +430,7 @@ impl<'a> CodeGenContext<'a> {
             comment_map,
             nested_module_names,
             unboxed_oneof_variants,
+            inlined_message_fields,
             warnings: std::cell::RefCell::new(Vec::new()),
             imports: std::cell::RefCell::new(crate::imports::ImportsPhase::Off),
         }
@@ -927,13 +942,25 @@ impl<'a> CodeGenContext<'a> {
     /// field at the given proto path. Last matching rule wins (proto-segment
     /// prefix match); fields matching no rule use
     /// [`PointerRepr::Box`](crate::PointerRepr::Box).
+    ///
+    /// `Inline` is recursion-aware: a path whose raw rule resolves to
+    /// [`PointerRepr::Inline`](crate::PointerRepr::Inline) but is absent from
+    /// the [`resolve_inlined_fields`](crate::oneof::resolve_inlined_fields) set
+    /// (a recursive singular field, or a non-singular path such as a oneof
+    /// variant) is demoted to `Box` so the generated type stays sized.
     pub fn pointer_repr(&self, field_fqn: &str) -> crate::PointerRepr {
-        self.config
+        let raw = self
+            .config
             .pointer_fields
             .iter()
             .rev()
             .find(|(prefix, _)| matches_proto_prefix(prefix, field_fqn))
-            .map_or(crate::PointerRepr::default(), |(_, repr)| repr.clone())
+            .map_or(crate::PointerRepr::default(), |(_, repr)| repr.clone());
+        if raw == crate::PointerRepr::Inline && !self.inlined_message_fields.contains(field_fqn) {
+            crate::PointerRepr::Box
+        } else {
+            raw
+        }
     }
 
     /// Resolve the [`RepeatedRepr`](crate::RepeatedRepr) for a `repeated` field

@@ -39,6 +39,7 @@ mod editions_enum_json;
 mod extensions;
 mod extensions_json;
 mod idiomatic_imports;
+mod inline_field;
 mod json;
 mod keyword;
 mod lazy_views;

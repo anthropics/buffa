@@ -54,6 +54,14 @@ pub mod box_type {
     buffa::include_proto!("box_type");
 }
 
+/// `unbox_message_fields()`: the built-in inline pointer (`::buffa::Inline<T>`)
+/// for every non-recursive singular message field. The `self_ref` field is
+/// recursive and stays on `Box`.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod inline_field {
+    buffa::include_proto!("inline_field");
+}
+
 /// `string_type` + vtable reflection with a crate-local newtype string used as
 /// a `repeated` element. Because the type is local, codegen may emit the
 /// `ReflectElement` and `ProtoElemJson` impls for it — the orphan rule forbids
