@@ -4,8 +4,9 @@ Why the numbers in [REPORT.md](REPORT.md) move. The data is a **dense,
 per-message-isolated, layout-normalized matrix**: every message shape is measured
 against every release (v0.1.0–v0.7.1), each built with only its own decoder
 compiled, at the pinned toolchain (1.96.0), `lto=true, codegen-units=1`, and
-**64-byte block alignment** (`-Cllvm-args=-align-all-nofallthru-blocks=6`), median
-of 32 cores. See [DESIGN.md](DESIGN.md) for the system and [README.md](README.md)
+**64-byte block and loop alignment** (`-Cllvm-args=-align-all-nofallthru-blocks=6
+-Cllvm-args=-align-loops=64`; the committed runs predate the loop flag — see "Loop
+alignment" below), median of 32 cores. See [DESIGN.md](DESIGN.md) for the system and [README.md](README.md)
 for the mechanics. Each release's harness lives on its `historical-benchmark/vX.Y.Z`
 branch, so any cell is rebuildable.
 
@@ -108,6 +109,57 @@ plain `cargo build` ships. For a tracker whose job is "did buffa's *code* get
 faster," that is the right frame: it isolates code from placement luck. For "what
 will my service see from a default release build," the as-shipped number is lower and
 noisier on the JSON path. The history answers the first question.
+
+## Loop alignment — closing the gap block alignment left open (2026-06)
+
+The block-alignment flag turned out to cover less than it appeared to.
+`-align-all-nofallthru-blocks` aligns only blocks with **no fall-through
+predecessor** — branch targets, which is the right treatment for the dispatch-heavy
+decode paths — but a canonical loop head *has* a fall-through predecessor (its
+preheader falls into it), so the flag skips most loop heads entirely. Disassembly of
+`smoothutf8::verify_with_slack` made the gap concrete: under the block flag alone,
+only 3 of 10 loop heads were 32-byte aligned. The hot loops the normalization was
+adopted for were still rolling the placement dice.
+
+The loop that decides `json_encode` is `serde_json`'s
+`format_escaped_str_contents` byte-scan — a per-character table lookup that runs
+once per byte of every string field, and whose body is **exactly 32 bytes**. A
+three-phase bare-metal experiment (toolchain 1.95.0, lto=true, codegen-units=1,
+spot c7i.metal-24xl) pinned its behaviour to one variable — the loop head's address
+modulo 64:
+
+| build | flags | loop head mod 64 | `log_record/json_encode` |
+|-------|-------|---:|---:|
+| monolithic | block only | 48 | 53.9 µs (slow) |
+| monolithic | block + `-align-loops=32` | 0 | 41.5 µs (fast) |
+| isolated | block only | 16 | 41.8 µs (fast) |
+| isolated | block + `-align-loops=32` | 32 | 52.6 µs (slow) |
+| monolithic | block + `-align-loops=64` | 0 | 41.5 µs (fast) |
+| isolated | block + `-align-loops=64` | 0 | 39.2 µs (fast) |
+
+Six builds, one rule: the loop is fast when its 32 bytes sit inside one 64-byte DSB
+fetch window (head mod 64 ≤ 31) and ~25% slower when they straddle two — the same
+front-end-bandwidth mechanism `perf stat` identified for the original flap. The
+table also shows why **`-align-loops=32` is the wrong value here** even though it
+was the right one for smoothutf8's (shorter) validation loop: 32-byte alignment
+forces the head to mod 64 ∈ {0, 32}, and 32 is the *worst* placement for a 32-byte
+body — guaranteed to straddle. The flag replaced one 50/50 lottery with another,
+which is exactly what the inverted monolithic/isolated results measured.
+`-align-loops=64` is the value that makes the placement unconditional: the loop can
+never straddle, both build shapes land fast, and the isolated binary came out 6%
+faster than the luckiest block-only build. The full five-shape sweep confirmed the
+flag is otherwise neutral: every `json_encode` −7% to −28%, all other operations
+within the run-to-run floor, +106 KB of padding on a 6.3 MB binary.
+
+Two methodology notes fell out of the same experiment. First, a
+`CARGO_TARGET_DIR` change does **not** perturb layout at `lto=true,
+codegen-units=1` — three "perturbed" builds differed in only 1347 of 4.6M text
+bytes, all path-string immediates — so build-dir variation cannot be used as a
+layout-noise probe at the pinned profile (the cgu sweep in
+`build-cgu-variants.sh` remains the tool for that). Second, single-run deltas of
+±8-9% appeared and evaporated between phases on benches the flag provably does not
+affect; nothing below ~10% on a single criterion run should be read without an n≥3
+replication or a disassembly-level mechanism.
 
 ## Why this replaced the earlier (sparse, coupled) history
 

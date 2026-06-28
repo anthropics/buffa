@@ -54,17 +54,31 @@ the root's profile does not reach it, so the profile is applied via
 each run file records it in `build_profile`.
 
 **Layout normalization.** On top of the profile, every binary is built with
-**64-byte block alignment** (`RUSTFLAGS="-Cllvm-args=-align-all-nofallthru-blocks=6"`).
+**64-byte block and loop alignment**
+(`RUSTFLAGS="-Cllvm-args=-align-all-nofallthru-blocks=6 -Cllvm-args=-align-loops=64"`).
 Without it, final function and loop placement is a lottery: rebuilding the identical
 source in a different directory can move a hot loop ~20% with byte-identical machine
 code, worst on the serde JSON path (a µop-cache / DSB effect, measured with `perf
-stat` — see `annotations.md`). Aligning hot block heads to the cache line lands every
-build on the fast layout, which collapsed the cross-release spread (`json_encode` 19%
-→ 2.5%, overall 5.9% → 4.2%) while leaving the real code-driven steps untouched. The
-trade-off is that the curves show a *best-achievable* layout — the one a
-profile-guided build (or BOLT) would reach — not what a plain `cargo build` ships;
-that is the right frame for "did buffa's code get faster," and the wrong one for
-"what will my service see." See the caveat below.
+stat` — see `annotations.md`). The two flags are complementary, not redundant:
+`-align-all-nofallthru-blocks` aligns branch-target blocks (the dispatch-heavy decode
+paths) but skips any block with a fall-through predecessor — which is exactly the
+shape of a canonical loop head, whose preheader falls into it. `-align-loops=64`
+covers those, and 64 (not 32) is required because the dominant layout-sensitive loop
+(serde_json's per-byte escape scan) is itself 32 bytes long, so 32-byte alignment
+still lets it straddle a 64-byte DSB window half the time — measured as a bimodal
+±25% on `json_encode` (see "Loop alignment" in `annotations.md`). Together the flags
+land every build on the fast layout, which collapsed the cross-release spread
+(`json_encode` 19% → 2.5%, overall 5.9% → 4.2%) while leaving the real code-driven
+steps untouched. The trade-off is that the curves show a *best-achievable* layout —
+the one a profile-guided build (or BOLT) would reach — not what a plain `cargo
+build` ships; that is the right frame for "did buffa's code get faster," and the
+wrong one for "what will my service see." See the caveat below.
+
+> **Re-measurement required:** the committed `runs/*.json` predate the addition of
+> `-align-loops=64` (they were measured with the block-alignment flag only). Do not
+> append a new release measured with the new flag set onto the existing rows — the
+> isolated `json_encode` cells shift up to ~6% under the loop flag. Re-measure the
+> whole series with the full flag set when adding the next release.
 
 ## Comparability caveats
 
@@ -146,6 +160,9 @@ that is the right frame for "did buffa's code get faster," and the wrong one for
 - `generate.py` — renders `REPORT.md` and `charts/` from `runs/`.
 - `build-cgu-variants.sh` — builds the bench binary at several `codegen-units`
   settings for the layout-noise harness.
+- `build-align-variants.sh` — builds the bench binary under several alignment
+  flag sets, for re-verifying the loop-alignment policy (see the "Loop
+  alignment" section in `annotations.md`) after a toolchain or serde_json bump.
 - `layout_envelope.py` — computes the per-benchmark layout-noise envelope from
   labelled criterion captures of those variants (`test_layout_envelope.py`
   covers it; run `python3 -m unittest` from this directory).
@@ -199,7 +216,7 @@ All releases share one toolchain and profile, so adding a release means matching
    cd benchmarks/buffa
    for m in api_response log_record analytics_event google_message1 media_frame packed_tile; do
      RUSTUP_TOOLCHAIN=1.96.0 CARGO_PROFILE_BENCH_LTO=true CARGO_PROFILE_BENCH_CODEGEN_UNITS=1 \
-       RUSTFLAGS="-Cllvm-args=-align-all-nofallthru-blocks=6" \
+       RUSTFLAGS="-Cllvm-args=-align-all-nofallthru-blocks=6 -Cllvm-args=-align-loops=64" \
        cargo bench --no-default-features --features "iso,$m" --bench "$m" --no-run
    done
    ```
@@ -222,7 +239,7 @@ All releases share one toolchain and profile, so adding a release means matching
      --commit-date "$(git log -1 --format=%cI <version>)" \
      --measured-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
      --toolchain 1.96.0 \
-     --profile "lto=true, codegen-units=1, per-message-isolated, 64-byte block-aligned (-align-all-nofallthru-blocks=6)" \
+     --profile "lto=true, codegen-units=1, per-message-isolated, 64-byte block+loop-aligned (-align-all-nofallthru-blocks=6 -align-loops=64)" \
      --out benchmarks/history/runs/<version>.json
    ```
 
