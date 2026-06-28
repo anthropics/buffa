@@ -34,6 +34,12 @@ use crate::{DescriptorPool, FieldDescriptor, MessageDescriptor, OneofDescriptor}
 pub enum ReflectError {
     /// The supplied field descriptor is not a declared field or registered
     /// extension of the target message.
+    ///
+    /// Membership is identity-based, not structural: a descriptor that has
+    /// the same name and number but came from a different
+    /// [`DescriptorPool`] (e.g. two pools built from the same
+    /// `FileDescriptorSet`) is still foreign. Always pass descriptors
+    /// resolved from the message's own [`pool()`](ReflectMessage::pool).
     FieldNotMember {
         /// The message being mutated.
         message: String,
@@ -191,10 +197,13 @@ pub trait ReflectMessage {
 pub trait ReflectMessageMut: ReflectMessage {
     /// Checked variant of [`set`](Self::set).
     ///
-    /// The default implementation forwards to `set` and returns `Ok(())`.
+    /// The default implementation performs **no validation** — it forwards
+    /// to `set` and returns `Ok(())`, so on an implementation that has not
+    /// overridden it this can panic exactly where `set` would.
     /// Implementations that can validate field-descriptor membership should
     /// override it and return [`ReflectError::FieldNotMember`] rather than
-    /// mutating a colliding field number by accident.
+    /// mutating a colliding field number by accident ([`DynamicMessage`]
+    /// does).
     fn try_set(
         &mut self,
         field: &FieldDescriptor,
@@ -217,10 +226,13 @@ pub trait ReflectMessageMut: ReflectMessage {
 
     /// Checked variant of [`clear`](Self::clear).
     ///
-    /// The default implementation forwards to `clear` and returns `Ok(())`.
+    /// The default implementation performs **no validation** — it forwards
+    /// to `clear` and returns `Ok(())`, so on an implementation that has not
+    /// overridden it this can panic exactly where `clear` would.
     /// Implementations that can validate field-descriptor membership should
     /// override it and return [`ReflectError::FieldNotMember`] rather than
-    /// clearing a colliding field number by accident.
+    /// clearing a colliding field number by accident ([`DynamicMessage`]
+    /// does).
     fn try_clear(&mut self, field: &FieldDescriptor) -> Result<(), ReflectError> {
         self.clear(field);
         Ok(())
