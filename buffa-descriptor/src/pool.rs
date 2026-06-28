@@ -226,6 +226,11 @@ impl DescriptorPool {
     /// linking new types. Files already in the pool (by filename) are skipped.
     /// If linking fails, the pool is left unchanged.
     ///
+    /// Failure atomicity is implemented by staging the add against a clone of
+    /// the pool, so each call that introduces new files costs a deep copy of
+    /// the existing pool. Callers loading many files should batch them into a
+    /// single `FileDescriptorSet` rather than adding files one set at a time.
+    ///
     /// # Errors
     ///
     /// Returns a [`PoolError`] on resolution failure.
@@ -234,6 +239,7 @@ impl DescriptorPool {
         let has_new_files = set.file.iter().any(|f| {
             f.name
                 .as_deref()
+                // MSRV: `Option::is_none_or` requires 1.82.
                 .map_or(true, |n| !self.file_by_name.contains_key(n))
         });
         if !has_new_files {
