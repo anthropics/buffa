@@ -260,6 +260,12 @@ fn int64_deserializes_exact_float_notation_strings() {
     }
 }
 
+#[test]
+fn int64_deserializes_exact_negative_float_notation_string() {
+    let val: SerdeInt64 = serde_json::from_str(r#""-9007199254740993.0""#).unwrap();
+    assert_eq!(val.0, -9007199254740993i64);
+}
+
 // ── uint64 ──────────────────────────────────────────────────────────────
 
 #[test]
@@ -407,6 +413,21 @@ fn int64_rejects_overflow_string() {
 #[test]
 fn int64_rejects_inexact_exponential_string() {
     assert!(serde_json::from_str::<SerdeInt64>(r#""1e-1""#).is_err());
+}
+
+#[test]
+fn int64_rejects_significand_overflow_string() {
+    // 40 digits overflows even the i128 significand accumulator, exercising
+    // the checked-arithmetic path rather than the i64 try_from narrowing.
+    assert!(
+        serde_json::from_str::<SerdeInt64>(r#""9999999999999999999999999999999999999999""#)
+            .is_err()
+    );
+}
+
+#[test]
+fn int64_rejects_huge_exponent_string() {
+    assert!(serde_json::from_str::<SerdeInt64>(r#""1e9999999999""#).is_err());
 }
 
 #[test]
