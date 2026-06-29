@@ -64,12 +64,18 @@ pub struct Tag {
 impl Tag {
     /// Create a new tag.
     ///
+    /// Generated `write_to` code calls this once per set field with a
+    /// constant field number; `#[inline]` lets the range assert const-fold
+    /// away and the tag collapse into the caller, instead of an out-of-line
+    /// call per field write in non-LTO builds.
+    ///
     /// # Panics
     ///
     /// Panics if `field_number` is not in the valid range
     /// `[1, MAX_FIELD_NUMBER]`. This is a programming error (generated
     /// code always uses valid field numbers); the panic fires in all
     /// build profiles.
+    #[inline]
     pub fn new(field_number: u32, wire_type: WireType) -> Self {
         assert!(
             (1..=MAX_FIELD_NUMBER).contains(&field_number),

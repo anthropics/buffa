@@ -1,0 +1,3 @@
+kind: Changed
+body: '`Tag::new` is now `#[inline]`, allowing the per-field-write call in generated `write_to` code to inline in optimized builds without LTO (cargo''s default release profile). Measured up to ~13% fewer encode instructions on encode-heavy workloads. No API change. (#257)'
+time: 2026-06-29T00:32:05.000000000Z
