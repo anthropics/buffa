@@ -645,6 +645,20 @@ pub mod view_json {
     buffa::include_proto!("test.viewjson");
 }
 
+// Idiomatic field names (#256): camelCase proto names → snake_case Rust
+// identifiers. Compilation proves every emission surface (owned struct,
+// codecs, views, JSON impls) agrees on the renamed idents; the runtime
+// checks live in `tests/idiomatic_fields.rs`.
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod idiomatic_fields {
+    buffa::include_proto!("test.idiofields");
+}
+
 #[allow(
     clippy::derivable_impls,
     clippy::match_single_binding,

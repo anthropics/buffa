@@ -537,6 +537,27 @@ impl Config {
         self
     }
 
+    /// Convert proto field and oneof names to idiomatic snake_case Rust
+    /// identifiers (`webMessageInfo` → `web_message_info`), matching
+    /// prost-build's behavior for protos that use camelCase field names.
+    /// Default: `false` (proto names are emitted verbatim).
+    ///
+    /// Only the generated Rust source names change; the wire format, JSON
+    /// (`json_name` plus the original proto name accepted on parse), text
+    /// format, and reflection lookups all keep the descriptor's names, so the
+    /// option is fully wire- and JSON-compatible. Enum values are covered by
+    /// [`idiomatic_enum_aliases`](Self::idiomatic_enum_aliases) instead.
+    ///
+    /// If two members of one message collide after conversion (`userName` and
+    /// `user_name` — rejected by protoc for proto3/editions, so proto2 only),
+    /// the names are adjusted deterministically and a build warning is
+    /// emitted; see [`CodeGenConfig::idiomatic_field_names`] for the rules.
+    #[must_use]
+    pub fn idiomatic_field_names(mut self, enabled: bool) -> Self {
+        self.codegen_config.idiomatic_field_names = enabled;
+        self
+    }
+
     /// Emit one `<dotted.package>.rs` file per proto package instead of the
     /// per-proto-file content set plus `<pkg>.mod.rs` stitcher. Default:
     /// `false`.

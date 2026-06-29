@@ -38,6 +38,7 @@ mod editions_2024;
 mod editions_enum_json;
 mod extensions;
 mod extensions_json;
+mod idiomatic_fields;
 mod idiomatic_imports;
 mod inline_field;
 mod json;

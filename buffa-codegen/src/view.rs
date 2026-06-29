@@ -495,7 +495,7 @@ fn view_struct_field(
     let proto_comment = ctx.comment(&field_fqn);
 
     if is_repeated && is_map_field(msg, field) {
-        let ident = make_field_ident(field_name);
+        let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
         let number = field.number.unwrap_or(0);
         let tag_line = format!("Field {number}: `{field_name}` (map)");
         let doc = crate::comments::doc_attrs_with_tag_resolved(
@@ -505,8 +505,10 @@ fn view_struct_field(
             &ctx.type_map,
         );
         let map_ty = view_map_type(scope, msg, field, &quote! { 'a })?;
+        let lint_attr = ctx.field_lint_attr(field_name, number);
         let tokens = quote! {
             #doc
+            #lint_attr
             pub #ident: #map_ty,
         };
         return Ok(Some((
@@ -516,7 +518,7 @@ fn view_struct_field(
         )));
     }
 
-    let ident = make_field_ident(field_name);
+    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     let number = field.number.unwrap_or(0);
     let tag_line = format!("Field {number}: `{field_name}`");
     let doc = crate::comments::doc_attrs_with_tag_resolved(
@@ -548,8 +550,10 @@ fn view_struct_field(
         rust_type
     };
 
+    let lint_attr = ctx.field_lint_attr(field_name, number);
     let tokens = quote! {
         #doc
+        #lint_attr
         pub #ident: #struct_ty,
     };
     Ok(Some((
@@ -781,13 +785,15 @@ pub(crate) fn oneof_view_struct_fields(
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("oneof.name"))?;
-        let field_ident = make_field_ident(oneof_name);
+        let field_ident = ctx.oneof_ident(oneof_name);
         let generics = if oneof_view_needs_lifetime(ctx, &fields, features) {
             quote! { <'a> }
         } else {
             quote! {}
         };
+        let lint_attr = ctx.oneof_lint_attr(oneof_name);
         let tokens = quote! {
+            #lint_attr
             pub #field_ident: ::core::option::Option<#view_oneof_prefix #enum_ident #generics>,
         };
         out.push((tokens, field_ident));
@@ -982,7 +988,10 @@ pub(crate) fn required_presence(
 struct RequiredViewField<'a> {
     /// Rust field identifier on the view struct.
     ident: proc_macro2::Ident,
-    /// Proto field name (for the `has_*` accessor name and its docs).
+    /// Resolved Rust source name (pre keyword escaping) — the `has_*`
+    /// accessor is derived from this so it follows `idiomatic_field_names`.
+    rust_name: String,
+    /// Proto field name (for the `has_*` accessor docs).
     proto_name: &'a str,
     field_number: u32,
     /// Position in the hidden seen-bit words for scalar-like fields;
@@ -1019,7 +1028,8 @@ fn required_view_fields<'a>(
             Some(b)
         };
         out.push(RequiredViewField {
-            ident: make_field_ident(proto_name),
+            ident: scope.ctx.field_ident(proto_name, number),
+            rust_name: scope.ctx.field_rust_name(proto_name, number).into_owned(),
             proto_name,
             field_number: number as u32,
             bit,
@@ -1038,7 +1048,7 @@ fn required_has_methods(required: &[RequiredViewField<'_>]) -> Vec<TokenStream> 
     required
         .iter()
         .map(|r| {
-            let method = format_ident!("has_{}", r.proto_name);
+            let method = format_ident!("has_{}", r.rust_name);
             match r.bit {
                 Some(bit) => {
                     // Bit-tracked scalar: the value is stored bare, so only
@@ -1192,7 +1202,7 @@ pub(crate) fn scalar_decode_arm(
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
-    let ident = make_field_ident(field_name);
+    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     let wire_type = wire_type_token(ty);
 
     let wire_check = wire_type_check(&quote! { tag }, &wire_type);
@@ -1305,7 +1315,7 @@ pub(crate) fn repeated_decode_arm(
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
-    let ident = make_field_ident(field_name);
+    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
 
     // Message: always LengthDelimited, unpacked.
     if ty == Type::TYPE_MESSAGE {
@@ -1467,7 +1477,7 @@ pub(crate) fn map_decode_arm(
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
-    let ident = make_field_ident(field_name);
+    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
 
     let ld_check = wire_type_check(
@@ -1609,7 +1619,7 @@ pub(crate) fn oneof_decode_arms(
 ) -> Result<Vec<TokenStream>, CodeGenError> {
     let MessageScope { ctx, features, .. } = scope;
     let preserve_unknown_fields = ctx.config.preserve_unknown_fields;
-    let field_ident = make_field_ident(oneof_name);
+    let field_ident = ctx.oneof_ident(oneof_name);
     let view_enum: TokenStream = quote! { #view_oneof_prefix #base_ident };
 
     fields
@@ -1737,7 +1747,7 @@ fn build_to_owned_fields(
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?;
-        let ident = make_field_ident(name);
+        let ident = ctx.field_ident(name, field.number.unwrap_or(0));
         let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;
         if is_repeated && is_map_field(msg, field) {
             let expr = map_to_owned_expr(scope, msg, field, &ident)?;
@@ -1771,7 +1781,7 @@ fn build_to_owned_fields(
         if group.is_empty() {
             continue;
         }
-        let field_ident = make_field_ident(oneof_name);
+        let field_ident = ctx.oneof_ident(oneof_name);
         let view_enum: TokenStream = quote! { #view_oneof_prefix #base_ident };
         let owned_enum: TokenStream = quote! { #owned_oneof_prefix #base_ident };
 
@@ -2112,7 +2122,7 @@ fn generate_view_serialize(
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("oneof.name"))?;
-        let field_ident = make_field_ident(oneof_name);
+        let field_ident = scope.ctx.oneof_ident(oneof_name);
         let view_enum = quote! { #view_oneof_prefix #base_ident };
         let fields: Vec<_> = msg
             .field
@@ -2177,7 +2187,7 @@ pub(crate) fn view_field_serialize_stmt(
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let json_name = field.json_name.as_deref().unwrap_or(field_name);
-    let ident = make_field_ident(field_name);
+    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     let label = field.label.unwrap_or_default();
     let is_repeated = label == Label::LABEL_REPEATED;
     let is_required = is_required_field(field, parent_features);

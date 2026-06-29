@@ -29,7 +29,7 @@ use crate::impl_message::{
     find_map_entry_fields, is_explicit_presence_scalar, is_non_default_expr, is_real_oneof_member,
     is_required_field, is_supported_field_type, map_string_repr, map_value_bytes_repr,
 };
-use crate::message::{is_closed_enum, is_map_field, make_field_ident};
+use crate::message::{is_closed_enum, is_map_field};
 use crate::CodeGenError;
 
 /// Wrap a text-decoded owned `String` expression in the conversion to the
@@ -503,7 +503,7 @@ fn scalar_encode_stmt(
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
-    let ident = make_field_ident(proto_name);
+    let ident = ctx.field_ident(proto_name, field.number.unwrap_or(0));
     let ty = effective_type(ctx, field, features);
     let (name_lit, _) = text_field_name(proto_name, field, ty);
     let required = is_required_field(field, features);
@@ -612,7 +612,7 @@ fn scalar_merge_arm(
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
-    let ident = make_field_ident(proto_name);
+    let ident = ctx.field_ident(proto_name, field.number.unwrap_or(0));
     let ty = effective_type(ctx, field, features);
     let (_, name_pat) = text_field_name(proto_name, field, ty);
     let explicit = is_explicit_presence_scalar(field, ty, features);
@@ -668,7 +668,7 @@ fn repeated_encode_stmt(
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
-    let ident = make_field_ident(proto_name);
+    let ident = ctx.field_ident(proto_name, field.number.unwrap_or(0));
     let ty = effective_type(ctx, field, features);
     let (name_lit, _) = text_field_name(proto_name, field, ty);
 
@@ -702,7 +702,7 @@ fn repeated_merge_arm(
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
-    let ident = make_field_ident(proto_name);
+    let ident = ctx.field_ident(proto_name, field.number.unwrap_or(0));
     let ty = effective_type(ctx, field, features);
     let (_, name_pat) = text_field_name(proto_name, field, ty);
     let bytes_repr = field_bytes_repr(ctx, proto_fqn, proto_name);
@@ -786,7 +786,7 @@ fn oneof_encode_stmt(
     proto_fqn: &str,
     parent_features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
-    let field_ident = make_field_ident(oneof_name);
+    let field_ident = ctx.oneof_ident(oneof_name);
     let qualified: TokenStream = quote! { #oneof_prefix #enum_ident };
 
     let mut arms: Vec<TokenStream> = Vec::new();
@@ -852,7 +852,7 @@ fn oneof_merge_arms(
     parent_features: &ResolvedFeatures,
     nesting: usize,
 ) -> Result<Vec<TokenStream>, CodeGenError> {
-    let field_ident = make_field_ident(oneof_name);
+    let field_ident = ctx.oneof_ident(oneof_name);
     let qualified: TokenStream = quote! { #oneof_prefix #enum_ident };
 
     let mut arms: Vec<TokenStream> = Vec::new();
@@ -963,7 +963,7 @@ fn map_encode_stmt(
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
-    let ident = make_field_ident(proto_name);
+    let ident = ctx.field_ident(proto_name, field.number.unwrap_or(0));
     let name_lit = proto_name;
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
     let key_ty = effective_type_in_map_entry(ctx, key_fd, features);
@@ -1023,7 +1023,7 @@ fn map_merge_arm(
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
-    let ident = make_field_ident(proto_name);
+    let ident = ctx.field_ident(proto_name, field.number.unwrap_or(0));
     let name_lit = proto_name;
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
     let key_ty = effective_type_in_map_entry(ctx, key_fd, features);

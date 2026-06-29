@@ -28,6 +28,7 @@ pub(crate) mod extension;
 pub(crate) mod feature_gates;
 pub use feature_gates::FeatureGateNames;
 pub(crate) mod features;
+pub(crate) mod field_names;
 #[doc(hidden)]
 pub use buffa_descriptor::generated;
 pub mod idents;
@@ -1238,6 +1239,37 @@ pub struct CodeGenConfig {
     /// the option itself may be renamed or removed outside semver
     /// guarantees.
     pub idiomatic_imports: bool,
+    /// Convert proto field and oneof names to idiomatic snake_case Rust
+    /// identifiers (`webMessageInfo` → `web_message_info`), matching
+    /// prost-build's behavior for protos that use camelCase field names.
+    ///
+    /// Only the generated *Rust source names* change — struct fields, view
+    /// accessors, `has_*`/`with_*` methods. Every name-keyed protocol surface
+    /// keeps the descriptor's names: the wire format keys on field numbers,
+    /// JSON uses `json_name` (with the original proto name still accepted on
+    /// parse, per the proto3 JSON spec), text format and reflection lookups
+    /// use the original proto name. Enum values and message/module names are
+    /// not affected (see
+    /// [`idiomatic_enum_aliases`](Self::idiomatic_enum_aliases) for enums),
+    /// and extension accessors are `SHOUTY_SNAKE_CASE` constants derived
+    /// independently of this option.
+    ///
+    /// The conversion is lossy, so two members of one message can collide
+    /// (`userName` and `user_name`). Unlike enum aliases — which are additive
+    /// `const`s and can simply be suppressed — a field rename replaces the
+    /// canonical name, so collisions are resolved deterministically instead:
+    /// a member whose name is already snake_case keeps it, a converted field
+    /// that collides gets an `_f<field_number>` suffix (`userName = 12` →
+    /// `user_name_f12`), and a converted oneof that collides keeps its
+    /// verbatim proto name. Each adjustment is reported as a
+    /// [`CodeGenWarning::IdiomaticFieldNamesAdjusted`]. protoc rejects the
+    /// underlying name collisions for proto3 and editions files (conflicting
+    /// `json_name`s), so adjustments are only reachable from proto2 inputs.
+    ///
+    /// Defaults to `false`: a rename is not backward-compatible for existing
+    /// consumers of generated camelCase fields, and verbatim emission keeps
+    /// the `.proto` file the source of truth. Opt in for prost parity.
+    pub idiomatic_field_names: bool,
     /// Crate feature names used by the `#[cfg(feature = "...")]` gates that
     /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features)
     /// and
@@ -1323,6 +1355,7 @@ impl Default for CodeGenConfig {
             gate_reflect_on_crate_feature: false,
             idiomatic_enum_aliases: true,
             idiomatic_imports: false,
+            idiomatic_field_names: false,
             feature_gate_names: FeatureGateNames::default(),
             type_name_prefix: String::new(),
         }
@@ -1542,6 +1575,19 @@ pub enum CodeGenWarning {
     /// no lazy views were generated. Emitted once per generation run.
     #[non_exhaustive]
     LazyViewsRequireViews,
+    /// `idiomatic_field_names` found two or more members of one message whose
+    /// snake_case conversions collide, and adjusted the affected Rust names
+    /// deterministically (`_f<number>` suffix for fields, verbatim fallback
+    /// for oneofs — see [`CodeGenConfig::idiomatic_field_names`]). Wire,
+    /// JSON, and text-format names are unaffected.
+    #[non_exhaustive]
+    IdiomaticFieldNamesAdjusted {
+        /// Fully-qualified proto name of the affected message.
+        message_name: String,
+        /// `(proto_name, final_rust_name)` for each adjusted member, sorted
+        /// by proto name.
+        assignments: Vec<(String, String)>,
+    },
 }
 
 impl core::fmt::Display for CodeGenWarning {
@@ -1590,6 +1636,21 @@ impl core::fmt::Display for CodeGenWarning {
                      eager view-oneof enums and sub-view types); no lazy views were \
                      generated — enable generate_views (buffa-build: \
                      `.generate_views(true)`, the default; plugin: `views=true`)"
+                )
+            }
+            Self::IdiomaticFieldNamesAdjusted {
+                message_name,
+                assignments,
+            } => {
+                let parts: Vec<String> = assignments
+                    .iter()
+                    .map(|(proto, rust)| format!("`{proto}` → `{rust}`"))
+                    .collect();
+                write!(
+                    f,
+                    "message `{message_name}`: idiomatic snake_case field names collide; \
+                     adjusted: {} (wire/JSON/text names are unaffected)",
+                    parts.join(", ")
                 )
             }
         }

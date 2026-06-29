@@ -307,6 +307,19 @@ fn main() {
         .compile()
         .expect("buffa_build failed for json_types.proto");
 
+    // Idiomatic field names (#256): camelCase proto fields/oneofs generate
+    // snake_case Rust identifiers (prost parity); the wire format and JSON
+    // names keep the originals. Views + JSON on so accessors, has-paths, and
+    // the serde rename/alias surface all compile and round-trip.
+    buffa_build::Config::new()
+        .files(&["protos/idiomatic_fields.proto"])
+        .includes(&["protos/"])
+        .idiomatic_field_names(true)
+        .generate_views(true)
+        .generate_json(true)
+        .compile()
+        .expect("buffa_build failed for idiomatic_fields.proto");
+
     // View + JSON round-trip tests (issue #83): views and JSON both enabled.
     // The proto3 file imports WKTs (Timestamp, Duration, wrappers) so the
     // hand-written WKT view Serialize impls in buffa-types are exercised; the
