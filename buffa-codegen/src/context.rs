@@ -475,7 +475,7 @@ impl<'a> CodeGenContext<'a> {
                 return Cow::Borrowed(renamed.as_str());
             }
         }
-        let converted = to_snake_case(name);
+        let converted = crate::field_names::idiomatic_snake_case(name);
         if converted == name {
             Cow::Borrowed(name)
         } else {
@@ -497,7 +497,7 @@ impl<'a> CodeGenContext<'a> {
         if !self.config.idiomatic_field_names || self.oneof_keep_verbatim.contains(name) {
             return Cow::Borrowed(name);
         }
-        let converted = to_snake_case(name);
+        let converted = crate::field_names::idiomatic_snake_case(name);
         if converted == name {
             Cow::Borrowed(name)
         } else {

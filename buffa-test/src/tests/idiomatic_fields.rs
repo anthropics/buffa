@@ -22,6 +22,7 @@ fn sample() -> WebMessageInfo {
         }),
         r#type: "chat".into(),
         plain_field: "untouched".into(),
+        ip_v6_address: "::1".into(),
         ..Default::default()
     };
     msg.reaction_counts.insert("👍".into(), 3);
@@ -36,6 +37,7 @@ fn snake_case_round_trip() {
     assert_eq!(decoded.remote_jid, "alice@s.whatsapp.net");
     assert_eq!(decoded.message_timestamp, 1_700_000_000);
     assert_eq!(decoded.plain_field, "untouched");
+    assert_eq!(decoded.ip_v6_address, "::1");
     assert_eq!(
         decoded.quoted_message.as_option().unwrap().stanza_id,
         "ABCD1234"

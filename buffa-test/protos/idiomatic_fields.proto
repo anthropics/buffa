@@ -17,6 +17,8 @@ message WebMessageInfo {
   string Type = 7;
   // Already snake_case: must pass through unchanged.
   string plain_field = 8;
+  // Digit-transparent boundary: -> ip_v6_address (heck/prost-compatible).
+  string ipV6Address = 9;
 
   oneof messageContent {
     string textBody = 10;

@@ -2,11 +2,32 @@
 //! snake_case Rust source names for proto fields and oneofs, resolving
 //! collisions before any code is emitted.
 //!
-//! The conversion itself ([`to_snake_case`]) is context-free and applied at
-//! ident-construction time by [`CodeGenContext::field_rust_name`] /
+//! The conversion itself ([`idiomatic_snake_case`]) is context-free and
+//! applied at ident-construction time by
+//! [`CodeGenContext::field_rust_name`] /
 //! [`CodeGenContext::oneof_rust_name`]; this pass only records the
 //! *exceptions* — names whose context-free conversion would collide inside a
 //! message's struct namespace and therefore need a deterministic adjustment.
+//!
+//! ## Conversion semantics
+//!
+//! [`idiomatic_snake_case`] is an *insertion-only* converter: it inserts an
+//! underscore at every word boundary and lowercases, but never deletes or
+//! collapses underscores the proto author wrote — so it is the identity on
+//! every name that is already a valid snake_case identifier (including
+//! `_foo` and `a__b`, which heck-style converters would rewrite to `foo` /
+//! `a_b`). Word boundaries match heck's (and therefore prost-build's)
+//! segmentation exactly: a boundary falls before an uppercase character
+//! whose most recent *cased* predecessor is lowercase (digits are
+//! transparent, so `v2Field` → `v2_field`), and before the last uppercase
+//! character of an acronym run that is followed by a lowercase one
+//! (`XMLHttpRequest` → `xml_http_request`). The Rails `underscore` /
+//! Python `inflection` family behaves the same way on both counts.
+//!
+//! The net difference from prost is confined to names containing leading,
+//! trailing, or doubled underscores: prost (via heck) normalizes those
+//! (`_fieldName3` → `field_name3`), buffa preserves them
+//! (`_fieldName3` → `_field_name3`).
 //!
 //! ## Collision rules
 //!
@@ -59,8 +80,55 @@ use std::collections::{HashMap, HashSet};
 
 use crate::generated::descriptor::{DescriptorProto, FileDescriptorProto};
 use crate::impl_message::is_real_oneof_member;
-use crate::oneof::to_snake_case;
 use crate::CodeGenWarning;
+
+/// Convert a proto field/oneof name to snake_case for
+/// `idiomatic_field_names` (see the module docs for the exact semantics and
+/// how they relate to heck/prost and the Rails `underscore` family).
+///
+/// This is deliberately a separate function from
+/// [`crate::oneof::to_snake_case`], which names modules: that converter has
+/// no digit-transparent boundary (`Msg2Part` → `msg2part`), and adding one
+/// there would re-shape the generated module layout for existing users.
+/// Field idents are a new, opt-in surface, so they can adopt the
+/// ecosystem-standard boundaries from the start.
+pub(crate) fn idiomatic_snake_case(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len() + 4);
+    // The most recent cased (upper/lowercase) character of the current word.
+    // Digits are transparent; an underscore starts a new word (`None`), which
+    // both suppresses insertion right after it and keeps `foo_2Bar` as
+    // `foo_2bar` (matching heck's segmentation) rather than `foo_2_bar`.
+    let mut last_cased: Option<char> = None;
+    for (i, &c) in chars.iter().enumerate() {
+        if c == '_' {
+            last_cased = None;
+            out.push('_');
+            continue;
+        }
+        if c.is_uppercase() && i > 0 {
+            let boundary = match last_cased {
+                Some(p) if p.is_lowercase() => true,
+                Some(p) if p.is_uppercase() => {
+                    // Acronym end: the last uppercase of a run starts the
+                    // next word when followed by a lowercase character.
+                    chars.get(i + 1).is_some_and(|n| n.is_lowercase())
+                }
+                _ => false,
+            };
+            if boundary {
+                out.push('_');
+            }
+        }
+        // `to_lowercase()` may yield multiple chars (e.g. `İ` → `i\u{307}`);
+        // extend with the full sequence rather than truncating to the first.
+        out.extend(c.to_lowercase());
+        if c.is_lowercase() || c.is_uppercase() {
+            last_cased = Some(c);
+        }
+    }
+    out
+}
 
 /// The planned field/oneof rename exceptions for one generation run.
 ///
@@ -168,7 +236,7 @@ fn sweep_inherited(
         };
         if assigned.contains(&(fqn.to_string(), name.to_string()))
             || !plan.oneof_keep_verbatim.contains(name)
-            || to_snake_case(name) == name
+            || idiomatic_snake_case(name) == name
         {
             continue;
         }
@@ -216,7 +284,7 @@ fn plan_message(
         members.push(Member {
             proto_name: name,
             number: Some(field.number.unwrap_or(0)),
-            converted: to_snake_case(name),
+            converted: idiomatic_snake_case(name),
         });
     }
     for (idx, oneof) in msg.oneof_decl.iter().enumerate() {
@@ -229,7 +297,7 @@ fn plan_message(
         members.push(Member {
             proto_name: name,
             number: None,
-            converted: to_snake_case(name),
+            converted: idiomatic_snake_case(name),
         });
     }
 
@@ -340,6 +408,65 @@ mod tests {
             message_type: messages,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn idiomatic_snake_case_matches_heck_where_they_agree() {
+        // prost-build's `to_snake` test vectors (which come from the
+        // conformance suite's test_messages_proto3.proto), minus keyword
+        // escaping (handled later by make_field_ident) and minus the
+        // underscore-normalization class covered below.
+        for (input, expected) in [
+            ("FooBar", "foo_bar"),
+            ("FooBarBAZ", "foo_bar_baz"),
+            ("XMLHttpRequest", "xml_http_request"),
+            ("While", "while"),
+            ("FUZZ_BUSTER", "fuzz_buster"),
+            ("foo_bar_baz", "foo_bar_baz"),
+            ("FUZZ_buster", "fuzz_buster"),
+            ("fieldname1", "fieldname1"),
+            ("field_name2", "field_name2"),
+            ("field0name5", "field0name5"),
+            ("field_0_name6", "field_0_name6"),
+            ("fieldName7", "field_name7"),
+            ("FieldName8", "field_name8"),
+            ("field_Name9", "field_name9"),
+            ("Field_Name10", "field_name10"),
+            ("FIELD_NAME11", "field_name11"),
+            ("FIELD_name12", "field_name12"),
+        ] {
+            assert_eq!(idiomatic_snake_case(input), expected, "input {input}");
+        }
+    }
+
+    #[test]
+    fn idiomatic_snake_case_digit_transparent_boundaries() {
+        // Digits are transparent to the boundary rules — both heck/prost and
+        // the Rails `underscore` family split here; buffa's module-naming
+        // converter does not.
+        assert_eq!(idiomatic_snake_case("v2Field"), "v2_field");
+        assert_eq!(idiomatic_snake_case("field0Name"), "field0_name");
+        assert_eq!(idiomatic_snake_case("ipV6Address"), "ip_v6_address");
+        assert_eq!(idiomatic_snake_case("HTTP2Server"), "http2_server");
+        // An all-caps run with digits is one word (heck agrees).
+        assert_eq!(idiomatic_snake_case("A2B"), "a2b");
+        // An underscore starts a fresh word, so the digit carries no case
+        // from before it (heck agrees: `foo_2bar`, not `foo_2_bar`).
+        assert_eq!(idiomatic_snake_case("foo_2Bar"), "foo_2bar");
+    }
+
+    #[test]
+    fn idiomatic_snake_case_preserves_authored_underscores() {
+        // The deliberate divergence from heck/prost: insertion-only, so the
+        // conversion is the identity on every valid snake_case identifier.
+        // prost would produce field_name3 / field_name4 / fuzz here.
+        assert_eq!(idiomatic_snake_case("_field_name3"), "_field_name3");
+        assert_eq!(idiomatic_snake_case("field__name4_"), "field__name4_");
+        assert_eq!(idiomatic_snake_case("_fuzz"), "_fuzz");
+        assert_eq!(idiomatic_snake_case("fuzz_"), "fuzz_");
+        // ...and conversion still applies around preserved underscores.
+        assert_eq!(idiomatic_snake_case("_fieldName3"), "_field_name3");
+        assert_eq!(idiomatic_snake_case("Fuzz_"), "fuzz_");
     }
 
     #[test]

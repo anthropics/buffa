@@ -548,6 +548,11 @@ impl Config {
     /// option is fully wire- and JSON-compatible. Enum values are covered by
     /// [`idiomatic_enum_aliases`](Self::idiomatic_enum_aliases) instead.
     ///
+    /// Word boundaries match prost-build's (heck's) segmentation, including
+    /// digit-transparent case boundaries (`v2Field` → `v2_field`); unlike
+    /// prost, authored underscores are always preserved (`_foo` stays
+    /// `_foo`), so already-snake_case names are never rewritten.
+    ///
     /// If two members of one message collide after conversion (`userName` and
     /// `user_name` — rejected by protoc for proto3/editions, so proto2 only),
     /// the names are adjusted deterministically and a build warning is

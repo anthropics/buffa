@@ -1254,6 +1254,16 @@ pub struct CodeGenConfig {
     /// and extension accessors are `SHOUTY_SNAKE_CASE` constants derived
     /// independently of this option.
     ///
+    /// Word boundaries match heck's (and therefore prost-build's)
+    /// segmentation, including acronym handling (`XMLHttpRequest` →
+    /// `xml_http_request`) and digit-transparent case boundaries
+    /// (`v2Field` → `v2_field`). The one deliberate divergence from prost:
+    /// the conversion is insertion-only and never deletes underscores the
+    /// proto author wrote, so it is the identity on every name that is
+    /// already a valid snake_case identifier (`_foo` stays `_foo`, where
+    /// prost emits `foo`). See [`crate::field_names`] for the full
+    /// semantics.
+    ///
     /// The conversion is lossy, so two members of one message can collide
     /// (`userName` and `user_name`). Unlike enum aliases — which are additive
     /// `const`s and can simply be suppressed — a field rename replaces the
