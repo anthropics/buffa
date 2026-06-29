@@ -527,29 +527,55 @@ impl<'a> CodeGenContext<'a> {
         ))
     }
 
-    /// `#[allow(non_snake_case)]` when the resolved Rust name for this field
-    /// is non-snake (the collision plan's verbatim fallback); empty
-    /// otherwise. Never fires with `idiomatic_field_names` off, so default
-    /// output is unchanged.
-    pub(crate) fn field_lint_attr(&self, name: &str, number: i32) -> proc_macro2::TokenStream {
-        if self.config.idiomatic_field_names
-            && self
-                .field_rust_name(name, number)
-                .contains(|c: char| c.is_ascii_uppercase())
-        {
-            quote::quote! { #[allow(non_snake_case)] }
-        } else {
-            proc_macro2::TokenStream::new()
+    /// `#[allow(non_snake_case)]` when any of `msg`'s emitted member names —
+    /// non-oneof-member fields and real oneofs, after `idiomatic_field_names`
+    /// resolution — contains an uppercase character (the rustc lint's
+    /// trigger; proto identifiers are ASCII). Empty for conforming messages,
+    /// so their generated output is unchanged.
+    ///
+    /// Applied at the struct and impl level (struct declarations and the
+    /// setter / `Deserialize` / `has_*` / owned-view-wrapper impls) rather
+    /// than per member, so it covers the pub fields *and* every method and
+    /// local whose name derives from them. Detection is independent of
+    /// `idiomatic_field_names`: a verbatim camelCase proto compiled with the
+    /// option off gets the same scoped allows, keeping consumer crates
+    /// warning-free either way.
+    pub(crate) fn message_non_snake_attr(&self, msg: &DescriptorProto) -> proc_macro2::TokenStream {
+        let non_snake = |s: &str| s.contains(|c: char| c.is_ascii_uppercase());
+        let mut real_oneofs: HashSet<i32> = HashSet::new();
+        let mut found = false;
+        for field in &msg.field {
+            let Some(name) = field.name.as_deref() else {
+                continue;
+            };
+            // Mirrors `impl_message::is_real_oneof_member` (not imported to
+            // keep context.rs free of emission-module dependencies).
+            if field.oneof_index.is_some() && !field.proto3_optional.unwrap_or(false) {
+                if let Some(idx) = field.oneof_index {
+                    real_oneofs.insert(idx);
+                }
+                continue;
+            }
+            if non_snake(&self.field_rust_name(name, field.number.unwrap_or(0))) {
+                found = true;
+                break;
+            }
         }
-    }
-
-    /// Oneof counterpart of [`field_lint_attr`](Self::field_lint_attr).
-    pub(crate) fn oneof_lint_attr(&self, name: &str) -> proc_macro2::TokenStream {
-        if self.config.idiomatic_field_names
-            && self
-                .oneof_rust_name(name)
-                .contains(|c: char| c.is_ascii_uppercase())
-        {
+        if !found {
+            for (idx, oneof) in msg.oneof_decl.iter().enumerate() {
+                let Some(name) = oneof.name.as_deref() else {
+                    continue;
+                };
+                if !real_oneofs.contains(&i32::try_from(idx).unwrap_or(i32::MAX)) {
+                    continue;
+                }
+                if non_snake(&self.oneof_rust_name(name)) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if found {
             quote::quote! { #[allow(non_snake_case)] }
         } else {
             proc_macro2::TokenStream::new()

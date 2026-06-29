@@ -219,22 +219,54 @@ fn verbatim_fallback_gets_non_snake_allow() {
     let c = joined(&files);
     assert!(c.contains("pub userName:"), "{c}");
     assert!(c.contains("#[allow(non_snake_case)]"), "{c}");
-    // Flag off: verbatim names never get the allow (default output is
-    // byte-identical to before the feature).
-    let mut file2 = proto2_file("s.proto");
-    file2.message_type.push(DescriptorProto {
-        name: Some("Msg".to_string()),
-        field: vec![string_field("userName", 12)],
-        ..Default::default()
-    });
-    let files2 = generate(
-        &[file2],
+}
+
+#[test]
+fn non_snake_allow_is_detection_scoped() {
+    // The allow is detection-based and independent of the flag: a verbatim
+    // camelCase proto compiled with the flag OFF gets the scoped allow...
+    let camel = message_file("s.proto", "Msg", vec![string_field("remoteJid", 1)]);
+    let files = generate(
+        &[camel],
         &["s.proto".to_string()],
         &CodeGenConfig::default(),
     )
     .unwrap();
-    let c2 = joined(&files2);
-    assert!(!c2.contains("#[allow(non_snake_case)]"), "{c2}");
+    assert!(joined(&files).contains("#[allow(non_snake_case)]"));
+    // ...a snake-conforming proto never gets it (zero output diff), flag off
+    // or on...
+    for config in [CodeGenConfig::default(), fields_config()] {
+        let snake = message_file("s.proto", "Msg", vec![string_field("plain_field", 1)]);
+        let files = generate(&[snake], &["s.proto".to_string()], &config).unwrap();
+        assert!(!joined(&files).contains("non_snake_case"));
+    }
+    // ...and a camelCase proto with the flag ON converts cleanly, so no
+    // allow is needed there either.
+    let camel = message_file("s.proto", "Msg", vec![string_field("remoteJid", 1)]);
+    let files = generate(&[camel], &["s.proto".to_string()], &fields_config()).unwrap();
+    assert!(!joined(&files).contains("non_snake_case"));
+}
+
+#[test]
+fn non_snake_allow_fires_for_oneof_only() {
+    // A message whose only non-snake member is a real oneof exercises the
+    // oneof branch of the detection (the fields are all conforming).
+    let mut file = proto3_file("s.proto");
+    let mut member = string_field("text_body", 2);
+    member.oneof_index = Some(0);
+    file.message_type.push(DescriptorProto {
+        name: Some("Msg".to_string()),
+        field: vec![string_field("plain_field", 1), member],
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("oneofKind".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let files = generate(&[file], &["s.proto".to_string()], &CodeGenConfig::default()).unwrap();
+    let c = joined(&files);
+    assert!(c.contains("pub oneofKind:"), "{c}");
+    assert!(c.contains("#[allow(non_snake_case)]"), "{c}");
 }
 
 #[test]

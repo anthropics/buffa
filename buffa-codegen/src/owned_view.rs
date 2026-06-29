@@ -220,11 +220,17 @@ pub(crate) fn generate_owned_view_wrapper(
         quote! {}
     };
 
+    // Scoped #[allow(non_snake_case)]: accessor methods are named after the
+    // (resolved) member names, which can be non-snake for verbatim camelCase
+    // protos or collision fallbacks. Empty for conforming messages.
+    let non_snake_attr = ctx.message_non_snake_attr(msg);
+
     Ok(quote! {
         #[doc = #wrapper_doc]
         #[derive(Clone, Debug)]
         pub struct #wrapper_ident(::buffa::OwnedView<#view_ident<'static>>);
 
+        #non_snake_attr
         impl #wrapper_ident {
             /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
             ///

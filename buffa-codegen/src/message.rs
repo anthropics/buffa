@@ -224,12 +224,10 @@ fn generate_message_with_nesting(
                 quote! { Some(value) }
             };
             let param = &s.param_type;
-            let lint_attr = &s.lint_attr;
             quote! {
                 #[must_use = "with_* setters return `self` by value; assign or chain the result"]
                 #[inline]
                 #[doc = #doc]
-                #lint_attr
                 pub fn #setter_ident(mut self, value: #param) -> Self {
                     self.#field_ident = #body;
                     self
@@ -281,10 +279,8 @@ fn generate_message_with_nesting(
             let enum_ident = oneof_idents.get(&idx)?;
             let oneof_name = oneof.name.as_deref()?;
             let field_ident = ctx.oneof_ident(oneof_name);
-            let lint_attr = ctx.oneof_lint_attr(oneof_name);
             let opt = resolver.option_at(ctx, nesting);
             let tokens = quote! {
-                #lint_attr
                 #oneof_serde_attr
                 pub #field_ident: #opt<#oneof_prefix #enum_ident>,
             };
@@ -789,8 +785,15 @@ fn generate_message_with_nesting(
     let message_doc =
         crate::comments::doc_attrs_resolved(ctx.comment(proto_fqn), proto_fqn, &ctx.type_map);
 
+    // Scoped #[allow(non_snake_case)] for messages whose emitted member
+    // names are non-snake (verbatim camelCase protos, or the collision
+    // plan's verbatim fallback under idiomatic_field_names). Empty for
+    // conforming messages, so their output is unchanged. Applied to the
+    // struct and to the impls that define per-field methods.
+    let non_snake_attr = ctx.message_non_snake_attr(msg);
     let with_setters_impl = if ctx.config.generate_with_setters && !setter_methods.is_empty() {
         quote! {
+            #non_snake_attr
             impl #name_ident {
                 #setter_methods
             }
@@ -806,6 +809,7 @@ fn generate_message_with_nesting(
         #arbitrary_derive
         #custom_type_attrs
         #custom_message_attrs
+        #non_snake_attr
         pub struct #name_ident {
             #(#direct_fields)*
             #(#oneof_struct_fields)*
@@ -1164,10 +1168,13 @@ fn generate_custom_deserialize(
         (quote! {}, quote! {}, quote! {})
     };
 
-    // Assemble the impl block.
+    // Assemble the impl block. The non-snake allow covers the `__f_<name>` /
+    // `__oneof_<name>` locals bound inside the visitor.
     let expecting_msg = format!("struct {name_ident}");
+    let non_snake_attr = ctx.message_non_snake_attr(msg);
 
     Ok(quote! {
+        #non_snake_attr
         impl<'de> serde::Deserialize<'de> for #name_ident {
             fn deserialize<D: serde::Deserializer<'de>>(d: D) -> ::core::result::Result<Self, D::Error> {
                 struct _V;
@@ -1697,10 +1704,6 @@ fn classify_field(
 struct SetterInfo {
     ident: Ident,
     param_type: TokenStream,
-    /// `#[allow(non_snake_case)]` when the collision plan's verbatim
-    /// fallback kept a non-snake field name (so `with_<name>` is non-snake
-    /// too); empty otherwise.
-    lint_attr: TokenStream,
     /// `true`  → emit `Some(value.into())` and take `impl Into<T>`.
     ///   Set for `string` (accepts `&str`), `bytes` (accepts `b"..."`
     ///   array literals via `From<&[u8; N]> for Vec<u8>`, or `Vec<u8>`
@@ -1806,18 +1809,16 @@ fn generate_field(
     };
     let rust_type = &info.struct_field_type;
     // Collision-plan surfacing: a doc note on adjusted names (parity with
-    // the enum-alias doc note) and an `#[allow(non_snake_case)]` when the
-    // verbatim fallback kept a non-snake name. Both are empty in the
-    // common (non-collision) case and always empty with the flag off.
+    // the enum-alias doc note). Empty in the common (non-collision) case
+    // and always empty with the flag off. Non-snake fallback names are
+    // covered by the struct-level `message_non_snake_attr`.
     let rename_note = match ctx.field_rename_note(field_name, field_number) {
         Some(note) => quote! { #[doc = ""] #[doc = #note] },
         None => quote! {},
     };
-    let lint_attr = ctx.field_lint_attr(field_name, field_number);
     let tokens = quote! {
         #doc
         #rename_note
-        #lint_attr
         #serde_attr
         #arbitrary_field_attr
         #custom_field_attrs
@@ -1844,7 +1845,6 @@ fn generate_field(
             ident: setter_ident,
             param_type,
             use_into,
-            lint_attr: ctx.field_lint_attr(field_name, field_number),
         })
     } else {
         None

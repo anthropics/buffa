@@ -154,7 +154,11 @@ pub(crate) fn generate_view_with_nesting(
     let required_has_impl = if required.has_methods.is_empty() {
         quote! {}
     } else {
+        // The allow covers `has_<name>` methods derived from non-snake
+        // member names.
+        let has_non_snake_attr = ctx.message_non_snake_attr(msg);
         quote! {
+            #has_non_snake_attr
             impl<'a> #view_ident<'a> {
                 #(#required_has_methods)*
             }
@@ -365,9 +369,13 @@ pub(crate) fn generate_view_with_nesting(
         (quote! { #[derive(Clone, Debug, Default)] }, quote! {})
     };
 
+    // Scoped #[allow(non_snake_case)] for non-snake member names (verbatim
+    // camelCase protos or collision fallbacks); empty otherwise.
+    let non_snake_attr = ctx.message_non_snake_attr(msg);
     let top_level = quote! {
         #view_doc
         #view_debug_derive
+        #non_snake_attr
         pub struct #view_ident<'a> {
             #(#direct_fields)*
             #(#oneof_struct_fields)*
@@ -505,10 +513,8 @@ fn view_struct_field(
             &ctx.type_map,
         );
         let map_ty = view_map_type(scope, msg, field, &quote! { 'a })?;
-        let lint_attr = ctx.field_lint_attr(field_name, number);
         let tokens = quote! {
             #doc
-            #lint_attr
             pub #ident: #map_ty,
         };
         return Ok(Some((
@@ -550,10 +556,8 @@ fn view_struct_field(
         rust_type
     };
 
-    let lint_attr = ctx.field_lint_attr(field_name, number);
     let tokens = quote! {
         #doc
-        #lint_attr
         pub #ident: #struct_ty,
     };
     Ok(Some((
@@ -791,9 +795,7 @@ pub(crate) fn oneof_view_struct_fields(
         } else {
             quote! {}
         };
-        let lint_attr = ctx.oneof_lint_attr(oneof_name);
         let tokens = quote! {
-            #lint_attr
             pub #field_ident: ::core::option::Option<#view_oneof_prefix #enum_ident #generics>,
         };
         out.push((tokens, field_ident));

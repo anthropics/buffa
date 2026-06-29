@@ -254,9 +254,15 @@ pub(crate) fn generate_lazy_view_with_nesting(
         (quote! { #[derive(Clone, Debug, Default)] }, quote! {})
     };
 
+    // Scoped #[allow(non_snake_case)] for non-snake member names (verbatim
+    // camelCase protos or collision fallbacks); empty otherwise. Applied to
+    // the inherent impl too, which holds the `has_<name>` methods.
+    let non_snake_attr = ctx.message_non_snake_attr(msg);
+
     Ok(quote! {
         #[doc = #doc]
         #debug_derive
+        #non_snake_attr
         pub struct #lazy_ident<'a> {
             #(#direct_fields)*
             #(#oneof_struct_fields)*
@@ -267,6 +273,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
 
         #debug_impl
 
+        #non_snake_attr
         impl<'a> #lazy_ident<'a> {
             /// Decode from `buf` under the limits carried by `ctx`, recording
             /// nested/repeated message fields as byte ranges.
@@ -444,9 +451,8 @@ fn lazy_struct_field(
             &ctx.type_map,
         );
         let map_ty = view_map_type(scope, msg, field, &quote! { 'a })?;
-        let lint_attr = ctx.field_lint_attr(field_name, number);
         return Ok(Some((
-            quote! { #doc #lint_attr pub #ident: #map_ty, },
+            quote! { #doc pub #ident: #map_ty, },
             ident,
             crate::message::is_debug_redacted(field),
         )));
@@ -484,9 +490,8 @@ fn lazy_struct_field(
         (false, false) => view_singular_type(scope, field, &quote! { 'a })?,
     };
 
-    let lint_attr = ctx.field_lint_attr(field_name, number);
     Ok(Some((
-        quote! { #doc #lint_attr pub #ident: #rust_type, },
+        quote! { #doc pub #ident: #rust_type, },
         ident,
         crate::message::is_debug_redacted(field),
     )))
