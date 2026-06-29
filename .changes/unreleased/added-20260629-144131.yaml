@@ -1,6 +1,6 @@
 kind: Added
 body: |-
-    **`jiff` feature for `buffa-types`** (#NNN).
+    **`jiff` feature for `buffa-types`** (#264).
     Adds conversions between the well-known types and [jiff](https://docs.rs/jiff):
     `Timestamp` ↔ `jiff::Timestamp` and `Duration` ↔ `jiff::SignedDuration`. Gated
     behind the new `jiff` Cargo feature and `no_std`-compatible (`jiff` is pulled
