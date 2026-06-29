@@ -63,8 +63,6 @@ impl From<jiff::SignedDuration> for Duration {
     fn from(d: jiff::SignedDuration) -> Self {
         Self {
             seconds: d.as_secs(),
-            // `SignedDuration::subsec_nanos` is signed and shares the duration's
-            // overall sign, matching the proto Duration convention.
             nanos: d.subsec_nanos(),
             ..Default::default()
         }
@@ -104,18 +102,13 @@ impl TryFrom<Duration> for jiff::SignedDuration {
         if !(-999_999_999..=999_999_999).contains(&d.nanos) {
             return Err(DurationJiffError::InvalidNanos);
         }
-        // Decoding doesn't validate the spec's sign-consistency rule, so a
-        // malformed message can carry e.g. {seconds: 5, nanos: -1}. Reject per
-        // spec instead of handing it to `SignedDuration::new`, which would
-        // carry it into a different (smaller-magnitude) duration.
         let sign_mismatch = (d.seconds > 0 && d.nanos < 0) || (d.seconds < 0 && d.nanos > 0);
         if sign_mismatch {
             return Err(DurationJiffError::InvalidNanos);
         }
 
         // `|nanos| < 1_000_000_000`, so `new` performs no second-carry and
-        // therefore cannot overflow `i64`: every validated proto `Duration`
-        // maps into `SignedDuration`'s (wider) range.
+        // cannot overflow i64.
         Ok(jiff::SignedDuration::new(d.seconds, d.nanos))
     }
 }

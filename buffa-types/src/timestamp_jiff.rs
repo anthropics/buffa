@@ -45,10 +45,8 @@ impl From<jiff::Timestamp> for Timestamp {
         let seconds = ts.as_second();
         let nanos = ts.subsec_nanosecond();
         if nanos < 0 {
-            // Pre-epoch: jiff splits e.g. -1.5s as (secs=-1, nanos=-500_000_000).
-            // Proto requires non-negative nanos, so borrow a second to land on
-            // (secs=-2, nanos=500_000_000). `seconds` is >= jiff's MIN second
-            // (-377_705_023_201), so the subtraction cannot underflow i64.
+            // `seconds` is >= jiff's MIN second (-377_705_023_201), so the
+            // borrow `seconds - 1` cannot underflow i64.
             Self {
                 seconds: seconds - 1,
                 nanos: nanos + 1_000_000_000,
@@ -94,9 +92,8 @@ impl TryFrom<Timestamp> for jiff::Timestamp {
         if ts.nanos < 0 || ts.nanos > NANOS_MAX {
             return Err(TimestampError::InvalidNanos);
         }
-        // `jiff::Timestamp::new` normalizes mixed signs, but a validated proto
-        // Timestamp already carries non-negative nanos, so this is a direct
-        // construction that only fails when `seconds` is out of jiff's range.
+        // Nanos validated above, so the only remaining failure is an
+        // out-of-range second.
         jiff::Timestamp::new(ts.seconds, ts.nanos).map_err(|_| TimestampError::Overflow)
     }
 }
