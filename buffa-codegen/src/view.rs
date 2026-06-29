@@ -20,8 +20,8 @@ use crate::impl_message::{
     closed_enum_decode, closed_enum_decode_with_unknown, decode_fn_token, effective_type,
     effective_type_in_map_entry, field_string_repr, find_map_entry_fields,
     is_explicit_presence_scalar, is_packed_type, is_real_oneof_member, is_required_field,
-    is_supported_field_type, map_string_repr, map_value_bytes_repr, validated_field_number,
-    wire_type_check, wire_type_token,
+    is_supported_field_type, map_string_repr, map_value_bytes_repr, packed_decode_fn_token,
+    validated_field_number, wire_type_check, wire_type_token,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident, rust_path_to_tokens};
 use crate::oneof::{is_null_value_field, serde_helper_path};
@@ -1389,10 +1389,10 @@ pub(crate) fn repeated_decode_arm(
         if closed {
             closed_enum_decode(&quote! { &mut pcur }, push_known.clone())
         } else {
-            quote! { view.#ident.push(::buffa::EnumValue::from(::buffa::types::decode_int32(&mut pcur)?)); }
+            quote! { view.#ident.push(::buffa::EnumValue::from(::buffa::types::decode_int32_packed(&mut pcur)?)); }
         }
     } else {
-        let dfn = decode_fn_token(ty);
+        let dfn = packed_decode_fn_token(ty);
         quote! { view.#ident.push(#dfn(&mut pcur)?); }
     };
 

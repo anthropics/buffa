@@ -1399,6 +1399,46 @@ pub(crate) fn decode_fn_token(ty: Type) -> TokenStream {
     }
 }
 
+/// [`decode_fn_token`] for packed-repeated element loops: varint-family
+/// types route to the `_packed` force-inlined decoders, removing the
+/// per-element call boundary (a large measured win; the figure is anchored
+/// on `buffa::encoding::decode_varint_packed`'s doc); fixed-width types
+/// fall through to the plain decoders, which have no out-of-line fast path
+/// to begin with. Callers route enums themselves — see the `TYPE_ENUM` arm.
+pub(crate) fn packed_decode_fn_token(ty: Type) -> TokenStream {
+    match ty {
+        Type::TYPE_INT32 => quote! { ::buffa::types::decode_int32_packed },
+        Type::TYPE_INT64 => quote! { ::buffa::types::decode_int64_packed },
+        Type::TYPE_UINT32 => quote! { ::buffa::types::decode_uint32_packed },
+        Type::TYPE_UINT64 => quote! { ::buffa::types::decode_uint64_packed },
+        Type::TYPE_SINT32 => quote! { ::buffa::types::decode_sint32_packed },
+        Type::TYPE_SINT64 => quote! { ::buffa::types::decode_sint64_packed },
+        Type::TYPE_BOOL => quote! { ::buffa::types::decode_bool_packed },
+        // Enums are varint-family and packed-capable, but both emission
+        // sites hand-route them before calling this function: open enums go
+        // straight to `decode_int32_packed`, and closed-enum packed arms
+        // deliberately stay on the plain `decode_int32` (their decode path
+        // runs through `closed_enum_decode*`, which interleaves
+        // unknown-value routing — not a tight per-element loop).
+        Type::TYPE_ENUM => unreachable!(
+            "packed_decode_fn_token called for TYPE_ENUM; enum packed arms \
+             are routed by the caller"
+        ),
+        // Fixed-width and floating types have no out-of-line varint fast
+        // path, so there is nothing to force-inline; the plain decoders are
+        // already optimal in packed loops.
+        Type::TYPE_FIXED32
+        | Type::TYPE_FIXED64
+        | Type::TYPE_SFIXED32
+        | Type::TYPE_SFIXED64
+        | Type::TYPE_FLOAT
+        | Type::TYPE_DOUBLE => decode_fn_token(ty),
+        Type::TYPE_STRING | Type::TYPE_BYTES | Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
+            unreachable!("packed_decode_fn_token called for non-packable type {ty:?}")
+        }
+    }
+}
+
 pub(crate) fn is_non_default_expr(ty: Type, field_ident: &Ident) -> TokenStream {
     match ty {
         Type::TYPE_INT32 | Type::TYPE_SINT32 | Type::TYPE_SFIXED32 => {
@@ -2354,10 +2394,10 @@ fn repeated_merge_arm(
                 unknown_route.clone(),
             )
         } else {
-            quote! { self.#ident.push(::buffa::EnumValue::from(::buffa::types::decode_int32(&mut limited)?)); }
+            quote! { self.#ident.push(::buffa::EnumValue::from(::buffa::types::decode_int32_packed(&mut limited)?)); }
         }
     } else {
-        let decode_fn = decode_fn_token(ty);
+        let decode_fn = packed_decode_fn_token(ty);
         quote! { self.#ident.push(#decode_fn(&mut limited)?); }
     };
     // Unpacked path: decode a single element from the outer buffer.

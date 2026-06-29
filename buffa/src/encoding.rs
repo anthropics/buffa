@@ -209,6 +209,10 @@ pub fn count_varints(payload: &[u8]) -> usize {
 /// 1. Single-byte fast path for values < 128 (common for tags, small lengths).
 /// 2. Unrolled slice decode when the contiguous chunk is large enough.
 /// 3. Byte-at-a-time fallback for non-contiguous or fragmented buffers.
+///
+/// A force-inlined twin, [`decode_varint_packed`], duplicates this dispatch
+/// for packed-repeated element loops — when editing this body, keep the two
+/// in sync (the rationale for the duplication is on the twin's doc).
 #[inline]
 pub fn decode_varint(buf: &mut impl Buf) -> Result<u64, DecodeError> {
     let chunk = buf.chunk();
@@ -237,22 +241,62 @@ pub fn decode_varint(buf: &mut impl Buf) -> Result<u64, DecodeError> {
     }
 }
 
-/// Decode a varint from a contiguous byte slice, returning the value and the
-/// number of bytes consumed.
+/// [`decode_varint`] with the fast paths force-inlined, for packed-repeated
+/// element loops only.
 ///
-/// The caller must ensure that `bytes` is non-empty and that either
-/// `bytes.len() > 10` or the last byte in `bytes` has its continuation bit
-/// clear (< 0x80). Under these conditions every index up to the terminating
-/// byte is guaranteed to be in bounds, so no per-byte bounds check is needed
-/// beyond the initial assertions.
+/// Packed payloads decode one varint per element in a tight generated loop,
+/// where the out-of-line `decode_varint_slice` call boundary is a measured
+/// ~16–28% cost on packed-varint-dense decode/merge (bare-metal A/B at the
+/// layout-normalized profile, 2026-06; other sites quoting this figure
+/// reference this doc rather than restating it). Force-inlining is
+/// intentionally restricted to this entry point: applying it to
+/// [`decode_varint`] globally regresses large view-decode functions
+/// (code-size/front-end pressure), so singular-field decoding keeps the
+/// compiler-judged `#[inline]` hint. The fragmented-buffer fallback stays
+/// out of line and cold.
 ///
-/// # Panics
-///
-/// Panics if `bytes` is empty or if the last byte has its continuation bit
-/// set while `bytes.len() <= 10`. These conditions are guaranteed by the
-/// caller (`decode_varint`), so the assertions serve as optimizer hints.
-#[inline]
-fn decode_varint_slice(bytes: &[u8]) -> Result<(u64, usize), DecodeError> {
+/// The dispatch body deliberately duplicates [`decode_varint`]'s — sharing
+/// it would re-couple the two functions in the inliner and reintroduce the
+/// placement instability this split exists to avoid. Keep the two in sync;
+/// the `len > 10 || chunk[len - 1] < 0x80` condition is the precondition
+/// the slice decoders' assertions rely on for bounds-check elimination.
+#[inline(always)]
+pub(crate) fn decode_varint_packed(buf: &mut impl Buf) -> Result<u64, DecodeError> {
+    let chunk = buf.chunk();
+    let len = chunk.len();
+    if len == 0 {
+        return Err(DecodeError::UnexpectedEof);
+    }
+
+    let first = chunk[0];
+    if first < 0x80 {
+        buf.advance(1);
+        return Ok(first as u64);
+    }
+
+    if len > 10 || chunk[len - 1] < 0x80 {
+        let (value, advance) = decode_varint_slice_always(chunk)?;
+        buf.advance(advance);
+        Ok(value)
+    } else {
+        decode_varint_slow(buf)
+    }
+}
+
+// One body, two emission forms: `decode_varint_slice` (compiler-judged
+// `#[inline]`, the status-quo path for singular fields) and
+// `decode_varint_slice_always` (force-inlined, used only by
+// `decode_varint_packed` in packed-repeated element loops). A macro rather
+// than a delegating wrapper: a thin wrapper gets merged by the inliner,
+// which bloats `decode_varint` and flips *its* inlining decision at every
+// call site — the macro keeps the two functions physically independent so
+// the status-quo path stays byte-identical. The caller contract / `# Panics`
+// docs are passed through each invocation below so both emitted functions
+// carry them.
+macro_rules! decode_varint_slice_fn {
+    ($(#[$attr:meta])* fn $name:ident) => {
+        $(#[$attr])*
+        fn $name(bytes: &[u8]) -> Result<(u64, usize), DecodeError> {
     // These assertions are always satisfied by `decode_varint`'s dispatch
     // logic and exist so the optimizer can prove all subsequent indexing is
     // in-bounds, eliminating per-byte bounds checks after inlining.
@@ -340,7 +384,36 @@ fn decode_varint_slice(bytes: &[u8]) -> Result<(u64, usize), DecodeError> {
     }
 
     Ok((value + (u64::from(part2) << 56), 10))
+        }
+    };
 }
+
+decode_varint_slice_fn!(
+    /// Decode a varint from a contiguous byte slice, returning the value and
+    /// the number of bytes consumed. See the macro note above for why this
+    /// body is emitted twice.
+    ///
+    /// The caller must ensure that `bytes` is non-empty and that either
+    /// `bytes.len() > 10` or the last byte in `bytes` has its continuation
+    /// bit clear (< 0x80). Under these conditions every index up to the
+    /// terminating byte is guaranteed to be in bounds, so no per-byte bounds
+    /// check is needed beyond the initial assertions.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `bytes` is empty or if the last byte has its continuation
+    /// bit set while `bytes.len() <= 10`. These conditions are guaranteed by
+    /// the callers (`decode_varint` / `decode_varint_packed`), so the
+    /// assertions serve as optimizer hints.
+    #[inline]
+    fn decode_varint_slice
+);
+decode_varint_slice_fn!(
+    /// Force-inlined twin of [`decode_varint_slice`] for packed loops; same
+    /// caller contract and `# Panics` conditions (see its doc).
+    #[inline(always)]
+    fn decode_varint_slice_always
+);
 
 /// Byte-at-a-time varint decode for non-contiguous or fragmented buffers.
 ///
@@ -655,6 +728,83 @@ mod tests {
             let decoded = decode_varint(&mut buf.as_slice()).unwrap();
             assert_eq!(v, decoded, "roundtrip failed for {v}");
         }
+    }
+
+    #[test]
+    fn test_decode_varint_packed_parity() {
+        // `decode_varint_packed` must agree with `decode_varint` on every
+        // path: single-byte fast path, multi-byte slice path, and the
+        // fragmented-buffer slow path.
+        let test_values: &[u64] = &[0, 1, 127, 128, 255, 300, 16384, 1 << 28, 1 << 56, u64::MAX];
+        for &v in test_values {
+            let mut buf = Vec::new();
+            encode_varint(v, &mut buf);
+            let plain = decode_varint(&mut buf.as_slice()).unwrap();
+            let packed = decode_varint_packed(&mut buf.as_slice()).unwrap();
+            assert_eq!(plain, packed, "parity failed for {v}");
+            if buf.len() > 1 {
+                // Split mid-varint so the packed decoder takes the
+                // fragmented-buffer slow path.
+                let mid = buf.len() / 2;
+                let first = bytes::Bytes::copy_from_slice(&buf[..mid]);
+                let second = bytes::Bytes::copy_from_slice(&buf[mid..]);
+                let mut chain = first.chain(second);
+                assert_eq!(
+                    decode_varint_packed(&mut chain).unwrap(),
+                    v,
+                    "fragmented parity failed for {v}"
+                );
+                assert_eq!(chain.remaining(), 0);
+            }
+        }
+    }
+
+    #[test]
+    fn test_decode_varint_packed_errors_match_plain() {
+        // Empty buffer.
+        assert_eq!(
+            decode_varint_packed(&mut [].as_slice()),
+            Err(DecodeError::UnexpectedEof)
+        );
+        // Truncated multi-byte varint (continuation bit set, no next byte).
+        assert_eq!(
+            decode_varint_packed(&mut [0x80u8].as_slice()),
+            Err(DecodeError::UnexpectedEof)
+        );
+        // 11-byte varint: continuation bits past the 10-byte maximum.
+        let mut too_long = vec![0x80u8; 10];
+        too_long.push(0x01);
+        assert_eq!(
+            decode_varint_packed(&mut too_long.as_slice()),
+            Err(DecodeError::VarintTooLong)
+        );
+        assert_eq!(
+            decode_varint(&mut too_long.as_slice()),
+            Err(DecodeError::VarintTooLong)
+        );
+        // Exactly 10 bytes with overflow bits in the last byte: taken via
+        // the `chunk[len - 1] < 0x80` disjunct, hitting the `b >= 0x02`
+        // check inside the force-inlined slice body — the only branch of
+        // the always-twin that valid encodings never reach.
+        let mut overflow10 = vec![0x80u8; 9];
+        overflow10.push(0x02);
+        assert_eq!(
+            decode_varint_packed(&mut overflow10.as_slice()),
+            Err(DecodeError::VarintTooLong)
+        );
+        assert_eq!(
+            decode_varint(&mut overflow10.as_slice()),
+            Err(DecodeError::VarintTooLong)
+        );
+        // VarintTooLong via the fragmented-buffer slow path: split the
+        // 11-byte malformed varint across two chunks.
+        let first = bytes::Bytes::copy_from_slice(&too_long[..5]);
+        let second = bytes::Bytes::copy_from_slice(&too_long[5..]);
+        let mut chain = first.chain(second);
+        assert_eq!(
+            decode_varint_packed(&mut chain),
+            Err(DecodeError::VarintTooLong)
+        );
     }
 
     #[test]

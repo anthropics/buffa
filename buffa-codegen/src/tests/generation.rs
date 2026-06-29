@@ -1884,6 +1884,58 @@ fn test_repeated_packed_scalar() {
 }
 
 #[test]
+fn test_packed_varint_loop_uses_force_inlined_decoder() {
+    // Packed varint-family element loops route through the force-inlined
+    // `decode_*_packed` decoders (removing the per-element call boundary);
+    // the unpacked fallback arm and fixed-width packed loops keep the
+    // plain decoders.
+    let mut file = proto3_file("packedinline.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("WithPacked".to_string()),
+        field: vec![
+            make_field("ids", 1, Label::LABEL_REPEATED, Type::TYPE_INT32),
+            make_field("flags", 2, Label::LABEL_REPEATED, Type::TYPE_BOOL),
+            make_field("hashes", 3, Label::LABEL_REPEATED, Type::TYPE_FIXED32),
+        ],
+        ..Default::default()
+    });
+
+    let files = generate(
+        &[file],
+        &["packedinline.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("packed varint message should generate");
+    let content = &joined(&files);
+
+    // Packed loop (owned merge): `_packed` decoders against the limited
+    // sub-buffer.
+    assert!(
+        content.contains("decode_int32_packed(&mut limited)"),
+        "packed int32 loop must use the force-inlined decoder: {content}"
+    );
+    assert!(
+        content.contains("decode_bool_packed(&mut limited)"),
+        "packed bool loop must use the force-inlined decoder: {content}"
+    );
+    // Unpacked fallback arm: plain decoder against the outer buffer.
+    assert!(
+        content.contains("decode_int32(buf)"),
+        "unpacked fallback must keep the plain decoder: {content}"
+    );
+    // Fixed-width packed loop: no `_packed` variant exists or is needed
+    // (no out-of-line fast path to begin with).
+    assert!(
+        content.contains("decode_fixed32(&mut limited)"),
+        "fixed32 packed loop must keep the plain decoder: {content}"
+    );
+    assert!(
+        !content.contains("decode_fixed32_packed"),
+        "fixed-width types must not reference a _packed decoder: {content}"
+    );
+}
+
+#[test]
 fn test_repeated_unpacked_string() {
     let mut file = proto3_file("repeatedstr.proto");
     file.message_type.push(DescriptorProto {

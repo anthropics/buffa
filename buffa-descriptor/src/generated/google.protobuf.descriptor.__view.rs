@@ -479,7 +479,7 @@ impl<'a> ::buffa::MessageView<'a> for FileDescriptorProtoView<'a> {
                     let mut pcur: &[u8] = payload;
                     while !pcur.is_empty() {
                         view.public_dependency
-                            .push(::buffa::types::decode_int32(&mut pcur)?);
+                            .push(::buffa::types::decode_int32_packed(&mut pcur)?);
                     }
                 } else if tag.wire_type() == ::buffa::encoding::WireType::Varint {
                     view.public_dependency.push(::buffa::types::decode_int32(&mut cur)?);
@@ -500,7 +500,7 @@ impl<'a> ::buffa::MessageView<'a> for FileDescriptorProtoView<'a> {
                     let mut pcur: &[u8] = payload;
                     while !pcur.is_empty() {
                         view.weak_dependency
-                            .push(::buffa::types::decode_int32(&mut pcur)?);
+                            .push(::buffa::types::decode_int32_packed(&mut pcur)?);
                     }
                 } else if tag.wire_type() == ::buffa::encoding::WireType::Varint {
                     view.weak_dependency.push(::buffa::types::decode_int32(&mut cur)?);
@@ -14425,7 +14425,8 @@ pub mod source_code_info {
                         view.path.reserve(::buffa::encoding::count_varints(payload));
                         let mut pcur: &[u8] = payload;
                         while !pcur.is_empty() {
-                            view.path.push(::buffa::types::decode_int32(&mut pcur)?);
+                            view.path
+                                .push(::buffa::types::decode_int32_packed(&mut pcur)?);
                         }
                     } else if tag.wire_type() == ::buffa::encoding::WireType::Varint {
                         view.path.push(::buffa::types::decode_int32(&mut cur)?);
@@ -14444,7 +14445,8 @@ pub mod source_code_info {
                         view.span.reserve(::buffa::encoding::count_varints(payload));
                         let mut pcur: &[u8] = payload;
                         while !pcur.is_empty() {
-                            view.span.push(::buffa::types::decode_int32(&mut pcur)?);
+                            view.span
+                                .push(::buffa::types::decode_int32_packed(&mut pcur)?);
                         }
                     } else if tag.wire_type() == ::buffa::encoding::WireType::Varint {
                         view.span.push(::buffa::types::decode_int32(&mut cur)?);
@@ -15251,7 +15253,8 @@ pub mod generated_code_info {
                         view.path.reserve(::buffa::encoding::count_varints(payload));
                         let mut pcur: &[u8] = payload;
                         while !pcur.is_empty() {
-                            view.path.push(::buffa::types::decode_int32(&mut pcur)?);
+                            view.path
+                                .push(::buffa::types::decode_int32_packed(&mut pcur)?);
                         }
                     } else if tag.wire_type() == ::buffa::encoding::WireType::Varint {
                         view.path.push(::buffa::types::decode_int32(&mut cur)?);

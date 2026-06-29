@@ -1239,7 +1239,7 @@ impl ::buffa::Message for FileDescriptorProto {
                     let mut limited = buf.take(len);
                     while limited.has_remaining() {
                         self.public_dependency
-                            .push(::buffa::types::decode_int32(&mut limited)?);
+                            .push(::buffa::types::decode_int32_packed(&mut limited)?);
                     }
                     let leftover = limited.remaining();
                     if leftover > 0 {
@@ -1270,7 +1270,7 @@ impl ::buffa::Message for FileDescriptorProto {
                     let mut limited = buf.take(len);
                     while limited.has_remaining() {
                         self.weak_dependency
-                            .push(::buffa::types::decode_int32(&mut limited)?);
+                            .push(::buffa::types::decode_int32_packed(&mut limited)?);
                     }
                     let leftover = limited.remaining();
                     if leftover > 0 {
@@ -18834,7 +18834,8 @@ pub mod source_code_info {
                         self.path.reserve(len);
                         let mut limited = buf.take(len);
                         while limited.has_remaining() {
-                            self.path.push(::buffa::types::decode_int32(&mut limited)?);
+                            self.path
+                                .push(::buffa::types::decode_int32_packed(&mut limited)?);
                         }
                         let leftover = limited.remaining();
                         if leftover > 0 {
@@ -18864,7 +18865,8 @@ pub mod source_code_info {
                         self.span.reserve(len);
                         let mut limited = buf.take(len);
                         while limited.has_remaining() {
-                            self.span.push(::buffa::types::decode_int32(&mut limited)?);
+                            self.span
+                                .push(::buffa::types::decode_int32_packed(&mut limited)?);
                         }
                         let leftover = limited.remaining();
                         if leftover > 0 {
@@ -19462,7 +19464,8 @@ pub mod generated_code_info {
                         self.path.reserve(len);
                         let mut limited = buf.take(len);
                         while limited.has_remaining() {
-                            self.path.push(::buffa::types::decode_int32(&mut limited)?);
+                            self.path
+                                .push(::buffa::types::decode_int32_packed(&mut limited)?);
                         }
                         let leftover = limited.remaining();
                         if leftover > 0 {
