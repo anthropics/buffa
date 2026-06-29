@@ -22,6 +22,12 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
     );
     let from_str =
         remote_field::qualified_call(field_ty, quote! { ::core::convert::From<&str> }, "from");
+    // Fully qualified, not `#accessor.as_ref()` — a remote type implementing
+    // more than one `AsRef<_>` (e.g. both `AsRef<str>` and `AsRef<[u8]>`)
+    // makes plain method-call syntax ambiguous, since method resolution
+    // doesn't use the caller's expected return type to disambiguate.
+    let as_str =
+        remote_field::qualified_call(field_ty, quote! { ::core::convert::AsRef<str> }, "as_ref");
 
     let ctor_from_string = remote.construct(quote! { #from_string(s) });
     let ctor_from_str = remote.construct(quote! { #from_str(s) });
@@ -32,14 +38,14 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
             type Target = str;
             #[inline]
             fn deref(&self) -> &str {
-                #accessor.as_ref()
+                #as_str(&#accessor)
             }
         }
 
         impl #impl_generics ::core::convert::AsRef<str> for #ident #ty_generics #where_clause {
             #[inline]
             fn as_ref(&self) -> &str {
-                #accessor.as_ref()
+                #as_str(&#accessor)
             }
         }
 

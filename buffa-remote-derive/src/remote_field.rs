@@ -35,16 +35,7 @@ pub struct RemoteField {
 ///
 /// Requires the struct to have exactly one field (newtype shape).
 pub fn parse(input: &DeriveInput) -> syn::Result<RemoteField> {
-    parse_overrides(input, &[])?;
-    let (field_ty, accessor, field_name) = single_field(input)?;
-
-    Ok(RemoteField {
-        ident: input.ident.clone(),
-        generics: input.generics.clone(),
-        field_ty,
-        accessor,
-        field_name,
-    })
+    parse_with_overrides(input, &[]).map(|(remote, _)| remote)
 }
 
 /// Like [`parse`], but also collects any of `allowed_overrides` present in

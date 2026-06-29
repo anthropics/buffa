@@ -27,6 +27,13 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         quote! { ::core::convert::From<::buffa::alloc::vec::Vec<#element_ty>> },
         "from",
     );
+    // Fully qualified, not `#accessor.as_ref()` — see the matching comment in
+    // string.rs for why plain method-call syntax is ambiguous here.
+    let as_slice = remote_field::qualified_call(
+        field_ty,
+        quote! { ::core::convert::AsRef<[#element_ty]> },
+        "as_ref",
+    );
 
     let ctor_from_iter = remote.construct(quote! { #from_iter(iter) });
     let ctor_from_vec = remote.construct(quote! { #from_vec(v) });
@@ -36,7 +43,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
             type Target = [#element_ty];
             #[inline]
             fn deref(&self) -> &[#element_ty] {
-                #accessor.as_ref()
+                #as_slice(&#accessor)
             }
         }
 

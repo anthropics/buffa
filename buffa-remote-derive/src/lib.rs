@@ -12,6 +12,27 @@
 //! in shape every time; these derives generate it from one annotation,
 //! mirroring `serde`'s `remote` attribute pattern.
 //!
+//! # Scope: the binary codec only
+//!
+//! **These derives cover the binary wire format only.** A pluggable
+//! owned-type trait's own supertraits don't mention `serde::Serialize` /
+//! `Deserialize`, `arbitrary::Arbitrary`, or `buffa_descriptor`'s
+//! `ReflectList`/`ReflectMap` — those are pulled in separately, by whichever
+//! optional feature needs them (`json`, `arbitrary`, `reflect`), and the
+//! reference newtypes in `examples/custom-types/src/types/` add them as
+//! ordinary extra `#[derive(..)]`s alongside the buffa-trait impl. This crate
+//! does the same: it generates nothing serde-, `Arbitrary`-, or
+//! reflection-related, so a newtype produced by one of these derives that's
+//! used as a message field in a JSON-enabled, fuzzed, or reflection/vtable
+//! build needs those impls added by hand, exactly as the hand-written
+//! reference newtypes do — `#[derive(serde::Serialize, serde::Deserialize)]`
+//! with `#[serde(transparent)]` typically suffices when the remote type
+//! itself supports serde, since the newtype is `#[repr(transparent)]`-style
+//! single-field. Skipping this on a JSON/reflect/fuzz build surfaces as a
+//! trait-bound error deep in *generated message code*
+//! (`MyType: Serialize` is not satisfied), not at the derive site — there is
+//! no diagnostic from this crate pointing back to it.
+//!
 //! ```rust
 //! #[derive(Clone, PartialEq, Default, Debug, buffa_remote_derive::ProtoString)]
 //! #[buffa(remote = ecow::EcoString)]
@@ -34,8 +55,15 @@
 //! macro to diagnose it.
 //!
 //! [`ProtoBytes`](macro@ProtoBytes) and [`ProtoList`](macro@ProtoList) follow
-//! the same shape for `bytes` and `repeated` fields respectively. `ProtoList`
-//! additionally requires the remote collection to implement `Extend<T>` (used
+//! the same shape for `bytes` and `repeated` fields respectively.
+//! `ProtoBytes`'s generated `from_wire` always copies the payload via
+//! `to_vec()` before handing it to the remote type's `From<Vec<u8>>` — there
+//! is no generic way to ask an arbitrary remote type to take ownership of a
+//! borrowed/`Bytes`-backed payload without copying, so this derive can't
+//! reach the zero-copy decode path the built-in `bytes::Bytes` representation
+//! gets; hand-write `from_wire` against [`WirePayload::into_bytes`] instead if
+//! that copy matters for your workload. `ProtoList` additionally requires the
+//! remote collection to implement `Extend<T>` (used
 //! to implement `push`); its generated `clear` reinitializes the field via
 //! `Default::default()`, which drops the existing allocation rather than
 //! retaining capacity — acceptable per `ProtoList`'s contract ("retaining

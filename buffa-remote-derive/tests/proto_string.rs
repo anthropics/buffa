@@ -42,3 +42,42 @@ fn named_field_struct_works() {
     let s = NamedEcoString::from("named");
     assert_eq!(s.as_ref(), "named");
 }
+
+// A remote type implementing both `AsRef<str>` and `AsRef<[u8]>` would make
+// plain `.as_ref()` method-call syntax in the generated body ambiguous
+// (return-type-directed resolution doesn't apply to method calls); the derive
+// must use fully qualified `<Remote as AsRef<str>>::as_ref` instead. This
+// type exists to catch a regression back to plain method-call syntax.
+#[derive(Clone, PartialEq, Default, Debug)]
+struct DualAsRef(String);
+impl AsRef<str> for DualAsRef {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
+    }
+}
+impl AsRef<[u8]> for DualAsRef {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+impl From<String> for DualAsRef {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+impl From<&str> for DualAsRef {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+#[derive(Clone, PartialEq, Default, Debug, DeriveProtoString)]
+#[buffa(remote = DualAsRef)]
+struct MyDualAsRef(pub DualAsRef);
+
+#[test]
+fn remote_with_multiple_as_ref_impls_resolves_unambiguously() {
+    let s = MyDualAsRef::from("disambiguated");
+    assert_eq!(&*s, "disambiguated");
+    assert_eq!(s.as_ref(), "disambiguated");
+}
