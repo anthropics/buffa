@@ -69,6 +69,13 @@ bytes = { version = "1", default-features = false }
 # 0.4.31 fails to compile this crate's `chrono` feature, 0.4.34 succeeds.
 chrono = { version = "0.4.34", default-features = false }
 foldhash = { version = "0.1", default-features = false }
+# `jiff` interop for `Timestamp` / `Duration` (the `buffa-types` `jiff`
+# feature). Pulled with `default-features = false` + `alloc` so the conversions
+# stay `no_std`; `buffa-types`' own `std` feature layers `jiff/std` on top.
+# `jiff::Timestamp` spans ≈ years -9999..=9999 (narrower than proto
+# `Timestamp`), and `jiff::SignedDuration` is the proto `Duration` analog.
+# MSRV 1.70 as of 0.2 — within buffa's pin.
+jiff = { version = "0.2", default-features = false, features = ["alloc"] }
 hashbrown = { version = "0.15", default-features = false, features = ["default-hasher"] }
 once_cell = { version = "1", default-features = false }
 rustversion = { version = "1" }
