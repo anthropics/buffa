@@ -61,18 +61,18 @@ use crate::error::DecodeError;
 /// Validate UTF-8 and return the borrowed `&str`.
 ///
 /// With the `fast-utf8` feature (on by default) this dispatches to
-/// [`smoothutf8::to_str`], which is faster than [`core::str::from_utf8`] on
-/// the short ASCII strings typical of protobuf field values and (when `std`
-/// is also enabled) delegates inputs of 128 bytes or more to `simdutf8`.
-/// Without the feature, it is exactly `core::str::from_utf8`. Either way the
-/// check is the full Unicode §3.9 well-formedness rule, so the
-/// `from_utf8_unchecked` calls that consume the result are sound.
+/// [`smoothutf8::from_utf8`], which is faster than [`core::str::from_utf8`]
+/// on the short ASCII strings typical of protobuf field values and (when
+/// `std` is also enabled) delegates inputs of 128 bytes or more to
+/// `simdutf8`. Without the feature, it is exactly `core::str::from_utf8`.
+/// Either way the check is the full Unicode §3.9 well-formedness rule, so
+/// the `from_utf8_unchecked` calls that consume the result are sound.
 // The explicit `return`s are required by the mutually-exclusive `#[cfg]` arms.
 #[allow(clippy::needless_return)]
 #[inline(always)]
 pub(crate) fn validate_str(bytes: &[u8]) -> Result<&str, DecodeError> {
     #[cfg(feature = "fast-utf8")]
-    return smoothutf8::to_str(bytes).ok_or(DecodeError::InvalidUtf8);
+    return smoothutf8::from_utf8(bytes).ok_or(DecodeError::InvalidUtf8);
     #[cfg(not(feature = "fast-utf8"))]
     return core::str::from_utf8(bytes).map_err(|_| DecodeError::InvalidUtf8);
 }
