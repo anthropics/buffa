@@ -12,6 +12,7 @@ fn main() {
         ("ANALYTICS_EVENT", "../proto/iso/analytics_event.proto"),
         ("MEDIA_FRAME", "../proto/iso/media_frame.proto"),
         ("PACKED_TILE", "../proto/iso/packed_tile.proto"),
+        ("MESH", "../proto/iso/mesh.proto"),
         (
             "GOOGLE_MESSAGE1",
             "../proto/benchmark_message1_proto3.proto",

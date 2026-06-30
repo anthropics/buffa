@@ -410,6 +410,11 @@ pub mod codecs {
                 }
                 fn decode_packed(bytes: &[u8], out: &mut Vec<$ty>) {
                     let mut buf = bytes;
+                    // Deliberately the plain `decode_varint`, not the
+                    // force-inlined packed twin used by generated message
+                    // loops: extension decode runs off unknown-field
+                    // storage and is not hot enough to justify the
+                    // per-call-site code-size cost.
                     while buf.has_remaining() {
                         match decode_varint(&mut buf) {
                             Ok($d) => out.push($decode),

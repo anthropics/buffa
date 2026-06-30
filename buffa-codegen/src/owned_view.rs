@@ -16,7 +16,7 @@ use quote::{format_ident, quote};
 
 use crate::context::MessageScope;
 use crate::impl_message::{effective_type, is_real_oneof_member, is_supported_field_type};
-use crate::message::{is_map_field, make_field_ident};
+use crate::message::is_map_field;
 use crate::view::{
     oneof_view_needs_lifetime, view_map_type, view_repeated_type, view_singular_type,
 };
@@ -82,15 +82,18 @@ pub(crate) fn generate_owned_view_wrapper(
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?;
-        if RESERVED_WRAPPER_METHODS.contains(&field_name) {
+        let number = field.number.unwrap_or(0);
+        // The reserved-name check runs against the *resolved* Rust name, so
+        // an `idiomatic_field_names` conversion that lands on a reserved
+        // method (`toOwnedMessage` → `to_owned_message`) is also suppressed.
+        if RESERVED_WRAPPER_METHODS.contains(&ctx.field_rust_name(field_name, number).as_ref()) {
             ctx.warn(CodeGenWarning::OwnedViewAccessorSuppressed {
                 wrapper_name: wrapper_ident.to_string(),
                 field_name: field_name.to_string(),
             });
             continue;
         }
-        let ident = make_field_ident(field_name);
-        let number = field.number.unwrap_or(0);
+        let ident = ctx.field_ident(field_name, number);
         let field_fqn = format!("{proto_fqn}.{field_name}");
         let proto_comment = ctx.comment(&field_fqn);
 
@@ -161,14 +164,14 @@ pub(crate) fn generate_owned_view_wrapper(
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("oneof.name"))?;
-        if RESERVED_WRAPPER_METHODS.contains(&oneof_name) {
+        if RESERVED_WRAPPER_METHODS.contains(&ctx.oneof_rust_name(oneof_name).as_ref()) {
             ctx.warn(CodeGenWarning::OwnedViewAccessorSuppressed {
                 wrapper_name: wrapper_ident.to_string(),
                 field_name: oneof_name.to_string(),
             });
             continue;
         }
-        let ident = make_field_ident(oneof_name);
+        let ident = ctx.oneof_ident(oneof_name);
         let generics = if oneof_view_needs_lifetime(ctx, &fields, features) {
             quote! { <'_> }
         } else {
@@ -217,11 +220,17 @@ pub(crate) fn generate_owned_view_wrapper(
         quote! {}
     };
 
+    // Scoped #[allow(non_snake_case)]: accessor methods are named after the
+    // (resolved) member names, which can be non-snake for verbatim camelCase
+    // protos or collision fallbacks. Empty for conforming messages.
+    let non_snake_attr = ctx.message_non_snake_attr(msg);
+
     Ok(quote! {
         #[doc = #wrapper_doc]
         #[derive(Clone, Debug)]
         pub struct #wrapper_ident(::buffa::OwnedView<#view_ident<'static>>);
 
+        #non_snake_attr
         impl #wrapper_ident {
             /// Decode an owned view from a [`::buffa::bytes::Bytes`] buffer.
             ///

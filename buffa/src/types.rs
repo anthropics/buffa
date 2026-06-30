@@ -28,6 +28,14 @@
 //! fused forms; the `encode_*` primitives remain the building blocks for
 //! packed payloads and hand-written codecs.
 //!
+//! On the decode side, the varint-family decoders have force-inlined
+//! `_packed` twins ([`decode_int32_packed`] etc.) for per-element use
+//! inside packed-repeated loops, where removing the per-element call
+//! boundary is a large measured win. They are not general-purpose
+//! replacements — see [`decode_int32_packed`] for the trade-off — and
+//! fixed-width types have no twins because their decoders have no
+//! out-of-line fast path to remove.
+//!
 //! # Wire format reference
 //!
 //! Fixed-width types are encoded as little-endian bytes on the wire, per the
@@ -272,6 +280,92 @@ pub fn encode_bool(value: bool, buf: &mut impl BufMut) {
 #[inline]
 pub fn decode_bool(buf: &mut impl Buf) -> Result<bool, DecodeError> {
     let v = decode_varint(buf)?;
+    Ok(v != 0)
+}
+
+// ---------------------------------------------------------------------------
+// Packed-loop decode variants — varint types
+// ---------------------------------------------------------------------------
+
+/// Force-inlined variant of [`decode_int32`] for packed-repeated element
+/// loops; identical semantics, decodes **one element** per call.
+///
+/// Generated packed-field decode loops call this once per element over the
+/// length-delimited sub-buffer; removing the per-element out-of-line call
+/// is a measured ~16–28% win on packed-varint-dense shapes (see
+/// `encoding::decode_varint_packed` for the measurement anchor). It is
+/// **not** a faster general-purpose [`decode_int32`]: each call site
+/// expands the full unrolled varint decoder (a few hundred bytes), so
+/// using it outside a tight per-element loop bloats the enclosing function
+/// and typically loses to the plain version. Prefer [`decode_int32`] for
+/// singular fields and anything that is not a packed loop.
+///
+/// Only varint-family types have `_packed` twins — fixed-width decoders
+/// ([`decode_fixed32`] etc.) have no out-of-line fast path to remove.
+#[inline(always)]
+pub fn decode_int32_packed(buf: &mut impl Buf) -> Result<i32, DecodeError> {
+    let v = crate::encoding::decode_varint_packed(buf)?;
+    Ok(v as i32)
+}
+
+/// Force-inlined variant of [`decode_int64`] for packed-repeated element
+/// loops; identical semantics, decodes one element per call. Not a faster
+/// general-purpose decoder — see [`decode_int32_packed`] for when to use
+/// the `_packed` family and when to prefer the plain version.
+#[inline(always)]
+pub fn decode_int64_packed(buf: &mut impl Buf) -> Result<i64, DecodeError> {
+    let v = crate::encoding::decode_varint_packed(buf)?;
+    Ok(v as i64)
+}
+
+/// Force-inlined variant of [`decode_uint32`] for packed-repeated element
+/// loops; identical semantics, decodes one element per call. Not a faster
+/// general-purpose decoder — see [`decode_int32_packed`] for when to use
+/// the `_packed` family and when to prefer the plain version.
+#[inline(always)]
+pub fn decode_uint32_packed(buf: &mut impl Buf) -> Result<u32, DecodeError> {
+    let v = crate::encoding::decode_varint_packed(buf)?;
+    Ok(v as u32)
+}
+
+/// Force-inlined variant of [`decode_uint64`] for packed-repeated element
+/// loops; identical semantics, decodes one element per call. Not a faster
+/// general-purpose decoder — see [`decode_int32_packed`] for when to use
+/// the `_packed` family and when to prefer the plain version.
+#[inline(always)]
+pub fn decode_uint64_packed(buf: &mut impl Buf) -> Result<u64, DecodeError> {
+    crate::encoding::decode_varint_packed(buf)
+}
+
+/// Force-inlined variant of [`decode_sint32`] for packed-repeated element
+/// loops; identical semantics, decodes one element per call. Not a faster
+/// general-purpose decoder — see [`decode_int32_packed`] for when to use
+/// the `_packed` family and when to prefer the plain version.
+#[inline(always)]
+pub fn decode_sint32_packed(buf: &mut impl Buf) -> Result<i32, DecodeError> {
+    let v = crate::encoding::decode_varint_packed(buf)?;
+    // Truncate to u32 before ZigZag decode (spec: upper bits are discarded
+    // for 32-bit types).
+    Ok(zigzag_decode_i32(v as u32))
+}
+
+/// Force-inlined variant of [`decode_sint64`] for packed-repeated element
+/// loops; identical semantics, decodes one element per call. Not a faster
+/// general-purpose decoder — see [`decode_int32_packed`] for when to use
+/// the `_packed` family and when to prefer the plain version.
+#[inline(always)]
+pub fn decode_sint64_packed(buf: &mut impl Buf) -> Result<i64, DecodeError> {
+    let v = crate::encoding::decode_varint_packed(buf)?;
+    Ok(zigzag_decode_i64(v))
+}
+
+/// Force-inlined variant of [`decode_bool`] for packed-repeated element
+/// loops; identical semantics, decodes one element per call. Not a faster
+/// general-purpose decoder — see [`decode_int32_packed`] for when to use
+/// the `_packed` family and when to prefer the plain version.
+#[inline(always)]
+pub fn decode_bool_packed(buf: &mut impl Buf) -> Result<bool, DecodeError> {
+    let v = crate::encoding::decode_varint_packed(buf)?;
     Ok(v != 0)
 }
 
@@ -2173,6 +2267,62 @@ mod tests {
         // but the decoder must accept any non-zero varint per the spec.
         let decoded = decode_bool(&mut &[0x80u8, 0x01][..]).unwrap();
         assert!(decoded);
+    }
+
+    #[test]
+    fn test_packed_scalar_decoders_match_plain() {
+        // Every `decode_*_packed` must agree with its plain counterpart on
+        // the same wire bytes — same value, same truncation/zigzag/bool
+        // conversion, same buffer advance.
+        let raw_values: &[u64] = &[
+            0,
+            1,
+            127,
+            128,
+            300,
+            u64::from(u32::MAX),
+            u64::from(u32::MAX) + 1,
+            u64::MAX,
+        ];
+        for &raw in raw_values {
+            let mut buf = Vec::new();
+            encode_varint(raw, &mut buf);
+            assert_eq!(
+                decode_int32(&mut buf.as_slice()),
+                decode_int32_packed(&mut buf.as_slice()),
+                "int32 parity failed for raw {raw}"
+            );
+            assert_eq!(
+                decode_int64(&mut buf.as_slice()),
+                decode_int64_packed(&mut buf.as_slice()),
+                "int64 parity failed for raw {raw}"
+            );
+            assert_eq!(
+                decode_uint32(&mut buf.as_slice()),
+                decode_uint32_packed(&mut buf.as_slice()),
+                "uint32 parity failed for raw {raw}"
+            );
+            assert_eq!(
+                decode_uint64(&mut buf.as_slice()),
+                decode_uint64_packed(&mut buf.as_slice()),
+                "uint64 parity failed for raw {raw}"
+            );
+            assert_eq!(
+                decode_sint32(&mut buf.as_slice()),
+                decode_sint32_packed(&mut buf.as_slice()),
+                "sint32 parity failed for raw {raw}"
+            );
+            assert_eq!(
+                decode_sint64(&mut buf.as_slice()),
+                decode_sint64_packed(&mut buf.as_slice()),
+                "sint64 parity failed for raw {raw}"
+            );
+            assert_eq!(
+                decode_bool(&mut buf.as_slice()),
+                decode_bool_packed(&mut buf.as_slice()),
+                "bool parity failed for raw {raw}"
+            );
+        }
     }
 
     // -----------------------------------------------------------------------

@@ -7,6 +7,7 @@
     feature = "log_record",
     feature = "analytics_event",
     feature = "packed_tile",
+    feature = "mesh",
     feature = "google_message1",
     feature = "reflect",
     feature = "lazy"

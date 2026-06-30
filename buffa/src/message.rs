@@ -185,6 +185,28 @@ impl<'a> DecodeContext<'a> {
 /// in the message — so messages can be placed in an `Arc` and shared across
 /// threads freely. `merge` requires `&mut self`, so mutation is exclusive.
 ///
+/// # Struct evolution policy
+///
+/// Generated message structs (and their [`MessageView`](crate::MessageView) /
+/// [`LazyMessageView`](crate::LazyMessageView) counterparts) may gain fields
+/// across releases — both when the source `.proto` schema evolves and when
+/// buffa adds internal bookkeeping such as `__buffa_unknown_fields` or the
+/// required-field presence bitmaps. **Exhaustive struct literals and
+/// exhaustive destructuring patterns are not covered by buffa's semver
+/// guarantees**: code that names every field will fail to compile when a field
+/// is added, and that breakage is not considered a breaking change.
+///
+/// The forward-compatible ways to construct a generated struct are:
+///
+/// - decode it from bytes;
+/// - struct-update syntax over the default: `Foo { x, y, ..Default::default() }`;
+/// - start from `Foo::default()` and assign fields (or call generated `with_*`
+///   setters when `generate_with_setters` is enabled).
+///
+/// The structs are deliberately *not* `#[non_exhaustive]`, so struct-update
+/// syntax remains available from downstream crates; this policy is a documented
+/// contract rather than a compiler-enforced one.
+///
 /// [`SizeCache`]: crate::SizeCache
 pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// Compute the encoded byte size of this message, recording nested

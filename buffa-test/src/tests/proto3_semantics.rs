@@ -553,8 +553,10 @@ fn synthetic_oneofs_not_user_visible() {
     let _: Option<i32> = OptionalAllTypes::default().i32;
     let _: Option<String> = OptionalAllTypes::default().s;
     let _: Option<EnumValue<Color>> = OptionalAllTypes::default().e;
-    // The optional message field uses MessageField, not Option<Box<T>>.
-    let _: buffa::MessageField<ImplicitScalars> = OptionalAllTypes::default().nested;
+    // The optional message field uses MessageField (default-inline), not a
+    // synthetic oneof enum.
+    let _: buffa::MessageField<ImplicitScalars, buffa::Inline<ImplicitScalars>> =
+        OptionalAllTypes::default().nested;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,3 @@
+kind: Fixed
+body: 'JSON: quoted integer strings in decimal/exponent notation (e.g. `"9007199254740993.0"`, `"9.007199254740993e15"`) now parse exactly instead of routing through `f64`, which silently rounded magnitudes above 2^53. Non-integral and overflowing strings are still rejected. (#255)'
+time: 2026-06-28T21:11:00.000000000Z

@@ -1,0 +1,3 @@
+kind: Fixed
+body: '`DynamicMessage::set` / `clear` now validate field-descriptor membership in release builds and panic on a foreign descriptor, instead of silently writing to whatever field shares its number. Previously the check was a `debug_assert!` only. (#254)'
+time: 2026-06-28T21:10:01.000000000Z

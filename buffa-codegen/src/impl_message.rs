@@ -22,7 +22,7 @@ use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
 
 use crate::features::ResolvedFeatures;
-use crate::message::{find_map_entry, is_closed_enum, make_field_ident};
+use crate::message::{find_map_entry, is_closed_enum};
 use crate::CodeGenError;
 use buffa::encoding::MAX_FIELD_NUMBER;
 
@@ -442,7 +442,7 @@ pub fn generate_message_impl(
                     preserve_unknown_fields,
                     &repr,
                 )?);
-                clear_stmts.push(vec_field_clear_stmt(f, &repr)?);
+                clear_stmts.push(vec_field_clear_stmt(ctx, f, &repr)?);
             }
             FieldKind::Map(f) => {
                 compute_stmts.push(map_compute_size_stmt(ctx, msg, f, proto_fqn, features)?);
@@ -470,7 +470,7 @@ pub fn generate_message_impl(
                 compute_stmts.push(cs);
                 write_stmts.push(ws);
                 merge_arms.extend(mas);
-                let ident = make_field_ident(name);
+                let ident = ctx.oneof_ident(name);
                 clear_stmts.push(quote! { self.#ident = ::core::option::Option::None; });
             }
         }
@@ -723,6 +723,7 @@ pub fn generate_message_impl(
 /// and **without validation**. `accessor` is `fragments` (singular) or
 /// `raw_elements` (repeated).
 fn lazy_fragment_encode_stmts(
+    ctx: &CodeGenContext,
     field: &FieldDescriptorProto,
     accessor: TokenStream,
 ) -> Result<(TokenStream, TokenStream), CodeGenError> {
@@ -731,7 +732,7 @@ fn lazy_fragment_encode_stmts(
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
-    let ident = make_field_ident(field_name);
+    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     let ld_tag_len = tag_encoded_len(field_number, 2);
     let compute = quote! {
         for __frag in self.#ident.#accessor() {
@@ -782,12 +783,12 @@ pub(crate) fn build_view_encode_methods(
     for kind in &fields {
         match kind {
             FieldKind::Scalar(f) if lazy_message(f) => {
-                let (compute, write) = lazy_fragment_encode_stmts(f, quote! { fragments })?;
+                let (compute, write) = lazy_fragment_encode_stmts(ctx, f, quote! { fragments })?;
                 compute_stmts.push(compute);
                 write_stmts.push(write);
             }
             FieldKind::Repeated(f) if lazy_message(f) => {
-                let (compute, write) = lazy_fragment_encode_stmts(f, quote! { raw_elements })?;
+                let (compute, write) = lazy_fragment_encode_stmts(ctx, f, quote! { raw_elements })?;
                 compute_stmts.push(compute);
                 write_stmts.push(write);
             }
@@ -831,7 +832,7 @@ pub(crate) fn build_view_encode_methods(
                 enum_ident,
                 fields,
             } => {
-                let field_ident = make_field_ident(name);
+                let field_ident = ctx.oneof_ident(name);
                 let qualified: TokenStream = quote! { #view_oneof_prefix #enum_ident };
                 let mut size_arms: Vec<TokenStream> = Vec::new();
                 let mut write_arms: Vec<TokenStream> = Vec::new();
@@ -957,14 +958,16 @@ pub(crate) fn build_view_encode_methods(
 /// `self.<field>.clear();` for repeated and map fields — both `Vec<T>` and
 /// `HashMap<K,V>` retain their backing allocation on `.clear()`.
 fn vec_field_clear_stmt(
+    ctx: &CodeGenContext,
     field: &FieldDescriptorProto,
     repr: &crate::RepeatedRepr,
 ) -> Result<TokenStream, CodeGenError> {
-    let ident = make_field_ident(
+    let ident = ctx.field_ident(
         field
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?,
+        field.number.unwrap_or(0),
     );
     if repr.is_default() {
         Ok(quote! { self.#ident.clear(); })
@@ -988,7 +991,7 @@ fn map_field_clear_stmt(
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
-    let ident = make_field_ident(field_name);
+    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     if field_map_repr(ctx, proto_fqn, field_name).is_default() {
         Ok(quote! { self.#ident.clear(); })
     } else {
@@ -1149,7 +1152,7 @@ fn scalar_clear_stmt(
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let ty = effective_type(ctx, field, features);
-    let ident = make_field_ident(field_name);
+    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     let bytes_repr = field_bytes_repr(ctx, proto_fqn, field_name);
 
     // Explicit-presence fields (Option<T>): set to None.
@@ -1399,6 +1402,46 @@ pub(crate) fn decode_fn_token(ty: Type) -> TokenStream {
     }
 }
 
+/// [`decode_fn_token`] for packed-repeated element loops: varint-family
+/// types route to the `_packed` force-inlined decoders, removing the
+/// per-element call boundary (a large measured win; the figure is anchored
+/// on `buffa::encoding::decode_varint_packed`'s doc); fixed-width types
+/// fall through to the plain decoders, which have no out-of-line fast path
+/// to begin with. Callers route enums themselves — see the `TYPE_ENUM` arm.
+pub(crate) fn packed_decode_fn_token(ty: Type) -> TokenStream {
+    match ty {
+        Type::TYPE_INT32 => quote! { ::buffa::types::decode_int32_packed },
+        Type::TYPE_INT64 => quote! { ::buffa::types::decode_int64_packed },
+        Type::TYPE_UINT32 => quote! { ::buffa::types::decode_uint32_packed },
+        Type::TYPE_UINT64 => quote! { ::buffa::types::decode_uint64_packed },
+        Type::TYPE_SINT32 => quote! { ::buffa::types::decode_sint32_packed },
+        Type::TYPE_SINT64 => quote! { ::buffa::types::decode_sint64_packed },
+        Type::TYPE_BOOL => quote! { ::buffa::types::decode_bool_packed },
+        // Enums are varint-family and packed-capable, but both emission
+        // sites hand-route them before calling this function: open enums go
+        // straight to `decode_int32_packed`, and closed-enum packed arms
+        // deliberately stay on the plain `decode_int32` (their decode path
+        // runs through `closed_enum_decode*`, which interleaves
+        // unknown-value routing — not a tight per-element loop).
+        Type::TYPE_ENUM => unreachable!(
+            "packed_decode_fn_token called for TYPE_ENUM; enum packed arms \
+             are routed by the caller"
+        ),
+        // Fixed-width and floating types have no out-of-line varint fast
+        // path, so there is nothing to force-inline; the plain decoders are
+        // already optimal in packed loops.
+        Type::TYPE_FIXED32
+        | Type::TYPE_FIXED64
+        | Type::TYPE_SFIXED32
+        | Type::TYPE_SFIXED64
+        | Type::TYPE_FLOAT
+        | Type::TYPE_DOUBLE => decode_fn_token(ty),
+        Type::TYPE_STRING | Type::TYPE_BYTES | Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
+            unreachable!("packed_decode_fn_token called for non-packable type {ty:?}")
+        }
+    }
+}
+
 pub(crate) fn is_non_default_expr(ty: Type, field_ident: &Ident) -> TokenStream {
     match ty {
         Type::TYPE_INT32 | Type::TYPE_SINT32 | Type::TYPE_SFIXED32 => {
@@ -1461,7 +1504,7 @@ fn scalar_compute_size_stmt(
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
-    let ident = make_field_ident(field_name);
+    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     let tag_len = tag_encoded_len(field_number, wire_type_byte(ty));
     // Proto2 `required` scalars must always be encoded, even when their value
     // equals the type default (zero / empty).  All other non-optional scalars
@@ -1612,7 +1655,7 @@ fn scalar_write_to_stmt(
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
-    let ident = make_field_ident(field_name);
+    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     let is_proto2_required = is_required_field(field, features);
 
     // Explicit-presence field: encoded as Option<T>; always encode when Some.
@@ -1839,7 +1882,7 @@ fn scalar_merge_arm(
     let ty = effective_type(ctx, field, features);
     let bytes_repr = field_bytes_repr(ctx, proto_fqn, field_name);
     let string_repr = field_string_repr(ctx, proto_fqn, field_name);
-    let ident = make_field_ident(field_name);
+    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     let wire_type = wire_type_token(ty);
 
     let wire_check = wire_type_check(&quote! { tag }, &wire_type);
@@ -2078,7 +2121,7 @@ fn repeated_compute_size_stmt(
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
-    let ident = make_field_ident(field_name);
+    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     let elems = repeated_for_iter(&ident, repr);
     // LengthDelimited tag (wire type 2): used for packed, message, string, bytes.
     let ld_tag_len = tag_encoded_len(field_number, 2);
@@ -2176,7 +2219,7 @@ fn repeated_write_to_stmt(
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
-    let ident = make_field_ident(field_name);
+    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     let elems = repeated_for_iter(&ident, repr);
 
     if ty == Type::TYPE_MESSAGE {
@@ -2256,7 +2299,7 @@ fn repeated_merge_arm(
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
     let bytes_repr = field_bytes_repr(ctx, proto_fqn, field_name);
-    let ident = make_field_ident(field_name);
+    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     // For a custom collection, bring `ProtoList` into the arm's scope so the
     // bare `self.field.push(..)` / `.reserve(..)` below resolve to the trait
     // (a newtype has no inherent push). For the default `Vec` this stays empty,
@@ -2354,10 +2397,10 @@ fn repeated_merge_arm(
                 unknown_route.clone(),
             )
         } else {
-            quote! { self.#ident.push(::buffa::EnumValue::from(::buffa::types::decode_int32(&mut limited)?)); }
+            quote! { self.#ident.push(::buffa::EnumValue::from(::buffa::types::decode_int32_packed(&mut limited)?)); }
         }
     } else {
-        let decode_fn = decode_fn_token(ty);
+        let decode_fn = packed_decode_fn_token(ty);
         quote! { self.#ident.push(#decode_fn(&mut limited)?); }
     };
     // Unpacked path: decode a single element from the outer buffer.
@@ -2736,7 +2779,7 @@ fn generate_oneof_impls(
     features: &ResolvedFeatures,
     preserve_unknown_fields: bool,
 ) -> Result<(TokenStream, TokenStream, Vec<TokenStream>), CodeGenError> {
-    let field_ident = make_field_ident(oneof_name);
+    let field_ident = ctx.oneof_ident(oneof_name);
     let qualified_enum: TokenStream = quote! { #oneof_prefix #enum_ident };
 
     let mut size_arms: Vec<TokenStream> = Vec::new();
@@ -2944,7 +2987,7 @@ fn map_entry_ctx(
     let val_string_repr = map_string_repr(ctx, val_ty, proto_fqn, field_name);
     Ok(MapEntryCtx {
         field_number,
-        ident: make_field_ident(field_name),
+        ident: ctx.field_ident(field_name, field.number.unwrap_or(0)),
         outer_tag_len: tag_encoded_len(field_number, 2),
         val_ty,
         val_is_closed_enum: val_ty == Type::TYPE_ENUM && is_closed_enum(&val_features),
@@ -3044,7 +3087,7 @@ fn map_view_compute_size_stmt(
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
-    let ident = make_field_ident(field_name);
+    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     let outer_tag_len = tag_encoded_len(field_number, 2);
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
     let key_ty = effective_type_in_map_entry(ctx, key_fd, features);
@@ -3112,7 +3155,7 @@ fn map_view_write_to_stmt(
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
-    let ident = make_field_ident(field_name);
+    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
     let key_ty = effective_type_in_map_entry(ctx, key_fd, features);
     let val_ty = effective_type_in_map_entry(ctx, val_fd, features);

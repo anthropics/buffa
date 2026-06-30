@@ -673,6 +673,13 @@ Key design choices:
 - **`MessageField<T>`** for sub-message fields (not `Option<Box<T>>`)
 - **`EnumValue<E>`** for open enum fields (not raw `i32`)
 - **`__buffa_unknown_fields`** preserves fields from newer schema versions
+- **Struct evolution policy**: generated message and view structs may gain
+  fields as schemas evolve or buffa adds internal bookkeeping. Construct values
+  by decoding, with `Foo { x, ..Default::default() }`, or by starting from
+  `Foo::default()` and assigning fields; exhaustive struct literals and
+  destructuring are not covered by buffa's semver guarantees. See the
+  [`Message` trait documentation](https://docs.rs/buffa/latest/buffa/trait.Message.html#struct-evolution-policy)
+  for the full policy.
 - **Module nesting** for nested message types (`outer::Inner`, not `OuterInner`)
 - **No serialization state** — sizes live in an external [`SizeCache`](https://docs.rs/buffa/latest/buffa/struct.SizeCache.html), so the struct holds only its proto fields plus the unknown-fields plumbing, with no interior mutability
 
@@ -703,9 +710,9 @@ use my_crate::pkg::__buffa::{oneof, view};
 // then: pkg::Foo, view::FooView, oneof::foo::Kind, view::oneof::foo::Kind
 ```
 
-### `MessageField<T>` — ergonomic optional messages
+### `MessageField<T, P>` — ergonomic optional messages
 
-`MessageField<T>` wraps `Option<Box<T>>` internally but implements `Deref` to a static default instance when unset, eliminating unwrap ceremony:
+`MessageField<T, P>` stores the message inline by default (`P = Inline<T>`, laid out as `Option<T>` — no per-field heap allocation; recursive fields and explicit opt-outs use `P = Box<T>`). It implements `Deref` to a static default instance when unset, eliminating unwrap ceremony:
 
 ```rust,ignore
 // Reading — no unwrap needed, derefs to default when unset

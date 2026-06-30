@@ -111,6 +111,9 @@ use bytes::{BufMut, Bytes};
 ///
 /// The lifetime `'a` ties the view to the input buffer — the view cannot
 /// outlive the buffer it was decoded from.
+///
+/// Generated view structs may gain fields across releases; see the
+/// [struct evolution policy on `Message`](crate::Message#struct-evolution-policy).
 pub trait MessageView<'a>: Sized {
     /// The corresponding owned message type.
     type Owned: crate::Message;
@@ -931,6 +934,9 @@ impl<V: Eq + DefaultViewInstance> Eq for MessageFieldView<V> {}
 /// [`LazyMessageFieldView`] / [`LazyRepeatedView`]) and decoded only on
 /// access. Deferred validation is therefore visible in the type and trait
 /// bound — generic code over `MessageView` never silently inherits it.
+///
+/// Generated lazy-view structs may gain fields across releases; see the
+/// [struct evolution policy on `Message`](crate::Message#struct-evolution-policy).
 pub trait LazyMessageView<'a>: Sized {
     /// The corresponding owned message type.
     type Owned: crate::Message;

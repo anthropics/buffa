@@ -175,7 +175,7 @@ fn test_type_name_prefix_declarations_and_references() {
 
     // Cross-references use the prefixed names.
     assert!(
-        content.contains("MessageField<RpcUser>"),
+        content.contains("MessageField<RpcUser, ::buffa::Inline<RpcUser>>"),
         "message field must reference prefixed type: {content}"
     );
     assert!(

@@ -1,0 +1,3 @@
+kind: Added
+body: '`idiomatic_field_names` codegen option (`buffa_build::Config`, `CodeGenConfig`, protoc plugin): opt-in conversion of camelCase proto field and oneof names to snake_case Rust identifiers, prost-compatible on underscore-free names; wire, JSON, and text-format names are unchanged, and collisions resolve deterministically with an `_f<number>` suffix and a build warning. Generated structs with non-snake member names now carry a detection-scoped `#[allow(non_snake_case)]` regardless of the option. (#260)'
+time: 2026-06-29T02:23:43.000000000Z

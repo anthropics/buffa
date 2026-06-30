@@ -8,6 +8,7 @@
     feature = "analytics_event",
     feature = "media_frame",
     feature = "google_message1",
+    feature = "mesh",
     feature = "reflect",
     feature = "lazy"
 ))]

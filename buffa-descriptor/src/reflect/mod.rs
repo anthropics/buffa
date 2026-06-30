@@ -33,7 +33,7 @@ pub use containers::{ReflectElement, ReflectMapKey};
 pub use dynamic::{AnyError, DynamicMessage};
 #[cfg(feature = "json")]
 pub use json::DynamicMessageSeed;
-pub use message::{ReflectCow, ReflectMessage, ReflectMessageMut, Reflectable};
+pub use message::{ReflectCow, ReflectError, ReflectMessage, ReflectMessageMut, Reflectable};
 pub use value::{MapKey, MapKeyRef, MapValue, ReflectList, ReflectMap, Value, ValueRef};
 
 /// Per-message reflection mode, selected at codegen time.

@@ -915,14 +915,70 @@ fn parse_int_from_str<I: TryFrom<i128>>(v: &str) -> Option<I> {
     if let Ok(n) = v.parse::<i128>() {
         return I::try_from(n).ok();
     }
-    // Fall back to parsing as f64 for exponential/float notation (e.g. "1e5").
-    // The f64 intermediate silently rounds values > 2^53, but the direct
-    // integer parse above handles those cases exactly.
-    let f: f64 = v.parse().ok()?;
-    if !is_exact_integer(f) {
+    let n = parse_exact_decimal_int(v)?;
+    I::try_from(n).ok()
+}
+
+/// Parse a decimal/exponential string as an exact integer.
+///
+/// Accepts the numeric string forms the JSON integer helpers intentionally
+/// support beyond plain integers: zero-fraction decimals like `"1.0"` and
+/// decimal scientific notation like `"1e5"` / `"1.0e2"`. Returns `None` if
+/// the value is not mathematically integral or would overflow `i128`.
+fn parse_exact_decimal_int(v: &str) -> Option<i128> {
+    let (mantissa, exp) = match v.split_once(['e', 'E']) {
+        // `i64::from_str` handles the exponent's sign and rejects empty,
+        // non-digit, and i64-overflowing exponents.
+        Some((m, e)) => (m, e.parse::<i64>().ok()?),
+        None => (v, 0),
+    };
+    let (negative, mantissa) = match mantissa.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, mantissa.strip_prefix('+').unwrap_or(mantissa)),
+    };
+    let (int_part, frac_part) = mantissa
+        .split_once('.')
+        .map_or((mantissa, ""), |(i, f)| (i, f));
+    if int_part.is_empty() && frac_part.is_empty() {
         return None;
     }
-    I::try_from(f as i128).ok()
+    // Trailing fractional zeros do not affect integrality and would only
+    // inflate the significand before we re-scale it.
+    let frac_part = frac_part.trim_end_matches('0');
+
+    let mut significand = 0i128;
+    for digit in int_part.bytes().chain(frac_part.bytes()) {
+        if !digit.is_ascii_digit() {
+            return None;
+        }
+        significand = significand
+            .checked_mul(10)?
+            .checked_add(i128::from(digit - b'0'))?;
+    }
+    if significand == 0 {
+        // Zero is integral under any exponent; short-circuit before the
+        // power-of-ten scaling below can overflow on e.g. "0e100".
+        return Some(0);
+    }
+
+    // value = significand × 10^(exp − frac_len)
+    let scale = exp.checked_sub(frac_part.len() as i64)?;
+    if scale >= 0 {
+        let pow10 = 10i128.checked_pow(u32::try_from(scale).ok()?)?;
+        significand = significand.checked_mul(pow10)?;
+    } else {
+        let divisor = 10i128.checked_pow(u32::try_from(scale.unsigned_abs()).ok()?)?;
+        if significand % divisor != 0 {
+            return None;
+        }
+        significand /= divisor;
+    }
+
+    if negative {
+        significand.checked_neg()
+    } else {
+        Some(significand)
+    }
 }
 
 /// Try to interpret an f64 as an exact integer.
@@ -1773,9 +1829,12 @@ impl<'de, T: serde::Deserialize<'de>> serde::de::DeserializeSeed<'de>
 /// maps `null` → `None` (field absent). For types like `google.protobuf.Value`
 /// where `null` is a valid value (`NullValue`), this function ensures `null`
 /// reaches `T::deserialize` and the field is set rather than absent.
-pub fn message_field_always_present<'de, T, D>(d: D) -> Result<crate::MessageField<T>, D::Error>
+pub fn message_field_always_present<'de, T, P, D>(
+    d: D,
+) -> Result<crate::MessageField<T, P>, D::Error>
 where
     T: Default + serde::Deserialize<'de>,
+    P: crate::ProtoBox<T>,
     D: serde::Deserializer<'de>,
 {
     T::deserialize(d).map(crate::MessageField::some)

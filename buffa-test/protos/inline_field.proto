@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package inline_field;
+
+// Compiled with the default `PointerRepr::Inline` (no pointer config) so every
+// non-recursive singular message field uses the built-in `::buffa::Inline<T>`
+// pointer (laid out as `Option<T>` in the parent struct, no heap). The
+// `self_ref` field is recursive and must be silently kept on `Box`. Exercises
+// the decode (`get_or_insert_default`), encode (deref), and view→owned (`some`)
+// paths through the inline pointer, plus the recursion guard.
+message Outer {
+  Inner inner = 1;
+  Inner maybe = 2;
+  int32 count = 3;
+  Outer self_ref = 4;
+}
+
+message Inner {
+  int32 id = 1;
+  string name = 2;
+}

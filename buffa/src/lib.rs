@@ -252,7 +252,7 @@ pub use message::{
     DecodeContext, DecodeOptions, Message, MessageName, DEFAULT_UNKNOWN_FIELD_LIMIT,
     RECURSION_LIMIT,
 };
-pub use message_field::{DefaultInstance, MessageField, ProtoBox};
+pub use message_field::{DefaultInstance, Inline, MessageField, ProtoBox};
 pub use oneof::Oneof;
 pub use size_cache::{SizeCache, SizeCachePool};
 pub use types::{ProtoBytes, ProtoList, ProtoString, WirePayload};

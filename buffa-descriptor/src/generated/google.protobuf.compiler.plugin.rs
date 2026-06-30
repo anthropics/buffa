@@ -393,7 +393,7 @@ pub struct CodeGeneratorRequest {
             skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
         )
     )]
-    pub compiler_version: ::buffa::MessageField<Version>,
+    pub compiler_version: ::buffa::MessageField<Version, ::buffa::Inline<Version>>,
     #[cfg_attr(feature = "json", serde(skip))]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1337,7 +1337,10 @@ pub mod code_generator_response {
                 skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
             )
         )]
-        pub generated_code_info: ::buffa::MessageField<super::super::GeneratedCodeInfo>,
+        pub generated_code_info: ::buffa::MessageField<
+            super::super::GeneratedCodeInfo,
+            ::buffa::Inline<super::super::GeneratedCodeInfo>,
+        >,
         #[cfg_attr(feature = "json", serde(skip))]
         #[doc(hidden)]
         pub __buffa_unknown_fields: ::buffa::UnknownFields,

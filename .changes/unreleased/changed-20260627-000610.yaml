@@ -1,0 +1,3 @@
+kind: Changed
+body: 'Documented the struct evolution policy for generated types: exhaustive struct literals and destructuring of generated message/view structs are not covered by semver. See the `Message` trait docs. (#202, #244)'
+time: 2026-06-27T00:06:10.071892619Z

@@ -342,7 +342,7 @@ if msg.address.is_set() { ... }
 msg.address.get_or_insert_default().street = "123 Main St".into();
 ```
 
-`MessageField<T>` is heap-allocated (`Option<Box<T>>` internally) so the struct size stays small, but the Deref impl provides transparent read access through a lazily-initialized `&'static T` default singleton.
+`MessageField<T, P>` stores the message inline by default (`Option<Inline<T>>` ≡ `Option<T>` — no per-field heap allocation), with recursive fields and explicit `box_type_in(PointerRepr::Box, …)` opt-outs falling back to `Option<Box<T>>`. The Deref impl provides transparent read access through a lazily-initialized `&'static T` default singleton.
 
 ### 4. EnumValue\<T\> — Type-Safe Open Enums
 

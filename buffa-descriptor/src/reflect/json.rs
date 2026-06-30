@@ -462,14 +462,18 @@ impl<'de> Visitor<'de> for MessageVisitor {
                         }
                     }
                 }
-                // Re-resolve the descriptor by number (the `fd` borrow was
+                // Re-resolve the field by number (the `fd` borrow was
                 // released before `next_value_seed` mutated `msg`). The
                 // declared-field lookup misses extension numbers, so fall
-                // back to the pool's extension index.
-                if let Some(fd) = self.pool.message(self.msg_idx).field(number) {
-                    msg.set(fd, v);
-                } else if let Some(ext) = self.pool.extension_for(self.msg_idx, number) {
-                    msg.set(ext.field(), v);
+                // back to the pool's extension index. Membership is proven
+                // by construction here — the field was just resolved from
+                // this message's own pool — and oneof siblings were cleared
+                // above, so insert directly instead of paying `set`'s
+                // re-validation lookup and duplicate oneof sweep per field.
+                if self.pool.message(self.msg_idx).field(number).is_some()
+                    || self.pool.extension_for(self.msg_idx, number).is_some()
+                {
+                    msg.insert_value(number, v);
                 }
             }
         }
