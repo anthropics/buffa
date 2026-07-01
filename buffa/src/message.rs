@@ -764,12 +764,13 @@ impl DecodeOptions {
     /// the limit is exceeded, decoding returns
     /// [`DecodeError::UnknownFieldLimitExceeded`].
     ///
-    /// Zero-copy view decoding ([`decode_view`](Self::decode_view)) counts
-    /// **coalesced spans** — one per contiguous run of unknown fields, at
-    /// ~16 bytes each — rather than individual fields, so the same value is
-    /// more permissive for views (a single contiguous run of any length
-    /// costs one slot). Converting a view to an owned message re-materializes
-    /// unknown fields under the *default* limit, not this one.
+    /// Zero-copy view decoding ([`decode_view`](Self::decode_view)) charges
+    /// one slot per unknown field — including fields nested inside unknown
+    /// groups — even though views store unknown fields as coalesced spans
+    /// (~16 bytes per contiguous run): coalescing bounds view memory, while
+    /// this limit bounds what converting the view to an owned message would
+    /// materialize. Conversion replays under exactly the budget decoding
+    /// charged, so a view that decodes within this limit always converts.
     ///
     /// Default: 1,000,000 ([`DEFAULT_UNKNOWN_FIELD_LIMIT`]).
     #[must_use]
@@ -901,8 +902,9 @@ impl DecodeOptions {
     /// Decode a zero-copy view from a byte slice.
     ///
     /// Enforces `max_message_size` on the input, and passes the recursion
-    /// limit and unknown-field limit to the view decoder (views count
-    /// coalesced unknown-field spans against the limit — see
+    /// limit and unknown-field limit to the view decoder (views charge the
+    /// unknown-field limit per field, including fields nested in unknown
+    /// groups — see
     /// [`with_unknown_field_limit`](Self::with_unknown_field_limit)).
     ///
     /// # Errors

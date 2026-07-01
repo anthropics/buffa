@@ -499,6 +499,67 @@ pub fn skip_field_depth(tag: Tag, buf: &mut impl Buf, depth: u32) -> Result<(), 
     Ok(())
 }
 
+/// What [`register_unknown_record`] charged for one span: the slot count
+/// and the maximum group-nesting depth. `UnknownFieldsView` accumulates
+/// these so `to_owned` can replay under exactly the budget decode charged.
+pub(crate) struct UnknownSpanCharge {
+    /// Slots charged — one per field at every nesting level, matching the
+    /// `UnknownField`s [`decode_unknown_field`] materializes for the span.
+    pub fields: usize,
+    /// Deepest group nesting in the span — the recursion depth
+    /// [`decode_unknown_field`] needs to re-materialize it.
+    pub depth: u32,
+}
+
+/// Charge `ctx`'s unknown-field allowance with exactly the slots
+/// [`decode_unknown_field`] consumes when `span` is re-materialized: one per
+/// `(tag, value)` record, plus one per field nested inside unknown groups.
+///
+/// That count is simply the number of non-`EndGroup` tags in the span
+/// (`decode_unknown_field` materializes one `UnknownField` per field at
+/// every nesting level, and `EndGroup` tags close groups rather than start
+/// fields), so a flat scan suffices — no recursion, and no re-validation of
+/// group framing. `span` must hold complete records whose group tags are
+/// balanced and matched, which every caller guarantees by capturing the
+/// span from a successful [`skip_field_depth`] walk.
+///
+/// This is the decode-time accounting twin of [`decode_unknown_field`]:
+/// zero-copy view decoding stores the raw record bytes and defers
+/// materialization to `UnknownFieldsView::to_owned`, so it charges the
+/// allowance here instead, keeping decode-time and replay-time counts
+/// identical.
+pub(crate) fn register_unknown_record(
+    span: &[u8],
+    ctx: crate::DecodeContext<'_>,
+) -> Result<UnknownSpanCharge, DecodeError> {
+    let mut cur = span;
+    let mut charge = UnknownSpanCharge {
+        fields: 0,
+        depth: 0,
+    };
+    let mut depth = 0u32;
+    while !cur.is_empty() {
+        let tag = Tag::decode(&mut cur)?;
+        match tag.wire_type() {
+            WireType::EndGroup => depth = depth.saturating_sub(1),
+            WireType::StartGroup => {
+                ctx.register_unknown_field()?;
+                charge.fields = charge.fields.saturating_add(1);
+                depth = depth.saturating_add(1);
+                charge.depth = charge.depth.max(depth);
+            }
+            // Non-group payloads never recurse, so the depth argument is
+            // unused — pass zero rather than threading `ctx.depth()`.
+            _ => {
+                ctx.register_unknown_field()?;
+                charge.fields = charge.fields.saturating_add(1);
+                skip_field_depth(tag, &mut cur, 0)?;
+            }
+        }
+    }
+    Ok(charge)
+}
+
 /// Decode one unknown field's value from `buf` and return it as an
 /// [`UnknownField`](crate::unknown_fields::UnknownField).
 ///
