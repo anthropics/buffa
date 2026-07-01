@@ -1012,7 +1012,7 @@ Raise the limit if you decode trusted messages that legitimately carry more
 unknown fields (e.g. a proxy forwarding messages with a huge unpacked
 repeated field from a much newer schema).
 
-Zero-copy view decoding (`decode_view`) honors the same limit, but counts **coalesced spans** — one per contiguous run of unknown fields (~16 bytes each) — rather than individual fields, since views store unknown fields as borrowed byte ranges instead of materializing them. The same numeric limit is therefore more permissive for views; the per-field cost is only paid (under the default limit) when converting a view to an owned message.
+Zero-copy view decoding (`decode_view`) honors the same limit with per-field accounting (one slot per unknown field, including fields nested inside unknown groups), even though views store unknown fields as borrowed byte ranges (coalesced into one span per contiguous run, ~16 bytes each) instead of materializing them. The limit bounds what converting the view to an owned message would materialize, and the conversion replays under exactly the budget decoding charged — so a view that decodes successfully always converts via `to_owned_message` without error.
 
 The default `Message::decode` / `decode_from_slice` methods use the defaults (100 depth, 2 GiB max input, 1M unknown fields). `DecodeOptions` is only needed when you want different limits.
 
@@ -1039,8 +1039,10 @@ use buffa::MessageView;
 let view = PersonView::decode_view(&bytes)?;
 println!("name: {}", view.name);  // &str, no allocation
 
-// Convert to owned when needed (e.g., for storage or mutation)
-let owned: Person = view.to_owned_message();
+// Convert to owned when needed (e.g., for storage or mutation).
+// Infallible for views produced by decode_view; the Result covers
+// hand-written view impls.
+let owned: Person = view.to_owned_message()?;
 ```
 
 Views are ideal for read-only request handlers where the message doesn't outlive the input buffer. They're typically 1.5-4x faster than owned decoding.
@@ -1129,7 +1131,7 @@ let person = view.view();
 for tag in person.tags.iter() { /* ... */ }
 
 // Convert to owned if needed for storage or mutation
-let owned: Person = view.to_owned_message();
+let owned: Person = view.to_owned_message()?;
 ```
 
 When working with the generic `OwnedView<V>` directly (for example, a request type handed to you by an RPC framework), reach the inner view with `reborrow()`, which ties the borrow to the `OwnedView` itself: `let person = view.reborrow();` then `person.name`. Field access directly on the handle is deliberately not provided — the stored view's lifetime is a synthetic `'static`, and exposing it would let field borrows outlive the buffer they point into.

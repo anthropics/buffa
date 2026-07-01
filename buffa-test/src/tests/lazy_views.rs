@@ -374,8 +374,8 @@ fn extern_wkt_field_stays_eager() {
 fn unknown_field_allowance_flows_through_lazy_boundary() {
     // The allowance remaining at the deferred field's record site is captured
     // and replayed per access — a per-subtree approximation of the shared
-    // pool, not the exact shared accounting of a fully-eager decode. View
-    // decoding charges one unit per *coalesced unknown span*.
+    // pool, not the exact shared accounting of a fully-eager decode. Unknown
+    // records at decoded levels charge one unit per field.
     let mut payload_bytes = Payload {
         name: "x".into(),
         ..Default::default()

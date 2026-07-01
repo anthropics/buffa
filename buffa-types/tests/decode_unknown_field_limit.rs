@@ -143,9 +143,12 @@ fn limit_spans_nested_groups() {
 // ── Zero-copy view path ────────────────────────────────────────────────────
 //
 // Views store unknown fields as borrowed spans rather than decoded values,
-// and adjacent unknown records coalesce into a single span — so a contiguous
-// flood costs one slot regardless of field count, while interleaved runs
-// are counted per span against the same unknown-field limit.
+// and adjacent unknown records coalesce into a single span — but the limit
+// counts what converting the view to an owned message would materialize:
+// one per record, plus one per field nested inside unknown groups.
+// Coalescing saves memory, not allowance, which gives the view path its
+// invariant: a payload that decodes as a view always converts via
+// `to_owned_message`.
 
 mod view_path {
     use super::*;
@@ -153,23 +156,38 @@ mod view_path {
     use buffa_types::google::protobuf::__buffa::view::{DurationView, EmptyView};
 
     #[test]
-    fn contiguous_unknown_flood_coalesces_to_one_span() {
-        // 100k unknown varint fields, fully contiguous: one span, one slot.
+    fn contiguous_unknown_flood_counted_per_record() {
+        // 100k unknown varint fields, fully contiguous: one coalesced span,
+        // but 100k allowance slots — a limit below the record count rejects
+        // the payload at decode, exactly like the owned path. At exactly
+        // the record count, the boundary of the invariant: whatever decodes
+        // must convert, never failing later at `to_owned_message`.
         let payload = flat_varint_flood(100_000);
-        let view: EmptyView = DecodeOptions::new()
-            .with_unknown_field_limit(1)
-            .decode_view(&payload)
-            .expect("a contiguous flood coalesces into a single span");
-        // Converting to owned materializes one UnknownField per record, so
-        // the decode-time allowance (1) carries through and is enforced.
-        assert_eq!(
-            view.to_owned_message(),
+        assert!(matches!(
+            DecodeOptions::new()
+                .with_unknown_field_limit(99_999)
+                .decode_view::<EmptyView>(&payload),
             Err(DecodeError::UnknownFieldLimitExceeded)
-        );
-        // With an adequate allowance the round-trip is byte-identical.
-        let view: EmptyView = EmptyView::decode_view(&payload).expect("default limit");
-        let owned = view.to_owned_message().expect("within default allowance");
+        ));
+        let view: EmptyView = DecodeOptions::new()
+            .with_unknown_field_limit(100_000)
+            .decode_view(&payload)
+            .expect("limit exactly covers the record count");
+        let owned = view.to_owned_message().expect("decoded, so convertible");
         assert_eq!(owned.encode_to_vec(), payload);
+    }
+
+    #[test]
+    fn flood_over_default_limit_rejected_at_view_decode() {
+        // The regression this accounting fixes: a ~2 MiB payload of
+        // contiguous 2-byte unknown records exceeding the default limit
+        // used to decode as a view (one span, one slot) and then fail
+        // `to_owned_message`. It must fail at decode instead.
+        let payload = flat_varint_flood(OVER_DEFAULT_LIMIT);
+        assert!(matches!(
+            EmptyView::decode_view(&payload),
+            Err(DecodeError::UnknownFieldLimitExceeded)
+        ));
     }
 
     #[test]
@@ -206,25 +224,42 @@ mod view_path {
 
     #[test]
     fn group_flood_through_views_is_bounded() {
-        // The group payload through the view path: the group is skipped
-        // (not recursed into) and captured as one contiguous span. The
-        // decode-time allowance carries into conversion, where each nested
-        // record materializes as an owned field.
+        // The group payload through the view path: the group is stored as
+        // one contiguous span, but charged like the owned path — the group
+        // field plus each nested field, N + 1 slots for a group of N (the
+        // view twin of `limit_is_exact`). Conversion then always fits the
+        // captured allowance.
         let payload = group_amp(100_000);
-        let view: EmptyView = DecodeOptions::new()
-            .with_unknown_field_limit(1)
-            .decode_view(&payload)
-            .expect("one span for the whole group record");
-        assert_eq!(
-            view.to_owned_message(),
+        assert!(matches!(
+            DecodeOptions::new()
+                .with_unknown_field_limit(100_000)
+                .decode_view::<EmptyView>(&payload),
             Err(DecodeError::UnknownFieldLimitExceeded)
-        );
-        let view: EmptyView = EmptyView::decode_view(&payload).expect("default limit");
+        ));
+        let view: EmptyView = DecodeOptions::new()
+            .with_unknown_field_limit(100_001)
+            .decode_view(&payload)
+            .expect("exactly enough slots");
         assert_eq!(
             view.to_owned_message()
-                .expect("default allowance")
+                .expect("decoded, so convertible")
                 .encode_to_vec(),
             payload
         );
+    }
+
+    #[test]
+    fn deep_unknown_group_converts_under_raised_recursion_limit() {
+        // The invariant must hold for any decode configuration, including
+        // a recursion limit above the default: conversion replays with the
+        // group-nesting depth tracked at decode time, so an unknown group
+        // decodable only under a raised limit still converts.
+        let depth = 120usize; // > default RECURSION_LIMIT of 100
+        let mut payload = vec![0x0bu8; depth]; // StartGroup ×120
+        payload.resize(2 * depth, 0x0c); // EndGroup ×120
+        let opts = DecodeOptions::new().with_recursion_limit(150);
+        let view: EmptyView = opts.decode_view(&payload).expect("within 150");
+        let owned = view.to_owned_message().expect("decoded, so convertible");
+        assert_eq!(owned.encode_to_vec(), payload);
     }
 }
