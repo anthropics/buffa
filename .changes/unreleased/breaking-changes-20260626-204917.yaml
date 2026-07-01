@@ -1,0 +1,17 @@
+kind: Breaking changes
+body: |-
+    **`WirePayload` is now an opaque struct.** The 0.8.0 public-variant
+    enum (`Borrowed(&[u8])` / `Owned(Bytes)`) is replaced by a struct with
+    private fields, the same accessors (`as_slice`, `to_str`, `into_bytes`,
+    plus new `len` / `is_empty` / `is_owned`), and
+    `WirePayload::borrowed(&[u8])` / `WirePayload::owned(Bytes)`
+    constructors. `ProtoString` / `ProtoBytes` `from_wire` implementations
+    that use the accessors are unaffected; code that *constructed*
+    `WirePayload::Borrowed(..)` / `::Owned(..)` migrates by lowercasing to
+    `::borrowed(..)` / `::owned(..)`; code that *matched* on the variants
+    moves to the accessors — `is_owned()` covers the
+    take-the-`Bytes`-only-when-free pattern. The reshape lets a borrowed
+    payload carry the surrounding wire-buffer tail, so `to_str` now reaches
+    the slack-aware UTF-8 validator on the custom-`ProtoString` decode path
+    (it was the one `string` decode site #241 didn't cover).
+time: 2026-06-26T20:49:17.028558817Z
