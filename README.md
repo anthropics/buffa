@@ -56,8 +56,6 @@ These are intentionally out of scope:
 
 These are gaps we intend to address in future releases:
 
-- **Closed-enum unknown values in packed-repeated view decode** are silently dropped (not routed to unknown fields). The owned decoder handles this correctly; the view decoder handles singular, optional, oneof, unpacked repeated, and map values correctly. Packed blobs have no per-element tag to borrow, so the zero-copy `UnknownFieldsView<'a>` has no span to reference.
-
 ## Semver and API stability
 
 Buffa is pre-1.0. We follow the [Rust community convention](https://doc.rust-lang.org/cargo/reference/semver.html) for 0.x crates: breaking changes increment the **minor** version (0.1.x → 0.2.0), additive changes increment the **patch** version (0.1.0 → 0.1.1). Pin to a minor version (`buffa = "x.y"`; the full `x.y.z` that `cargo add buffa` writes is equivalent under caret semantics) to avoid surprises.
