@@ -376,7 +376,7 @@ mod tests {
         // through to_owned_from_source(Some(&self.bytes)), so the bytes field
         // is a zero-copy slice_ref into the retained buffer.
         let ov = OwnedView::<AnyView<'static>>::decode(buf.clone()).unwrap();
-        let owned2 = ov.to_owned_message().unwrap();
+        let owned2 = ov.to_owned_message();
         assert_eq!(owned2.value, src.value);
         assert!(buf_range.contains(&(owned2.value.as_ptr() as usize)));
 

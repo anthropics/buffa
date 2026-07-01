@@ -214,13 +214,13 @@ impl FileDescriptorSetOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::FileDescriptorSet, ::buffa::DecodeError> {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::FileDescriptorSet {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -955,16 +955,13 @@ impl FileDescriptorProtoOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<
-        super::super::FileDescriptorProto,
-        ::buffa::DecodeError,
-    > {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::FileDescriptorProto {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -1712,13 +1709,13 @@ impl DescriptorProtoOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::DescriptorProto, ::buffa::DecodeError> {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::DescriptorProto {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -2143,16 +2140,15 @@ pub mod descriptor_proto {
         }
         /// Convert to the owned message type.
         ///
-        /// # Errors
-        ///
-        /// Returns an error if re-materializing preserved unknown fields
-        /// fails (e.g. the unknown-field limit is exceeded).
+        /// Infallible: this type's constructors wire-decode their
+        /// buffer, and a view produced by wire decoding always
+        /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+        /// whose contract also governs handles converted from a raw
+        /// [`::buffa::OwnedView`].
+        #[must_use]
         pub fn to_owned_message(
             &self,
-        ) -> ::core::result::Result<
-            super::super::super::descriptor_proto::ExtensionRange,
-            ::buffa::DecodeError,
-        > {
+        ) -> super::super::super::descriptor_proto::ExtensionRange {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -2443,16 +2439,15 @@ pub mod descriptor_proto {
         }
         /// Convert to the owned message type.
         ///
-        /// # Errors
-        ///
-        /// Returns an error if re-materializing preserved unknown fields
-        /// fails (e.g. the unknown-field limit is exceeded).
+        /// Infallible: this type's constructors wire-decode their
+        /// buffer, and a view produced by wire decoding always
+        /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+        /// whose contract also governs handles converted from a raw
+        /// [`::buffa::OwnedView`].
+        #[must_use]
         pub fn to_owned_message(
             &self,
-        ) -> ::core::result::Result<
-            super::super::super::descriptor_proto::ReservedRange,
-            ::buffa::DecodeError,
-        > {
+        ) -> super::super::super::descriptor_proto::ReservedRange {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -2871,16 +2866,13 @@ impl ExtensionRangeOptionsOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<
-        super::super::ExtensionRangeOptions,
-        ::buffa::DecodeError,
-    > {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::ExtensionRangeOptions {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -3265,16 +3257,15 @@ pub mod extension_range_options {
         }
         /// Convert to the owned message type.
         ///
-        /// # Errors
-        ///
-        /// Returns an error if re-materializing preserved unknown fields
-        /// fails (e.g. the unknown-field limit is exceeded).
+        /// Infallible: this type's constructors wire-decode their
+        /// buffer, and a view produced by wire decoding always
+        /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+        /// whose contract also governs handles converted from a raw
+        /// [`::buffa::OwnedView`].
+        #[must_use]
         pub fn to_owned_message(
             &self,
-        ) -> ::core::result::Result<
-            super::super::super::extension_range_options::Declaration,
-            ::buffa::DecodeError,
-        > {
+        ) -> super::super::super::extension_range_options::Declaration {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -3848,16 +3839,13 @@ impl FieldDescriptorProtoOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<
-        super::super::FieldDescriptorProto,
-        ::buffa::DecodeError,
-    > {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::FieldDescriptorProto {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -4258,16 +4246,13 @@ impl OneofDescriptorProtoOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<
-        super::super::OneofDescriptorProto,
-        ::buffa::DecodeError,
-    > {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::OneofDescriptorProto {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -4712,16 +4697,13 @@ impl EnumDescriptorProtoOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<
-        super::super::EnumDescriptorProto,
-        ::buffa::DecodeError,
-    > {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::EnumDescriptorProto {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -5047,16 +5029,15 @@ pub mod enum_descriptor_proto {
         }
         /// Convert to the owned message type.
         ///
-        /// # Errors
-        ///
-        /// Returns an error if re-materializing preserved unknown fields
-        /// fails (e.g. the unknown-field limit is exceeded).
+        /// Infallible: this type's constructors wire-decode their
+        /// buffer, and a view produced by wire decoding always
+        /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+        /// whose contract also governs handles converted from a raw
+        /// [`::buffa::OwnedView`].
+        #[must_use]
         pub fn to_owned_message(
             &self,
-        ) -> ::core::result::Result<
-            super::super::super::enum_descriptor_proto::EnumReservedRange,
-            ::buffa::DecodeError,
-        > {
+        ) -> super::super::super::enum_descriptor_proto::EnumReservedRange {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -5384,16 +5365,13 @@ impl EnumValueDescriptorProtoOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<
-        super::super::EnumValueDescriptorProto,
-        ::buffa::DecodeError,
-    > {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::EnumValueDescriptorProto {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -5745,16 +5723,13 @@ impl ServiceDescriptorProtoOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<
-        super::super::ServiceDescriptorProto,
-        ::buffa::DecodeError,
-    > {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::ServiceDescriptorProto {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -6154,16 +6129,13 @@ impl MethodDescriptorProtoOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<
-        super::super::MethodDescriptorProto,
-        ::buffa::DecodeError,
-    > {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::MethodDescriptorProto {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -7011,13 +6983,13 @@ impl FileOptionsOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::FileOptions, ::buffa::DecodeError> {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::FileOptions {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -7707,13 +7679,13 @@ impl MessageOptionsOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::MessageOptions, ::buffa::DecodeError> {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::MessageOptions {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -8561,13 +8533,13 @@ impl FieldOptionsOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::FieldOptions, ::buffa::DecodeError> {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::FieldOptions {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -9008,16 +8980,15 @@ pub mod field_options {
         }
         /// Convert to the owned message type.
         ///
-        /// # Errors
-        ///
-        /// Returns an error if re-materializing preserved unknown fields
-        /// fails (e.g. the unknown-field limit is exceeded).
+        /// Infallible: this type's constructors wire-decode their
+        /// buffer, and a view produced by wire decoding always
+        /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+        /// whose contract also governs handles converted from a raw
+        /// [`::buffa::OwnedView`].
+        #[must_use]
         pub fn to_owned_message(
             &self,
-        ) -> ::core::result::Result<
-            super::super::super::field_options::EditionDefault,
-            ::buffa::DecodeError,
-        > {
+        ) -> super::super::super::field_options::EditionDefault {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -9383,16 +9354,15 @@ pub mod field_options {
         }
         /// Convert to the owned message type.
         ///
-        /// # Errors
-        ///
-        /// Returns an error if re-materializing preserved unknown fields
-        /// fails (e.g. the unknown-field limit is exceeded).
+        /// Infallible: this type's constructors wire-decode their
+        /// buffer, and a view produced by wire decoding always
+        /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+        /// whose contract also governs handles converted from a raw
+        /// [`::buffa::OwnedView`].
+        #[must_use]
         pub fn to_owned_message(
             &self,
-        ) -> ::core::result::Result<
-            super::super::super::field_options::FeatureSupport,
-            ::buffa::DecodeError,
-        > {
+        ) -> super::super::super::field_options::FeatureSupport {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -9747,13 +9717,13 @@ impl OneofOptionsOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::OneofOptions, ::buffa::DecodeError> {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::OneofOptions {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -10168,13 +10138,13 @@ impl EnumOptionsOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::EnumOptions, ::buffa::DecodeError> {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::EnumOptions {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -10646,13 +10616,13 @@ impl EnumValueOptionsOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::EnumValueOptions, ::buffa::DecodeError> {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::EnumValueOptions {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -11051,13 +11021,13 @@ impl ServiceOptionsOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::ServiceOptions, ::buffa::DecodeError> {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::ServiceOptions {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -11473,13 +11443,13 @@ impl MethodOptionsOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::MethodOptions, ::buffa::DecodeError> {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::MethodOptions {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -11923,16 +11893,13 @@ impl UninterpretedOptionOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<
-        super::super::UninterpretedOption,
-        ::buffa::DecodeError,
-    > {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::UninterpretedOption {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -12255,16 +12222,15 @@ Distinguishes a field that was absent from one explicitly encoded with its defau
         }
         /// Convert to the owned message type.
         ///
-        /// # Errors
-        ///
-        /// Returns an error if re-materializing preserved unknown fields
-        /// fails (e.g. the unknown-field limit is exceeded).
+        /// Infallible: this type's constructors wire-decode their
+        /// buffer, and a view produced by wire decoding always
+        /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+        /// whose contract also governs handles converted from a raw
+        /// [`::buffa::OwnedView`].
+        #[must_use]
         pub fn to_owned_message(
             &self,
-        ) -> ::core::result::Result<
-            super::super::super::uninterpreted_option::NamePart,
-            ::buffa::DecodeError,
-        > {
+        ) -> super::super::super::uninterpreted_option::NamePart {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -12763,13 +12729,13 @@ impl FeatureSetOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::FeatureSet, ::buffa::DecodeError> {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::FeatureSet {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -13054,16 +13020,15 @@ pub mod feature_set {
         }
         /// Convert to the owned message type.
         ///
-        /// # Errors
-        ///
-        /// Returns an error if re-materializing preserved unknown fields
-        /// fails (e.g. the unknown-field limit is exceeded).
+        /// Infallible: this type's constructors wire-decode their
+        /// buffer, and a view produced by wire decoding always
+        /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+        /// whose contract also governs handles converted from a raw
+        /// [`::buffa::OwnedView`].
+        #[must_use]
         pub fn to_owned_message(
             &self,
-        ) -> ::core::result::Result<
-            super::super::super::feature_set::VisibilityFeature,
-            ::buffa::DecodeError,
-        > {
+        ) -> super::super::super::feature_set::VisibilityFeature {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -13397,13 +13362,13 @@ impl FeatureSetDefaultsOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::FeatureSetDefaults, ::buffa::DecodeError> {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::FeatureSetDefaults {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -13822,16 +13787,15 @@ pub mod feature_set_defaults {
         }
         /// Convert to the owned message type.
         ///
-        /// # Errors
-        ///
-        /// Returns an error if re-materializing preserved unknown fields
-        /// fails (e.g. the unknown-field limit is exceeded).
+        /// Infallible: this type's constructors wire-decode their
+        /// buffer, and a view produced by wire decoding always
+        /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+        /// whose contract also governs handles converted from a raw
+        /// [`::buffa::OwnedView`].
+        #[must_use]
         pub fn to_owned_message(
             &self,
-        ) -> ::core::result::Result<
-            super::super::super::feature_set_defaults::FeatureSetEditionDefault,
-            ::buffa::DecodeError,
-        > {
+        ) -> super::super::super::feature_set_defaults::FeatureSetEditionDefault {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -14168,13 +14132,13 @@ impl SourceCodeInfoOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::SourceCodeInfo, ::buffa::DecodeError> {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::SourceCodeInfo {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -14705,16 +14669,15 @@ pub mod source_code_info {
         }
         /// Convert to the owned message type.
         ///
-        /// # Errors
-        ///
-        /// Returns an error if re-materializing preserved unknown fields
-        /// fails (e.g. the unknown-field limit is exceeded).
+        /// Infallible: this type's constructors wire-decode their
+        /// buffer, and a view produced by wire decoding always
+        /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+        /// whose contract also governs handles converted from a raw
+        /// [`::buffa::OwnedView`].
+        #[must_use]
         pub fn to_owned_message(
             &self,
-        ) -> ::core::result::Result<
-            super::super::super::source_code_info::Location,
-            ::buffa::DecodeError,
-        > {
+        ) -> super::super::super::source_code_info::Location {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
@@ -15086,13 +15049,13 @@ impl GeneratedCodeInfoOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::GeneratedCodeInfo, ::buffa::DecodeError> {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::GeneratedCodeInfo {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -15484,16 +15447,15 @@ pub mod generated_code_info {
         }
         /// Convert to the owned message type.
         ///
-        /// # Errors
-        ///
-        /// Returns an error if re-materializing preserved unknown fields
-        /// fails (e.g. the unknown-field limit is exceeded).
+        /// Infallible: this type's constructors wire-decode their
+        /// buffer, and a view produced by wire decoding always
+        /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+        /// whose contract also governs handles converted from a raw
+        /// [`::buffa::OwnedView`].
+        #[must_use]
         pub fn to_owned_message(
             &self,
-        ) -> ::core::result::Result<
-            super::super::super::generated_code_info::Annotation,
-            ::buffa::DecodeError,
-        > {
+        ) -> super::super::super::generated_code_info::Annotation {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.

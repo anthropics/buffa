@@ -81,7 +81,6 @@ fn view_to_owned_round_trip() {
     let bytes = bytes::Bytes::from(sample().encode_to_vec());
     let owned: CustomMaps = crate::map_type_custom::CustomMapsOwnedView::decode(bytes)
         .expect("decode view")
-        .to_owned_message()
-        .expect("to_owned");
+        .to_owned_message();
     assert_eq!(owned, sample());
 }

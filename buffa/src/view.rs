@@ -307,6 +307,10 @@ pub trait MessageView<'a>: Sized {
     /// budget and group-nesting depth recorded at decode time. The `Result`
     /// remains for hand-written view impls and for views holding manually
     /// pushed ([`UnknownFieldsView::push_raw`]) unknown-field spans.
+    /// [`OwnedView`], which always holds a wire-decoded view, exposes this
+    /// conversion infallibly — see
+    /// [`OwnedView::to_owned_message`](OwnedView::to_owned_message) (and the
+    /// generated `FooOwnedView` wrappers likewise).
     ///
     /// # Errors
     ///
@@ -1934,8 +1938,9 @@ impl<'a> UnknownFieldsView<'a> {
 /// println!("name: {}", person.name);
 /// println!("id: {}", person.id);
 ///
-/// // Convert to owned if you need to store or mutate
-/// let owned: Person = view.to_owned_message()?;
+/// // Convert to owned if you need to store or mutate — infallible, since
+/// // an OwnedView always holds a wire-decoded view.
+/// let owned: Person = view.to_owned_message();
 /// ```
 ///
 /// Generated code additionally provides a per-message `FooOwnedView` wrapper
@@ -2029,6 +2034,18 @@ impl<V> Drop for OwnedView<V> {
     }
 }
 
+/// Panic path for [`OwnedView::to_owned_message`], hoisted out of the
+/// generic method so the format machinery is emitted once rather than per
+/// monomorphization — the branch is unreachable for generated view types.
+#[cold]
+#[inline(never)]
+fn convert_contract_violated(e: DecodeError) -> ! {
+    panic!(
+        "OwnedView conversion failed ({e:?}): the wrapped MessageView \
+         impl violates the wire-decode => convert contract"
+    )
+}
+
 impl<V> OwnedView<V>
 where
     V: MessageView<'static>,
@@ -2104,12 +2121,25 @@ where
     /// into the retained buffer (zero-copy); other borrowed fields are
     /// allocated and copied.
     ///
-    /// # Errors
+    /// Infallible: every `OwnedView` constructor wire-decodes its view
+    /// ([`decode`](Self::decode), [`decode_with_options`](Self::decode_with_options),
+    /// [`from_owned`](Self::from_owned)) or requires wire-decode provenance
+    /// as part of its safety contract ([`from_parts`](Self::from_parts)),
+    /// and a view produced by wire decoding always converts (see
+    /// [`MessageView::to_owned_message`]).
     ///
-    /// Returns an error if re-materializing preserved unknown fields fails
-    /// (see [`MessageView::to_owned_message`]).
-    pub fn to_owned_message(&self) -> Result<V::Owned, DecodeError> {
-        self.view.to_owned_from_source(Some(&self.bytes))
+    /// # Panics
+    ///
+    /// Panics if `V`'s [`MessageView`] implementation violates the
+    /// wire-decode ⇒ convert contract. Generated view types cannot trigger
+    /// this; only a buggy hand-written impl (or a
+    /// [`from_parts`](Self::from_parts) view that breaches its safety
+    /// contract) can.
+    #[must_use]
+    pub fn to_owned_message(&self) -> V::Owned {
+        self.view
+            .to_owned_from_source(Some(&self.bytes))
+            .unwrap_or_else(|e| convert_contract_violated(e))
     }
 
     /// Get a reference to the underlying bytes buffer.
@@ -2124,10 +2154,15 @@ where
     ///
     /// # Safety
     ///
-    /// The caller must ensure that **all** borrows in `view` point into the
-    /// data region of `bytes`. In practice, `view` must have been decoded
-    /// from `bytes` (or a sub-slice that `bytes` fully contains). Violating
-    /// this invariant causes undefined behavior (dangling references).
+    /// The caller must ensure that `view` was produced by **wire-decoding**
+    /// `bytes` (or a sub-slice that `bytes` fully contains) — e.g. via
+    /// [`MessageView::decode_view`]. This guarantees both that all borrows
+    /// in `view` point into the data region of `bytes` (violating that
+    /// causes undefined behavior — dangling references) and that
+    /// [`to_owned_message`](Self::to_owned_message)'s infallible-conversion
+    /// contract holds (a manually assembled view merely borrowing from
+    /// `bytes` satisfies the borrow requirement but can make conversion
+    /// panic).
     pub unsafe fn from_parts(bytes: Bytes, view: V) -> Self {
         Self {
             view: core::mem::ManuallyDrop::new(view),
@@ -2674,8 +2709,8 @@ mod tests {
     fn to_owned_of_manual_flood_over_default_limit_fails() {
         // The replay limit stays live for manually built views: push_raw
         // spans get the default allowance, no more — the memory-
-        // amplification bound survives even though wire-decoded views can
-        // no longer hit it.
+        // amplification bound survives even though wire-decoded views
+        // cannot hit it (decode charges the allowance up front).
         let n = crate::DEFAULT_UNKNOWN_FIELD_LIMIT + 1;
         let mut buf = alloc::vec::Vec::with_capacity(2 * n);
         for _ in 0..n {
@@ -3127,10 +3162,45 @@ mod tests {
     fn owned_view_to_owned_message() {
         let bytes = encode_simple(7, "world");
         let view = OwnedView::<SimpleMessageView<'static>>::decode(bytes).unwrap();
-        let owned = view.to_owned_message().unwrap();
+        let owned = view.to_owned_message();
 
         assert_eq!(owned.id, 7);
         assert_eq!(owned.name, "world");
+    }
+
+    /// A view whose `to_owned_message` breaks the wire-decode ⇒ convert
+    /// contract, standing in for a buggy hand-written impl.
+    #[derive(Clone, Debug, Default, PartialEq)]
+    struct ContractBreakingView<'a>(core::marker::PhantomData<&'a ()>);
+
+    crate::impl_view_reborrow!(ContractBreakingView);
+
+    impl<'a> MessageView<'a> for ContractBreakingView<'a> {
+        type Owned = SimpleMessage;
+        fn merge_view_field(
+            &mut self,
+            _tag: crate::encoding::Tag,
+            cur: &'a [u8],
+            _before_tag: &'a [u8],
+            _ctx: crate::DecodeContext<'_>,
+        ) -> Result<&'a [u8], DecodeError> {
+            Ok(cur)
+        }
+        fn decode_view(_buf: &'a [u8]) -> Result<Self, DecodeError> {
+            Ok(Self(core::marker::PhantomData))
+        }
+        fn to_owned_message(&self) -> Result<SimpleMessage, DecodeError> {
+            Err(DecodeError::UnknownFieldLimitExceeded)
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "wire-decode => convert contract")]
+    fn owned_view_panics_when_impl_breaks_convert_contract() {
+        // The infallible signature rests on the decode ⇒ convert invariant;
+        // an impl that violates it must fail loudly, not silently.
+        let view = OwnedView::<ContractBreakingView<'static>>::decode(Bytes::new()).unwrap();
+        let _ = view.to_owned_message();
     }
 
     #[test]
@@ -3193,7 +3263,7 @@ mod tests {
         assert_eq!(view.reborrow().id, 99);
         assert_eq!(view.reborrow().name, "roundtrip");
 
-        let back = view.to_owned_message().unwrap();
+        let back = view.to_owned_message();
         assert_eq!(back, msg);
     }
 
