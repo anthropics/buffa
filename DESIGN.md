@@ -231,7 +231,7 @@ let request = PersonView::decode_view(&wire_bytes)?;
 println!("name: {}", request.name);  // &str, no allocation
 
 // Convert to owned if needed for storage
-let owned: Person = request.to_owned_message();
+let owned: Person = request.to_owned_message()?;
 ```
 
 **`OwnedView<V>` — views across async boundaries:**
