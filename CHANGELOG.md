@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Entries for unreleased changes live as fragment files under [`.changes/unreleased/`](.changes/unreleased/); run `task changelog-new` to add one. This file is assembled at release time — do not edit it directly.
 
+## [0.8.1] - 2026-07-01
+
+A single-fix patch release: unknown-field limit accounting for zero-copy
+views now matches owned conversion exactly, establishing the guarantee that
+a view which decodes successfully always converts to an owned message. No
+API changes, and regenerating code is not required — the fix lives in the
+runtime.
+
+### Fixed
+
+- **Zero-copy view decoding now charges the unknown-field limit per
+  re-materializable field** — one per unknown record plus, for unknown group
+  records, one per nested field — instead of one per coalesced span, and
+  conversion replays under exactly the field budget and group-nesting depth
+  recorded at decode time (previously a fixed recursion limit, which could
+  reject deep unknown groups decoded under a raised `with_recursion_limit`).
+  Decode-time accounting now matches what `to_owned_message` re-materializes,
+  which gives views a guarantee: **a view produced by `decode_view` always
+  converts via `to_owned_message` without error** (the `Result` remains for
+  hand-written impls and `push_raw`-built views). **Behavioral tightening:**
+  payloads whose unknown-field count exceeds the limit but previously slipped
+  through view decode via span coalescing — e.g. a ~2 MiB run of >1M
+  contiguous 2-byte unknown records under the default limit, or an unknown
+  group with more nested fields than the limit — now fail at view decode with
+  `UnknownFieldLimitExceeded`. Consumers that converted such views already
+  got this error at conversion; view-only consumers that re-encoded such
+  payloads without converting (e.g. a zero-copy passthrough proxy) now see it
+  at decode — raise the bound with `DecodeOptions::with_unknown_field_limit`
+  if such payloads are trusted and expected. The accounting lives in the
+  runtime (`UnknownFieldsView::push_record`), so previously generated code is
+  fixed without regeneration. (#266)
+
+[0.8.1]: https://github.com/anthropics/buffa/compare/v0.8.0...v0.8.1
+
 ## [0.8.0] - 2026-06-25
 
 The headline of this release is that the owned representation of every field
