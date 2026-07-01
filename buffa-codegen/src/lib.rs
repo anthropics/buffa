@@ -1170,7 +1170,7 @@ pub struct CodeGenConfig {
     /// A low-level knob for crates whose generated code is a public interface
     /// (`buffa-types`, the conformance harness). Set directly by `gen_wkt_types`
     /// and exposed through `buffa_build::Config::gate_reflect_on_crate_feature`
-    /// (currently `#[doc(hidden)]`, paired with the experimental vtable flag).
+    /// (currently `#[doc(hidden)]`).
     ///
     /// Defaults to `false`.
     pub gate_reflect_on_crate_feature: bool,
