@@ -322,10 +322,14 @@ pub trait MapCodec: MapValueDecode {
     /// Must equal the length [`encode`](Self::encode) actually writes for
     /// every value — [`field_len`] sizes the buffer with it. (One reason the
     /// traits are sealed.)
-    const FIXED_LEN: Option<u32> = None;
+    const FIXED_LEN: Option<u64> = None;
 
     /// Encoded payload length in bytes (no tag).
-    fn encoded_len(value: &Self::Value) -> u32;
+    ///
+    /// `u64`, like all size arithmetic feeding `compute_size` accumulators:
+    /// a huge `bytes`/`string` payload must surface as an exact over-limit
+    /// total at the encode entry points' 2 GiB check, never wrap.
+    fn encoded_len(value: &Self::Value) -> u64;
 
     /// Write the payload (no tag) to `buf`.
     fn encode(value: &Self::Value, buf: &mut impl BufMut);
@@ -356,12 +360,12 @@ macro_rules! scalar_codec {
         }
 
         impl MapCodec for $name {
-            const FIXED_LEN: Option<u32> = $fixed;
+            const FIXED_LEN: Option<u64> = $fixed;
 
             #[inline]
             #[allow(clippy::redundant_closure_call)]
-            fn encoded_len(value: &Self::Value) -> u32 {
-                ($len)(value) as u32
+            fn encoded_len(value: &Self::Value) -> u64 {
+                ($len)(value) as u64
             }
 
             #[inline]
@@ -417,49 +421,49 @@ scalar_codec!(
 );
 scalar_codec!(
     /// `bool` codec.
-    Bool, bool, WireType::Varint, Some(types::BOOL_ENCODED_LEN as u32),
+    Bool, bool, WireType::Varint, Some(types::BOOL_ENCODED_LEN as u64),
     len: |_: &bool| types::BOOL_ENCODED_LEN,
     encode: |v: &bool, buf: &mut _| types::encode_bool(*v, buf),
     decode: types::decode_bool
 );
 scalar_codec!(
     /// `fixed32` codec.
-    Fixed32, u32, WireType::Fixed32, Some(types::FIXED32_ENCODED_LEN as u32),
+    Fixed32, u32, WireType::Fixed32, Some(types::FIXED32_ENCODED_LEN as u64),
     len: |_: &u32| types::FIXED32_ENCODED_LEN,
     encode: |v: &u32, buf: &mut _| types::encode_fixed32(*v, buf),
     decode: types::decode_fixed32
 );
 scalar_codec!(
     /// `fixed64` codec.
-    Fixed64, u64, WireType::Fixed64, Some(types::FIXED64_ENCODED_LEN as u32),
+    Fixed64, u64, WireType::Fixed64, Some(types::FIXED64_ENCODED_LEN as u64),
     len: |_: &u64| types::FIXED64_ENCODED_LEN,
     encode: |v: &u64, buf: &mut _| types::encode_fixed64(*v, buf),
     decode: types::decode_fixed64
 );
 scalar_codec!(
     /// `sfixed32` codec.
-    Sfixed32, i32, WireType::Fixed32, Some(types::FIXED32_ENCODED_LEN as u32),
+    Sfixed32, i32, WireType::Fixed32, Some(types::FIXED32_ENCODED_LEN as u64),
     len: |_: &i32| types::FIXED32_ENCODED_LEN,
     encode: |v: &i32, buf: &mut _| types::encode_sfixed32(*v, buf),
     decode: types::decode_sfixed32
 );
 scalar_codec!(
     /// `sfixed64` codec.
-    Sfixed64, i64, WireType::Fixed64, Some(types::FIXED64_ENCODED_LEN as u32),
+    Sfixed64, i64, WireType::Fixed64, Some(types::FIXED64_ENCODED_LEN as u64),
     len: |_: &i64| types::FIXED64_ENCODED_LEN,
     encode: |v: &i64, buf: &mut _| types::encode_sfixed64(*v, buf),
     decode: types::decode_sfixed64
 );
 scalar_codec!(
     /// `float` codec.
-    Float, f32, WireType::Fixed32, Some(types::FIXED32_ENCODED_LEN as u32),
+    Float, f32, WireType::Fixed32, Some(types::FIXED32_ENCODED_LEN as u64),
     len: |_: &f32| types::FIXED32_ENCODED_LEN,
     encode: |v: &f32, buf: &mut _| types::encode_float(*v, buf),
     decode: types::decode_float
 );
 scalar_codec!(
     /// `double` codec.
-    Double, f64, WireType::Fixed64, Some(types::FIXED64_ENCODED_LEN as u32),
+    Double, f64, WireType::Fixed64, Some(types::FIXED64_ENCODED_LEN as u64),
     len: |_: &f64| types::FIXED64_ENCODED_LEN,
     encode: |v: &f64, buf: &mut _| types::encode_double(*v, buf),
     decode: types::decode_double
@@ -513,8 +517,8 @@ impl<B: crate::types::ProtoBytes> MapValueDecode for ProtoBytesMap<B> {
 
 impl<B: crate::types::ProtoBytes> MapCodec for ProtoBytesMap<B> {
     #[inline]
-    fn encoded_len(value: &Self::Value) -> u32 {
-        types::bytes_encoded_len(value.as_ref()) as u32
+    fn encoded_len(value: &Self::Value) -> u64 {
+        types::bytes_encoded_len(value.as_ref()) as u64
     }
 
     #[inline]
@@ -556,8 +560,8 @@ impl<S: crate::types::ProtoString> MapValueDecode for ProtoStringMap<S> {
 
 impl<S: crate::types::ProtoString> MapCodec for ProtoStringMap<S> {
     #[inline]
-    fn encoded_len(value: &Self::Value) -> u32 {
-        types::string_encoded_len(value.as_ref()) as u32
+    fn encoded_len(value: &Self::Value) -> u64 {
+        types::string_encoded_len(value.as_ref()) as u64
     }
 
     #[inline]
@@ -589,8 +593,8 @@ impl<E: Enumeration> MapValueDecode for OpenEnum<E> {
 
 impl<E: Enumeration> MapCodec for OpenEnum<E> {
     #[inline]
-    fn encoded_len(value: &Self::Value) -> u32 {
-        types::int32_encoded_len(value.to_i32()) as u32
+    fn encoded_len(value: &Self::Value) -> u64 {
+        types::int32_encoded_len(value.to_i32()) as u64
     }
 
     #[inline]
@@ -631,8 +635,8 @@ impl<E: Enumeration + Default> MapValueDecode for ClosedEnum<E> {
 
 impl<E: Enumeration + Default> MapCodec for ClosedEnum<E> {
     #[inline]
-    fn encoded_len(value: &Self::Value) -> u32 {
-        types::int32_encoded_len(value.to_i32()) as u32
+    fn encoded_len(value: &Self::Value) -> u64 {
+        types::int32_encoded_len(value.to_i32()) as u64
     }
 
     #[inline]
@@ -664,10 +668,10 @@ impl<M: Message + Default> MapValueDecode for Msg<M> {
 
 /// Key tag (field 1) and value tag (field 2) are both single-byte for every
 /// wire type, so each entry carries exactly two tag bytes.
-const ENTRY_TAG_LEN: u32 = 2;
+const ENTRY_TAG_LEN: u64 = 2;
 
 #[inline]
-fn entry_len<KC: MapCodec, VC: MapCodec>(k: &KC::Value, v: &VC::Value) -> u32 {
+fn entry_len<KC: MapCodec, VC: MapCodec>(k: &KC::Value, v: &VC::Value) -> u64 {
     ENTRY_TAG_LEN + KC::encoded_len(k) + VC::encoded_len(v)
 }
 
@@ -677,19 +681,18 @@ fn entry_len<KC: MapCodec, VC: MapCodec>(k: &KC::Value, v: &VC::Value) -> u32 {
 /// `outer_tag_len` is the encoded length of the field's outer tag (a codegen
 /// constant). When both codecs are fixed-width the per-entry size is a
 /// compile-time constant and the loop folds to `len() * entry`.
-pub fn field_len<KC: MapCodec, VC: MapCodec, C>(map: &C, outer_tag_len: u32) -> u32
+pub fn field_len<KC: MapCodec, VC: MapCodec, C>(map: &C, outer_tag_len: u64) -> u64
 where
     C: MapStorage<Key = KC::Value, Value = VC::Value>,
 {
     if let (Some(kf), Some(vf)) = (KC::FIXED_LEN, VC::FIXED_LEN) {
         let entry = ENTRY_TAG_LEN + kf + vf;
-        return map.storage_len() as u32
-            * (outer_tag_len + varint_len(entry as u64) as u32 + entry);
+        return map.storage_len() as u64 * (outer_tag_len + varint_len(entry) as u64 + entry);
     }
-    let mut size = 0u32;
+    let mut size = 0u64;
     for (k, v) in map.storage_iter() {
         let entry = entry_len::<KC, VC>(k, v);
-        size += outer_tag_len + varint_len(entry as u64) as u32 + entry;
+        size += outer_tag_len + varint_len(entry) as u64 + entry;
     }
     size
 }
@@ -703,7 +706,7 @@ where
     for (k, v) in map.storage_iter() {
         let entry = entry_len::<KC, VC>(k, v);
         Tag::new(field_number, WireType::LengthDelimited).encode(buf);
-        encode_varint(entry as u64, buf);
+        encode_varint(entry, buf);
         Tag::new(1, KC::WIRE_TYPE).encode(buf);
         KC::encode(k, buf);
         Tag::new(2, VC::WIRE_TYPE).encode(buf);
@@ -718,19 +721,20 @@ where
 /// helpers iterate the same map, so the orders match by construction.
 pub fn message_field_len<KC: MapCodec, M: Message, C>(
     map: &C,
-    outer_tag_len: u32,
+    outer_tag_len: u64,
     cache: &mut SizeCache,
-) -> u32
+) -> u64
 where
     C: MapStorage<Key = KC::Value, Value = M>,
 {
-    let mut size = 0u32;
+    let mut size = 0u64;
     for (k, v) in map.storage_iter() {
         let slot = cache.reserve();
         let inner = v.compute_size(cache);
         cache.set(slot, inner);
-        let entry = ENTRY_TAG_LEN + KC::encoded_len(k) + varint_len(inner as u64) as u32 + inner;
-        size += outer_tag_len + varint_len(entry as u64) as u32 + entry;
+        let entry =
+            ENTRY_TAG_LEN + KC::encoded_len(k) + varint_len(inner as u64) as u64 + inner as u64;
+        size += outer_tag_len + varint_len(entry) as u64 + entry;
     }
     size
 }
@@ -747,9 +751,10 @@ pub fn write_message_field<KC: MapCodec, M: Message, C>(
 {
     for (k, v) in map.storage_iter() {
         let inner = cache.consume_next();
-        let entry = ENTRY_TAG_LEN + KC::encoded_len(k) + varint_len(inner as u64) as u32 + inner;
+        let entry =
+            ENTRY_TAG_LEN + KC::encoded_len(k) + varint_len(inner as u64) as u64 + inner as u64;
         Tag::new(field_number, WireType::LengthDelimited).encode(buf);
-        encode_varint(entry as u64, buf);
+        encode_varint(entry, buf);
         Tag::new(1, KC::WIRE_TYPE).encode(buf);
         KC::encode(k, buf);
         Tag::new(2, WireType::LengthDelimited).encode(buf);
@@ -932,7 +937,7 @@ mod tests {
     fn encode_field<KC: MapCodec, VC: MapCodec>(
         map: &Map<KC::Value, VC::Value>,
         field_number: u32,
-        outer_tag_len: u32,
+        outer_tag_len: u64,
     ) -> Vec<u8>
     where
         KC::Value: Eq + Hash,
@@ -940,7 +945,7 @@ mod tests {
         let len = field_len::<KC, VC, _>(map, outer_tag_len);
         let mut buf = Vec::new();
         write_field::<KC, VC, _>(map, field_number, &mut buf);
-        assert_eq!(buf.len() as u32, len, "field_len must match written bytes");
+        assert_eq!(buf.len() as u64, len, "field_len must match written bytes");
         buf
     }
 
@@ -1138,7 +1143,7 @@ mod tests {
         let len = message_field_len::<Int32, FlatMsg, _>(&map, 1, &mut cache);
         let mut wire = Vec::new();
         write_message_field::<Int32, FlatMsg, _>(&map, 4, &mut cache, &mut wire);
-        assert_eq!(wire.len() as u32, len, "size pass must match write pass");
+        assert_eq!(wire.len() as u64, len, "size pass must match write pass");
 
         let back = decode_field::<Int32, Msg<FlatMsg>>(&wire);
         assert_eq!(back, map);

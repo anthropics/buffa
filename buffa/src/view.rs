@@ -627,22 +627,79 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     /// nested-message sizes from `cache` (populated by a prior
     /// [`compute_size`](Self::compute_size) call on the same cache).
     ///
-    /// Most callers should use [`encode`](Self::encode) instead.
+    /// Most callers should use [`encode`](Self::encode) instead. This is a
+    /// low-level primitive: the 2 GiB size check
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)) lives in the
+    /// provided encode entry points, so callers driving `compute_size` /
+    /// `write_to` directly must validate the size themselves (via
+    /// [`checked_encode_size`](crate::checked_encode_size)).
     fn write_to(&self, cache: &mut crate::SizeCache, buf: &mut impl BufMut);
 
     /// Compute size, then write. Primary view-encode entry point.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)) — see
+    /// [`try_encode`](Self::try_encode) for the error-returning variant.
+    #[inline]
     fn encode(&self, buf: &mut impl BufMut) {
+        self.try_encode(buf)
+            .unwrap_or_else(|_| crate::message::encode_size_overflow())
+    }
+
+    /// Encode, returning an error instead of panicking if the encoded size
+    /// exceeds the 2 GiB protobuf limit
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)).
+    ///
+    /// On `Err`, nothing is written to `buf`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EncodeError::MessageTooLarge`](crate::EncodeError::MessageTooLarge)
+    /// if the encoded size exceeds the limit.
+    fn try_encode(&self, buf: &mut impl BufMut) -> Result<(), crate::EncodeError> {
         let mut cache = crate::SizeCache::new();
-        self.compute_size(&mut cache);
+        crate::message::checked_encode_size(self.compute_size(&mut cache))?;
         self.write_to(&mut cache, buf);
+        Ok(())
     }
 
     /// Encode using a caller-supplied [`SizeCache`](crate::SizeCache), for
     /// reuse across many encodes in a hot loop. Clears the cache first.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)) — see
+    /// [`try_encode_with_cache`](Self::try_encode_with_cache) for the
+    /// error-returning variant.
+    #[inline]
     fn encode_with_cache(&self, cache: &mut crate::SizeCache, buf: &mut impl BufMut) {
+        self.try_encode_with_cache(cache, buf)
+            .unwrap_or_else(|_| crate::message::encode_size_overflow())
+    }
+
+    /// Encode with a caller-supplied [`SizeCache`](crate::SizeCache),
+    /// returning an error instead of panicking if the encoded size exceeds
+    /// the 2 GiB protobuf limit ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)).
+    /// Clears the cache first.
+    ///
+    /// On `Err`, nothing is written to `buf`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EncodeError::MessageTooLarge`](crate::EncodeError::MessageTooLarge)
+    /// if the encoded size exceeds the limit.
+    fn try_encode_with_cache(
+        &self,
+        cache: &mut crate::SizeCache,
+        buf: &mut impl BufMut,
+    ) -> Result<(), crate::EncodeError> {
         cache.clear();
-        self.compute_size(cache);
+        crate::message::checked_encode_size(self.compute_size(cache))?;
         self.write_to(cache, buf);
+        Ok(())
     }
 
     /// Compute the encoded byte size of this view.
@@ -651,37 +708,161 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     /// [`SizeCache`](crate::SizeCache). If you also intend to encode,
     /// prefer [`encode`](Self::encode) or [`encode_to_vec`](Self::encode_to_vec)
     /// — they do a single size pass and reuse the cache for the write.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)) — see
+    /// [`try_encoded_len`](Self::try_encoded_len) for the error-returning
+    /// variant.
+    #[inline]
     #[must_use]
     fn encoded_len(&self) -> u32 {
-        self.compute_size(&mut crate::SizeCache::new())
+        self.try_encoded_len()
+            .unwrap_or_else(|_| crate::message::encode_size_overflow())
+    }
+
+    /// Compute the encoded byte size, returning an error instead of
+    /// panicking if it exceeds the 2 GiB protobuf limit
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EncodeError::MessageTooLarge`](crate::EncodeError::MessageTooLarge)
+    /// if the encoded size exceeds the limit.
+    fn try_encoded_len(&self) -> Result<u32, crate::EncodeError> {
+        crate::message::checked_encode_size(self.compute_size(&mut crate::SizeCache::new()))
     }
 
     /// Encode this view as a length-delimited byte sequence.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)); the check runs
+    /// before the length prefix is written, so nothing reaches `buf` on
+    /// failure. See
+    /// [`try_encode_length_delimited`](Self::try_encode_length_delimited)
+    /// for the error-returning variant.
+    #[inline]
     fn encode_length_delimited(&self, buf: &mut impl BufMut) {
+        self.try_encode_length_delimited(buf)
+            .unwrap_or_else(|_| crate::message::encode_size_overflow())
+    }
+
+    /// Encode as a length-delimited byte sequence, returning an error
+    /// instead of panicking if the encoded size exceeds the 2 GiB protobuf
+    /// limit ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)).
+    ///
+    /// On `Err`, nothing is written to `buf`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EncodeError::MessageTooLarge`](crate::EncodeError::MessageTooLarge)
+    /// if the encoded size exceeds the limit.
+    fn try_encode_length_delimited(&self, buf: &mut impl BufMut) -> Result<(), crate::EncodeError> {
         let mut cache = crate::SizeCache::new();
-        let len = self.compute_size(&mut cache);
+        let len = crate::message::checked_encode_size(self.compute_size(&mut cache))?;
         crate::encoding::encode_varint(len as u64, buf);
         self.write_to(&mut cache, buf);
+        Ok(())
     }
 
     /// Encode this view to a new `Vec<u8>`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)) — see
+    /// [`try_encode_to_vec`](Self::try_encode_to_vec) for the
+    /// error-returning variant. In debug builds, also panics if a manual
+    /// implementation's `write_to` produces a different byte count than
+    /// its `compute_size` declared.
+    // Direct body rather than delegating to try_encode_to_vec — the
+    // Result<Vec<u8>> niche survives inlining and costs measurably in
+    // callers; see Message::encode_to_vec for the measurement.
+    #[inline]
     #[must_use]
     fn encode_to_vec(&self) -> alloc::vec::Vec<u8> {
         let mut cache = crate::SizeCache::new();
-        let size = self.compute_size(&mut cache) as usize;
+        let size = match crate::message::checked_encode_size(self.compute_size(&mut cache)) {
+            Ok(size) => size as usize,
+            Err(_) => crate::message::encode_size_overflow(),
+        };
         let mut buf = alloc::vec::Vec::with_capacity(size);
         self.write_to(&mut cache, &mut buf);
+        crate::message::debug_assert_two_pass(buf.len(), size);
         buf
     }
 
+    /// Encode to a new `Vec<u8>`, returning an error instead of panicking
+    /// if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EncodeError::MessageTooLarge`](crate::EncodeError::MessageTooLarge)
+    /// if the encoded size exceeds the limit.
+    ///
+    /// # Panics
+    ///
+    /// In debug builds, panics if a manual implementation's `write_to`
+    /// produces a different byte count than its `compute_size` declared.
+    fn try_encode_to_vec(&self) -> Result<alloc::vec::Vec<u8>, crate::EncodeError> {
+        let mut cache = crate::SizeCache::new();
+        let size = crate::message::checked_encode_size(self.compute_size(&mut cache))? as usize;
+        let mut buf = alloc::vec::Vec::with_capacity(size);
+        self.write_to(&mut cache, &mut buf);
+        crate::message::debug_assert_two_pass(buf.len(), size);
+        Ok(buf)
+    }
+
     /// Encode this view to a new [`bytes::Bytes`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)) — see
+    /// [`try_encode_to_bytes`](Self::try_encode_to_bytes) for the
+    /// error-returning variant. In debug builds, also panics if a manual
+    /// implementation's `write_to` produces a different byte count than
+    /// its `compute_size` declared.
+    // Direct body — see Message::encode_to_vec for why the fat-payload
+    // entry points do not delegate to their try_ twins.
+    #[inline]
     #[must_use]
     fn encode_to_bytes(&self) -> Bytes {
         let mut cache = crate::SizeCache::new();
-        let size = self.compute_size(&mut cache) as usize;
+        let size = match crate::message::checked_encode_size(self.compute_size(&mut cache)) {
+            Ok(size) => size as usize,
+            Err(_) => crate::message::encode_size_overflow(),
+        };
         let mut buf = bytes::BytesMut::with_capacity(size);
         self.write_to(&mut cache, &mut buf);
+        crate::message::debug_assert_two_pass(buf.len(), size);
         buf.freeze()
+    }
+
+    /// Encode to a new [`bytes::Bytes`], returning an error instead of
+    /// panicking if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EncodeError::MessageTooLarge`](crate::EncodeError::MessageTooLarge)
+    /// if the encoded size exceeds the limit.
+    ///
+    /// # Panics
+    ///
+    /// In debug builds, panics if a manual implementation's `write_to`
+    /// produces a different byte count than its `compute_size` declared.
+    fn try_encode_to_bytes(&self) -> Result<Bytes, crate::EncodeError> {
+        let mut cache = crate::SizeCache::new();
+        let size = crate::message::checked_encode_size(self.compute_size(&mut cache))? as usize;
+        let mut buf = bytes::BytesMut::with_capacity(size);
+        self.write_to(&mut cache, &mut buf);
+        crate::message::debug_assert_two_pass(buf.len(), size);
+        Ok(buf.freeze())
     }
 }
 
@@ -2108,10 +2289,16 @@ where
     ///
     /// # Errors
     ///
-    /// Returns [`DecodeError`] if the re-encoded bytes are somehow invalid
-    /// (should not happen for well-formed messages).
+    /// Returns [`DecodeError::MessageTooLarge`] if the message's encoded
+    /// size exceeds the 2 GiB protobuf limit
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)), or another
+    /// [`DecodeError`] if the re-encoded bytes are somehow invalid (should
+    /// not happen for well-formed messages).
     pub fn from_owned(msg: &V::Owned) -> Result<Self, DecodeError> {
-        let bytes = Bytes::from(msg.encode_to_vec());
+        let bytes = Bytes::from(
+            msg.try_encode_to_vec()
+                .map_err(|_| DecodeError::MessageTooLarge)?,
+        );
         Self::decode(bytes)
     }
 
@@ -3658,5 +3845,200 @@ mod tests {
         assert!(results[1].is_err());
         let cloned = rep.clone();
         assert_eq!(cloned.len(), 2);
+    }
+
+    // ── Encode-side 2 GiB guard tests ──────────────────────────────────
+
+    /// Test double whose `compute_size` reports a caller-chosen value and
+    /// whose `write_to` writes nothing — exercises the over-limit paths
+    /// without materializing gigabytes.
+    #[derive(Clone, Debug, Default, PartialEq)]
+    struct SizedView {
+        reported_size: u32,
+    }
+
+    impl<'a> MessageView<'a> for SizedView {
+        type Owned = SimpleMessage;
+        fn merge_view_field(
+            &mut self,
+            _tag: crate::encoding::Tag,
+            cur: &'a [u8],
+            _before_tag: &'a [u8],
+            _ctx: crate::DecodeContext<'_>,
+        ) -> Result<&'a [u8], DecodeError> {
+            Ok(cur)
+        }
+        fn decode_view(_buf: &'a [u8]) -> Result<Self, DecodeError> {
+            Ok(Self::default())
+        }
+        fn to_owned_message(&self) -> Result<SimpleMessage, DecodeError> {
+            Ok(SimpleMessage::default())
+        }
+    }
+
+    impl<'a> ViewEncode<'a> for SizedView {
+        fn compute_size(&self, _cache: &mut crate::SizeCache) -> u32 {
+            self.reported_size
+        }
+        fn write_to(&self, _cache: &mut crate::SizeCache, _buf: &mut impl bytes::BufMut) {}
+    }
+
+    const OVER_LIMIT: u32 = crate::MAX_MESSAGE_BYTES + 1;
+
+    /// View double over the shared [`SizedMsg`](crate::test_doubles::SizedMsg)
+    /// owned double, so `OwnedView::from_owned` can hit the over-limit
+    /// encode path without materializing gigabytes.
+    #[derive(Clone, Debug, Default, PartialEq)]
+    struct SizedOwnedView;
+
+    impl<'a> MessageView<'a> for SizedOwnedView {
+        type Owned = crate::test_doubles::SizedMsg;
+        fn merge_view_field(
+            &mut self,
+            _tag: crate::encoding::Tag,
+            cur: &'a [u8],
+            _before_tag: &'a [u8],
+            _ctx: crate::DecodeContext<'_>,
+        ) -> Result<&'a [u8], DecodeError> {
+            Ok(cur)
+        }
+        fn decode_view(_buf: &'a [u8]) -> Result<Self, DecodeError> {
+            Ok(Self)
+        }
+        fn to_owned_message(&self) -> Result<crate::test_doubles::SizedMsg, DecodeError> {
+            Ok(crate::test_doubles::SizedMsg::default())
+        }
+    }
+
+    #[test]
+    fn owned_view_from_owned_over_limit_errs_not_panics() {
+        // from_owned is a Result-returning API: an over-limit message must
+        // surface as Err(MessageTooLarge), never a panic from the interior
+        // encode.
+        let msg = crate::test_doubles::SizedMsg {
+            reported_size: OVER_LIMIT,
+        };
+        let res = OwnedView::<SizedOwnedView>::from_owned(&msg);
+        assert!(matches!(res, Err(DecodeError::MessageTooLarge)));
+    }
+
+    #[test]
+    #[should_panic(expected = "2 GiB protobuf limit")]
+    fn view_encode_over_limit_panics() {
+        let view = SizedView {
+            reported_size: OVER_LIMIT,
+        };
+        let mut buf = alloc::vec::Vec::new();
+        view.encode(&mut buf);
+    }
+
+    #[test]
+    #[should_panic(expected = "2 GiB protobuf limit")]
+    fn view_encoded_len_over_limit_panics() {
+        let view = SizedView {
+            reported_size: OVER_LIMIT,
+        };
+        let _ = view.encoded_len();
+    }
+
+    #[test]
+    #[should_panic(expected = "2 GiB protobuf limit")]
+    fn view_encode_length_delimited_over_limit_panics() {
+        let view = SizedView {
+            reported_size: OVER_LIMIT,
+        };
+        let mut buf = alloc::vec::Vec::new();
+        view.encode_length_delimited(&mut buf);
+    }
+
+    #[test]
+    #[should_panic(expected = "2 GiB protobuf limit")]
+    fn view_encode_to_vec_over_limit_panics() {
+        let view = SizedView {
+            reported_size: OVER_LIMIT,
+        };
+        let _ = view.encode_to_vec();
+    }
+
+    #[test]
+    #[should_panic(expected = "2 GiB protobuf limit")]
+    fn view_encode_to_bytes_over_limit_panics() {
+        let view = SizedView {
+            reported_size: OVER_LIMIT,
+        };
+        let _ = view.encode_to_bytes();
+    }
+
+    #[test]
+    #[should_panic(expected = "2 GiB protobuf limit")]
+    fn view_encode_with_cache_over_limit_panics() {
+        let view = SizedView {
+            reported_size: OVER_LIMIT,
+        };
+        let mut cache = crate::SizeCache::new();
+        let mut buf = alloc::vec::Vec::new();
+        view.encode_with_cache(&mut cache, &mut buf);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "two-pass traversal mismatch")]
+    fn view_encode_to_vec_ledger_catches_size_write_disagreement() {
+        // An under-limit reported size with a no-op write_to: the guard
+        // passes, then the debug ledger flags the two-pass divergence.
+        let view = SizedView { reported_size: 3 };
+        let _ = view.encode_to_vec();
+    }
+
+    #[test]
+    fn view_try_encode_over_limit_errors_and_writes_nothing() {
+        let view = SizedView {
+            reported_size: OVER_LIMIT,
+        };
+        let mut buf = alloc::vec::Vec::new();
+        assert_eq!(
+            view.try_encode(&mut buf),
+            Err(crate::EncodeError::MessageTooLarge)
+        );
+        assert!(buf.is_empty(), "no bytes may reach the buffer on Err");
+        let mut cache = crate::SizeCache::new();
+        assert_eq!(
+            view.try_encode_with_cache(&mut cache, &mut buf),
+            Err(crate::EncodeError::MessageTooLarge)
+        );
+        assert!(buf.is_empty(), "no bytes may reach the buffer on Err");
+        assert_eq!(
+            view.try_encode_length_delimited(&mut buf),
+            Err(crate::EncodeError::MessageTooLarge)
+        );
+        assert!(buf.is_empty(), "not even the length prefix");
+        assert_eq!(
+            view.try_encode_to_vec(),
+            Err(crate::EncodeError::MessageTooLarge)
+        );
+        assert_eq!(
+            view.try_encode_to_bytes(),
+            Err(crate::EncodeError::MessageTooLarge)
+        );
+        assert_eq!(
+            view.try_encoded_len(),
+            Err(crate::EncodeError::MessageTooLarge)
+        );
+    }
+
+    #[test]
+    fn view_try_encode_matches_encode_for_normal_views() {
+        let view = SimpleMessageView {
+            id: 42,
+            name: "hello",
+        };
+        let mut expected = alloc::vec::Vec::new();
+        view.encode(&mut expected);
+        let mut actual = alloc::vec::Vec::new();
+        view.try_encode(&mut actual).unwrap();
+        assert_eq!(actual, expected);
+        assert_eq!(view.try_encode_to_vec().unwrap(), expected);
+        assert_eq!(view.try_encode_to_bytes().unwrap(), expected);
+        assert_eq!(view.try_encoded_len().unwrap(), expected.len() as u32);
     }
 }

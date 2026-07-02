@@ -381,36 +381,157 @@ pub(crate) fn generate_lazy_view_with_nesting(
             #view_encode_methods
 
             /// Compute size, then write. Primary encode entry point.
+            ///
+            /// # Panics
+            ///
+            /// Panics if the encoded size exceeds the 2 GiB protobuf limit
+            /// ([`::buffa::MAX_MESSAGE_BYTES`]) — see
+            /// [`try_encode`](Self::try_encode) for the error-returning
+            /// variant.
+            #[inline]
             pub fn encode(&self, buf: &mut impl ::buffa::bytes::BufMut) {
+                self.try_encode(buf)
+                    .unwrap_or_else(|_| ::buffa::encode_size_overflow())
+            }
+
+            /// Encode, returning an error instead of panicking if the
+            /// encoded size exceeds the 2 GiB protobuf limit
+            /// ([`::buffa::MAX_MESSAGE_BYTES`]).
+            ///
+            /// On `Err`, nothing is written to `buf`.
+            ///
+            /// # Errors
+            ///
+            /// Returns [`::buffa::EncodeError::MessageTooLarge`] if the
+            /// encoded size exceeds the limit.
+            pub fn try_encode(
+                &self,
+                buf: &mut impl ::buffa::bytes::BufMut,
+            ) -> ::core::result::Result<(), ::buffa::EncodeError> {
                 let mut __cache = ::buffa::SizeCache::new();
-                self.compute_size(&mut __cache);
+                ::buffa::checked_encode_size(self.compute_size(&mut __cache))?;
                 self.write_to(&mut __cache, buf);
+                ::core::result::Result::Ok(())
             }
 
             /// Encoded byte size of this view.
+            ///
+            /// # Panics
+            ///
+            /// Panics if the encoded size exceeds the 2 GiB protobuf limit
+            /// ([`::buffa::MAX_MESSAGE_BYTES`]) — see
+            /// [`try_encoded_len`](Self::try_encoded_len) for the
+            /// error-returning variant.
+            #[inline]
             #[must_use]
             pub fn encoded_len(&self) -> u32 {
-                self.compute_size(&mut ::buffa::SizeCache::new())
+                self.try_encoded_len()
+                    .unwrap_or_else(|_| ::buffa::encode_size_overflow())
+            }
+
+            /// Encoded byte size, returning an error instead of panicking
+            /// if it exceeds the 2 GiB protobuf limit
+            /// ([`::buffa::MAX_MESSAGE_BYTES`]).
+            ///
+            /// # Errors
+            ///
+            /// Returns [`::buffa::EncodeError::MessageTooLarge`] if the
+            /// encoded size exceeds the limit.
+            pub fn try_encoded_len(
+                &self,
+            ) -> ::core::result::Result<u32, ::buffa::EncodeError> {
+                ::buffa::checked_encode_size(
+                    self.compute_size(&mut ::buffa::SizeCache::new()),
+                )
             }
 
             /// Encode this view to a new `Vec<u8>`.
+            ///
+            /// # Panics
+            ///
+            /// Panics if the encoded size exceeds the 2 GiB protobuf limit
+            /// ([`::buffa::MAX_MESSAGE_BYTES`]) — see
+            /// [`try_encode_to_vec`](Self::try_encode_to_vec) for the
+            /// error-returning variant.
+            #[inline]
             #[must_use]
             pub fn encode_to_vec(&self) -> ::buffa::alloc::vec::Vec<u8> {
                 let mut __cache = ::buffa::SizeCache::new();
-                let __size = self.compute_size(&mut __cache) as usize;
+                let __size = match ::buffa::checked_encode_size(
+                    self.compute_size(&mut __cache),
+                ) {
+                    ::core::result::Result::Ok(__size) => __size as usize,
+                    ::core::result::Result::Err(_) => ::buffa::encode_size_overflow(),
+                };
                 let mut __buf = ::buffa::alloc::vec::Vec::with_capacity(__size);
                 self.write_to(&mut __cache, &mut __buf);
+                ::buffa::debug_assert_two_pass(__buf.len(), __size);
                 __buf
             }
 
+            /// Encode to a new `Vec<u8>`, returning an error instead of
+            /// panicking if the encoded size exceeds the 2 GiB protobuf
+            /// limit ([`::buffa::MAX_MESSAGE_BYTES`]).
+            ///
+            /// # Errors
+            ///
+            /// Returns [`::buffa::EncodeError::MessageTooLarge`] if the
+            /// encoded size exceeds the limit.
+            pub fn try_encode_to_vec(
+                &self,
+            ) -> ::core::result::Result<::buffa::alloc::vec::Vec<u8>, ::buffa::EncodeError>
+            {
+                let mut __cache = ::buffa::SizeCache::new();
+                let __size =
+                    ::buffa::checked_encode_size(self.compute_size(&mut __cache))? as usize;
+                let mut __buf = ::buffa::alloc::vec::Vec::with_capacity(__size);
+                self.write_to(&mut __cache, &mut __buf);
+                ::buffa::debug_assert_two_pass(__buf.len(), __size);
+                ::core::result::Result::Ok(__buf)
+            }
+
             /// Encode this view to a new [`::buffa::bytes::Bytes`].
+            ///
+            /// # Panics
+            ///
+            /// Panics if the encoded size exceeds the 2 GiB protobuf limit
+            /// ([`::buffa::MAX_MESSAGE_BYTES`]) — see
+            /// [`try_encode_to_bytes`](Self::try_encode_to_bytes) for the
+            /// error-returning variant.
+            #[inline]
             #[must_use]
             pub fn encode_to_bytes(&self) -> ::buffa::bytes::Bytes {
                 let mut __cache = ::buffa::SizeCache::new();
-                let __size = self.compute_size(&mut __cache) as usize;
+                let __size = match ::buffa::checked_encode_size(
+                    self.compute_size(&mut __cache),
+                ) {
+                    ::core::result::Result::Ok(__size) => __size as usize,
+                    ::core::result::Result::Err(_) => ::buffa::encode_size_overflow(),
+                };
                 let mut __buf = ::buffa::bytes::BytesMut::with_capacity(__size);
                 self.write_to(&mut __cache, &mut __buf);
+                ::buffa::debug_assert_two_pass(__buf.len(), __size);
                 __buf.freeze()
+            }
+
+            /// Encode to a new [`::buffa::bytes::Bytes`], returning an
+            /// error instead of panicking if the encoded size exceeds the
+            /// 2 GiB protobuf limit ([`::buffa::MAX_MESSAGE_BYTES`]).
+            ///
+            /// # Errors
+            ///
+            /// Returns [`::buffa::EncodeError::MessageTooLarge`] if the
+            /// encoded size exceeds the limit.
+            pub fn try_encode_to_bytes(
+                &self,
+            ) -> ::core::result::Result<::buffa::bytes::Bytes, ::buffa::EncodeError> {
+                let mut __cache = ::buffa::SizeCache::new();
+                let __size =
+                    ::buffa::checked_encode_size(self.compute_size(&mut __cache))? as usize;
+                let mut __buf = ::buffa::bytes::BytesMut::with_capacity(__size);
+                self.write_to(&mut __cache, &mut __buf);
+                ::buffa::debug_assert_two_pass(__buf.len(), __size);
+                ::core::result::Result::Ok(__buf.freeze())
             }
         }
 

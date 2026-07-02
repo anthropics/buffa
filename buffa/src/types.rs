@@ -638,12 +638,18 @@ put_field_fn!(
 /// length coming from the [`SizeCache`](crate::SizeCache)) and for packed
 /// repeated fields (the payload loop follows).
 ///
-/// The arguments are `(field_number, len)` — both `u32`, so transposing them
-/// compiles but emits a structurally-valid-but-wrong header.
+/// The arguments are `(field_number, len)` — both plain integers, so
+/// transposing them can compile (integer literals infer either width) but
+/// emits a structurally-valid-but-wrong header.
+///
+/// `len` is `u64`, like all size arithmetic feeding the encode path;
+/// callers holding a `u32` (e.g. from
+/// [`SizeCache::consume_next`](crate::SizeCache::consume_next)) widen with
+/// `u64::from`.
 #[inline(always)]
-pub fn put_len_delimited_header(field_number: u32, len: u32, buf: &mut impl BufMut) {
+pub fn put_len_delimited_header(field_number: u32, len: u64, buf: &mut impl BufMut) {
     Tag::new(field_number, WireType::LengthDelimited).encode(buf);
-    encode_varint(len as u64, buf);
+    encode_varint(len, buf);
 }
 
 /// Write a group field's `StartGroup` tag.
