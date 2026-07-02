@@ -1,0 +1,3 @@
+kind: Fixed
+body: '64-bit integer JSON helpers now reject high-magnitude unquoted decimal/exponent numbers that serde has already rounded to an integer-valued `f64`, avoiding silent decode to the wrong `i64`/`u64`. Quote large integer values to parse them exactly.'
+time: 2026-07-02T21:58:13.000000000Z

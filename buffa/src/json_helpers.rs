@@ -908,6 +908,14 @@ fn is_exact_integer(f: f64) -> bool {
     f.is_finite() && f == (f as i128 as f64)
 }
 
+/// Largest integer-valued `f64` this visitor accepts from an unquoted JSON
+/// decimal/exponent token.
+///
+/// Above this, adjacent representable `f64`s are spaced at least one integer
+/// apart, so a rounded `visit_f64` value may no longer identify the original
+/// JSON number. Quote larger integer values to parse them exactly.
+const MAX_SAFE_JSON_INTEGER_F64: f64 = 4_503_599_627_370_495.0;
+
 /// Try to parse a string as an integer, handling float notation like `"1.0"`,
 /// `"1e5"`, `"1.0e2"`.  Returns `None` if the value is not an exact integer.
 fn parse_int_from_str<I: TryFrom<i128>>(v: &str) -> Option<I> {
@@ -983,6 +991,9 @@ fn parse_exact_decimal_int(v: &str) -> Option<i128> {
 
 /// Try to interpret an f64 as an exact integer.
 fn f64_to_int<I: TryFrom<i128>>(v: f64) -> Option<I> {
+    if !(-MAX_SAFE_JSON_INTEGER_F64..=MAX_SAFE_JSON_INTEGER_F64).contains(&v) {
+        return None;
+    }
     if !is_exact_integer(v) {
         return None;
     }
