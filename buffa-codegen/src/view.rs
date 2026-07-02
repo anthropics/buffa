@@ -44,6 +44,21 @@ fn closed_enum_view_unknown_route(preserve_unknown_fields: bool) -> TokenStream 
     }
 }
 
+/// Token stream that records a closed-enum unknown packed element as
+/// synthetic varint wire bytes in `view.__buffa_unknown_fields`.
+fn closed_enum_view_unknown_varint_route(
+    field_number: u32,
+    preserve_unknown_fields: bool,
+) -> TokenStream {
+    if preserve_unknown_fields {
+        quote! {
+            view.__buffa_unknown_fields.push_varint(#field_number, __raw as u64, ctx)?;
+        }
+    } else {
+        quote! {}
+    }
+}
+
 /// Convert a borrowed bytes view to the owned field type.
 ///
 /// When `use_bytes_type()` is active for this field, emits
@@ -1399,7 +1414,13 @@ pub(crate) fn repeated_decode_arm(
     let push_known = quote! { view.#ident.push(__v); };
     let packed_elem = if ty == Type::TYPE_ENUM {
         if closed {
-            closed_enum_decode(&quote! { &mut pcur }, push_known.clone())
+            let unknown_route =
+                closed_enum_view_unknown_varint_route(field_number, preserve_unknown_fields);
+            closed_enum_decode_with_unknown(
+                &quote! { &mut pcur },
+                push_known.clone(),
+                unknown_route,
+            )
         } else {
             quote! { view.#ident.push(::buffa::EnumValue::from(::buffa::types::decode_int32_packed(&mut pcur)?)); }
         }
