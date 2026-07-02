@@ -547,7 +547,36 @@ impl DynamicMessage {
     // ── Encode ──────────────────────────────────────────────────────────────
 
     /// Encode this message into `buf`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`buffa::MAX_MESSAGE_BYTES`]): no conforming decoder — including
+    /// buffa's own — would accept the output. See
+    /// [`try_encode`](Self::try_encode) for the error-returning variant.
     pub fn encode(&self, buf: &mut impl BufMut) {
+        Self::assert_encode_size(self.encoded_len());
+        self.encode_unchecked(buf);
+    }
+
+    /// Encode, returning an error instead of panicking if the encoded size
+    /// exceeds the 2 GiB protobuf limit ([`buffa::MAX_MESSAGE_BYTES`]).
+    ///
+    /// On `Err`, nothing is written to `buf`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`buffa::EncodeError::MessageTooLarge`] if the encoded size
+    /// exceeds the limit.
+    pub fn try_encode(&self, buf: &mut impl BufMut) -> Result<(), buffa::EncodeError> {
+        Self::checked_encode_size(self.encoded_len())?;
+        self.encode_unchecked(buf);
+        Ok(())
+    }
+
+    /// Encode without the size check; callers must have validated
+    /// `encoded_len()` against the 2 GiB limit already.
+    fn encode_unchecked(&self, buf: &mut impl BufMut) {
         for (&number, value) in &self.fields {
             // Skip if neither the descriptor nor the extension index
             // recognizes this number anymore (defensive — the fields map
@@ -563,11 +592,59 @@ impl DynamicMessage {
     }
 
     /// Encode this message to a fresh `Vec<u8>`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`buffa::MAX_MESSAGE_BYTES`]). See
+    /// [`try_encode_to_vec`](Self::try_encode_to_vec) for the
+    /// error-returning variant.
     #[must_use]
     pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(self.encoded_len());
-        self.encode(&mut buf);
+        let len = Self::assert_encode_size(self.encoded_len());
+        let mut buf = Vec::with_capacity(len);
+        self.encode_unchecked(&mut buf);
         buf
+    }
+
+    /// Encode to a fresh `Vec<u8>`, returning an error instead of panicking
+    /// if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`buffa::MAX_MESSAGE_BYTES`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`buffa::EncodeError::MessageTooLarge`] if the encoded size
+    /// exceeds the limit.
+    pub fn try_encode_to_vec(&self) -> Result<Vec<u8>, buffa::EncodeError> {
+        let len = Self::checked_encode_size(self.encoded_len())?;
+        let mut buf = Vec::with_capacity(len);
+        self.encode_unchecked(&mut buf);
+        Ok(buf)
+    }
+
+    /// Validate an encoded size against the 2 GiB protobuf limit.
+    ///
+    /// The single-pass descriptor-driven codec computes sizes in `usize`,
+    /// which is exact on 64-bit hosts — unlike the generated two-pass codec
+    /// there is no `u32` arithmetic to saturate, so a plain comparison
+    /// suffices.
+    fn checked_encode_size(len: usize) -> Result<usize, buffa::EncodeError> {
+        if len > buffa::MAX_MESSAGE_BYTES as usize {
+            Err(buffa::EncodeError::MessageTooLarge)
+        } else {
+            Ok(len)
+        }
+    }
+
+    /// Panicking wrapper over [`checked_encode_size`](Self::checked_encode_size).
+    fn assert_encode_size(len: usize) -> usize {
+        match Self::checked_encode_size(len) {
+            Ok(len) => len,
+            Err(_) => panic!(
+                "message encoded size ({len} bytes) exceeds the 2 GiB protobuf limit \
+                 (use try_encode/try_encode_to_vec to handle this as an error)"
+            ),
+        }
     }
 
     /// Compute the encoded length.
@@ -593,7 +670,9 @@ impl DynamicMessage {
     ///
     /// Panics if `msg.encode_to_vec()` produces bytes that fail to decode
     /// against `msg_idx`'s descriptor. This indicates a mismatch between the
-    /// descriptor in the pool and the generated `Message` impl.
+    /// descriptor in the pool and the generated `Message` impl. Also panics
+    /// (inside `encode_to_vec`) if `msg`'s encoded size exceeds the 2 GiB
+    /// protobuf limit ([`buffa::MAX_MESSAGE_BYTES`]).
     #[must_use]
     pub fn from_message<M: Message>(
         msg: &M,
@@ -613,7 +692,11 @@ impl DynamicMessage {
     /// `M` — typically a descriptor mismatch between the pool and the
     /// generated type.
     pub fn to_message<M: Message + Default>(&self) -> Result<M, DecodeError> {
-        let bytes = self.encode_to_vec();
+        // An over-limit snapshot cannot become valid wire bytes; surface the
+        // mirror decode error instead of panicking inside a fallible API.
+        let bytes = self
+            .try_encode_to_vec()
+            .map_err(|_| DecodeError::MessageTooLarge)?;
         let mut m = M::default();
         m.merge_from_slice(&bytes)?;
         Ok(m)
@@ -783,8 +866,11 @@ impl DynamicMessage {
             self.message_descriptor().full_name
         );
         let mut any = DynamicMessage::new(Arc::clone(&self.pool), any_idx);
+        let bytes = self
+            .try_encode_to_vec()
+            .map_err(|_| AnyError::MessageTooLarge)?;
         any.insert_value(1, Value::String(type_url));
-        any.insert_value(2, Value::Bytes(self.encode_to_vec()));
+        any.insert_value(2, Value::Bytes(bytes));
         Ok(any)
     }
 
@@ -821,7 +907,8 @@ impl DynamicMessage {
         O: Message + buffa::MessageName,
     {
         let idx = pool.message_index(O::FULL_NAME)?;
-        Self::decode(pool, idx, &options.encode_to_vec()).ok()
+        let bytes = options.try_encode_to_vec().ok()?;
+        Self::decode(pool, idx, &bytes).ok()
     }
 }
 
@@ -849,6 +936,10 @@ pub enum AnyError {
         /// The unresolvable type URL.
         type_url: String,
     },
+    /// The message being packed encodes past the 2 GiB protobuf limit
+    /// ([`buffa::MAX_MESSAGE_BYTES`]), so it cannot become a valid
+    /// `Any.value` payload.
+    MessageTooLarge,
     /// The wrapped `value` bytes failed to decode against the resolved type.
     Decode {
         /// The `type_url` that resolved before the decode failed.
@@ -868,6 +959,9 @@ impl core::fmt::Display for AnyError {
                 write!(f, "google.protobuf.Any is not registered in the pool")
             }
             Self::MissingTypeUrl => write!(f, "Any has no type_url"),
+            Self::MessageTooLarge => {
+                write!(f, "packed message exceeds the 2 GiB protobuf encode limit")
+            }
             Self::UnknownType { type_url } => {
                 write!(f, "Any type_url {type_url:?} not registered in the pool")
             }
@@ -1328,13 +1422,17 @@ fn encode_singular_with_tag(
         (SingularKind::Scalar(s), v) => encode_scalar(s, v, buf),
         (SingularKind::Enum(_), Value::EnumNumber(n)) => encode_int32(*n, buf),
         (SingularKind::Message(_), Value::Message(m)) => {
+            // encode_unchecked: nested sizes are covered by the top-level
+            // entry point's 2 GiB check (a parent is at least as large as
+            // any child), and re-checking here would add a size walk per
+            // nesting level.
             if delimited {
-                m.encode(buf);
+                m.encode_unchecked(buf);
                 Tag::new(number, WireType::EndGroup).encode(buf);
             } else {
                 let len = m.encoded_len();
                 encode_varint(len as u64, buf);
-                m.encode(buf);
+                m.encode_unchecked(buf);
             }
         }
         _ => {} // shape mismatch — already wrote a tag, but no payload follows; corrupt output is the consumer's problem
@@ -1403,10 +1501,11 @@ fn encode_packed_element(kind: SingularKind, v: &Value, buf: &mut impl BufMut) {
         (SingularKind::Scalar(s), v) => encode_scalar(s, v, buf),
         (SingularKind::Enum(_), Value::EnumNumber(n)) => encode_int32(*n, buf),
         (SingularKind::Message(_), Value::Message(m)) => {
-            // Map values are length-prefixed messages.
+            // Map values are length-prefixed messages. encode_unchecked:
+            // covered by the top-level entry point's 2 GiB check.
             let len = m.encoded_len();
             encode_varint(len as u64, buf);
-            m.encode(buf);
+            m.encode_unchecked(buf);
         }
         _ => {}
     }
@@ -1479,4 +1578,36 @@ const _: fn(EnumIndex) = |_| {};
 /// Compute the encoded length of a tag without writing it.
 fn tag_len(field_number: u32, wt: WireType) -> usize {
     uint64_encoded_len(((field_number as u64) << 3) | (wt as u64))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DynamicMessage;
+
+    // The encode/encode_to_vec entry points funnel through
+    // `assert_encode_size`; exercising the over-limit path end-to-end would
+    // require materializing >2 GiB of field data, so the guard is tested
+    // directly (the e2e encode paths are covered in `tests/dynamic_e2e.rs`).
+
+    #[test]
+    fn assert_encode_size_allows_exactly_max() {
+        let max = buffa::MAX_MESSAGE_BYTES as usize;
+        assert_eq!(DynamicMessage::assert_encode_size(max), max);
+    }
+
+    #[test]
+    fn checked_encode_size_boundary() {
+        let max = buffa::MAX_MESSAGE_BYTES as usize;
+        assert_eq!(DynamicMessage::checked_encode_size(max), Ok(max));
+        assert_eq!(
+            DynamicMessage::checked_encode_size(max + 1),
+            Err(buffa::EncodeError::MessageTooLarge)
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "exceeds the 2 GiB protobuf limit")]
+    fn assert_encode_size_rejects_over_limit() {
+        let _ = DynamicMessage::assert_encode_size(buffa::MAX_MESSAGE_BYTES as usize + 1);
+    }
 }

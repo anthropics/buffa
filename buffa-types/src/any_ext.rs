@@ -105,7 +105,7 @@ pub fn register_wkt_types(reg: &mut buffa::type_registry::TypeRegistry) {
                     from_json: |value| {
                         let msg: $type =
                             serde_json::from_value(value).map_err(|e| e.to_string())?;
-                        Ok(buffa::Message::encode_to_vec(&msg))
+                        buffa::Message::try_encode_to_vec(&msg).map_err(|e| e.to_string())
                     },
                     is_wkt: $wkt,
                 });

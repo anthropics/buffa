@@ -432,7 +432,7 @@ where
 {
     use alloc::format;
     let m: M = serde_json::from_value(v).map_err(|e| format!("{e}"))?;
-    Ok(m.encode_to_vec())
+    m.try_encode_to_vec().map_err(|e| format!("{e}"))
 }
 
 // ── Text Any-entry converters (codegen points TextAnyEntry fields here) ────
@@ -477,7 +477,22 @@ where
 {
     let mut m = M::default();
     dec.merge_message(&mut m)?;
-    Ok(m.encode_to_vec())
+    m.try_encode_to_vec().map_err(|_| oversized_message_error())
+}
+
+/// Merged-message payload exceeded the 2 GiB protobuf limit
+/// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)) — the re-encode step of
+/// a text/JSON converter cannot produce valid wire bytes for it, so the
+/// parse surfaces an error rather than panicking inside a fallible API.
+#[cfg(feature = "text")]
+fn oversized_message_error() -> crate::text::ParseError {
+    crate::text::ParseError::new(
+        0,
+        0,
+        crate::text::ParseErrorKind::Internal(
+            "merged message exceeds the 2 GiB protobuf encode limit",
+        ),
+    )
 }
 
 // ── Text extension converters (codegen points TextExtEntry fields here) ────
@@ -516,9 +531,12 @@ where
     use crate::unknown_fields::{UnknownField, UnknownFieldData};
     let mut m = M::default();
     dec.merge_message(&mut m)?;
+    let bytes = m
+        .try_encode_to_vec()
+        .map_err(|_| oversized_message_error())?;
     Ok(alloc::vec![UnknownField {
         number: n,
-        data: UnknownFieldData::LengthDelimited(m.encode_to_vec()),
+        data: UnknownFieldData::LengthDelimited(bytes),
     }])
 }
 
@@ -560,7 +578,9 @@ where
     use crate::unknown_fields::{UnknownField, UnknownFieldData, UnknownFields};
     let mut m = M::default();
     dec.merge_message(&mut m)?;
-    let bytes = m.encode_to_vec();
+    let bytes = m
+        .try_encode_to_vec()
+        .map_err(|_| oversized_message_error())?;
     // Freshly-encoded → re-decode cannot fail short of an encoder bug.
     // Surface as Internal rather than panicking so a library caller
     // isn't taken down by it.

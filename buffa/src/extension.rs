@@ -253,6 +253,10 @@ pub trait ExtensionSet {
     /// # Panics
     ///
     /// Panics if `ext.extendee()` does not match `Self::PROTO_FQN`.
+    ///
+    /// Message-typed extension values are encoded to wire bytes on `set`,
+    /// so this also panics if the value's encoded size exceeds the 2 GiB
+    /// protobuf limit ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)).
     #[track_caller]
     fn set_extension<C: ExtensionCodec>(&mut self, ext: &Extension<C>, value: C::Value) {
         assert_extendee(ext, Self::PROTO_FQN);
