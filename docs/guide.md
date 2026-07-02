@@ -949,7 +949,20 @@ Buffa uses a two-pass model to avoid the exponential-time size computation that 
 
 ### Error handling
 
-Encoding is **infallible** — `encode()` and `write_to()` never return errors. The buffer grows as needed via `BufMut`.
+Encoding has exactly one failure condition: the protobuf specification caps
+any message at **2 GiB** (`buffa::MAX_MESSAGE_BYTES`), and buffa refuses to
+produce over-limit output that no conforming decoder — including its own —
+would read back. `encode()`, `encode_to_vec()`, `encode_to_bytes()`,
+`encode_length_delimited()`, `encode_with_cache()`, and `encoded_len()`
+**panic** on an over-limit message (before anything is written); each has a
+`try_`-prefixed twin
+(`try_encode()`, `try_encode_with_cache()`, `try_encode_to_vec()`,
+`try_encode_to_bytes()`, `try_encode_length_delimited()`,
+`try_encoded_len()`) that returns `Err(EncodeError::MessageTooLarge)`
+instead. Writers that can grow without
+bound (logs, snapshots, accumulators) should use the `try_*` variants and
+split or shrink on error. There are no other encode errors — the buffer
+grows as needed via `BufMut`.
 
 Decoding returns `Result<T, DecodeError>`. See [`buffa::DecodeError`](https://docs.rs/buffa/latest/buffa/enum.DecodeError.html)
 for the full list of variants (the enum is `#[non_exhaustive]`). Common cases:
@@ -2029,14 +2042,18 @@ impl Message for Int64Range {
         //   let slot = cache.reserve();
         //   let inner = self.m.compute_size(cache);
         //   cache.set(slot, inner);
-        let mut size = 0u32;
+        //
+        // Accumulate in u64 and saturate at return — the same pattern
+        // generated code uses — so an over-limit message surfaces at the
+        // encode entry points' 2 GiB check instead of wrapping silently.
+        let mut size = 0u64;
         if self.inner.start != 0 {
-            size += 1 + buffa::types::int64_encoded_len(self.inner.start) as u32;
+            size += 1 + buffa::types::int64_encoded_len(self.inner.start) as u64;
         }
         if self.inner.end != 0 {
-            size += 1 + buffa::types::int64_encoded_len(self.inner.end) as u32;
+            size += 1 + buffa::types::int64_encoded_len(self.inner.end) as u64;
         }
-        size
+        buffa::saturate_size(size)
     }
 
     fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl bytes::BufMut) {
