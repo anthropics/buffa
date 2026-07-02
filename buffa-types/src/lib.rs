@@ -36,6 +36,8 @@
 //! - `Timestamp` ↔ [`chrono::DateTime`] (requires `chrono` feature; any time
 //!   zone in, `Utc` out)
 //! - `Duration` ↔ [`chrono::TimeDelta`] (requires `chrono` feature)
+//! - `Timestamp` ↔ [`jiff::Timestamp`] (requires `jiff` feature)
+//! - `Duration` ↔ [`jiff::SignedDuration`] (requires `jiff` feature)
 //! - `Any::pack` / `Any::unpack` helpers
 //! - `Value` constructors: [`Value::null`](google::protobuf::Value::null), `From<f64>`, `From<String>`, `From<bool>`, etc.
 //! - Wrapper type `From`/`Into` impls
@@ -49,6 +51,9 @@
 //! - **`chrono`** — `Timestamp` ↔ `chrono::DateTime` and `Duration` ↔
 //!   `chrono::TimeDelta` conversions. `no_std`-compatible (`chrono` is pulled
 //!   with `default-features = false`).
+//! - **`jiff`** — `Timestamp` ↔ `jiff::Timestamp` and `Duration` ↔
+//!   `jiff::SignedDuration` conversions. `no_std`-compatible (`jiff` is pulled
+//!   with `default-features = false` + `alloc`).
 //! - **`reflect`** — runtime reflection: the WKT view types implement
 //!   `buffa_descriptor::reflect::ReflectMessage`, so a message that has a WKT
 //!   field can reflect over it. This pulls a `buffa-descriptor` dependency and
@@ -76,6 +81,11 @@ mod wrapper_ext;
 mod duration_chrono;
 #[cfg(feature = "chrono")]
 mod timestamp_chrono;
+
+#[cfg(feature = "jiff")]
+mod duration_jiff;
+#[cfg(feature = "jiff")]
+mod timestamp_jiff;
 
 // Well-known type Rust structs — generated once by `gen_wkt_types`, checked
 // into src/generated/. These protos are Google-owned and frozen; regeneration
@@ -115,6 +125,10 @@ pub use timestamp_ext::TimestampError;
 #[cfg(feature = "chrono")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 pub use duration_chrono::DurationChronoError;
+
+#[cfg(feature = "jiff")]
+#[cfg_attr(docsrs, doc(cfg(feature = "jiff")))]
+pub use duration_jiff::DurationJiffError;
 
 // Re-export the WKT registry function for `Any` JSON + text support.
 pub use any_ext::register_wkt_types;
