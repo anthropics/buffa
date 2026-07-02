@@ -95,7 +95,7 @@ The macro argument is the dotted protobuf package name. For multi-package builds
 
  // Encode
 -let bytes = msg.write_to_bytes()?;
-+let bytes = msg.encode_to_vec();   // infallible, no Result
++let bytes = msg.encode_to_vec();   // no Result; panics only past the 2 GiB limit (see try_encode_to_vec)
 
  // Merge
 -msg.merge_from_bytes(&more_bytes)?;
@@ -122,7 +122,7 @@ The macro argument is the dotted protobuf package name. For multi-package builds
 
  // Encode
 -let bytes = msg.serialize()?;
-+let bytes = msg.encode_to_vec();   // infallible
++let bytes = msg.encode_to_vec();   // no Result; panics only past the 2 GiB limit
 ```
 
 ## 4. Optional message fields

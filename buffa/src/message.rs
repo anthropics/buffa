@@ -188,24 +188,6 @@ pub fn checked_encode_size(size: u32) -> Result<u32, EncodeError> {
     }
 }
 
-/// Validate a computed encode size against [`MAX_MESSAGE_BYTES`], panicking
-/// on overflow.
-///
-/// The panicking half of the encode-size funnel, shared by the panicking
-/// `Message` / `ViewEncode` entry points and generated inherent encode
-/// entry points.
-///
-/// # Panics
-///
-/// Panics if `size` exceeds [`MAX_MESSAGE_BYTES`].
-#[inline]
-pub fn assert_encode_size(size: u32) -> u32 {
-    match checked_encode_size(size) {
-        Ok(size) => size,
-        Err(_) => encode_size_overflow(),
-    }
-}
-
 /// Debug-build two-pass coherence ledger: asserts `write_to` produced
 /// exactly the byte count `compute_size` declared.
 ///
@@ -226,12 +208,22 @@ pub fn debug_assert_two_pass(written: usize, declared: usize) {
     );
 }
 
+/// Panic shim shared by every panicking encode entry point — the provided
+/// `Message` / `ViewEncode` methods, `SizeCachePool`, and generated
+/// lazy-view inherent methods all delegate to their `try_*` twin and route
+/// the `Err` here, so the panicking and fallible paths cannot diverge.
+///
+/// # Panics
+///
+/// Always — that is its entire job: one cold, out-of-line panic site with
+/// the canonical over-limit message.
+#[doc(hidden)]
 #[cold]
 #[inline(never)]
-fn encode_size_overflow() -> ! {
+pub fn encode_size_overflow() -> ! {
     panic!(
         "message encoded size exceeds the 2 GiB protobuf limit \
-         (use the try_encode* methods to handle this as an error)"
+         (the try_* variant of this method returns this as an error instead)"
     )
 }
 
@@ -341,8 +333,7 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// low-level primitive: the 2 GiB size check ([`MAX_MESSAGE_BYTES`])
     /// lives in the provided encode entry points, so callers driving
     /// `compute_size` / `write_to` directly must validate the size
-    /// themselves (e.g. via [`assert_encode_size`] /
-    /// [`checked_encode_size`]).
+    /// themselves (via [`checked_encode_size`]).
     fn write_to(&self, cache: &mut crate::SizeCache, buf: &mut impl BufMut);
 
     /// Compute size, then write. This is the primary encoding API.
@@ -352,10 +343,10 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// Panics if the encoded size exceeds the 2 GiB protobuf limit
     /// ([`MAX_MESSAGE_BYTES`]) — see [`try_encode`](Self::try_encode) for
     /// the error-returning variant.
+    #[inline]
     fn encode(&self, buf: &mut impl BufMut) {
-        let mut cache = crate::SizeCache::new();
-        assert_encode_size(self.compute_size(&mut cache));
-        self.write_to(&mut cache, buf);
+        self.try_encode(buf)
+            .unwrap_or_else(|_| encode_size_overflow())
     }
 
     /// Encode, returning an error instead of panicking if the encoded size
@@ -383,10 +374,10 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// ([`MAX_MESSAGE_BYTES`]) — see
     /// [`try_encode_with_cache`](Self::try_encode_with_cache) for the
     /// error-returning variant.
+    #[inline]
     fn encode_with_cache(&self, cache: &mut crate::SizeCache, buf: &mut impl BufMut) {
-        cache.clear();
-        assert_encode_size(self.compute_size(cache));
-        self.write_to(cache, buf);
+        self.try_encode_with_cache(cache, buf)
+            .unwrap_or_else(|_| encode_size_overflow())
     }
 
     /// Encode with a caller-supplied [`SizeCache`](crate::SizeCache),
@@ -425,9 +416,11 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// for the error-returning variant.
     ///
     /// [`SizeCache`]: crate::SizeCache
+    #[inline]
     #[must_use]
     fn encoded_len(&self) -> u32 {
-        assert_encode_size(self.compute_size(&mut crate::SizeCache::new()))
+        self.try_encoded_len()
+            .unwrap_or_else(|_| encode_size_overflow())
     }
 
     /// Compute the encoded byte size, returning an error instead of
@@ -451,11 +444,10 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// written, so nothing reaches `buf` on failure. See
     /// [`try_encode_length_delimited`](Self::try_encode_length_delimited)
     /// for the error-returning variant.
+    #[inline]
     fn encode_length_delimited(&self, buf: &mut impl BufMut) {
-        let mut cache = crate::SizeCache::new();
-        let len = assert_encode_size(self.compute_size(&mut cache));
-        crate::encoding::encode_varint(len as u64, buf);
-        self.write_to(&mut cache, buf);
+        self.try_encode_length_delimited(buf)
+            .unwrap_or_else(|_| encode_size_overflow())
     }
 
     /// Encode as a length-delimited byte sequence, returning an error
@@ -486,14 +478,11 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// error-returning variant. In debug builds, also panics if a manual
     /// implementation's `write_to` produces a different byte count than
     /// its `compute_size` declared.
+    #[inline]
     #[must_use]
     fn encode_to_vec(&self) -> alloc::vec::Vec<u8> {
-        let mut cache = crate::SizeCache::new();
-        let size = assert_encode_size(self.compute_size(&mut cache)) as usize;
-        let mut buf = alloc::vec::Vec::with_capacity(size);
-        self.write_to(&mut cache, &mut buf);
-        debug_assert_two_pass(buf.len(), size);
-        buf
+        self.try_encode_to_vec()
+            .unwrap_or_else(|_| encode_size_overflow())
     }
 
     /// Encode to a new `Vec<u8>`, returning an error instead of panicking
@@ -535,14 +524,11 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// error-returning variant. In debug builds, also panics if a manual
     /// implementation's `write_to` produces a different byte count than
     /// its `compute_size` declared.
+    #[inline]
     #[must_use]
     fn encode_to_bytes(&self) -> bytes::Bytes {
-        let mut cache = crate::SizeCache::new();
-        let size = assert_encode_size(self.compute_size(&mut cache)) as usize;
-        let mut buf = bytes::BytesMut::with_capacity(size);
-        self.write_to(&mut cache, &mut buf);
-        debug_assert_two_pass(buf.len(), size);
-        buf.freeze()
+        self.try_encode_to_bytes()
+            .unwrap_or_else(|_| encode_size_overflow())
     }
 
     /// Encode to a new [`bytes::Bytes`], returning an error instead of
@@ -2001,39 +1987,7 @@ mod tests {
 
     // ── Encode-side 2 GiB guard tests ──────────────────────────────────
 
-    /// Test double whose `compute_size` reports a caller-chosen value and
-    /// whose `write_to` writes nothing. Lets the guard tests exercise the
-    /// over-limit paths without materializing gigabytes.
-    #[derive(Clone, Debug, Default, PartialEq)]
-    struct SizedMsg {
-        reported_size: u32,
-    }
-
-    impl DefaultInstance for SizedMsg {
-        fn default_instance() -> &'static Self {
-            static INST: crate::__private::OnceBox<SizedMsg> = crate::__private::OnceBox::new();
-            INST.get_or_init(|| alloc::boxed::Box::new(SizedMsg::default()))
-        }
-    }
-
-    impl Message for SizedMsg {
-        fn compute_size(&self, _cache: &mut SizeCache) -> u32 {
-            self.reported_size
-        }
-        fn write_to(&self, _cache: &mut SizeCache, _buf: &mut impl BufMut) {}
-        fn merge_field(
-            &mut self,
-            tag: crate::encoding::Tag,
-            buf: &mut impl Buf,
-            _ctx: DecodeContext<'_>,
-        ) -> Result<(), DecodeError> {
-            crate::encoding::skip_field(tag, buf)?;
-            Ok(())
-        }
-        fn clear(&mut self) {
-            *self = Self::default();
-        }
-    }
+    use crate::test_doubles::SizedMsg;
 
     const OVER_LIMIT: u32 = MAX_MESSAGE_BYTES + 1;
 

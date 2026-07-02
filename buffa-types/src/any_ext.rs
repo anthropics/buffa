@@ -10,12 +10,37 @@ impl Any {
     /// The type URL is conventionally of the form
     /// `type.googleapis.com/fully.qualified.TypeName`, but this method does
     /// not enforce that convention — any string is accepted.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `msg`'s encoded size exceeds the 2 GiB protobuf limit
+    /// ([`buffa::MAX_MESSAGE_BYTES`]) — see [`try_pack`](Self::try_pack)
+    /// for the error-returning variant.
     pub fn pack(msg: &impl buffa::Message, type_url: impl Into<String>) -> Self {
         Self {
             type_url: type_url.into(),
             value: msg.encode_to_bytes(),
             ..Default::default()
         }
+    }
+
+    /// Pack a message into an [`Any`], returning an error instead of
+    /// panicking if the message's encoded size exceeds the 2 GiB protobuf
+    /// limit ([`buffa::MAX_MESSAGE_BYTES`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`buffa::EncodeError::MessageTooLarge`] if the encoded size
+    /// exceeds the limit.
+    pub fn try_pack(
+        msg: &impl buffa::Message,
+        type_url: impl Into<String>,
+    ) -> Result<Self, buffa::EncodeError> {
+        Ok(Self {
+            type_url: type_url.into(),
+            value: msg.try_encode_to_bytes()?,
+            ..Default::default()
+        })
     }
 
     /// Unpack the contained message, decoding its bytes as `T`, **without
@@ -397,6 +422,62 @@ mod tests {
         let mut u = Unstructured::new(&raw);
         let any = Any::arbitrary(&mut u).unwrap();
         let _ = any.value.slice(..);
+    }
+
+    /// Test double whose `compute_size` reports over the 2 GiB limit and
+    /// whose `write_to` writes nothing — exercises `pack`'s guard without
+    /// materializing gigabytes. Mirrors buffa's crate-internal
+    /// `test_doubles::SizedMsg` (`#[cfg(test)]` items don't cross the crate
+    /// boundary).
+    #[derive(Clone, Default, PartialEq, Debug)]
+    struct HugeMsg;
+
+    impl buffa::DefaultInstance for HugeMsg {
+        fn default_instance() -> &'static Self {
+            static INST: buffa::__private::OnceBox<HugeMsg> = buffa::__private::OnceBox::new();
+            INST.get_or_init(|| alloc::boxed::Box::new(HugeMsg))
+        }
+    }
+
+    impl buffa::Message for HugeMsg {
+        fn compute_size(&self, _cache: &mut buffa::SizeCache) -> u32 {
+            buffa::MAX_MESSAGE_BYTES + 1
+        }
+        fn write_to(&self, _cache: &mut buffa::SizeCache, _buf: &mut impl bytes::BufMut) {}
+        fn merge_field(
+            &mut self,
+            tag: buffa::encoding::Tag,
+            buf: &mut impl bytes::Buf,
+            _ctx: buffa::DecodeContext<'_>,
+        ) -> Result<(), buffa::DecodeError> {
+            buffa::encoding::skip_field(tag, buf)?;
+            Ok(())
+        }
+        fn clear(&mut self) {}
+    }
+
+    #[test]
+    fn try_pack_over_limit_errs() {
+        assert_eq!(
+            Any::try_pack(&HugeMsg, "type.googleapis.com/x"),
+            Err(buffa::EncodeError::MessageTooLarge)
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "2 GiB protobuf limit")]
+    fn pack_over_limit_panics() {
+        let _ = Any::pack(&HugeMsg, "type.googleapis.com/x");
+    }
+
+    #[test]
+    fn try_pack_matches_pack_for_normal_messages() {
+        let ts = Timestamp {
+            seconds: 42,
+            ..Default::default()
+        };
+        let url = "type.googleapis.com/google.protobuf.Timestamp";
+        assert_eq!(Any::try_pack(&ts, url).unwrap(), Any::pack(&ts, url));
     }
 
     #[test]

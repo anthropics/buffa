@@ -72,6 +72,7 @@
 
 use core::marker::PhantomData;
 
+use crate::error::EncodeError;
 use crate::unknown_fields::UnknownFields;
 
 /// Typed extension descriptor.
@@ -196,8 +197,39 @@ pub trait ExtensionCodec {
     /// Encode `value` into the extendee's unknown fields.
     ///
     /// The caller is responsible for clearing any prior occurrences (see
-    /// [`ExtensionSet::set_extension`]).
-    fn encode(number: u32, value: Self::Value, fields: &mut UnknownFields);
+    /// [`ExtensionSet::set_extension`]). This is the one required encode
+    /// method — the fallible signature is required so that a codec whose
+    /// encode can fail (the message/group codecs, on an over-limit value)
+    /// cannot accidentally leave the fallible extension path panicking.
+    /// Infallible codecs (every scalar) simply end with `Ok(())`.
+    ///
+    /// Records pushed before an `Err` may remain in `fields`;
+    /// [`ExtensionSet::try_set_extension`] stages into a scratch set, so
+    /// the extendee itself is never affected by a failed set. Do not
+    /// implement this in terms of [`encode`](Self::encode) — that provided
+    /// wrapper calls back here.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EncodeError::MessageTooLarge`] if a message-typed value's
+    /// encoded size exceeds the 2 GiB protobuf limit
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)).
+    fn try_encode(
+        number: u32,
+        value: Self::Value,
+        fields: &mut UnknownFields,
+    ) -> Result<(), EncodeError>;
+
+    /// Panicking wrapper over [`try_encode`](Self::try_encode).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `try_encode` fails — i.e. a message-typed value's encoded
+    /// size exceeds the 2 GiB protobuf limit.
+    fn encode(number: u32, value: Self::Value, fields: &mut UnknownFields) {
+        Self::try_encode(number, value, fields)
+            .unwrap_or_else(|_| crate::message::encode_size_overflow())
+    }
 }
 
 /// Implemented by codegen on every message that preserves unknown fields.
@@ -256,12 +288,50 @@ pub trait ExtensionSet {
     ///
     /// Message-typed extension values are encoded to wire bytes on `set`,
     /// so this also panics if the value's encoded size exceeds the 2 GiB
-    /// protobuf limit ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)).
+    /// protobuf limit ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)) —
+    /// see [`try_set_extension`](Self::try_set_extension) for the
+    /// error-returning variant.
     #[track_caller]
     fn set_extension<C: ExtensionCodec>(&mut self, ext: &Extension<C>, value: C::Value) {
+        self.try_set_extension(ext, value)
+            .unwrap_or_else(|_| crate::message::encode_size_overflow())
+    }
+
+    /// Write an extension value, replacing any prior occurrences —
+    /// returning an error instead of panicking if a message-typed value's
+    /// encoded size exceeds the 2 GiB protobuf limit
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)).
+    ///
+    /// On `Err`, the extendee's unknown fields are unchanged — prior
+    /// occurrences are retained.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EncodeError::MessageTooLarge`] if a message-typed value's
+    /// encoded size exceeds the limit. Scalar-typed extensions cannot fail.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `ext.extendee()` does not match `Self::PROTO_FQN` —
+    /// passing an extension for the wrong message is a bug in the caller,
+    /// not a runtime condition.
+    #[track_caller]
+    fn try_set_extension<C: ExtensionCodec>(
+        &mut self,
+        ext: &Extension<C>,
+        value: C::Value,
+    ) -> Result<(), EncodeError> {
         assert_extendee(ext, Self::PROTO_FQN);
-        self.unknown_fields_mut().retain(|f| f.number != ext.number);
-        C::encode(ext.number, value, self.unknown_fields_mut());
+        // Stage into a scratch set first so `Err` leaves the extendee
+        // untouched (not even cleared).
+        let mut staged = UnknownFields::default();
+        C::try_encode(ext.number, value, &mut staged)?;
+        let fields = self.unknown_fields_mut();
+        fields.retain(|f| f.number != ext.number);
+        for f in staged {
+            fields.push(f);
+        }
+        Ok(())
     }
 
     /// Returns `true` if any record at the extension's field number is present.
@@ -364,7 +434,30 @@ pub mod codecs {
         fn decode_packed(bytes: &[u8], out: &mut Vec<Self::Value>);
 
         /// Encode one value as a single unknown-field record.
-        fn encode_one(value: &Self::Value) -> UnknownFieldData;
+        ///
+        /// The one required encode method — same fallible-required contract
+        /// as [`ExtensionCodec::try_encode`]: infallible codecs (every
+        /// scalar) end with `Ok(...)`, and the message/group codecs surface
+        /// an over-limit value as an error. Do not implement this in terms
+        /// of [`encode_one`](Self::encode_one) — that provided wrapper
+        /// calls back here.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`EncodeError::MessageTooLarge`](crate::EncodeError::MessageTooLarge)
+        /// if a message-typed value's encoded size exceeds the 2 GiB
+        /// protobuf limit ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)).
+        fn try_encode_one(value: &Self::Value) -> Result<UnknownFieldData, crate::EncodeError>;
+
+        /// Panicking wrapper over [`try_encode_one`](Self::try_encode_one).
+        ///
+        /// # Panics
+        ///
+        /// Panics if `try_encode_one` fails — i.e. a message-typed value's
+        /// encoded size exceeds the 2 GiB protobuf limit.
+        fn encode_one(value: &Self::Value) -> UnknownFieldData {
+            Self::try_encode_one(value).unwrap_or_else(|_| crate::message::encode_size_overflow())
+        }
     }
 
     /// Codecs whose elements can be concatenated into a packed wire form.
@@ -396,11 +489,16 @@ pub mod codecs {
                         .filter(|f| f.number == number)
                         .find_map(|f| Self::decode_one(&f.data))
                 }
-                fn encode(number: u32, value: $ty, fields: &mut UnknownFields) {
+                fn try_encode(
+                    number: u32,
+                    value: $ty,
+                    fields: &mut UnknownFields,
+                ) -> Result<(), crate::EncodeError> {
                     fields.push(UnknownField {
                         number,
-                        data: Self::encode_one(&value),
+                        data: Self::try_encode_one(&value)?,
                     });
+                    Ok(())
                 }
             }
 
@@ -426,9 +524,9 @@ pub mod codecs {
                         }
                     }
                 }
-                fn encode_one($e: &$ty) -> UnknownFieldData {
+                fn try_encode_one($e: &$ty) -> Result<UnknownFieldData, crate::EncodeError> {
                     let $e = *$e;
-                    UnknownFieldData::Varint($encode)
+                    Ok(UnknownFieldData::Varint($encode))
                 }
             }
 
@@ -473,8 +571,12 @@ pub mod codecs {
         fn decode(number: u32, fields: &UnknownFields) -> Option<i32> {
             Int32::decode(number, fields)
         }
-        fn encode(number: u32, value: i32, fields: &mut UnknownFields) {
-            Int32::encode(number, value, fields)
+        fn try_encode(
+            number: u32,
+            value: i32,
+            fields: &mut UnknownFields,
+        ) -> Result<(), crate::EncodeError> {
+            Int32::try_encode(number, value, fields)
         }
     }
     impl SingularCodec for EnumI32 {
@@ -485,8 +587,8 @@ pub mod codecs {
         fn decode_packed(bytes: &[u8], out: &mut Vec<i32>) {
             Int32::decode_packed(bytes, out)
         }
-        fn encode_one(value: &i32) -> UnknownFieldData {
-            Int32::encode_one(value)
+        fn try_encode_one(value: &i32) -> Result<UnknownFieldData, crate::EncodeError> {
+            Int32::try_encode_one(value)
         }
     }
     impl PackableCodec for EnumI32 {
@@ -514,11 +616,16 @@ pub mod codecs {
                         .filter(|f| f.number == number)
                         .find_map(|f| Self::decode_one(&f.data))
                 }
-                fn encode(number: u32, value: $ty, fields: &mut UnknownFields) {
+                fn try_encode(
+                    number: u32,
+                    value: $ty,
+                    fields: &mut UnknownFields,
+                ) -> Result<(), crate::EncodeError> {
                     fields.push(UnknownField {
                         number,
-                        data: Self::encode_one(&value),
+                        data: Self::try_encode_one(&value)?,
                     });
+                    Ok(())
                 }
             }
 
@@ -537,9 +644,9 @@ pub mod codecs {
                         out.push($decode);
                     }
                 }
-                fn encode_one($e: &$ty) -> UnknownFieldData {
+                fn try_encode_one($e: &$ty) -> Result<UnknownFieldData, crate::EncodeError> {
                     let $e = *$e;
-                    UnknownFieldData::Fixed32($encode)
+                    Ok(UnknownFieldData::Fixed32($encode))
                 }
             }
 
@@ -568,11 +675,16 @@ pub mod codecs {
                         .filter(|f| f.number == number)
                         .find_map(|f| Self::decode_one(&f.data))
                 }
-                fn encode(number: u32, value: $ty, fields: &mut UnknownFields) {
+                fn try_encode(
+                    number: u32,
+                    value: $ty,
+                    fields: &mut UnknownFields,
+                ) -> Result<(), crate::EncodeError> {
                     fields.push(UnknownField {
                         number,
-                        data: Self::encode_one(&value),
+                        data: Self::try_encode_one(&value)?,
                     });
+                    Ok(())
                 }
             }
 
@@ -591,9 +703,9 @@ pub mod codecs {
                         out.push($decode);
                     }
                 }
-                fn encode_one($e: &$ty) -> UnknownFieldData {
+                fn try_encode_one($e: &$ty) -> Result<UnknownFieldData, crate::EncodeError> {
                     let $e = *$e;
-                    UnknownFieldData::Fixed64($encode)
+                    Ok(UnknownFieldData::Fixed64($encode))
                 }
             }
 
@@ -631,11 +743,16 @@ pub mod codecs {
                 .filter(|f| f.number == number)
                 .find_map(|f| Self::decode_one(&f.data))
         }
-        fn encode(number: u32, value: String, fields: &mut UnknownFields) {
+        fn try_encode(
+            number: u32,
+            value: String,
+            fields: &mut UnknownFields,
+        ) -> Result<(), crate::EncodeError> {
             fields.push(UnknownField {
                 number,
                 data: UnknownFieldData::LengthDelimited(value.into_bytes()),
             });
+            Ok(())
         }
     }
 
@@ -648,8 +765,10 @@ pub mod codecs {
             }
         }
         fn decode_packed(_bytes: &[u8], _out: &mut Vec<String>) {}
-        fn encode_one(value: &String) -> UnknownFieldData {
-            UnknownFieldData::LengthDelimited(value.clone().into_bytes())
+        fn try_encode_one(value: &String) -> Result<UnknownFieldData, crate::EncodeError> {
+            Ok(UnknownFieldData::LengthDelimited(
+                value.clone().into_bytes(),
+            ))
         }
     }
 
@@ -666,11 +785,16 @@ pub mod codecs {
                 .filter(|f| f.number == number)
                 .find_map(|f| Self::decode_one(&f.data))
         }
-        fn encode(number: u32, value: Vec<u8>, fields: &mut UnknownFields) {
+        fn try_encode(
+            number: u32,
+            value: Vec<u8>,
+            fields: &mut UnknownFields,
+        ) -> Result<(), crate::EncodeError> {
             fields.push(UnknownField {
                 number,
                 data: UnknownFieldData::LengthDelimited(value),
             });
+            Ok(())
         }
     }
 
@@ -683,8 +807,8 @@ pub mod codecs {
             }
         }
         fn decode_packed(_bytes: &[u8], _out: &mut Vec<Vec<u8>>) {}
-        fn encode_one(value: &Vec<u8>) -> UnknownFieldData {
-            UnknownFieldData::LengthDelimited(value.clone())
+        fn try_encode_one(value: &Vec<u8>) -> Result<UnknownFieldData, crate::EncodeError> {
+            Ok(UnknownFieldData::LengthDelimited(value.clone()))
         }
     }
 
@@ -710,11 +834,16 @@ pub mod codecs {
             }
             msg
         }
-        fn encode(number: u32, value: M, fields: &mut UnknownFields) {
+        fn try_encode(
+            number: u32,
+            value: M,
+            fields: &mut UnknownFields,
+        ) -> Result<(), crate::EncodeError> {
             fields.push(UnknownField {
                 number,
-                data: UnknownFieldData::LengthDelimited(value.encode_to_vec()),
+                data: UnknownFieldData::LengthDelimited(value.try_encode_to_vec()?),
             });
+            Ok(())
         }
     }
 
@@ -731,8 +860,10 @@ pub mod codecs {
             }
         }
         fn decode_packed(_bytes: &[u8], _out: &mut Vec<M>) {}
-        fn encode_one(value: &M) -> UnknownFieldData {
-            UnknownFieldData::LengthDelimited(value.encode_to_vec())
+        fn try_encode_one(value: &M) -> Result<UnknownFieldData, crate::EncodeError> {
+            Ok(UnknownFieldData::LengthDelimited(
+                value.try_encode_to_vec()?,
+            ))
         }
     }
 
@@ -771,8 +902,12 @@ pub mod codecs {
             }
             msg
         }
-        fn encode(number: u32, value: M, fields: &mut UnknownFields) {
-            let bytes = value.encode_to_vec();
+        fn try_encode(
+            number: u32,
+            value: M,
+            fields: &mut UnknownFields,
+        ) -> Result<(), crate::EncodeError> {
+            let bytes = value.try_encode_to_vec()?;
             // We just encoded `value` — re-decoding its bytes cannot fail
             // unless there's a bug in the Message encoder itself.
             let inner = UnknownFields::decode_from_slice(&bytes)
@@ -781,6 +916,7 @@ pub mod codecs {
                 number,
                 data: UnknownFieldData::Group(inner),
             });
+            Ok(())
         }
     }
 
@@ -801,12 +937,12 @@ pub mod codecs {
         // Groups are never packed — leave `out` unmodified (see
         // `SingularCodec::decode_packed` contract).
         fn decode_packed(_bytes: &[u8], _out: &mut Vec<M>) {}
-        fn encode_one(value: &M) -> UnknownFieldData {
-            let bytes = value.encode_to_vec();
+        fn try_encode_one(value: &M) -> Result<UnknownFieldData, crate::EncodeError> {
+            let bytes = value.try_encode_to_vec()?;
             // We just encoded `value` — re-decoding cannot fail.
             let inner = UnknownFields::decode_from_slice(&bytes)
                 .expect("BUG: re-decoding freshly-encoded message bytes failed");
-            UnknownFieldData::Group(inner)
+            Ok(UnknownFieldData::Group(inner))
         }
     }
 
@@ -827,13 +963,21 @@ pub mod codecs {
         fn decode(number: u32, fields: &UnknownFields) -> Vec<C::Value> {
             decode_repeated::<C>(number, fields)
         }
-        fn encode(number: u32, value: Vec<C::Value>, fields: &mut UnknownFields) {
+        fn try_encode(
+            number: u32,
+            value: Vec<C::Value>,
+            fields: &mut UnknownFields,
+        ) -> Result<(), crate::EncodeError> {
+            // Records already pushed stay in `fields` if a later element
+            // errs — `try_set_extension`'s scratch staging is what keeps
+            // the extendee itself untouched.
             for v in &value {
                 fields.push(UnknownField {
                     number,
-                    data: C::encode_one(v),
+                    data: C::try_encode_one(v)?,
                 });
             }
+            Ok(())
         }
     }
 
@@ -855,9 +999,13 @@ pub mod codecs {
         fn decode(number: u32, fields: &UnknownFields) -> Vec<C::Value> {
             decode_repeated::<C>(number, fields)
         }
-        fn encode(number: u32, value: Vec<C::Value>, fields: &mut UnknownFields) {
+        fn try_encode(
+            number: u32,
+            value: Vec<C::Value>,
+            fields: &mut UnknownFields,
+        ) -> Result<(), crate::EncodeError> {
             if value.is_empty() {
-                return;
+                return Ok(());
             }
             let mut buf = Vec::new();
             for v in &value {
@@ -867,6 +1015,7 @@ pub mod codecs {
                 number,
                 data: UnknownFieldData::LengthDelimited(buf),
             });
+            Ok(())
         }
     }
 
@@ -1549,6 +1698,62 @@ mod tests {
         let got = c.extension(&E).expect("decoded");
         assert_eq!(got.a, 3);
         assert_eq!(got.b, -1);
+    }
+
+    // ── Over-limit message values (2 GiB encode guard) ──────────────────
+
+    use crate::test_doubles::SizedMsg;
+
+    fn huge_msg() -> SizedMsg {
+        SizedMsg {
+            reported_size: crate::MAX_MESSAGE_BYTES + 1,
+        }
+    }
+
+    #[test]
+    fn try_set_extension_over_limit_errs_and_leaves_priors() {
+        const E: Extension<MessageCodec<SizedMsg>> = Extension::new(1, CARRIER);
+        let mut c = Carrier::default();
+        c.unknown.push(ld(1, vec![0x08, 0x05])); // prior record at the number
+        c.unknown.push(varint(7, 9)); // unrelated record
+        assert_eq!(
+            c.try_set_extension(&E, huge_msg()),
+            Err(EncodeError::MessageTooLarge)
+        );
+        // On Err the extendee is untouched: the prior record at the
+        // extension's number is retained, not cleared.
+        assert_eq!(c.unknown.iter().count(), 2);
+        assert!(c.unknown.iter().any(|f| f.number == 1));
+    }
+
+    #[test]
+    fn try_set_extension_scalar_replaces_priors() {
+        const E: Extension<Int32> = Extension::new(3, CARRIER);
+        let mut c = Carrier::default();
+        c.unknown.push(varint(3, 1));
+        c.unknown.push(varint(3, 2));
+        c.try_set_extension(&E, 42).expect("scalars cannot fail");
+        assert_eq!(c.extension(&E), Some(42));
+        assert_eq!(c.unknown.iter().filter(|f| f.number == 3).count(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "2 GiB protobuf limit")]
+    fn set_extension_over_limit_panics() {
+        const E: Extension<MessageCodec<SizedMsg>> = Extension::new(1, CARRIER);
+        let mut c = Carrier::default();
+        c.set_extension(&E, huge_msg());
+    }
+
+    #[test]
+    fn try_set_extension_repeated_message_over_limit_errs() {
+        const E: Extension<Repeated<MessageCodec<SizedMsg>>> = Extension::new(2, CARRIER);
+        let mut c = Carrier::default();
+        assert_eq!(
+            c.try_set_extension(&E, vec![huge_msg()]),
+            Err(EncodeError::MessageTooLarge)
+        );
+        assert_eq!(c.unknown.iter().count(), 0);
     }
 
     #[test]

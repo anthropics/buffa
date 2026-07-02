@@ -156,13 +156,14 @@ Buffa keeps the proto `SHOUTY_SNAKE_CASE` value names as the definitive Rust var
  // Encode to Vec — unchanged
  let bytes = msg.encode_to_vec();
 
- // Encode to buffer — now infallible (no Result)
+ // Encode to buffer — no Result; panics only past the 2 GiB
+ // protobuf limit (try_encode is the error-returning twin)
 -msg.encode(&mut buf)?;
 +msg.encode(&mut buf);
 
- // encoded_len — now compute_size (returns u32, caches result)
+ // encoded_len — same name, returns u32 (try_encoded_len for no-panic)
 -let len = msg.encoded_len();
-+let len = msg.compute_size() as usize;
++let len = msg.encoded_len() as usize;
 ```
 
 ## 6. Decoding API

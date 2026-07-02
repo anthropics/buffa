@@ -23,11 +23,15 @@ pub enum DecodeError {
     #[error("invalid field number")]
     InvalidFieldNumber,
 
-    /// The message or sub-message length exceeded the configured size limit.
+    /// The message or sub-message length exceeded the size limit.
     ///
-    /// By default, the limit is 2 GiB. Use [`DecodeOptions::with_max_message_size`](crate::DecodeOptions::with_max_message_size)
-    /// to set a lower limit for untrusted input.
-    #[error("message length exceeds configured size limit")]
+    /// By default, the limit is the 2 GiB protobuf maximum. Use
+    /// [`DecodeOptions::with_max_message_size`](crate::DecodeOptions::with_max_message_size)
+    /// to set a lower limit for untrusted input. Fallible re-encode paths
+    /// ([`OwnedView::from_owned`](crate::view::OwnedView::from_owned)) also
+    /// surface an over-limit *encode* through this variant, mirroring
+    /// [`EncodeError::MessageTooLarge`].
+    #[error("message length exceeds the size limit (2 GiB protobuf maximum, or a configured DecodeOptions limit)")]
     MessageTooLarge,
 
     /// The wire type of an incoming field did not match the type expected for

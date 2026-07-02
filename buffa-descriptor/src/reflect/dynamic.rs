@@ -548,6 +548,11 @@ impl DynamicMessage {
 
     /// Encode this message into `buf`.
     ///
+    /// The size check costs a full [`encoded_len`](Self::encoded_len) walk
+    /// before the write pass (the single-pass descriptor-driven codec has no
+    /// size cache to reuse). [`encode_to_vec`](Self::encode_to_vec) pays no
+    /// extra walk — it needs the length for its allocation anyway.
+    ///
     /// # Panics
     ///
     /// Panics if the encoded size exceeds the 2 GiB protobuf limit
@@ -555,8 +560,8 @@ impl DynamicMessage {
     /// buffa's own — would accept the output. See
     /// [`try_encode`](Self::try_encode) for the error-returning variant.
     pub fn encode(&self, buf: &mut impl BufMut) {
-        Self::assert_encode_size(self.encoded_len());
-        self.encode_unchecked(buf);
+        self.try_encode(buf)
+            .unwrap_or_else(|_| buffa::encode_size_overflow())
     }
 
     /// Encode, returning an error instead of panicking if the encoded size
@@ -601,10 +606,8 @@ impl DynamicMessage {
     /// error-returning variant.
     #[must_use]
     pub fn encode_to_vec(&self) -> Vec<u8> {
-        let len = Self::assert_encode_size(self.encoded_len());
-        let mut buf = Vec::with_capacity(len);
-        self.encode_unchecked(&mut buf);
-        buf
+        self.try_encode_to_vec()
+            .unwrap_or_else(|_| buffa::encode_size_overflow())
     }
 
     /// Encode to a fresh `Vec<u8>`, returning an error instead of panicking
@@ -626,28 +629,24 @@ impl DynamicMessage {
     ///
     /// The single-pass descriptor-driven codec computes sizes in `usize`,
     /// which is exact on 64-bit hosts — unlike the generated two-pass codec
-    /// there is no `u32` arithmetic to saturate, so a plain comparison
-    /// suffices.
+    /// there is no `u32` arithmetic to saturate. This adapts the `usize`
+    /// domain onto the shared [`buffa::checked_encode_size`] guard (via
+    /// [`buffa::saturate_size`], so a value past `u32::MAX` still trips the
+    /// check) rather than restating the comparison here.
     fn checked_encode_size(len: usize) -> Result<usize, buffa::EncodeError> {
-        if len > buffa::MAX_MESSAGE_BYTES as usize {
-            Err(buffa::EncodeError::MessageTooLarge)
-        } else {
-            Ok(len)
-        }
-    }
-
-    /// Panicking wrapper over [`checked_encode_size`](Self::checked_encode_size).
-    fn assert_encode_size(len: usize) -> usize {
-        match Self::checked_encode_size(len) {
-            Ok(len) => len,
-            Err(_) => panic!(
-                "message encoded size ({len} bytes) exceeds the 2 GiB protobuf limit \
-                 (use try_encode/try_encode_to_vec to handle this as an error)"
-            ),
-        }
+        buffa::checked_encode_size(buffa::saturate_size(len as u64))?;
+        Ok(len)
     }
 
     /// Compute the encoded length.
+    ///
+    /// Unlike [`Message::encoded_len`](buffa::Message::encoded_len), this
+    /// does **not** enforce the 2 GiB limit: the `usize` result is exact
+    /// (there is no `u32` saturation that could turn an over-limit size
+    /// into a lie), so the check lives only in the encode entry points.
+    /// Use [`try_encode_to_vec`](Self::try_encode_to_vec) or compare
+    /// against [`buffa::MAX_MESSAGE_BYTES`] if you need the guard before
+    /// writing.
     #[must_use]
     pub fn encoded_len(&self) -> usize {
         let mut len = self.unknown.encoded_len();
@@ -855,7 +854,9 @@ impl DynamicMessage {
     ///
     /// [`AnyError::AnyNotRegistered`] if the pool does not contain
     /// `google.protobuf.Any` (e.g. a `FileDescriptorSet` built without the
-    /// well-known types).
+    /// well-known types). [`AnyError::MessageTooLarge`] if this message's
+    /// encoded size exceeds the 2 GiB protobuf limit
+    /// ([`buffa::MAX_MESSAGE_BYTES`]).
     pub fn pack_any(&self) -> Result<DynamicMessage, AnyError> {
         let any_idx = self
             .pool
@@ -960,7 +961,7 @@ impl core::fmt::Display for AnyError {
             }
             Self::MissingTypeUrl => write!(f, "Any has no type_url"),
             Self::MessageTooLarge => {
-                write!(f, "packed message exceeds the 2 GiB protobuf encode limit")
+                write!(f, "packed message exceeds the 2 GiB protobuf limit")
             }
             Self::UnknownType { type_url } => {
                 write!(f, "Any type_url {type_url:?} not registered in the pool")
@@ -1584,16 +1585,12 @@ fn tag_len(field_number: u32, wt: WireType) -> usize {
 mod tests {
     use super::DynamicMessage;
 
-    // The encode/encode_to_vec entry points funnel through
-    // `assert_encode_size`; exercising the over-limit path end-to-end would
-    // require materializing >2 GiB of field data, so the guard is tested
-    // directly (the e2e encode paths are covered in `tests/dynamic_e2e.rs`).
-
-    #[test]
-    fn assert_encode_size_allows_exactly_max() {
-        let max = buffa::MAX_MESSAGE_BYTES as usize;
-        assert_eq!(DynamicMessage::assert_encode_size(max), max);
-    }
+    // The encode entry points funnel through `checked_encode_size`;
+    // exercising the over-limit path end-to-end would require materializing
+    // >2 GiB of field data, so the usize adapter over the shared guard is
+    // tested directly (the e2e encode paths are covered in
+    // `tests/dynamic_e2e.rs`, and the shared guard's own boundary in
+    // `buffa::message`).
 
     #[test]
     fn checked_encode_size_boundary() {
@@ -1603,11 +1600,11 @@ mod tests {
             DynamicMessage::checked_encode_size(max + 1),
             Err(buffa::EncodeError::MessageTooLarge)
         );
-    }
-
-    #[test]
-    #[should_panic(expected = "exceeds the 2 GiB protobuf limit")]
-    fn assert_encode_size_rejects_over_limit() {
-        let _ = DynamicMessage::assert_encode_size(buffa::MAX_MESSAGE_BYTES as usize + 1);
+        // Past u32::MAX the adapter saturates rather than wrapping.
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(
+            DynamicMessage::checked_encode_size(u32::MAX as usize + 1),
+            Err(buffa::EncodeError::MessageTooLarge)
+        );
     }
 }

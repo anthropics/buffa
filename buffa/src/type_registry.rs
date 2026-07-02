@@ -489,9 +489,7 @@ fn oversized_message_error() -> crate::text::ParseError {
     crate::text::ParseError::new(
         0,
         0,
-        crate::text::ParseErrorKind::Internal(
-            "merged message exceeds the 2 GiB protobuf encode limit",
-        ),
+        crate::text::ParseErrorKind::Internal("merged message exceeds the 2 GiB protobuf limit"),
     )
 }
 

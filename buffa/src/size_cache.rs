@@ -217,14 +217,15 @@ impl SizeCache {
     /// generated code this indicates a codegen bug; for manual `Message`
     /// implementations it indicates a traversal-order mismatch.
     ///
-    /// Also panics if the cached size exceeds the 2 GiB protobuf limit
-    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)): every slot is a
-    /// sub-message length about to become a wire length prefix, and no
-    /// conforming decoder accepts a prefix above the limit. The comparison
-    /// runs on every call (one perfectly-predicted branch per slot), but it
-    /// can only *fire* when `compute_size`/`write_to` are driven directly
+    /// In debug builds, also panics if the cached size exceeds the 2 GiB
+    /// protobuf limit ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)):
+    /// every slot is a sub-message length about to become a wire length
+    /// prefix, and no conforming decoder accepts a prefix above the limit.
+    /// This can only fire when `compute_size`/`write_to` are driven directly
     /// with an over-limit sub-message — the provided `Message::encode*`
-    /// entry points reject over-limit messages before `write_to` runs.
+    /// entry points reject over-limit messages before `write_to` runs, so
+    /// (like the two-pass byte ledger) the check is debug-only rather than a
+    /// release-mode branch on every nested-message write.
     #[inline]
     #[track_caller]
     pub fn consume_next(&mut self) -> u32 {
@@ -242,9 +243,11 @@ impl SizeCache {
         } else {
             self.spill[idx - INLINE_CAP]
         };
-        if size > crate::MAX_MESSAGE_BYTES {
-            Self::oversized(size);
-        }
+        debug_assert!(
+            size <= crate::MAX_MESSAGE_BYTES,
+            "SizeCache slot holds a sub-message length of {size} bytes, \
+             which exceeds the 2 GiB protobuf limit"
+        );
         size
     }
 
@@ -256,16 +259,6 @@ impl SizeCache {
             "SizeCache cursor overrun: write_to consumed {} slots but \
              compute_size produced {len} (traversal-order mismatch)",
             idx + 1,
-        )
-    }
-
-    #[cold]
-    #[inline(never)]
-    #[track_caller]
-    fn oversized(size: u32) -> ! {
-        panic!(
-            "SizeCache slot holds a sub-message length of {size} bytes, \
-             which exceeds the 2 GiB protobuf limit"
         )
     }
 }
@@ -426,10 +419,8 @@ impl SizeCachePool {
     #[inline]
     #[must_use]
     pub fn encoded_len<M: crate::Message>(&mut self, msg: &M) -> u32 {
-        let mut cache = self.acquire();
-        let len = msg.compute_size(&mut cache);
-        self.release(cache);
-        crate::message::assert_encode_size(len)
+        self.try_encoded_len(msg)
+            .unwrap_or_else(|_| crate::message::encode_size_overflow())
     }
 
     /// Encode a message into `buf`, reusing a pooled spill buffer.
@@ -443,9 +434,8 @@ impl SizeCachePool {
     /// [`Message::encode_with_cache`](crate::Message::encode_with_cache).
     #[inline]
     pub fn encode<M: crate::Message>(&mut self, msg: &M, buf: &mut impl bytes::BufMut) {
-        let mut cache = self.acquire();
-        msg.encode_with_cache(&mut cache, buf);
-        self.release(cache);
+        self.try_encode(msg, buf)
+            .unwrap_or_else(|_| crate::message::encode_size_overflow())
     }
 
     /// Encode a borrowed message view into `buf`, reusing a pooled spill buffer.
@@ -463,9 +453,8 @@ impl SizeCachePool {
         view: &V,
         buf: &mut impl bytes::BufMut,
     ) {
-        let mut cache = self.acquire();
-        view.encode_with_cache(&mut cache, buf);
-        self.release(cache);
+        self.try_encode_view(view, buf)
+            .unwrap_or_else(|_| crate::message::encode_size_overflow())
     }
 
     /// Compute a message's encoded length, returning an error instead of
@@ -821,12 +810,14 @@ mod tests {
         assert_eq!(c.consume_next(), crate::MAX_MESSAGE_BYTES);
     }
 
+    #[cfg(debug_assertions)]
     #[test]
     #[should_panic(expected = "exceeds the 2 GiB protobuf limit")]
     fn consume_next_rejects_oversized_slot() {
         // A slot above the limit would become an invalid wire length
         // prefix. The entry points reject such messages before write_to
-        // runs; this backstop covers direct compute_size/write_to drivers.
+        // runs; this debug-only backstop covers direct compute_size/write_to
+        // drivers.
         let mut c = SizeCache::new();
         let s = c.reserve();
         c.set(s, crate::MAX_MESSAGE_BYTES + 1);

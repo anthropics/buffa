@@ -1638,6 +1638,14 @@ field_opts.set_extension(&FIELD, my_rules);
 field_opts.clear_extension(&FIELD);
 ```
 
+Message-typed extension values are encoded to wire bytes on `set`, so
+`set_extension()` panics if the value's encoded size exceeds the 2 GiB
+protobuf limit; `try_set_extension()` returns
+`Err(EncodeError::MessageTooLarge)` instead and leaves the extendee
+unchanged. (Scalar-typed extensions cannot fail.) `Any::pack` has the same
+shape: it panics on an over-limit message, and `Any::try_pack` is the
+error-returning twin.
+
 ### Extendee identity check
 
 `extension()`, `set_extension()`, and `clear_extension()` **panic** if you

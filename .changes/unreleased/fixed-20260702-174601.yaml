@@ -16,6 +16,11 @@ body: |-
     `try_encode_with_cache`, `try_encoded_len`, `try_encode_length_delimited`,
     `try_encode_to_vec`, and `try_encode_to_bytes` twins return
     `Err(EncodeError::MessageTooLarge)` instead — `EncodeError` gains its first
-    variant. `SizeCache::consume_next` also rejects over-limit slots as a
-    backstop for callers driving `compute_size`/`write_to` directly.
+    variant. Fallible variants also cover the eager re-encode paths:
+    `ExtensionSet::try_set_extension` and `Any::try_pack` (message-typed
+    extension values and `Any::pack` encode their payload on the spot, so the
+    panicking originals document the new panic and these twins return the
+    error instead). In debug builds `SizeCache::consume_next` additionally
+    rejects over-limit slots as a backstop for callers driving
+    `compute_size`/`write_to` directly.
 time: 2026-07-02T17:46:01.12802197Z
