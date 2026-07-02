@@ -6,6 +6,7 @@ members = [
     "buffa-descriptor",
     "buffa-codegen",
     "buffa-build",
+    "buffa-remote-derive",
     "buffa-test",
     "buffa-yaml",
     "protoc-gen-buffa",

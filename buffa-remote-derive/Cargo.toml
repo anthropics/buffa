@@ -1,0 +1,25 @@
+[package]
+name = "buffa-remote-derive"
+description = "Derive macros that implement buffa's pluggable owned-type traits (ProtoString, ProtoBytes, ProtoList, ProtoBox, MapStorage) for a newtype wrapping a foreign remote type"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["protobuf", "protocol-buffers", "derive"]
+categories = ["encoding"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true }
+
+[dev-dependencies]
+buffa = { workspace = true, features = ["std"] }
+ecow = { workspace = true }
+smallvec = { version = "1", default-features = false }
+smallbox = { version = "0.8", default-features = false }
+indexmap = { version = "2", default-features = false, features = ["std"] }
