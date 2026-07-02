@@ -456,8 +456,17 @@ pub(crate) fn generate_lazy_view_with_nesting(
             #[inline]
             #[must_use]
             pub fn encode_to_vec(&self) -> ::buffa::alloc::vec::Vec<u8> {
-                self.try_encode_to_vec()
-                    .unwrap_or_else(|_| ::buffa::encode_size_overflow())
+                let mut __cache = ::buffa::SizeCache::new();
+                let __size = match ::buffa::checked_encode_size(
+                    self.compute_size(&mut __cache),
+                ) {
+                    ::core::result::Result::Ok(__size) => __size as usize,
+                    ::core::result::Result::Err(_) => ::buffa::encode_size_overflow(),
+                };
+                let mut __buf = ::buffa::alloc::vec::Vec::with_capacity(__size);
+                self.write_to(&mut __cache, &mut __buf);
+                ::buffa::debug_assert_two_pass(__buf.len(), __size);
+                __buf
             }
 
             /// Encode to a new `Vec<u8>`, returning an error instead of
@@ -492,8 +501,17 @@ pub(crate) fn generate_lazy_view_with_nesting(
             #[inline]
             #[must_use]
             pub fn encode_to_bytes(&self) -> ::buffa::bytes::Bytes {
-                self.try_encode_to_bytes()
-                    .unwrap_or_else(|_| ::buffa::encode_size_overflow())
+                let mut __cache = ::buffa::SizeCache::new();
+                let __size = match ::buffa::checked_encode_size(
+                    self.compute_size(&mut __cache),
+                ) {
+                    ::core::result::Result::Ok(__size) => __size as usize,
+                    ::core::result::Result::Err(_) => ::buffa::encode_size_overflow(),
+                };
+                let mut __buf = ::buffa::bytes::BytesMut::with_capacity(__size);
+                self.write_to(&mut __cache, &mut __buf);
+                ::buffa::debug_assert_two_pass(__buf.len(), __size);
+                __buf.freeze()
             }
 
             /// Encode to a new [`::buffa::bytes::Bytes`], returning an

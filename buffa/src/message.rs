@@ -478,11 +478,26 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// error-returning variant. In debug builds, also panics if a manual
     /// implementation's `write_to` produces a different byte count than
     /// its `compute_size` declared.
+    // Direct body rather than delegating to try_encode_to_vec: LLVM does
+    // not fold the Result<Vec<u8>> niche away even under full inlining, so
+    // the delegating form re-checks the capacity sentinel and round-trips
+    // the Vec through a Result temp in every caller — measured +7.5% on
+    // dense-small-message encode (google_message1, quieted metal,
+    // layout-normalized). Same for encode_to_bytes. The unit- and
+    // scalar-returning entry points delegate — their Results stay in
+    // registers and fold cleanly.
     #[inline]
     #[must_use]
     fn encode_to_vec(&self) -> alloc::vec::Vec<u8> {
-        self.try_encode_to_vec()
-            .unwrap_or_else(|_| encode_size_overflow())
+        let mut cache = crate::SizeCache::new();
+        let size = match checked_encode_size(self.compute_size(&mut cache)) {
+            Ok(size) => size as usize,
+            Err(_) => encode_size_overflow(),
+        };
+        let mut buf = alloc::vec::Vec::with_capacity(size);
+        self.write_to(&mut cache, &mut buf);
+        debug_assert_two_pass(buf.len(), size);
+        buf
     }
 
     /// Encode to a new `Vec<u8>`, returning an error instead of panicking
@@ -524,11 +539,20 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// error-returning variant. In debug builds, also panics if a manual
     /// implementation's `write_to` produces a different byte count than
     /// its `compute_size` declared.
+    // Direct body — see encode_to_vec for why the fat-payload entry points
+    // do not delegate to their try_ twins.
     #[inline]
     #[must_use]
     fn encode_to_bytes(&self) -> bytes::Bytes {
-        self.try_encode_to_bytes()
-            .unwrap_or_else(|_| encode_size_overflow())
+        let mut cache = crate::SizeCache::new();
+        let size = match checked_encode_size(self.compute_size(&mut cache)) {
+            Ok(size) => size as usize,
+            Err(_) => encode_size_overflow(),
+        };
+        let mut buf = bytes::BytesMut::with_capacity(size);
+        self.write_to(&mut cache, &mut buf);
+        debug_assert_two_pass(buf.len(), size);
+        buf.freeze()
     }
 
     /// Encode to a new [`bytes::Bytes`], returning an error instead of
