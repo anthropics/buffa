@@ -266,6 +266,42 @@ fn int64_deserializes_exact_negative_float_notation_string() {
     assert_eq!(val.0, -9007199254740993i64);
 }
 
+#[test]
+fn int64_deserializes_safe_unquoted_float_notation() {
+    #[rustfmt::skip]
+    let cases: &[(&str, i64)] = &[
+        ("4503599627370495.0",     4503599627370495),
+        ("4.503599627370495e15",   4503599627370495),
+        ("-4503599627370495.0",   -4503599627370495),
+        ("-4.503599627370495e15", -4503599627370495),
+    ];
+    for &(json, expected) in cases {
+        let val: SerdeInt64 = serde_json::from_str(json).unwrap();
+        assert_eq!(val.0, expected, "input: {json}");
+    }
+}
+
+#[test]
+fn int64_rejects_unsafe_unquoted_float_notation() {
+    #[rustfmt::skip]
+    let cases: &[&str] = &[
+        "4503599627370496.0",
+        "9007199254740992.0",
+        "9007199254740993.0",
+        "9.007199254740993e15",
+        "-4503599627370496.0",
+        "-9007199254740992.0",
+        "-9007199254740993.0",
+        "-9.007199254740993e15",
+    ];
+    for &json in cases {
+        assert!(
+            serde_json::from_str::<SerdeInt64>(json).is_err(),
+            "input should reject: {json}"
+        );
+    }
+}
+
 // ── uint64 ──────────────────────────────────────────────────────────────
 
 #[test]
@@ -284,6 +320,23 @@ fn uint64_deserializes_from_quoted_string() {
 fn uint64_deserializes_exact_float_notation_string() {
     let val: SerdeUint64 = serde_json::from_str(r#""18446744073709551615.0""#).unwrap();
     assert_eq!(val.0, u64::MAX);
+}
+
+#[test]
+fn uint64_rejects_unsafe_unquoted_float_notation() {
+    #[rustfmt::skip]
+    let cases: &[&str] = &[
+        "4503599627370496.0",
+        "9007199254740992.0",
+        "9007199254740993.0",
+        "9.007199254740993e15",
+    ];
+    for &json in cases {
+        assert!(
+            serde_json::from_str::<SerdeUint64>(json).is_err(),
+            "input should reject: {json}"
+        );
+    }
 }
 
 // ── float ───────────────────────────────────────────────────────────────
