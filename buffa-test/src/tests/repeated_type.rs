@@ -73,7 +73,6 @@ fn view_to_owned_round_trip() {
     let bytes = bytes::Bytes::from(sample().encode_to_vec());
     let owned: Lists = crate::repeated_type::ListsOwnedView::decode(bytes)
         .expect("decode view")
-        .to_owned_message()
-        .expect("to_owned");
+        .to_owned_message();
     assert_eq!(owned, sample());
 }

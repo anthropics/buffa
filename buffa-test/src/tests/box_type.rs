@@ -86,8 +86,7 @@ fn view_to_owned_round_trip() {
     let bytes = bytes::Bytes::from(sample().encode_to_vec());
     let owned: Outer = crate::box_type::OuterOwnedView::decode(bytes)
         .expect("decode view")
-        .to_owned_message()
-        .expect("to_owned");
+        .to_owned_message();
     assert_eq!(owned, sample());
 }
 
@@ -145,7 +144,6 @@ fn oneof_view_to_owned_round_trip() {
     let bytes = bytes::Bytes::from(msg.encode_to_vec());
     let owned: WithOneof = crate::box_type::WithOneofOwnedView::decode(bytes)
         .expect("decode view")
-        .to_owned_message()
-        .expect("to_owned");
+        .to_owned_message();
     assert_eq!(owned, msg);
 }

@@ -1033,8 +1033,9 @@ let view = PersonView::decode_view(&bytes)?;
 println!("name: {}", view.name);  // &str, no allocation
 
 // Convert to owned when needed (e.g., for storage or mutation).
-// Infallible for views produced by decode_view; the Result covers
-// hand-written view impls.
+// Won't error for views from decode_view, but the signature stays
+// Result because hand-written view impls can fail; the OwnedView
+// handle below drops the Result entirely.
 let owned: Person = view.to_owned_message()?;
 ```
 
@@ -1123,8 +1124,9 @@ println!("id: {}", view.id());
 let person = view.view();
 for tag in person.tags.iter() { /* ... */ }
 
-// Convert to owned if needed for storage or mutation
-let owned: Person = view.to_owned_message()?;
+// Convert to owned if needed for storage or mutation — infallible, since
+// the handle always holds a wire-decoded view
+let owned: Person = view.to_owned_message();
 ```
 
 When working with the generic `OwnedView<V>` directly (for example, a request type handed to you by an RPC framework), reach the inner view with `reborrow()`, which ties the borrow to the `OwnedView` itself: `let person = view.reborrow();` then `person.name`. Field access directly on the handle is deliberately not provided — the stored view's lifetime is a synthetic `'static`, and exposing it would let field borrows outlive the buffer they point into.
