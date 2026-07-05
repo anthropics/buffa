@@ -586,8 +586,23 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `reflection=true` | Emit reflection support (vtable mode) plus an embedded per-package descriptor pool — see [Runtime reflection](#runtime-reflection) |
 | `reflect_mode=off\|bridge\|vtable` | Finer-grained reflection selector; `reflection=true` is shorthand for `vtable` |
 | `extern_path=.pkg=::rust` | Map a proto package — or a single type, e.g. `extern_path=.pkg.Type=::rust::Type` — to an external Rust path |
+| `exclude_package=.pkg` | Drop a proto package and its subpackages from generation (repeatable; leading dot optional). For option-only imports that `include_imports` pulls in but that are never used as field types, e.g. `buf.validate`, `gnostic`. **Pass the same `exclude_package` to `protoc-gen-buffa-packaging`** (see the note below the table) so the generated `mod.rs` omits the same packages. |
 | `file_per_package=true` | Emit one `<dotted.package>.rs` per package instead of per-proto-file content + a `<dotted.pkg>.mod.rs` stitcher. Use this with the remote plugin when you don't want to install `protoc-gen-buffa-packaging` — see [Remote plugin only](#remote-plugin-only-no-local-install). Under `strategy: directory`, requires the input module to be `PACKAGE_DIRECTORY_MATCH`-clean. |
 | `idiomatic_imports=true` | **Experimental.** Emit `use`-backed short type names at the package root. Requires `file_per_package=true`. Only type declarations are shortened; the generated file must keep its `#[allow]` wrapper. |
+
+> **`exclude_package` spans both plugins.** It is accepted by both `protoc-gen-buffa` (which skips generating the package's files) and `protoc-gen-buffa-packaging` (which omits the package from the emitted `mod.rs`). Pass the identical `exclude_package` opt to both — the two share one exclusion predicate, so a mismatch leaves the `mod.rs` `include!`-ing a stitcher that was never generated (or dropping one that was). Example, excluding the option-only `buf.validate` and `gnostic` imports that `include_imports` pulls in:
+>
+> ```yaml
+> plugins:
+>   - local: protoc-gen-buffa
+>     out: src/gen
+>     opt: [exclude_package=.buf.validate, exclude_package=.gnostic]
+>     include_imports: true
+>   - local: protoc-gen-buffa-packaging
+>     out: src/gen
+>     strategy: all
+>     opt: [exclude_package=.buf.validate, exclude_package=.gnostic]
+> ```
 
 #### BSR-generated SDKs
 

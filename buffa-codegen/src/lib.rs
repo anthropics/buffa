@@ -2966,6 +2966,80 @@ pub fn package_to_mod_filename(package: &str) -> String {
     }
 }
 
+/// Returns `true` if `package` is covered by any entry in `excludes`.
+///
+/// Intended for packages that `include_imports` pulls into
+/// `file_to_generate` but that a caller does not want emitted — typically
+/// option-only imports such as `buf.validate` or `gnostic.openapi.v3`, whose
+/// types are referenced only from custom options and never appear as message
+/// fields.
+///
+/// An exclusion matches a package exactly, or as a dotted-path prefix on a
+/// component boundary: `"buf.validate"` covers `buf.validate` and
+/// `buf.validate.foo`, but not `buf.validatex`. Entries are proto package
+/// paths without a leading dot (`buf.validate`, not `.buf.validate`); an
+/// empty entry matches only the unnamed package.
+///
+/// Both `protoc-gen-buffa` (which filters `file_to_generate` before codegen)
+/// and `protoc-gen-buffa-packaging` (which filters the packages it stitches
+/// into `mod.rs`) route their exclusion through this one predicate, so the
+/// two plugins are guaranteed to drop exactly the same set — the invariant
+/// the packaging plugin's "Matching a codegen plugin's output set" note
+/// depends on.
+pub fn package_is_excluded(package: &str, excludes: &[String]) -> bool {
+    excludes.iter().any(|ex| {
+        package == ex
+            || (package.len() > ex.len()
+                && package.starts_with(ex.as_str())
+                && package.as_bytes()[ex.len()] == b'.')
+    })
+}
+
+#[cfg(test)]
+mod package_exclusion_tests {
+    use super::package_is_excluded;
+
+    fn ex(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn exact_match_is_excluded() {
+        assert!(package_is_excluded("buf.validate", &ex(&["buf.validate"])));
+    }
+
+    #[test]
+    fn subpackage_matches_on_component_boundary() {
+        assert!(package_is_excluded("gnostic.openapi.v3", &ex(&["gnostic"])));
+        assert!(package_is_excluded(
+            "buf.validate.priv",
+            &ex(&["buf.validate"])
+        ));
+    }
+
+    #[test]
+    fn prefix_without_boundary_does_not_match() {
+        assert!(!package_is_excluded(
+            "buf.validatex",
+            &ex(&["buf.validate"])
+        ));
+        assert!(!package_is_excluded("gnostics", &ex(&["gnostic"])));
+    }
+
+    #[test]
+    fn unrelated_package_is_kept() {
+        assert!(!package_is_excluded(
+            "kimi.user.v1",
+            &ex(&["buf.validate", "gnostic"])
+        ));
+    }
+
+    #[test]
+    fn empty_exclude_list_keeps_everything() {
+        assert!(!package_is_excluded("buf.validate", &ex(&[])));
+    }
+}
+
 /// Convert a proto package name to its [`file_per_package`] output filename.
 ///
 /// e.g., `"google.protobuf"` → `"google.protobuf.rs"`. The unnamed
