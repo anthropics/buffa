@@ -3,7 +3,8 @@
 //! Implements the protobuf binary wire format: varints, fixed-width integers,
 //! length-delimited fields, and tag parsing.
 
-use bytes::{Buf, BufMut};
+use crate::encode_sink::EncodeSink;
+use bytes::Buf;
 
 use crate::error::DecodeError;
 
@@ -101,7 +102,7 @@ impl Tag {
 
     /// Encode a tag to a buffer.
     #[inline]
-    pub fn encode(&self, buf: &mut impl BufMut) {
+    pub fn encode(&self, buf: &mut impl EncodeSink) {
         // Cast to u64 before shifting to avoid overflow for large (invalid)
         // field numbers; valid field numbers fit in 29 bits so the result
         // always fits in 32 bits when the field number is in range.
@@ -172,7 +173,7 @@ impl Tag {
 /// (it cannot prove the inner `return` always fires), and this function is
 /// called for every tag and varint field on the encode hot path.
 #[inline]
-pub fn encode_varint(mut value: u64, buf: &mut impl BufMut) {
+pub fn encode_varint(mut value: u64, buf: &mut impl EncodeSink) {
     loop {
         if value < 0x80 {
             buf.put_u8(value as u8);

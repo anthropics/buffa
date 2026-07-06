@@ -41,7 +41,7 @@ The runtime library that generated code depends on. Contains:
 - **`MessageField<T>`**: Ergonomic wrapper for optional message fields that dereferences to a default instance when unset.
 - **`SizeCache`**: External pre-order size cache threaded through `compute_size` / `write_to` for linear-time serialization.
 - **`EnumValue<T>`**: Type-safe wrapper for open enum fields that preserves unknown values.
-- **Wire format codec**: Varint, fixed-width, length-delimited, and group encoding/decoding using `bytes::{Buf, BufMut}`.
+- **Wire format codec**: Varint, fixed-width, length-delimited, and group encoding/decoding; decoding reads any `bytes::Buf`, encoding writes to any `EncodeSink` (every `bytes::BufMut` qualifies via a blanket impl, and `Rope` provides segmented zero-copy output).
 - **Unknown field storage**: Preserves unknown fields for round-trip fidelity.
 - **Edition feature types**: Rust types representing edition features (`FieldPresence`, `EnumType`, `RepeatedFieldEncoding`, etc.) used by generated code and runtime logic.
 
@@ -393,13 +393,13 @@ The `Message` trait reflects this two-pass model:
 pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     // Required methods (implemented by codegen per message type):
     fn compute_size(&self, cache: &mut SizeCache) -> u32;  // Pass 1
-    fn write_to(&self, cache: &mut SizeCache, buf: &mut impl BufMut);  // Pass 2
+    fn write_to(&self, cache: &mut SizeCache, buf: &mut impl EncodeSink);  // Pass 2
     fn merge_field(&mut self, tag: Tag, buf: &mut impl Buf, ctx: DecodeContext<'_>)
         -> Result<(), DecodeError>;     // Per-field decode dispatch
     fn clear(&mut self);
 
     // Provided methods (default impls):
-    fn encode(&self, buf: &mut impl BufMut);
+    fn encode(&self, buf: &mut impl EncodeSink);
     fn encode_to_vec(&self) -> Vec<u8>;
     fn encode_to_bytes(&self) -> Bytes;
     fn decode_from_slice(data: &[u8]) -> Result<Self, DecodeError>;

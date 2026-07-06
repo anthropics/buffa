@@ -54,6 +54,7 @@ mod owned_view;
 mod proto2;
 mod proto3_semantics;
 mod repeated_type;
+mod rope_encode;
 mod string_type;
 mod textproto;
 mod type_prefix;

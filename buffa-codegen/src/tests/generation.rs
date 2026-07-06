@@ -1726,8 +1726,8 @@ fn test_message_proto3_optional_bytes_and_bool() {
     );
     // Bytes uses encode_bytes
     assert!(
-        content.contains("put_bytes_field"),
-        "missing put_bytes_field for optional bytes: {content}"
+        content.contains("put_shared_bytes_field"),
+        "missing put_shared_bytes_field for optional bytes: {content}"
     );
 }
 
@@ -1772,8 +1772,8 @@ fn test_message_string_and_bytes_fields() {
         "missing string_encoded_len: {content}"
     );
     assert!(
-        content.contains("put_bytes_field"),
-        "missing put_bytes_field: {content}"
+        content.contains("put_shared_bytes_field"),
+        "missing put_shared_bytes_field: {content}"
     );
     assert!(
         content.contains("merge_bytes"),

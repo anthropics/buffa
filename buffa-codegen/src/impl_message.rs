@@ -576,9 +576,9 @@ pub fn generate_message_impl(
         quote! { let size = 0u32; }
     };
     let buf_param = if has_body {
-        quote! { buf: &mut impl ::buffa::bytes::BufMut }
+        quote! { buf: &mut impl ::buffa::EncodeSink }
     } else {
-        quote! { _buf: &mut impl ::buffa::bytes::BufMut }
+        quote! { _buf: &mut impl ::buffa::EncodeSink }
     };
 
     let extension_set_impl = if preserve_unknown_fields {
@@ -897,9 +897,9 @@ pub(crate) fn build_view_encode_methods(
         quote! { let size = 0u32; }
     };
     let buf_param = if has_body {
-        quote! { buf: &mut impl ::buffa::bytes::BufMut }
+        quote! { buf: &mut impl ::buffa::EncodeSink }
     } else {
-        quote! { _buf: &mut impl ::buffa::bytes::BufMut }
+        quote! { _buf: &mut impl ::buffa::EncodeSink }
     };
 
     // On the lazy family these are inherent `pub fn`s, so they need doc
@@ -1668,7 +1668,7 @@ fn scalar_write_to_stmt(
             }),
             Type::TYPE_BYTES => Ok(quote! {
                 if let Some(ref v) = self.#ident {
-                    ::buffa::types::put_bytes_field(#field_number, v, buf);
+                    ::buffa::types::put_shared_bytes_field(#field_number, v, buf);
                 }
             }),
             Type::TYPE_ENUM => Ok(quote! {
@@ -1705,12 +1705,12 @@ fn scalar_write_to_stmt(
         Type::TYPE_BYTES => {
             return Ok(if is_proto2_required {
                 quote! {
-                    ::buffa::types::put_bytes_field(#field_number, &self.#ident, buf);
+                    ::buffa::types::put_shared_bytes_field(#field_number, &self.#ident, buf);
                 }
             } else {
                 quote! {
                     if !self.#ident.is_empty() {
-                        ::buffa::types::put_bytes_field(#field_number, &self.#ident, buf);
+                        ::buffa::types::put_shared_bytes_field(#field_number, &self.#ident, buf);
                     }
                 }
             });
@@ -2250,7 +2250,7 @@ fn repeated_write_to_stmt(
                 quote! { ::buffa::types::put_string_field(#field_number, v, buf); }
             }
             Type::TYPE_BYTES => {
-                quote! { ::buffa::types::put_bytes_field(#field_number, v, buf); }
+                quote! { ::buffa::types::put_shared_bytes_field(#field_number, v, buf); }
             }
             Type::TYPE_ENUM => {
                 quote! { ::buffa::types::put_int32_field(#field_number, v.to_i32(), buf); }
@@ -2574,7 +2574,7 @@ fn oneof_write_arm(
         },
         Type::TYPE_BYTES => quote! {
             #enum_ident::#variant_ident(x) => {
-                ::buffa::types::put_bytes_field(#field_number, x, buf);
+                ::buffa::types::put_shared_bytes_field(#field_number, x, buf);
             }
         },
         Type::TYPE_ENUM => quote! {

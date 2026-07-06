@@ -99,9 +99,10 @@
 //! }
 //! ```
 
+use crate::encode_sink::EncodeSink;
 use crate::error::DecodeError;
 use crate::message::Message as _;
-use bytes::{BufMut, Bytes};
+use bytes::Bytes;
 
 /// Trait for zero-copy borrowed message views.
 ///
@@ -563,20 +564,29 @@ pub fn bytes_from_source(source: Option<&Bytes>, slice: &[u8]) -> Bytes {
         return Bytes::new();
     }
     if let Some(b) = source {
-        // Mirrors `slice_ref`'s own containment precondition so we fall back
-        // to copy (rather than panic) for slices outside `source`.
-        let b_start = b.as_ptr() as usize;
-        let s_start = slice.as_ptr() as usize;
-        if let (Some(b_end), Some(s_end)) = (
-            b_start.checked_add(b.len()),
-            s_start.checked_add(slice.len()),
-        ) {
-            if s_start >= b_start && s_end <= b_end {
-                return b.slice_ref(slice);
-            }
+        if let Some(shared) = try_slice_ref(b, slice) {
+            return shared;
         }
     }
     Bytes::copy_from_slice(slice)
+}
+
+/// Zero-copy [`Bytes::slice_ref`] guarded by `slice_ref`'s own containment
+/// precondition: returns `Some` only when `slice` lies entirely within
+/// `backing`, so callers fall back to a copy rather than panic for slices
+/// from elsewhere. Shared by [`bytes_from_source`] and the
+/// [`Rope`](crate::Rope) backing-buffer capture.
+///
+/// The caller is responsible for excluding empty slices when an empty
+/// result is not wanted (an empty slice's dangling pointer can spuriously
+/// fall inside any range).
+#[inline]
+pub(crate) fn try_slice_ref(backing: &Bytes, slice: &[u8]) -> Option<Bytes> {
+    let b_start = backing.as_ptr() as usize;
+    let s_start = slice.as_ptr() as usize;
+    let b_end = b_start.checked_add(backing.len())?;
+    let s_end = s_start.checked_add(slice.len())?;
+    (s_start >= b_start && s_end <= b_end).then(|| backing.slice_ref(slice))
 }
 
 /// Serialize a [`MessageView`] directly from its borrowed fields.
@@ -628,10 +638,15 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     /// [`compute_size`](Self::compute_size) call on the same cache).
     ///
     /// Most callers should use [`encode`](Self::encode) instead.
-    fn write_to(&self, cache: &mut crate::SizeCache, buf: &mut impl BufMut);
+    fn write_to(&self, cache: &mut crate::SizeCache, buf: &mut impl EncodeSink);
 
     /// Compute size, then write. Primary view-encode entry point.
-    fn encode(&self, buf: &mut impl BufMut) {
+    ///
+    /// The sink can be any [`BufMut`](bytes::BufMut) (contiguous output) or
+    /// a [`Rope`](crate::Rope); a rope constructed with
+    /// [`with_backing`](crate::Rope::with_backing) on the view's source
+    /// buffer re-encodes large borrowed fields zero-copy.
+    fn encode(&self, buf: &mut impl EncodeSink) {
         let mut cache = crate::SizeCache::new();
         self.compute_size(&mut cache);
         self.write_to(&mut cache, buf);
@@ -639,7 +654,7 @@ pub trait ViewEncode<'a>: MessageView<'a> {
 
     /// Encode using a caller-supplied [`SizeCache`](crate::SizeCache), for
     /// reuse across many encodes in a hot loop. Clears the cache first.
-    fn encode_with_cache(&self, cache: &mut crate::SizeCache, buf: &mut impl BufMut) {
+    fn encode_with_cache(&self, cache: &mut crate::SizeCache, buf: &mut impl EncodeSink) {
         cache.clear();
         self.compute_size(cache);
         self.write_to(cache, buf);
@@ -657,7 +672,7 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     }
 
     /// Encode this view as a length-delimited byte sequence.
-    fn encode_length_delimited(&self, buf: &mut impl BufMut) {
+    fn encode_length_delimited(&self, buf: &mut impl EncodeSink) {
         let mut cache = crate::SizeCache::new();
         let len = self.compute_size(&mut cache);
         crate::encoding::encode_varint(len as u64, buf);
@@ -873,7 +888,7 @@ impl<'a, V: ViewEncode<'a>> MessageFieldView<V> {
     /// Forward to the inner view's [`write_to`](ViewEncode::write_to);
     /// no-op if unset.
     #[inline]
-    pub fn write_to(&self, cache: &mut crate::SizeCache, buf: &mut impl BufMut) {
+    pub fn write_to(&self, cache: &mut crate::SizeCache, buf: &mut impl EncodeSink) {
         if let Some(v) = self.inner.as_deref() {
             v.write_to(cache, buf);
         }
@@ -1852,7 +1867,7 @@ impl<'a> UnknownFieldsView<'a> {
     /// Write all unknown-field bytes verbatim. Each span holds one or more
     /// complete `(tag, value)` records as they appeared on the wire, so
     /// concatenating the spans produces a valid encoding.
-    pub fn write_to(&self, buf: &mut impl BufMut) {
+    pub fn write_to(&self, buf: &mut impl EncodeSink) {
         for span in &self.raw_spans {
             buf.put_slice(span);
         }
@@ -3038,7 +3053,7 @@ mod tests {
             size
         }
 
-        fn write_to(&self, _cache: &mut crate::SizeCache, buf: &mut impl bytes::BufMut) {
+        fn write_to(&self, _cache: &mut crate::SizeCache, buf: &mut impl crate::EncodeSink) {
             if self.id != 0 {
                 crate::encoding::Tag::new(1, crate::encoding::WireType::Varint).encode(buf);
                 crate::types::encode_int32(self.id, buf);
@@ -3126,7 +3141,7 @@ mod tests {
             size
         }
 
-        fn write_to(&self, _cache: &mut crate::SizeCache, buf: &mut impl bytes::BufMut) {
+        fn write_to(&self, _cache: &mut crate::SizeCache, buf: &mut impl crate::EncodeSink) {
             if self.id != 0 {
                 crate::encoding::Tag::new(1, crate::encoding::WireType::Varint).encode(buf);
                 crate::types::encode_int32(self.id, buf);

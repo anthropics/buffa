@@ -28,7 +28,8 @@
 //! dedicated [`message_field_len`] / [`write_message_field`] helpers, and
 //! implement only [`MapValueDecode`] (via [`Msg`]) for the merge path.
 
-use crate::bytes::{Buf, BufMut};
+use crate::bytes::Buf;
+use crate::encode_sink::EncodeSink;
 use crate::encoding::{
     check_wire_type, decode_varint, encode_varint, skip_field_depth, varint_len, Tag, WireType,
 };
@@ -328,7 +329,7 @@ pub trait MapCodec: MapValueDecode {
     fn encoded_len(value: &Self::Value) -> u32;
 
     /// Write the payload (no tag) to `buf`.
-    fn encode(value: &Self::Value, buf: &mut impl BufMut);
+    fn encode(value: &Self::Value, buf: &mut impl EncodeSink);
 }
 
 /// Stamp a varint/fixed scalar codec from the existing `types::` functions.
@@ -366,7 +367,7 @@ macro_rules! scalar_codec {
 
             #[inline]
             #[allow(clippy::redundant_closure_call)]
-            fn encode(value: &Self::Value, buf: &mut impl BufMut) {
+            fn encode(value: &Self::Value, buf: &mut impl EncodeSink) {
                 ($encode)(value, buf)
             }
         }
@@ -483,7 +484,8 @@ scalar_codec!(
     /// codegen option; zero-copy when the source buffer is `Bytes`-backed).
     BytesBuf, crate::bytes::Bytes, WireType::LengthDelimited, None,
     len: |v: &crate::bytes::Bytes| types::bytes_encoded_len(v),
-    encode: |v: &crate::bytes::Bytes, buf: &mut _| types::encode_bytes(v, buf),
+    // Shared-aware: splices into segmented sinks by refcount.
+    encode: |v: &crate::bytes::Bytes, buf: &mut _| types::encode_shared_bytes(v, buf),
     decode: types::decode_bytes_to_bytes
 );
 
@@ -518,8 +520,10 @@ impl<B: crate::types::ProtoBytes> MapCodec for ProtoBytesMap<B> {
     }
 
     #[inline]
-    fn encode(value: &Self::Value, buf: &mut impl BufMut) {
-        types::encode_bytes(value.as_ref(), buf);
+    fn encode(value: &Self::Value, buf: &mut impl EncodeSink) {
+        // Shared-aware: a `Bytes`-backed map value splices into segmented
+        // sinks by refcount, like top-level bytes fields.
+        types::encode_shared_bytes(value, buf);
     }
 }
 
@@ -561,7 +565,7 @@ impl<S: crate::types::ProtoString> MapCodec for ProtoStringMap<S> {
     }
 
     #[inline]
-    fn encode(value: &Self::Value, buf: &mut impl BufMut) {
+    fn encode(value: &Self::Value, buf: &mut impl EncodeSink) {
         types::encode_string(value.as_ref(), buf);
     }
 }
@@ -594,7 +598,7 @@ impl<E: Enumeration> MapCodec for OpenEnum<E> {
     }
 
     #[inline]
-    fn encode(value: &Self::Value, buf: &mut impl BufMut) {
+    fn encode(value: &Self::Value, buf: &mut impl EncodeSink) {
         types::encode_int32(value.to_i32(), buf);
     }
 }
@@ -636,7 +640,7 @@ impl<E: Enumeration + Default> MapCodec for ClosedEnum<E> {
     }
 
     #[inline]
-    fn encode(value: &Self::Value, buf: &mut impl BufMut) {
+    fn encode(value: &Self::Value, buf: &mut impl EncodeSink) {
         types::encode_int32(value.to_i32(), buf);
     }
 }
@@ -696,8 +700,11 @@ where
 
 /// Write a scalar-valued map field: one `field_number`-tagged,
 /// length-prefixed entry per element.
-pub fn write_field<KC: MapCodec, VC: MapCodec, C>(map: &C, field_number: u32, buf: &mut impl BufMut)
-where
+pub fn write_field<KC: MapCodec, VC: MapCodec, C>(
+    map: &C,
+    field_number: u32,
+    buf: &mut impl EncodeSink,
+) where
     C: MapStorage<Key = KC::Value, Value = VC::Value>,
 {
     for (k, v) in map.storage_iter() {
@@ -741,7 +748,7 @@ pub fn write_message_field<KC: MapCodec, M: Message, C>(
     map: &C,
     field_number: u32,
     cache: &mut SizeCache,
-    buf: &mut impl BufMut,
+    buf: &mut impl EncodeSink,
 ) where
     C: MapStorage<Key = KC::Value, Value = M>,
 {
@@ -1103,7 +1110,7 @@ mod tests {
                     0
                 }
             }
-            fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+            fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
                 if self.value != 0 {
                     Tag::new(1, WireType::Varint).encode(buf);
                     types::encode_int32(self.value, buf);

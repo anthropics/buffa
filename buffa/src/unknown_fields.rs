@@ -1,7 +1,7 @@
 //! Unknown field preservation for round-trip fidelity.
 
+use crate::encode_sink::EncodeSink;
 use alloc::vec::Vec;
-use bytes::BufMut;
 
 /// A collection of unknown fields encountered during decoding.
 ///
@@ -65,7 +65,7 @@ impl UnknownFields {
     }
 
     /// Re-encode all unknown fields to `buf` in their original wire format.
-    pub fn write_to(&self, buf: &mut impl BufMut) {
+    pub fn write_to(&self, buf: &mut impl EncodeSink) {
         for field in &self.fields {
             field.write_to(buf);
         }
@@ -137,7 +137,7 @@ impl UnknownField {
     }
 
     /// Re-encode this field (tag + data) to `buf` in its original wire format.
-    pub fn write_to(&self, buf: &mut impl BufMut) {
+    pub fn write_to(&self, buf: &mut impl EncodeSink) {
         use crate::encoding::encode_varint;
         let tag_value = ((self.number as u64) << 3) | self.data.wire_type_value();
         encode_varint(tag_value, buf);

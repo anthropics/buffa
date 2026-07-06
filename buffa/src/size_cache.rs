@@ -407,7 +407,7 @@ impl SizeCachePool {
     ///
     /// The pooled equivalent of [`Message::encode`](crate::Message::encode).
     #[inline]
-    pub fn encode<M: crate::Message>(&mut self, msg: &M, buf: &mut impl bytes::BufMut) {
+    pub fn encode<M: crate::Message>(&mut self, msg: &M, buf: &mut impl crate::EncodeSink) {
         let mut cache = self.acquire();
         msg.encode_with_cache(&mut cache, buf);
         self.release(cache);
@@ -420,7 +420,7 @@ impl SizeCachePool {
     pub fn encode_view<'a, V: crate::ViewEncode<'a>>(
         &mut self,
         view: &V,
-        buf: &mut impl bytes::BufMut,
+        buf: &mut impl crate::EncodeSink,
     ) {
         let mut cache = self.acquire();
         view.encode_with_cache(&mut cache, buf);
