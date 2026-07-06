@@ -389,6 +389,16 @@ impl<T: Default, P: ProtoBox<T>> MessageField<T, P> {
         self.inner.map(<P as ProtoBox<T>>::into_inner)
     }
 
+    /// Consume the field, applying `f` to the inner value if set.
+    ///
+    /// Mirrors [`Option::map`]. Equivalent in effect to
+    /// `into_option().map(f)`, but reads naturally alongside the other
+    /// `MessageField` consuming combinators.
+    #[inline]
+    pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> Option<U> {
+        self.into_option().map(f)
+    }
+
     /// Consume the field, returning the inner value.
     ///
     /// Equivalent in effect to `into_option().unwrap()`, with a clearer
@@ -852,6 +862,47 @@ mod tests {
 
         let field: MessageField<Inner> = MessageField::none();
         assert!(field.into_option().is_none());
+    }
+
+    #[test]
+    fn test_map_set_transforms_inner_value() {
+        let field: MessageField<Inner> = MessageField::some(Inner {
+            value: 5,
+            name: "mapped".into(),
+        });
+
+        let mapped: Option<alloc::string::String> = field.map(|inner| inner.name);
+
+        assert_eq!(mapped.as_deref(), Some("mapped"));
+    }
+
+    #[test]
+    fn test_map_unset_returns_none_without_calling_closure() {
+        let field: MessageField<Inner> = MessageField::none();
+
+        let mapped: Option<i32> = field.map(|_| panic!("closure must not run"));
+
+        assert_eq!(mapped, None);
+    }
+
+    #[test]
+    fn test_map_accepts_fnonce_closure() {
+        let field: MessageField<Inner> = MessageField::some(Inner::default());
+        let replacement = alloc::string::String::from("moved");
+
+        let mapped: Option<alloc::string::String> = field.map(|_| replacement);
+
+        assert_eq!(mapped.as_deref(), Some("moved"));
+    }
+
+    #[test]
+    fn test_map_works_with_inline_pointer() {
+        let field: MessageField<Inner, Inline<Inner>> = MessageField::some(Inner {
+            value: 41,
+            ..Default::default()
+        });
+
+        assert_eq!(field.map(|inner| inner.value + 1), Some(42));
     }
 
     #[test]
