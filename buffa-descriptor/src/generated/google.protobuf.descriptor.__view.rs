@@ -8136,6 +8136,9 @@ impl<'a> ::buffa::MessageView<'a> for FieldOptionsView<'a> {
                             __raw,
                         ) {
                             view.targets.push(__v);
+                        } else {
+                            view.__buffa_unknown_fields
+                                .push_varint(19u32, __raw as u64, ctx)?;
                         }
                     }
                 } else if tag.wire_type() == ::buffa::encoding::WireType::Varint {

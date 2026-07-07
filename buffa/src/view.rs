@@ -1724,21 +1724,41 @@ impl<'a, K, V> IntoIterator for MapView<'a, K, V> {
     }
 }
 
+/// One unknown-field wire record: either a span borrowed from the input
+/// buffer, or synthetic bytes for a value with no borrowable source span.
+#[derive(Clone, Debug)]
+enum UnknownFieldsViewRecord<'a> {
+    Borrowed(&'a [u8]),
+    Owned(alloc::vec::Vec<u8>),
+}
+
+impl UnknownFieldsViewRecord<'_> {
+    fn as_slice(&self) -> &[u8] {
+        match self {
+            Self::Borrowed(span) => span,
+            Self::Owned(bytes) => bytes,
+        }
+    }
+}
+
 /// A borrowed view of unknown fields.
 ///
-/// Stores raw byte slices from the input buffer rather than decoded values,
-/// enabling zero-copy round-tripping of unknown fields. Each stored span
-/// holds **one or more consecutive** complete `(tag, value)` records:
-/// adjacent unknown fields are coalesced into a single span, so a long run
-/// of unknown fields costs one `Vec` slot rather than one per field.
+/// Stores unknown fields as wire records rather than decoded values, enabling
+/// zero-copy round-tripping for borrowable input spans. Borrowed spans may
+/// hold **one or more consecutive** complete `(tag, value)` records: adjacent
+/// unknown fields are coalesced into a single span, so a long run of unknown
+/// fields costs one `Vec` slot rather than one per field. Synthetic records
+/// cover cases where the view decoder must preserve a value that has no
+/// borrowable source span.
 /// Coalescing bounds the view's memory only — the decode-time
 /// unknown-field allowance is still charged per field (see
 /// [`push_record`](Self::push_record)).
 #[derive(Clone, Default)]
 pub struct UnknownFieldsView<'a> {
-    /// Raw byte spans from the input buffer, each one or more complete
-    /// `(tag, value)` records.
-    raw_spans: alloc::vec::Vec<&'a [u8]>,
+    /// Unknown wire records in decode order. Borrowed records may each hold
+    /// one or more complete `(tag, value)` records; owned records are
+    /// synthetic wire bytes for values that have no borrowable source span.
+    records: alloc::vec::Vec<UnknownFieldsViewRecord<'a>>,
     /// The input-buffer tail starting at the first byte of the last span,
     /// kept so [`push_record`](Self::push_record) can extend that span over
     /// an adjacent record by re-slicing `last_tail` — never by widening the
@@ -1765,7 +1785,7 @@ pub struct UnknownFieldsView<'a> {
 impl core::fmt::Debug for UnknownFieldsView<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("UnknownFieldsView")
-            .field("raw_spans", &self.raw_spans)
+            .field("records", &self.records)
             .finish_non_exhaustive()
     }
 }
@@ -1778,7 +1798,7 @@ impl<'a> UnknownFieldsView<'a> {
 
     #[doc(hidden)]
     pub fn push_raw(&mut self, span: &'a [u8]) {
-        self.raw_spans.push(span);
+        self.records.push(UnknownFieldsViewRecord::Borrowed(span));
         // A manually pushed span has no known position in the input buffer,
         // so coalescing must not extend it — and it was never charged
         // against a decode allowance, so to_owned falls back to the default
@@ -1821,7 +1841,9 @@ impl<'a> UnknownFieldsView<'a> {
         let charge = crate::encoding::register_unknown_record(&tail[..span_len], ctx)?;
         self.to_owned_budget = self.to_owned_budget.saturating_add(charge.fields);
         self.to_owned_depth = self.to_owned_depth.max(charge.depth);
-        if let (Some(last), Some(prev_tail)) = (self.raw_spans.last_mut(), self.last_tail) {
+        if let (Some(UnknownFieldsViewRecord::Borrowed(last)), Some(prev_tail)) =
+            (self.records.last_mut(), self.last_tail)
+        {
             let prev_len = last.len();
             // Contiguous if the new record begins exactly one past the end
             // of the previous span. Both checks are plain pointer/length
@@ -1834,54 +1856,79 @@ impl<'a> UnknownFieldsView<'a> {
                 return Ok(());
             }
         }
-        self.raw_spans.push(&tail[..span_len]);
+        self.records
+            .push(UnknownFieldsViewRecord::Borrowed(&tail[..span_len]));
         self.last_tail = Some(tail);
+        Ok(())
+    }
+
+    #[doc(hidden)]
+    pub fn push_varint(
+        &mut self,
+        field_number: u32,
+        value: u64,
+        ctx: crate::DecodeContext<'_>,
+    ) -> Result<(), crate::DecodeError> {
+        use crate::encoding::{encode_varint, Tag, WireType};
+
+        ctx.register_unknown_field()?;
+        self.to_owned_budget = self.to_owned_budget.saturating_add(1);
+
+        let mut bytes = alloc::vec::Vec::new();
+        Tag::new(field_number, WireType::Varint).encode(&mut bytes);
+        encode_varint(value, &mut bytes);
+        self.records.push(UnknownFieldsViewRecord::Owned(bytes));
+        // Synthetic bytes have no position in the input buffer, so a later
+        // borrowed record must start a fresh span.
+        self.last_tail = None;
         Ok(())
     }
 
     /// Returns `true` if no unknown fields were recorded.
     pub fn is_empty(&self) -> bool {
-        self.raw_spans.is_empty()
+        self.records.is_empty()
     }
 
     /// Total byte length of all unknown field data.
     pub fn encoded_len(&self) -> usize {
-        self.raw_spans.iter().map(|s| s.len()).sum()
+        self.records
+            .iter()
+            .map(|record| record.as_slice().len())
+            .sum()
     }
 
-    /// Write all unknown-field bytes verbatim. Each span holds one or more
-    /// complete `(tag, value)` records as they appeared on the wire, so
-    /// concatenating the spans produces a valid encoding.
+    /// Write all unknown-field bytes in decode order. Each record holds one
+    /// or more complete `(tag, value)` records, so concatenating them
+    /// produces a valid encoding.
     pub fn write_to(&self, buf: &mut impl BufMut) {
-        for span in &self.raw_spans {
-            buf.put_slice(span);
+        for record in &self.records {
+            buf.put_slice(record.as_slice());
         }
     }
 
-    /// Convert to an owned [`UnknownFields`](crate::UnknownFields) by parsing all stored raw byte spans.
+    /// Convert to an owned [`UnknownFields`](crate::UnknownFields) by parsing all stored wire records.
     ///
-    /// Each span holds one or more consecutive (tag + value) records as they
-    /// appeared on the wire. Parsing uses
+    /// Each record holds one or more consecutive (tag + value) records as
+    /// they should be re-emitted. Parsing uses
     /// [`crate::encoding::decode_unknown_field`] under exactly the budget
-    /// [`push_record`](Self::push_record) charged at decode time — the same
-    /// field count and group-nesting depth — so replay cannot exhaust
-    /// either. Views holding manually pushed spans (via
-    /// [`push_raw`](Self::push_raw)) additionally get
+    /// [`push_record`](Self::push_record) and [`push_varint`](Self::push_varint)
+    /// charged at decode time — the same field count and group-nesting depth —
+    /// so replay cannot exhaust either. Views holding manually pushed spans
+    /// (via [`push_raw`](Self::push_raw)) additionally get
     /// [`DEFAULT_UNKNOWN_FIELD_LIMIT`](crate::DEFAULT_UNKNOWN_FIELD_LIMIT)
     /// slots and the full [`RECURSION_LIMIT`](crate::RECURSION_LIMIT), since
     /// those spans were never charged.
-    /// A coalesced span re-materializes one owned `UnknownField` per
-    /// record, so this conversion is where a long run of unknown fields
+    /// A coalesced borrowed span re-materializes one owned `UnknownField` per
+    /// wire record, so this conversion is where a long run of unknown fields
     /// actually allocates.
     ///
     /// # Errors
     ///
-    /// Returns `Err` if a stored span is malformed or exceeds the replay
-    /// budget. Neither can occur when the view was produced by wire
-    /// decoding — every span was parsed off the wire, and the budget equals
-    /// what decoding charged — so any view that decoded successfully
-    /// converts successfully. Only views holding
-    /// [`push_raw`](Self::push_raw) spans can fail here.
+    /// Returns `Err` if a stored record is malformed or exceeds the replay
+    /// budget. Neither can occur when the view was produced by wire decoding
+    /// — every borrowed record was parsed off the wire, and the budget equals
+    /// what decoding charged — so any such view converts successfully. Only
+    /// views holding [`push_raw`](Self::push_raw) spans can fail here.
     pub fn to_owned(&self) -> Result<crate::UnknownFields, crate::DecodeError> {
         use crate::encoding::{decode_unknown_field, Tag};
 
@@ -1897,8 +1944,8 @@ impl<'a> UnknownFieldsView<'a> {
         let limit = core::cell::Cell::new(budget);
         let ctx = crate::DecodeContext::new(depth, &limit);
         let mut out = crate::UnknownFields::new();
-        for span in &self.raw_spans {
-            let mut cur: &[u8] = span;
+        for record in &self.records {
+            let mut cur = record.as_slice();
             while !cur.is_empty() {
                 let tag = Tag::decode(&mut cur)?;
                 let field = decode_unknown_field(tag, &mut cur, ctx)?;
@@ -2517,7 +2564,7 @@ mod tests {
         ufv.push_record(&buf[2..], 2, ctx).unwrap();
         ufv.push_record(&buf[4..], 2, ctx).unwrap();
         assert_eq!(ufv.encoded_len(), 6);
-        assert_eq!(ufv.raw_spans.len(), 1, "coalesced into one span");
+        assert_eq!(ufv.records.len(), 1, "coalesced into one span");
         let mut out = alloc::vec::Vec::new();
         ufv.write_to(&mut out);
         assert_eq!(out, buf);
@@ -2648,7 +2695,7 @@ mod tests {
         for i in 0..3 {
             ufv.push_record(&buf[2 * i..], 2, ctx).unwrap();
         }
-        assert_eq!(ufv.raw_spans.len(), 1, "coalesced into one span");
+        assert_eq!(ufv.records.len(), 1, "coalesced into one span");
         assert_eq!(ctx.remaining_unknown_fields(), 0, "limit exactly used");
         let owned = ufv.to_owned().expect("decode succeeded, so convert must");
         assert_eq!(owned.iter().count(), 3);
@@ -3003,6 +3050,23 @@ mod tests {
         let mut uf = UnknownFieldsView::new();
         uf.push_raw(&[0x80]);
         assert!(uf.to_owned().is_err());
+    }
+
+    #[test]
+    fn unknown_fields_view_to_owned_includes_synthetic_varint_records() {
+        let ctx = record_ctx(1);
+        let mut uf = UnknownFieldsView::new();
+        uf.push_varint(3, 99, ctx).unwrap();
+        assert_eq!(ctx.remaining_unknown_fields(), 0);
+
+        let owned = uf.to_owned().expect("owned unknown field");
+        let fields: Vec<_> = owned.iter().collect();
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].number, 3);
+        assert!(matches!(
+            fields[0].data,
+            crate::UnknownFieldData::Varint(99)
+        ));
     }
 
     // ── OwnedView ──────────────────────────────────────────────────────
