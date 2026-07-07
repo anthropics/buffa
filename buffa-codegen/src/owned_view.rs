@@ -115,7 +115,9 @@ pub(crate) fn generate_owned_view_wrapper(
                 quote! { &self.0.reborrow().#ident },
             )
         } else {
-            let field_features = crate::features::resolve_field(ctx, field, features);
+            let field_fqn = scope.field_fqn(field_name);
+            let field_features =
+                crate::features::resolve_field(ctx, field, features, Some(&field_fqn));
             let ty = view_singular_type(scope, field, &lt)?;
             let tag_line = format!("Field {number}: `{field_name}`");
             match effective_type(ctx, field, &field_features) {

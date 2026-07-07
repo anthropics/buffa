@@ -182,11 +182,11 @@ pub(crate) fn generate_text_impl(
 
     let scalar_encode: Vec<_> = scalar_fields
         .iter()
-        .map(|f| scalar_encode_stmt(ctx, f, features))
+        .map(|f| scalar_encode_stmt(ctx, f, proto_fqn, features))
         .collect::<Result<_, _>>()?;
     let repeated_encode: Vec<_> = repeated_fields
         .iter()
-        .map(|f| repeated_encode_stmt(ctx, f, features))
+        .map(|f| repeated_encode_stmt(ctx, f, proto_fqn, features))
         .collect::<Result<_, _>>()?;
     let oneof_encode: Vec<_> = oneof_groups
         .iter()
@@ -204,7 +204,7 @@ pub(crate) fn generate_text_impl(
         .collect::<Result<_, _>>()?;
     let map_encode: Vec<_> = map_fields
         .iter()
-        .map(|f| map_encode_stmt(ctx, msg, f, features))
+        .map(|f| map_encode_stmt(ctx, msg, f, proto_fqn, features))
         .collect::<Result<_, _>>()?;
 
     // ── merge_text arms ─────────────────────────────────────────────────────
@@ -496,13 +496,15 @@ fn enum_read(closed: bool, enum_ty: &TokenStream, dec: &proc_macro2::Ident) -> T
 fn scalar_encode_stmt(
     ctx: &CodeGenContext,
     field: &FieldDescriptorProto,
+    proto_fqn: &str,
     parent_features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
-    let features = &crate::features::resolve_field(ctx, field, parent_features);
     let proto_name = field
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
+    let field_fqn = format!(".{proto_fqn}.{proto_name}");
+    let features = &crate::features::resolve_field(ctx, field, parent_features, Some(&field_fqn));
     let ident = ctx.field_ident(proto_name, field.number.unwrap_or(0));
     let ty = effective_type(ctx, field, features);
     let (name_lit, _) = text_field_name(proto_name, field, ty);
@@ -607,11 +609,12 @@ fn scalar_merge_arm(
     parent_features: &ResolvedFeatures,
     nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
-    let features = &crate::features::resolve_field(ctx, field, parent_features);
     let proto_name = field
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
+    let field_fqn = format!(".{proto_fqn}.{proto_name}");
+    let features = &crate::features::resolve_field(ctx, field, parent_features, Some(&field_fqn));
     let ident = ctx.field_ident(proto_name, field.number.unwrap_or(0));
     let ty = effective_type(ctx, field, features);
     let (_, name_pat) = text_field_name(proto_name, field, ty);
@@ -661,13 +664,15 @@ fn scalar_merge_arm(
 fn repeated_encode_stmt(
     ctx: &CodeGenContext,
     field: &FieldDescriptorProto,
+    proto_fqn: &str,
     parent_features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
-    let features = &crate::features::resolve_field(ctx, field, parent_features);
     let proto_name = field
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
+    let field_fqn = format!(".{proto_fqn}.{proto_name}");
+    let features = &crate::features::resolve_field(ctx, field, parent_features, Some(&field_fqn));
     let ident = ctx.field_ident(proto_name, field.number.unwrap_or(0));
     let ty = effective_type(ctx, field, features);
     let (name_lit, _) = text_field_name(proto_name, field, ty);
@@ -697,11 +702,12 @@ fn repeated_merge_arm(
     parent_features: &ResolvedFeatures,
     nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
-    let features = &crate::features::resolve_field(ctx, field, parent_features);
     let proto_name = field
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
+    let field_fqn = format!(".{proto_fqn}.{proto_name}");
+    let features = &crate::features::resolve_field(ctx, field, parent_features, Some(&field_fqn));
     let ident = ctx.field_ident(proto_name, field.number.unwrap_or(0));
     let ty = effective_type(ctx, field, features);
     let (_, name_pat) = text_field_name(proto_name, field, ty);
@@ -791,19 +797,18 @@ fn oneof_encode_stmt(
 
     let mut arms: Vec<TokenStream> = Vec::new();
     for field in fields {
-        let features = crate::features::resolve_field(ctx, field, parent_features);
         let proto_name = field
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?;
+        let variant_fqn = format!(".{proto_fqn}.{oneof_name}.{proto_name}");
+        let field_fqn = format!(".{proto_fqn}.{proto_name}");
+        let features =
+            crate::features::resolve_field(ctx, field, parent_features, Some(&field_fqn));
         let variant = crate::oneof::oneof_variant_ident(proto_name);
         let ty = effective_type(ctx, field, &features);
         let (name_lit, _) = text_field_name(proto_name, field, ty);
-        let boxed = crate::oneof::variant_boxed(
-            ctx,
-            ty,
-            &format!(".{proto_fqn}.{oneof_name}.{proto_name}"),
-        );
+        let boxed = crate::oneof::variant_boxed(ctx, ty, &variant_fqn);
 
         // Box<M> auto-derefs through `&**__v` → `&M`. For string/bytes,
         // `__v: &String` / `&Vec<u8>` / `&bytes::Bytes` deref-coerces.
@@ -857,11 +862,14 @@ fn oneof_merge_arms(
 
     let mut arms: Vec<TokenStream> = Vec::new();
     for field in fields {
-        let features = crate::features::resolve_field(ctx, field, parent_features);
         let proto_name = field
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?;
+        let variant_fqn = format!(".{proto_fqn}.{oneof_name}.{proto_name}");
+        let field_fqn = format!(".{proto_fqn}.{proto_name}");
+        let features =
+            crate::features::resolve_field(ctx, field, parent_features, Some(&field_fqn));
         let variant = crate::oneof::oneof_variant_ident(proto_name);
         let ty = effective_type(ctx, field, &features);
         let (_, name_pat) = text_field_name(proto_name, field, ty);
@@ -869,11 +877,7 @@ fn oneof_merge_arms(
 
         // Message/group variants are boxed unless opted out. Merge-into-existing
         // matches binary oneof semantics (oneof_merge_arm in impl_message.rs).
-        let boxed = crate::oneof::variant_boxed(
-            ctx,
-            ty,
-            &format!(".{proto_fqn}.{oneof_name}.{proto_name}"),
-        );
+        let boxed = crate::oneof::variant_boxed(ctx, ty, &variant_fqn);
         let assign = match ty {
             Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
                 let existing_ref = if boxed {
@@ -957,6 +961,7 @@ fn map_encode_stmt(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
     field: &FieldDescriptorProto,
+    proto_fqn: &str,
     features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
     let proto_name = field
@@ -968,7 +973,8 @@ fn map_encode_stmt(
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
     let key_ty = effective_type_in_map_entry(ctx, key_fd, features);
     let val_ty = effective_type_in_map_entry(ctx, val_fd, features);
-    let val_features = crate::features::resolve_field(ctx, val_fd, features);
+    let field_fqn = format!(".{proto_fqn}.{proto_name}");
+    let val_features = crate::features::resolve_field(ctx, val_fd, features, Some(&field_fqn));
 
     // Key: integral/bool/string only. `__k` is a reference from the iterator.
     let key_write = if key_ty == Type::TYPE_STRING {
@@ -1028,7 +1034,8 @@ fn map_merge_arm(
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
     let key_ty = effective_type_in_map_entry(ctx, key_fd, features);
     let val_ty = effective_type_in_map_entry(ctx, val_fd, features);
-    let val_features = crate::features::resolve_field(ctx, val_fd, features);
+    let field_fqn = format!(".{proto_fqn}.{proto_name}");
+    let val_features = crate::features::resolve_field(ctx, val_fd, features, Some(&field_fqn));
 
     // Key read (never enum, never message per proto spec). A custom `string_type`
     // on the map field promotes the `string` key to the configured owned type.

@@ -1264,7 +1264,8 @@ fn custom_deser_regular_field(
     let info = classify_field(scope, msg, field, resolver)?;
     let rust_type = &info.rust_type;
 
-    let field_features = crate::features::resolve_field(ctx, field, features);
+    let field_fqn = scope.field_fqn(field_name);
+    let field_features = crate::features::resolve_field(ctx, field, features, Some(&field_fqn));
     let (with_module, null_deser) = field_deser_modules(
         crate::impl_message::effective_type(ctx, field, features),
         &info,
@@ -1366,16 +1367,25 @@ fn custom_deser_oneof_group(
         } else {
             crate::BytesRepr::Vec
         };
+        let variant_fqn = format!(".{proto_fqn}.{oneof_name}.{proto_name}");
+        let field_fqn = format!(".{proto_fqn}.{proto_name}");
         let variant_type = if field_type == Type::TYPE_BYTES && !variant_bytes_repr.is_default() {
             variant_bytes_repr.type_path(resolver, ctx, nesting)?
         } else if field_type == Type::TYPE_STRING && !variant_string_repr.is_default() {
             variant_string_repr.type_path(resolver, ctx, nesting)?
         } else {
-            scalar_or_message_type_nested(ctx, field, current_package, nesting, features, resolver)?
+            scalar_or_message_type_nested(
+                ctx,
+                field,
+                current_package,
+                nesting,
+                features,
+                Some(&field_fqn),
+                resolver,
+            )?
         };
 
         let qualified_enum: TokenStream = quote! { #oneof_prefix #enum_ident };
-        let variant_fqn = format!(".{proto_fqn}.{oneof_name}.{proto_name}");
         let variant_pointer_repr = ctx.pointer_repr(&variant_fqn);
         let arm = crate::oneof::oneof_variant_deser_arm(&crate::oneof::OneofVariantDeserInput {
             variant_ident: &variant_ident,
@@ -1505,7 +1515,7 @@ fn classify_field(
 
     // Resolve the configurable owned representation for this `bytes` field.
     let field_name = field.name.as_deref().unwrap_or("");
-    let field_fqn = format!(".{}.{}", proto_fqn, field_name);
+    let field_fqn = scope.field_fqn(field_name);
     let bytes_repr = if field_type == Type::TYPE_BYTES {
         ctx.bytes_repr(&field_fqn)
     } else {
@@ -1597,6 +1607,7 @@ fn classify_field(
         map_rust_type_from_entry(
             scope,
             entry,
+            &field_fqn,
             &map_value_bytes_repr,
             &map_string_repr,
             &map_repr,
@@ -1608,7 +1619,15 @@ fn classify_field(
         } else if field_type == Type::TYPE_STRING {
             string_type()?
         } else {
-            scalar_or_message_type_nested(ctx, field, current_package, nesting, features, resolver)?
+            scalar_or_message_type_nested(
+                ctx,
+                field,
+                current_package,
+                nesting,
+                features,
+                Some(&field_fqn),
+                resolver,
+            )?
         };
         repeated_repr.type_path(&elem, resolver, ctx, nesting)?
     } else if field_type == Type::TYPE_MESSAGE || field_type == Type::TYPE_GROUP {
@@ -1617,7 +1636,7 @@ fn classify_field(
         pointer_repr.type_path(&mf, &inner)?
     } else if is_optional {
         let inner = if field_type == Type::TYPE_ENUM {
-            resolve_enum_type(scope, field, resolver)?
+            resolve_enum_type(scope, field, Some(&field_fqn), resolver)?
         } else if field_type == Type::TYPE_BYTES {
             bytes_type()?
         } else if field_type == Type::TYPE_STRING {
@@ -1631,7 +1650,7 @@ fn classify_field(
             quote! { #opt<#inner> }
         }
     } else if field_type == Type::TYPE_ENUM {
-        resolve_enum_type(scope, field, resolver)?
+        resolve_enum_type(scope, field, Some(&field_fqn), resolver)?
     } else if field_type == Type::TYPE_BYTES {
         bytes_type()?
     } else if field_type == Type::TYPE_STRING {
@@ -1671,7 +1690,8 @@ fn classify_field(
         map_entry
             .and_then(|e| e.field.iter().find(|f| f.number == Some(2)))
             .map(|val_fd| {
-                let val_features = crate::features::resolve_field(ctx, val_fd, features);
+                let val_features =
+                    crate::features::resolve_field(ctx, val_fd, features, Some(&field_fqn));
                 is_closed_enum(&val_features)
             })
     } else {
@@ -1766,7 +1786,8 @@ fn generate_field(
         &ctx.type_map,
     );
     let serde_attr = if ctx.config.generate_json {
-        serde_field_attr(ctx, field, field_name, &info, features)
+        let field_match_fqn = format!(".{field_fqn}");
+        serde_field_attr(ctx, field, field_name, &field_match_fqn, &info, features)
     } else {
         quote! {}
     };
@@ -1944,6 +1965,7 @@ pub(crate) fn map_entry_value_type(
 fn map_rust_type_from_entry(
     scope: MessageScope<'_>,
     entry: &DescriptorProto,
+    field_fqn: &str,
     value_bytes_repr: &crate::BytesRepr,
     string_repr: &crate::StringRepr,
     map_repr: &crate::MapRepr,
@@ -1975,7 +1997,15 @@ fn map_rust_type_from_entry(
     {
         string_repr.type_path(resolver, ctx, nesting)?
     } else {
-        scalar_or_message_type_nested(ctx, key_field, current_package, nesting, features, resolver)?
+        scalar_or_message_type_nested(
+            ctx,
+            key_field,
+            current_package,
+            nesting,
+            features,
+            None,
+            resolver,
+        )?
     };
     let value_effective =
         crate::impl_message::effective_type_in_map_entry(ctx, value_field, features);
@@ -1992,6 +2022,7 @@ fn map_rust_type_from_entry(
             current_package,
             nesting,
             features,
+            Some(field_fqn),
             resolver,
         )?
     };
@@ -2012,6 +2043,7 @@ pub(crate) fn scalar_or_message_type_nested(
     current_package: &str,
     nesting: usize,
     features: &ResolvedFeatures,
+    field_fqn: Option<&str>,
     resolver: &crate::imports::ImportResolver,
 ) -> Result<TokenStream, CodeGenError> {
     let scope = MessageScope {
@@ -2023,7 +2055,7 @@ pub(crate) fn scalar_or_message_type_nested(
     };
     match crate::impl_message::effective_type(ctx, field, features) {
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => resolve_message_type(scope, field),
-        Type::TYPE_ENUM => resolve_enum_type(scope, field, resolver),
+        Type::TYPE_ENUM => resolve_enum_type(scope, field, field_fqn, resolver),
         other => scalar_rust_type(other, resolver, ctx, nesting),
     }
 }
@@ -2052,6 +2084,7 @@ fn resolve_message_type(
 fn resolve_enum_type(
     scope: MessageScope<'_>,
     field: &crate::generated::descriptor::FieldDescriptorProto,
+    field_fqn: Option<&str>,
     resolver: &crate::imports::ImportResolver,
 ) -> Result<TokenStream, CodeGenError> {
     let type_name = field
@@ -2068,7 +2101,8 @@ fn resolve_enum_type(
             ))
         })?;
     let ty = rust_path_to_tokens(&path_str);
-    let field_features = crate::features::resolve_field(scope.ctx, field, scope.features);
+    let field_features =
+        crate::features::resolve_field(scope.ctx, field, scope.features, field_fqn);
     if is_closed_enum(&field_features) {
         Ok(quote! { #ty })
     } else {
@@ -2390,11 +2424,12 @@ fn serde_field_attr(
     ctx: &CodeGenContext,
     field: &crate::generated::descriptor::FieldDescriptorProto,
     field_name: &str,
+    field_fqn: &str,
     info: &FieldInfo,
     features: &ResolvedFeatures,
 ) -> TokenStream {
     let field_type = crate::impl_message::effective_type(ctx, field, features);
-    let field_features = crate::features::resolve_field(ctx, field, features);
+    let field_features = crate::features::resolve_field(ctx, field, features, Some(field_fqn));
     let json_name = field.json_name.as_deref().unwrap_or(field_name);
     let (with_module, null_deser) = field_deser_modules(field_type, info, &field_features);
 
@@ -2448,9 +2483,13 @@ fn generate_custom_default(
     features: &ResolvedFeatures,
     nesting: usize,
 ) -> Result<Option<TokenStream>, CodeGenError> {
-    // Custom defaults only apply when field presence is explicit (proto2,
-    // or editions with explicit presence).
-    if features.field_presence != crate::features::FieldPresence::Explicit {
+    // Keep this aligned with `parse_default_value`: custom defaults apply when
+    // fields have explicit storage semantics, including editions
+    // LEGACY_REQUIRED.
+    if !matches!(
+        features.field_presence,
+        crate::features::FieldPresence::Explicit | crate::features::FieldPresence::LegacyRequired
+    ) {
         return Ok(None);
     }
 
@@ -2460,8 +2499,14 @@ fn generate_custom_default(
         if is_real_oneof_member(field) {
             continue;
         }
-        let field_type = crate::impl_message::effective_type(ctx, field, features);
-        let is_optional = is_explicit_presence_scalar(field, field_type, features);
+        let field_name = field
+            .name
+            .as_deref()
+            .ok_or(CodeGenError::MissingField("field.name"))?;
+        let field_fqn = format!(".{proto_fqn}.{field_name}");
+        let field_features = crate::features::resolve_field(ctx, field, features, Some(&field_fqn));
+        let field_type = crate::impl_message::effective_type(ctx, field, &field_features);
+        let is_optional = is_explicit_presence_scalar(field, field_type, &field_features);
         let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;
         if is_optional
             || is_repeated
@@ -2474,6 +2519,15 @@ fn generate_custom_default(
             .default_value
             .as_deref()
             .is_some_and(|s| !s.is_empty())
+            || crate::defaults::open_enum_override_declared_default_value(
+                field,
+                ctx,
+                current_package,
+                &field_features,
+                nesting,
+                &field_fqn,
+            )?
+            .is_some()
         {
             has_custom = true;
             break;
@@ -2495,9 +2549,11 @@ fn generate_custom_default(
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?;
+        let field_fqn = format!(".{proto_fqn}.{field_name}");
+        let field_features = crate::features::resolve_field(ctx, field, features, Some(&field_fqn));
         let field_ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
-        let field_type = crate::impl_message::effective_type(ctx, field, features);
-        let is_optional = is_explicit_presence_scalar(field, field_type, features);
+        let field_type = crate::impl_message::effective_type(ctx, field, &field_features);
+        let is_optional = is_explicit_presence_scalar(field, field_type, &field_features);
         let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;
 
         if is_optional
@@ -2513,9 +2569,18 @@ fn generate_custom_default(
             field,
             ctx,
             current_package,
-            features,
+            &field_features,
             nesting,
             crate::impl_message::field_string_repr(ctx, proto_fqn, field_name),
+        )? {
+            field_inits.push(quote! { #field_ident: #expr, });
+        } else if let Some(expr) = crate::defaults::open_enum_override_declared_default_value(
+            field,
+            ctx,
+            current_package,
+            &field_features,
+            nesting,
+            &field_fqn,
         )? {
             field_inits.push(quote! { #field_ident: #expr, });
         } else {

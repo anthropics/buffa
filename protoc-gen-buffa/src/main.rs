@@ -272,6 +272,14 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
             // is not PascalCase at generation time (same rule as the
             // builder API).
             "type_name_prefix" => codegen.type_name_prefix = value.to_string(),
+            // Repeatable path-scoped closed-enum override. Values are
+            // normalized by `normalize_open_enums_path`; "." matches every
+            // enum field.
+            "open_enums_in" => {
+                codegen
+                    .open_enums_in
+                    .push(normalize_open_enums_path(value.trim())?);
+            }
             "extern_path" => {
                 // value is "<proto_path>=<rust_path>"
                 if let Some((proto, rust)) = value.split_once('=') {
@@ -326,6 +334,29 @@ fn parse_bool(key: &str, value: &str) -> Result<bool, String> {
             "invalid boolean value for '{key}': '{other}', expected true or false"
         )),
     }
+}
+
+fn normalize_open_enums_path(path: &str) -> Result<String, String> {
+    if path.is_empty() {
+        return Err("'open_enums_in' requires a non-empty proto path; use '.' explicitly to match every enum field".to_string());
+    }
+
+    if path == "." {
+        return Ok(".".to_string());
+    }
+
+    let mut path = path.to_string();
+    if !path.starts_with('.') {
+        path.insert(0, '.');
+    }
+    while path.ends_with('.') {
+        path.pop();
+    }
+
+    if path.is_empty() {
+        return Err("'open_enums_in' requires a non-empty proto path; use '.' explicitly to match every enum field".to_string());
+    }
+    Ok(path)
 }
 
 #[cfg(test)]
@@ -453,6 +484,37 @@ mod tests {
         assert_eq!(config.codegen.extern_paths.len(), 2);
         assert_eq!(config.codegen.extern_paths[0].0, ".my.a");
         assert_eq!(config.codegen.extern_paths[1].0, ".my.b");
+    }
+
+    #[test]
+    fn open_enums_in_is_repeatable_and_normalized() {
+        let config =
+            parse_config("open_enums_in=my.pkg.Status.,open_enums_in=.my.pkg.Msg.e").unwrap();
+        assert_eq!(
+            config.codegen.open_enums_in,
+            vec![".my.pkg.Status".to_string(), ".my.pkg.Msg.e".to_string()]
+        );
+    }
+
+    #[test]
+    fn open_enums_in_catchall() {
+        let config = parse_config("open_enums_in=.").unwrap();
+        assert_eq!(config.codegen.open_enums_in, vec![".".to_string()]);
+    }
+
+    #[test]
+    fn empty_open_enums_in_errors() {
+        let err = parse_err("open_enums_in=");
+        assert!(err.contains("open_enums_in"));
+        assert!(err.contains("non-empty"));
+        assert!(err.contains("'.'"));
+    }
+
+    #[test]
+    fn all_dots_open_enums_in_errors() {
+        let err = parse_err("open_enums_in=...");
+        assert!(err.contains("open_enums_in"));
+        assert!(err.contains("non-empty"));
     }
 
     #[test]

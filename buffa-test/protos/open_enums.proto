@@ -1,0 +1,44 @@
+syntax = "proto2";
+
+package test.openenums;
+
+message OpenEnumContexts {
+  optional Priority opt = 1;
+  repeated Priority rep = 2;
+  repeated Priority rep_packed = 3 [packed = true];
+
+  oneof choice {
+    Priority oneof_priority = 4;
+  }
+
+  optional Priority closed_control = 5;
+  map<string, Priority> labels = 6;
+}
+
+message RequiredDefault {
+  required Priority level = 1 [default = HIGH];
+}
+
+message RequiredImplicitDefault {
+  required NonZeroFirst level = 1;
+}
+
+message LazyParent {
+  optional LazyChild child = 1;
+}
+
+message LazyChild {
+  optional Priority opt = 1;
+  required Priority level = 2 [default = HIGH];
+}
+
+enum Priority {
+  LOW = 0;
+  MEDIUM = 1;
+  HIGH = 2;
+}
+
+enum NonZeroFirst {
+  NZ_HIGH = 2;
+  NZ_LOW = 0;
+}

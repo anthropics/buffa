@@ -79,7 +79,12 @@ pub(crate) fn reflect_view_impls(
     view_oneof_prefix: &TokenStream,
     oneof_idents: &HashMap<usize, proc_macro2::Ident>,
 ) -> Result<TokenStream, CodeGenError> {
-    let MessageScope { ctx, .. } = view_scope;
+    let MessageScope {
+        ctx,
+        current_package,
+        nesting,
+        ..
+    } = view_scope;
     let features = view_scope.features;
     let vr = quote! { ::buffa_descriptor::reflect::ValueRef };
     let cow = quote! { ::buffa_descriptor::reflect::ReflectCow };
@@ -117,7 +122,8 @@ pub(crate) fn reflect_view_impls(
             continue;
         }
 
-        let f_features = resolve_field(ctx, field, features);
+        let field_fqn = view_scope.field_fqn(name);
+        let f_features = resolve_field(ctx, field, features, Some(&field_fqn));
         let (get_val, has_val) = if is_explicit_presence_scalar(field, ty, &f_features) {
             // Stored as `Option<T>`; absent singular returns the type default.
             match ty {
@@ -166,10 +172,21 @@ pub(crate) fn reflect_view_impls(
                 Type::TYPE_ENUM => {
                     // A closed enum's default need not be zero (editions allows
                     // a non-zero first value), so "non-default" compares against
-                    // the type default rather than `to_i32() != 0`. Open enums
-                    // (`EnumValue`) always default to the zero wire value.
+                    // the type default rather than `to_i32() != 0`. Closed enums
+                    // opened by `open_enums_in` also keep their declared default.
                     let has_val = if is_closed_enum(&f_features) {
                         quote! { self.#id != ::core::default::Default::default() }
+                    } else if let Some(default_expr) =
+                        crate::defaults::open_enum_override_default_value(
+                            field,
+                            ctx,
+                            current_package,
+                            &f_features,
+                            nesting,
+                            &field_fqn,
+                        )?
+                    {
+                        quote! { self.#id != #default_expr }
                     } else {
                         quote! { self.#id.to_i32() != 0 }
                     };

@@ -367,6 +367,48 @@ fn main() {
         .compile()
         .expect("buffa_build failed for proto2_json.proto");
 
+    // open_enums_in: selected proto2 closed-enum fields opt into open
+    // `EnumValue<E>` representation. JSON + text + vtable reflection compile
+    // the generated helper and reflection surfaces; runtime tests verify unknown
+    // values do not double-retain in unknown fields.
+    buffa_build::Config::new()
+        .files(&["protos/open_enums.proto"])
+        .includes(&["protos/"])
+        .open_enums_in(&[
+            ".test.openenums.OpenEnumContexts.opt",
+            ".test.openenums.OpenEnumContexts.rep",
+            ".test.openenums.OpenEnumContexts.rep_packed",
+            ".test.openenums.OpenEnumContexts.oneof_priority",
+            ".test.openenums.OpenEnumContexts.labels",
+            ".test.openenums.RequiredDefault.level",
+            ".test.openenums.RequiredImplicitDefault.level",
+            ".test.openenums.LazyChild.opt",
+            ".test.openenums.LazyChild.level",
+        ])
+        .generate_json(true)
+        .generate_text(true)
+        .lazy_views(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for open_enums.proto");
+
+    // open_enums_no_unknowns: same open_enums_in override coverage with
+    // unknown-field preservation disabled, so matching enum unknowns surface
+    // through `EnumValue<E>` instead of relying on unknown fields.
+    buffa_build::Config::new()
+        .files(&["protos/open_enums_no_unknowns.proto"])
+        .includes(&["protos/"])
+        .open_enums_in(&[
+            ".test.openenums_nounknowns.OpenEnumNoUnknowns.opt",
+            ".test.openenums_nounknowns.OpenEnumNoUnknowns.rep",
+            ".test.openenums_nounknowns.OpenEnumNoUnknowns.rep_packed",
+            ".test.openenums_nounknowns.OpenEnumNoUnknowns.labels",
+        ])
+        .preserve_unknown_fields(false)
+        .generate_views(true)
+        .compile()
+        .expect("buffa_build failed for open_enums_no_unknowns.proto");
+
     // Cross-package references — types from basic + nested_deep.
     // Uses extern_path to map sibling packages to crate-level modules.
     buffa_build::Config::new()

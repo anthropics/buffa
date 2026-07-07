@@ -148,6 +148,8 @@ Prost represents all enum fields as `i32`. Buffa uses `EnumValue<E>` for open en
 
 Buffa keeps the proto `SHOUTY_SNAKE_CASE` value names as the definitive Rust variants, but it also emits idiomatic `UpperCamelCase` associated-const aliases (prefix-stripped, the same names prost generates), so `Status::Active`-style spellings carried over from prost code resolve as-is — in expressions and in `match` patterns alike.
 
+For proto2 closed enums, Buffa follows closed-enum semantics by default and routes unknown wire values through unknown fields. If you need prost-style direct access to unknown values while migrating, configure `open_enums_in` for the affected field, enum type, or package prefix.
+
 ## 5. Encoding API
 
 ```diff

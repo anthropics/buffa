@@ -371,6 +371,9 @@ fn collect_variant_info(
             let json_name = field.json_name.as_deref().unwrap_or(proto_name).to_string();
             let variant_ident = oneof_variant_ident(proto_name);
             let field_type = crate::impl_message::effective_type(ctx, field, features);
+            let variant_fqn = format!("{proto_fqn}.{oneof_name}.{proto_name}");
+            let dotted_fqn = format!(".{variant_fqn}");
+            let field_fqn = format!(".{proto_fqn}.{proto_name}");
             // bytes_fields config override: scalar_or_message_type_nested goes
             // through scalar_rust_type which hardcodes Vec<u8> for TYPE_BYTES.
             // Encode/size/JSON-serialize all take &[u8] so Bytes deref-coerces
@@ -404,10 +407,10 @@ fn collect_variant_info(
                     current_package,
                     nesting + 3,
                     features,
+                    Some(&field_fqn),
                     resolver,
                 )?
             };
-            let variant_fqn = format!("{proto_fqn}.{oneof_name}.{proto_name}");
             let custom_attrs =
                 CodeGenContext::matching_attributes(&ctx.config.field_attributes, &variant_fqn)?;
             // Recursive variants never make it into the resolved unboxed set
@@ -415,7 +418,6 @@ fn collect_variant_info(
             // *exact-path* rule names but that is still boxed can only have
             // been excluded for recursion — reject loudly, the user asked for
             // something impossible. Prefix/blanket rules skip it silently.
-            let dotted_fqn = format!(".{variant_fqn}");
             let is_boxed = variant_boxed(ctx, field_type, &dotted_fqn);
             if is_boxed
                 && ctx

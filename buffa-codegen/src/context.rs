@@ -1066,6 +1066,24 @@ impl<'a> CodeGenContext<'a> {
             .map_or(crate::StringRepr::default(), |(_, repr)| repr.clone())
     }
 
+    /// Check whether `open_enums_in` forces an enum field to use
+    /// `EnumValue<E>` even when the referenced enum is closed.
+    ///
+    /// `field_fqn` is the public field path used by the matching rule, and
+    /// `enum_fqn` is the referenced enum type FQN. A rule may match either side,
+    /// so `.my.pkg.E` opens every field of that enum while `.my.pkg.Msg.e`
+    /// opens only the selected field.
+    pub(crate) fn open_enum_override_matches(
+        &self,
+        field_fqn: Option<&str>,
+        enum_fqn: &str,
+    ) -> bool {
+        self.config.open_enums_in.iter().any(|rule| {
+            matches_open_enum_rule(rule, enum_fqn)
+                || field_fqn.is_some_and(|fqn| matches_open_enum_rule(rule, fqn))
+        })
+    }
+
     /// Resolve the [`MapRepr`](crate::MapRepr) for a `map` field at the given
     /// proto path.
     ///
@@ -1161,6 +1179,11 @@ impl<'a> MessageScope<'a> {
             features,
             nesting: self.nesting + 1,
         }
+    }
+
+    /// Fully-qualified proto field path for a direct field in this message.
+    pub fn field_fqn(&self, field_name: &str) -> String {
+        format!(".{}.{}", self.proto_fqn, field_name)
     }
 }
 
@@ -1258,6 +1281,26 @@ pub(crate) fn matches_proto_prefix(prefix: &str, fqn_dotted: &str) -> bool {
         || prefix == fqn_dotted
         || (fqn_dotted.starts_with(prefix)
             && fqn_dotted.as_bytes().get(prefix.len()) == Some(&b'.'))
+}
+
+fn matches_open_enum_rule(rule: &str, fqn_dotted: &str) -> bool {
+    let rule = rule.trim();
+    if rule == "." {
+        return true;
+    }
+
+    let rule = rule.trim_end_matches('.');
+    if rule.is_empty() {
+        return false;
+    }
+
+    if rule.starts_with('.') {
+        matches_proto_prefix(rule, fqn_dotted)
+    } else if let Some(fqn_dotless) = fqn_dotted.strip_prefix('.') {
+        matches_proto_prefix(rule, fqn_dotless)
+    } else {
+        matches_proto_prefix(rule, fqn_dotted)
+    }
 }
 
 /// Look up a file-level extern mapping by exact proto file path.
@@ -2806,5 +2849,36 @@ mod tests {
         assert!(!matches_proto_prefix(".my.pk", ".my.pkg.Msg"));
         // But full-segment prefix match does.
         assert!(matches_proto_prefix(".my.pkg", ".my.pkg.Msg"));
+    }
+
+    #[test]
+    fn test_matches_open_enum_rule_normalizes_and_keeps_boundaries() {
+        assert!(matches_open_enum_rule(".", ".my.pkg.Msg.status"));
+        assert!(matches_open_enum_rule(
+            "my.pkg.Msg.status.",
+            ".my.pkg.Msg.status"
+        ));
+        assert!(matches_open_enum_rule(
+            "  .my.pkg.Status.  ",
+            ".my.pkg.Status"
+        ));
+
+        assert!(!matches_open_enum_rule("", ".my.pkg.Msg.status"));
+        assert!(!matches_open_enum_rule("...", ".my.pkg.Msg.status"));
+        assert!(!matches_open_enum_rule(".my.pk", ".my.pkg.Msg.status"));
+    }
+
+    #[test]
+    fn test_open_enum_override_matches_field_or_enum_path() {
+        let files = [make_file("a.proto", "p", vec![], vec![enum_desc("E")])];
+        let config = CodeGenConfig {
+            open_enums_in: vec![".p.M.e".into(), ".p.OtherEnum".into()],
+            ..Default::default()
+        };
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+
+        assert!(ctx.open_enum_override_matches(Some(".p.M.e"), ".p.E"));
+        assert!(!ctx.open_enum_override_matches(Some(".p.M.other"), ".p.E"));
+        assert!(ctx.open_enum_override_matches(None, ".p.OtherEnum"));
     }
 }

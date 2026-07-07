@@ -5,7 +5,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::context::CodeGenContext;
-use crate::features::ResolvedFeatures;
+use crate::features::{EnumType, ResolvedFeatures};
 use crate::CodeGenError;
 
 /// Parse a proto `default_value` string into a Rust expression `TokenStream`.
@@ -32,10 +32,13 @@ pub fn parse_default_value(
         _ => return Ok(None),
     };
 
-    // Custom defaults only apply to fields with explicit presence (proto2,
-    // or editions with `features.field_presence = EXPLICIT`). Proto3 implicit
+    // Custom defaults apply to fields with explicit storage semantics (proto2,
+    // editions `EXPLICIT`, or editions `LEGACY_REQUIRED`). Proto3 implicit
     // fields and editions with implicit presence ignore `default_value`.
-    if features.field_presence != crate::features::FieldPresence::Explicit {
+    if !matches!(
+        features.field_presence,
+        crate::features::FieldPresence::Explicit | crate::features::FieldPresence::LegacyRequired
+    ) {
         return Ok(None);
     }
 
@@ -125,13 +128,103 @@ pub fn parse_default_value(
             // e.g. `[default = type]` → `r#type` and `[default = Self]` → `Self_`
             // match the actual variant ident emitted in the enum definition.
             let variant_ident = crate::message::make_field_ident(default_str);
-            // Proto2 enum fields use bare E (closed enums).
-            quote! { #ty::#variant_ident }
+            if features.enum_type == EnumType::Open {
+                quote! { ::buffa::EnumValue::Known(#ty::#variant_ident) }
+            } else {
+                quote! { #ty::#variant_ident }
+            }
         }
         _ => return Ok(None),
     };
 
     Ok(Some(expr))
+}
+
+/// Return the implicit enum default for a closed enum field that was made open
+/// by `open_enums_in`.
+///
+/// Proto2 enum fields without an explicit default use the enum type's declared
+/// default (the first value), while `EnumValue<E>::default()` represents raw
+/// wire zero. When a required closed enum field is opened by codegen config, its
+/// generated `EnumValue<E>` still needs to carry the enum's declared default.
+pub fn open_enum_override_declared_default_value(
+    field: &FieldDescriptorProto,
+    ctx: &CodeGenContext,
+    current_package: &str,
+    features: &ResolvedFeatures,
+    nesting: usize,
+    field_fqn: &str,
+) -> Result<Option<TokenStream>, CodeGenError> {
+    use crate::generated::descriptor::field_descriptor_proto::Type;
+
+    if field.r#type.unwrap_or_default() != Type::TYPE_ENUM || features.enum_type != EnumType::Open {
+        return Ok(None);
+    }
+
+    let type_name = field
+        .type_name
+        .as_deref()
+        .ok_or(CodeGenError::MissingField("field.type_name"))?;
+    if !ctx.open_enum_override_matches(Some(field_fqn), type_name) {
+        return Ok(None);
+    }
+
+    let path_str = ctx
+        .rust_type_relative(type_name, current_package, nesting)
+        .ok_or_else(|| {
+            CodeGenError::Other(format!(
+                "enum type '{type_name}' not found in descriptor set"
+            ))
+        })?;
+    let ty = crate::message::rust_path_to_tokens(&path_str);
+    Ok(Some(quote! {
+        ::buffa::EnumValue::Known(<#ty as ::core::default::Default>::default())
+    }))
+}
+
+/// Return the generated default expression for a closed enum field opened by
+/// `open_enums_in`, including an explicit proto default when present.
+pub fn open_enum_override_default_value(
+    field: &FieldDescriptorProto,
+    ctx: &CodeGenContext,
+    current_package: &str,
+    features: &ResolvedFeatures,
+    nesting: usize,
+    field_fqn: &str,
+) -> Result<Option<TokenStream>, CodeGenError> {
+    use crate::generated::descriptor::field_descriptor_proto::Type;
+
+    if field.r#type.unwrap_or_default() != Type::TYPE_ENUM || features.enum_type != EnumType::Open {
+        return Ok(None);
+    }
+
+    let type_name = field
+        .type_name
+        .as_deref()
+        .ok_or(CodeGenError::MissingField("field.type_name"))?;
+    if !ctx.open_enum_override_matches(Some(field_fqn), type_name) {
+        return Ok(None);
+    }
+
+    if let Some(default_expr) = parse_default_value(
+        field,
+        ctx,
+        current_package,
+        features,
+        nesting,
+        crate::StringRepr::String,
+    )? {
+        return Ok(Some(default_expr));
+    }
+
+    open_enum_override_declared_default_value(
+        field,
+        ctx,
+        current_package,
+        features,
+        nesting,
+        field_fqn,
+    )
 }
 
 /// Parse a float/double default value, handling special values "inf", "-inf", "nan".

@@ -930,6 +930,31 @@ pub struct CodeGenConfig {
     /// scalar/string/bytes/message rules and substituted into the collection
     /// template.
     pub repeated_fields: Vec<(String, RepeatedRepr)>,
+    /// Fully-qualified proto path prefixes whose closed enum fields should use
+    /// the open enum representation.
+    ///
+    /// Matching enum fields generate as `EnumValue<E>` instead of `E`, making
+    /// unknown wire values directly visible as `EnumValue::Unknown(n)`. This is
+    /// a deliberate codegen-only override of closed-enum field representation:
+    /// for matching fields, an unknown value makes the field read as present
+    /// instead of unset with the raw value represented through unknown fields.
+    ///
+    /// Paths are matched with the same proto-segment-aware logic as
+    /// [`bytes_fields`](Self::bytes_fields). A rule may name an enum type
+    /// (`".my.pkg.E"`), a field (`".my.pkg.Msg.e"`), a package/message prefix,
+    /// or `"."` for every enum field. Leading dots are optional, trailing dots
+    /// are ignored, and blank/malformed all-dot entries match nothing. Map enum
+    /// values match the outer map field path; oneof enum variants match the
+    /// direct field path. Prefixes are applied to both the field path and
+    /// referenced enum type path; use an individual field path when the override
+    /// should be location-scoped only.
+    ///
+    /// This does not mutate descriptors. Generated serde JSON uses open-enum
+    /// numeric handling for matching fields, while descriptor-driven dynamic JSON
+    /// still follows the descriptor's closed-enum semantics. The default is empty,
+    /// so generated output and closed-enum semantics are unchanged unless
+    /// configured.
+    pub open_enums_in: Vec<String>,
     /// Fully-qualified proto paths whose message-typed oneof variants should
     /// **not** be wrapped in `Box<T>`. By default every message/group oneof
     /// variant is boxed (so recursive types compile); entries here opt matching
@@ -1347,6 +1372,7 @@ impl Default for CodeGenConfig {
             map_fields: Vec::new(),
             pointer_fields: Vec::new(),
             repeated_fields: Vec::new(),
+            open_enums_in: Vec::new(),
             unboxed_oneof_fields: Vec::new(),
             strict_utf8_mapping: false,
             allow_message_set: false,
@@ -1803,7 +1829,8 @@ fn collect_custom_elements(
                     continue;
                 }
 
-                let field_features = crate::features::resolve_field(ctx, field, &msg_features);
+                let field_features =
+                    crate::features::resolve_field(ctx, field, &msg_features, Some(&field_fqn));
                 let ty = crate::impl_message::effective_type(ctx, field, &field_features);
                 match ty {
                     Type::TYPE_STRING => {

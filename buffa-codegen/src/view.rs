@@ -295,13 +295,13 @@ pub(crate) fn generate_view_with_nesting(
     // If no field borrows from 'a (all-scalar message with unknown-fields
     // preservation disabled), inject PhantomData<&'a ()> so the struct's
     // lifetime param is used. decode_view_ctx(buf: &'a [u8]) requires 'a.
-    let phantom_field =
-        if message_view_has_borrowing_field(ctx, msg, features, ctx.config.preserve_unknown_fields)
-        {
-            quote! {}
-        } else {
-            quote! { #[doc(hidden)] pub __buffa_phantom: ::core::marker::PhantomData<&'a ()>, }
-        };
+    let has_phantom_field =
+        !message_view_has_borrowing_field(ctx, msg, features, ctx.config.preserve_unknown_fields);
+    let phantom_field = if has_phantom_field {
+        quote! { #[doc(hidden)] pub __buffa_phantom: ::core::marker::PhantomData<&'a ()>, }
+    } else {
+        quote! {}
+    };
 
     let mod_items = quote! {
         #(#oneof_view_enums)*
@@ -348,6 +348,9 @@ pub(crate) fn generate_view_with_nesting(
     // Like the owned message's Debug impl, the manual impl lists proto fields
     // only — `__buffa_unknown_fields` is deliberately excluded because unknown
     // fields can carry redacted data from a newer schema version.
+    let custom_default_impl =
+        custom_view_default_impl(view_scope, msg, &view_ident, has_phantom_field)?;
+    let has_custom_default_impl = custom_default_impl.is_some();
     let any_redacted = view_fields.iter().any(|(_, _, redacted)| *redacted);
     let (view_debug_derive, view_debug_impl) = if any_redacted {
         let placeholder = crate::message::DEBUG_REDACT_PLACEHOLDER;
@@ -369,7 +372,11 @@ pub(crate) fn generate_view_with_nesting(
             debug_field_values.push(quote! { &self.#ident });
         }
         (
-            quote! { #[derive(Clone, Default)] },
+            if has_custom_default_impl {
+                quote! { #[derive(Clone)] }
+            } else {
+                quote! { #[derive(Clone, Default)] }
+            },
             quote! {
                 impl<'a> ::core::fmt::Debug for #view_ident<'a> {
                     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -380,6 +387,8 @@ pub(crate) fn generate_view_with_nesting(
                 }
             },
         )
+    } else if has_custom_default_impl {
+        (quote! { #[derive(Clone, Debug)] }, quote! {})
     } else {
         (quote! { #[derive(Clone, Debug, Default)] }, quote! {})
     };
@@ -400,6 +409,8 @@ pub(crate) fn generate_view_with_nesting(
         }
 
         #view_debug_impl
+
+        #custom_default_impl
 
         #required_has_impl
 
@@ -491,6 +502,132 @@ pub(crate) fn generate_view_with_nesting(
     };
 
     Ok((top_level, mod_items))
+}
+
+/// Generate a custom `Default` impl for eager/lazy view structs when
+/// `open_enums_in` changes a required enum field's default representation.
+///
+/// Most view fields can safely derive `Default`. The exception is a proto2
+/// required closed enum field opened into `EnumValue<E>`: `EnumValue::default()`
+/// is the raw wire value zero, but proto2 defaults to the enum's declared
+/// default value. The owned struct already gets a custom `Default`; views need
+/// the same initializer because decoders start from `Self::default()`.
+pub(crate) fn custom_view_default_impl(
+    scope: MessageScope<'_>,
+    msg: &DescriptorProto,
+    view_ident: &proc_macro2::Ident,
+    has_phantom_field: bool,
+) -> Result<Option<TokenStream>, CodeGenError> {
+    let ctx = scope.ctx;
+
+    let mut field_inits = Vec::new();
+    let mut has_custom = false;
+    for field in &msg.field {
+        if is_real_oneof_member(field) || !is_supported_field_type(field.r#type.unwrap_or_default())
+        {
+            continue;
+        }
+        let field_name = field
+            .name
+            .as_deref()
+            .ok_or(CodeGenError::MissingField("field.name"))?;
+        let field_ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
+        if let Some(expr) = view_open_enum_default_expr(scope, msg, field)? {
+            has_custom = true;
+            field_inits.push(quote! { #field_ident: #expr, });
+        } else {
+            field_inits.push(quote! { #field_ident: ::core::default::Default::default(), });
+        }
+    }
+    if !has_custom {
+        return Ok(None);
+    }
+
+    for (idx, oneof) in msg.oneof_decl.iter().enumerate() {
+        let oneof_name = oneof
+            .name
+            .as_deref()
+            .ok_or(CodeGenError::MissingField("oneof.name"))?;
+        let has_real = msg
+            .field
+            .iter()
+            .any(|f| is_real_oneof_member(f) && f.oneof_index == Some(idx as i32));
+        if has_real {
+            let ident = ctx.oneof_ident(oneof_name);
+            field_inits.push(quote! { #ident: ::core::default::Default::default(), });
+        }
+    }
+
+    if ctx.config.preserve_unknown_fields {
+        field_inits.push(quote! {
+            __buffa_unknown_fields: ::core::default::Default::default(),
+        });
+    }
+
+    let required_fields = required_view_fields(scope, msg);
+    let bit_count = required_fields.iter().filter(|r| r.bit.is_some()).count();
+    for word in 0..bit_count.div_ceil(64) {
+        let ident = required_seen_word_ident(word);
+        field_inits.push(quote! { #ident: 0, });
+    }
+
+    if has_phantom_field {
+        field_inits.push(quote! {
+            __buffa_phantom: ::core::marker::PhantomData,
+        });
+    }
+
+    Ok(Some(quote! {
+        impl<'a> ::core::default::Default for #view_ident<'a> {
+            fn default() -> Self {
+                Self {
+                    #(#field_inits)*
+                }
+            }
+        }
+    }))
+}
+
+fn view_open_enum_default_expr(
+    scope: MessageScope<'_>,
+    msg: &DescriptorProto,
+    field: &FieldDescriptorProto,
+) -> Result<Option<TokenStream>, CodeGenError> {
+    let MessageScope {
+        ctx,
+        current_package,
+        features: parent_features,
+        nesting,
+        ..
+    } = scope;
+    if is_real_oneof_member(field)
+        || !is_supported_field_type(field.r#type.unwrap_or_default())
+        || field.label.unwrap_or_default() == Label::LABEL_REPEATED
+        || is_map_field(msg, field)
+    {
+        return Ok(None);
+    }
+
+    let field_name = field
+        .name
+        .as_deref()
+        .ok_or(CodeGenError::MissingField("field.name"))?;
+    let field_fqn = scope.field_fqn(field_name);
+    let field_features =
+        crate::features::resolve_field(ctx, field, parent_features, Some(&field_fqn));
+    let ty = effective_type(ctx, field, &field_features);
+    if ty != Type::TYPE_ENUM || is_explicit_presence_scalar(field, ty, &field_features) {
+        return Ok(None);
+    }
+
+    crate::defaults::open_enum_override_default_value(
+        field,
+        ctx,
+        current_package,
+        &field_features,
+        nesting,
+        &field_fqn,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -595,7 +732,12 @@ pub(crate) fn view_singular_type(
         features: parent_features,
         ..
     } = scope;
-    let features = &crate::features::resolve_field(ctx, field, parent_features);
+    let field_name = field
+        .name
+        .as_deref()
+        .ok_or(CodeGenError::MissingField("field.name"))?;
+    let field_fqn = scope.field_fqn(field_name);
+    let features = &crate::features::resolve_field(ctx, field, parent_features, Some(&field_fqn));
     let ty = effective_type(ctx, field, features);
 
     if is_explicit_presence_scalar(field, ty, features) {
@@ -648,7 +790,12 @@ pub(crate) fn view_repeated_type(
         features: parent_features,
         ..
     } = scope;
-    let features = &crate::features::resolve_field(ctx, field, parent_features);
+    let field_name = field
+        .name
+        .as_deref()
+        .ok_or(CodeGenError::MissingField("field.name"))?;
+    let field_fqn = scope.field_fqn(field_name);
+    let features = &crate::features::resolve_field(ctx, field, parent_features, Some(&field_fqn));
     let ty = effective_type(ctx, field, features);
     match ty {
         Type::TYPE_STRING => Ok(quote! { ::buffa::RepeatedView<#lt, &#lt str> }),
@@ -681,6 +828,11 @@ pub(crate) fn view_map_type(
     lt: &TokenStream,
 ) -> Result<TokenStream, CodeGenError> {
     let MessageScope { ctx, features, .. } = scope;
+    let field_name = field
+        .name
+        .as_deref()
+        .ok_or(CodeGenError::MissingField("field.name"))?;
+    let field_fqn = scope.field_fqn(field_name);
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
 
     let key_ty = match effective_type_in_map_entry(ctx, key_fd, features) {
@@ -699,7 +851,8 @@ pub(crate) fn view_map_type(
         }
         Type::TYPE_ENUM => {
             let et = resolve_enum_ty(scope, val_fd)?;
-            let val_features = crate::features::resolve_field(ctx, val_fd, features);
+            let val_features =
+                crate::features::resolve_field(ctx, val_fd, features, Some(&field_fqn));
             if is_closed_enum(&val_features) {
                 quote! { #et }
             } else {
@@ -834,7 +987,6 @@ fn generate_oneof_view_enum(
         Some(id) => id,
         None => return Ok(TokenStream::new()),
     };
-
     let fields: Vec<_> = msg
         .field
         .iter()
@@ -863,7 +1015,8 @@ fn generate_oneof_view_enum(
                 .ok_or(CodeGenError::MissingField("field.name"))?;
             let variant = crate::oneof::oneof_variant_ident(name);
             let ty = effective_type(ctx, f, features);
-            let f_features = crate::features::resolve_field(ctx, f, features);
+            let field_fqn = scope.field_fqn(name);
+            let f_features = crate::features::resolve_field(ctx, f, features, Some(&field_fqn));
             let vty = match ty {
                 Type::TYPE_STRING => quote! { &'a str },
                 Type::TYPE_BYTES => quote! { &'a [u8] },
@@ -1212,11 +1365,12 @@ pub(crate) fn scalar_decode_arm(
         ..
     } = scope;
     let preserve_unknown_fields = ctx.config.preserve_unknown_fields;
-    let features = &crate::features::resolve_field(ctx, field, parent_features);
     let field_name = field
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
+    let field_fqn = scope.field_fqn(field_name);
+    let features = &crate::features::resolve_field(ctx, field, parent_features, Some(&field_fqn));
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
     let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
@@ -1325,11 +1479,12 @@ pub(crate) fn repeated_decode_arm(
         ..
     } = scope;
     let preserve_unknown_fields = ctx.config.preserve_unknown_fields;
-    let features = &crate::features::resolve_field(ctx, field, parent_features);
     let field_name = field
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
+    let field_fqn = scope.field_fqn(field_name);
+    let features = &crate::features::resolve_field(ctx, field, parent_features, Some(&field_fqn));
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
     let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
@@ -1502,6 +1657,7 @@ pub(crate) fn map_decode_arm(
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
     let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
+    let field_fqn = scope.field_fqn(field_name);
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
 
     let ld_check = wire_type_check(
@@ -1526,7 +1682,7 @@ pub(crate) fn map_decode_arm(
     // generated code for ordinary maps stays unchanged. Within a closed-enum
     // entry, repeated value occurrences follow last-wins: a known value resets
     // the flag, an unknown value sets it.
-    let val_features = crate::features::resolve_field(ctx, val_fd, features);
+    let val_features = crate::features::resolve_field(ctx, val_fd, features, Some(&field_fqn));
     let val_is_closed_enum = effective_type_in_map_entry(ctx, val_fd, features) == Type::TYPE_ENUM
         && is_closed_enum(&val_features);
     let closed_enum_hooks = val_is_closed_enum.then(|| {
@@ -1535,9 +1691,14 @@ pub(crate) fn map_decode_arm(
             quote! { __entry_unknown = true; },
         )
     });
-    let decode_key = map_view_entry_decode(scope, key_fd, &format_ident!("key"), None)?;
-    let decode_val =
-        map_view_entry_decode(scope, val_fd, &format_ident!("val"), closed_enum_hooks)?;
+    let decode_key = map_view_entry_decode(scope, key_fd, None, &format_ident!("key"), None)?;
+    let decode_val = map_view_entry_decode(
+        scope,
+        val_fd,
+        Some(&field_fqn),
+        &format_ident!("val"),
+        closed_enum_hooks,
+    )?;
 
     let push = quote! { view.#ident.push(key, val); };
     let (entry_unknown_decl, entry_finish) = if val_is_closed_enum {
@@ -1586,6 +1747,7 @@ pub(crate) fn map_decode_arm(
 fn map_view_entry_decode(
     scope: MessageScope<'_>,
     fd: &FieldDescriptorProto,
+    field_fqn: Option<&str>,
     var: &proc_macro2::Ident,
     closed_enum_hooks: Option<(TokenStream, TokenStream)>,
 ) -> Result<TokenStream, CodeGenError> {
@@ -1594,7 +1756,7 @@ fn map_view_entry_decode(
         features: parent_features,
         ..
     } = scope;
-    let features = &crate::features::resolve_field(ctx, fd, parent_features);
+    let features = &crate::features::resolve_field(ctx, fd, parent_features, field_fqn);
     let ty = effective_type_in_map_entry(ctx, fd, features);
     let wire_type = wire_type_token(ty);
     let tag_check = wire_type_check(&quote! { entry_tag }, &wire_type);
@@ -1655,7 +1817,9 @@ pub(crate) fn oneof_decode_arms(
                 .ok_or(CodeGenError::MissingField("field.name"))?;
             let field_number = validated_field_number(field)?;
             let ty = effective_type(ctx, field, features);
-            let field_features = crate::features::resolve_field(ctx, field, features);
+            let field_fqn = scope.field_fqn(name);
+            let field_features =
+                crate::features::resolve_field(ctx, field, features, Some(&field_fqn));
             let variant = crate::oneof::oneof_variant_ident(name);
             let wire_type = wire_type_token(ty);
             let wire_check = wire_type_check(&quote! { tag }, &wire_type);
@@ -2204,12 +2368,13 @@ pub(crate) fn view_field_serialize_stmt(
         features: parent_features,
         ..
     } = scope;
-    let f_features = crate::features::resolve_field(ctx, field, parent_features);
 
     let field_name = field
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
+    let field_fqn = scope.field_fqn(field_name);
+    let f_features = crate::features::resolve_field(ctx, field, parent_features, Some(&field_fqn));
     let json_name = field.json_name.as_deref().unwrap_or(field_name);
     let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     let label = field.label.unwrap_or_default();
@@ -2222,7 +2387,7 @@ pub(crate) fn view_field_serialize_stmt(
         let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
         let key_raw = effective_type_in_map_entry(ctx, key_fd, parent_features);
         let val_raw = effective_type_in_map_entry(ctx, val_fd, parent_features);
-        let val_f = crate::features::resolve_field(ctx, val_fd, parent_features);
+        let val_f = crate::features::resolve_field(ctx, val_fd, parent_features, Some(&field_fqn));
 
         let key_ty = match key_raw {
             Type::TYPE_STRING => quote! { &'__a str },
@@ -2526,12 +2691,13 @@ pub(crate) fn view_oneof_serialize_arm(
     view_enum: &TokenStream,
 ) -> Result<TokenStream, CodeGenError> {
     let MessageScope { ctx, features, .. } = scope;
-    let f_features = crate::features::resolve_field(ctx, field, features);
 
     let name = field
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
+    let field_fqn = scope.field_fqn(name);
+    let f_features = crate::features::resolve_field(ctx, field, features, Some(&field_fqn));
     let json_name = field.json_name.as_deref().unwrap_or(name);
     let variant = crate::oneof::oneof_variant_ident(name);
     let ty = effective_type(ctx, field, features);

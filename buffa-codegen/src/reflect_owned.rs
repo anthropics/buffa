@@ -116,7 +116,8 @@ pub(crate) fn reflect_owned_impls(
             continue;
         }
 
-        let f_features = resolve_field(ctx, field, features);
+        let field_fqn = format!(".{proto_fqn}.{name}");
+        let f_features = resolve_field(ctx, field, features, Some(&field_fqn));
         let (get_val, has_val) = if is_explicit_presence_scalar(field, ty, &f_features) {
             // Stored as `Option<T>`; absent singular returns the type default.
             match ty {
@@ -164,6 +165,17 @@ pub(crate) fn reflect_owned_impls(
                 Type::TYPE_ENUM => {
                     let has_val = if is_closed_enum(&f_features) {
                         quote! { self.#id != ::core::default::Default::default() }
+                    } else if let Some(default_expr) =
+                        crate::defaults::open_enum_override_default_value(
+                            field,
+                            ctx,
+                            current_package,
+                            &f_features,
+                            nesting,
+                            &field_fqn,
+                        )?
+                    {
+                        quote! { self.#id != #default_expr }
                     } else {
                         quote! { self.#id.to_i32() != 0 }
                     };

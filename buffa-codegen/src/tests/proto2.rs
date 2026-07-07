@@ -13,6 +13,39 @@ fn proto2_file(name: &str) -> FileDescriptorProto {
     }
 }
 
+fn proto2_open_enum_override_file(name: &str) -> FileDescriptorProto {
+    let mut file = proto2_file(name);
+    file.package = Some("pkg".to_string());
+    file.enum_type.push(EnumDescriptorProto {
+        name: Some("Color".to_string()),
+        value: vec![enum_value("RED", 0), enum_value("BLUE", 1)],
+        ..Default::default()
+    });
+    file.message_type.push(DescriptorProto {
+        name: Some("Msg".to_string()),
+        field: vec![
+            FieldDescriptorProto {
+                name: Some("color".to_string()),
+                number: Some(1),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_ENUM),
+                type_name: Some(".pkg.Color".to_string()),
+                ..Default::default()
+            },
+            FieldDescriptorProto {
+                name: Some("other".to_string()),
+                number: Some(2),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_ENUM),
+                type_name: Some(".pkg.Color".to_string()),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    });
+    file
+}
+
 #[test]
 fn test_proto2_optional_scalar_is_option() {
     let mut file = proto2_file("p2opt.proto");
@@ -137,6 +170,343 @@ fn test_proto2_optional_enum_is_option_enum_value() {
     assert!(
         content.contains("pub color: ::core::option::Option<Color>"),
         "proto2 optional enum must be ::core::option::Option<Color> (closed enum): {content}"
+    );
+}
+
+#[test]
+fn test_proto2_open_enums_in_rules_open_matching_fields() {
+    for (case, rule) in [
+        ("enum_type", ".pkg.Color"),
+        ("message_prefix", ".pkg.Msg"),
+        ("package_prefix", ".pkg"),
+        ("catchall", "."),
+    ] {
+        let file_name = format!("p2_open_{case}.proto");
+        let file = proto2_open_enum_override_file(&file_name);
+        let config = CodeGenConfig {
+            open_enums_in: vec![rule.to_string()],
+            ..Default::default()
+        };
+
+        let files = generate(&[file], &[file_name], &config)
+            .unwrap_or_else(|err| panic!("proto2 {case} override should generate: {err}"));
+        let content = &joined(&files);
+
+        assert!(
+            content.contains("pub color: ::core::option::Option<::buffa::EnumValue<Color>>"),
+            "{case} open_enums_in must open color: {content}"
+        );
+        assert!(
+            content.contains("pub other: ::core::option::Option<::buffa::EnumValue<Color>>"),
+            "{case} open_enums_in must open other: {content}"
+        );
+    }
+}
+
+#[test]
+fn test_proto2_open_enums_in_field_path_only_opens_matching_field() {
+    let file = proto2_open_enum_override_file("p2_open_field.proto");
+    let config = CodeGenConfig {
+        open_enums_in: vec![".pkg.Msg.color".to_string()],
+        ..Default::default()
+    };
+
+    let files = generate(&[file], &["p2_open_field.proto".to_string()], &config)
+        .expect("proto2 field override should generate");
+    let content = &joined(&files);
+
+    assert!(
+        content.contains("pub color: ::core::option::Option<::buffa::EnumValue<Color>>"),
+        "field-specific open_enums_in must open color: {content}"
+    );
+    assert!(
+        content.contains("pub other: ::core::option::Option<Color>"),
+        "field-specific open_enums_in must not open sibling fields: {content}"
+    );
+}
+
+#[test]
+fn test_proto2_open_enums_in_direct_config_normalizes_paths_at_match_time() {
+    let file = proto2_open_enum_override_file("p2_open_direct_normalized.proto");
+    let config = CodeGenConfig {
+        open_enums_in: vec![
+            "pkg.Msg.color.".to_string(),
+            "".to_string(),
+            "...".to_string(),
+        ],
+        ..Default::default()
+    };
+
+    let files = generate(
+        &[file],
+        &["p2_open_direct_normalized.proto".to_string()],
+        &config,
+    )
+    .expect("proto2 dotless/trailing-dot direct config should generate");
+    let content = &joined(&files);
+
+    assert!(
+        content.contains("pub color: ::core::option::Option<::buffa::EnumValue<Color>>"),
+        "dotless/trailing-dot open_enums_in must match color: {content}"
+    );
+    assert!(
+        content.contains("pub other: ::core::option::Option<Color>"),
+        "empty/all-dot open_enums_in rules must not become catch-all: {content}"
+    );
+}
+
+#[test]
+fn test_proto2_open_enums_in_repeated_and_packed_repeated_fields() {
+    let mut file = proto2_file("p2_open_repeated.proto");
+    file.package = Some("pkg".to_string());
+    file.enum_type.push(EnumDescriptorProto {
+        name: Some("Color".to_string()),
+        value: vec![enum_value("RED", 0), enum_value("BLUE", 1)],
+        ..Default::default()
+    });
+    let mut packed = FieldDescriptorProto {
+        name: Some("packed_colors".to_string()),
+        number: Some(2),
+        label: Some(Label::LABEL_REPEATED),
+        r#type: Some(Type::TYPE_ENUM),
+        type_name: Some(".pkg.Color".to_string()),
+        ..Default::default()
+    };
+    packed.options = crate::generated::descriptor::FieldOptions {
+        packed: Some(true),
+        ..Default::default()
+    }
+    .into();
+    file.message_type.push(DescriptorProto {
+        name: Some("Msg".to_string()),
+        field: vec![
+            FieldDescriptorProto {
+                name: Some("colors".to_string()),
+                number: Some(1),
+                label: Some(Label::LABEL_REPEATED),
+                r#type: Some(Type::TYPE_ENUM),
+                type_name: Some(".pkg.Color".to_string()),
+                ..Default::default()
+            },
+            packed,
+        ],
+        ..Default::default()
+    });
+    let config = CodeGenConfig {
+        open_enums_in: vec![".pkg.Color".to_string()],
+        ..Default::default()
+    };
+
+    let files = generate(&[file], &["p2_open_repeated.proto".to_string()], &config)
+        .expect("proto2 repeated enum override should generate");
+    let content = &joined(&files);
+
+    assert!(
+        content.contains("pub colors: ::buffa::alloc::vec::Vec<::buffa::EnumValue<Color>>"),
+        "repeated closed enum override must use EnumValue: {content}"
+    );
+    assert!(
+        content.contains("pub packed_colors: ::buffa::alloc::vec::Vec<::buffa::EnumValue<Color>>"),
+        "packed repeated closed enum override must use EnumValue: {content}"
+    );
+}
+
+#[test]
+fn test_proto2_open_enums_in_oneof_variant() {
+    let mut file = proto2_file("p2_open_oneof.proto");
+    file.package = Some("pkg".to_string());
+    file.enum_type.push(EnumDescriptorProto {
+        name: Some("Color".to_string()),
+        value: vec![enum_value("RED", 0), enum_value("BLUE", 1)],
+        ..Default::default()
+    });
+    file.message_type.push(DescriptorProto {
+        name: Some("Msg".to_string()),
+        field: vec![FieldDescriptorProto {
+            name: Some("color".to_string()),
+            number: Some(1),
+            label: Some(Label::LABEL_OPTIONAL),
+            r#type: Some(Type::TYPE_ENUM),
+            type_name: Some(".pkg.Color".to_string()),
+            oneof_index: Some(0),
+            ..Default::default()
+        }],
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("choice".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let config = CodeGenConfig {
+        open_enums_in: vec![".pkg.Msg.color".to_string()],
+        ..Default::default()
+    };
+
+    let files = generate(&[file], &["p2_open_oneof.proto".to_string()], &config)
+        .expect("proto2 oneof enum override should generate");
+    let content = &joined(&files);
+
+    assert!(
+        content.contains("Color(::buffa::EnumValue<"),
+        "oneof enum override must use EnumValue payload: {content}"
+    );
+}
+
+#[test]
+fn test_proto2_open_enums_in_map_value_uses_outer_field_path() {
+    let mut file = proto2_file("p2_open_map.proto");
+    file.package = Some("pkg".to_string());
+    file.enum_type.push(EnumDescriptorProto {
+        name: Some("Color".to_string()),
+        value: vec![enum_value("RED", 0), enum_value("BLUE", 1)],
+        ..Default::default()
+    });
+
+    let map_entry = DescriptorProto {
+        name: Some("ColorsEntry".to_string()),
+        field: vec![
+            make_field("key", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING),
+            FieldDescriptorProto {
+                name: Some("value".to_string()),
+                number: Some(2),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_ENUM),
+                type_name: Some(".pkg.Color".to_string()),
+                ..Default::default()
+            },
+        ],
+        options: MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        }
+        .into(),
+        ..Default::default()
+    };
+    file.message_type.push(DescriptorProto {
+        name: Some("Msg".to_string()),
+        field: vec![FieldDescriptorProto {
+            name: Some("colors".to_string()),
+            number: Some(1),
+            label: Some(Label::LABEL_REPEATED),
+            r#type: Some(Type::TYPE_MESSAGE),
+            type_name: Some(".pkg.Msg.ColorsEntry".to_string()),
+            ..Default::default()
+        }],
+        nested_type: vec![map_entry],
+        ..Default::default()
+    });
+    let config = CodeGenConfig {
+        open_enums_in: vec![".pkg.Msg.colors".to_string()],
+        ..Default::default()
+    };
+
+    let files = generate(&[file], &["p2_open_map.proto".to_string()], &config)
+        .expect("proto2 map enum override should generate");
+    let content = &joined(&files);
+
+    assert!(
+        content.contains("pub colors: ::buffa::__private::HashMap<"),
+        "map field should still use the default map collection: {content}"
+    );
+    assert!(
+        content.contains("::buffa::EnumValue<Color>"),
+        "map value override must use EnumValue by matching the outer field path: {content}"
+    );
+}
+
+#[test]
+fn test_proto2_open_enums_in_required_enum_default_uses_enum_value() {
+    let mut file = proto2_file("p2_open_required_default.proto");
+    file.package = Some("pkg".to_string());
+    file.enum_type.push(EnumDescriptorProto {
+        name: Some("Priority".to_string()),
+        value: vec![enum_value("LOW", 0), enum_value("HIGH", 2)],
+        ..Default::default()
+    });
+    file.message_type.push(DescriptorProto {
+        name: Some("Msg".to_string()),
+        field: vec![FieldDescriptorProto {
+            name: Some("level".to_string()),
+            number: Some(1),
+            label: Some(Label::LABEL_REQUIRED),
+            r#type: Some(Type::TYPE_ENUM),
+            type_name: Some(".pkg.Priority".to_string()),
+            default_value: Some("HIGH".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let config = CodeGenConfig {
+        open_enums_in: vec![".".to_string()],
+        ..Default::default()
+    };
+
+    let files = generate(
+        &[file],
+        &["p2_open_required_default.proto".to_string()],
+        &config,
+    )
+    .expect("proto2 required enum default override should generate");
+    let content = &joined(&files);
+
+    assert!(
+        content.contains("pub level: ::buffa::EnumValue<Priority>"),
+        "required closed enum override must use EnumValue: {content}"
+    );
+    assert!(
+        content.contains("level: ::buffa::EnumValue::Known(Priority::HIGH)"),
+        "required enum default must wrap known values as EnumValue: {content}"
+    );
+}
+
+#[test]
+fn test_proto2_open_enums_in_required_enum_implicit_default_uses_enum_default() {
+    let mut file = proto2_file("p2_open_required_implicit_default.proto");
+    file.package = Some("pkg".to_string());
+    file.enum_type.push(EnumDescriptorProto {
+        name: Some("Priority".to_string()),
+        value: vec![enum_value("HIGH", 2), enum_value("LOW", 0)],
+        ..Default::default()
+    });
+    file.message_type.push(DescriptorProto {
+        name: Some("Msg".to_string()),
+        field: vec![FieldDescriptorProto {
+            name: Some("level".to_string()),
+            number: Some(1),
+            label: Some(Label::LABEL_REQUIRED),
+            r#type: Some(Type::TYPE_ENUM),
+            type_name: Some(".pkg.Priority".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let config = CodeGenConfig {
+        open_enums_in: vec![".".to_string()],
+        ..Default::default()
+    };
+
+    let files = generate(
+        &[file],
+        &["p2_open_required_implicit_default.proto".to_string()],
+        &config,
+    )
+    .expect("proto2 required enum implicit default override should generate");
+    let content = &joined(&files);
+    let compact = content.split_whitespace().collect::<String>();
+
+    assert!(
+        content.contains("pub level: ::buffa::EnumValue<Priority>"),
+        "required closed enum override must use EnumValue: {content}"
+    );
+    assert!(
+        compact.contains("level:::buffa::EnumValue::Known(")
+            && compact.contains("<Priorityas::core::default::Default>::default()"),
+        "required enum implicit default must wrap the enum's declared default: {content}"
+    );
+    assert!(
+        compact.contains("self.level=::buffa::EnumValue::Known(")
+            && compact.contains("<Priorityas::core::default::Default>::default()"),
+        "clear() must restore the enum's declared default: {content}"
     );
 }
 

@@ -621,6 +621,49 @@ impl Config {
         self
     }
 
+    /// Treat selected closed enum fields as open for generated field
+    /// representation.
+    ///
+    /// Matching closed enum fields generate as `EnumValue<E>` instead of `E`, so
+    /// unknown wire values are directly visible as `EnumValue::Unknown(n)`. This
+    /// is an opt-in migration / interop mode: it deliberately changes closed-enum
+    /// presence behavior for matching fields, making an unknown value read as
+    /// present instead of unset with the raw value represented through unknown
+    /// fields.
+    ///
+    /// Each path is a fully-qualified proto path prefix. A rule may name an enum
+    /// type (for example, `".my.pkg.Status"`), a field
+    /// (`".my.pkg.Response.status"`), a package/message prefix, or `"."` for
+    /// every enum field. A leading dot is added if missing. Map enum values match
+    /// the outer map field path; oneof enum variants match the direct field path.
+    /// Prefixes are applied to both the field path and referenced enum type path;
+    /// use an individual field path when the override should be location-scoped
+    /// only. Empty paths are ignored so `"."` remains the only global opt-in
+    /// spelling.
+    ///
+    /// The wire format and descriptors are unchanged. Generated serde JSON uses
+    /// the existing open-enum numeric representation for unknown values, but
+    /// descriptor-driven dynamic JSON still follows the descriptor's closed-enum
+    /// semantics. The default is empty, so closed-enum output and semantics are
+    /// unchanged unless this option is configured.
+    #[must_use]
+    pub fn open_enums_in(mut self, paths: &[impl AsRef<str>]) -> Self {
+        for path in paths {
+            let raw = path.as_ref();
+            let normalized = normalize_open_enums_path(raw);
+            if normalized.is_empty() {
+                if !raw.trim().is_empty() {
+                    println!(
+                        "cargo:warning=buffa: open_enums_in path '{raw}' normalizes to empty and will be ignored"
+                    );
+                }
+                continue;
+            }
+            self.codegen_config.open_enums_in.push(normalized);
+        }
+        self
+    }
+
     /// Honor `features.utf8_validation = NONE` by emitting `Vec<u8>` / `&[u8]`
     /// for such string fields instead of `String` / `&str` (default: false).
     ///
@@ -1707,6 +1750,20 @@ fn normalize_attr_path(mut path: String) -> String {
     path
 }
 
+fn normalize_open_enums_path(path: &str) -> String {
+    let mut path = path.trim().to_string();
+    if path.is_empty() || path == "." {
+        return path;
+    }
+    if !path.starts_with('.') {
+        path.insert(0, '.');
+    }
+    while path.ends_with('.') {
+        path.pop();
+    }
+    path
+}
+
 /// Write `content` to `path` only if the file doesn't already exist with
 /// identical content. Avoids bumping timestamps on unchanged files, which
 /// prevents unnecessary downstream recompilation.
@@ -1920,6 +1977,37 @@ mod tests {
                 ".my.pkg.Other".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn open_enums_in_normalizes_paths() {
+        // Without normalization, dotless or trailing-dot paths would silently
+        // match nothing.
+        let config = Config::new()
+            .open_enums_in(&[
+                "my.pkg.Status.",
+                ".my.pkg.Msg.status",
+                ".",
+                "  my.pkg.Trimmed  ",
+            ])
+            .codegen_config;
+        assert_eq!(
+            config.open_enums_in,
+            vec![
+                ".my.pkg.Status".to_string(),
+                ".my.pkg.Msg.status".to_string(),
+                ".".to_string(),
+                ".my.pkg.Trimmed".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn open_enums_in_empty_path_is_not_catchall() {
+        let config = Config::new()
+            .open_enums_in(&["", "   ", "..."])
+            .codegen_config;
+        assert!(config.open_enums_in.is_empty());
     }
 
     #[test]

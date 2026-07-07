@@ -183,6 +183,10 @@ pub(crate) fn closed_enum_decode_with_unknown(
     on_known: TokenStream,
     on_unknown: TokenStream,
 ) -> TokenStream {
+    if on_unknown.is_empty() {
+        return closed_enum_decode(buf_expr, on_known);
+    }
+
     quote! {
         let __raw = ::buffa::types::decode_int32(#buf_expr)?;
         if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(__raw) {
@@ -1146,11 +1150,12 @@ fn scalar_clear_stmt(
     parent_features: &ResolvedFeatures,
     nesting: usize,
 ) -> Result<TokenStream, CodeGenError> {
-    let features = &crate::features::resolve_field(ctx, field, parent_features);
     let field_name = field
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
+    let field_fqn = format!(".{proto_fqn}.{field_name}");
+    let features = &crate::features::resolve_field(ctx, field, parent_features, Some(&field_fqn));
     let ty = effective_type(ctx, field, features);
     let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     let bytes_repr = field_bytes_repr(ctx, proto_fqn, field_name);
@@ -1169,6 +1174,17 @@ fn scalar_clear_stmt(
         features,
         nesting,
         field_string_repr(ctx, proto_fqn, field_name),
+    )? {
+        return Ok(quote! { self.#ident = #default_expr; });
+    }
+
+    if let Some(default_expr) = crate::defaults::open_enum_override_declared_default_value(
+        field,
+        ctx,
+        current_package,
+        features,
+        nesting,
+        &field_fqn,
     )? {
         return Ok(quote! { self.#ident = #default_expr; });
     }
@@ -1873,11 +1889,12 @@ fn scalar_merge_arm(
     parent_features: &ResolvedFeatures,
     preserve_unknown_fields: bool,
 ) -> Result<TokenStream, CodeGenError> {
-    let features = &crate::features::resolve_field(ctx, field, parent_features);
     let field_name = field
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
+    let field_fqn = format!(".{proto_fqn}.{field_name}");
+    let features = &crate::features::resolve_field(ctx, field, parent_features, Some(&field_fqn));
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
     let bytes_repr = field_bytes_repr(ctx, proto_fqn, field_name);
@@ -2291,11 +2308,12 @@ fn repeated_merge_arm(
     preserve_unknown_fields: bool,
     repr: &crate::RepeatedRepr,
 ) -> Result<TokenStream, CodeGenError> {
-    let features = &crate::features::resolve_field(ctx, field, parent_features);
     let field_name = field
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
+    let field_fqn = format!(".{proto_fqn}.{field_name}");
+    let features = &crate::features::resolve_field(ctx, field, parent_features, Some(&field_fqn));
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
     let bytes_repr = field_bytes_repr(ctx, proto_fqn, field_name);
@@ -2803,10 +2821,11 @@ fn generate_oneof_impls(
             field_number,
             ty,
         ));
-        let field_features = crate::features::resolve_field(ctx, field, features);
         let bytes_repr = field_bytes_repr(ctx, proto_fqn, field_name);
         let string_repr = field_string_repr(ctx, proto_fqn, field_name);
         let variant_fqn = format!(".{proto_fqn}.{oneof_name}.{field_name}");
+        let field_fqn = format!(".{proto_fqn}.{field_name}");
+        let field_features = crate::features::resolve_field(ctx, field, features, Some(&field_fqn));
         let boxed = crate::oneof::variant_boxed(ctx, ty, &variant_fqn);
         // A boxed message/group variant with a custom pointer needs the inner
         // message type (to type the decoded value) and the pointer type (to
@@ -2970,10 +2989,11 @@ fn map_entry_ctx(
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
     let key_ty = effective_type_in_map_entry(ctx, key_fd, features);
     let val_ty = effective_type_in_map_entry(ctx, val_fd, features);
+    let field_fqn = format!(".{proto_fqn}.{field_name}");
     // Resolve features per map-entry field so enum_type reflects the
     // referenced enum's declaration (not the parent message's).
-    let key_features = crate::features::resolve_field(ctx, key_fd, features);
-    let val_features = crate::features::resolve_field(ctx, val_fd, features);
+    let key_features = crate::features::resolve_field(ctx, key_fd, features, None);
+    let val_features = crate::features::resolve_field(ctx, val_fd, features, Some(&field_fqn));
     // `bytes_type` on `map<K, bytes>` → value encodes/decodes with the matching
     // representation (Vec / Bytes / custom), via the shared carve-out in
     // `map_value_bytes_repr`. Keys are always built-in, so they pass `Vec`.

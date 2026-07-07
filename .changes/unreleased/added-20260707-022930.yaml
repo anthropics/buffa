@@ -1,0 +1,3 @@
+kind: Added
+body: '**Path-scoped closed-enum open representation** via `open_enums_in`. Builds can opt selected closed enum fields into `EnumValue<E>` codegen, making unknown wire values directly visible as `EnumValue::Unknown(n)` for prost-parity migrations or memory-optimized builds with `preserve_unknown_fields(false)`. The option is default-off; default closed-enum semantics are unchanged. (#269)'
+time: 2026-07-07T02:29:30.000000000Z
