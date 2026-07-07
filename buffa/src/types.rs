@@ -795,33 +795,110 @@ pub fn merge_string(value: &mut String, buf: &mut impl Buf) -> Result<(), Decode
 /// construct itself directly from the wire — validating (or skipping validation)
 /// and choosing borrow-vs-own on its own terms.
 ///
-/// The decoder hands over `Borrowed` when the field's bytes are contiguous in
-/// the current input chunk (the common case for slice- and `Bytes`-backed
-/// sources) and `Owned` only otherwise (e.g. a field straddling a `Chain`
-/// boundary). A representation validates-and-borrows with
+/// The decoder hands over a borrowed payload when the field's bytes are
+/// contiguous in the current input chunk (the common case for slice- and
+/// `Bytes`-backed sources) and an owned [`Bytes`] only otherwise (e.g. a field
+/// straddling a `Chain` boundary). A representation validates-and-borrows with
 /// [`to_str`](Self::to_str), reads the raw bytes with
 /// [`as_slice`](Self::as_slice) (always zero-copy), or takes ownership with
-/// [`into_bytes`](Self::into_bytes) (zero-copy only for an `Owned` payload —
-/// see that method).
-#[derive(Debug, Clone)]
-pub enum WirePayload<'a> {
-    /// The field's bytes borrowed directly from the input buffer.
-    Borrowed(&'a [u8]),
-    /// The field's bytes owned as `Bytes` (reference-counted). Produced today
-    /// only for multi-chunk sources; a single-chunk source — including a single
-    /// `Bytes` buffer — currently arrives as `Borrowed`.
+/// [`into_bytes`](Self::into_bytes) (zero-copy only for an owned payload — see
+/// that method).
+///
+/// Opaque so that a borrowed payload can carry the surrounding wire-buffer tail
+/// for the slack-aware UTF-8 validator without exposing it to consumers; use the
+/// accessors above and the [`borrowed`](Self::borrowed) / [`owned`](Self::owned)
+/// constructors.
+#[derive(Clone)]
+pub struct WirePayload<'a>(WirePayloadRepr<'a>);
+
+impl core::fmt::Debug for WirePayload<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // Print only the field bytes, never the surrounding tail (which for a
+        // decoder-constructed payload is subsequent fields' wire bytes).
+        f.debug_struct("WirePayload")
+            .field("bytes", &self.as_slice())
+            .field("owned", &self.is_owned())
+            .finish()
+    }
+}
+
+#[derive(Clone)]
+enum WirePayloadRepr<'a> {
+    /// `chunk[..len]` is the field; `chunk[len..]` is the surrounding
+    /// wire-buffer tail (empty when constructed via `WirePayload::borrowed`).
+    /// Invariant: `len <= chunk.len()`.
+    Borrowed {
+        chunk: &'a [u8],
+        len: usize,
+    },
     Owned(Bytes),
 }
 
-impl WirePayload<'_> {
+impl<'a> WirePayload<'a> {
+    /// A payload borrowing exactly `field` (no surrounding wire buffer).
+    ///
+    /// Tests and hand-built payloads use this; the decoder uses an internal
+    /// constructor that also carries the surrounding tail so
+    /// [`to_str`](Self::to_str) can take the slack-aware fast path.
+    #[inline]
+    #[must_use]
+    pub const fn borrowed(field: &'a [u8]) -> Self {
+        Self(WirePayloadRepr::Borrowed {
+            chunk: field,
+            len: field.len(),
+        })
+    }
+
+    /// A payload owning `bytes`.
+    #[inline]
+    #[must_use]
+    pub const fn owned(bytes: Bytes) -> Self {
+        Self(WirePayloadRepr::Owned(bytes))
+    }
+
+    /// `chunk[..len]` is the field; `chunk[len..]` is readable tail. The caller
+    /// has established `len <= chunk.len()` (the EOF check before every call).
+    #[inline]
+    pub(crate) fn borrowed_in(chunk: &'a [u8], len: usize) -> Self {
+        debug_assert!(len <= chunk.len());
+        Self(WirePayloadRepr::Borrowed { chunk, len })
+    }
+
     /// Borrow the field's bytes (zero-copy in both variants).
     #[inline]
     #[must_use]
     pub fn as_slice(&self) -> &[u8] {
-        match self {
-            WirePayload::Borrowed(s) => s,
-            WirePayload::Owned(b) => b,
+        match &self.0 {
+            WirePayloadRepr::Borrowed { chunk, len } => &chunk[..*len],
+            WirePayloadRepr::Owned(b) => b,
         }
+    }
+
+    /// Field length in bytes.
+    #[inline]
+    #[must_use]
+    pub fn len(&self) -> usize {
+        match &self.0 {
+            WirePayloadRepr::Borrowed { len, .. } => *len,
+            WirePayloadRepr::Owned(b) => b.len(),
+        }
+    }
+
+    /// Whether the field is empty.
+    #[inline]
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Whether this payload owns its bytes (and so [`into_bytes`](Self::into_bytes)
+    /// is zero-copy). A `from_wire` impl that wants the [`Bytes`] only when it's
+    /// free can branch on this and fall back to [`as_slice`](Self::as_slice)
+    /// otherwise.
+    #[inline]
+    #[must_use]
+    pub fn is_owned(&self) -> bool {
+        matches!(self.0, WirePayloadRepr::Owned(_))
     }
 
     /// Borrow the payload as a `&str` if it is valid UTF-8.
@@ -829,7 +906,10 @@ impl WirePayload<'_> {
     /// Convenience for [`ProtoString::from_wire`] implementations; uses
     /// buffa's UTF-8 validator (so it picks up the `fast-utf8` feature when
     /// enabled) and returns the same [`DecodeError::InvalidUtf8`] the
-    /// built-in `String` representation would.
+    /// built-in `String` representation would. For a borrowed payload that
+    /// carries surrounding wire-buffer tail (the decoder's common case) this
+    /// reaches the slack-aware fast path; the `borrowed`/`owned` constructors
+    /// have no tail, so they take the plain validator.
     ///
     /// # Errors
     ///
@@ -837,23 +917,30 @@ impl WirePayload<'_> {
     #[inline]
     #[must_use = "the validated `&str` is the only way to use the payload as a string"]
     pub fn to_str(&self) -> Result<&str, DecodeError> {
-        validate_str(self.as_slice())
+        match &self.0 {
+            // SAFETY: the `Borrowed` invariant is `len <= chunk.len()`,
+            // satisfying `validate_str_in`'s precondition. Established at
+            // `borrowed_in` (debug-asserted) by the decoder's preceding EOF
+            // check, and at `borrowed` by `len = field.len()`.
+            WirePayloadRepr::Borrowed { chunk, len } => unsafe { validate_str_in(chunk, *len) },
+            WirePayloadRepr::Owned(b) => validate_str(b),
+        }
     }
 
     /// Take ownership of the field's bytes as [`Bytes`].
     ///
-    /// Zero-copy only for an `Owned` payload, which today is produced only for
+    /// Zero-copy only for an owned payload, which today is produced only for
     /// multi-chunk sources — a single-chunk source (including a single `Bytes`
-    /// buffer) arrives as `Borrowed` and is copied here. For a guaranteed
-    /// zero-copy `bytes` field path use the built-in `bytes::Bytes` representation
+    /// buffer) arrives borrowed and is copied here. For a guaranteed zero-copy
+    /// `bytes` field path use the built-in `bytes::Bytes` representation
     /// ([`decode_bytes_to_bytes`]); single-chunk-`Bytes` zero-copy for custom
     /// types is a planned additive enhancement.
     #[inline]
     #[must_use]
     pub fn into_bytes(self) -> Bytes {
-        match self {
-            WirePayload::Borrowed(s) => Bytes::copy_from_slice(s),
-            WirePayload::Owned(b) => b,
+        match self.0 {
+            WirePayloadRepr::Borrowed { chunk, len } => Bytes::copy_from_slice(&chunk[..len]),
+            WirePayloadRepr::Owned(b) => b,
         }
     }
 }
@@ -887,14 +974,15 @@ pub(crate) fn read_field_payload<R>(
     }
     let chunk = buf.chunk();
     if chunk.len() >= len {
-        // Whole field is contiguous: hand over a borrowed slice (zero-copy).
-        let r = f(WirePayload::Borrowed(&chunk[..len]))?;
+        // Whole field is contiguous: hand over a borrowed payload carrying the
+        // full remaining chunk (so `to_str` can take the slack-aware path).
+        let r = f(WirePayload::borrowed_in(chunk, len))?;
         buf.advance(len);
         Ok(r)
     } else {
         // Field straddles chunk boundaries: take an owned `Bytes` (zero-copy
         // when `buf` is `Bytes`-backed, a copy otherwise).
-        f(WirePayload::Owned(buf.copy_to_bytes(len)))
+        f(WirePayload::owned(buf.copy_to_bytes(len)))
     }
 }
 
@@ -1652,11 +1740,32 @@ mod tests {
 
     #[test]
     fn wire_payload_to_str() {
-        assert_eq!(WirePayload::Borrowed(b"abc").to_str().unwrap(), "abc");
+        assert_eq!(WirePayload::borrowed(b"abc").to_str().unwrap(), "abc");
         assert!(matches!(
-            WirePayload::Borrowed(&[0xFF]).to_str(),
+            WirePayload::borrowed(&[0xFF]).to_str(),
             Err(DecodeError::InvalidUtf8)
         ));
+        // Decoder-constructed payload with surrounding tail: `to_str` reaches
+        // `validate_str_in` and the tail is excluded from the result.
+        let wire = b"abc\x00\x00\x00\x00\x00\x00\x00\x00trailing";
+        assert_eq!(WirePayload::borrowed_in(wire, 3).to_str().unwrap(), "abc");
+        assert_eq!(WirePayload::borrowed_in(wire, 3).as_slice(), b"abc");
+        assert_eq!(WirePayload::borrowed_in(wire, 3).len(), 3);
+        // Tail bytes after an invalid field don't rescue it.
+        assert!(matches!(
+            WirePayload::borrowed_in(b"\xFFtailtailtail", 1).to_str(),
+            Err(DecodeError::InvalidUtf8)
+        ));
+        // Owned path is unchanged.
+        let p = WirePayload::owned(Bytes::from_static(b"hi"));
+        assert_eq!(p.to_str().unwrap(), "hi");
+        assert!(p.is_owned());
+        assert!(!WirePayload::borrowed(b"hi").is_owned());
+        assert!(WirePayload::borrowed(b"").is_empty());
+        // Debug never prints the surrounding tail.
+        let dbg = alloc::format!("{:?}", WirePayload::borrowed_in(wire, 3));
+        assert!(dbg.contains("[97, 98, 99]"), "{dbg}");
+        assert!(!dbg.contains("trailing"), "{dbg}");
     }
 
     /// A custom string representation that enforces an extra invariant in

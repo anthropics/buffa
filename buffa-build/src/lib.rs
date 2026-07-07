@@ -256,9 +256,10 @@ impl Config {
     /// `buffa-descriptor`-dependent (and `std`-requiring) reflection surface to
     /// be opt-in. `buffa-types` is the motivating case.
     ///
-    /// **Experimental and `#[doc(hidden)]`**, paired with
-    /// [`generate_reflection_vtable`](Self::generate_reflection_vtable) until the
-    /// public `ReflectMode` selector lands.
+    /// **Experimental and `#[doc(hidden)]`.** This knob only controls the
+    /// crate-feature gate on the emitted reflection impls; the reflection
+    /// codegen mode itself is selected via the public
+    /// [`reflect_mode`](Self::reflect_mode) selector.
     #[doc(hidden)]
     #[must_use]
     pub fn gate_reflect_on_crate_feature(mut self, enabled: bool) -> Self {
