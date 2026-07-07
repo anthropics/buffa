@@ -1454,7 +1454,8 @@ pub(crate) fn repeated_decode_arm(
         if closed {
             // Unpacked: each element has its own tag, so `before_tag` captures
             // the per-element span. Packed (above) can't do this — the tag
-            // covers the whole blob — so packed unknowns are still dropped.
+            // covers the whole blob — so packed unknowns are recorded as
+            // synthetic varint records instead.
             let unknown_route = closed_enum_view_unknown_route(preserve_unknown_fields);
             closed_enum_decode_with_unknown(&quote! { &mut cur }, push_known, unknown_route)
         } else {

@@ -1724,18 +1724,8 @@ impl<'a, K, V> IntoIterator for MapView<'a, K, V> {
     }
 }
 
-/// A borrowed view of unknown fields.
-///
-/// Stores unknown fields as wire records rather than decoded values, enabling
-/// zero-copy round-tripping for borrowable input spans. Borrowed spans may
-/// hold **one or more consecutive** complete `(tag, value)` records: adjacent
-/// unknown fields are coalesced into a single span, so a long run of unknown
-/// fields costs one `Vec` slot rather than one per field. Synthetic records
-/// cover cases where the view decoder must preserve a value that has no
-/// borrowable source span.
-/// Coalescing bounds the view's memory only — the decode-time
-/// unknown-field allowance is still charged per field (see
-/// [`push_record`](Self::push_record)).
+/// One unknown-field wire record: either a span borrowed from the input
+/// buffer, or synthetic bytes for a value with no borrowable source span.
 #[derive(Clone, Debug)]
 enum UnknownFieldsViewRecord<'a> {
     Borrowed(&'a [u8]),
@@ -1750,6 +1740,19 @@ impl UnknownFieldsViewRecord<'_> {
         }
     }
 }
+
+/// A borrowed view of unknown fields.
+///
+/// Stores unknown fields as wire records rather than decoded values, enabling
+/// zero-copy round-tripping for borrowable input spans. Borrowed spans may
+/// hold **one or more consecutive** complete `(tag, value)` records: adjacent
+/// unknown fields are coalesced into a single span, so a long run of unknown
+/// fields costs one `Vec` slot rather than one per field. Synthetic records
+/// cover cases where the view decoder must preserve a value that has no
+/// borrowable source span.
+/// Coalescing bounds the view's memory only — the decode-time
+/// unknown-field allowance is still charged per field (see
+/// [`push_record`](Self::push_record)).
 #[derive(Clone, Default)]
 pub struct UnknownFieldsView<'a> {
     /// Unknown wire records in decode order. Borrowed records may each hold
