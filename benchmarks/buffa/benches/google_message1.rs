@@ -8,6 +8,7 @@
     feature = "analytics_event",
     feature = "media_frame",
     feature = "packed_tile",
+    feature = "mesh",
     feature = "reflect",
     feature = "lazy"
 ))]

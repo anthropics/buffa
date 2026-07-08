@@ -246,6 +246,26 @@ fn int64_deserializes_from_quoted_string() {
     assert_eq!(val.0, -9007199254740993i64);
 }
 
+#[test]
+fn int64_deserializes_exact_float_notation_strings() {
+    #[rustfmt::skip]
+    let cases: &[(&str, i64)] = &[
+        (r#""9007199254740993.0""#, 9007199254740993),
+        (r#""9.007199254740993e15""#, 9007199254740993),
+        (r#""1200e-2""#, 12),
+    ];
+    for &(json, expected) in cases {
+        let val: SerdeInt64 = serde_json::from_str(json).unwrap();
+        assert_eq!(val.0, expected, "input: {json}");
+    }
+}
+
+#[test]
+fn int64_deserializes_exact_negative_float_notation_string() {
+    let val: SerdeInt64 = serde_json::from_str(r#""-9007199254740993.0""#).unwrap();
+    assert_eq!(val.0, -9007199254740993i64);
+}
+
 // ── uint64 ──────────────────────────────────────────────────────────────
 
 #[test]
@@ -257,6 +277,12 @@ fn uint64_serializes_as_quoted_string() {
 #[test]
 fn uint64_deserializes_from_quoted_string() {
     let val: SerdeUint64 = serde_json::from_str(r#""18446744073709551615""#).unwrap();
+    assert_eq!(val.0, u64::MAX);
+}
+
+#[test]
+fn uint64_deserializes_exact_float_notation_string() {
+    let val: SerdeUint64 = serde_json::from_str(r#""18446744073709551615.0""#).unwrap();
     assert_eq!(val.0, u64::MAX);
 }
 
@@ -382,6 +408,26 @@ fn int64_rejects_non_numeric_string() {
 #[test]
 fn int64_rejects_overflow_string() {
     assert!(serde_json::from_str::<SerdeInt64>(r#""99999999999999999999""#).is_err());
+}
+
+#[test]
+fn int64_rejects_inexact_exponential_string() {
+    assert!(serde_json::from_str::<SerdeInt64>(r#""1e-1""#).is_err());
+}
+
+#[test]
+fn int64_rejects_significand_overflow_string() {
+    // 40 digits overflows even the i128 significand accumulator, exercising
+    // the checked-arithmetic path rather than the i64 try_from narrowing.
+    assert!(
+        serde_json::from_str::<SerdeInt64>(r#""9999999999999999999999999999999999999999""#)
+            .is_err()
+    );
+}
+
+#[test]
+fn int64_rejects_huge_exponent_string() {
+    assert!(serde_json::from_str::<SerdeInt64>(r#""1e9999999999""#).is_err());
 }
 
 #[test]
@@ -963,11 +1009,13 @@ fn int32_deserialize_table() {
         ("42",               Some(42)),       // bare number
         (r#""42""#,          Some(42)),       // quoted string
         (r#""1e2""#,         Some(100)),      // exponential string notation
+        (r#""1200e-2""#,     Some(12)),       // exact negative exponent
         ("null",             Some(0)),        // null → 0
         ("1.0",              Some(1)),        // integer-valued f64 (visit_f64)
         ("-2147483648",      Some(i32::MIN)), // boundary
         ("2147483647",       Some(i32::MAX)), // boundary
         ("9223372036854775807", None),        // i64::MAX overflow → error
+        (r#""1e-1""#,        None),           // non-integral exponential string → error
         (r#""1.5""#,         None),           // fractional string → error
         ("1.5",              None),           // fractional f64 → error
     ];

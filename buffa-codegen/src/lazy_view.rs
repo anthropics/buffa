@@ -24,7 +24,7 @@ use crate::impl_message::{
     effective_type, is_real_oneof_member, is_supported_field_type, validated_field_number,
     wire_type_check,
 };
-use crate::message::{is_map_field, make_field_ident, rust_path_to_tokens};
+use crate::message::{is_map_field, rust_path_to_tokens};
 use crate::view::{
     map_decode_arm, map_to_owned_expr, message_view_has_borrowing_field, oneof_decode_arms,
     oneof_variant_to_owned, oneof_view_struct_fields, repeated_decode_arm, repeated_to_owned,
@@ -254,9 +254,15 @@ pub(crate) fn generate_lazy_view_with_nesting(
         (quote! { #[derive(Clone, Debug, Default)] }, quote! {})
     };
 
+    // Scoped #[allow(non_snake_case)] for non-snake member names (verbatim
+    // camelCase protos or collision fallbacks); empty otherwise. Applied to
+    // the inherent impl too, which holds the `has_<name>` methods.
+    let non_snake_attr = ctx.message_non_snake_attr(msg);
+
     Ok(quote! {
         #[doc = #doc]
         #debug_derive
+        #non_snake_attr
         pub struct #lazy_ident<'a> {
             #(#direct_fields)*
             #(#oneof_struct_fields)*
@@ -267,6 +273,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
 
         #debug_impl
 
+        #non_snake_attr
         impl<'a> #lazy_ident<'a> {
             /// Decode from `buf` under the limits carried by `ctx`, recording
             /// nested/repeated message fields as byte ranges.
@@ -429,7 +436,7 @@ fn lazy_struct_field(
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
-    let ident = make_field_ident(field_name);
+    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     let number = field.number.unwrap_or(0);
     let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;
     let field_fqn = format!("{}.{}", proto_fqn, field_name);
@@ -577,13 +584,13 @@ fn lazy_singular_message_arm(
     field: &FieldDescriptorProto,
 ) -> Result<TokenStream, CodeGenError> {
     let field_number = validated_field_number(field)?;
-    let ident = make_field_ident(
+    let ident = scope.ctx.field_ident(
         field
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?,
+        field.number.unwrap_or(0),
     );
-    let _ = scope;
     let wire_check = wire_type_check(
         &quote! { tag },
         &quote! { ::buffa::encoding::WireType::LengthDelimited },
@@ -603,13 +610,13 @@ fn lazy_repeated_message_arm(
     field: &FieldDescriptorProto,
 ) -> Result<TokenStream, CodeGenError> {
     let field_number = validated_field_number(field)?;
-    let ident = make_field_ident(
+    let ident = scope.ctx.field_ident(
         field
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?,
+        field.number.unwrap_or(0),
     );
-    let _ = scope;
     let wire_check = wire_type_check(
         &quote! { tag },
         &quote! { ::buffa::encoding::WireType::LengthDelimited },
@@ -644,7 +651,7 @@ fn build_lazy_to_owned_fields(
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?;
-        let ident = make_field_ident(name);
+        let ident = ctx.field_ident(name, field.number.unwrap_or(0));
         let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;
         if is_repeated && is_map_field(msg, field) {
             let expr = map_to_owned_expr(scope, msg, field, &ident)?;
@@ -704,7 +711,7 @@ fn build_lazy_to_owned_fields(
         if group.is_empty() {
             continue;
         }
-        let field_ident = make_field_ident(oneof_name);
+        let field_ident = ctx.oneof_ident(oneof_name);
         let view_enum: TokenStream = quote! { #view_oneof_prefix #base_ident };
         let owned_enum: TokenStream = quote! { #owned_oneof_prefix #base_ident };
 
@@ -797,7 +804,7 @@ fn generate_lazy_view_serialize(
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("oneof.name"))?;
-        let field_ident = make_field_ident(oneof_name);
+        let field_ident = scope.ctx.oneof_ident(oneof_name);
         let view_enum = quote! { #view_oneof_prefix #base_ident };
         let fields: Vec<_> = msg
             .field
@@ -846,7 +853,7 @@ fn lazy_field_serialize_stmt(
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let json_name = field.json_name.as_deref().unwrap_or(field_name);
-    let ident = make_field_ident(field_name);
+    let ident = scope.ctx.field_ident(field_name, field.number.unwrap_or(0));
     let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;
 
     if is_repeated {

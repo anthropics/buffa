@@ -25,7 +25,6 @@ use crate::context::CodeGenContext;
 use crate::features::{resolve_field, ResolvedFeatures};
 use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
 use crate::generated::descriptor::DescriptorProto;
-use crate::idents::make_field_ident;
 use crate::impl_message::{
     effective_type, is_explicit_presence_scalar, is_real_oneof_member, is_supported_field_type,
 };
@@ -93,7 +92,7 @@ pub(crate) fn reflect_owned_impls(
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?;
-        let id = make_field_ident(name);
+        let id = ctx.field_ident(name, field.number.unwrap_or(0));
         let number = field.number.unwrap_or(0) as u32;
         let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;
 
@@ -194,7 +193,7 @@ pub(crate) fn reflect_owned_impls(
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("oneof.name"))?;
-        let field_ident = make_field_ident(oneof_name);
+        let field_ident = ctx.oneof_ident(oneof_name);
         let oneof_enum = quote! { #oneof_prefix #base_ident };
 
         for field in msg

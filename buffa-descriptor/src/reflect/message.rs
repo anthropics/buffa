@@ -22,10 +22,61 @@
 //! diff at the call site.
 
 use alloc::boxed::Box;
+use alloc::string::{String, ToString};
 
 use super::value::ValueRef;
 use super::DynamicMessage;
 use crate::{DescriptorPool, FieldDescriptor, MessageDescriptor, OneofDescriptor};
+
+/// Errors returned by checked reflection mutation APIs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ReflectError {
+    /// The supplied field descriptor is not a declared field or registered
+    /// extension of the target message.
+    ///
+    /// Membership is identity-based, not structural: a descriptor that has
+    /// the same name and number but came from a different
+    /// [`DescriptorPool`] (e.g. two pools built from the same
+    /// `FileDescriptorSet`) is still foreign. Always pass descriptors
+    /// resolved from the message's own [`pool()`](ReflectMessage::pool).
+    FieldNotMember {
+        /// The message being mutated.
+        message: String,
+        /// The foreign descriptor's simple field name.
+        field_name: String,
+        /// The foreign descriptor's field number.
+        number: u32,
+    },
+}
+
+impl ReflectError {
+    pub(crate) fn field_not_member(message: &MessageDescriptor, field: &FieldDescriptor) -> Self {
+        Self::FieldNotMember {
+            message: message.full_name().to_string(),
+            field_name: field.name().to_string(),
+            number: field.number(),
+        }
+    }
+}
+
+impl core::fmt::Display for ReflectError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::FieldNotMember {
+                message,
+                field_name,
+                number,
+            } => write!(
+                f,
+                "field descriptor {field_name:?} (#{number}) is not a member of {message}"
+            ),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for ReflectError {}
 
 /// Reflection over a protobuf message.
 ///
@@ -144,13 +195,55 @@ pub trait ReflectMessage {
 /// common case (interceptors inspecting a request) and shouldn't require
 /// `&mut`.
 pub trait ReflectMessageMut: ReflectMessage {
+    /// Checked variant of [`set`](Self::set).
+    ///
+    /// The default implementation performs **no validation** — it forwards
+    /// to `set` and returns `Ok(())`, so on an implementation that has not
+    /// overridden it this can panic exactly where `set` would.
+    /// Implementations that can validate field-descriptor membership should
+    /// override it and return [`ReflectError::FieldNotMember`] rather than
+    /// mutating a colliding field number by accident ([`DynamicMessage`]
+    /// does).
+    fn try_set(
+        &mut self,
+        field: &FieldDescriptor,
+        value: super::Value,
+    ) -> Result<(), ReflectError> {
+        self.set(field, value);
+        Ok(())
+    }
+
     /// Set a field's value.
     ///
     /// Setting a singular field replaces it. Setting a `List` or `Map`
     /// value replaces the whole container.
+    ///
+    /// # Panics
+    ///
+    /// May panic if `field` is not a member of this message's descriptor.
+    /// Use [`try_set`](Self::try_set) when membership is not already proven.
     fn set(&mut self, field: &FieldDescriptor, value: super::Value);
 
+    /// Checked variant of [`clear`](Self::clear).
+    ///
+    /// The default implementation performs **no validation** — it forwards
+    /// to `clear` and returns `Ok(())`, so on an implementation that has not
+    /// overridden it this can panic exactly where `clear` would.
+    /// Implementations that can validate field-descriptor membership should
+    /// override it and return [`ReflectError::FieldNotMember`] rather than
+    /// clearing a colliding field number by accident ([`DynamicMessage`]
+    /// does).
+    fn try_clear(&mut self, field: &FieldDescriptor) -> Result<(), ReflectError> {
+        self.clear(field);
+        Ok(())
+    }
+
     /// Clear a field, returning it to its default/absent state.
+    ///
+    /// # Panics
+    ///
+    /// May panic if `field` is not a member of this message's descriptor.
+    /// Use [`try_clear`](Self::try_clear) when membership is not already proven.
     fn clear(&mut self, field: &FieldDescriptor);
 }
 

@@ -10,7 +10,8 @@
     feature = "log_record",
     feature = "analytics_event",
     feature = "media_frame",
-    feature = "packed_tile"
+    feature = "packed_tile",
+    feature = "mesh"
 ))]
 #[allow(
     clippy::derivable_impls,

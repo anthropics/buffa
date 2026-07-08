@@ -1,0 +1,20 @@
+// Adversarial names for the package-root reflect re-exports: an extension
+// const named `file_descriptor_set_bytes` SCREAMING_SNAKEs to
+// FILE_DESCRIPTOR_SET_BYTES, colliding in the value namespace with the
+// reflect re-export unless codegen reserves the name (see
+// root_occupied_names). Compiling this file with reflection enabled IS the
+// regression test.
+syntax = "proto3";
+
+package reflectcollide;
+
+import "google/protobuf/descriptor.proto";
+
+extend google.protobuf.MessageOptions {
+  bytes file_descriptor_set_bytes = 50401;
+  bytes descriptor_pool = 50402;
+}
+
+message Probe {
+  string name = 1;
+}

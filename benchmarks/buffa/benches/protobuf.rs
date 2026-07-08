@@ -8,7 +8,7 @@ use bench_buffa::bench::__buffa::lazy_view::{
 };
 use bench_buffa::bench::__buffa::view::{
     analytics_event::PropertyView, AnalyticsEventView, ApiResponseView, LogRecordView,
-    MediaFrameView, PackedSignedView, PackedTileView,
+    MediaFrameView, PackedSignedView, PackedTileView, TriMeshView,
 };
 use bench_buffa::bench::__buffa::{oneof, view::oneof as view_oneof};
 use bench_buffa::bench::*;
@@ -664,6 +664,28 @@ fn bench_packed_tile(c: &mut Criterion) {
     );
 }
 
+// Many small singular sub-messages per repeated element: the regression target
+// for `PointerRepr::Inline` (issue #248). The owned decode/merge cost is
+// dominated by per-submessage allocation under the `Box` default.
+fn bench_mesh(c: &mut Criterion) {
+    benchmark_decode::<TriMesh>(c, "buffa/mesh", include_bytes!("../../datasets/mesh.pb"));
+}
+
+fn bench_mesh_view(c: &mut Criterion) {
+    let dataset = load_dataset(include_bytes!("../../datasets/mesh.pb"));
+    let bytes = total_payload_bytes(&dataset);
+    let mut group = c.benchmark_group("buffa/mesh");
+    group.throughput(Throughput::Bytes(bytes));
+    group.bench_function("decode_view", |b| {
+        b.iter(|| {
+            for payload in &dataset.payload {
+                criterion::black_box(TriMeshView::decode_view(payload).unwrap());
+            }
+        });
+    });
+    group.finish();
+}
+
 // Control for the packed-varint reservation: every element is a negative
 // (10-byte) varint, the worst case for the old byte-length reserve.
 fn bench_packed_signed(c: &mut Criterion) {
@@ -740,6 +762,7 @@ criterion_group!(
     bench_google_message1,
     bench_media_frame,
     bench_packed_tile,
+    bench_mesh,
     bench_packed_signed,
 );
 
@@ -751,6 +774,7 @@ criterion_group!(
     bench_google_message1_view,
     bench_media_frame_view,
     bench_packed_tile_view,
+    bench_mesh_view,
     bench_packed_signed_view,
     bench_api_response_view_encode,
     bench_log_record_view_encode,

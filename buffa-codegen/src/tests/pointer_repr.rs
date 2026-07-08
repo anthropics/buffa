@@ -62,6 +62,35 @@ fn custom_type_path_threads_pointer_param() {
 }
 
 #[test]
+fn inline_type_path_uses_buffa_inline() {
+    let mf = quote! { ::buffa::MessageField };
+    let got = PointerRepr::Inline
+        .type_path(&mf, &quote! { Inner })
+        .unwrap();
+    assert_eq!(
+        got.to_string(),
+        quote! { ::buffa::MessageField<Inner, ::buffa::Inline<Inner>> }.to_string()
+    );
+}
+
+#[test]
+fn inline_some_path_carries_pointer() {
+    let got = PointerRepr::Inline.some_path(&quote! { Inner }).unwrap();
+    assert_eq!(
+        got.to_string(),
+        quote! { ::buffa::MessageField::<Inner, ::buffa::Inline<Inner>> }.to_string()
+    );
+}
+
+#[test]
+fn inline_pointer_new_is_tuple_constructor() {
+    let got = PointerRepr::Inline
+        .pointer_new(&quote! { Inner }, &quote! { v })
+        .unwrap();
+    assert_eq!(got.to_string(), quote! { ::buffa::Inline(v) }.to_string());
+}
+
+#[test]
 fn custom_some_path_carries_pointer() {
     let repr = PointerRepr::Custom("::my::SBox<*>".to_string());
     let got = repr.some_path(&quote! { Inner }).unwrap();

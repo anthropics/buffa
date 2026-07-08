@@ -1,0 +1,34 @@
+// Fixture for the detection-scoped #[allow(non_snake_case)]: camelCase
+// field/oneof names compiled WITHOUT idiomatic_field_names, so the generated
+// Rust keeps the verbatim names. The crate compiling under
+// `clippy -D warnings` is the test — every generated surface that defines an
+// ident derived from a field name (struct fields, has_*/with_* methods,
+// owned-view accessors, deserialize locals) must sit under a scoped allow.
+// proto2 so that required (has_*) and optional (with_* setter) both exist.
+syntax = "proto2";
+
+package test.verbatimcamel;
+
+message CamelMessage {
+  required string requiredField = 1;
+  optional string optionalField = 2;
+  repeated string repeatedField = 3;
+  map<string, int32> mapField = 4;
+  optional NestedCamel nestedMessage = 5;
+
+  oneof oneofKind {
+    string textChoice = 10;
+    int32 numberChoice = 11;
+  }
+
+  message NestedCamel {
+    optional string innerValue = 1;
+  }
+}
+
+// A conforming sibling in the same file: its generated output must NOT carry
+// the allow (checked by the codegen unit tests; here it guards against the
+// attr leaking to the wrong message).
+message SnakeMessage {
+  optional string plain_field = 1;
+}

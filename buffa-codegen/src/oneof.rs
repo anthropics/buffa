@@ -77,20 +77,52 @@ pub(crate) fn variant_boxed(ctx: &CodeGenContext, ty: Type, variant_fqn: &str) -
 /// boxing site consistent with the enum declaration and builds the message
 /// index a single time.
 pub(crate) fn resolve_unboxed_variants(
-    files: &[FileDescriptorProto],
+    index: &std::collections::HashMap<String, &DescriptorProto>,
     rules: &[String],
+    pointer_fields: &[(String, crate::PointerRepr)],
 ) -> std::collections::HashSet<String> {
     let mut resolved = std::collections::HashSet::new();
     if rules.is_empty() {
         return resolved;
     }
-    let index = message_index(files);
-    for (msg_fqn, msg) in &index {
+    for (msg_fqn, msg) in index {
         for_each_message_variant(msg, msg_fqn, |variant_fqn, type_name| {
             if rule_matches(rules, &variant_fqn)
-                && !unboxing_is_recursive(&index, rules, msg_fqn, type_name)
+                && !inline_is_recursive(index, rules, pointer_fields, msg_fqn, type_name)
             {
                 resolved.insert(variant_fqn);
+            }
+        });
+    }
+    resolved
+}
+
+/// Resolve the set of singular message-field paths whose configured
+/// [`PointerRepr`](crate::PointerRepr) is `Inline` and which can safely be
+/// stored inline (no cycle through inline edges).
+///
+/// Mirrors [`resolve_unboxed_variants`]: a field where the raw last-match-wins
+/// repr is `Inline` is added unless [`inline_is_recursive`] reports a cycle
+/// through inlined oneof variants and/or other inline singular fields. The
+/// resulting set is the source of truth for
+/// [`CodeGenContext::pointer_repr`](crate::context::CodeGenContext::pointer_repr),
+/// which demotes any `Inline` not in this set to `Box`.
+///
+/// Runs unconditionally now that `Inline` is the default. Cost is `O(F·(V+E))`
+/// (a fresh DFS per candidate field); memoize per-target reachable sets if a
+/// very large schema makes this noticeable.
+pub(crate) fn resolve_inlined_fields(
+    index: &std::collections::HashMap<String, &DescriptorProto>,
+    rules: &[String],
+    pointer_fields: &[(String, crate::PointerRepr)],
+) -> std::collections::HashSet<String> {
+    let mut resolved = std::collections::HashSet::new();
+    for (msg_fqn, msg) in index {
+        for_each_singular_message_field(msg, msg_fqn, |field_fqn, type_name| {
+            if raw_pointer_repr(pointer_fields, &field_fqn) == crate::PointerRepr::Inline
+                && !inline_is_recursive(index, rules, pointer_fields, msg_fqn, type_name)
+            {
+                resolved.insert(field_fqn);
             }
         });
     }
@@ -102,6 +134,20 @@ fn rule_matches(rules: &[String], variant_fqn: &str) -> bool {
     rules
         .iter()
         .any(|prefix| crate::context::matches_proto_prefix(prefix, variant_fqn))
+}
+
+/// Last-match-wins [`PointerRepr`](crate::PointerRepr) for `field_fqn` from the
+/// raw `pointer_fields` config — no recursion demotion. The recursion check
+/// uses this (not the post-demotion resolver) so the walk is order-independent.
+fn raw_pointer_repr(
+    pointer_fields: &[(String, crate::PointerRepr)],
+    field_fqn: &str,
+) -> crate::PointerRepr {
+    pointer_fields
+        .iter()
+        .rev()
+        .find(|(prefix, _)| crate::context::matches_proto_prefix(prefix, field_fqn))
+        .map_or(crate::PointerRepr::default(), |(_, repr)| repr.clone())
 }
 
 /// Invoke `f` for every message/group-typed real oneof member of `msg`, with
@@ -141,9 +187,44 @@ fn for_each_message_variant(msg: &DescriptorProto, msg_fqn: &str, mut f: impl Fn
     }
 }
 
+/// Invoke `f` for every singular (non-repeated, non-oneof) message/group-typed
+/// field of `msg`, with the field's leading-dot path and its target message
+/// name (no leading dot). `msg_fqn` has no leading dot.
+///
+/// These are the fields whose [`PointerRepr`](crate::PointerRepr) governs
+/// inline-vs-heap storage; repeated and map fields are heap-backed and break
+/// cycles regardless of pointer config.
+fn for_each_singular_message_field(
+    msg: &DescriptorProto,
+    msg_fqn: &str,
+    mut f: impl FnMut(String, &str),
+) {
+    use crate::generated::descriptor::field_descriptor_proto::Label;
+    for field in &msg.field {
+        if crate::impl_message::is_real_oneof_member(field) {
+            continue;
+        }
+        if !is_boxed_variant(field.r#type.unwrap_or_default()) {
+            continue;
+        }
+        if field.label.unwrap_or_default() == Label::LABEL_REPEATED {
+            continue;
+        }
+        let (Some(field_name), Some(type_name)) =
+            (field.name.as_deref(), field.type_name.as_deref())
+        else {
+            continue;
+        };
+        f(
+            format!(".{msg_fqn}.{field_name}"),
+            type_name.trim_start_matches('.'),
+        );
+    }
+}
+
 /// Build a map from fully-qualified message name (no leading dot) to its
 /// descriptor, walking every file and its nested types.
-fn message_index(
+pub(crate) fn message_index(
     files: &[FileDescriptorProto],
 ) -> std::collections::HashMap<String, &DescriptorProto> {
     fn walk<'a>(
@@ -175,23 +256,25 @@ fn message_index(
     map
 }
 
-/// Returns `true` when storing a variant of message type `target` inline
-/// inside `enclosing` would produce an unsized type.
+/// Returns `true` when storing a value of message type `target` inline inside
+/// `enclosing` would produce an unsized type.
 ///
-/// `enclosing` and `target` are fully-qualified message names without a
-/// leading dot. A cycle is only reachable through message-typed oneof variants
-/// that are themselves stored inline (singular message fields are
-/// `Option<Box<_>>`, repeated fields are `Vec`, and maps are heap-backed, so
-/// none of those carry storage inline). The walk follows every *rule-matched*
-/// edge from `target`; if it reaches `enclosing`, the opt-out is recursive.
+/// `enclosing` and `target` are fully-qualified message names without a leading
+/// dot. A cycle is reachable only through edges that store the target inline:
+/// message-typed oneof variants matched by an `unboxed_oneof_fields` rule, and
+/// singular message fields whose raw [`PointerRepr`](crate::PointerRepr)
+/// resolves to `Inline`. Repeated fields, maps, and `Box`/custom-pointer fields
+/// are heap-backed and break cycles. The walk follows every *rule-matched* edge
+/// from `target`; if it reaches `enclosing`, inlining is recursive.
 ///
-/// Following rule-matched (rather than finally-resolved) edges keeps the
-/// check order-independent and conservative: an edge that resolution later
-/// keeps boxed (because it is itself part of a cycle) can only cause a false
-/// `true` here, which keeps more variants boxed — never an unsized type.
-fn unboxing_is_recursive(
+/// Following rule-matched (rather than finally-resolved) edges keeps the check
+/// order-independent and conservative: an edge that resolution later keeps
+/// boxed (because it is itself part of a cycle) can only cause a false `true`
+/// here, which keeps more fields boxed — never an unsized type.
+fn inline_is_recursive(
     index: &std::collections::HashMap<String, &DescriptorProto>,
     rules: &[String],
+    pointer_fields: &[(String, crate::PointerRepr)],
     enclosing: &str,
     target: &str,
 ) -> bool {
@@ -209,6 +292,11 @@ fn unboxing_is_recursive(
         };
         for_each_message_variant(msg, &current, |variant_fqn, type_name| {
             if rule_matches(rules, &variant_fqn) {
+                stack.push(type_name.to_string());
+            }
+        });
+        for_each_singular_message_field(msg, &current, |field_fqn, type_name| {
+            if raw_pointer_repr(pointer_fields, &field_fqn) == crate::PointerRepr::Inline {
                 stack.push(type_name.to_string());
             }
         });

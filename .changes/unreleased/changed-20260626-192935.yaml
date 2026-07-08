@@ -1,0 +1,11 @@
+kind: Changed
+body: |-
+    **`smoothutf8` bumped to 0.2.3.** The decode hot path picks up the
+    0.2.1–0.2.3 performance work: `verify_with_slack` ASCII improves
+    38–64% at 1–32 bytes (inline-partition fix) and 28–39% at 32–512
+    bytes on aarch64 (NEON `ascii_skip`), and the safe `verify` tail
+    rewrite improves 1–4-byte inputs up to 5.9×. `wasm32` targets now run
+    the portable shift-DFA validator instead of delegating to
+    `core::str::from_utf8`. buffa's call site moves from the deprecated
+    `to_str` alias to its new name `from_utf8`; behavior is unchanged.
+time: 2026-06-26T19:29:35.543946322Z

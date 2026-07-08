@@ -251,7 +251,7 @@ use my_crate::pkg::__buffa::view::PersonView;
 let view = PersonView::decode_view(&bytes)?;
 println!("name: {}", view.name);  // &str, no allocation
 
-let owned: Person = view.to_owned_message();
+let owned: Person = view.to_owned_message()?;
 ```
 
 ### `OwnedView` for async/RPC use

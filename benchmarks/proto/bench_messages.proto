@@ -109,6 +109,28 @@ message PackedTile {
   repeated uint64 checksums = 2;    // one larger packed varint field
 }
 
+// Many small singular sub-messages per repeated element (issue #248). Each
+// `Face` holds four singular `Vertex` fields, so a boxed `MessageField<Vertex>`
+// costs four heap allocations per face on decode that an inline pointer
+// (`PointerRepr::Inline`, the default) eliminates. None of the other benchmark
+// messages has more than one singular message field per payload, so this is the
+// regression target for the inline-by-default storage.
+// Target payload: ~18KB (256 faces).
+message TriMesh {
+  message Vertex {
+    float px = 1;
+    float py = 2;
+    float pz = 3;
+  }
+  message Face {
+    Vertex a = 1;
+    Vertex b = 2;
+    Vertex c = 3;
+    Vertex n = 4;
+  }
+  repeated Face faces = 1;
+}
+
 // Control for the packed-varint reservation path's worst case: negative
 // `int32`/`int64` always encode to 10 bytes per element, so reserving from the
 // payload byte length over-allocated ~10x. Reserving from the counted varint

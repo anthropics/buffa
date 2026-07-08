@@ -100,7 +100,7 @@ pub(crate) fn reflect_view_impls(
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?;
-        let id = make_field_ident(name);
+        let id = ctx.field_ident(name, field.number.unwrap_or(0));
         // `FieldDescriptor::number()` (matched on below) returns `u32`; proto
         // field numbers are always positive.
         let number = field.number.unwrap_or(0) as u32;
@@ -190,7 +190,10 @@ pub(crate) fn reflect_view_impls(
         // words / `is_set`), surfaced by the generated `has_*` accessor —
         // route reflection's `has()` through it so the two surfaces agree.
         let has_val = if is_required_field(field, features) && field.number.is_some() {
-            let has_method = format_ident!("has_{}", name);
+            let has_method = format_ident!(
+                "has_{}",
+                ctx.field_rust_name(name, field.number.unwrap_or(0))
+            );
             quote! { self.#has_method() }
         } else {
             has_val
@@ -208,7 +211,7 @@ pub(crate) fn reflect_view_impls(
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("oneof.name"))?;
-        let field_ident = make_field_ident(oneof_name);
+        let field_ident = ctx.oneof_ident(oneof_name);
         let view_enum = quote! { #view_oneof_prefix #base_ident };
 
         for field in msg

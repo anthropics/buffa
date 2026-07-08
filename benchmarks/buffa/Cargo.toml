@@ -23,13 +23,14 @@ buffa-build = { path = "../../buffa-build" }
 criterion = "0.5"
 
 [features]
-default = ["api_response", "log_record", "analytics_event", "google_message1", "media_frame", "packed_tile", "reflect", "lazy"]
+default = ["api_response", "log_record", "analytics_event", "google_message1", "media_frame", "packed_tile", "mesh", "reflect", "lazy"]
 api_response = []
 log_record = []
 analytics_event = []
 google_message1 = []
 media_frame = []
 packed_tile = []
+mesh = []
 reflect = []
 lazy = []
 # `iso` gates the per-message isolated targets out of the default `task bench` run.
@@ -38,12 +39,12 @@ iso = []
 [[bench]]
 name = "protobuf"
 harness = false
-required-features = ["api_response", "log_record", "analytics_event", "google_message1", "media_frame", "packed_tile", "lazy"]
+required-features = ["api_response", "log_record", "analytics_event", "google_message1", "media_frame", "packed_tile", "mesh", "lazy"]
 
 [[bench]]
 name = "reflect"
 harness = false
-required-features = ["api_response", "log_record", "analytics_event", "google_message1", "media_frame", "packed_tile", "reflect", "lazy"]
+required-features = ["api_response", "log_record", "analytics_event", "google_message1", "media_frame", "packed_tile", "mesh", "reflect", "lazy"]
 
 [[bench]]
 name = "api_response"
@@ -74,6 +75,11 @@ required-features = ["iso", "media_frame"]
 name = "packed_tile"
 harness = false
 required-features = ["iso", "packed_tile"]
+
+[[bench]]
+name = "mesh"
+harness = false
+required-features = ["iso", "mesh"]
 
 # Build at the release profile (lto, single codegen unit) for a fair cross-impl
 # comparison — the same profile a consumer building in release gets, and the one

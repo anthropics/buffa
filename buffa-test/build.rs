@@ -22,6 +22,17 @@ fn main() {
         .compile()
         .expect("buffa_build failed for box_type.proto");
 
+    // PointerRepr::Inline default: every non-recursive singular message field
+    // is the built-in inline pointer (`::buffa::Inline<T>`) with no config
+    // knob. The `self_ref` field is recursive and must be silently kept on
+    // `Box` — the crate compiling proves the recursion guard works on the
+    // default config (an inlined `self_ref` would E0072).
+    buffa_build::Config::new()
+        .files(&["protos/inline_field.proto"])
+        .includes(&["protos/"])
+        .compile()
+        .expect("buffa_build failed for inline_field.proto");
+
     // views(false) + vtable: owned-message vtable reflection is self-contained,
     // so it must compile without view generation (only owned impls emitted).
     buffa_build::Config::new()
@@ -196,6 +207,17 @@ fn main() {
         .compile()
         .expect("buffa_build failed for name_collisions.proto");
 
+    // Reflect re-export collision — an extension const that SCREAMING_SNAKEs
+    // to FILE_DESCRIPTOR_SET_BYTES must lose the package-root slot to the
+    // reflect re-export instead of producing E0252. Compiling is the test.
+    buffa_build::Config::new()
+        .files(&["protos/reflect_name_collision.proto"])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for reflect_name_collision.proto");
+
     // Prelude shadowing (gh#36, gh#64) — nested + cross-file `message Option`
     // with optional/oneof fields, built with views + JSON so all `Option<...>`
     // emission paths are exercised. The sibling file shares the package, so
@@ -295,6 +317,33 @@ fn main() {
         .generate_json(true)
         .compile()
         .expect("buffa_build failed for json_types.proto");
+
+    // Idiomatic field names (#256): camelCase proto fields/oneofs generate
+    // snake_case Rust identifiers (prost parity); the wire format and JSON
+    // names keep the originals. Views + JSON on so accessors, has-paths, and
+    // the serde rename/alias surface all compile and round-trip.
+    buffa_build::Config::new()
+        .files(&["protos/idiomatic_fields.proto"])
+        .includes(&["protos/"])
+        .idiomatic_field_names(true)
+        .generate_views(true)
+        .generate_json(true)
+        .compile()
+        .expect("buffa_build failed for idiomatic_fields.proto");
+
+    // Verbatim camelCase names WITHOUT idiomatic_field_names: the generated
+    // code keeps the non-snake idents and must compile warning-free under
+    // the scoped #[allow(non_snake_case)] (detection-based, so conforming
+    // protos see no attr at all). Views + JSON on to cover every surface
+    // that defines field-derived idents.
+    buffa_build::Config::new()
+        .files(&["protos/verbatim_camel.proto"])
+        .includes(&["protos/"])
+        .generate_views(true)
+        .lazy_views(true)
+        .generate_json(true)
+        .compile()
+        .expect("buffa_build failed for verbatim_camel.proto");
 
     // View + JSON round-trip tests (issue #83): views and JSON both enabled.
     // The proto3 file imports WKTs (Timestamp, Duration, wrappers) so the

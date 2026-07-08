@@ -102,7 +102,7 @@ mod tests {
     fn short_string_decodes_inline_without_heap() {
         // 5 bytes is well within smol_str's 23-byte inline capacity, so
         // `from_wire` must produce an inline value with no heap allocation.
-        let s = SmolStr::from_wire(WirePayload::Borrowed(b"hello")).unwrap();
+        let s = SmolStr::from_wire(WirePayload::borrowed(b"hello")).unwrap();
         assert_eq!(s.as_ref(), "hello");
         assert!(
             !s.0.is_heap_allocated(),
@@ -113,18 +113,18 @@ mod tests {
     #[test]
     fn long_string_roundtrips() {
         let long = "x".repeat(64);
-        let s = SmolStr::from_wire(WirePayload::Borrowed(long.as_bytes())).unwrap();
+        let s = SmolStr::from_wire(WirePayload::borrowed(long.as_bytes())).unwrap();
         assert_eq!(s.as_ref(), long.as_str());
     }
 
     #[test]
     fn invalid_utf8_is_rejected() {
-        assert!(SmolStr::from_wire(WirePayload::Borrowed(&[0xff, 0xfe])).is_err());
+        assert!(SmolStr::from_wire(WirePayload::borrowed(&[0xff, 0xfe])).is_err());
     }
 
     #[test]
     fn owned_payload_decodes() {
-        let payload = WirePayload::Owned(::buffa::bytes::Bytes::from_static(b"hi"));
+        let payload = WirePayload::owned(::buffa::bytes::Bytes::from_static(b"hi"));
         let s = SmolStr::from_wire(payload).unwrap();
         assert_eq!(s.as_ref(), "hi");
         assert!(!s.0.is_heap_allocated());

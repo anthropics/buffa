@@ -36,7 +36,7 @@ use buffa::types::{
 use buffa::unknown_fields::UnknownFields;
 use buffa::{DecodeContext, DecodeError, Message, DEFAULT_UNKNOWN_FIELD_LIMIT, RECURSION_LIMIT};
 
-use super::message::{ReflectCow, ReflectMessage, ReflectMessageMut};
+use super::message::{ReflectCow, ReflectError, ReflectMessage, ReflectMessageMut};
 use super::value::{MapKey, MapValue, Value, ValueRef};
 
 /// A dynamically-typed protobuf message.
@@ -175,6 +175,22 @@ impl DynamicMessage {
                 .map(crate::ExtensionDescriptor::field);
         }
         None
+    }
+
+    fn field_descriptor_is_member(&self, field: &FieldDescriptor) -> bool {
+        self.field_or_extension(field.number())
+            .is_some_and(|f| core::ptr::eq(f, field))
+    }
+
+    fn validate_field_descriptor(&self, field: &FieldDescriptor) -> Result<(), ReflectError> {
+        if self.field_descriptor_is_member(field) {
+            Ok(())
+        } else {
+            Err(ReflectError::field_not_member(
+                self.message_descriptor(),
+                field,
+            ))
+        }
     }
 
     /// Decode wire bytes against the descriptor.
@@ -669,12 +685,11 @@ impl DynamicMessage {
     #[must_use]
     pub fn field_mut(&mut self, field: &FieldDescriptor) -> Option<&mut Value> {
         debug_assert!(
-            self.field_or_extension(field.number)
-                .is_some_and(|f| core::ptr::eq(f, field)),
+            self.field_descriptor_is_member(field),
             "FieldDescriptor passed to field_mut() is not a member of {}",
             self.message_descriptor().full_name,
         );
-        self.fields.get_mut(&field.number)
+        self.fields.get_mut(&field.number())
     }
 
     /// Insert a field value by number, bypassing the descriptor-keyed
@@ -889,19 +904,23 @@ impl ReflectMessage for DynamicMessage {
         // the wrong value, which is worse than a panic. The check is
         // debug-only because `get` is the hot path.
         debug_assert!(
-            self.field_or_extension(field.number)
-                .is_some_and(|f| core::ptr::eq(f, field)),
+            self.field_descriptor_is_member(field),
             "FieldDescriptor passed to get() is not a member of {}",
             self.message_descriptor().full_name,
         );
-        match self.fields.get(&field.number) {
+        match self.fields.get(&field.number()) {
             Some(v) => v.as_ref(),
             None => default_value_ref(field.kind, &self.pool),
         }
     }
 
     fn has(&self, field: &FieldDescriptor) -> bool {
-        match self.fields.get(&field.number) {
+        debug_assert!(
+            self.field_descriptor_is_member(field),
+            "FieldDescriptor passed to has() is not a member of {}",
+            self.message_descriptor().full_name,
+        );
+        match self.fields.get(&field.number()) {
             None => false,
             Some(Value::List(l)) => !l.is_empty(),
             Some(Value::Map(m)) => !m.is_empty(),
@@ -942,7 +961,8 @@ impl ReflectMessage for DynamicMessage {
 }
 
 impl ReflectMessageMut for DynamicMessage {
-    fn set(&mut self, field: &FieldDescriptor, value: Value) {
+    fn try_set(&mut self, field: &FieldDescriptor, value: Value) -> Result<(), ReflectError> {
+        self.validate_field_descriptor(field)?;
         // Setting a oneof member must clear its siblings, otherwise a
         // subsequent encode writes multiple oneof members onto the wire,
         // which violates the proto spec. The wire decoder and the JSON
@@ -950,14 +970,26 @@ impl ReflectMessageMut for DynamicMessage {
         // and a `ReflectMessageMut`-driven mutation (a CEL evaluator, a
         // fuzzer, generic field-mask application) must not be the one that
         // breaks the invariant.
-        if let Some(oi) = field.oneof_index {
-            self.clear_other_oneof_members(oi, field.number);
+        if let Some(oi) = field.oneof_index() {
+            self.clear_other_oneof_members(oi, field.number());
         }
-        self.fields.insert(field.number, value);
+        self.fields.insert(field.number(), value);
+        Ok(())
+    }
+
+    fn set(&mut self, field: &FieldDescriptor, value: Value) {
+        self.try_set(field, value)
+            .unwrap_or_else(|err| panic!("{err}"));
+    }
+
+    fn try_clear(&mut self, field: &FieldDescriptor) -> Result<(), ReflectError> {
+        self.validate_field_descriptor(field)?;
+        self.fields.remove(&field.number());
+        Ok(())
     }
 
     fn clear(&mut self, field: &FieldDescriptor) {
-        self.fields.remove(&field.number);
+        self.try_clear(field).unwrap_or_else(|err| panic!("{err}"));
     }
 }
 

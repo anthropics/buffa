@@ -1,0 +1,8 @@
+kind: Breaking changes
+body: |-
+  Singular message fields are now stored inline by default: codegen emits `MessageField<T, ::buffa::Inline<T>>` (laid out as `Option<T>`, no per-field heap allocation) for every non-recursive field. Recursive fields are detected and stay on `Box` automatically. (#248)
+
+  To restore the old behaviour for specific fields (e.g. large or rarely-set submessages), use `box_type_in(PointerRepr::Box, &[".pkg.Msg.field"])`; for the old global default, `box_type(PointerRepr::Box)`. Explicit `MessageField<Foo>` type annotations now mean the boxed form and will mismatch the new default — drop the annotation and let `P` infer from the field's declared type (or, for a standalone value with no pinning context, write `MessageField::<Foo, buffa::Inline<Foo>>::some(x)`).
+
+  `box_type_in` / `box_type_custom_in` now normalize a missing leading dot on each path; previously a dotless path silently matched nothing.
+time: 2026-06-27T00:29:30.000000000Z

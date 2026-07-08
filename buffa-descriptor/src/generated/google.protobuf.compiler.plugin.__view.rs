@@ -246,13 +246,13 @@ impl VersionOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<super::super::Version, ::buffa::DecodeError> {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::Version {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -515,6 +515,7 @@ impl<'a> ::buffa::MessageView<'a> for CodeGeneratorRequestView<'a> {
                 Some(v) => {
                     ::buffa::MessageField::<
                         super::super::Version,
+                        ::buffa::Inline<super::super::Version>,
                     >::some(v.to_owned_from_source(__buffa_src)?)
                 }
                 None => ::buffa::MessageField::none(),
@@ -707,16 +708,13 @@ impl CodeGeneratorRequestOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<
-        super::super::CodeGeneratorRequest,
-        ::buffa::DecodeError,
-    > {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::CodeGeneratorRequest {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -1158,16 +1156,13 @@ impl CodeGeneratorResponseOwnedView {
     }
     /// Convert to the owned message type.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if re-materializing preserved unknown fields
-    /// fails (e.g. the unknown-field limit is exceeded).
-    pub fn to_owned_message(
-        &self,
-    ) -> ::core::result::Result<
-        super::super::CodeGeneratorResponse,
-        ::buffa::DecodeError,
-    > {
+    /// Infallible: this type's constructors wire-decode their
+    /// buffer, and a view produced by wire decoding always
+    /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+    /// whose contract also governs handles converted from a raw
+    /// [`::buffa::OwnedView`].
+    #[must_use]
+    pub fn to_owned_message(&self) -> super::super::CodeGeneratorResponse {
         self.0.to_owned_message()
     }
     /// The underlying bytes buffer.
@@ -1448,6 +1443,9 @@ pub mod code_generator_response {
                     Some(v) => {
                         ::buffa::MessageField::<
                             super::super::super::super::GeneratedCodeInfo,
+                            ::buffa::Inline<
+                                super::super::super::super::GeneratedCodeInfo,
+                            >,
                         >::some(v.to_owned_from_source(__buffa_src)?)
                     }
                     None => ::buffa::MessageField::none(),
@@ -1615,16 +1613,15 @@ pub mod code_generator_response {
         }
         /// Convert to the owned message type.
         ///
-        /// # Errors
-        ///
-        /// Returns an error if re-materializing preserved unknown fields
-        /// fails (e.g. the unknown-field limit is exceeded).
+        /// Infallible: this type's constructors wire-decode their
+        /// buffer, and a view produced by wire decoding always
+        /// converts. Delegates to [`::buffa::OwnedView::to_owned_message`],
+        /// whose contract also governs handles converted from a raw
+        /// [`::buffa::OwnedView`].
+        #[must_use]
         pub fn to_owned_message(
             &self,
-        ) -> ::core::result::Result<
-            super::super::super::code_generator_response::File,
-            ::buffa::DecodeError,
-        > {
+        ) -> super::super::super::code_generator_response::File {
             self.0.to_owned_message()
         }
         /// The underlying bytes buffer.
