@@ -1843,7 +1843,10 @@ fn proto_relative_name(file: &Path, includes: &[PathBuf]) -> String {
 /// `protoc --include_imports` records the full transitive import closure in
 /// the descriptor set. Convert descriptor-relative names back to filesystem
 /// paths under the configured include roots so edits to imported protos rerun
-/// codegen even when `.files()` listed only the leaf proto.
+/// codegen even when `.files()` listed only the leaf proto. Imports resolved
+/// from protoc's bundled includes (the well-known types) are not under any
+/// configured root and are deliberately left unwatched — they ship with the
+/// protoc binary and are not user-editable.
 fn protoc_rerun_if_changed_paths(
     fds: &FileDescriptorSet,
     files: &[PathBuf],
@@ -1860,6 +1863,10 @@ fn protoc_rerun_if_changed_paths(
     paths.into_iter().collect()
 }
 
+/// Map an include-relative descriptor name back to an on-disk path, trying
+/// the include roots in `-I` order (matching protoc's own resolution).
+/// Absolute or parent-traversing names are rejected outright; with no
+/// include roots, the name is tried relative to the working directory.
 fn resolve_descriptor_name_under_include(name: &str, includes: &[PathBuf]) -> Option<PathBuf> {
     let rel = Path::new(name);
     if rel.is_absolute()
