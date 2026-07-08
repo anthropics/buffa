@@ -214,4 +214,20 @@ mod tests {
             assert_eq!(back, jt);
         }
     }
+
+    #[test]
+    fn borrow_at_near_min_roundtrip() {
+        // The subtlest borrow case: one nanosecond short of jiff's MIN second.
+        // jiff reports it as (MIN + 1, -999_999_999); the borrow produces proto
+        // { seconds: MIN, nanos: 1 }, and the conversion back must accept a
+        // positive nanos at MIN (jiff permits it — only negative nanos at MIN
+        // are out of range).
+        let min_second = jiff::Timestamp::MIN.as_second();
+        let jt = jiff::Timestamp::new(min_second + 1, -999_999_999).unwrap();
+        let ts: Timestamp = jt.into();
+        assert_eq!(ts.seconds, min_second);
+        assert_eq!(ts.nanos, 1);
+        let back: jiff::Timestamp = ts.try_into().expect("near-MIN borrow must convert back");
+        assert_eq!(back, jt);
+    }
 }
