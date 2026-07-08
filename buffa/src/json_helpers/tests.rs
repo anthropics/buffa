@@ -268,11 +268,10 @@ fn int64_deserializes_exact_negative_float_notation_string() {
 
 #[test]
 fn int64_deserializes_safe_unquoted_float_notation() {
-    #[rustfmt::skip]
     let cases: &[(&str, i64)] = &[
-        ("4503599627370495.0",     4503599627370495),
-        ("4.503599627370495e15",   4503599627370495),
-        ("-4503599627370495.0",   -4503599627370495),
+        ("4503599627370495.0", 4503599627370495),
+        ("4.503599627370495e15", 4503599627370495),
+        ("-4503599627370495.0", -4503599627370495),
         ("-4.503599627370495e15", -4503599627370495),
     ];
     for &(json, expected) in cases {
@@ -283,13 +282,17 @@ fn int64_deserializes_safe_unquoted_float_notation() {
 
 #[test]
 fn int64_rejects_unsafe_unquoted_float_notation() {
-    #[rustfmt::skip]
+    // From 2^52 an ulp is a whole integer, so serde_json's default
+    // (not-correctly-rounded) float parse can silently produce the adjacent
+    // integer — "9007199254740991.0" is observed to parse as …990.0.
     let cases: &[&str] = &[
         "4503599627370496.0",
+        "9007199254740991.0",
         "9007199254740992.0",
         "9007199254740993.0",
         "9.007199254740993e15",
         "-4503599627370496.0",
+        "-9007199254740991.0",
         "-9007199254740992.0",
         "-9007199254740993.0",
         "-9.007199254740993e15",
@@ -323,10 +326,16 @@ fn uint64_deserializes_exact_float_notation_string() {
 }
 
 #[test]
+fn uint64_deserializes_safe_unquoted_float_notation() {
+    let val: SerdeUint64 = serde_json::from_str("4503599627370495.0").unwrap();
+    assert_eq!(val.0, 4503599627370495);
+}
+
+#[test]
 fn uint64_rejects_unsafe_unquoted_float_notation() {
-    #[rustfmt::skip]
     let cases: &[&str] = &[
         "4503599627370496.0",
+        "9007199254740991.0",
         "9007199254740992.0",
         "9007199254740993.0",
         "9.007199254740993e15",
