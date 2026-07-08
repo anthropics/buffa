@@ -400,5 +400,6 @@ pub trait Reflectable {
     fn reflect(&self) -> ReflectCow<'_>;
 
     // `reflect_mut(&mut self) -> ReflectCowMut<'_>` is part of the design but
-    // deferred to the MergeSink work in this prototype — see merge.rs.
+    // deferred to the MergeSink work sketched in
+    // docs/investigations/reflection.md.
 }

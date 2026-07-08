@@ -563,6 +563,20 @@ impl DynamicMessage {
     // ── Encode ──────────────────────────────────────────────────────────────
 
     /// Encode this message into `buf`.
+    ///
+    /// A stored `Value` whose shape does not match its field descriptor —
+    /// only reachable by bypassing [`try_set`]'s validation via
+    /// [`field_by_number_mut`](Self::field_by_number_mut) /
+    /// [`field_mut`](Self::field_mut) — is silently omitted, as the whole
+    /// field: one invalid element suppresses its entire repeated/map field.
+    /// A nested `Value::Message` counts as invalid unless it was built from
+    /// the *same* [`DescriptorPool`] instance (pointer identity, not
+    /// full-name equality). [`encoded_len`](Self::encoded_len) applies the
+    /// same rule, so length and bytes always agree. The JSON serializer
+    /// represents the same invalid values as `null` rather than omitting
+    /// the field.
+    ///
+    /// [`try_set`]: crate::reflect::ReflectMessageMut::try_set
     pub fn encode(&self, buf: &mut impl BufMut) {
         for (&number, value) in &self.fields {
             // Skip if neither the descriptor nor the extension index
@@ -587,6 +601,10 @@ impl DynamicMessage {
     }
 
     /// Compute the encoded length.
+    ///
+    /// Applies the same invalid-value omission rule as
+    /// [`encode`](Self::encode), so the result always matches the bytes
+    /// `encode` writes.
     #[must_use]
     pub fn encoded_len(&self) -> usize {
         let mut len = self.unknown.encoded_len();
@@ -691,6 +709,11 @@ impl DynamicMessage {
     /// paralleling [`ReflectMessage::get`](crate::reflect::ReflectMessage::get).
     /// `field` may be a declared field or a registered extension of this
     /// message; both resolve by number.
+    ///
+    /// Replacing the value with one whose shape doesn't match the field's
+    /// kind bypasses [`ReflectMessageMut::try_set`]'s validation; the
+    /// encoder defensively skips invalid stored values (see
+    /// [`encode`](Self::encode)).
     ///
     /// # Panics
     ///
@@ -1092,7 +1115,16 @@ fn validate_singular_shape(
 ) -> Result<(), ValueShapeMismatch> {
     let matches = match kind {
         SingularKind::Scalar(s) => value_matches_scalar(s, value),
+        // Enums are validated by variant only — no enum-descriptor identity
+        // or known-value check, deliberately asymmetric with the message arm
+        // below: enums are plain i32 on the wire (proto3 keeps unknown
+        // numbers), and JSON serialization looks the number up against the
+        // *field's* enum descriptor, so a foreign or unknown number cannot
+        // corrupt output.
         SingularKind::Enum(_) => matches!(value, Value::EnumNumber(_)),
+        // Pointer identity, not full-name equality: a structurally-identical
+        // message built from a different pool instance is foreign, matching
+        // `FieldNotMember`'s identity philosophy.
         SingularKind::Message(midx) => match value {
             Value::Message(msg) => Arc::ptr_eq(&msg.pool, pool) && msg.msg_idx == midx,
             _ => false,
