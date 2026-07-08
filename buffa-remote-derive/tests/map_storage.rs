@@ -66,7 +66,7 @@ impl<K: Ord, V> OddMap<K, V> {
 
 #[derive(Clone, PartialEq, Debug, DeriveMapStorage)]
 #[buffa(
-    remote = std::collections::BTreeMap<K, V>,
+    remote = OddMap<K, V>,
     len = OddMap::count,
     insert = OddMap::put,
     clear = OddMap::wipe,

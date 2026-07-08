@@ -303,7 +303,9 @@ When several entries could match a reference, the most specific one wins: an exa
 > a standalone crate that wires every owned-type knob (`string_type_custom`,
 > `bytes_type_custom`, `repeated_type_custom`, `map_type_custom`,
 > `box_type_custom`) to a crate-local newtype and round-trips the result
-> through binary and JSON. The newtypes there are the copy-paste template.
+> through binary and JSON. The newtypes there are the copy-paste template —
+> and its `FlexStr` shows the low-boilerplate alternative, deriving the
+> buffa-facing impls via the `buffa-remote-derive` crate.
 
 By default every proto `string` field is generated as `String` and every `bytes` field as `Vec<u8>`. For schemas dominated by many short strings — log labels, identifiers, header-like maps — a small-string type can avoid most of those heap allocations. The `string_type` / `bytes_type` options select an alternative owned representation, with the same path-prefix rules as `use_bytes_type_in` (rules accumulate, last match wins):
 
@@ -323,7 +325,7 @@ buffa_build::Config::new()
 
 A representation is **any type that implements `buffa::ProtoString` / `buffa::ProtoBytes`**. Each trait requires a `from_wire(WirePayload<'_>) -> Result<Self, DecodeError>` decode constructor, plus the supertraits `Clone + PartialEq + Default + Debug + Send + Sync`, `Deref` to `str` / `[u8]`, `AsRef`, and `From<String>` / `From<Vec<u8>>`. `from_wire` lets the type decide validation and borrow-vs-own — an inline string type stores a short value with no heap allocation. buffa ships the built-in impls for `String`, `Vec<u8>`, and `bytes::Bytes`; for `bytes`, `bytes_type(BytesRepr::Bytes)` (and the `use_bytes_type` / `use_bytes_type_in` aliases) selects `bytes::Bytes`, which decodes zero-copy from a `Bytes`-backed buffer.
 
-**A foreign type cannot implement these traits directly** (orphan rule), so wrap it in a small local newtype. The `buffa-smolstr` crate is the ready-made one for `smol_str::SmolStr` and the template for the rest:
+**A foreign type cannot implement these traits directly** (orphan rule), so wrap it in a small local newtype. The `buffa-remote-derive` crate generates the newtype's buffa-facing surface (the trait impl plus `Deref`/`AsRef`/`From`) from a single `#[buffa(remote = ...)]` annotation; the hand-written form below is what that derive replaces. The `buffa-smolstr` crate is the ready-made newtype for `smol_str::SmolStr`:
 
 ```rust,ignore
 use buffa::{DecodeError, ProtoString, WirePayload};

@@ -2,8 +2,8 @@
 //! newtype wrapping a **foreign** ("remote") type.
 //!
 //! The owned Rust representation backing a proto `string`/`bytes`/`repeated`
-//! field is pluggable (see [`buffa::ProtoString`], [`buffa::ProtoBytes`],
-//! [`buffa::ProtoList`]). A custom representation implements one of those
+//! field is pluggable (see `buffa::ProtoString`, `buffa::ProtoBytes`,
+//! `buffa::ProtoList`). A custom representation implements one of those
 //! traits. The friction is the orphan rule: a type from another crate (e.g.
 //! `ecow::EcoString`) cannot implement a buffa-owned trait directly, so it
 //! must be wrapped in a crate-local newtype with the trait impl — plus
@@ -25,10 +25,28 @@
 //! reflection-related, so a newtype produced by one of these derives that's
 //! used as a message field in a JSON-enabled, fuzzed, or reflection/vtable
 //! build needs those impls added by hand, exactly as the hand-written
-//! reference newtypes do — `#[derive(serde::Serialize, serde::Deserialize)]`
-//! with `#[serde(transparent)]` typically suffices when the remote type
-//! itself supports serde, since the newtype is `#[repr(transparent)]`-style
-//! single-field. Skipping this on a JSON/reflect/fuzz build surfaces as a
+//! reference newtypes do. For serde, what "by hand" means depends on where
+//! the storage type's own serde is actually consulted:
+//!
+//! - **Singular and oneof `string` fields, and `bytes` fields in every
+//!   position**, are handled by buffa's own `#[serde(with = ...)]` modules
+//!   (`proto_string`, base64 `bytes`), which use only the `AsRef`/`From`
+//!   surface these derives already generate — the newtype needs no serde
+//!   impls for them. Don't add `#[serde(transparent)]` to a bytes newtype
+//!   in particular: it is dead weight in message context, and if the
+//!   newtype is ever serialized standalone it produces a JSON array of
+//!   numbers instead of base64. (Compare `SmallBytes` in
+//!   `examples/custom-types`, which derives no serde and documents why.)
+//! - **A string newtype that appears as a repeated element, an `optional`
+//!   (explicit-presence) field, or a map value** serializes through its
+//!   own serde, so it needs `#[derive(serde::Serialize,
+//!   serde::Deserialize)]` — `#[serde(transparent)]` suffices when the
+//!   remote type itself supports serde, since the newtype is a single-field
+//!   wrapper. The full per-trait matrix, including list, map, and box
+//!   container newtypes, is tabulated in `examples/custom-types/README.md`
+//!   in the buffa repository.
+//!
+//! Skipping a *required* impl on a JSON/reflect/fuzz build surfaces as a
 //! trait-bound error deep in *generated message code*
 //! (`MyType: Serialize` is not satisfied), not at the derive site — there is
 //! no diagnostic from this crate pointing back to it.
@@ -47,9 +65,12 @@
 //! `Default`, `Debug`, `Send`, `Sync`, `AsRef<str>`, `From<String>`,
 //! `From<&str>`) — true of essentially every inline/shared-string crate, since
 //! that's the API surface they're built to offer as a `String` substitute.
-//! Derive those on the newtype yourself (they forward to the inner field
-//! automatically via `#[derive(..)]`); this crate only generates the
-//! buffa-specific pieces that the orphan rule blocks. If the remote type is
+//! On the newtype itself, derive the derivable subset (`Clone`,
+//! `PartialEq`, `Default`, `Debug`) yourself — `Send`/`Sync` are automatic
+//! for a single-field wrapper, and for the generic list/map derives
+//! implement `Default` by hand instead (see those macros' docs) — and this
+//! crate generates the rest (`Deref`,
+//! `AsRef`, the `From` conversions, and the trait impl). If the remote type is
 //! missing one of those supertraits, the compiler error names the missing
 //! trait bound against the newtype's field — there is no need to expand the
 //! macro to diagnose it.
@@ -61,8 +82,12 @@
 //! is no generic way to ask an arbitrary remote type to take ownership of a
 //! borrowed/`Bytes`-backed payload without copying, so this derive can't
 //! reach the zero-copy decode path the built-in `bytes::Bytes` representation
-//! gets; hand-write `from_wire` against [`WirePayload::into_bytes`] instead if
-//! that copy matters for your workload. `ProtoList` additionally requires the
+//! gets. A hand-written `from_wire` doesn't escape the copy either:
+//! `WirePayload::into_bytes` is zero-copy only for an owned multi-chunk
+//! payload, and the common single-chunk source arrives borrowed and is
+//! copied there too. When that copy matters, use the built-in `bytes::Bytes`
+//! representation for the field rather than a custom type.
+//! `ProtoList` additionally requires the
 //! remote collection to implement `Extend<T>` (used
 //! to implement `push`); its generated `clear` reinitializes the field via
 //! `Default::default()`, which drops the existing allocation rather than
@@ -122,8 +147,9 @@
 //! won't suggest them, since the derive itself compiles fine without them; the
 //! failure shows up later, in generated message code, as `the trait bound
 //! '...: Default' is not satisfied`. They aren't generated here for the same
-//! reason `ProtoList`'s `Default` isn't (see above): a derived impl would
-//! force `K: Default`/`V: Default`, which `MapStorage` does not require.
+//! reason [`ProtoList`](macro@ProtoList)'s `Default` isn't (see that macro's
+//! docs): a derived impl would force `K: Default`/`V: Default`, which
+//! `MapStorage` does not require.
 //!
 //! To override a default, name the method explicitly:
 //! `#[buffa(remote = ..., into_inner = MyType::unwrap)]` for `ProtoBox`, or

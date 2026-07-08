@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::DeriveInput;
+use syn::{parse_quote, DeriveInput};
 
 use crate::remote_field::{self, RemoteField};
 
@@ -34,9 +34,35 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         quote! { ::core::convert::AsRef<[#element_ty]> },
         "as_ref",
     );
+    let extend = remote_field::qualified_call(
+        field_ty,
+        quote! { ::core::iter::Extend<#element_ty> },
+        "extend",
+    );
 
     let ctor_from_iter = remote.construct(quote! { #from_iter(iter) });
     let ctor_from_vec = remote.construct(quote! { #from_vec(v) });
+
+    // The `ProtoList` impl needs bounds beyond the struct's own (the element
+    // bounds, `Extend`, `Default`), so it can't reuse `#where_clause` like
+    // the impls below do. Augment a copy of the generics instead of
+    // hand-writing the `where` block, so the struct's own predicates are
+    // preserved — dropping them fails well-formedness for a newtype declared
+    // with a `where` clause.
+    let mut list_generics = (*generics).clone();
+    {
+        let predicates = &mut list_generics.make_where_clause().predicates;
+        predicates.push(parse_quote! {
+            #element_ty: ::core::clone::Clone
+                + ::core::cmp::PartialEq
+                + ::core::fmt::Debug
+                + ::core::marker::Send
+                + ::core::marker::Sync
+        });
+        predicates.push(parse_quote! { #field_ty: ::core::iter::Extend<#element_ty> });
+        predicates.push(parse_quote! { Self: ::core::default::Default });
+    }
+    let list_where_clause = &list_generics.where_clause;
 
     Ok(quote! {
         impl #impl_generics ::core::ops::Deref for #ident #ty_generics #where_clause {
@@ -64,18 +90,11 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         }
 
         impl #impl_generics ::buffa::ProtoList<#element_ty> for #ident #ty_generics
-        where
-            #element_ty: ::core::clone::Clone
-                + ::core::cmp::PartialEq
-                + ::core::fmt::Debug
-                + ::core::marker::Send
-                + ::core::marker::Sync,
-            #field_ty: ::core::iter::Extend<#element_ty>,
-            Self: ::core::default::Default,
+        #list_where_clause
         {
             #[inline]
             fn push(&mut self, value: #element_ty) {
-                #accessor.extend(::core::iter::once(value));
+                #extend(&mut #accessor, ::core::iter::once(value));
             }
 
             // Reinitializes via `Default` rather than forwarding to a native
