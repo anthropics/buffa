@@ -1,0 +1,3 @@
+kind: Added
+body: '`exclude_package` protoc plugin option (`protoc-gen-buffa` and `protoc-gen-buffa-packaging`): drop a proto package and its subpackages from generation and from the emitted `mod.rs`. Repeatable; the leading dot is optional. Intended for option-only imports that `include_imports` pulls into `file_to_generate` but that are never referenced as message fields (e.g. `buf.validate`, `gnostic`). Both plugins route exclusion through the new `buffa_codegen::package_is_excluded` predicate, so their output sets stay in sync. (#279)'
+time: 2026-07-05T12:00:00.000000000Z

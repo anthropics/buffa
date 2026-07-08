@@ -167,6 +167,8 @@ let decoded: MyMessage = serde_json::from_str(&json).unwrap();
 | `buffa-descriptor` | Protobuf descriptor types (`FileDescriptorProto`, `DescriptorProto`, ...) |
 | `buffa-codegen` | Code generation from protobuf descriptors |
 | `buffa-build` | `build.rs` helper for invoking codegen via `protoc` |
+| `buffa-remote-derive` | Derive macros implementing the pluggable owned-type traits for newtypes over foreign types |
+| `buffa-yaml` | YAML serialization for buffa messages |
 | `protoc-gen-buffa` | `protoc` plugin binary; also published as [`buf.build/anthropics/buffa`](https://buf.build/anthropics/buffa) |
 | `protoc-gen-buffa-packaging` | `protoc` plugin that emits a `mod.rs` module tree (local-only) |
 

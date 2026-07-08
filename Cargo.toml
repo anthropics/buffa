@@ -6,6 +6,7 @@ members = [
     "buffa-descriptor",
     "buffa-codegen",
     "buffa-build",
+    "buffa-remote-derive",
     "buffa-test",
     "buffa-yaml",
     "protoc-gen-buffa",
@@ -70,6 +71,11 @@ bytes = { version = "1", default-features = false }
 chrono = { version = "0.4.34", default-features = false }
 foldhash = { version = "0.1", default-features = false }
 hashbrown = { version = "0.15", default-features = false, features = ["default-hasher"] }
+# `jiff` interop for `Timestamp` / `Duration` (the `buffa-types` `jiff`
+# feature). Pulled with `default-features = false` + `alloc` so the conversions
+# stay `no_std`; `buffa-types`' `std` feature layers `jiff/std` on top. MSRV
+# 1.70 as of 0.2 — within buffa's pin.
+jiff = { version = "0.2", default-features = false, features = ["alloc"] }
 once_cell = { version = "1", default-features = false }
 rustversion = { version = "1" }
 serde = { version = "1", default-features = false }

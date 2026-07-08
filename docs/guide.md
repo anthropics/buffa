@@ -298,7 +298,9 @@ When several entries could match a reference, the most specific one wins: an exa
 > a standalone crate that wires every owned-type knob (`string_type_custom`,
 > `bytes_type_custom`, `repeated_type_custom`, `map_type_custom`,
 > `box_type_custom`) to a crate-local newtype and round-trips the result
-> through binary and JSON. The newtypes there are the copy-paste template.
+> through binary and JSON. The newtypes there are the copy-paste template —
+> and its `FlexStr` shows the low-boilerplate alternative, deriving the
+> buffa-facing impls via the `buffa-remote-derive` crate.
 
 By default every proto `string` field is generated as `String` and every `bytes` field as `Vec<u8>`. For schemas dominated by many short strings — log labels, identifiers, header-like maps — a small-string type can avoid most of those heap allocations. The `string_type` / `bytes_type` options select an alternative owned representation, with the same path-prefix rules as `use_bytes_type_in` (rules accumulate, last match wins):
 
@@ -318,7 +320,7 @@ buffa_build::Config::new()
 
 A representation is **any type that implements `buffa::ProtoString` / `buffa::ProtoBytes`**. Each trait requires a `from_wire(WirePayload<'_>) -> Result<Self, DecodeError>` decode constructor, plus the supertraits `Clone + PartialEq + Default + Debug + Send + Sync`, `Deref` to `str` / `[u8]`, `AsRef`, and `From<String>` / `From<Vec<u8>>`. `from_wire` lets the type decide validation and borrow-vs-own — an inline string type stores a short value with no heap allocation. buffa ships the built-in impls for `String`, `Vec<u8>`, and `bytes::Bytes`; for `bytes`, `bytes_type(BytesRepr::Bytes)` (and the `use_bytes_type` / `use_bytes_type_in` aliases) selects `bytes::Bytes`, which decodes zero-copy from a `Bytes`-backed buffer.
 
-**A foreign type cannot implement these traits directly** (orphan rule), so wrap it in a small local newtype. The `buffa-smolstr` crate is the ready-made one for `smol_str::SmolStr` and the template for the rest:
+**A foreign type cannot implement these traits directly** (orphan rule), so wrap it in a small local newtype. The `buffa-remote-derive` crate generates the newtype's buffa-facing surface (the trait impl plus `Deref`/`AsRef`/`From`) from a single `#[buffa(remote = ...)]` annotation; the hand-written form below is what that derive replaces. The `buffa-smolstr` crate is the ready-made newtype for `smol_str::SmolStr`:
 
 ```rust,ignore
 use buffa::{DecodeError, ProtoString, WirePayload};
@@ -590,8 +592,29 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `reflection=true` | Emit reflection support (vtable mode) plus an embedded per-package descriptor pool — see [Runtime reflection](#runtime-reflection) |
 | `reflect_mode=off\|bridge\|vtable` | Finer-grained reflection selector; `reflection=true` is shorthand for `vtable` |
 | `extern_path=.pkg=::rust` | Map a proto package — or a single type, e.g. `extern_path=.pkg.Type=::rust::Type` — to an external Rust path |
+| `exclude_package=.pkg` | Drop a proto package and its subpackages from generation (repeatable; leading dot optional). For option-only imports that `include_imports` pulls in but that are never used as field types, e.g. `buf.validate`, `gnostic`. **Pass the same `exclude_package` to `protoc-gen-buffa-packaging`** (see the note below the table) so the generated `mod.rs` omits the same packages. |
 | `file_per_package=true` | Emit one `<dotted.package>.rs` per package instead of per-proto-file content + a `<dotted.pkg>.mod.rs` stitcher. Use this with the remote plugin when you don't want to install `protoc-gen-buffa-packaging` — see [Remote plugin only](#remote-plugin-only-no-local-install). Under `strategy: directory`, requires the input module to be `PACKAGE_DIRECTORY_MATCH`-clean. |
 | `idiomatic_imports=true` | **Experimental.** Emit `use`-backed short type names at the package root. Requires `file_per_package=true`. Only type declarations are shortened; the generated file must keep its `#[allow]` wrapper. |
+
+> **`exclude_package` spans both plugins.** It is accepted by both `protoc-gen-buffa` (which skips generating the package's files) and `protoc-gen-buffa-packaging` (which omits the package from the emitted `mod.rs`). Pass the identical `exclude_package` opt to both — the two share one exclusion predicate, so a mismatch leaves the `mod.rs` `include!`-ing a stitcher that was never generated (or dropping one that was). Example, excluding the option-only `buf.validate` and `gnostic` imports that `include_imports` pulls in:
+>
+> ```yaml
+> plugins:
+>   - local: protoc-gen-buffa
+>     out: src/gen
+>     opt:
+>       - exclude_package=.buf.validate
+>       - exclude_package=.gnostic
+>     include_imports: true
+>   - local: protoc-gen-buffa-packaging
+>     out: src/gen
+>     strategy: all
+>     opt:
+>       - exclude_package=.buf.validate
+>       - exclude_package=.gnostic
+> ```
+>
+> Excluded descriptors stay available for option resolution, but a kept message with a *field* of an excluded type generates a reference to a Rust module that was never emitted — a compile error in generated code, far from its cause. If the types are genuinely needed, map them with `extern_path` instead of excluding them. On the buf path, per-plugin `exclude_types:` (a buf.gen.yaml field, not a plugin opt) is an alternative that prunes the descriptors themselves before the plugin runs — note its subpackage semantics differ: use a `pkg.**` glob to cover subpackages, where `exclude_package` covers them automatically. `exclude_package` is a protoc-plugin option only; the `buffa-build`/`build.rs` path does not need it, since there `files()` lists the generate set explicitly.
 
 #### BSR-generated SDKs
 

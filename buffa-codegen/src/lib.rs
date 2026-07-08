@@ -3115,6 +3115,138 @@ pub fn package_to_mod_filename(package: &str) -> String {
     }
 }
 
+/// Returns `true` if `package` is covered by any entry in `excludes`.
+///
+/// Intended for packages that `include_imports` pulls into
+/// `file_to_generate` but that a caller does not want emitted — typically
+/// option-only imports such as `buf.validate` or `gnostic.openapi.v3`, whose
+/// types are referenced only from custom options and never appear as message
+/// fields.
+///
+/// An exclusion matches a package exactly, or as a dotted-path prefix on a
+/// component boundary: `"buf.validate"` covers `buf.validate` and
+/// `buf.validate.foo`, but not `buf.validatex`. Entries are proto package
+/// paths without a leading dot (`buf.validate`, not `.buf.validate`); an
+/// empty entry matches only the unnamed package.
+///
+/// Both `protoc-gen-buffa` (which filters `file_to_generate` before codegen)
+/// and `protoc-gen-buffa-packaging` (which filters the packages it stitches
+/// into `mod.rs`) route their exclusion through this one predicate, so the
+/// two plugins are guaranteed to drop exactly the same set — the invariant
+/// the packaging plugin's "Matching a codegen plugin's output set" note
+/// depends on.
+pub fn package_is_excluded(package: &str, excludes: &[String]) -> bool {
+    excludes.iter().any(|ex| {
+        package == ex
+            || (package.len() > ex.len()
+                && package.starts_with(ex.as_str())
+                && package.as_bytes()[ex.len()] == b'.')
+    })
+}
+
+/// Normalize and validate one `exclude_package` option value: trim
+/// whitespace, strip the optional leading dot, reject an empty result or a
+/// value with empty components (`buf.validate.`, `buf..validate`) — those
+/// could never match a real package, so a typo would otherwise be a silent
+/// no-op.
+///
+/// Both protoc plugins parse their `exclude_package` options through this
+/// one function so their normalization cannot drift — the same reason they
+/// share [`package_is_excluded`].
+///
+/// # Errors
+///
+/// Returns the user-facing message for a malformed value. The error is a
+/// plain `String` (not [`CodeGenError`]) deliberately: this is plugin
+/// option-string parsing, and both plugins' parse layers are
+/// `Result<_, String>` end to end, surfaced verbatim by protoc.
+pub fn normalize_exclude_package(value: &str) -> Result<String, String> {
+    let pkg = value.trim();
+    let pkg = pkg.strip_prefix('.').unwrap_or(pkg);
+    if pkg.is_empty() || pkg.split('.').any(str::is_empty) {
+        return Err(
+            "'exclude_package' requires a non-empty proto package with no \
+             empty components, e.g. exclude_package=.buf.validate"
+                .to_string(),
+        );
+    }
+    Ok(pkg.to_string())
+}
+
+#[cfg(test)]
+mod package_exclusion_tests {
+    use super::package_is_excluded;
+
+    fn ex(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn exact_match_is_excluded() {
+        assert!(package_is_excluded("buf.validate", &ex(&["buf.validate"])));
+    }
+
+    #[test]
+    fn subpackage_matches_on_component_boundary() {
+        assert!(package_is_excluded("gnostic.openapi.v3", &ex(&["gnostic"])));
+        assert!(package_is_excluded(
+            "buf.validate.priv",
+            &ex(&["buf.validate"])
+        ));
+    }
+
+    #[test]
+    fn prefix_without_boundary_does_not_match() {
+        assert!(!package_is_excluded(
+            "buf.validatex",
+            &ex(&["buf.validate"])
+        ));
+        assert!(!package_is_excluded("gnostics", &ex(&["gnostic"])));
+    }
+
+    #[test]
+    fn unrelated_package_is_kept() {
+        assert!(!package_is_excluded(
+            "example.user.v1",
+            &ex(&["buf.validate", "gnostic"])
+        ));
+    }
+
+    #[test]
+    fn empty_exclude_list_keeps_everything() {
+        assert!(!package_is_excluded("buf.validate", &ex(&[])));
+    }
+
+    // An empty exclude entry is unreachable through either plugin
+    // (`normalize_exclude_package` rejects it); this pins the raw
+    // predicate's documented behavior for direct callers.
+    #[test]
+    fn empty_entry_matches_only_the_unnamed_package() {
+        assert!(package_is_excluded("", &ex(&[""])));
+        assert!(!package_is_excluded("foo", &ex(&[""])));
+    }
+
+    #[test]
+    fn normalize_strips_dot_and_rejects_malformed() {
+        use super::normalize_exclude_package;
+        assert_eq!(
+            normalize_exclude_package(".buf.validate").as_deref(),
+            Ok("buf.validate")
+        );
+        assert_eq!(
+            normalize_exclude_package("gnostic").as_deref(),
+            Ok("gnostic")
+        );
+        assert!(normalize_exclude_package("").is_err());
+        assert!(normalize_exclude_package(".").is_err());
+        assert!(normalize_exclude_package("  ").is_err());
+        // Entries that could never match a real package are rejected, not
+        // silently accepted as no-ops.
+        assert!(normalize_exclude_package("buf.validate.").is_err());
+        assert!(normalize_exclude_package("buf..validate").is_err());
+    }
+}
+
 /// Convert a proto package name to its [`file_per_package`] output filename.
 ///
 /// e.g., `"google.protobuf"` → `"google.protobuf.rs"`. The unnamed

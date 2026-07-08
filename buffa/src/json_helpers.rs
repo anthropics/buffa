@@ -908,6 +908,21 @@ fn is_exact_integer(f: f64) -> bool {
     f.is_finite() && f == (f as i128 as f64)
 }
 
+/// Largest integer-valued `f64` this visitor accepts from an unquoted JSON
+/// decimal/exponent token: 2^52 - 1.
+///
+/// The hazard is not only f64 representability (integers up to 2^53 are
+/// exact) but `serde_json`'s *default* float parsing, which is not
+/// correctly rounded (that is its opt-in `float_roundtrip` feature) and can
+/// be off by an ulp. In `[2^52, 2^53)` an ulp is exactly 1, so a one-ulp
+/// parse error silently turns an integer token into the *adjacent* integer
+/// — observed: `"9007199254740991.0"` parsing as `…990.0`. Below 2^52 an
+/// ulp is at most 0.5, so the same parse error breaks integrality instead
+/// and the exactness check below rejects the token loudly rather than
+/// mis-decoding it. Quote larger integer values to parse them exactly —
+/// the quoted-string path parses the token text digit-by-digit.
+const MAX_SAFE_JSON_INTEGER_F64: f64 = 4_503_599_627_370_495.0;
+
 /// Try to parse a string as an integer, handling float notation like `"1.0"`,
 /// `"1e5"`, `"1.0e2"`.  Returns `None` if the value is not an exact integer.
 fn parse_int_from_str<I: TryFrom<i128>>(v: &str) -> Option<I> {
@@ -981,8 +996,13 @@ fn parse_exact_decimal_int(v: &str) -> Option<i128> {
     }
 }
 
-/// Try to interpret an f64 as an exact integer.
+/// Try to interpret an f64 as an exact integer, rejecting magnitudes above
+/// [`MAX_SAFE_JSON_INTEGER_F64`] where the value no longer uniquely
+/// identifies the JSON token it was parsed from.
 fn f64_to_int<I: TryFrom<i128>>(v: f64) -> Option<I> {
+    if !(-MAX_SAFE_JSON_INTEGER_F64..=MAX_SAFE_JSON_INTEGER_F64).contains(&v) {
+        return None;
+    }
     if !is_exact_integer(v) {
         return None;
     }

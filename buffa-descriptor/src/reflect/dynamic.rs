@@ -13,6 +13,7 @@
 
 use alloc::borrow::ToOwned;
 use alloc::collections::BTreeMap;
+use alloc::format;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -191,6 +192,21 @@ impl DynamicMessage {
                 field,
             ))
         }
+    }
+
+    fn validate_field_value(
+        &self,
+        field: &FieldDescriptor,
+        value: &Value,
+    ) -> Result<(), ReflectError> {
+        validate_value_shape(field.kind, value, &self.pool).map_err(|err| {
+            ReflectError::wrong_value_kind(
+                self.message_descriptor(),
+                field,
+                err.expected,
+                err.actual,
+            )
+        })
     }
 
     /// Decode wire bytes against the descriptor.
@@ -547,6 +563,20 @@ impl DynamicMessage {
     // ── Encode ──────────────────────────────────────────────────────────────
 
     /// Encode this message into `buf`.
+    ///
+    /// A stored `Value` whose shape does not match its field descriptor —
+    /// only reachable by bypassing [`try_set`]'s validation via
+    /// [`field_by_number_mut`](Self::field_by_number_mut) /
+    /// [`field_mut`](Self::field_mut) — is silently omitted, as the whole
+    /// field: one invalid element suppresses its entire repeated/map field.
+    /// A nested `Value::Message` counts as invalid unless it was built from
+    /// the *same* [`DescriptorPool`] instance (pointer identity, not
+    /// full-name equality). [`encoded_len`](Self::encoded_len) applies the
+    /// same rule, so length and bytes always agree. The JSON serializer
+    /// represents the same invalid values as `null` rather than omitting
+    /// the field.
+    ///
+    /// [`try_set`]: crate::reflect::ReflectMessageMut::try_set
     pub fn encode(&self, buf: &mut impl BufMut) {
         for (&number, value) in &self.fields {
             // Skip if neither the descriptor nor the extension index
@@ -556,7 +586,7 @@ impl DynamicMessage {
                 if should_skip_on_encode(fd, value) {
                     continue;
                 }
-                encode_field(fd, value, buf);
+                encode_field(fd, value, &self.pool, buf);
             }
         }
         self.unknown.write_to(buf);
@@ -571,6 +601,10 @@ impl DynamicMessage {
     }
 
     /// Compute the encoded length.
+    ///
+    /// Applies the same invalid-value omission rule as
+    /// [`encode`](Self::encode), so the result always matches the bytes
+    /// `encode` writes.
     #[must_use]
     pub fn encoded_len(&self) -> usize {
         let mut len = self.unknown.encoded_len();
@@ -579,7 +613,7 @@ impl DynamicMessage {
                 if should_skip_on_encode(fd, value) {
                     continue;
                 }
-                len += encoded_field_len(fd, value);
+                len += encoded_field_len(fd, value, &self.pool);
             }
         }
         len
@@ -661,8 +695,9 @@ impl DynamicMessage {
     /// ```
     ///
     /// Replacing the value with one whose shape doesn't match the field's
-    /// kind is permitted (the same latitude as `set`); the encoder defensively
-    /// skips a shape-mismatched value.
+    /// kind bypasses [`ReflectMessageMut::try_set`]'s validation. The encoder
+    /// defensively skips invalid stored values, but callers that replace a
+    /// whole value should prefer `try_set`.
     #[must_use]
     pub fn field_by_number_mut(&mut self, number: u32) -> Option<&mut Value> {
         self.fields.get_mut(&number)
@@ -674,6 +709,11 @@ impl DynamicMessage {
     /// paralleling [`ReflectMessage::get`](crate::reflect::ReflectMessage::get).
     /// `field` may be a declared field or a registered extension of this
     /// message; both resolve by number.
+    ///
+    /// Replacing the value with one whose shape doesn't match the field's
+    /// kind bypasses [`ReflectMessageMut::try_set`]'s validation; the
+    /// encoder defensively skips invalid stored values (see
+    /// [`encode`](Self::encode)).
     ///
     /// # Panics
     ///
@@ -963,6 +1003,7 @@ impl ReflectMessage for DynamicMessage {
 impl ReflectMessageMut for DynamicMessage {
     fn try_set(&mut self, field: &FieldDescriptor, value: Value) -> Result<(), ReflectError> {
         self.validate_field_descriptor(field)?;
+        self.validate_field_value(field, &value)?;
         // Setting a oneof member must clear its siblings, otherwise a
         // subsequent encode writes multiple oneof members onto the wire,
         // which violates the proto spec. The wire decoder and the JSON
@@ -1019,6 +1060,208 @@ fn should_skip_on_encode(fd: &FieldDescriptor, value: &Value) -> bool {
         // never have implicit presence in practice, but be defensive.
         // List/Map skipping for empty containers happens in `encode_field`.
         _ => false,
+    }
+}
+
+#[derive(Debug)]
+struct ValueShapeMismatch {
+    expected: String,
+    actual: String,
+}
+
+fn validate_value_shape(
+    kind: FieldKind,
+    value: &Value,
+    pool: &Arc<DescriptorPool>,
+) -> Result<(), ValueShapeMismatch> {
+    match kind {
+        FieldKind::Singular(sk) => validate_singular_shape(sk, value, pool),
+        FieldKind::List(sk) => {
+            let Value::List(items) = value else {
+                return Err(field_shape_mismatch(kind, pool, value_shape(value)));
+            };
+            for item in items {
+                validate_singular_shape(sk, item, pool).map_err(|err| {
+                    field_shape_mismatch(kind, pool, format!("list element {}", err.actual))
+                })?;
+            }
+            Ok(())
+        }
+        FieldKind::Map { key, value: vk } => {
+            let Value::Map(entries) = value else {
+                return Err(field_shape_mismatch(kind, pool, value_shape(value)));
+            };
+            for (map_key, map_value) in entries {
+                if !map_key_matches_scalar(key, map_key) {
+                    return Err(field_shape_mismatch(
+                        kind,
+                        pool,
+                        format!("map key {}", map_key_shape(map_key)),
+                    ));
+                }
+                validate_singular_shape(vk, map_value, pool).map_err(|err| {
+                    field_shape_mismatch(kind, pool, format!("map value {}", err.actual))
+                })?;
+            }
+            Ok(())
+        }
+    }
+}
+
+fn validate_singular_shape(
+    kind: SingularKind,
+    value: &Value,
+    pool: &Arc<DescriptorPool>,
+) -> Result<(), ValueShapeMismatch> {
+    let matches = match kind {
+        SingularKind::Scalar(s) => value_matches_scalar(s, value),
+        // Enums are validated by variant only — no enum-descriptor identity
+        // or known-value check, deliberately asymmetric with the message arm
+        // below: enums are plain i32 on the wire (proto3 keeps unknown
+        // numbers), and JSON serialization looks the number up against the
+        // *field's* enum descriptor, so a foreign or unknown number cannot
+        // corrupt output.
+        SingularKind::Enum(_) => matches!(value, Value::EnumNumber(_)),
+        // Pointer identity, not full-name equality: a structurally-identical
+        // message built from a different pool instance is foreign, matching
+        // `FieldNotMember`'s identity philosophy.
+        SingularKind::Message(midx) => match value {
+            Value::Message(msg) => Arc::ptr_eq(&msg.pool, pool) && msg.msg_idx == midx,
+            _ => false,
+        },
+    };
+    if matches {
+        Ok(())
+    } else {
+        Err(ValueShapeMismatch {
+            expected: singular_kind_name(kind, pool),
+            actual: value_shape(value),
+        })
+    }
+}
+
+fn field_shape_mismatch(
+    kind: FieldKind,
+    pool: &DescriptorPool,
+    actual: String,
+) -> ValueShapeMismatch {
+    ValueShapeMismatch {
+        expected: field_kind_name(kind, pool),
+        actual,
+    }
+}
+
+fn field_kind_name(kind: FieldKind, pool: &DescriptorPool) -> String {
+    match kind {
+        FieldKind::Singular(sk) => singular_kind_name(sk, pool),
+        FieldKind::List(sk) => format!("list<{}>", singular_kind_name(sk, pool)),
+        FieldKind::Map { key, value } => {
+            format!(
+                "map<{}, {}>",
+                scalar_type_name(key),
+                singular_kind_name(value, pool)
+            )
+        }
+    }
+}
+
+fn value_matches_field_shape(kind: FieldKind, value: &Value, pool: &Arc<DescriptorPool>) -> bool {
+    validate_value_shape(kind, value, pool).is_ok()
+}
+
+fn value_matches_scalar(s: ScalarType, value: &Value) -> bool {
+    matches!(
+        (s, value),
+        (ScalarType::Double, Value::F64(_))
+            | (ScalarType::Float, Value::F32(_))
+            | (
+                ScalarType::Int64 | ScalarType::Sfixed64 | ScalarType::Sint64,
+                Value::I64(_)
+            )
+            | (ScalarType::Uint64 | ScalarType::Fixed64, Value::U64(_))
+            | (
+                ScalarType::Int32 | ScalarType::Sfixed32 | ScalarType::Sint32,
+                Value::I32(_)
+            )
+            | (ScalarType::Uint32 | ScalarType::Fixed32, Value::U32(_))
+            | (ScalarType::Bool, Value::Bool(_))
+            | (ScalarType::String, Value::String(_))
+            | (ScalarType::Bytes, Value::Bytes(_))
+    )
+}
+
+fn map_key_matches_scalar(s: ScalarType, key: &MapKey) -> bool {
+    matches!(
+        (s, key),
+        (ScalarType::Bool, MapKey::Bool(_))
+            | (
+                ScalarType::Int32 | ScalarType::Sint32 | ScalarType::Sfixed32,
+                MapKey::I32(_)
+            )
+            | (
+                ScalarType::Int64 | ScalarType::Sint64 | ScalarType::Sfixed64,
+                MapKey::I64(_)
+            )
+            | (ScalarType::Uint32 | ScalarType::Fixed32, MapKey::U32(_))
+            | (ScalarType::Uint64 | ScalarType::Fixed64, MapKey::U64(_))
+            | (ScalarType::String, MapKey::String(_))
+    )
+}
+
+fn singular_kind_name(kind: SingularKind, pool: &DescriptorPool) -> String {
+    match kind {
+        SingularKind::Scalar(s) => scalar_type_name(s).into(),
+        SingularKind::Enum(eidx) => format!("enum {}", pool.enumeration(eidx).full_name()),
+        SingularKind::Message(midx) => format!("message {}", pool.message(midx).full_name()),
+    }
+}
+
+fn scalar_type_name(s: ScalarType) -> &'static str {
+    match s {
+        ScalarType::Double => "double",
+        ScalarType::Float => "float",
+        ScalarType::Int64 => "int64",
+        ScalarType::Uint64 => "uint64",
+        ScalarType::Int32 => "int32",
+        ScalarType::Fixed64 => "fixed64",
+        ScalarType::Fixed32 => "fixed32",
+        ScalarType::Bool => "bool",
+        ScalarType::String => "string",
+        ScalarType::Bytes => "bytes",
+        ScalarType::Uint32 => "uint32",
+        ScalarType::Sfixed32 => "sfixed32",
+        ScalarType::Sfixed64 => "sfixed64",
+        ScalarType::Sint32 => "sint32",
+        ScalarType::Sint64 => "sint64",
+    }
+}
+
+fn value_shape(value: &Value) -> String {
+    match value {
+        Value::Bool(_) => "bool".into(),
+        Value::I32(_) => "i32".into(),
+        Value::I64(_) => "i64".into(),
+        Value::U32(_) => "u32".into(),
+        Value::U64(_) => "u64".into(),
+        Value::F32(_) => "f32".into(),
+        Value::F64(_) => "f64".into(),
+        Value::String(_) => "string".into(),
+        Value::Bytes(_) => "bytes".into(),
+        Value::EnumNumber(_) => "enum number".into(),
+        Value::Message(msg) => format!("message {}", msg.message_descriptor().full_name()),
+        Value::List(_) => "list".into(),
+        Value::Map(_) => "map".into(),
+    }
+}
+
+fn map_key_shape(key: &MapKey) -> &'static str {
+    match key {
+        MapKey::Bool(_) => "bool",
+        MapKey::I32(_) => "i32",
+        MapKey::I64(_) => "i64",
+        MapKey::U32(_) => "u32",
+        MapKey::U64(_) => "u64",
+        MapKey::String(_) => "string",
     }
 }
 
@@ -1190,7 +1433,15 @@ fn default_scalar_ref(s: ScalarType) -> ValueRef<'static> {
 
 // ── Encode helpers ──────────────────────────────────────────────────────────
 
-fn encode_field(fd: &FieldDescriptor, value: &Value, buf: &mut impl BufMut) {
+fn encode_field(
+    fd: &FieldDescriptor,
+    value: &Value,
+    pool: &Arc<DescriptorPool>,
+    buf: &mut impl BufMut,
+) {
+    if !value_matches_field_shape(fd.kind, value, pool) {
+        return;
+    }
     match (&fd.kind, value) {
         (FieldKind::Singular(sk), v) => {
             encode_singular_with_tag(fd.number, *sk, fd.delimited, v, buf);
@@ -1228,13 +1479,15 @@ fn encode_field(fd: &FieldDescriptor, value: &Value, buf: &mut impl BufMut) {
             }
         }
         _ => {
-            // Stored value's shape doesn't match the descriptor's kind —
-            // can happen if a consumer set() a mismatched Value. Skip.
+            // `value_matches_field_shape` checked this above.
         }
     }
 }
 
-fn encoded_field_len(fd: &FieldDescriptor, value: &Value) -> usize {
+fn encoded_field_len(fd: &FieldDescriptor, value: &Value, pool: &Arc<DescriptorPool>) -> usize {
+    if !value_matches_field_shape(fd.kind, value, pool) {
+        return 0;
+    }
     match (&fd.kind, value) {
         (FieldKind::Singular(sk), v) => singular_len_with_tag(fd.number, *sk, fd.delimited, v),
         (FieldKind::List(sk), Value::List(items)) => {
@@ -1323,11 +1576,17 @@ fn encode_singular_with_tag(
     value: &Value,
     buf: &mut impl BufMut,
 ) {
-    Tag::new(number, singular_wire_type(kind, delimited)).encode(buf);
     match (kind, value) {
-        (SingularKind::Scalar(s), v) => encode_scalar(s, v, buf),
-        (SingularKind::Enum(_), Value::EnumNumber(n)) => encode_int32(*n, buf),
+        (SingularKind::Scalar(s), v) if value_matches_scalar(s, v) => {
+            Tag::new(number, singular_wire_type(kind, delimited)).encode(buf);
+            encode_scalar(s, v, buf);
+        }
+        (SingularKind::Enum(_), Value::EnumNumber(n)) => {
+            Tag::new(number, singular_wire_type(kind, delimited)).encode(buf);
+            encode_int32(*n, buf);
+        }
         (SingularKind::Message(_), Value::Message(m)) => {
+            Tag::new(number, singular_wire_type(kind, delimited)).encode(buf);
             if delimited {
                 m.encode(buf);
                 Tag::new(number, WireType::EndGroup).encode(buf);
@@ -1337,14 +1596,14 @@ fn encode_singular_with_tag(
                 m.encode(buf);
             }
         }
-        _ => {} // shape mismatch — already wrote a tag, but no payload follows; corrupt output is the consumer's problem
+        _ => {}
     }
 }
 
 fn singular_len_with_tag(number: u32, kind: SingularKind, delimited: bool, value: &Value) -> usize {
     let tag_bytes = tag_len(number, singular_wire_type(kind, delimited));
     let payload = match (kind, value) {
-        (SingularKind::Scalar(s), v) => scalar_len(s, v),
+        (SingularKind::Scalar(s), v) if value_matches_scalar(s, v) => scalar_len(s, v),
         (SingularKind::Enum(_), Value::EnumNumber(n)) => int32_encoded_len(*n),
         (SingularKind::Message(_), Value::Message(m)) => {
             if delimited {
@@ -1355,7 +1614,7 @@ fn singular_len_with_tag(number: u32, kind: SingularKind, delimited: bool, value
                 uint64_encoded_len(inner as u64) + inner
             }
         }
-        _ => 0,
+        _ => return 0,
     };
     tag_bytes + payload
 }
@@ -1383,8 +1642,10 @@ fn encode_scalar(s: ScalarType, v: &Value, buf: &mut impl BufMut) {
 
 fn scalar_len(s: ScalarType, v: &Value) -> usize {
     match (s, v) {
-        (ScalarType::Double | ScalarType::Fixed64 | ScalarType::Sfixed64, _) => 8,
-        (ScalarType::Float | ScalarType::Fixed32 | ScalarType::Sfixed32, _) => 4,
+        (ScalarType::Double, Value::F64(_)) => 8,
+        (ScalarType::Fixed64, Value::U64(_)) | (ScalarType::Sfixed64, Value::I64(_)) => 8,
+        (ScalarType::Float, Value::F32(_)) => 4,
+        (ScalarType::Fixed32, Value::U32(_)) | (ScalarType::Sfixed32, Value::I32(_)) => 4,
         (ScalarType::Bool, Value::Bool(_)) => buffa::types::BOOL_ENCODED_LEN,
         (ScalarType::Int64, Value::I64(x)) => int64_encoded_len(*x),
         (ScalarType::Uint64, Value::U64(x)) => uint64_encoded_len(*x),
@@ -1457,8 +1718,8 @@ fn encode_map_key(s: ScalarType, k: &MapKey, buf: &mut impl BufMut) {
 
 fn map_key_len(s: ScalarType, k: &MapKey) -> usize {
     match (s, k) {
-        (ScalarType::Fixed32 | ScalarType::Sfixed32, _) => 4,
-        (ScalarType::Fixed64 | ScalarType::Sfixed64, _) => 8,
+        (ScalarType::Fixed32, MapKey::U32(_)) | (ScalarType::Sfixed32, MapKey::I32(_)) => 4,
+        (ScalarType::Fixed64, MapKey::U64(_)) | (ScalarType::Sfixed64, MapKey::I64(_)) => 8,
         (ScalarType::Bool, MapKey::Bool(_)) => buffa::types::BOOL_ENCODED_LEN,
         (ScalarType::Int32, MapKey::I32(x)) => int32_encoded_len(*x),
         (ScalarType::Sint32, MapKey::I32(x)) => sint32_encoded_len(*x),

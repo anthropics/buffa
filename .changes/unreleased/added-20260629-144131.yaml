@@ -1,0 +1,14 @@
+kind: Added
+body: |-
+    **`jiff` feature for `buffa-types`** (#264).
+    Adds conversions between the well-known types and [jiff](https://docs.rs/jiff):
+    `Timestamp` ↔ `jiff::Timestamp` and `Duration` ↔ `jiff::SignedDuration`. Gated
+    behind the new `jiff` Cargo feature and `no_std`-compatible (`jiff` is pulled
+    with `default-features = false` + `alloc`). Note for `chrono` users switching
+    over: the `Duration` → `jiff::SignedDuration` conversion has no `Overflow`
+    error mode (`SignedDuration` stores full `i64` seconds, so a well-formed proto
+    `Duration` can never overflow it) — code that relied on
+    `DurationChronoError::Overflow` to reject huge durations must check the proto
+    JSON spec bound (±315,576,000,000 s) itself, or let JSON serialization
+    enforce it.
+time: 2026-06-29T14:41:31.006126085+08:00

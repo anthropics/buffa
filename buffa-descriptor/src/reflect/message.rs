@@ -48,6 +48,20 @@ pub enum ReflectError {
         /// The foreign descriptor's field number.
         number: u32,
     },
+    /// The supplied value's runtime shape does not match the target field's
+    /// descriptor.
+    WrongValueKind {
+        /// The message being mutated.
+        message: String,
+        /// The target field's simple field name.
+        field_name: String,
+        /// The target field's field number.
+        number: u32,
+        /// Human-readable descriptor shape expected by the field.
+        expected: String,
+        /// Human-readable runtime shape supplied by the caller.
+        actual: String,
+    },
 }
 
 impl ReflectError {
@@ -56,6 +70,21 @@ impl ReflectError {
             message: message.full_name().to_string(),
             field_name: field.name().to_string(),
             number: field.number(),
+        }
+    }
+
+    pub(crate) fn wrong_value_kind(
+        message: &MessageDescriptor,
+        field: &FieldDescriptor,
+        expected: String,
+        actual: String,
+    ) -> Self {
+        Self::WrongValueKind {
+            message: message.full_name().to_string(),
+            field_name: field.name().to_string(),
+            number: field.number(),
+            expected,
+            actual,
         }
     }
 }
@@ -70,6 +99,16 @@ impl core::fmt::Display for ReflectError {
             } => write!(
                 f,
                 "field descriptor {field_name:?} (#{number}) is not a member of {message}"
+            ),
+            Self::WrongValueKind {
+                message,
+                field_name,
+                number,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "field {field_name:?} (#{number}) on {message} expects {expected}, got {actual}"
             ),
         }
     }
@@ -200,10 +239,11 @@ pub trait ReflectMessageMut: ReflectMessage {
     /// The default implementation performs **no validation** — it forwards
     /// to `set` and returns `Ok(())`, so on an implementation that has not
     /// overridden it this can panic exactly where `set` would.
-    /// Implementations that can validate field-descriptor membership should
-    /// override it and return [`ReflectError::FieldNotMember`] rather than
-    /// mutating a colliding field number by accident ([`DynamicMessage`]
-    /// does).
+    /// Implementations that can validate field-descriptor membership or
+    /// runtime value shape should override it and return
+    /// [`ReflectError::FieldNotMember`] or
+    /// [`ReflectError::WrongValueKind`] rather than mutating invalid state
+    /// ([`DynamicMessage`] does both).
     fn try_set(
         &mut self,
         field: &FieldDescriptor,
@@ -220,8 +260,9 @@ pub trait ReflectMessageMut: ReflectMessage {
     ///
     /// # Panics
     ///
-    /// May panic if `field` is not a member of this message's descriptor.
-    /// Use [`try_set`](Self::try_set) when membership is not already proven.
+    /// May panic if `field` is not a member of this message's descriptor or
+    /// `value` does not match the field kind. Use [`try_set`](Self::try_set)
+    /// when membership or value shape is not already proven.
     fn set(&mut self, field: &FieldDescriptor, value: super::Value);
 
     /// Checked variant of [`clear`](Self::clear).
@@ -359,5 +400,6 @@ pub trait Reflectable {
     fn reflect(&self) -> ReflectCow<'_>;
 
     // `reflect_mut(&mut self) -> ReflectCowMut<'_>` is part of the design but
-    // deferred to the MergeSink work in this prototype — see merge.rs.
+    // deferred to the MergeSink work sketched in
+    // docs/investigations/reflection.md.
 }

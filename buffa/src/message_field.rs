@@ -389,6 +389,28 @@ impl<T: Default, P: ProtoBox<T>> MessageField<T, P> {
         self.inner.map(<P as ProtoBox<T>>::into_inner)
     }
 
+    /// Consume the field, applying `f` to the inner value if set.
+    ///
+    /// Mirrors [`Option::map`]. Equivalent in effect to
+    /// [`into_option`](Self::into_option)`.map(f)`, but reads as if the
+    /// field were a plain `Option`. The motivating case is converting an
+    /// optional submessage into a differently-typed `Option` when mapping
+    /// a generated struct to a domain type:
+    ///
+    /// ```rust,ignore
+    /// // Before: value.shoulder_entity_left.into_option().map(Into::into)
+    /// shoulder_entity_left: value.shoulder_entity_left.map(Into::into),
+    /// ```
+    ///
+    /// With `map(Into::into)` the target type must be inferable from
+    /// context (a typed struct field, annotated `let`, or function return);
+    /// otherwise name the conversion (`map(Domain::from)`). To map without
+    /// consuming the field, use [`as_option`](Self::as_option)`.map(...)`.
+    #[inline]
+    pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> Option<U> {
+        self.into_option().map(f)
+    }
+
     /// Consume the field, returning the inner value.
     ///
     /// Equivalent in effect to `into_option().unwrap()`, with a clearer
@@ -852,6 +874,40 @@ mod tests {
 
         let field: MessageField<Inner> = MessageField::none();
         assert!(field.into_option().is_none());
+    }
+
+    #[test]
+    fn test_map_set_transforms_inner_value() {
+        let field: MessageField<Inner> = MessageField::some(Inner {
+            value: 5,
+            name: "mapped".into(),
+        });
+        let mapped: Option<alloc::string::String> = field.map(|inner| inner.name);
+        assert_eq!(mapped.as_deref(), Some("mapped"));
+    }
+
+    #[test]
+    fn test_map_unset_returns_none_without_calling_closure() {
+        let field: MessageField<Inner> = MessageField::none();
+        let mapped: Option<i32> = field.map(|_| panic!("closure must not run"));
+        assert_eq!(mapped, None);
+    }
+
+    #[test]
+    fn test_map_accepts_fnonce_closure() {
+        let field: MessageField<Inner> = MessageField::some(Inner::default());
+        let replacement = alloc::string::String::from("moved");
+        let mapped: Option<alloc::string::String> = field.map(|_| replacement);
+        assert_eq!(mapped.as_deref(), Some("moved"));
+    }
+
+    #[test]
+    fn test_map_works_with_inline_pointer() {
+        let field: MessageField<Inner, Inline<Inner>> = MessageField::some(Inner {
+            value: 41,
+            ..Default::default()
+        });
+        assert_eq!(field.map(|inner| inner.value + 1), Some(42));
     }
 
     #[test]

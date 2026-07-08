@@ -38,24 +38,20 @@ If all you want from a custom map is deterministic key order, the built-in `MapR
 
 ## The newtype pattern
 
-Each custom type wraps a *foreign* storage type. The orphan rule forbids implementing `buffa::ProtoString` (or `ProtoBytes`, `ProtoList`, `ProtoBox`) on `flexstr::SharedStr` directly, because both the trait and the type are defined outside this crate — so a thin `#[repr(transparent)]` newtype in this crate is the bridge. `FlexStr` is the template; the other three follow the same shape.
+Each custom type wraps a *foreign* storage type. The orphan rule forbids implementing `buffa::ProtoString` (or `ProtoBytes`, `ProtoList`, `ProtoBox`) on `flexstr::SharedStr` directly, because both the trait and the type are defined outside this crate — so a thin `#[repr(transparent)]` newtype in this crate is the bridge.
+
+For the common case the newtype's whole buffa-facing surface can be generated from one annotation: `FlexStr` uses the [`buffa-remote-derive`](../../buffa-remote-derive) crate's `ProtoString` derive.
 
 ```rust
-#[derive(Clone, PartialEq, Eq, Hash, Default, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Default, Debug, serde::Serialize, serde::Deserialize,
+    buffa_remote_derive::ProtoString)]
 #[serde(transparent)]
+#[buffa(remote = flexstr::SharedStr)]
 #[repr(transparent)]
 pub struct FlexStr(pub flexstr::SharedStr);
-
-impl buffa::ProtoString for FlexStr {
-    fn from_wire(payload: WirePayload<'_>) -> Result<Self, DecodeError> {
-        core::str::from_utf8(payload.as_slice())
-            .map(|s| Self(flexstr::SharedStr::from_ref(s)))
-            .map_err(|_| DecodeError::InvalidUtf8)
-    }
-}
 ```
 
-The remaining trait surface (`Deref<Target = str>`, `AsRef<str>`, `From<String>`, `From<&str>`) is `ProtoString`'s supertrait set, and each impl is a one-line forward to the inner type. The `assert_transparent!` macro in [`src/types/mod.rs`](src/types/mod.rs) freezes the zero-cost guarantee — if a second field ever sneaks into the wrapper, the build fails.
+The derive expands the `buffa::ProtoString` impl plus the rest of the required surface (`Deref<Target = str>`, `AsRef<str>`, `From<String>`, `From<&str>`), each a one-line forward to the inner type. The other newtypes in this crate hand-write that same surface — `small_bytes.rs` and `small_vec.rs` deliberately so, because their impls carry allocation behavior the generic derive can't express (a `from_wire` with no intermediate `Vec`, a capacity-retaining `clear`) — so the module shows both the generated and the written-out form of the pattern. The `assert_transparent!` macro in [`src/types/mod.rs`](src/types/mod.rs) freezes the zero-cost guarantee — if a second field ever sneaks into the wrapper, the build fails.
 
 ## What each newtype needs for JSON
 

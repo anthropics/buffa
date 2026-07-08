@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 buffa = { path = "../../buffa", features = ["std", "json"] }
+buffa-remote-derive = { path = "../../buffa-remote-derive" }
 # `generate_json(true)` emits `#[derive(serde::Serialize, ...)]`, which expands
 # to `extern crate serde as _serde;` — so `serde` must be a *direct* dependency
 # of this crate. buffa re-exports `bytes`/`alloc`/`serde_json` for generated
@@ -13,7 +14,7 @@ buffa = { path = "../../buffa", features = ["std", "json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Backing storage for the crate-local newtypes. These are the "foreign"
-# types an integrator would bring; the newtypes in src/types.rs wrap them
+# types an integrator would bring; the newtypes in src/types/ wrap them
 # to satisfy buffa's owned-type traits without an orphan-rule conflict.
 flexstr = { version = "0.9", features = ["serde"] }
 smallvec = { version = "1", features = ["serde", "const_generics"] }

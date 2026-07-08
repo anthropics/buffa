@@ -26,7 +26,8 @@
 //! used instead — see [`Config::use_buf()`]. Alternatively, feed a
 //! pre-compiled descriptor set via [`Config::descriptor_set()`].
 
-use std::path::{Path, PathBuf};
+use std::collections::BTreeSet;
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 use buffa::Message;
@@ -1744,16 +1745,15 @@ impl Config {
         //
         // For Buf mode, `self.files` are module-root-relative and cargo can't
         // stat them — use `buf ls-files` instead, which lists all workspace
-        // protos with workspace-relative paths. This also catches changes to
-        // transitively-imported protos (a gap in the Protoc mode, which only
-        // watches explicitly-listed files).
+        // protos with workspace-relative paths. Protoc mode uses the decoded
+        // descriptor set below to watch resolved transitive imports.
         match self.descriptor_source {
             DescriptorSource::Buf => emit_buf_rerun_if_changed(),
             DescriptorSource::Protoc => {
                 // Rerun if PROTOC changes (different binary may accept
                 // protos the previous one rejected, e.g. newer editions).
                 println!("cargo:rerun-if-env-changed=PROTOC");
-                for proto_file in &self.files {
+                for proto_file in protoc_rerun_if_changed_paths(&fds, &self.files, &self.includes) {
                     println!("cargo:rerun-if-changed={}", proto_file.display());
                 }
             }
@@ -1939,6 +1939,59 @@ fn proto_relative_name(file: &Path, includes: &[PathBuf]) -> String {
         }
     }
     best.unwrap_or(file).to_str().unwrap_or("").to_string()
+}
+
+/// Files Cargo should watch for protoc-based builds.
+///
+/// `protoc --include_imports` records the full transitive import closure in
+/// the descriptor set. Convert descriptor-relative names back to filesystem
+/// paths under the configured include roots so edits to imported protos rerun
+/// codegen even when `.files()` listed only the leaf proto. Imports resolved
+/// from protoc's bundled includes (the well-known types) are not under any
+/// configured root and are deliberately left unwatched — they ship with the
+/// protoc binary and are not user-editable.
+fn protoc_rerun_if_changed_paths(
+    fds: &FileDescriptorSet,
+    files: &[PathBuf],
+    includes: &[PathBuf],
+) -> Vec<PathBuf> {
+    let mut paths: BTreeSet<PathBuf> = files.iter().cloned().collect();
+    for file in &fds.file {
+        if let Some(name) = file.name.as_deref() {
+            if let Some(path) = resolve_descriptor_name_under_include(name, includes) {
+                paths.insert(path);
+            }
+        }
+    }
+    paths.into_iter().collect()
+}
+
+/// Map an include-relative descriptor name back to an on-disk path, trying
+/// the include roots in `-I` order (matching protoc's own resolution).
+/// Absolute or parent-traversing names are rejected outright; with no
+/// include roots, the name is tried relative to the working directory.
+fn resolve_descriptor_name_under_include(name: &str, includes: &[PathBuf]) -> Option<PathBuf> {
+    let rel = Path::new(name);
+    if rel.is_absolute()
+        || rel
+            .components()
+            .any(|c| matches!(c, Component::ParentDir | Component::Prefix(_)))
+    {
+        return None;
+    }
+
+    if includes.is_empty() {
+        let path = PathBuf::from(rel);
+        return path.exists().then_some(path);
+    }
+
+    for include in includes {
+        let path = include.join(rel);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    None
 }
 
 /// Generate the content of an include file that assembles generated `.rs`
@@ -2134,6 +2187,73 @@ mod tests {
             &[PathBuf::from("other/"), PathBuf::from("third/")],
         );
         assert_eq!(got, "src/my.proto");
+    }
+
+    #[test]
+    fn protoc_rerun_paths_include_transitive_imports() {
+        use buffa_codegen::generated::descriptor::FileDescriptorProto;
+
+        let dir = tempfile::tempdir().unwrap();
+        let include = dir.path().join("proto");
+        std::fs::create_dir_all(include.join("svc")).unwrap();
+        std::fs::write(include.join("svc/service.proto"), b"syntax = \"proto3\";").unwrap();
+        std::fs::write(include.join("common.proto"), b"syntax = \"proto3\";").unwrap();
+
+        let fds = FileDescriptorSet {
+            file: vec![
+                FileDescriptorProto {
+                    name: Some("svc/service.proto".into()),
+                    ..Default::default()
+                },
+                FileDescriptorProto {
+                    name: Some("common.proto".into()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let explicit = vec![include.join("svc/service.proto")];
+
+        let got: BTreeSet<_> =
+            protoc_rerun_if_changed_paths(&fds, &explicit, std::slice::from_ref(&include))
+                .into_iter()
+                .collect();
+        let expected: BTreeSet<_> = [
+            include.join("svc/service.proto"),
+            include.join("common.proto"),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn protoc_rerun_paths_skip_descriptor_names_not_under_include_roots() {
+        use buffa_codegen::generated::descriptor::FileDescriptorProto;
+
+        let dir = tempfile::tempdir().unwrap();
+        let include = dir.path().join("proto");
+        std::fs::create_dir_all(&include).unwrap();
+
+        let fds = FileDescriptorSet {
+            file: vec![
+                FileDescriptorProto {
+                    name: Some("missing.proto".into()),
+                    ..Default::default()
+                },
+                FileDescriptorProto {
+                    name: Some("../outside.proto".into()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let explicit = vec![PathBuf::from("service.proto")];
+
+        assert_eq!(
+            protoc_rerun_if_changed_paths(&fds, &explicit, &[include]),
+            explicit
+        );
     }
 
     #[test]
