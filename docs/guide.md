@@ -596,13 +596,19 @@ Passed via `opt:` (works for `remote:` and `local:`):
 > plugins:
 >   - local: protoc-gen-buffa
 >     out: src/gen
->     opt: [exclude_package=.buf.validate, exclude_package=.gnostic]
+>     opt:
+>       - exclude_package=.buf.validate
+>       - exclude_package=.gnostic
 >     include_imports: true
 >   - local: protoc-gen-buffa-packaging
 >     out: src/gen
 >     strategy: all
->     opt: [exclude_package=.buf.validate, exclude_package=.gnostic]
+>     opt:
+>       - exclude_package=.buf.validate
+>       - exclude_package=.gnostic
 > ```
+>
+> Excluded descriptors stay available for option resolution, but a kept message with a *field* of an excluded type generates a reference to a Rust module that was never emitted — a compile error in generated code, far from its cause. If the types are genuinely needed, map them with `extern_path` instead of excluding them. On the buf path, per-plugin `exclude_types:` (a buf.gen.yaml field, not a plugin opt) is an alternative that prunes the descriptors themselves before the plugin runs — note its subpackage semantics differ: use a `pkg.**` glob to cover subpackages, where `exclude_package` covers them automatically. `exclude_package` is a protoc-plugin option only; the `buffa-build`/`build.rs` path does not need it, since there `files()` lists the generate set explicitly.
 
 #### BSR-generated SDKs
 

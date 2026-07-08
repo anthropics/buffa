@@ -226,17 +226,15 @@ fn parse_options(params: &str) -> Result<Selection, String> {
                 }
             };
         } else if let Some(value) = opt.strip_prefix("exclude_package=") {
-            // Must mirror protoc-gen-buffa's exclude_package: same spelling,
-            // same leading-dot normalization, so both plugins drop the same
-            // packages and the mod.rs never references a skipped stitcher.
-            let pkg = value.trim();
-            let pkg = pkg.strip_prefix('.').unwrap_or(pkg);
-            if pkg.is_empty() {
-                return Err("'exclude_package' requires a non-empty proto package, \
-                     e.g. exclude_package=.buf.validate"
-                    .to_string());
-            }
-            selection.exclude.push(pkg.to_string());
+            // Shares protoc-gen-buffa's normalization (one helper in
+            // buffa-codegen), so both plugins drop the same packages and the
+            // mod.rs never references a skipped stitcher. The option key
+            // itself must also stay spelled `exclude_package` in both
+            // plugins — renaming or aliasing it in one without the other
+            // recreates the mismatch the shared helper exists to prevent.
+            selection
+                .exclude
+                .push(buffa_codegen::normalize_exclude_package(value)?);
         } else {
             return Err(format!(
                 "unknown plugin option {opt:?}. \
@@ -357,7 +355,7 @@ mod tests {
         let req = request(
             Some("exclude_package=.buf.validate,exclude_package=gnostic"),
             vec![
-                file("kimi/user/v1/user.proto", "kimi.user.v1", false),
+                file("example/user/v1/user.proto", "example.user.v1", false),
                 file("buf/validate/validate.proto", "buf.validate", false),
                 file(
                     "gnostic/openapi/v3/openapiv3.proto",
@@ -368,7 +366,7 @@ mod tests {
         );
         let resp = generate(&req).unwrap();
         let content = resp.file[0].content.as_deref().unwrap();
-        assert!(content.contains("kimi.user.v1.mod.rs"));
+        assert!(content.contains("example.user.v1.mod.rs"));
         assert!(!content.contains("buf.validate.mod.rs"));
         assert!(!content.contains("gnostic.openapi.v3.mod.rs"));
     }

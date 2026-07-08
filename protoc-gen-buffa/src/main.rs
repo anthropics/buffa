@@ -334,14 +334,7 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
             // optional (normalized like extern_path). protoc-gen-buffa-packaging
             // accepts the same option so the generated mod.rs stays in sync.
             "exclude_package" => {
-                let pkg = value.trim();
-                let pkg = pkg.strip_prefix('.').unwrap_or(pkg);
-                if pkg.is_empty() {
-                    return Err("'exclude_package' requires a non-empty proto package, \
-                         e.g. exclude_package=.buf.validate"
-                        .to_string());
-                }
-                exclude_packages.push(pkg.to_string());
+                exclude_packages.push(buffa_codegen::normalize_exclude_package(value)?);
             }
             "extern_path" => {
                 // value is "<proto_path>=<rust_path>"
@@ -729,7 +722,7 @@ mod tests {
     #[test]
     fn filter_excluded_files_drops_excluded_packages() {
         let protos = vec![
-            fd("kimi/user/v1/user.proto", "kimi.user.v1"),
+            fd("example/user/v1/user.proto", "example.user.v1"),
             fd("buf/validate/validate.proto", "buf.validate"),
             fd("gnostic/openapi/v3/openapiv3.proto", "gnostic.openapi.v3"),
         ];
@@ -739,12 +732,12 @@ mod tests {
             &protos,
             &["buf.validate".to_string(), "gnostic".to_string()],
         );
-        assert_eq!(kept, vec!["kimi/user/v1/user.proto".to_string()]);
+        assert_eq!(kept, vec!["example/user/v1/user.proto".to_string()]);
     }
 
     #[test]
     fn filter_excluded_files_no_excludes_is_identity() {
-        let protos = vec![fd("kimi/user/v1/user.proto", "kimi.user.v1")];
+        let protos = vec![fd("example/user/v1/user.proto", "example.user.v1")];
         let all: Vec<String> = protos.iter().map(|f| f.name.clone().unwrap()).collect();
         assert_eq!(filter_excluded_files(&all, &protos, &[]), all);
     }

@@ -2995,6 +2995,35 @@ pub fn package_is_excluded(package: &str, excludes: &[String]) -> bool {
     })
 }
 
+/// Normalize and validate one `exclude_package` option value: trim
+/// whitespace, strip the optional leading dot, reject an empty result or a
+/// value with empty components (`buf.validate.`, `buf..validate`) — those
+/// could never match a real package, so a typo would otherwise be a silent
+/// no-op.
+///
+/// Both protoc plugins parse their `exclude_package` options through this
+/// one function so their normalization cannot drift — the same reason they
+/// share [`package_is_excluded`].
+///
+/// # Errors
+///
+/// Returns the user-facing message for a malformed value. The error is a
+/// plain `String` (not [`CodeGenError`]) deliberately: this is plugin
+/// option-string parsing, and both plugins' parse layers are
+/// `Result<_, String>` end to end, surfaced verbatim by protoc.
+pub fn normalize_exclude_package(value: &str) -> Result<String, String> {
+    let pkg = value.trim();
+    let pkg = pkg.strip_prefix('.').unwrap_or(pkg);
+    if pkg.is_empty() || pkg.split('.').any(str::is_empty) {
+        return Err(
+            "'exclude_package' requires a non-empty proto package with no \
+             empty components, e.g. exclude_package=.buf.validate"
+                .to_string(),
+        );
+    }
+    Ok(pkg.to_string())
+}
+
 #[cfg(test)]
 mod package_exclusion_tests {
     use super::package_is_excluded;
@@ -3029,7 +3058,7 @@ mod package_exclusion_tests {
     #[test]
     fn unrelated_package_is_kept() {
         assert!(!package_is_excluded(
-            "kimi.user.v1",
+            "example.user.v1",
             &ex(&["buf.validate", "gnostic"])
         ));
     }
@@ -3037,6 +3066,35 @@ mod package_exclusion_tests {
     #[test]
     fn empty_exclude_list_keeps_everything() {
         assert!(!package_is_excluded("buf.validate", &ex(&[])));
+    }
+
+    // An empty exclude entry is unreachable through either plugin
+    // (`normalize_exclude_package` rejects it); this pins the raw
+    // predicate's documented behavior for direct callers.
+    #[test]
+    fn empty_entry_matches_only_the_unnamed_package() {
+        assert!(package_is_excluded("", &ex(&[""])));
+        assert!(!package_is_excluded("foo", &ex(&[""])));
+    }
+
+    #[test]
+    fn normalize_strips_dot_and_rejects_malformed() {
+        use super::normalize_exclude_package;
+        assert_eq!(
+            normalize_exclude_package(".buf.validate").as_deref(),
+            Ok("buf.validate")
+        );
+        assert_eq!(
+            normalize_exclude_package("gnostic").as_deref(),
+            Ok("gnostic")
+        );
+        assert!(normalize_exclude_package("").is_err());
+        assert!(normalize_exclude_package(".").is_err());
+        assert!(normalize_exclude_package("  ").is_err());
+        // Entries that could never match a real package are rejected, not
+        // silently accepted as no-ops.
+        assert!(normalize_exclude_package("buf.validate.").is_err());
+        assert!(normalize_exclude_package("buf..validate").is_err());
     }
 }
 
