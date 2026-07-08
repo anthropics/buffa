@@ -2515,12 +2515,9 @@ fn generate_package(
         }
         ctx.truncate_warnings(warn_mark);
         occupied.insert("register_types".to_string());
-        // The reflection pool accessor is re-exported at the package root
-        // directly by `generate_package_mod` (not via a ReexportCandidate),
-        // so the dry run doesn't capture it — reserve it explicitly.
-        if ctx.config.generate_reflection {
-            occupied.insert("descriptor_pool".to_string());
-        }
+        // The reflect re-export names (`descriptor_pool`,
+        // `FILE_DESCRIPTOR_SET_BYTES`) are reserved inside
+        // `root_occupied_names` itself.
         let collected = ctx.imports_take_collected();
         ctx.imports_set_resolving(imports::RootImports::assign(&collected, &occupied));
     }
@@ -2667,6 +2664,16 @@ fn root_occupied_names(
                     .prefixed_type_name(e.name.as_deref().unwrap_or("")),
             );
         }
+    }
+    // The reflect surface is re-exported at the package root directly by
+    // `generate_package_mod` (not via a `ReexportCandidate`), so candidates
+    // that could share its names — an extension const named
+    // `file_descriptor_set_bytes` becomes `FILE_DESCRIPTOR_SET_BYTES` —
+    // must be filtered against it here or the two `pub use`s collide
+    // (E0252) in the generated package root.
+    if ctx.config.generate_reflection {
+        occupied.insert("descriptor_pool".to_string());
+        occupied.insert("FILE_DESCRIPTOR_SET_BYTES".to_string());
     }
     occupied
 }
@@ -2869,14 +2876,15 @@ fn generate_package_mod(
     // Reflection: embed the FileDescriptorSet bytes and a lazy pool
     // accessor so per-message `Reflectable` impls have a descriptor pool to
     // resolve against. Lives inside `__buffa` so the impls can reach it via
-    // a relative `__buffa::reflect::descriptor_pool()` path. A package-root
-    // `pub use` re-exports `descriptor_pool` so consumers don't have to
-    // route through the reserved `__buffa` sentinel.
+    // a relative `__buffa::reflect::descriptor_pool()` path. Package-root
+    // `pub use`s re-export `descriptor_pool` and `FILE_DESCRIPTOR_SET_BYTES`
+    // so consumers don't have to route through the reserved `__buffa`
+    // sentinel.
     let (reflect_mod, reflect_reexport) = if ctx.config.generate_reflection {
         let gate = ctx.config.feature_gates().reflect;
         (
             feature_gates::cfg_block(reflect::reflect_pool_module(fds_bytes), gate),
-            feature_gates::cfg_block(reflect::pool_accessor_reexport(&quote! { __buffa }), gate),
+            reflect::reflect_reexports(&quote! { __buffa }, gate),
         )
     } else {
         (TokenStream::new(), TokenStream::new())

@@ -207,6 +207,17 @@ fn main() {
         .compile()
         .expect("buffa_build failed for name_collisions.proto");
 
+    // Reflect re-export collision — an extension const that SCREAMING_SNAKEs
+    // to FILE_DESCRIPTOR_SET_BYTES must lose the package-root slot to the
+    // reflect re-export instead of producing E0252. Compiling is the test.
+    buffa_build::Config::new()
+        .files(&["protos/reflect_name_collision.proto"])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for reflect_name_collision.proto");
+
     // Prelude shadowing (gh#36, gh#64) — nested + cross-file `message Option`
     // with optional/oneof fields, built with views + JSON so all `Option<...>`
     // emission paths are exercised. The sibling file shares the package, so

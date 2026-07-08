@@ -544,6 +544,10 @@ pub mod collisions {
     buffa::include_proto!("test.collisions");
 }
 
+pub mod reflectcollide {
+    buffa::include_proto!("reflectcollide");
+}
+
 #[allow(clippy::derivable_impls, clippy::match_single_binding, dead_code)]
 pub mod prelude_shadow {
     buffa::include_proto!("test.prelude_shadow");

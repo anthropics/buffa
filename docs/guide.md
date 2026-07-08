@@ -692,6 +692,7 @@ Owned message structs and their nested-type modules sit at the package level, ex
 | Extension const | `pkg::__buffa::ext::MY_EXT` |
 | Registration fn | `pkg::__buffa::register_types` |
 | Descriptor pool (with reflection enabled) | `pkg::__buffa::reflect::descriptor_pool()` (re-exported as `pkg::descriptor_pool()`) |
+| Descriptor set bytes (with reflection enabled) | `pkg::__buffa::reflect::FILE_DESCRIPTOR_SET_BYTES` (re-exported as `pkg::FILE_DESCRIPTOR_SET_BYTES`) |
 
 `__buffa` is the **only** name codegen reserves at user scope. It aligns with the `__buffa_` reserved field-name prefix (`__buffa_unknown_fields`, `__buffa_phantom`), so the rule is uniformly "anything starting `__buffa` is buffa-internal." A proto message, file-level enum, or package segment that snake-cases to `__buffa` is rejected at codegen time.
 
@@ -1852,10 +1853,18 @@ handle.for_each_set(&mut |field, value| {
 let id = handle.get(descriptor.field_by_name("id").unwrap());
 ```
 
-Either mode embeds the package's `FileDescriptorSet` in the generated code
-and exposes a lazily-built pool as `your_pkg::descriptor_pool()`, so the
-descriptors used by `reflect()` are always the ones the code was generated
-from.
+Either mode embeds a `FileDescriptorSet` in the generated code and exposes a
+lazily-built pool as `your_pkg::descriptor_pool()`, so the descriptors used
+by `reflect()` are always the ones the code was generated from. The raw bytes
+are also re-exported as `your_pkg::FILE_DESCRIPTOR_SET_BYTES` — useful for
+shipping the schema over the wire to a peer that decodes with
+`DynamicMessage`. Two caveats about the embedded set: it covers the **whole
+codegen run** (every package plus transitive imports, not just
+`your_pkg`), and it has `source_code_info` stripped — the runtime pool never
+reads source info, and keeping it can multiply the embedded bytes an order of
+magnitude (14x for the comment-heavy well-known-types package). If you need
+proto comments at runtime, or a set scoped to specific files, build a
+descriptor set directly with `protoc --include_source_info` or `buf build`.
 
 Two Cargo notes:
 
