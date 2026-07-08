@@ -8,7 +8,7 @@ struct MyBytes(pub SmallVec<[u8; 16]>);
 
 #[test]
 fn from_wire_copies_payload() {
-    let b = MyBytes::from_wire(WirePayload::Borrowed(b"hello bytes")).unwrap();
+    let b = MyBytes::from_wire(WirePayload::borrowed(b"hello bytes")).unwrap();
     assert_eq!(b.as_ref(), b"hello bytes");
 }
 

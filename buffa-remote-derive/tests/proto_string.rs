@@ -7,13 +7,13 @@ struct MyEcoString(pub ecow::EcoString);
 
 #[test]
 fn from_wire_decodes_valid_utf8() {
-    let s = MyEcoString::from_wire(WirePayload::Borrowed(b"hello")).unwrap();
+    let s = MyEcoString::from_wire(WirePayload::borrowed(b"hello")).unwrap();
     assert_eq!(s.as_ref(), "hello");
 }
 
 #[test]
 fn from_wire_rejects_invalid_utf8() {
-    assert!(MyEcoString::from_wire(WirePayload::Borrowed(&[0xff, 0xfe])).is_err());
+    assert!(MyEcoString::from_wire(WirePayload::borrowed(&[0xff, 0xfe])).is_err());
 }
 
 #[test]
