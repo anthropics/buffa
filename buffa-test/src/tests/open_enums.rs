@@ -286,6 +286,63 @@ fn open_enum_override_required_view_defaults_are_known_enum_values() {
 }
 
 #[test]
+fn embedded_descriptor_options_match_override_scope() {
+    use buffa_descriptor::generated::descriptor::feature_set;
+
+    fn field_enum_type(field: &buffa_descriptor::FieldDescriptor) -> Option<feature_set::EnumType> {
+        field
+            .options()?
+            .features
+            .as_option()
+            .and_then(|features| features.enum_type)
+    }
+
+    fn enum_option_enum_type(
+        enum_desc: &buffa_descriptor::EnumDescriptor,
+    ) -> Option<feature_set::EnumType> {
+        enum_desc
+            .options()?
+            .features
+            .as_option()
+            .and_then(|features| features.enum_type)
+    }
+
+    let field_pool = crate::open_enums::descriptor_pool();
+    let contexts = field_pool
+        .message_by_name("test.openenums.OpenEnumContexts")
+        .unwrap();
+    assert_eq!(
+        field_enum_type(contexts.field_by_name("opt").unwrap()),
+        Some(feature_set::EnumType::OPEN)
+    );
+    assert_eq!(
+        field_enum_type(contexts.field_by_name("closed_control").unwrap()),
+        None
+    );
+    assert_eq!(
+        enum_option_enum_type(field_pool.enum_by_name("test.openenums.Priority").unwrap()),
+        None
+    );
+
+    let enum_pool = crate::open_enums_enum_rule::descriptor_pool();
+    let wrapper = enum_pool
+        .message_by_name("test.openenums_enumrule.Wrapper")
+        .unwrap();
+    assert_eq!(
+        enum_option_enum_type(
+            enum_pool
+                .enum_by_name("test.openenums_enumrule.Level")
+                .unwrap()
+        ),
+        Some(feature_set::EnumType::OPEN)
+    );
+    assert_eq!(
+        field_enum_type(wrapper.field_by_name("level").unwrap()),
+        None
+    );
+}
+
+#[test]
 fn field_rule_keeps_runtime_descriptor_pool_closed() {
     use buffa_descriptor::features::EnumType;
     use buffa_descriptor::reflect::DynamicMessage;
