@@ -145,10 +145,25 @@ pub(crate) fn reflectable_impl_vtable(ty: &TokenStream) -> TokenStream {
 /// for googleapis-scale workloads with hundreds of packages. The cached
 /// bytes are also shared between the byte-literal emission and any future
 /// build-script-output deduplication.
+///
+/// `source_code_info` is stripped from every file before encoding: codegen
+/// consumes it for doc comments, but the runtime `DescriptorPool` never
+/// reads it, so embedding it would spend binary size on bytes nothing looks
+/// at. Consumers that need source info at runtime should build their own
+/// descriptor set with `protoc --include_source_info` / `buf build`.
+///
+/// The `to_vec` clone copies the source info only to drop it — a deliberate
+/// trade: a field-by-field clone that skips it would silently omit any
+/// future `FileDescriptorProto` field from the embedded set, and the cost
+/// is transient build-time memory on comment-heavy runs.
 pub(crate) fn encode_fds_once(file_descriptors: &[FileDescriptorProto]) -> Vec<u8> {
     use buffa::Message;
+    let mut files = file_descriptors.to_vec();
+    for file in &mut files {
+        file.source_code_info = Default::default();
+    }
     FileDescriptorSet {
-        file: file_descriptors.to_vec(),
+        file: files,
         ..Default::default()
     }
     .encode_to_vec()
@@ -170,8 +185,12 @@ pub(crate) fn reflect_pool_module(fds_bytes: &[u8]) -> TokenStream {
         /// and `ReflectMessage` impls (bridge and vtable mode alike).
         pub mod reflect {
             /// The serialized `FileDescriptorSet` for this codegen run,
-            /// including transitive dependencies. Used to build the
-            /// runtime [`DescriptorPool`](::buffa_descriptor::DescriptorPool).
+            /// including transitive dependencies, with `source_code_info`
+            /// stripped. Used to build the runtime
+            /// [`DescriptorPool`](::buffa_descriptor::DescriptorPool);
+            /// also suitable for shipping the schema over the wire.
+            /// Re-exported at the package root — prefer that path over
+            /// going through `__buffa`.
             pub const FILE_DESCRIPTOR_SET_BYTES: &[u8] = &[#(#byte_literals),*];
 
             /// The lazily-built descriptor pool for this package's
@@ -199,16 +218,49 @@ pub(crate) fn reflect_pool_module(fds_bytes: &[u8]) -> TokenStream {
     }
 }
 
-/// Generate a package-root re-export so the pool accessor is reachable at
-/// `pkg::descriptor_pool()` without going through the `__buffa` sentinel.
+/// Generate package-root re-exports so the reflect surface is reachable as
+/// `pkg::descriptor_pool()` and `pkg::FILE_DESCRIPTOR_SET_BYTES` without
+/// going through the `__buffa` sentinel.
 ///
 /// `__buffa` is documented as a reserved sentinel module ("don't reference
-/// this directly"); the accessor needs a discoverable home outside it.
-pub(crate) fn pool_accessor_reexport(buffa_path: &TokenStream) -> TokenStream {
+/// this directly"); anything consumers are expected to touch needs a
+/// discoverable home outside it.
+///
+/// Takes the feature gate directly (rather than being wrapped by the caller)
+/// because [`cfg_block`](crate::feature_gates::cfg_block) attaches to a
+/// single item — each of the two `use` items needs its own gate.
+pub(crate) fn reflect_reexports(buffa_path: &TokenStream, gate: Option<&str>) -> TokenStream {
+    // Gating happens inside this closure so a future third re-export
+    // cannot be added without it — each emitted `use` is one item, which
+    // is all `cfg_block` can gate.
+    let reexport = |docs: &[&str], name: TokenStream| {
+        crate::feature_gates::cfg_block(
+            quote! {
+                #(#[doc = #docs])*
+                #[doc(inline)]
+                pub use self::#buffa_path::reflect::#name;
+            },
+            gate,
+        )
+    };
+    let pool = reexport(
+        &[
+            "The lazily-built descriptor pool for this package's",
+            "`Reflectable` impls. Re-exported from `__buffa::reflect`.",
+        ],
+        quote! { descriptor_pool },
+    );
+    let fds_bytes = reexport(
+        &[
+            "The serialized `FileDescriptorSet` this package's descriptor",
+            "pool is built from (`source_code_info` stripped).",
+            "Re-exported from `__buffa::reflect`.",
+        ],
+        quote! { FILE_DESCRIPTOR_SET_BYTES },
+    );
     quote! {
-        #[doc = "The lazily-built descriptor pool for this package's"]
-        #[doc = "`Reflectable` impls. Re-exported from `__buffa::reflect`."]
-        pub use #buffa_path::reflect::descriptor_pool;
+        #pool
+        #fds_bytes
     }
 }
 
@@ -234,8 +286,7 @@ mod tests {
         let buffa = quote! { __buffa };
         let tokens = reflectable_impl(&ty_ts, &buffa);
         // The output must parse as an `impl` item — codegen blind spots
-        // (per `feedback-codegen-reexport-canary.md`) hide behind quote!'s
-        // tolerance for un-parseable token soup.
+        // hide behind quote!'s tolerance for un-parseable token soup.
         let parsed = syn::parse2::<syn::ItemImpl>(tokens.clone());
         assert!(parsed.is_ok(), "generated impl must parse: {tokens}");
     }
@@ -264,10 +315,58 @@ mod tests {
     }
 
     #[test]
-    fn pool_accessor_reexport_emits_well_formed_tokens() {
+    fn reflect_reexports_emit_well_formed_tokens() {
         let buffa = quote! { __buffa };
-        let tokens = pool_accessor_reexport(&buffa);
-        let parsed = syn::parse2::<syn::ItemUse>(tokens.clone());
-        assert!(parsed.is_ok(), "generated re-export must parse: {tokens}");
+        let tokens = reflect_reexports(&buffa, None);
+        let parsed = syn::parse2::<syn::File>(tokens.clone());
+        let file = parsed.expect("generated re-exports must parse");
+        assert_eq!(file.items.len(), 2, "pool accessor + FDS bytes constant");
+        assert!(
+            file.items.iter().all(|i| matches!(i, syn::Item::Use(_))),
+            "both items must be `use` re-exports"
+        );
+        let rendered = tokens.to_string();
+        assert!(rendered.contains("descriptor_pool"));
+        assert!(rendered.contains("FILE_DESCRIPTOR_SET_BYTES"));
+    }
+
+    #[test]
+    fn reflect_reexports_gate_each_item() {
+        // `cfg_block` attaches to a single item; both `use` items must carry
+        // their own `#[cfg]` or the second leaks into non-reflect builds.
+        let buffa = quote! { __buffa };
+        let tokens = reflect_reexports(&buffa, Some("reflect"));
+        let file = syn::parse2::<syn::File>(tokens).expect("gated re-exports must parse");
+        assert_eq!(file.items.len(), 2);
+        for item in &file.items {
+            let syn::Item::Use(item_use) = item else {
+                panic!("expected a use item");
+            };
+            assert!(
+                item_use.attrs.iter().any(|a| a.path().is_ident("cfg")),
+                "re-export missing its own #[cfg] gate"
+            );
+        }
+    }
+
+    #[test]
+    fn encode_fds_once_strips_source_code_info() {
+        use crate::generated::descriptor::SourceCodeInfo;
+        let fd = FileDescriptorProto {
+            name: Some("test.proto".into()),
+            package: Some("test".into()),
+            source_code_info: SourceCodeInfo::default().into(),
+            ..Default::default()
+        };
+        assert!(fd.source_code_info.is_set());
+        let bytes = encode_fds_once(&[fd]);
+        use buffa::Message;
+        let decoded =
+            FileDescriptorSet::decode_from_slice(&bytes).expect("encoded FDS round-trips");
+        assert_eq!(decoded.file.len(), 1);
+        assert!(
+            !decoded.file[0].source_code_info.is_set(),
+            "source_code_info must not survive into the embedded FDS"
+        );
     }
 }

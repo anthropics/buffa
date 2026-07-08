@@ -464,6 +464,41 @@ fn test_view_repeated_message_field() {
 }
 
 #[test]
+fn test_view_packed_varint_loop_uses_force_inlined_decoder() {
+    // View-path packed varint loops use the force-inlined `decode_*_packed`
+    // decoders against the packed cursor; the unpacked fallback and
+    // fixed-width loops keep the plain decoders.
+    let mut file = proto3_file("packed_view_inline.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("PackedViewInline".to_string()),
+        field: vec![
+            make_field("ids", 1, Label::LABEL_REPEATED, Type::TYPE_UINT64),
+            make_field("hashes", 2, Label::LABEL_REPEATED, Type::TYPE_FIXED32),
+        ],
+        ..Default::default()
+    });
+    let files = generate(
+        &[file],
+        &["packed_view_inline.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let content = &joined(&files);
+    assert!(
+        content.contains("decode_uint64_packed(&mut pcur)"),
+        "view packed uint64 loop must use the force-inlined decoder: {content}"
+    );
+    assert!(
+        content.contains("decode_uint64(&mut cur)"),
+        "view unpacked fallback must keep the plain decoder: {content}"
+    );
+    assert!(
+        content.contains("decode_fixed32(&mut pcur)"),
+        "view fixed32 packed loop must keep the plain decoder: {content}"
+    );
+}
+
+#[test]
 fn test_view_packed_scalar_reserves_capacity() {
     let mut file = proto3_file("packed_view.proto");
     file.message_type.push(DescriptorProto {

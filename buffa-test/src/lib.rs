@@ -544,6 +544,10 @@ pub mod collisions {
     buffa::include_proto!("test.collisions");
 }
 
+pub mod reflectcollide {
+    buffa::include_proto!("reflectcollide");
+}
+
 #[allow(clippy::derivable_impls, clippy::match_single_binding, dead_code)]
 pub mod prelude_shadow {
     buffa::include_proto!("test.prelude_shadow");
@@ -643,6 +647,30 @@ pub mod json_types {
 )]
 pub mod view_json {
     buffa::include_proto!("test.viewjson");
+}
+
+// Verbatim camelCase names with idiomatic_field_names OFF: generated code
+// keeps the non-snake idents under detection-scoped
+// #[allow(non_snake_case)] attrs. NOTE: deliberately no `non_snake_case`
+// (and no `non_camel_case_types`) in this module's allow list — compiling
+// warning-free IS the test.
+#[allow(clippy::derivable_impls, clippy::match_single_binding, dead_code)]
+pub mod verbatim_camel {
+    buffa::include_proto!("test.verbatimcamel");
+}
+
+// Idiomatic field names (#256): camelCase proto names → snake_case Rust
+// identifiers. Compilation proves every emission surface (owned struct,
+// codecs, views, JSON impls) agrees on the renamed idents; the runtime
+// checks live in `tests/idiomatic_fields.rs`.
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod idiomatic_fields {
+    buffa::include_proto!("test.idiofields");
 }
 
 #[allow(

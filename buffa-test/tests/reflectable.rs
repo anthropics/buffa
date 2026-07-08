@@ -207,3 +207,49 @@ fn descriptor_pool_is_built_once() {
     assert!(p1.message_index("basic.Person").is_some());
     assert!(p1.message_index("basic.Address").is_some());
 }
+
+#[test]
+fn reflect_reexports_win_root_slot_over_colliding_ext_consts() {
+    // reflect_name_collision.proto declares extensions whose consts
+    // SCREAMING_SNAKE to FILE_DESCRIPTOR_SET_BYTES / DESCRIPTOR_POOL. The
+    // reflect surface keeps the package root (the ext-const re-export is
+    // suppressed, not the reverse), and the ext consts stay reachable
+    // through `__buffa::ext`.
+    use buffa::Message;
+    use buffa_descriptor::generated::descriptor::FileDescriptorSet;
+    let fds =
+        FileDescriptorSet::decode_from_slice(buffa_test::reflectcollide::FILE_DESCRIPTOR_SET_BYTES)
+            .expect("root name resolves to the reflect bytes, not the ext const");
+    assert!(fds
+        .file
+        .iter()
+        .any(|f| f.name.as_deref() == Some("reflect_name_collision.proto")));
+    assert!(buffa_test::reflectcollide::descriptor_pool()
+        .message_index("reflectcollide.Probe")
+        .is_some());
+    // The suppressed candidates remain addressable at their canonical homes.
+    let _ = &buffa_test::reflectcollide::__buffa::ext::FILE_DESCRIPTOR_SET_BYTES;
+    let _ = &buffa_test::reflectcollide::__buffa::ext::DESCRIPTOR_POOL;
+}
+
+#[test]
+fn fds_bytes_reexported_at_package_root_without_source_info() {
+    use buffa::Message;
+    use buffa_descriptor::generated::descriptor::FileDescriptorSet;
+    // The package-root re-export is the supported access path (#278) —
+    // `__buffa::reflect::FILE_DESCRIPTOR_SET_BYTES` is the reserved-module
+    // internal home.
+    let bytes = buffa_test::basic::FILE_DESCRIPTOR_SET_BYTES;
+    let fds =
+        FileDescriptorSet::decode_from_slice(bytes).expect("embedded FileDescriptorSet decodes");
+    assert!(!fds.file.is_empty());
+    // `source_code_info` is stripped before embedding: the runtime pool
+    // never reads it, so it must not cost binary size.
+    for file in &fds.file {
+        assert!(
+            !file.source_code_info.is_set(),
+            "{:?} still carries source_code_info",
+            file.name
+        );
+    }
+}

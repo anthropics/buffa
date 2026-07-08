@@ -6,14 +6,10 @@ A comprehensive guide to using buffa for Protocol Buffers in Rust.
 
 Add buffa to your project:
 
-```toml
-# Cargo.toml
-[dependencies]
-buffa = "0.7"
-buffa-types = "0.7"       # well-known types (Timestamp, Duration, Any, etc.)
-
-[build-dependencies]
-buffa-build = "0.7"
+```sh
+cargo add buffa
+cargo add buffa-types           # well-known types (Timestamp, Duration, Any, etc.)
+cargo add --build buffa-build
 ```
 
 The Cargo dependency is all you need when generating code via `buffa-build` or the `buf.build/anthropics/buffa` remote plugin. A [Homebrew](https://brew.sh) formula is also available:
@@ -36,10 +32,10 @@ This is **optional** — it does not install the library. It puts the `protoc-ge
 | `text` (`buffa` only) | No | Text format (`textproto`) encode/decode — see [Text format](#text-format-textproto) |
 | `reflect` (`buffa-types` only) | No | `ReflectMessage` impls for the well-known types, so messages that embed WKTs reflect end to end — see [Runtime reflection](#runtime-reflection) |
 
-```toml
+```sh
 # Enable JSON support
-buffa = { version = "0.7", features = ["json"] }
-buffa-types = { version = "0.7", features = ["json"] }
+cargo add buffa --features json
+cargo add buffa-types --features json
 ```
 
 ## Prerequisites
@@ -215,11 +211,10 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 
 Well-known types (`google.protobuf.Timestamp`, `Duration`, `Any`, etc.) are automatically mapped to `buffa-types` — no configuration needed. Any proto that imports `google/protobuf/timestamp.proto` (or other WKTs) will reference `::buffa_types::google::protobuf::Timestamp` in the generated code.
 
-This requires `buffa-types` as a dependency in your `Cargo.toml`:
+This requires `buffa-types` as a dependency:
 
-```toml
-[dependencies]
-buffa-types = "0.7"
+```sh
+cargo add buffa-types
 ```
 
 `buffa-types` is a pure source crate — it does **not** run `protoc` or any code generation at build time. If your protos use WKTs but you generate your own Rust code ahead-of-time (via `buf generate` or a `protoc` script), then `buffa` + `buffa-types` is your entire runtime dependency surface.
@@ -238,21 +233,19 @@ This disables the automatic mapping and routes all `google.protobuf.*` reference
 
 ### Descriptor types
 
-`google/protobuf/descriptor.proto` and `google/protobuf/compiler/plugin.proto` types (`FieldDescriptorProto`, `FileOptions`, `Edition`, `CodeGeneratorRequest`, etc.) live in `buffa-descriptor`, not `buffa-types` — the latter only ships the JSON-mappable WKTs. Protos that reference a `descriptor.proto` type as a field type — most commonly via [protovalidate](https://buf.build/bufbuild/protovalidate)'s `buf/validate/validate.proto`, which uses `google.protobuf.FieldDescriptorProto.Type` — are automatically routed to `buffa-descriptor`, the same way WKTs are routed to `buffa-types`. Add it to your `Cargo.toml`:
+`google/protobuf/descriptor.proto` and `google/protobuf/compiler/plugin.proto` types (`FieldDescriptorProto`, `FileOptions`, `Edition`, `CodeGeneratorRequest`, etc.) live in `buffa-descriptor`, not `buffa-types` — the latter only ships the JSON-mappable WKTs. Protos that reference a `descriptor.proto` type as a field type — most commonly via [protovalidate](https://buf.build/bufbuild/protovalidate)'s `buf/validate/validate.proto`, which uses `google.protobuf.FieldDescriptorProto.Type` — are automatically routed to `buffa-descriptor`, the same way WKTs are routed to `buffa-types`. Add it as a dependency:
 
-```toml
-[dependencies]
-buffa-descriptor = "0.7"
+```sh
+cargo add buffa-descriptor
 ```
 
 If your protos import `descriptor.proto` only to declare custom options (`extend google.protobuf.MessageOptions { ... }`) and never reference a descriptor type as a *field type*, no `buffa-descriptor` dependency is required — extension declarations don't generate field-type references.
 
 `buffa-descriptor` ships its view, JSON, text, and arbitrary impls behind crate features (`views`, `json`, `text`, `arbitrary`), all off by default; a separate `reflect` feature provides the runtime reflection API (`DescriptorPool`, `DynamicMessage` — see [Runtime reflection](#runtime-reflection)). The codegen toolchain depends on it with `default-features = false`, so building `buffa-codegen` / `buffa-build` / `protoc-gen-buffa` doesn't pull in `serde` or `serde_json`. **If your protos reference a descriptor message type as a field type and you generate with `views=true`, `json=true`, or `text=true`, enable the matching `buffa-descriptor` features**:
 
-```toml
-[dependencies]
+```sh
 # Codegen with .generate_views(true).generate_json(true)
-buffa-descriptor = { version = "0.7", features = ["views", "json"] }
+cargo add buffa-descriptor --features views,json
 ```
 
 Descriptor **enum** types referenced as field types (the most common case — e.g. `google.protobuf.FieldDescriptorProto.Type` in protovalidate) work with the default feature set. The features are only needed for descriptor **message** types referenced as fields (e.g. `FileDescriptorSet`, `FileDescriptorProto`). If you hit a missing-impl error like `the trait bound FileDescriptorSet: serde::Deserialize is not satisfied`, add `buffa-descriptor` with the right features.
@@ -437,7 +430,7 @@ brew install buffa
 The [formula](https://formulae.brew.sh/formula/buffa) builds both plugins from the latest crates.io release and declares `protobuf` as a dependency, so `protoc` comes along with it. Homebrew always tracks the latest release; if you need the plugin version to match an older `buffa = "x.y"` in your `Cargo.toml`, use `cargo install` with an explicit `--version` instead:
 
 ```sh
-cargo install --locked --version 0.7.1 protoc-gen-buffa protoc-gen-buffa-packaging
+cargo install --locked --version <version> protoc-gen-buffa protoc-gen-buffa-packaging
 ```
 
 **From source (requires Rust toolchain):**
@@ -526,7 +519,7 @@ pub mod example {
 mod gen;
 ```
 
-Pin the plugin version for reproducible builds: `remote: buf.build/anthropics/buffa:v0.7.0`. Match it to the `buffa` runtime crate version in your `Cargo.toml` — generated code from a newer plugin may reference items that don't exist in an older runtime.
+Pin the plugin version for reproducible builds: `remote: buf.build/anthropics/buffa:vX.Y.Z`, matching the `buffa` runtime crate version in your `Cargo.toml` — generated code from a newer plugin may reference items that don't exist in an older runtime.
 
 The complete, runnable [`examples/bsr-quickstart/`](../examples/bsr-quickstart/) project uses this layout.
 
@@ -699,6 +692,7 @@ Owned message structs and their nested-type modules sit at the package level, ex
 | Extension const | `pkg::__buffa::ext::MY_EXT` |
 | Registration fn | `pkg::__buffa::register_types` |
 | Descriptor pool (with reflection enabled) | `pkg::__buffa::reflect::descriptor_pool()` (re-exported as `pkg::descriptor_pool()`) |
+| Descriptor set bytes (with reflection enabled) | `pkg::__buffa::reflect::FILE_DESCRIPTOR_SET_BYTES` (re-exported as `pkg::FILE_DESCRIPTOR_SET_BYTES`) |
 
 `__buffa` is the **only** name codegen reserves at user scope. It aligns with the `__buffa_` reserved field-name prefix (`__buffa_unknown_fields`, `__buffa_phantom`), so the rule is uniformly "anything starting `__buffa` is buffa-internal." A proto message, file-level enum, or package segment that snake-cases to `__buffa` is rejected at codegen time.
 
@@ -1012,7 +1006,7 @@ Raise the limit if you decode trusted messages that legitimately carry more
 unknown fields (e.g. a proxy forwarding messages with a huge unpacked
 repeated field from a much newer schema).
 
-Zero-copy view decoding (`decode_view`) honors the same limit, but counts **coalesced spans** — one per contiguous run of unknown fields (~16 bytes each) — rather than individual fields, since views store unknown fields as borrowed byte ranges instead of materializing them. The same numeric limit is therefore more permissive for views; the per-field cost is only paid (under the default limit) when converting a view to an owned message.
+Zero-copy view decoding (`decode_view`) honors the same limit with per-field accounting (one slot per unknown field, including fields nested inside unknown groups), even though views store unknown fields as borrowed byte ranges (coalesced into one span per contiguous run, ~16 bytes each) instead of materializing them. The limit bounds what converting the view to an owned message would materialize, and the conversion replays under exactly the budget decoding charged — so a view that decodes successfully always converts via `to_owned_message` without error.
 
 The default `Message::decode` / `decode_from_slice` methods use the defaults (100 depth, 2 GiB max input, 1M unknown fields). `DecodeOptions` is only needed when you want different limits.
 
@@ -1039,8 +1033,11 @@ use buffa::MessageView;
 let view = PersonView::decode_view(&bytes)?;
 println!("name: {}", view.name);  // &str, no allocation
 
-// Convert to owned when needed (e.g., for storage or mutation)
-let owned: Person = view.to_owned_message();
+// Convert to owned when needed (e.g., for storage or mutation).
+// Won't error for views from decode_view, but the signature stays
+// Result because hand-written view impls can fail; the OwnedView
+// handle below drops the Result entirely.
+let owned: Person = view.to_owned_message()?;
 ```
 
 Views are ideal for read-only request handlers where the message doesn't outlive the input buffer. They're typically 1.5-4x faster than owned decoding.
@@ -1128,7 +1125,8 @@ println!("id: {}", view.id());
 let person = view.view();
 for tag in person.tags.iter() { /* ... */ }
 
-// Convert to owned if needed for storage or mutation
+// Convert to owned if needed for storage or mutation — infallible, since
+// the handle always holds a wire-decoded view
 let owned: Person = view.to_owned_message();
 ```
 
@@ -1341,18 +1339,13 @@ to make hand-building map views ergonomic.
 
 Enable the `json` feature and `generate_json(true)` in your build config:
 
-```toml
-# Cargo.toml
-[dependencies]
-buffa = { version = "0.7", features = ["json"] }
-# Required: generated `#[derive(::serde::Serialize, ::serde::Deserialize)]`
-# expands to `extern crate serde as _serde;`, so the consumer crate must
-# depend on `serde` directly. `serde_json` is *not* required by generated
-# code (buffa re-exports it where it needs `Value`); add it yourself only
-# if you call `serde_json::to_string` / `from_str` directly, as below.
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+```sh
+cargo add buffa --features json
+cargo add serde --features derive
+cargo add serde_json
 ```
+
+The direct `serde` dependency is required: the generated `#[derive(::serde::Serialize, ::serde::Deserialize)]` expands to `extern crate serde as _serde;`, so the consuming crate must depend on `serde` itself. `serde_json` is *not* required by generated code (buffa re-exports it where it needs `Value`); add it only if you call `serde_json::to_string` / `from_str` directly, as below.
 
 ```rust,ignore
 // build.rs
@@ -1412,10 +1405,8 @@ float formatting. Use binary or JSON for data on the wire.
 
 Enable the `text` feature and `generate_text(true)`:
 
-```toml
-# Cargo.toml
-[dependencies]
-buffa = { version = "0.7", features = ["text"] }
+```sh
+cargo add buffa --features text
 ```
 
 ```rust,ignore
@@ -1545,9 +1536,9 @@ let obj = Struct::from_fields([
 
 Buffa works without `std` (requires `alloc`):
 
-```toml
-buffa = { version = "0.7", default-features = false }
-buffa-types = { version = "0.7", default-features = false }
+```sh
+cargo add buffa --no-default-features
+cargo add buffa-types --no-default-features
 ```
 
 In `no_std` mode:
@@ -1748,9 +1739,8 @@ half (`DescriptorPool` + `DynamicMessage`) that needs no generated code at
 all, and a generated-code half (`generate_reflection` / `reflect_mode`) that
 lets generated types hand out the same reflective interface.
 
-```toml
-[dependencies]
-buffa-descriptor = { version = "0.7", features = ["reflect"] }  # add "json" for JSON
+```sh
+cargo add buffa-descriptor --features reflect   # use --features reflect,json for JSON
 ```
 
 ### Loading descriptors: `DescriptorPool`
@@ -1863,10 +1853,18 @@ handle.for_each_set(&mut |field, value| {
 let id = handle.get(descriptor.field_by_name("id").unwrap());
 ```
 
-Either mode embeds the package's `FileDescriptorSet` in the generated code
-and exposes a lazily-built pool as `your_pkg::descriptor_pool()`, so the
-descriptors used by `reflect()` are always the ones the code was generated
-from.
+Either mode embeds a `FileDescriptorSet` in the generated code and exposes a
+lazily-built pool as `your_pkg::descriptor_pool()`, so the descriptors used
+by `reflect()` are always the ones the code was generated from. The raw bytes
+are also re-exported as `your_pkg::FILE_DESCRIPTOR_SET_BYTES` — useful for
+shipping the schema over the wire to a peer that decodes with
+`DynamicMessage`. Two caveats about the embedded set: it covers the **whole
+codegen run** (every package plus transitive imports, not just
+`your_pkg`), and it has `source_code_info` stripped — the runtime pool never
+reads source info, and keeping it can multiply the embedded bytes an order of
+magnitude (14x for the comment-heavy well-known-types package). If you need
+proto comments at runtime, or a set scoped to specific files, build a
+descriptor set directly with `protoc --include_source_info` or `buf build`.
 
 Two Cargo notes:
 

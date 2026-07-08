@@ -55,6 +55,7 @@ mod debug_redact;
 mod feature_gating;
 mod generation;
 mod idiomatic_enums;
+mod idiomatic_fields;
 mod idiomatic_imports;
 mod json_codegen;
 mod map_type;

@@ -260,6 +260,12 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
             "idiomatic_imports" => {
                 codegen.idiomatic_imports = parse_bool("idiomatic_imports", value)?
             }
+            // `idiomatic_field_names=true` converts camelCase proto field and
+            // oneof names to snake_case Rust identifiers (prost parity). Wire,
+            // JSON, and text-format names are unaffected. Default off.
+            "idiomatic_field_names" => {
+                codegen.idiomatic_field_names = parse_bool("idiomatic_field_names", value)?
+            }
             // `type_name_prefix=Rpc` prepends a prefix to every generated
             // message/enum type name (and their view types). The value is
             // passed through verbatim; buffa-codegen rejects anything that
@@ -405,6 +411,18 @@ mod tests {
     fn idiomatic_imports_defaults_off() {
         let config = parse_config("").unwrap();
         assert!(!config.codegen.idiomatic_imports);
+    }
+
+    #[test]
+    fn idiomatic_field_names_true() {
+        let config = parse_config("idiomatic_field_names=true").unwrap();
+        assert!(config.codegen.idiomatic_field_names);
+    }
+
+    #[test]
+    fn idiomatic_field_names_defaults_off() {
+        let config = parse_config("").unwrap();
+        assert!(!config.codegen.idiomatic_field_names);
     }
 
     #[test]

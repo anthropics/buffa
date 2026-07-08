@@ -278,7 +278,7 @@ fn generate_message_with_nesting(
         .filter_map(|(idx, oneof)| {
             let enum_ident = oneof_idents.get(&idx)?;
             let oneof_name = oneof.name.as_deref()?;
-            let field_ident = make_field_ident(oneof_name);
+            let field_ident = ctx.oneof_ident(oneof_name);
             let opt = resolver.option_at(ctx, nesting);
             let tokens = quote! {
                 #oneof_serde_attr
@@ -785,8 +785,15 @@ fn generate_message_with_nesting(
     let message_doc =
         crate::comments::doc_attrs_resolved(ctx.comment(proto_fqn), proto_fqn, &ctx.type_map);
 
+    // Scoped #[allow(non_snake_case)] for messages whose emitted member
+    // names are non-snake (verbatim camelCase protos, or the collision
+    // plan's verbatim fallback under idiomatic_field_names). Empty for
+    // conforming messages, so their output is unchanged. Applied to the
+    // struct and to the impls that define per-field methods.
+    let non_snake_attr = ctx.message_non_snake_attr(msg);
     let with_setters_impl = if ctx.config.generate_with_setters && !setter_methods.is_empty() {
         quote! {
+            #non_snake_attr
             impl #name_ident {
                 #setter_methods
             }
@@ -802,6 +809,7 @@ fn generate_message_with_nesting(
         #arbitrary_derive
         #custom_type_attrs
         #custom_message_attrs
+        #non_snake_attr
         pub struct #name_ident {
             #(#direct_fields)*
             #(#oneof_struct_fields)*
@@ -1160,10 +1168,13 @@ fn generate_custom_deserialize(
         (quote! {}, quote! {}, quote! {})
     };
 
-    // Assemble the impl block.
+    // Assemble the impl block. The non-snake allow covers the `__f_<name>` /
+    // `__oneof_<name>` locals bound inside the visitor.
     let expecting_msg = format!("struct {name_ident}");
+    let non_snake_attr = ctx.message_non_snake_attr(msg);
 
     Ok(quote! {
+        #non_snake_attr
         impl<'de> serde::Deserialize<'de> for #name_ident {
             fn deserialize<D: serde::Deserializer<'de>>(d: D) -> ::core::result::Result<Self, D::Error> {
                 struct _V;
@@ -1242,8 +1253,13 @@ fn custom_deser_regular_field(
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let json_name = field.json_name.as_deref().unwrap_or(field_name);
-    let var_ident = format_ident!("__f_{}", field_name);
-    let field_ident = make_field_ident(field_name);
+    // The local is derived from the *resolved* Rust name so renamed-mode
+    // output stays free of non_snake_case warnings.
+    let var_ident = format_ident!(
+        "__f_{}",
+        ctx.field_rust_name(field_name, field.number.unwrap_or(0))
+    );
+    let field_ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
 
     let info = classify_field(scope, msg, field, resolver)?;
     let rust_type = &info.rust_type;
@@ -1318,8 +1334,8 @@ fn custom_deser_oneof_group(
         None => return Ok(None),
     };
 
-    let var_ident = format_ident!("__oneof_{}", oneof_name);
-    let field_ident = make_field_ident(oneof_name);
+    let var_ident = format_ident!("__oneof_{}", ctx.oneof_rust_name(oneof_name));
+    let field_ident = ctx.oneof_ident(oneof_name);
 
     let var_decl =
         quote! { let mut #var_ident: ::core::option::Option<#oneof_prefix #enum_ident> = None; };
@@ -1739,7 +1755,7 @@ fn generate_field(
     }
 
     let info = classify_field(scope, msg, field, resolver)?;
-    let rust_name = make_field_ident(field_name);
+    let rust_name = ctx.field_ident(field_name, field_number);
 
     let field_fqn = format!("{}.{}", proto_fqn, field_name);
     let tag_line = format!("Field {field_number}: `{field_name}`");
@@ -1792,8 +1808,17 @@ fn generate_field(
         quote! {}
     };
     let rust_type = &info.struct_field_type;
+    // Collision-plan surfacing: a doc note on adjusted names (parity with
+    // the enum-alias doc note). Empty in the common (non-collision) case
+    // and always empty with the flag off. Non-snake fallback names are
+    // covered by the struct-level `message_non_snake_attr`.
+    let rename_note = match ctx.field_rename_note(field_name, field_number) {
+        Some(note) => quote! { #[doc = ""] #[doc = #note] },
+        None => quote! {},
+    };
     let tokens = quote! {
         #doc
+        #rename_note
         #serde_attr
         #arbitrary_field_attr
         #custom_field_attrs
@@ -1806,7 +1831,7 @@ fn generate_field(
     // is_optional=true (explicit-presence default) while is_repeated=true.
     let setter = if let Some(inner) = &info.inner_opt_type {
         let field_type = crate::impl_message::effective_type(ctx, field, features);
-        let setter_ident = format_ident!("with_{}", field_name);
+        let setter_ident = format_ident!("with_{}", ctx.field_rust_name(field_name, field_number));
         // impl Into<T> where a common conversion exists:
         //   String: &str. Vec<u8>: &[u8; N] (From<&[T; N]> stable since Rust 1.74).
         //   bytes::Bytes: Vec<u8>. EnumValue<E>: E (From<E> impl on EnumValue).
@@ -2470,7 +2495,7 @@ fn generate_custom_default(
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?;
-        let field_ident = make_field_ident(field_name);
+        let field_ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
         let field_type = crate::impl_message::effective_type(ctx, field, features);
         let is_optional = is_explicit_presence_scalar(field, field_type, features);
         let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;
@@ -2509,7 +2534,7 @@ fn generate_custom_default(
             .iter()
             .any(|f| is_real_oneof_member(f) && f.oneof_index == Some(idx as i32));
         if has_real {
-            let ident = make_field_ident(oneof_name);
+            let ident = ctx.oneof_ident(oneof_name);
             field_inits.push(quote! { #ident: ::core::default::Default::default(), });
         }
     }

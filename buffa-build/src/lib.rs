@@ -256,9 +256,10 @@ impl Config {
     /// `buffa-descriptor`-dependent (and `std`-requiring) reflection surface to
     /// be opt-in. `buffa-types` is the motivating case.
     ///
-    /// **Experimental and `#[doc(hidden)]`**, paired with
-    /// [`generate_reflection_vtable`](Self::generate_reflection_vtable) until the
-    /// public `ReflectMode` selector lands.
+    /// **Experimental and `#[doc(hidden)]`.** This knob only controls the
+    /// crate-feature gate on the emitted reflection impls; the reflection
+    /// codegen mode itself is selected via the public
+    /// [`reflect_mode`](Self::reflect_mode) selector.
     #[doc(hidden)]
     #[must_use]
     pub fn gate_reflect_on_crate_feature(mut self, enabled: bool) -> Self {
@@ -534,6 +535,32 @@ impl Config {
     #[must_use]
     pub fn idiomatic_enum_aliases(mut self, enabled: bool) -> Self {
         self.codegen_config.idiomatic_enum_aliases = enabled;
+        self
+    }
+
+    /// Convert proto field and oneof names to idiomatic snake_case Rust
+    /// identifiers (`webMessageInfo` → `web_message_info`), matching
+    /// prost-build's behavior for protos that use camelCase field names.
+    /// Default: `false` (proto names are emitted verbatim).
+    ///
+    /// Only the generated Rust source names change; the wire format, JSON
+    /// (`json_name` plus the original proto name accepted on parse), text
+    /// format, and reflection lookups all keep the descriptor's names, so the
+    /// option is fully wire- and JSON-compatible. Enum values are covered by
+    /// [`idiomatic_enum_aliases`](Self::idiomatic_enum_aliases) instead.
+    ///
+    /// Word boundaries match prost-build's (heck's) segmentation, including
+    /// digit-transparent case boundaries (`v2Field` → `v2_field`); unlike
+    /// prost, authored underscores are always preserved (`_foo` stays
+    /// `_foo`), so already-snake_case names are never rewritten.
+    ///
+    /// If two members of one message collide after conversion (`userName` and
+    /// `user_name` — rejected by protoc for proto3/editions, so proto2 only),
+    /// the names are adjusted deterministically and a build warning is
+    /// emitted; see [`CodeGenConfig::idiomatic_field_names`] for the rules.
+    #[must_use]
+    pub fn idiomatic_field_names(mut self, enabled: bool) -> Self {
+        self.codegen_config.idiomatic_field_names = enabled;
         self
     }
 

@@ -28,6 +28,14 @@
 //! fused forms; the `encode_*` primitives remain the building blocks for
 //! packed payloads and hand-written codecs.
 //!
+//! On the decode side, the varint-family decoders have force-inlined
+//! `_packed` twins ([`decode_int32_packed`] etc.) for per-element use
+//! inside packed-repeated loops, where removing the per-element call
+//! boundary is a large measured win. They are not general-purpose
+//! replacements — see [`decode_int32_packed`] for the trade-off — and
+//! fixed-width types have no twins because their decoders have no
+//! out-of-line fast path to remove.
+//!
 //! # Wire format reference
 //!
 //! Fixed-width types are encoded as little-endian bytes on the wire, per the
@@ -53,18 +61,18 @@ use crate::error::DecodeError;
 /// Validate UTF-8 and return the borrowed `&str`.
 ///
 /// With the `fast-utf8` feature (on by default) this dispatches to
-/// [`smoothutf8::to_str`], which is faster than [`core::str::from_utf8`] on
-/// the short ASCII strings typical of protobuf field values and (when `std`
-/// is also enabled) delegates inputs of 128 bytes or more to `simdutf8`.
-/// Without the feature, it is exactly `core::str::from_utf8`. Either way the
-/// check is the full Unicode §3.9 well-formedness rule, so the
-/// `from_utf8_unchecked` calls that consume the result are sound.
+/// [`smoothutf8::from_utf8`], which is faster than [`core::str::from_utf8`]
+/// on the short ASCII strings typical of protobuf field values and (when
+/// `std` is also enabled) delegates inputs of 128 bytes or more to
+/// `simdutf8`. Without the feature, it is exactly `core::str::from_utf8`.
+/// Either way the check is the full Unicode §3.9 well-formedness rule, so
+/// the `from_utf8_unchecked` calls that consume the result are sound.
 // The explicit `return`s are required by the mutually-exclusive `#[cfg]` arms.
 #[allow(clippy::needless_return)]
 #[inline(always)]
 pub(crate) fn validate_str(bytes: &[u8]) -> Result<&str, DecodeError> {
     #[cfg(feature = "fast-utf8")]
-    return smoothutf8::to_str(bytes).ok_or(DecodeError::InvalidUtf8);
+    return smoothutf8::from_utf8(bytes).ok_or(DecodeError::InvalidUtf8);
     #[cfg(not(feature = "fast-utf8"))]
     return core::str::from_utf8(bytes).map_err(|_| DecodeError::InvalidUtf8);
 }
@@ -272,6 +280,92 @@ pub fn encode_bool(value: bool, buf: &mut impl BufMut) {
 #[inline]
 pub fn decode_bool(buf: &mut impl Buf) -> Result<bool, DecodeError> {
     let v = decode_varint(buf)?;
+    Ok(v != 0)
+}
+
+// ---------------------------------------------------------------------------
+// Packed-loop decode variants — varint types
+// ---------------------------------------------------------------------------
+
+/// Force-inlined variant of [`decode_int32`] for packed-repeated element
+/// loops; identical semantics, decodes **one element** per call.
+///
+/// Generated packed-field decode loops call this once per element over the
+/// length-delimited sub-buffer; removing the per-element out-of-line call
+/// is a measured ~16–28% win on packed-varint-dense shapes (see
+/// `encoding::decode_varint_packed` for the measurement anchor). It is
+/// **not** a faster general-purpose [`decode_int32`]: each call site
+/// expands the full unrolled varint decoder (a few hundred bytes), so
+/// using it outside a tight per-element loop bloats the enclosing function
+/// and typically loses to the plain version. Prefer [`decode_int32`] for
+/// singular fields and anything that is not a packed loop.
+///
+/// Only varint-family types have `_packed` twins — fixed-width decoders
+/// ([`decode_fixed32`] etc.) have no out-of-line fast path to remove.
+#[inline(always)]
+pub fn decode_int32_packed(buf: &mut impl Buf) -> Result<i32, DecodeError> {
+    let v = crate::encoding::decode_varint_packed(buf)?;
+    Ok(v as i32)
+}
+
+/// Force-inlined variant of [`decode_int64`] for packed-repeated element
+/// loops; identical semantics, decodes one element per call. Not a faster
+/// general-purpose decoder — see [`decode_int32_packed`] for when to use
+/// the `_packed` family and when to prefer the plain version.
+#[inline(always)]
+pub fn decode_int64_packed(buf: &mut impl Buf) -> Result<i64, DecodeError> {
+    let v = crate::encoding::decode_varint_packed(buf)?;
+    Ok(v as i64)
+}
+
+/// Force-inlined variant of [`decode_uint32`] for packed-repeated element
+/// loops; identical semantics, decodes one element per call. Not a faster
+/// general-purpose decoder — see [`decode_int32_packed`] for when to use
+/// the `_packed` family and when to prefer the plain version.
+#[inline(always)]
+pub fn decode_uint32_packed(buf: &mut impl Buf) -> Result<u32, DecodeError> {
+    let v = crate::encoding::decode_varint_packed(buf)?;
+    Ok(v as u32)
+}
+
+/// Force-inlined variant of [`decode_uint64`] for packed-repeated element
+/// loops; identical semantics, decodes one element per call. Not a faster
+/// general-purpose decoder — see [`decode_int32_packed`] for when to use
+/// the `_packed` family and when to prefer the plain version.
+#[inline(always)]
+pub fn decode_uint64_packed(buf: &mut impl Buf) -> Result<u64, DecodeError> {
+    crate::encoding::decode_varint_packed(buf)
+}
+
+/// Force-inlined variant of [`decode_sint32`] for packed-repeated element
+/// loops; identical semantics, decodes one element per call. Not a faster
+/// general-purpose decoder — see [`decode_int32_packed`] for when to use
+/// the `_packed` family and when to prefer the plain version.
+#[inline(always)]
+pub fn decode_sint32_packed(buf: &mut impl Buf) -> Result<i32, DecodeError> {
+    let v = crate::encoding::decode_varint_packed(buf)?;
+    // Truncate to u32 before ZigZag decode (spec: upper bits are discarded
+    // for 32-bit types).
+    Ok(zigzag_decode_i32(v as u32))
+}
+
+/// Force-inlined variant of [`decode_sint64`] for packed-repeated element
+/// loops; identical semantics, decodes one element per call. Not a faster
+/// general-purpose decoder — see [`decode_int32_packed`] for when to use
+/// the `_packed` family and when to prefer the plain version.
+#[inline(always)]
+pub fn decode_sint64_packed(buf: &mut impl Buf) -> Result<i64, DecodeError> {
+    let v = crate::encoding::decode_varint_packed(buf)?;
+    Ok(zigzag_decode_i64(v))
+}
+
+/// Force-inlined variant of [`decode_bool`] for packed-repeated element
+/// loops; identical semantics, decodes one element per call. Not a faster
+/// general-purpose decoder — see [`decode_int32_packed`] for when to use
+/// the `_packed` family and when to prefer the plain version.
+#[inline(always)]
+pub fn decode_bool_packed(buf: &mut impl Buf) -> Result<bool, DecodeError> {
+    let v = crate::encoding::decode_varint_packed(buf)?;
     Ok(v != 0)
 }
 
@@ -701,33 +795,110 @@ pub fn merge_string(value: &mut String, buf: &mut impl Buf) -> Result<(), Decode
 /// construct itself directly from the wire — validating (or skipping validation)
 /// and choosing borrow-vs-own on its own terms.
 ///
-/// The decoder hands over `Borrowed` when the field's bytes are contiguous in
-/// the current input chunk (the common case for slice- and `Bytes`-backed
-/// sources) and `Owned` only otherwise (e.g. a field straddling a `Chain`
-/// boundary). A representation validates-and-borrows with
+/// The decoder hands over a borrowed payload when the field's bytes are
+/// contiguous in the current input chunk (the common case for slice- and
+/// `Bytes`-backed sources) and an owned [`Bytes`] only otherwise (e.g. a field
+/// straddling a `Chain` boundary). A representation validates-and-borrows with
 /// [`to_str`](Self::to_str), reads the raw bytes with
 /// [`as_slice`](Self::as_slice) (always zero-copy), or takes ownership with
-/// [`into_bytes`](Self::into_bytes) (zero-copy only for an `Owned` payload —
-/// see that method).
-#[derive(Debug, Clone)]
-pub enum WirePayload<'a> {
-    /// The field's bytes borrowed directly from the input buffer.
-    Borrowed(&'a [u8]),
-    /// The field's bytes owned as `Bytes` (reference-counted). Produced today
-    /// only for multi-chunk sources; a single-chunk source — including a single
-    /// `Bytes` buffer — currently arrives as `Borrowed`.
+/// [`into_bytes`](Self::into_bytes) (zero-copy only for an owned payload — see
+/// that method).
+///
+/// Opaque so that a borrowed payload can carry the surrounding wire-buffer tail
+/// for the slack-aware UTF-8 validator without exposing it to consumers; use the
+/// accessors above and the [`borrowed`](Self::borrowed) / [`owned`](Self::owned)
+/// constructors.
+#[derive(Clone)]
+pub struct WirePayload<'a>(WirePayloadRepr<'a>);
+
+impl core::fmt::Debug for WirePayload<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // Print only the field bytes, never the surrounding tail (which for a
+        // decoder-constructed payload is subsequent fields' wire bytes).
+        f.debug_struct("WirePayload")
+            .field("bytes", &self.as_slice())
+            .field("owned", &self.is_owned())
+            .finish()
+    }
+}
+
+#[derive(Clone)]
+enum WirePayloadRepr<'a> {
+    /// `chunk[..len]` is the field; `chunk[len..]` is the surrounding
+    /// wire-buffer tail (empty when constructed via `WirePayload::borrowed`).
+    /// Invariant: `len <= chunk.len()`.
+    Borrowed {
+        chunk: &'a [u8],
+        len: usize,
+    },
     Owned(Bytes),
 }
 
-impl WirePayload<'_> {
+impl<'a> WirePayload<'a> {
+    /// A payload borrowing exactly `field` (no surrounding wire buffer).
+    ///
+    /// Tests and hand-built payloads use this; the decoder uses an internal
+    /// constructor that also carries the surrounding tail so
+    /// [`to_str`](Self::to_str) can take the slack-aware fast path.
+    #[inline]
+    #[must_use]
+    pub const fn borrowed(field: &'a [u8]) -> Self {
+        Self(WirePayloadRepr::Borrowed {
+            chunk: field,
+            len: field.len(),
+        })
+    }
+
+    /// A payload owning `bytes`.
+    #[inline]
+    #[must_use]
+    pub const fn owned(bytes: Bytes) -> Self {
+        Self(WirePayloadRepr::Owned(bytes))
+    }
+
+    /// `chunk[..len]` is the field; `chunk[len..]` is readable tail. The caller
+    /// has established `len <= chunk.len()` (the EOF check before every call).
+    #[inline]
+    pub(crate) fn borrowed_in(chunk: &'a [u8], len: usize) -> Self {
+        debug_assert!(len <= chunk.len());
+        Self(WirePayloadRepr::Borrowed { chunk, len })
+    }
+
     /// Borrow the field's bytes (zero-copy in both variants).
     #[inline]
     #[must_use]
     pub fn as_slice(&self) -> &[u8] {
-        match self {
-            WirePayload::Borrowed(s) => s,
-            WirePayload::Owned(b) => b,
+        match &self.0 {
+            WirePayloadRepr::Borrowed { chunk, len } => &chunk[..*len],
+            WirePayloadRepr::Owned(b) => b,
         }
+    }
+
+    /// Field length in bytes.
+    #[inline]
+    #[must_use]
+    pub fn len(&self) -> usize {
+        match &self.0 {
+            WirePayloadRepr::Borrowed { len, .. } => *len,
+            WirePayloadRepr::Owned(b) => b.len(),
+        }
+    }
+
+    /// Whether the field is empty.
+    #[inline]
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Whether this payload owns its bytes (and so [`into_bytes`](Self::into_bytes)
+    /// is zero-copy). A `from_wire` impl that wants the [`Bytes`] only when it's
+    /// free can branch on this and fall back to [`as_slice`](Self::as_slice)
+    /// otherwise.
+    #[inline]
+    #[must_use]
+    pub fn is_owned(&self) -> bool {
+        matches!(self.0, WirePayloadRepr::Owned(_))
     }
 
     /// Borrow the payload as a `&str` if it is valid UTF-8.
@@ -735,7 +906,10 @@ impl WirePayload<'_> {
     /// Convenience for [`ProtoString::from_wire`] implementations; uses
     /// buffa's UTF-8 validator (so it picks up the `fast-utf8` feature when
     /// enabled) and returns the same [`DecodeError::InvalidUtf8`] the
-    /// built-in `String` representation would.
+    /// built-in `String` representation would. For a borrowed payload that
+    /// carries surrounding wire-buffer tail (the decoder's common case) this
+    /// reaches the slack-aware fast path; the `borrowed`/`owned` constructors
+    /// have no tail, so they take the plain validator.
     ///
     /// # Errors
     ///
@@ -743,23 +917,30 @@ impl WirePayload<'_> {
     #[inline]
     #[must_use = "the validated `&str` is the only way to use the payload as a string"]
     pub fn to_str(&self) -> Result<&str, DecodeError> {
-        validate_str(self.as_slice())
+        match &self.0 {
+            // SAFETY: the `Borrowed` invariant is `len <= chunk.len()`,
+            // satisfying `validate_str_in`'s precondition. Established at
+            // `borrowed_in` (debug-asserted) by the decoder's preceding EOF
+            // check, and at `borrowed` by `len = field.len()`.
+            WirePayloadRepr::Borrowed { chunk, len } => unsafe { validate_str_in(chunk, *len) },
+            WirePayloadRepr::Owned(b) => validate_str(b),
+        }
     }
 
     /// Take ownership of the field's bytes as [`Bytes`].
     ///
-    /// Zero-copy only for an `Owned` payload, which today is produced only for
+    /// Zero-copy only for an owned payload, which today is produced only for
     /// multi-chunk sources — a single-chunk source (including a single `Bytes`
-    /// buffer) arrives as `Borrowed` and is copied here. For a guaranteed
-    /// zero-copy `bytes` field path use the built-in `bytes::Bytes` representation
+    /// buffer) arrives borrowed and is copied here. For a guaranteed zero-copy
+    /// `bytes` field path use the built-in `bytes::Bytes` representation
     /// ([`decode_bytes_to_bytes`]); single-chunk-`Bytes` zero-copy for custom
     /// types is a planned additive enhancement.
     #[inline]
     #[must_use]
     pub fn into_bytes(self) -> Bytes {
-        match self {
-            WirePayload::Borrowed(s) => Bytes::copy_from_slice(s),
-            WirePayload::Owned(b) => b,
+        match self.0 {
+            WirePayloadRepr::Borrowed { chunk, len } => Bytes::copy_from_slice(&chunk[..len]),
+            WirePayloadRepr::Owned(b) => b,
         }
     }
 }
@@ -793,14 +974,15 @@ pub(crate) fn read_field_payload<R>(
     }
     let chunk = buf.chunk();
     if chunk.len() >= len {
-        // Whole field is contiguous: hand over a borrowed slice (zero-copy).
-        let r = f(WirePayload::Borrowed(&chunk[..len]))?;
+        // Whole field is contiguous: hand over a borrowed payload carrying the
+        // full remaining chunk (so `to_str` can take the slack-aware path).
+        let r = f(WirePayload::borrowed_in(chunk, len))?;
         buf.advance(len);
         Ok(r)
     } else {
         // Field straddles chunk boundaries: take an owned `Bytes` (zero-copy
         // when `buf` is `Bytes`-backed, a copy otherwise).
-        f(WirePayload::Owned(buf.copy_to_bytes(len)))
+        f(WirePayload::owned(buf.copy_to_bytes(len)))
     }
 }
 
@@ -1558,11 +1740,32 @@ mod tests {
 
     #[test]
     fn wire_payload_to_str() {
-        assert_eq!(WirePayload::Borrowed(b"abc").to_str().unwrap(), "abc");
+        assert_eq!(WirePayload::borrowed(b"abc").to_str().unwrap(), "abc");
         assert!(matches!(
-            WirePayload::Borrowed(&[0xFF]).to_str(),
+            WirePayload::borrowed(&[0xFF]).to_str(),
             Err(DecodeError::InvalidUtf8)
         ));
+        // Decoder-constructed payload with surrounding tail: `to_str` reaches
+        // `validate_str_in` and the tail is excluded from the result.
+        let wire = b"abc\x00\x00\x00\x00\x00\x00\x00\x00trailing";
+        assert_eq!(WirePayload::borrowed_in(wire, 3).to_str().unwrap(), "abc");
+        assert_eq!(WirePayload::borrowed_in(wire, 3).as_slice(), b"abc");
+        assert_eq!(WirePayload::borrowed_in(wire, 3).len(), 3);
+        // Tail bytes after an invalid field don't rescue it.
+        assert!(matches!(
+            WirePayload::borrowed_in(b"\xFFtailtailtail", 1).to_str(),
+            Err(DecodeError::InvalidUtf8)
+        ));
+        // Owned path is unchanged.
+        let p = WirePayload::owned(Bytes::from_static(b"hi"));
+        assert_eq!(p.to_str().unwrap(), "hi");
+        assert!(p.is_owned());
+        assert!(!WirePayload::borrowed(b"hi").is_owned());
+        assert!(WirePayload::borrowed(b"").is_empty());
+        // Debug never prints the surrounding tail.
+        let dbg = alloc::format!("{:?}", WirePayload::borrowed_in(wire, 3));
+        assert!(dbg.contains("[97, 98, 99]"), "{dbg}");
+        assert!(!dbg.contains("trailing"), "{dbg}");
     }
 
     /// A custom string representation that enforces an extra invariant in
@@ -2173,6 +2376,62 @@ mod tests {
         // but the decoder must accept any non-zero varint per the spec.
         let decoded = decode_bool(&mut &[0x80u8, 0x01][..]).unwrap();
         assert!(decoded);
+    }
+
+    #[test]
+    fn test_packed_scalar_decoders_match_plain() {
+        // Every `decode_*_packed` must agree with its plain counterpart on
+        // the same wire bytes — same value, same truncation/zigzag/bool
+        // conversion, same buffer advance.
+        let raw_values: &[u64] = &[
+            0,
+            1,
+            127,
+            128,
+            300,
+            u64::from(u32::MAX),
+            u64::from(u32::MAX) + 1,
+            u64::MAX,
+        ];
+        for &raw in raw_values {
+            let mut buf = Vec::new();
+            encode_varint(raw, &mut buf);
+            assert_eq!(
+                decode_int32(&mut buf.as_slice()),
+                decode_int32_packed(&mut buf.as_slice()),
+                "int32 parity failed for raw {raw}"
+            );
+            assert_eq!(
+                decode_int64(&mut buf.as_slice()),
+                decode_int64_packed(&mut buf.as_slice()),
+                "int64 parity failed for raw {raw}"
+            );
+            assert_eq!(
+                decode_uint32(&mut buf.as_slice()),
+                decode_uint32_packed(&mut buf.as_slice()),
+                "uint32 parity failed for raw {raw}"
+            );
+            assert_eq!(
+                decode_uint64(&mut buf.as_slice()),
+                decode_uint64_packed(&mut buf.as_slice()),
+                "uint64 parity failed for raw {raw}"
+            );
+            assert_eq!(
+                decode_sint32(&mut buf.as_slice()),
+                decode_sint32_packed(&mut buf.as_slice()),
+                "sint32 parity failed for raw {raw}"
+            );
+            assert_eq!(
+                decode_sint64(&mut buf.as_slice()),
+                decode_sint64_packed(&mut buf.as_slice()),
+                "sint64 parity failed for raw {raw}"
+            );
+            assert_eq!(
+                decode_bool(&mut buf.as_slice()),
+                decode_bool_packed(&mut buf.as_slice()),
+                "bool parity failed for raw {raw}"
+            );
+        }
     }
 
     // -----------------------------------------------------------------------

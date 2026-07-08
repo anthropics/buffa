@@ -1,5 +1,6 @@
 //! Code generation context and descriptor-to-Rust mapping state.
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use crate::features::{self, ResolvedFeatures};
@@ -113,6 +114,15 @@ pub struct CodeGenContext<'a> {
     ///
     /// [`generate_with_diagnostics`]: crate::generate_with_diagnostics
     warnings: std::cell::RefCell<Vec<crate::CodeGenWarning>>,
+    /// Field-rename exceptions for `CodeGenConfig::idiomatic_field_names`:
+    /// `(proto_name, field_number)` → final Rust source name, present only
+    /// for fields whose context-free snake_case conversion was adjusted by a
+    /// collision (see [`crate::field_names`]). Empty when the option is off
+    /// or no collisions exist — the common case.
+    field_renames: HashMap<(String, i32), String>,
+    /// Oneof proto names that keep their verbatim spelling under
+    /// `idiomatic_field_names` (their snake_case conversion collided).
+    oneof_keep_verbatim: HashSet<String>,
     /// Package-root import phase for `CodeGenConfig::idiomatic_imports`
     /// (file_per_package mode only). [`ImportsPhase::Off`] outside the
     /// two-pass window, so every path resolver below is a no-op by default.
@@ -422,6 +432,17 @@ impl<'a> CodeGenContext<'a> {
             }
         }
 
+        // Plan the idiomatic field-name conversion up front so every
+        // emission site resolves the same Rust name for a field. The plan's
+        // collision warnings are seeded into the sink now and drained with
+        // the rest after generation.
+        let (field_renames, oneof_keep_verbatim, plan_warnings) = if config.idiomatic_field_names {
+            let plan = crate::field_names::plan_field_names(files);
+            (plan.field_renames, plan.oneof_keep_verbatim, plan.warnings)
+        } else {
+            (HashMap::new(), HashSet::new(), Vec::new())
+        };
+
         Self {
             files,
             config,
@@ -432,8 +453,132 @@ impl<'a> CodeGenContext<'a> {
             nested_module_names,
             unboxed_oneof_variants,
             inlined_message_fields,
-            warnings: std::cell::RefCell::new(Vec::new()),
+            field_renames,
+            oneof_keep_verbatim,
+            warnings: std::cell::RefCell::new(plan_warnings),
             imports: std::cell::RefCell::new(crate::imports::ImportsPhase::Off),
+        }
+    }
+
+    /// The Rust source name for a proto field (pre keyword escaping).
+    ///
+    /// With `idiomatic_field_names` off this is the proto name verbatim.
+    /// With it on, the name is snake_case-converted, unless the collision
+    /// plan recorded an exception for `(name, number)` (see
+    /// [`crate::field_names`]).
+    pub(crate) fn field_rust_name<'n>(&'n self, name: &'n str, number: i32) -> Cow<'n, str> {
+        if !self.config.idiomatic_field_names {
+            return Cow::Borrowed(name);
+        }
+        if !self.field_renames.is_empty() {
+            if let Some(renamed) = self.field_renames.get(&(name.to_string(), number)) {
+                return Cow::Borrowed(renamed.as_str());
+            }
+        }
+        let converted = crate::field_names::idiomatic_snake_case(name);
+        if converted == name {
+            Cow::Borrowed(name)
+        } else {
+            Cow::Owned(converted)
+        }
+    }
+
+    /// The Rust field identifier for a proto field:
+    /// [`field_rust_name`](Self::field_rust_name) plus keyword escaping.
+    pub(crate) fn field_ident(&self, name: &str, number: i32) -> proc_macro2::Ident {
+        crate::idents::make_field_ident(&self.field_rust_name(name, number))
+    }
+
+    /// The Rust source name for a oneof (pre keyword escaping).
+    ///
+    /// Mirrors [`field_rust_name`](Self::field_rust_name); a oneof whose
+    /// conversion collided keeps its verbatim proto name.
+    pub(crate) fn oneof_rust_name<'n>(&'n self, name: &'n str) -> Cow<'n, str> {
+        if !self.config.idiomatic_field_names || self.oneof_keep_verbatim.contains(name) {
+            return Cow::Borrowed(name);
+        }
+        let converted = crate::field_names::idiomatic_snake_case(name);
+        if converted == name {
+            Cow::Borrowed(name)
+        } else {
+            Cow::Owned(converted)
+        }
+    }
+
+    /// The Rust field identifier for a oneof:
+    /// [`oneof_rust_name`](Self::oneof_rust_name) plus keyword escaping.
+    pub(crate) fn oneof_ident(&self, name: &str) -> proc_macro2::Ident {
+        crate::idents::make_field_ident(&self.oneof_rust_name(name))
+    }
+
+    /// Doc note for a field whose Rust name was *adjusted* by the
+    /// `idiomatic_field_names` collision plan (an `_f<number>` suffix or a
+    /// verbatim fallback). `None` for the plain conversion — there the
+    /// `Field N: `name`` doc tag already discloses the proto name.
+    pub(crate) fn field_rename_note(&self, name: &str, number: i32) -> Option<String> {
+        if !self.config.idiomatic_field_names || self.field_renames.is_empty() {
+            return None;
+        }
+        let resolved = self.field_renames.get(&(name.to_string(), number))?;
+        Some(format!(
+            " Note: the snake_case conversion of `{name}` collides with another \
+             member of this message; the Rust name was adjusted to `{resolved}` \
+             (`_f<n>` suffixes carry the field number)."
+        ))
+    }
+
+    /// `#[allow(non_snake_case)]` when any of `msg`'s emitted member names —
+    /// non-oneof-member fields and real oneofs, after `idiomatic_field_names`
+    /// resolution — contains an uppercase character (the rustc lint's
+    /// trigger; proto identifiers are ASCII). Empty for conforming messages,
+    /// so their generated output is unchanged.
+    ///
+    /// Applied at the struct and impl level (struct declarations and the
+    /// setter / `Deserialize` / `has_*` / owned-view-wrapper impls) rather
+    /// than per member, so it covers the pub fields *and* every method and
+    /// local whose name derives from them. Detection is independent of
+    /// `idiomatic_field_names`: a verbatim camelCase proto compiled with the
+    /// option off gets the same scoped allows, keeping consumer crates
+    /// warning-free either way.
+    pub(crate) fn message_non_snake_attr(&self, msg: &DescriptorProto) -> proc_macro2::TokenStream {
+        let non_snake = |s: &str| s.contains(|c: char| c.is_ascii_uppercase());
+        let mut real_oneofs: HashSet<i32> = HashSet::new();
+        let mut found = false;
+        for field in &msg.field {
+            let Some(name) = field.name.as_deref() else {
+                continue;
+            };
+            // Mirrors `impl_message::is_real_oneof_member` (not imported to
+            // keep context.rs free of emission-module dependencies).
+            if field.oneof_index.is_some() && !field.proto3_optional.unwrap_or(false) {
+                if let Some(idx) = field.oneof_index {
+                    real_oneofs.insert(idx);
+                }
+                continue;
+            }
+            if non_snake(&self.field_rust_name(name, field.number.unwrap_or(0))) {
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            for (idx, oneof) in msg.oneof_decl.iter().enumerate() {
+                let Some(name) = oneof.name.as_deref() else {
+                    continue;
+                };
+                if !real_oneofs.contains(&i32::try_from(idx).unwrap_or(i32::MAX)) {
+                    continue;
+                }
+                if non_snake(&self.oneof_rust_name(name)) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if found {
+            quote::quote! { #[allow(non_snake_case)] }
+        } else {
+            proc_macro2::TokenStream::new()
         }
     }
 

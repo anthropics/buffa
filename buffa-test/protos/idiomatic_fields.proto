@@ -1,0 +1,31 @@
+// Fixture for `idiomatic_field_names(true)`: every field and oneof name is
+// deliberately camelCase (proto3-JSON style), as produced by protos synced
+// from external sources. The generated Rust API must be snake_case while the
+// wire format and JSON names keep the originals.
+syntax = "proto3";
+
+package test.idiofields;
+
+message WebMessageInfo {
+  string remoteJid = 1;
+  uint64 messageTimestamp = 2;
+  optional string pushName = 3;
+  repeated string mentionedJid = 4;
+  map<string, int32> reactionCounts = 5;
+  QuotedMessage quotedMessage = 6;
+  // Converts to the Rust keyword `type` -> must escape to `r#type`.
+  string Type = 7;
+  // Already snake_case: must pass through unchanged.
+  string plain_field = 8;
+  // Digit-transparent boundary: -> ip_v6_address (heck/prost-compatible).
+  string ipV6Address = 9;
+
+  oneof messageContent {
+    string textBody = 10;
+    bytes imagePayload = 11;
+  }
+
+  message QuotedMessage {
+    string stanzaId = 1;
+  }
+}
