@@ -38,6 +38,7 @@ pub(crate) mod imports;
 pub(crate) mod lazy_view;
 pub(crate) mod message;
 pub(crate) mod oneof;
+pub(crate) mod open_enums;
 pub(crate) mod owned_view;
 pub(crate) mod reflect;
 pub(crate) mod reflect_owned;
@@ -930,6 +931,38 @@ pub struct CodeGenConfig {
     /// scalar/string/bytes/message rules and substituted into the collection
     /// template.
     pub repeated_fields: Vec<(String, RepeatedRepr)>,
+    /// Fully-qualified proto path prefixes whose closed enums (or closed enum
+    /// fields) should use the open enum representation.
+    ///
+    /// Matching enum fields generate as `EnumValue<E>` instead of `E`, making
+    /// unknown wire values directly visible as `EnumValue::Unknown(n)`. This is
+    /// a deliberate override of closed-enum field semantics: for matching
+    /// fields, an unknown value makes the field read as present instead of
+    /// unset with the raw value represented through unknown fields.
+    ///
+    /// Paths are matched with the same proto-segment-aware logic as
+    /// [`bytes_fields`](Self::bytes_fields). A rule may name an enum type
+    /// (`".my.pkg.E"`), a field (`".my.pkg.Msg.e"`), a package/message prefix,
+    /// or `"."` for every enum. Leading dots are optional, trailing dots are
+    /// ignored, and blank/all-dot entries match nothing. Map enum values match
+    /// the outer map field path; oneof enum variants match the direct field
+    /// path.
+    ///
+    /// Implemented as descriptor feature injection: an enum-type rule sets
+    /// `features.enum_type = OPEN` on the matched enum's descriptor (the same
+    /// construct protoc's proto2 → editions migration emits), and a field rule
+    /// sets a field-level `enum_type` override honored by buffa's feature
+    /// resolution. The mutated descriptors are what codegen — and, under
+    /// reflection, the embedded descriptor pool — see: for enum-type rules,
+    /// runtime reflection and descriptor-driven dynamic JSON agree with the
+    /// generated types; for field-scoped rules the enum's declared type is
+    /// unchanged, so descriptor-driven codecs keep closed-enum semantics for
+    /// that enum. A rule that matches nothing is reported as
+    /// [`CodeGenWarning::OpenEnumRuleMatchedNothing`] through
+    /// [`generate_with_diagnostics`] (the plain [`generate`] entry point
+    /// discards warnings). The default is empty, so generated output and
+    /// closed-enum semantics are unchanged unless configured.
+    pub open_enums_in: Vec<String>,
     /// Fully-qualified proto paths whose message-typed oneof variants should
     /// **not** be wrapped in `Box<T>`. By default every message/group oneof
     /// variant is boxed (so recursive types compile); entries here opt matching
@@ -1347,6 +1380,7 @@ impl Default for CodeGenConfig {
             map_fields: Vec::new(),
             pointer_fields: Vec::new(),
             repeated_fields: Vec::new(),
+            open_enums_in: Vec::new(),
             unboxed_oneof_fields: Vec::new(),
             strict_utf8_mapping: false,
             allow_message_set: false,
@@ -1598,6 +1632,15 @@ pub enum CodeGenWarning {
         /// by proto name.
         assignments: Vec<(String, String)>,
     },
+    /// An `open_enums_in` rule matched no enum and no enum field in the
+    /// compiled descriptor set, so it changed nothing. Usually a typo, a
+    /// missing nested-message segment, or a stale path after a proto rename —
+    /// the affected fields silently keep closed-enum semantics.
+    #[non_exhaustive]
+    OpenEnumRuleMatchedNothing {
+        /// The rule as configured (post-normalization).
+        rule: String,
+    },
 }
 
 impl core::fmt::Display for CodeGenWarning {
@@ -1661,6 +1704,14 @@ impl core::fmt::Display for CodeGenWarning {
                     "message `{message_name}`: idiomatic snake_case field names collide; \
                      adjusted: {} (wire/JSON/text names are unaffected)",
                     parts.join(", ")
+                )
+            }
+            Self::OpenEnumRuleMatchedNothing { rule } => {
+                write!(
+                    f,
+                    "open_enums_in rule '{rule}' matched no enum or enum field in the \
+                     compiled set; the affected fields keep closed-enum semantics — \
+                     check the path against the fully-qualified proto names"
                 )
             }
         }
@@ -1978,7 +2029,24 @@ pub fn generate_with_diagnostics(
 
     config.validate_type_name_prefix()?;
 
+    // `open_enums_in` is applied by mutating the descriptor set up front, so
+    // every downstream consumer — feature resolution, all generation paths,
+    // and the embedded reflection descriptor pool — reads the same overridden
+    // openness. With no rules configured this is a no-op borrow.
+    let opened = open_enums::apply_open_enum_overrides(file_descriptors, &config.open_enums_in);
+    let file_descriptors: &[FileDescriptorProto] =
+        opened.as_ref().map_or(file_descriptors, |o| &o.files);
+
     let ctx = context::CodeGenContext::for_generate(file_descriptors, files_to_generate, config);
+
+    // An inert rule means the user opted fields out of closed-enum semantics
+    // and silently didn't get it — warn per rule so typos surface at build
+    // time instead of as production presence-behavior surprises.
+    if let Some(o) = &opened {
+        for rule in &o.unmatched_rules {
+            ctx.warn(CodeGenWarning::OpenEnumRuleMatchedNothing { rule: rule.clone() });
+        }
+    }
 
     // Lazy views need the eager view machinery; warn once per run.
     if config.lazy_views && !config.generate_views {

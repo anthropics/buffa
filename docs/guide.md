@@ -183,6 +183,7 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.generate_json(bool)` | `false` | Generate serde Serialize/Deserialize for proto3 JSON |
 | `.generate_text(bool)` | `false` | Generate `impl buffa::text::TextFormat` for textproto encoding/decoding |
 | `.preserve_unknown_fields(bool)` | `true` | Preserve unknown fields for round-trip fidelity |
+| `.open_enums_in(&[...])` | — | Treat matching closed enums (or closed enum fields) as open in generated Rust (`EnumValue<E>`); see [Enums](#enumvaluet--type-safe-open-enums) for semantics |
 | `.generate_with_setters(bool)` | `true` | Emit `with_<name>()` builder-style setters for explicit-presence fields |
 | `.generate_arbitrary(bool)` | `false` | Emit `#[derive(arbitrary::Arbitrary)]` gated behind the `arbitrary` feature (for fuzzing) |
 | `.gate_impls_on_crate_features(bool)` | `false` | Wrap json/views/text impls in `#[cfg(feature = ...)]` for library crates whose generated code is a public dependency surface |
@@ -583,6 +584,7 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `allow_message_set=true` | Permit `option message_set_wire_format = true;` instead of rejecting it (default: false) |
 | `strict_utf8=true` | Map `string` fields to `Vec<u8>`/`&[u8]` (no UTF-8 validation) instead of `String`/`&str`. Alias: `strict_utf8_mapping`. |
 | `type_name_prefix=<prefix>` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to every generated message/enum type name (`message User` → `struct RpcUser`) |
+| `open_enums_in=<path>` | Treat matching closed enums (or closed enum fields) as open in generated Rust (`EnumValue<E>`). Repeatable |
 | `reflection=true` | Emit reflection support (vtable mode) plus an embedded per-package descriptor pool — see [Runtime reflection](#runtime-reflection) |
 | `reflect_mode=off\|bridge\|vtable` | Finer-grained reflection selector; `reflection=true` is shorthand for `vtable` |
 | `extern_path=.pkg=::rust` | Map a proto package — or a single type, e.g. `extern_path=.pkg.Type=::rust::Type` — to an external Rust path |
@@ -775,7 +777,11 @@ let i: i32 = msg.status.to_i32();
 let known: Option<Status> = msg.status.as_known();
 ```
 
-**Proto2 closed enums** use the bare enum type directly (`Status`, not `EnumValue<Status>`). Unknown values on the wire are routed to `unknown_fields` instead.
+**Proto2 closed enums** use the bare enum type directly (`Status`, not `EnumValue<Status>`). Unknown values on the wire are routed to `unknown_fields` instead. For migration or interop cases that need direct access to unknown closed-enum values, `open_enums_in` can opt selected closed enums into the open `EnumValue<E>` representation.
+
+`open_enums_in` paths can name an enum type (`.pkg.Status`), an individual field (`.pkg.Msg.status`), a package/message prefix, or `.` for every enum. For `map<string, Status> labels`, use the outer map field path (`.pkg.Msg.labels`). For a oneof enum variant, use the direct field path (`.pkg.Msg.status`), not the oneof group path. Prefix rules match every enum in the compiled descriptor set under that path, including enums declared in imported protos you don't generate code for. A rule that matches nothing produces a generation-time warning (surfaced as `cargo:warning` by `buffa-build`), since an inert rule silently leaves the affected fields closed.
+
+The option works by injecting `features.enum_type = OPEN` into the descriptors before generation — the same construct protoc's proto2 → editions migration emits. An enum-type rule opens the enum itself, so every field referencing it (in any package) uses `EnumValue<E>`; a field rule opens just that field via a field-level feature override. Because the injected features also flow into the embedded descriptor pool, runtime reflection and descriptor-driven dynamic JSON agree with the generated types for enum-level rules. A field-level rule is a buffa-specific override that other runtimes reading the exported descriptor set will ignore — and buffa's own descriptor-driven dynamic JSON likewise keeps closed-enum semantics for field-scoped rules (the enum's declared type is unchanged), so use an enum-type rule when reflective codecs must agree with generated code. Prefer enum-type rules when the descriptor set leaves the process (gRPC server reflection, exported `FILE_DESCRIPTOR_SET_BYTES`) — they are spec-valid editions descriptors, while field rules are faithful only to buffa consumers. The wire format is unchanged, and unknown values decoded into a matching field are not additionally retained in `unknown_fields`.
 
 **Iterating over variants.** Every generated enum implements [`Enumeration::values`], a static slice of all primary variants in proto declaration order:
 

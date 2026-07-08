@@ -621,6 +621,61 @@ impl Config {
         self
     }
 
+    /// Treat selected closed enums (or closed enum fields) as open in the
+    /// generated representation.
+    ///
+    /// Matching closed enum fields generate as `EnumValue<E>` instead of `E`,
+    /// so unknown wire values are directly visible as `EnumValue::Unknown(n)`.
+    /// This is an opt-in migration / interop mode: it deliberately changes
+    /// closed-enum presence behavior for matching fields, making an unknown
+    /// value read as present instead of unset with the raw value represented
+    /// through unknown fields.
+    ///
+    /// Each path is a fully-qualified proto path prefix. A rule may name an
+    /// enum type (for example, `".my.pkg.Status"`), a field
+    /// (`".my.pkg.Response.status"`), a package/message prefix, or `"."` for
+    /// every enum. A leading dot is added if missing. Map enum values match
+    /// the outer map field path; oneof enum variants match the direct field
+    /// path. Empty paths are warned about and ignored so `"."` remains the
+    /// only global opt-in spelling. (The `protoc-gen-buffa` plugin's
+    /// `open_enums_in=` option rejects empty paths with a hard error instead:
+    /// a stray build-script entry shouldn't fail the build, but plugin
+    /// options are usually machine-assembled, where an empty value is a bug.)
+    ///
+    /// Repeated calls accumulate. Rule order does not matter — a matched
+    /// enum or field is opened regardless of which rule matched it. A rule
+    /// that matches nothing produces a `cargo:warning` from this build
+    /// (surfaced via [`CodeGenWarning`](buffa_codegen::CodeGenWarning)),
+    /// since an inert rule silently leaves the affected fields on the
+    /// closed-enum semantics this option exists to change.
+    ///
+    /// The override is applied by injecting `features.enum_type = OPEN` into
+    /// the descriptors before generation: an enum-type rule opens the enum
+    /// itself (every field referencing it), a field rule opens just that
+    /// field. Under reflection, the embedded descriptor pool carries the
+    /// injected features: for enum-type rules, runtime reflection and
+    /// descriptor-driven dynamic JSON agree with the generated types; for
+    /// field-scoped rules the enum's declared type is unchanged, so
+    /// descriptor-driven codecs keep closed-enum semantics for that enum —
+    /// prefer enum-type rules when reflective codecs must agree. The wire
+    /// format is unchanged. The default is empty, so closed-enum output and
+    /// semantics are unchanged unless this option is configured.
+    #[must_use]
+    pub fn open_enums_in(mut self, paths: &[impl AsRef<str>]) -> Self {
+        for path in paths {
+            let raw = path.as_ref();
+            let normalized = normalize_open_enums_path(raw);
+            if normalized.is_empty() {
+                println!(
+                    "cargo:warning=buffa: open_enums_in path '{raw}' normalizes to empty and will be ignored"
+                );
+                continue;
+            }
+            self.codegen_config.open_enums_in.push(normalized);
+        }
+        self
+    }
+
     /// Honor `features.utf8_validation = NONE` by emitting `Vec<u8>` / `&[u8]`
     /// for such string fields instead of `String` / `&str` (default: false).
     ///
@@ -1707,6 +1762,25 @@ fn normalize_attr_path(mut path: String) -> String {
     path
 }
 
+/// Normalize an `open_enums_in` path: trim whitespace, prepend the leading
+/// dot if absent, and strip trailing dots. Unlike [`normalize_attr_path`],
+/// an entry that normalizes to empty (e.g. `"..."`) is returned empty rather
+/// than collapsing to the `"."` catch-all — the caller skips it, so `"."`
+/// stays the only global opt-in spelling.
+fn normalize_open_enums_path(path: &str) -> String {
+    let mut path = path.trim().to_string();
+    if path.is_empty() || path == "." {
+        return path;
+    }
+    if !path.starts_with('.') {
+        path.insert(0, '.');
+    }
+    while path.ends_with('.') {
+        path.pop();
+    }
+    path
+}
+
 /// Write `content` to `path` only if the file doesn't already exist with
 /// identical content. Avoids bumping timestamps on unchanged files, which
 /// prevents unnecessary downstream recompilation.
@@ -1920,6 +1994,37 @@ mod tests {
                 ".my.pkg.Other".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn open_enums_in_normalizes_paths() {
+        // Without normalization, dotless or trailing-dot paths would silently
+        // match nothing.
+        let config = Config::new()
+            .open_enums_in(&[
+                "my.pkg.Status.",
+                ".my.pkg.Msg.status",
+                ".",
+                "  my.pkg.Trimmed  ",
+            ])
+            .codegen_config;
+        assert_eq!(
+            config.open_enums_in,
+            vec![
+                ".my.pkg.Status".to_string(),
+                ".my.pkg.Msg.status".to_string(),
+                ".".to_string(),
+                ".my.pkg.Trimmed".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn open_enums_in_empty_path_is_not_catchall() {
+        let config = Config::new()
+            .open_enums_in(&["", "   ", "..."])
+            .codegen_config;
+        assert!(config.open_enums_in.is_empty());
     }
 
     #[test]
