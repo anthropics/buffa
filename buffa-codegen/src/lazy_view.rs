@@ -206,7 +206,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
         " Lazy view of `{proto_fqn}`: nested and repeated message fields are\n \
          recorded as undecoded byte ranges and decoded on access. See\n \
          [`::buffa::LazyMessageView`] for the deferred-validation contract;\n \
-         the eager, whole-tree-validated counterpart is [`{rust_name}View`].\n\n \
+         the eager, whole-tree-validated counterpart is named `{rust_name}View`.\n\n \
          Oneof variants, map values, groups, and extern-typed fields (e.g.\n \
          well-known types) hold eagerly-decoded `{rust_name}View`-family\n \
          types; only singular/repeated message fields defer.\n\n \

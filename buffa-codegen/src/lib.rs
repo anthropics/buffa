@@ -1343,8 +1343,7 @@ pub struct CodeGenConfig {
     /// the conversion is insertion-only and never deletes underscores the
     /// proto author wrote, so it is the identity on every name that is
     /// already a valid snake_case identifier (`_foo` stays `_foo`, where
-    /// prost emits `foo`). See [`crate::field_names`] for the full
-    /// semantics.
+    /// prost emits `foo`).
     ///
     /// The conversion is lossy, so two members of one message can collide
     /// (`userName` and `user_name`). Unlike enum aliases — which are additive
@@ -1353,7 +1352,9 @@ pub struct CodeGenConfig {
     /// a member whose name is already snake_case keeps it, a converted field
     /// that collides gets an `_f<field_number>` suffix (`userName = 12` →
     /// `user_name_f12`), and a converted oneof that collides keeps its
-    /// verbatim proto name. Each adjustment is reported as a
+    /// verbatim proto name. If an adjusted field name still collides, the
+    /// changed members in that collision group fall back to their verbatim
+    /// proto names. Each adjustment is reported as a
     /// [`CodeGenWarning::IdiomaticFieldNamesAdjusted`]. protoc rejects the
     /// underlying name collisions for proto3 and editions files (conflicting
     /// `json_name`s), so adjustments are only reachable from proto2 inputs.

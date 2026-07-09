@@ -317,7 +317,16 @@ jobs:
           load: true
           tags: buffa/tools:local
           cache-from: type=gha,scope=tools-image
-          cache-to: type=gha,scope=tools-image,mode=max
+          # Only main pushes save the cache. The cache service already
+          # isolates branches (a PR-written entry is not restorable from
+          # main), so this is quota hygiene plus defense in depth rather
+          # than the poisoning boundary itself: PR and merge-queue saves
+          # count against the repo's shared 10GB cache and can LRU-evict
+          # the main-scoped entries every PR restores from — merge_group
+          # writes land on an ephemeral queue ref nothing can ever restore.
+          # Cost: a PR that edits Dockerfile.tools rebuilds cold on every
+          # push instead of only the first; such PRs are rare.
+          cache-to: ${{ github.event_name == 'push' && 'type=gha,scope=tools-image,mode=max' || '' }}
 
       - name: Extract tools from image
         run: |

@@ -211,9 +211,6 @@ pub fn count_varints(payload: &[u8]) -> usize {
 /// 2. Unrolled slice decode when the contiguous chunk is large enough.
 /// 3. Byte-at-a-time fallback for non-contiguous or fragmented buffers.
 ///
-/// A force-inlined twin, [`decode_varint_packed`], duplicates this dispatch
-/// for packed-repeated element loops — when editing this body, keep the two
-/// in sync (the rationale for the duplication is on the twin's doc).
 #[inline]
 pub fn decode_varint(buf: &mut impl Buf) -> Result<u64, DecodeError> {
     let chunk = buf.chunk();
@@ -230,6 +227,8 @@ pub fn decode_varint(buf: &mut impl Buf) -> Result<u64, DecodeError> {
         return Ok(first as u64);
     }
 
+    // Keep this branch condition in sync with `decode_varint_packed`; packed
+    // repeated loops duplicate this body to preserve the force-inlined path.
     // The chunk either contains the full varint (len > 10, or the last byte
     // in the chunk has its continuation bit clear) or it may be split across
     // chunks. In the first case we can decode directly from the slice.
