@@ -67,3 +67,17 @@ mod reexports;
 mod reflect_view;
 mod repeated_type;
 mod view_codegen;
+
+/// Wrap paths as `EnumType(Open)` feature overrides — the shape used by the
+/// open-enum override tests.
+pub(super) fn open_enum_overrides(paths: &[&str]) -> Vec<(String, FeatureOverride)> {
+    paths
+        .iter()
+        .map(|p| {
+            (
+                (*p).to_string(),
+                FeatureOverride::EnumType(EnumTypeOverride::Open),
+            )
+        })
+        .collect()
+}

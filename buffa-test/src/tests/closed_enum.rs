@@ -272,6 +272,79 @@ fn test_view_closed_enum_repeated_unpacked_unknown_preserved() {
 }
 
 #[test]
+fn test_view_closed_enum_repeated_packed_unknown_preserved() {
+    use crate::proto2::__buffa::view::ClosedEnumContextsView;
+    use crate::proto2::{ClosedEnumContexts, Priority};
+    use buffa::encoding::{encode_varint, Tag, WireType};
+    use buffa::{Message, MessageView};
+
+    let mut payload = Vec::new();
+    encode_varint(0, &mut payload);
+    encode_varint(99, &mut payload);
+    encode_varint(2, &mut payload);
+    let mut wire = Vec::new();
+    Tag::new(3, WireType::LengthDelimited).encode(&mut wire);
+    encode_varint(payload.len() as u64, &mut wire);
+    wire.extend_from_slice(&payload);
+
+    let owned_direct = ClosedEnumContexts::decode(&mut wire.as_slice()).unwrap();
+    let view = ClosedEnumContextsView::decode_view(&wire).unwrap();
+    let vals: Vec<_> = view.rep_packed.iter().copied().collect();
+    assert_eq!(vals, vec![Priority::LOW, Priority::HIGH]);
+    assert!(!view.__buffa_unknown_fields.is_empty());
+
+    let via_view = view.to_owned_message().unwrap();
+    assert_eq!(via_view.encode_to_vec(), owned_direct.encode_to_vec());
+}
+
+#[test]
+fn test_view_closed_enum_repeated_packed_unknown_preserves_order_before_later_unknown() {
+    use crate::proto2::__buffa::view::ClosedEnumContextsView;
+    use crate::proto2::ClosedEnumContexts;
+    use buffa::encoding::{encode_varint, Tag, WireType};
+    use buffa::{Message, MessageView};
+
+    let mut payload = Vec::new();
+    encode_varint(99, &mut payload);
+    let mut wire = Vec::new();
+    Tag::new(3, WireType::LengthDelimited).encode(&mut wire);
+    encode_varint(payload.len() as u64, &mut wire);
+    wire.extend_from_slice(&payload);
+    wire.extend(varint_field(100, 7));
+
+    let owned_direct = ClosedEnumContexts::decode(&mut wire.as_slice()).unwrap();
+    let view = ClosedEnumContextsView::decode_view(&wire).unwrap();
+    assert!(!view.__buffa_unknown_fields.is_empty());
+
+    let via_view = view.to_owned_message().unwrap();
+    assert_eq!(via_view.encode_to_vec(), owned_direct.encode_to_vec());
+}
+
+#[test]
+fn test_view_closed_enum_repeated_packed_unknowns_consume_unknown_field_limit() {
+    use crate::proto2::__buffa::view::ClosedEnumContextsView;
+    use buffa::encoding::{encode_varint, Tag, WireType};
+    use buffa::MessageView;
+
+    let mut payload = Vec::new();
+    encode_varint(99, &mut payload);
+    encode_varint(100, &mut payload);
+    let mut wire = Vec::new();
+    Tag::new(3, WireType::LengthDelimited).encode(&mut wire);
+    encode_varint(payload.len() as u64, &mut wire);
+    wire.extend_from_slice(&payload);
+
+    let limit = core::cell::Cell::new(1);
+    let err = ClosedEnumContextsView::decode_view_ctx(
+        &wire,
+        buffa::DecodeContext::new(buffa::RECURSION_LIMIT, &limit),
+    )
+    .unwrap_err();
+
+    assert_eq!(err, buffa::DecodeError::UnknownFieldLimitExceeded);
+}
+
+#[test]
 fn test_view_closed_enum_oneof_unknown_to_unknown_fields() {
     use crate::proto2::__buffa::view::ClosedEnumContextsView;
     use buffa::MessageView;

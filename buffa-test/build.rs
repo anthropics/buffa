@@ -207,6 +207,17 @@ fn main() {
         .compile()
         .expect("buffa_build failed for name_collisions.proto");
 
+    // Reflect re-export collision — an extension const that SCREAMING_SNAKEs
+    // to FILE_DESCRIPTOR_SET_BYTES must lose the package-root slot to the
+    // reflect re-export instead of producing E0252. Compiling is the test.
+    buffa_build::Config::new()
+        .files(&["protos/reflect_name_collision.proto"])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for reflect_name_collision.proto");
+
     // Prelude shadowing (gh#36, gh#64) — nested + cross-file `message Option`
     // with optional/oneof fields, built with views + JSON so all `Option<...>`
     // emission paths are exercised. The sibling file shares the package, so
@@ -355,6 +366,67 @@ fn main() {
         .generate_json(true)
         .compile()
         .expect("buffa_build failed for proto2_json.proto");
+
+    // open_enums_in: selected proto2 closed-enum fields opt into open
+    // `EnumValue<E>` representation. JSON + text + vtable reflection compile
+    // the generated helper and reflection surfaces; runtime tests verify unknown
+    // values do not double-retain in unknown fields.
+    buffa_build::Config::new()
+        .files(&["protos/open_enums.proto"])
+        .includes(&["protos/"])
+        .open_enums_in(&[
+            ".test.openenums.OpenEnumContexts.opt",
+            ".test.openenums.OpenEnumContexts.rep",
+            ".test.openenums.OpenEnumContexts.rep_packed",
+            ".test.openenums.OpenEnumContexts.oneof_priority",
+            ".test.openenums.OpenEnumContexts.labels",
+            ".test.openenums.RequiredDefault.level",
+            ".test.openenums.RequiredImplicitDefault.level",
+            ".test.openenums.LazyChild.opt",
+            ".test.openenums.LazyChild.level",
+        ])
+        .generate_json(true)
+        .generate_text(true)
+        .lazy_views(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for open_enums.proto");
+
+    // open_enums_enum_rule: an enum-*type* rule opens the enum's own
+    // descriptor (features.enum_type = OPEN), which flows into the embedded
+    // reflection pool — so descriptor-driven dynamic JSON agrees with the
+    // generated `EnumValue<E>` representation instead of rejecting unknown
+    // values as a closed enum would. Uses the generic `override_feature_in`
+    // entry point directly (the other open-enum fixtures use the
+    // `open_enums_in` sugar).
+    buffa_build::Config::new()
+        .files(&["protos/open_enums_enum_rule.proto"])
+        .includes(&["protos/"])
+        .override_feature_in(
+            ".test.openenums_enumrule.Level",
+            buffa_build::FeatureOverride::EnumType(buffa_build::EnumTypeOverride::Open),
+        )
+        .generate_json(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for open_enums_enum_rule.proto");
+
+    // open_enums_no_unknowns: same open_enums_in override coverage with
+    // unknown-field preservation disabled, so matching enum unknowns surface
+    // through `EnumValue<E>` instead of relying on unknown fields.
+    buffa_build::Config::new()
+        .files(&["protos/open_enums_no_unknowns.proto"])
+        .includes(&["protos/"])
+        .open_enums_in(&[
+            ".test.openenums_nounknowns.OpenEnumNoUnknowns.opt",
+            ".test.openenums_nounknowns.OpenEnumNoUnknowns.rep",
+            ".test.openenums_nounknowns.OpenEnumNoUnknowns.rep_packed",
+            ".test.openenums_nounknowns.OpenEnumNoUnknowns.labels",
+        ])
+        .preserve_unknown_fields(false)
+        .generate_views(true)
+        .compile()
+        .expect("buffa_build failed for open_enums_no_unknowns.proto");
 
     // Cross-package references — types from basic + nested_deep.
     // Uses extern_path to map sibling packages to crate-level modules.

@@ -178,11 +178,19 @@ pub(crate) fn closed_enum_decode(buf_expr: &TokenStream, on_known: TokenStream) 
 ///
 /// The `on_unknown` token stream is placed in the `else` block, with `__raw`
 /// still in scope so it can be routed (e.g. to unknown fields storage).
+///
+/// An empty `on_unknown` (unknown-field preservation disabled) collapses to
+/// [`closed_enum_decode`]: emitting a literal `else {}` fails
+/// `clippy::needless_else` under `-D warnings` in consumer crates.
 pub(crate) fn closed_enum_decode_with_unknown(
     buf_expr: &TokenStream,
     on_known: TokenStream,
     on_unknown: TokenStream,
 ) -> TokenStream {
+    if on_unknown.is_empty() {
+        return closed_enum_decode(buf_expr, on_known);
+    }
+
     quote! {
         let __raw = ::buffa::types::decode_int32(#buf_expr)?;
         if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(__raw) {
@@ -1169,6 +1177,18 @@ fn scalar_clear_stmt(
         features,
         nesting,
         field_string_repr(ctx, proto_fqn, field_name),
+    )? {
+        return Ok(quote! { self.#ident = #default_expr; });
+    }
+
+    // A closed enum opened by an enum-type override keeps its declared (first-value)
+    // default, which differs from `EnumValue::default()` when non-zero.
+    if let Some(default_expr) = crate::defaults::open_enum_bare_default_value(
+        field,
+        ctx,
+        current_package,
+        features,
+        nesting,
     )? {
         return Ok(quote! { self.#ident = #default_expr; });
     }

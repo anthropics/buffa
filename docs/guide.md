@@ -183,6 +183,8 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.generate_json(bool)` | `false` | Generate serde Serialize/Deserialize for proto3 JSON |
 | `.generate_text(bool)` | `false` | Generate `impl buffa::text::TextFormat` for textproto encoding/decoding |
 | `.preserve_unknown_fields(bool)` | `true` | Preserve unknown fields for round-trip fidelity |
+| `.override_feature_in(path, feature)` | — | Apply a path-scoped editions feature override to the compiled descriptors — for protos you cannot modify; see [Enums](#enumvaluet--type-safe-open-enums) for the `enum_type` override's semantics |
+| `.open_enums_in(&[...])` | — | Shorthand for `override_feature_in(path, FeatureOverride::EnumType(EnumTypeOverride::Open))` per path: treat matching closed enums (or closed enum fields) as open in generated Rust (`EnumValue<E>`) |
 | `.generate_with_setters(bool)` | `true` | Emit `with_<name>()` builder-style setters for explicit-presence fields |
 | `.generate_arbitrary(bool)` | `false` | Emit `#[derive(arbitrary::Arbitrary)]` gated behind the `arbitrary` feature (for fuzzing) |
 | `.gate_impls_on_crate_features(bool)` | `false` | Wrap json/views/text impls in `#[cfg(feature = ...)]` for library crates whose generated code is a public dependency surface |
@@ -296,7 +298,9 @@ When several entries could match a reference, the most specific one wins: an exa
 > a standalone crate that wires every owned-type knob (`string_type_custom`,
 > `bytes_type_custom`, `repeated_type_custom`, `map_type_custom`,
 > `box_type_custom`) to a crate-local newtype and round-trips the result
-> through binary and JSON. The newtypes there are the copy-paste template.
+> through binary and JSON. The newtypes there are the copy-paste template —
+> and its `FlexStr` shows the low-boilerplate alternative, deriving the
+> buffa-facing impls via the `buffa-remote-derive` crate.
 
 By default every proto `string` field is generated as `String` and every `bytes` field as `Vec<u8>`. For schemas dominated by many short strings — log labels, identifiers, header-like maps — a small-string type can avoid most of those heap allocations. The `string_type` / `bytes_type` options select an alternative owned representation, with the same path-prefix rules as `use_bytes_type_in` (rules accumulate, last match wins):
 
@@ -316,7 +320,7 @@ buffa_build::Config::new()
 
 A representation is **any type that implements `buffa::ProtoString` / `buffa::ProtoBytes`**. Each trait requires a `from_wire(WirePayload<'_>) -> Result<Self, DecodeError>` decode constructor, plus the supertraits `Clone + PartialEq + Default + Debug + Send + Sync`, `Deref` to `str` / `[u8]`, `AsRef`, and `From<String>` / `From<Vec<u8>>`. `from_wire` lets the type decide validation and borrow-vs-own — an inline string type stores a short value with no heap allocation. buffa ships the built-in impls for `String`, `Vec<u8>`, and `bytes::Bytes`; for `bytes`, `bytes_type(BytesRepr::Bytes)` (and the `use_bytes_type` / `use_bytes_type_in` aliases) selects `bytes::Bytes`, which decodes zero-copy from a `Bytes`-backed buffer.
 
-**A foreign type cannot implement these traits directly** (orphan rule), so wrap it in a small local newtype. The `buffa-smolstr` crate is the ready-made one for `smol_str::SmolStr` and the template for the rest:
+**A foreign type cannot implement these traits directly** (orphan rule), so wrap it in a small local newtype. The `buffa-remote-derive` crate generates the newtype's buffa-facing surface (the trait impl plus `Deref`/`AsRef`/`From`) from a single `#[buffa(remote = ...)]` annotation; the hand-written form below is what that derive replaces. The `buffa-smolstr` crate is the ready-made newtype for `smol_str::SmolStr`:
 
 ```rust,ignore
 use buffa::{DecodeError, ProtoString, WirePayload};
@@ -583,11 +587,34 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `allow_message_set=true` | Permit `option message_set_wire_format = true;` instead of rejecting it (default: false) |
 | `strict_utf8=true` | Map `string` fields to `Vec<u8>`/`&[u8]` (no UTF-8 validation) instead of `String`/`&str`. Alias: `strict_utf8_mapping`. |
 | `type_name_prefix=<prefix>` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to every generated message/enum type name (`message User` → `struct RpcUser`) |
+| `override_feature_in=<path>=<feature>:<value>` | Apply a path-scoped editions feature override (currently `enum_type:OPEN`) to the compiled descriptors. Repeatable |
+| `open_enums_in=<path>` | Shorthand for `override_feature_in=<path>=enum_type:OPEN`. Repeatable |
 | `reflection=true` | Emit reflection support (vtable mode) plus an embedded per-package descriptor pool — see [Runtime reflection](#runtime-reflection) |
 | `reflect_mode=off\|bridge\|vtable` | Finer-grained reflection selector; `reflection=true` is shorthand for `vtable` |
 | `extern_path=.pkg=::rust` | Map a proto package — or a single type, e.g. `extern_path=.pkg.Type=::rust::Type` — to an external Rust path |
+| `exclude_package=.pkg` | Drop a proto package and its subpackages from generation (repeatable; leading dot optional). For option-only imports that `include_imports` pulls in but that are never used as field types, e.g. `buf.validate`, `gnostic`. **Pass the same `exclude_package` to `protoc-gen-buffa-packaging`** (see the note below the table) so the generated `mod.rs` omits the same packages. |
 | `file_per_package=true` | Emit one `<dotted.package>.rs` per package instead of per-proto-file content + a `<dotted.pkg>.mod.rs` stitcher. Use this with the remote plugin when you don't want to install `protoc-gen-buffa-packaging` — see [Remote plugin only](#remote-plugin-only-no-local-install). Under `strategy: directory`, requires the input module to be `PACKAGE_DIRECTORY_MATCH`-clean. |
 | `idiomatic_imports=true` | **Experimental.** Emit `use`-backed short type names at the package root. Requires `file_per_package=true`. Only type declarations are shortened; the generated file must keep its `#[allow]` wrapper. |
+
+> **`exclude_package` spans both plugins.** It is accepted by both `protoc-gen-buffa` (which skips generating the package's files) and `protoc-gen-buffa-packaging` (which omits the package from the emitted `mod.rs`). Pass the identical `exclude_package` opt to both — the two share one exclusion predicate, so a mismatch leaves the `mod.rs` `include!`-ing a stitcher that was never generated (or dropping one that was). Example, excluding the option-only `buf.validate` and `gnostic` imports that `include_imports` pulls in:
+>
+> ```yaml
+> plugins:
+>   - local: protoc-gen-buffa
+>     out: src/gen
+>     opt:
+>       - exclude_package=.buf.validate
+>       - exclude_package=.gnostic
+>     include_imports: true
+>   - local: protoc-gen-buffa-packaging
+>     out: src/gen
+>     strategy: all
+>     opt:
+>       - exclude_package=.buf.validate
+>       - exclude_package=.gnostic
+> ```
+>
+> Excluded descriptors stay available for option resolution, but a kept message with a *field* of an excluded type generates a reference to a Rust module that was never emitted — a compile error in generated code, far from its cause. If the types are genuinely needed, map them with `extern_path` instead of excluding them. On the buf path, per-plugin `exclude_types:` (a buf.gen.yaml field, not a plugin opt) is an alternative that prunes the descriptors themselves before the plugin runs — note its subpackage semantics differ: use a `pkg.**` glob to cover subpackages, where `exclude_package` covers them automatically. `exclude_package` is a protoc-plugin option only; the `buffa-build`/`build.rs` path does not need it, since there `files()` lists the generate set explicitly.
 
 #### BSR-generated SDKs
 
@@ -692,6 +719,7 @@ Owned message structs and their nested-type modules sit at the package level, ex
 | Extension const | `pkg::__buffa::ext::MY_EXT` |
 | Registration fn | `pkg::__buffa::register_types` |
 | Descriptor pool (with reflection enabled) | `pkg::__buffa::reflect::descriptor_pool()` (re-exported as `pkg::descriptor_pool()`) |
+| Descriptor set bytes (with reflection enabled) | `pkg::__buffa::reflect::FILE_DESCRIPTOR_SET_BYTES` (re-exported as `pkg::FILE_DESCRIPTOR_SET_BYTES`) |
 
 `__buffa` is the **only** name codegen reserves at user scope. It aligns with the `__buffa_` reserved field-name prefix (`__buffa_unknown_fields`, `__buffa_phantom`), so the rule is uniformly "anything starting `__buffa` is buffa-internal." A proto message, file-level enum, or package segment that snake-cases to `__buffa` is rejected at codegen time.
 
@@ -774,7 +802,11 @@ let i: i32 = msg.status.to_i32();
 let known: Option<Status> = msg.status.as_known();
 ```
 
-**Proto2 closed enums** use the bare enum type directly (`Status`, not `EnumValue<Status>`). Unknown values on the wire are routed to `unknown_fields` instead.
+**Proto2 closed enums** use the bare enum type directly (`Status`, not `EnumValue<Status>`). Unknown values on the wire are routed to `unknown_fields` instead. For migration or interop cases that need direct access to unknown closed-enum values, `open_enums_in` can opt selected closed enums into the open `EnumValue<E>` representation. It is shorthand for the general `override_feature_in` mechanism — path-scoped editions feature overrides for integrators working with protos they cannot modify, applied as if the proto had been migrated to editions with that feature set at the matched paths. The supported override set is the `FeatureOverride` enum; `enum_type:OPEN` is currently the only supported override.
+
+`open_enums_in` paths can name an enum type (`.pkg.Status`), an individual field (`.pkg.Msg.status`), a package/message prefix, or `.` for every enum. For `map<string, Status> labels`, use the outer map field path (`.pkg.Msg.labels`). For a oneof enum variant, use the direct field path (`.pkg.Msg.status`), not the oneof group path. Prefix rules match every enum in the compiled descriptor set under that path, including enums declared in imported protos you don't generate code for. A rule that matches nothing produces a generation-time warning (surfaced as `cargo:warning` by `buffa-build`), since an inert rule silently leaves the affected fields closed.
+
+The option works by injecting `features.enum_type = OPEN` into the descriptors before generation — the same construct protoc's proto2 → editions migration emits. An enum-type rule opens the enum itself, so every field referencing it (in any package) uses `EnumValue<E>`; a field rule opens just that field via a field-level feature override. Because the injected features also flow into the embedded descriptor pool, runtime reflection and descriptor-driven dynamic JSON agree with the generated types for enum-level rules. A field-level rule is a buffa-specific override that other runtimes reading the exported descriptor set will ignore — and buffa's own descriptor-driven dynamic JSON parsing keeps closed-enum input semantics for field-scoped rules (the enum's declared type is unchanged), so use an enum-type rule when reflective codecs must accept unknown numeric JSON input the same way generated code does. Prefer enum-type rules when the descriptor set leaves the process (gRPC server reflection, exported `FILE_DESCRIPTOR_SET_BYTES`) — they are spec-valid editions descriptors, while field rules are faithful only to buffa consumers. The wire format is unchanged, and unknown values decoded into a matching field are not additionally retained in `unknown_fields`.
 
 **Iterating over variants.** Every generated enum implements [`Enumeration::values`], a static slice of all primary variants in proto declaration order:
 
@@ -1859,10 +1891,18 @@ handle.for_each_set(&mut |field, value| {
 let id = handle.get(descriptor.field_by_name("id").unwrap());
 ```
 
-Either mode embeds the package's `FileDescriptorSet` in the generated code
-and exposes a lazily-built pool as `your_pkg::descriptor_pool()`, so the
-descriptors used by `reflect()` are always the ones the code was generated
-from.
+Either mode embeds a `FileDescriptorSet` in the generated code and exposes a
+lazily-built pool as `your_pkg::descriptor_pool()`, so the descriptors used
+by `reflect()` are always the ones the code was generated from. The raw bytes
+are also re-exported as `your_pkg::FILE_DESCRIPTOR_SET_BYTES` — useful for
+shipping the schema over the wire to a peer that decodes with
+`DynamicMessage`. Two caveats about the embedded set: it covers the **whole
+codegen run** (every package plus transitive imports, not just
+`your_pkg`), and it has `source_code_info` stripped — the runtime pool never
+reads source info, and keeping it can multiply the embedded bytes an order of
+magnitude (14x for the comment-heavy well-known-types package). If you need
+proto comments at runtime, or a set scoped to specific files, build a
+descriptor set directly with `protoc --include_source_info` or `buf build`.
 
 Two Cargo notes:
 

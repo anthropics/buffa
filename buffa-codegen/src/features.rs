@@ -30,14 +30,27 @@ use crate::generated::descriptor::FieldDescriptorProto;
 /// For extern_path enums (not in `ctx`), falls back to the field's own
 /// feature chain, which is correct for proto2/proto3 where `enum_type`
 /// is file-level anyway.
+///
+/// A field whose own `FeatureSet` sets `enum_type = OPEN` skips the overlay:
+/// legal editions input can never carry a field-level `enum_type` (it targets
+/// files and enums only, so protoc rejects it on a field), which makes the
+/// slot the carrier for field-scoped
+/// [`FeatureOverride::EnumType`](crate::FeatureOverride) rules injected
+/// by the [`feature_overrides`](crate::feature_overrides) preprocessing pass
+/// — those must win over the referenced enum's closedness. Only the `OPEN` value is
+/// honored (the only value the pass injects); any other stray field-level
+/// `enum_type` from a foreign descriptor set is ignored by the overlay,
+/// preserving the referenced enum's semantics.
 pub fn resolve_field(
     ctx: &CodeGenContext,
     field: &FieldDescriptorProto,
     parent: &ResolvedFeatures,
 ) -> ResolvedFeatures {
     let mut resolved = resolve_child(parent, field_features(field));
+    let field_opens_enum = field_features(field).and_then(|fs| fs.enum_type)
+        == Some(crate::generated::descriptor::feature_set::EnumType::OPEN);
     // Overlay the referenced enum's own enum_type.
-    if field.r#type.unwrap_or_default() == Type::TYPE_ENUM {
+    if field.r#type.unwrap_or_default() == Type::TYPE_ENUM && !field_opens_enum {
         if let Some(fqn) = field.type_name.as_deref() {
             if let Some(closed) = ctx.is_enum_closed(fqn) {
                 resolved.enum_type = if closed {

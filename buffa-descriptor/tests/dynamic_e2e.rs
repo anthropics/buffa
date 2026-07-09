@@ -112,6 +112,141 @@ fn dynamic_message_containers_round_trip() {
 }
 
 #[test]
+fn try_set_rejects_values_that_do_not_match_field_kind() {
+    let p = pool();
+    let scalars_idx = p.message_index("reflect.test.Scalars").unwrap();
+    let scalars = p.message_by_name("reflect.test.Scalars").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), scalars_idx);
+
+    msg.set(scalars.field(3).unwrap(), Value::I32(7));
+    let err = msg
+        .try_set(scalars.field(3).unwrap(), Value::String("bad".into()))
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        ReflectError::WrongValueKind {
+            ref message,
+            ref field_name,
+            number,
+            ref expected,
+            ref actual,
+        } if message == "reflect.test.Scalars"
+            && field_name == "f_int32"
+            && number == 3
+            && expected == "int32"
+            && actual == "string"
+    ));
+    assert_eq!(msg.field_by_number(3), Some(&Value::I32(7)));
+}
+
+#[test]
+fn try_set_rejects_values_with_mismatched_container_contents() {
+    let p = pool();
+    let containers_idx = p.message_index("reflect.test.Containers").unwrap();
+    let md = p.message_by_name("reflect.test.Containers").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), containers_idx);
+
+    let err = msg
+        .try_set(
+            md.field(1).unwrap(),
+            Value::List(vec![Value::I32(1), Value::String("bad".into())]),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        ReflectError::WrongValueKind {
+            ref field_name,
+            ref expected,
+            ref actual,
+            ..
+        } if field_name == "packed_ints" && expected == "list<int32>" && actual == "list element string"
+    ));
+
+    let mut wrong_key = MapValue::new();
+    wrong_key.insert(MapKey::I32(1), Value::I32(7));
+    let err = msg
+        .try_set(md.field(3).unwrap(), Value::Map(wrong_key))
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        ReflectError::WrongValueKind {
+            ref field_name,
+            ref expected,
+            ref actual,
+            ..
+        } if field_name == "tags" && expected == "map<string, int32>" && actual == "map key i32"
+    ));
+
+    let mut wrong_value = MapValue::new();
+    wrong_value.insert(MapKey::String("k".into()), Value::String("bad".into()));
+    let err = msg
+        .try_set(md.field(3).unwrap(), Value::Map(wrong_value))
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        ReflectError::WrongValueKind {
+            ref field_name,
+            ref expected,
+            ref actual,
+            ..
+        } if field_name == "tags"
+            && expected == "map<string, int32>"
+            && actual == "map value string"
+    ));
+}
+
+#[test]
+fn try_set_rejects_message_values_with_wrong_descriptor() {
+    let p = pool();
+    let containers_idx = p.message_index("reflect.test.Containers").unwrap();
+    let scalars_idx = p.message_index("reflect.test.Scalars").unwrap();
+    let md = p.message_by_name("reflect.test.Containers").unwrap();
+
+    let mut msg = DynamicMessage::new(Arc::clone(&p), containers_idx);
+    let wrong_message = DynamicMessage::new(Arc::clone(&p), scalars_idx);
+    let err = msg
+        .try_set(md.field(5).unwrap(), Value::Message(wrong_message))
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        ReflectError::WrongValueKind {
+            ref field_name,
+            ref expected,
+            ref actual,
+            ..
+        } if field_name == "nested"
+            && expected == "message reflect.test.Inner"
+            && actual == "message reflect.test.Scalars"
+    ));
+}
+
+#[test]
+#[should_panic(expected = "expects int32, got string")]
+fn set_panics_if_value_does_not_match_field_kind() {
+    let p = pool();
+    let scalars_idx = p.message_index("reflect.test.Scalars").unwrap();
+    let scalars = p.message_by_name("reflect.test.Scalars").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), scalars_idx);
+
+    msg.set(scalars.field(3).unwrap(), Value::String("bad".into()));
+}
+
+#[test]
+fn encode_skips_invalid_values_left_by_mutable_field_access() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
+    let md = p.message_by_name("reflect.test.Scalars").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+
+    msg.set(md.field(3).unwrap(), Value::I32(7));
+    *msg.field_by_number_mut(3).unwrap() = Value::String("bad".into());
+
+    let bytes = msg.encode_to_vec();
+    assert!(bytes.is_empty());
+    assert_eq!(msg.encoded_len(), bytes.len());
+}
+
+#[test]
 fn dynamic_message_unknown_fields_preserved() {
     let p = pool();
     let idx = p.message_index("reflect.test.Scalars").unwrap();

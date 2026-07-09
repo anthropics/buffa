@@ -1,0 +1,13 @@
+syntax = "proto2";
+
+package test.openenums_enumrule;
+
+message Wrapper {
+  optional Level level = 1;
+  repeated Level levels = 2;
+}
+
+enum Level {
+  L_FIRST = 0;
+  L_SECOND = 1;
+}

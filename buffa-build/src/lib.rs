@@ -26,7 +26,8 @@
 //! used instead — see [`Config::use_buf()`]. Alternatively, feed a
 //! pre-compiled descriptor set via [`Config::descriptor_set()`].
 
-use std::path::{Path, PathBuf};
+use std::collections::BTreeSet;
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 use buffa::Message;
@@ -40,6 +41,8 @@ pub use buffa_codegen::FeatureGateNames;
 pub use buffa_codegen::ReflectMode;
 #[doc(inline)]
 pub use buffa_codegen::{BytesRepr, MapRepr, PointerRepr, RepeatedRepr, StringRepr};
+#[doc(inline)]
+pub use buffa_codegen::{EnumTypeOverride, FeatureOverride};
 
 /// How to produce a `FileDescriptorSet` from `.proto` files.
 #[derive(Debug, Clone, Default)]
@@ -256,9 +259,10 @@ impl Config {
     /// `buffa-descriptor`-dependent (and `std`-requiring) reflection surface to
     /// be opt-in. `buffa-types` is the motivating case.
     ///
-    /// **Experimental and `#[doc(hidden)]`**, paired with
-    /// [`generate_reflection_vtable`](Self::generate_reflection_vtable) until the
-    /// public `ReflectMode` selector lands.
+    /// **Experimental and `#[doc(hidden)]`.** This knob only controls the
+    /// crate-feature gate on the emitted reflection impls; the reflection
+    /// codegen mode itself is selected via the public
+    /// [`reflect_mode`](Self::reflect_mode) selector.
     #[doc(hidden)]
     #[must_use]
     pub fn gate_reflect_on_crate_feature(mut self, enabled: bool) -> Self {
@@ -617,6 +621,87 @@ impl Config {
     #[must_use]
     pub fn preserve_unknown_fields(mut self, enabled: bool) -> Self {
         self.codegen_config.preserve_unknown_fields = enabled;
+        self
+    }
+
+    /// Apply a path-scoped editions [`FeatureOverride`] to the compiled
+    /// descriptors before generation.
+    ///
+    /// This is buffa's mechanism for integrators who must work with protos
+    /// they cannot modify: editions unification models proto2 and proto3 as
+    /// editions with fixed feature defaults, and an override behaves as if
+    /// the proto had been migrated to editions with that feature set at the
+    /// matched paths. The supported overrides are the [`FeatureOverride`]
+    /// variants — each is admitted only once buffa's codegen, runtime, and
+    /// validation handle the descriptor states it can create. Overrides
+    /// never change the wire format.
+    ///
+    /// `path` is a fully-qualified proto path prefix. A rule may name a type
+    /// (for example, `".my.pkg.Status"`), a field
+    /// (`".my.pkg.Response.status"`), a package/message prefix, or `"."` for
+    /// everything the override targets. A leading dot is added if missing.
+    /// Map enum values match the outer map field path; oneof enum variants
+    /// match the direct field path. An empty path is warned about and
+    /// ignored so `"."` remains the only global opt-in spelling. (The
+    /// `protoc-gen-buffa` plugin's `override_feature_in=` option rejects
+    /// empty paths with a hard error instead: a stray build-script entry
+    /// shouldn't fail the build, but plugin options are usually
+    /// machine-assembled, where an empty value is a bug.)
+    ///
+    /// Repeated calls accumulate; rule order does not matter. A rule that
+    /// matches nothing produces a `cargo:warning` from this build (surfaced
+    /// via [`CodeGenWarning`](buffa_codegen::CodeGenWarning)), since an
+    /// inert rule silently leaves the affected paths on the semantics the
+    /// override exists to change.
+    ///
+    /// Under reflection, the embedded descriptor pool carries the injected
+    /// features, so spec-valid injections (e.g. an enum-*type*
+    /// [`FeatureOverride::EnumType`] rule) keep runtime reflection and
+    /// descriptor-driven dynamic JSON consistent with the generated types;
+    /// see each variant's docs for its field-scoped semantics.
+    #[must_use]
+    pub fn override_feature_in(mut self, path: impl AsRef<str>, feature: FeatureOverride) -> Self {
+        let raw = path.as_ref();
+        let normalized = normalize_override_path(raw);
+        if normalized.is_empty() {
+            // Neutral wording: this also fires for the `open_enums_in` sugar,
+            // so the message must not name a method the caller didn't invoke.
+            println!(
+                "cargo:warning=buffa: feature override path '{raw}' normalizes to empty and will be ignored"
+            );
+            return self;
+        }
+        self.codegen_config
+            .feature_overrides
+            .push((normalized, feature));
+        self
+    }
+
+    /// Treat selected closed enums (or closed enum fields) as open in the
+    /// generated representation — shorthand for
+    /// [`override_feature_in(path, FeatureOverride::EnumType(EnumTypeOverride::Open))`](Self::override_feature_in)
+    /// applied to each path.
+    ///
+    /// Matching closed enum fields generate as `EnumValue<E>` instead of `E`,
+    /// so unknown wire values are directly visible as `EnumValue::Unknown(n)`.
+    /// This is an opt-in migration / interop mode: it deliberately changes
+    /// closed-enum presence behavior for matching fields, making an unknown
+    /// value read as present instead of unset with the raw value represented
+    /// through unknown fields. An enum-type rule opens the enum itself (every
+    /// field referencing it, and the embedded reflection pool agrees); a
+    /// field rule opens just that field (descriptor-driven codecs keep
+    /// closed-enum semantics for the enum) — prefer enum-type rules when
+    /// reflective codecs must agree. Path grammar, accumulation, and
+    /// inert-rule warnings are as described on
+    /// [`override_feature_in`](Self::override_feature_in).
+    #[must_use]
+    pub fn open_enums_in(mut self, paths: &[impl AsRef<str>]) -> Self {
+        for path in paths {
+            self = self.override_feature_in(
+                path.as_ref(),
+                FeatureOverride::EnumType(EnumTypeOverride::Open),
+            );
+        }
         self
     }
 
@@ -1660,16 +1745,15 @@ impl Config {
         //
         // For Buf mode, `self.files` are module-root-relative and cargo can't
         // stat them — use `buf ls-files` instead, which lists all workspace
-        // protos with workspace-relative paths. This also catches changes to
-        // transitively-imported protos (a gap in the Protoc mode, which only
-        // watches explicitly-listed files).
+        // protos with workspace-relative paths. Protoc mode uses the decoded
+        // descriptor set below to watch resolved transitive imports.
         match self.descriptor_source {
             DescriptorSource::Buf => emit_buf_rerun_if_changed(),
             DescriptorSource::Protoc => {
                 // Rerun if PROTOC changes (different binary may accept
                 // protos the previous one rejected, e.g. newer editions).
                 println!("cargo:rerun-if-env-changed=PROTOC");
-                for proto_file in &self.files {
+                for proto_file in protoc_rerun_if_changed_paths(&fds, &self.files, &self.includes) {
                     println!("cargo:rerun-if-changed={}", proto_file.display());
                 }
             }
@@ -1702,6 +1786,25 @@ fn normalize_attr_path(mut path: String) -> String {
         while path.ends_with('.') {
             path.pop();
         }
+    }
+    path
+}
+
+/// Normalize an `override_feature_in` path: trim whitespace, prepend the
+/// leading dot if absent, and strip trailing dots. Unlike
+/// [`normalize_attr_path`], an entry that normalizes to empty (e.g. `"..."`)
+/// is returned empty rather than collapsing to the `"."` catch-all — the
+/// caller skips it, so `"."` stays the only global opt-in spelling.
+fn normalize_override_path(path: &str) -> String {
+    let mut path = path.trim().to_string();
+    if path.is_empty() || path == "." {
+        return path;
+    }
+    if !path.starts_with('.') {
+        path.insert(0, '.');
+    }
+    while path.ends_with('.') {
+        path.pop();
     }
     path
 }
@@ -1838,6 +1941,59 @@ fn proto_relative_name(file: &Path, includes: &[PathBuf]) -> String {
     best.unwrap_or(file).to_str().unwrap_or("").to_string()
 }
 
+/// Files Cargo should watch for protoc-based builds.
+///
+/// `protoc --include_imports` records the full transitive import closure in
+/// the descriptor set. Convert descriptor-relative names back to filesystem
+/// paths under the configured include roots so edits to imported protos rerun
+/// codegen even when `.files()` listed only the leaf proto. Imports resolved
+/// from protoc's bundled includes (the well-known types) are not under any
+/// configured root and are deliberately left unwatched — they ship with the
+/// protoc binary and are not user-editable.
+fn protoc_rerun_if_changed_paths(
+    fds: &FileDescriptorSet,
+    files: &[PathBuf],
+    includes: &[PathBuf],
+) -> Vec<PathBuf> {
+    let mut paths: BTreeSet<PathBuf> = files.iter().cloned().collect();
+    for file in &fds.file {
+        if let Some(name) = file.name.as_deref() {
+            if let Some(path) = resolve_descriptor_name_under_include(name, includes) {
+                paths.insert(path);
+            }
+        }
+    }
+    paths.into_iter().collect()
+}
+
+/// Map an include-relative descriptor name back to an on-disk path, trying
+/// the include roots in `-I` order (matching protoc's own resolution).
+/// Absolute or parent-traversing names are rejected outright; with no
+/// include roots, the name is tried relative to the working directory.
+fn resolve_descriptor_name_under_include(name: &str, includes: &[PathBuf]) -> Option<PathBuf> {
+    let rel = Path::new(name);
+    if rel.is_absolute()
+        || rel
+            .components()
+            .any(|c| matches!(c, Component::ParentDir | Component::Prefix(_)))
+    {
+        return None;
+    }
+
+    if includes.is_empty() {
+        let path = PathBuf::from(rel);
+        return path.exists().then_some(path);
+    }
+
+    for include in includes {
+        let path = include.join(rel);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    None
+}
+
 /// Generate the content of an include file that assembles generated `.rs`
 /// files into a nested module tree matching the protobuf package hierarchy.
 ///
@@ -1922,6 +2078,74 @@ mod tests {
     }
 
     #[test]
+    fn open_enums_in_normalizes_paths() {
+        // Without normalization, dotless or trailing-dot paths would silently
+        // match nothing.
+        let config = Config::new()
+            .open_enums_in(&[
+                "my.pkg.Status.",
+                ".my.pkg.Msg.status",
+                ".",
+                "  my.pkg.Trimmed  ",
+            ])
+            .codegen_config;
+        let paths: Vec<&str> = config
+            .feature_overrides
+            .iter()
+            .map(|(p, _)| p.as_str())
+            .collect();
+        assert_eq!(
+            paths,
+            vec![
+                ".my.pkg.Status",
+                ".my.pkg.Msg.status",
+                ".",
+                ".my.pkg.Trimmed"
+            ]
+        );
+        assert!(config
+            .feature_overrides
+            .iter()
+            .all(|(_, o)| *o == FeatureOverride::EnumType(EnumTypeOverride::Open)));
+    }
+
+    #[test]
+    fn override_feature_in_accumulates_and_normalizes() {
+        let config = Config::new()
+            .override_feature_in(
+                "my.pkg.Status.",
+                FeatureOverride::EnumType(EnumTypeOverride::Open),
+            )
+            .override_feature_in(
+                ".my.pkg.Msg.e",
+                FeatureOverride::EnumType(EnumTypeOverride::Open),
+            )
+            .override_feature_in("...", FeatureOverride::EnumType(EnumTypeOverride::Open))
+            .codegen_config;
+        assert_eq!(
+            config.feature_overrides,
+            vec![
+                (
+                    ".my.pkg.Status".to_string(),
+                    FeatureOverride::EnumType(EnumTypeOverride::Open)
+                ),
+                (
+                    ".my.pkg.Msg.e".to_string(),
+                    FeatureOverride::EnumType(EnumTypeOverride::Open)
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn open_enums_in_empty_path_is_not_catchall() {
+        let config = Config::new()
+            .open_enums_in(&["", "   ", "..."])
+            .codegen_config;
+        assert!(config.feature_overrides.is_empty());
+    }
+
+    #[test]
     fn proto_relative_name_strips_include() {
         let got = proto_relative_name(
             Path::new("proto/my/service.proto"),
@@ -1963,6 +2187,73 @@ mod tests {
             &[PathBuf::from("other/"), PathBuf::from("third/")],
         );
         assert_eq!(got, "src/my.proto");
+    }
+
+    #[test]
+    fn protoc_rerun_paths_include_transitive_imports() {
+        use buffa_codegen::generated::descriptor::FileDescriptorProto;
+
+        let dir = tempfile::tempdir().unwrap();
+        let include = dir.path().join("proto");
+        std::fs::create_dir_all(include.join("svc")).unwrap();
+        std::fs::write(include.join("svc/service.proto"), b"syntax = \"proto3\";").unwrap();
+        std::fs::write(include.join("common.proto"), b"syntax = \"proto3\";").unwrap();
+
+        let fds = FileDescriptorSet {
+            file: vec![
+                FileDescriptorProto {
+                    name: Some("svc/service.proto".into()),
+                    ..Default::default()
+                },
+                FileDescriptorProto {
+                    name: Some("common.proto".into()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let explicit = vec![include.join("svc/service.proto")];
+
+        let got: BTreeSet<_> =
+            protoc_rerun_if_changed_paths(&fds, &explicit, std::slice::from_ref(&include))
+                .into_iter()
+                .collect();
+        let expected: BTreeSet<_> = [
+            include.join("svc/service.proto"),
+            include.join("common.proto"),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn protoc_rerun_paths_skip_descriptor_names_not_under_include_roots() {
+        use buffa_codegen::generated::descriptor::FileDescriptorProto;
+
+        let dir = tempfile::tempdir().unwrap();
+        let include = dir.path().join("proto");
+        std::fs::create_dir_all(&include).unwrap();
+
+        let fds = FileDescriptorSet {
+            file: vec![
+                FileDescriptorProto {
+                    name: Some("missing.proto".into()),
+                    ..Default::default()
+                },
+                FileDescriptorProto {
+                    name: Some("../outside.proto".into()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let explicit = vec![PathBuf::from("service.proto")];
+
+        assert_eq!(
+            protoc_rerun_if_changed_paths(&fds, &explicit, &[include]),
+            explicit
+        );
     }
 
     #[test]

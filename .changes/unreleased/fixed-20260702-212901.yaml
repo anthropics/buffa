@@ -1,0 +1,3 @@
+kind: Fixed
+body: '`DynamicMessage::try_set` now rejects `Value`s whose runtime shape does not match the target field descriptor — repeated elements, map keys and values, and nested message descriptor identity included — and `set` consequently panics on shapes it previously accepted and encoded as corrupt tag-only wire output. Invalid values planted through direct mutable field access are omitted during encode (whole field, with `encoded_len` in agreement) instead of corrupting the wire. (#272)'
+time: 2026-07-02T21:29:01.000000000Z

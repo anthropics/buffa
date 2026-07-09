@@ -21,3 +21,6 @@ fuzz/corpus/
 
 # Local editor settings
 /.claude/settings.local.json
+
+# IDEs
+.idea/

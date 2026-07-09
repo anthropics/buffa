@@ -68,6 +68,12 @@ pub struct CodeGenContext<'a> {
     /// enum-level `enum_type` into field options (verified 2026-03), so
     /// callers must look this up via `is_enum_closed`.
     enum_closedness: HashMap<String, bool>,
+    /// Map from fully-qualified enum name to its first declared value's
+    /// number — the enum type's implicit default per spec. Non-zero only for
+    /// closed (proto2 / editions-closed) enums; used to decide whether a bare
+    /// enum field opened by an enum-type override needs an explicit generated
+    /// default (`EnumValue::Known(first)` instead of the derived wire-zero).
+    enum_first_value: HashMap<String, i32>,
     /// Map from fully-qualified protobuf element name to its source comment.
     ///
     /// Keys use dotted FQN form without a leading dot, matching the `proto_fqn`
@@ -449,6 +455,14 @@ impl<'a> CodeGenContext<'a> {
             type_map,
             package_of,
             enum_closedness,
+            // Only consulted by opened-enum default handling (a bare open
+            // enum can otherwise never have a non-zero first value), so the
+            // walk is skipped entirely for the default configuration.
+            enum_first_value: if config.has_enum_type_overrides() {
+                collect_enum_first_values(files)
+            } else {
+                HashMap::new()
+            },
             comment_map,
             nested_module_names,
             unboxed_oneof_variants,
@@ -755,6 +769,12 @@ impl<'a> CodeGenContext<'a> {
     /// `enum_type` is file-level anyway).
     pub fn is_enum_closed(&self, proto_fqn: &str) -> Option<bool> {
         self.enum_closedness.get(proto_fqn).copied()
+    }
+
+    /// Look up an enum's first declared value number — its implicit default
+    /// per spec. `None` for enums not in this compilation set (extern_path).
+    pub(crate) fn enum_first_value(&self, proto_fqn: &str) -> Option<i32> {
+        self.enum_first_value.get(proto_fqn).copied()
     }
 
     /// Look up the Rust type path relative to the current code generation
@@ -1512,6 +1532,43 @@ fn register_nested_types(
             package_of.insert(fqn, package.to_string());
         }
     }
+}
+
+/// Record every enum's first declared value number, keyed by dotted FQN
+/// (same key form as `enum_closedness`).
+fn collect_enum_first_values(files: &[FileDescriptorProto]) -> HashMap<String, i32> {
+    fn record(map: &mut HashMap<String, i32>, prefix: &str, e: &EnumDescriptorProto) {
+        if let (Some(name), Some(first)) = (e.name.as_deref(), e.value.first()) {
+            map.insert(format!("{prefix}{name}"), first.number.unwrap_or(0));
+        }
+    }
+    fn walk_msg(map: &mut HashMap<String, i32>, prefix: &str, msg: &DescriptorProto) {
+        let Some(name) = msg.name.as_deref() else {
+            return;
+        };
+        let child_prefix = format!("{prefix}{name}.");
+        for e in &msg.enum_type {
+            record(map, &child_prefix, e);
+        }
+        for nested in &msg.nested_type {
+            walk_msg(map, &child_prefix, nested);
+        }
+    }
+
+    let mut map = HashMap::new();
+    for file in files {
+        let prefix = match file.package.as_deref() {
+            Some(p) if !p.is_empty() => format!(".{p}."),
+            _ => ".".to_string(),
+        };
+        for e in &file.enum_type {
+            record(&mut map, &prefix, e);
+        }
+        for msg in &file.message_type {
+            walk_msg(&mut map, &prefix, msg);
+        }
+    }
+    map
 }
 
 /// Resolve and record whether an enum is closed, given its parent's features.

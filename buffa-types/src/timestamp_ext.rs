@@ -4,15 +4,17 @@ use crate::google::protobuf::Timestamp;
 
 /// Maximum value of the `nanos` field per the protobuf `Timestamp` spec.
 ///
-/// `Timestamp.nanos` is constrained to `[0, NANOS_MAX]`. Shared with
-/// `timestamp_chrono` so the validation range cannot drift between files.
+/// `Timestamp.nanos` is constrained to `[0, NANOS_MAX]`. Shared with the
+/// `timestamp_chrono` / `timestamp_jiff` conversions so the validation range
+/// cannot drift between files.
 pub(crate) const NANOS_MAX: i32 = 999_999_999;
 
 /// Errors that can occur when converting a [`Timestamp`] to a Rust time type.
 ///
 /// Deliberately shared by the `std` conversion (`Timestamp` →
-/// `std::time::SystemTime`) and the `chrono` conversion (`Timestamp` →
-/// `chrono::DateTime<Utc>`): the failure modes map identically for both
+/// `std::time::SystemTime`), the `chrono` conversion (`Timestamp` →
+/// `chrono::DateTime<Utc>`), and the `jiff` conversion (`Timestamp` →
+/// `jiff::Timestamp`): the failure modes map identically for all three
 /// targets, so a separate error enum per target would add API surface
 /// without adding information.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
