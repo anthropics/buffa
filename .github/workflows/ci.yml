@@ -22,7 +22,9 @@ jobs:
   # ── Fast feedback: lint + test on stable ─────────────────────────────────
   lint-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 15 rather than 10: documenting the workspace (buffa-test's generated
+    # modules are large) adds a few minutes on top of a cold-cache build.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -59,6 +61,16 @@ jobs:
       # is sufficient to catch compile breaks without doubling the test time.
       - name: Check all features
         run: cargo check --workspace --all-features
+
+      # Rustdoc warnings are errors, in generated docs too: buffa-test's
+      # build include!s codegen output (views, lazy views, json, reflect), so
+      # documenting the workspace lints emitted doc comments as well as
+      # hand-written ones. Covers workspace members only — excluded crates
+      # (benchmarks/, most examples/) are not documented. (#295)
+      - name: Rustdoc (deny warnings)
+        run: cargo doc --workspace --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
 
       # `gate_impls_on_crate_features` codegen output: generate the buffa-test
       # fixture protos with the gate on, then `cargo check` the result with

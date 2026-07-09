@@ -223,11 +223,21 @@ tasks:
   verify:
     desc: >-
       Run the full pre-commit verification pipeline: clippy, markdownlint,
-      tests, then conformance suite.  Stops on first failure.
+      rustdoc, tests, then conformance suite.  Stops on first failure.
     cmds:
       - task: lint
+      - task: doc
       - task: test
       - task: conformance
+
+  doc:
+    desc: >-
+      Build workspace docs with rustdoc warnings as errors — the local
+      mirror of the CI "Rustdoc (deny warnings)" step.
+    env:
+      RUSTDOCFLAGS: -D warnings
+    cmds:
+      - cargo doc --workspace --all-features --no-deps
 
   test:
     desc: Run the workspace test suite.
