@@ -5,7 +5,7 @@ use syn::DeriveInput;
 use crate::remote_field::{self, RemoteField};
 
 pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
-    let remote = remote_field::parse(&input)?;
+    let (remote, overrides) = remote_field::parse_with_overrides(&input, &["as_shared"])?;
     let RemoteField {
         ident,
         generics,
@@ -27,6 +27,18 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
 
     let ctor_from_vec = remote.construct(quote! { #from_vec(v) });
     let ctor_from_wire = remote.construct(quote! { #from_vec(payload.as_slice().to_vec()) });
+
+    // Unlike the `ProtoBox`/`MapStorage` overrides there is no conventional
+    // method name to default to: absent the key, nothing is generated and
+    // the trait's own `None` default applies.
+    let as_shared_impl = overrides.get("as_shared").map(|path| {
+        quote! {
+            #[inline]
+            fn as_shared(&self) -> ::core::option::Option<::buffa::bytes::Bytes> {
+                #path(&#accessor)
+            }
+        }
+    });
 
     Ok(quote! {
         impl #impl_generics ::core::ops::Deref for #ident #ty_generics #where_clause {
@@ -58,6 +70,8 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
             ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
                 ::core::result::Result::Ok(#ctor_from_wire)
             }
+
+            #as_shared_impl
         }
     })
 }
