@@ -205,6 +205,7 @@ pub(crate) fn test_ctx(depth: u32) -> DecodeContext<'static> {
 #[cfg(feature = "json")]
 pub mod any_registry;
 pub mod editions;
+pub mod encode_sink;
 pub mod encoding;
 pub mod enumeration;
 pub mod error;
@@ -237,6 +238,7 @@ pub mod view;
 // Types that appear in user code: trait bounds, field types, return types,
 // and things users explicitly construct or call methods on.
 
+pub use encode_sink::{EncodeSink, Rope, RopeBuf, DEFAULT_MIN_SEGMENT};
 pub use enumeration::{EnumValue, Enumeration};
 pub use error::{DecodeError, EncodeError};
 pub use extension::{Extension, ExtensionCodec, ExtensionSet};
@@ -255,7 +257,7 @@ pub use message::{
 pub use message_field::{DefaultInstance, Inline, MessageField, ProtoBox};
 pub use oneof::Oneof;
 pub use size_cache::{SizeCache, SizeCachePool};
-pub use types::{ProtoBytes, ProtoList, ProtoString, WirePayload};
+pub use types::{AsSharedBytes, ProtoBytes, ProtoList, ProtoString, WirePayload};
 pub use unknown_fields::{UnknownField, UnknownFieldData, UnknownFields};
 
 #[cfg(feature = "text")]
@@ -492,7 +494,7 @@ pub mod __doctest_fixtures {
         fn compute_size(&self, _cache: &mut SizeCache) -> u32 {
             0
         }
-        fn write_to(&self, _cache: &mut SizeCache, _buf: &mut impl bytes::BufMut) {}
+        fn write_to(&self, _cache: &mut SizeCache, _buf: &mut impl crate::EncodeSink) {}
         fn merge_field(
             &mut self,
             tag: crate::encoding::Tag,

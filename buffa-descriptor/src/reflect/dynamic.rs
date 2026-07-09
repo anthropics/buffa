@@ -22,7 +22,7 @@ use crate::{
     DescriptorPool, EnumIndex, FieldDescriptor, FieldKind, MessageDescriptor, MessageIndex,
     ScalarType, SingularKind,
 };
-use buffa::bytes::{Buf, BufMut};
+use buffa::bytes::Buf;
 use buffa::encoding::{
     decode_unknown_field, decode_varint, encode_varint, skip_field_depth, Tag, WireType,
 };
@@ -577,7 +577,7 @@ impl DynamicMessage {
     /// the field.
     ///
     /// [`try_set`]: crate::reflect::ReflectMessageMut::try_set
-    pub fn encode(&self, buf: &mut impl BufMut) {
+    pub fn encode(&self, buf: &mut impl buffa::EncodeSink) {
         for (&number, value) in &self.fields {
             // Skip if neither the descriptor nor the extension index
             // recognizes this number anymore (defensive — the fields map
@@ -1437,7 +1437,7 @@ fn encode_field(
     fd: &FieldDescriptor,
     value: &Value,
     pool: &Arc<DescriptorPool>,
-    buf: &mut impl BufMut,
+    buf: &mut impl buffa::EncodeSink,
 ) {
     if !value_matches_field_shape(fd.kind, value, pool) {
         return;
@@ -1574,7 +1574,7 @@ fn encode_singular_with_tag(
     kind: SingularKind,
     delimited: bool,
     value: &Value,
-    buf: &mut impl BufMut,
+    buf: &mut impl buffa::EncodeSink,
 ) {
     match (kind, value) {
         (SingularKind::Scalar(s), v) if value_matches_scalar(s, v) => {
@@ -1619,7 +1619,7 @@ fn singular_len_with_tag(number: u32, kind: SingularKind, delimited: bool, value
     tag_bytes + payload
 }
 
-fn encode_scalar(s: ScalarType, v: &Value, buf: &mut impl BufMut) {
+fn encode_scalar(s: ScalarType, v: &Value, buf: &mut impl buffa::EncodeSink) {
     match (s, v) {
         (ScalarType::Double, Value::F64(x)) => encode_double(*x, buf),
         (ScalarType::Float, Value::F32(x)) => encode_float(*x, buf),
@@ -1659,7 +1659,7 @@ fn scalar_len(s: ScalarType, v: &Value) -> usize {
     }
 }
 
-fn encode_packed_element(kind: SingularKind, v: &Value, buf: &mut impl BufMut) {
+fn encode_packed_element(kind: SingularKind, v: &Value, buf: &mut impl buffa::EncodeSink) {
     match (kind, v) {
         (SingularKind::Scalar(s), v) => encode_scalar(s, v, buf),
         (SingularKind::Enum(_), Value::EnumNumber(n)) => encode_int32(*n, buf),
@@ -1698,7 +1698,7 @@ fn map_key_wire_type(s: ScalarType) -> WireType {
     }
 }
 
-fn encode_map_key(s: ScalarType, k: &MapKey, buf: &mut impl BufMut) {
+fn encode_map_key(s: ScalarType, k: &MapKey, buf: &mut impl buffa::EncodeSink) {
     match (s, k) {
         (ScalarType::Bool, MapKey::Bool(x)) => encode_bool(*x, buf),
         (ScalarType::Int32, MapKey::I32(x)) => encode_int32(*x, buf),

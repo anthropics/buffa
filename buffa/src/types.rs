@@ -51,9 +51,10 @@
 //! bytes. Use `sint32`/`sint64` (zigzag) when negative values are common.
 //! <https://protobuf.dev/programming-guides/encoding/#signed-ints>
 
+use crate::encode_sink::EncodeSink;
 use alloc::string::String;
 use alloc::vec::Vec;
-use bytes::{Buf, BufMut, Bytes};
+use bytes::{Buf, Bytes};
 
 use crate::encoding::{decode_varint, encode_varint, varint_len, Tag, WireType};
 use crate::error::DecodeError;
@@ -176,7 +177,7 @@ pub(crate) fn zigzag_decode_i64(value: u64) -> i64 {
 /// producing a 10-byte varint. Use [`encode_sint32`] when negative values are
 /// common.
 #[inline]
-pub fn encode_int32(value: i32, buf: &mut impl BufMut) {
+pub fn encode_int32(value: i32, buf: &mut impl EncodeSink) {
     // Sign-extend to i64 then reinterpret as u64 per the protobuf spec.
     encode_varint(value as i64 as u64, buf);
 }
@@ -193,7 +194,7 @@ pub fn decode_int32(buf: &mut impl Buf) -> Result<i32, DecodeError> {
 
 /// Encode an `int64` value as a varint (wire type 0).
 #[inline]
-pub fn encode_int64(value: i64, buf: &mut impl BufMut) {
+pub fn encode_int64(value: i64, buf: &mut impl EncodeSink) {
     encode_varint(value as u64, buf);
 }
 
@@ -206,7 +207,7 @@ pub fn decode_int64(buf: &mut impl Buf) -> Result<i64, DecodeError> {
 
 /// Encode a `uint32` value as a varint (wire type 0).
 #[inline]
-pub fn encode_uint32(value: u32, buf: &mut impl BufMut) {
+pub fn encode_uint32(value: u32, buf: &mut impl EncodeSink) {
     encode_varint(value as u64, buf);
 }
 
@@ -222,7 +223,7 @@ pub fn decode_uint32(buf: &mut impl Buf) -> Result<u32, DecodeError> {
 
 /// Encode a `uint64` value as a varint (wire type 0).
 #[inline]
-pub fn encode_uint64(value: u64, buf: &mut impl BufMut) {
+pub fn encode_uint64(value: u64, buf: &mut impl EncodeSink) {
     encode_varint(value, buf);
 }
 
@@ -238,7 +239,7 @@ pub fn decode_uint64(buf: &mut impl Buf) -> Result<u64, DecodeError> {
 /// magnitude produce short varints. Prefer this over [`encode_int32`] when the
 /// field regularly holds negative values.
 #[inline]
-pub fn encode_sint32(value: i32, buf: &mut impl BufMut) {
+pub fn encode_sint32(value: i32, buf: &mut impl EncodeSink) {
     encode_varint(zigzag_encode_i32(value) as u64, buf);
 }
 
@@ -253,7 +254,7 @@ pub fn decode_sint32(buf: &mut impl Buf) -> Result<i32, DecodeError> {
 
 /// Encode a `sint64` value as a varint using ZigZag encoding (wire type 0).
 #[inline]
-pub fn encode_sint64(value: i64, buf: &mut impl BufMut) {
+pub fn encode_sint64(value: i64, buf: &mut impl EncodeSink) {
     encode_varint(zigzag_encode_i64(value), buf);
 }
 
@@ -268,7 +269,7 @@ pub fn decode_sint64(buf: &mut impl Buf) -> Result<i64, DecodeError> {
 ///
 /// `true` encodes to `0x01`, `false` to `0x00`.
 #[inline]
-pub fn encode_bool(value: bool, buf: &mut impl BufMut) {
+pub fn encode_bool(value: bool, buf: &mut impl EncodeSink) {
     // Both values are < 0x80, so a single byte is a valid varint.
     buf.put_u8(value as u8);
 }
@@ -420,7 +421,7 @@ pub const BOOL_ENCODED_LEN: usize = 1;
 
 /// Encode a `float` value as 4 bytes little-endian (wire type 5).
 #[inline]
-pub fn encode_float(value: f32, buf: &mut impl BufMut) {
+pub fn encode_float(value: f32, buf: &mut impl EncodeSink) {
     buf.put_f32_le(value);
 }
 
@@ -435,7 +436,7 @@ pub fn decode_float(buf: &mut impl Buf) -> Result<f32, DecodeError> {
 
 /// Encode a `fixed32` value as 4 bytes little-endian (wire type 5).
 #[inline]
-pub fn encode_fixed32(value: u32, buf: &mut impl BufMut) {
+pub fn encode_fixed32(value: u32, buf: &mut impl EncodeSink) {
     buf.put_u32_le(value);
 }
 
@@ -453,7 +454,7 @@ pub fn decode_fixed32(buf: &mut impl Buf) -> Result<u32, DecodeError> {
 /// `sfixed32` is a signed 32-bit integer stored as its two's complement
 /// representation in little-endian order — identical bit pattern to `fixed32`.
 #[inline]
-pub fn encode_sfixed32(value: i32, buf: &mut impl BufMut) {
+pub fn encode_sfixed32(value: i32, buf: &mut impl EncodeSink) {
     buf.put_i32_le(value);
 }
 
@@ -472,7 +473,7 @@ pub fn decode_sfixed32(buf: &mut impl Buf) -> Result<i32, DecodeError> {
 
 /// Encode a `double` value as 8 bytes little-endian (wire type 1).
 #[inline]
-pub fn encode_double(value: f64, buf: &mut impl BufMut) {
+pub fn encode_double(value: f64, buf: &mut impl EncodeSink) {
     buf.put_f64_le(value);
 }
 
@@ -487,7 +488,7 @@ pub fn decode_double(buf: &mut impl Buf) -> Result<f64, DecodeError> {
 
 /// Encode a `fixed64` value as 8 bytes little-endian (wire type 1).
 #[inline]
-pub fn encode_fixed64(value: u64, buf: &mut impl BufMut) {
+pub fn encode_fixed64(value: u64, buf: &mut impl EncodeSink) {
     buf.put_u64_le(value);
 }
 
@@ -505,7 +506,7 @@ pub fn decode_fixed64(buf: &mut impl Buf) -> Result<u64, DecodeError> {
 /// `sfixed64` is a signed 64-bit integer stored as its two's complement
 /// representation in little-endian order — identical bit pattern to `fixed64`.
 #[inline]
-pub fn encode_sfixed64(value: i64, buf: &mut impl BufMut) {
+pub fn encode_sfixed64(value: i64, buf: &mut impl EncodeSink) {
     buf.put_i64_le(value);
 }
 
@@ -564,7 +565,7 @@ macro_rules! put_field_fn {
         // site, inlining const-folds the tag to constant byte store(s): one byte
         // for field numbers 1-15, a few for larger numbers.
         #[inline(always)]
-        pub fn $name(field_number: u32, value: $value, buf: &mut impl BufMut) {
+        pub fn $name(field_number: u32, value: $value, buf: &mut impl EncodeSink) {
             Tag::new(field_number, $wire).encode(buf);
             $encode(value, buf);
         }
@@ -632,6 +633,99 @@ put_field_fn!(
     put_bytes_field, &[u8], WireType::LengthDelimited, encode_bytes
 );
 
+/// A value a `bytes` field can encode from: every [`ProtoBytes`]
+/// representation, plus the borrowed `&[u8]` that view types carry.
+///
+/// This exists so [`put_shared_bytes_field`] can serve the duck-typed
+/// `write_to` bodies codegen shares between owned messages and views. The
+/// borrowed form has no owned handle to share ([`as_shared`](Self::as_shared)
+/// is `None`); a [`Rope`](crate::Rope) sink can still capture it zero-copy
+/// through its backing-buffer containment check.
+pub trait AsSharedBytes {
+    /// The value's bytes.
+    fn as_bytes_slice(&self) -> &[u8];
+
+    /// A reference-counted handle to exactly the bytes of
+    /// [`as_bytes_slice`](Self::as_bytes_slice), when one exists.
+    #[inline]
+    fn as_shared(&self) -> Option<Bytes> {
+        None
+    }
+}
+
+impl<B: ProtoBytes> AsSharedBytes for B {
+    #[inline]
+    fn as_bytes_slice(&self) -> &[u8] {
+        self.as_ref()
+    }
+
+    #[inline]
+    fn as_shared(&self) -> Option<Bytes> {
+        ProtoBytes::as_shared(self)
+    }
+}
+
+// View `bytes` fields are `&'a [u8]`. No overlap with the blanket impl:
+// `&[u8]` does not implement `ProtoBytes`, and never can — `ProtoBytes`
+// requires `From<Vec<u8>>`, and `impl From<Vec<u8>> for &[u8]` is
+// orphan-forbidden for every crate (all three types/traits are foreign to
+// any crate that would try), so the disjointness is permanent.
+impl AsSharedBytes for &[u8] {
+    #[inline]
+    fn as_bytes_slice(&self) -> &[u8] {
+        self
+    }
+}
+
+/// Write a tagged `bytes` field, splicing the payload into segmented sinks
+/// by reference count when the value can produce a [`Bytes`] handle.
+///
+/// Generated `write_to` bodies use this for every `bytes` field. The
+/// zero-copy attempt runs only when the sink declares
+/// [`IS_SEGMENTED`](EncodeSink::IS_SEGMENTED) — for contiguous sinks
+/// (`Vec<u8>`, `BytesMut`, every other `BufMut`) the constant is `false`,
+/// the branch const-folds away, and the payload is copied exactly as
+/// [`put_bytes_field`] would, with no refcount traffic. Into a
+/// [`Rope`](crate::Rope), `bytes::Bytes` fields (and custom [`ProtoBytes`]
+/// representations implementing `as_shared`) become refcount-shared
+/// segments; `Vec<u8>` and view `&[u8]` values fall back to
+/// [`EncodeSink::put_slice`], where the rope's backing-buffer capture can
+/// still apply.
+#[inline(always)]
+pub fn put_shared_bytes_field<B: AsSharedBytes, S: EncodeSink>(
+    field_number: u32,
+    value: &B,
+    buf: &mut S,
+) {
+    Tag::new(field_number, WireType::LengthDelimited).encode(buf);
+    encode_shared_bytes(value, buf);
+}
+
+/// Encode a length-delimited `bytes` value (varint length prefix + payload,
+/// no tag), splicing the payload into segmented sinks by reference count
+/// when the value can produce a [`Bytes`] handle.
+///
+/// The tagless sibling of [`put_shared_bytes_field`] and the shared-aware
+/// counterpart of [`encode_bytes`]; map value codecs use it directly (the
+/// map entry writes the value tag itself).
+#[inline(always)]
+pub fn encode_shared_bytes<B: AsSharedBytes, S: EncodeSink>(value: &B, buf: &mut S) {
+    let slice = value.as_bytes_slice();
+    encode_varint(slice.len() as u64, buf);
+    if S::IS_SEGMENTED {
+        if let Some(shared) = value.as_shared() {
+            debug_assert_eq!(
+                shared.len(),
+                slice.len(),
+                "as_shared must view exactly as_bytes_slice's bytes"
+            );
+            buf.put_shared(shared);
+            return;
+        }
+    }
+    buf.put_slice(slice);
+}
+
 /// Write a length-delimited field header: tag + payload-length varint.
 ///
 /// Used for sub-message fields (the payload follows via `write_to`, its
@@ -641,20 +735,20 @@ put_field_fn!(
 /// The arguments are `(field_number, len)` — both `u32`, so transposing them
 /// compiles but emits a structurally-valid-but-wrong header.
 #[inline(always)]
-pub fn put_len_delimited_header(field_number: u32, len: u32, buf: &mut impl BufMut) {
+pub fn put_len_delimited_header(field_number: u32, len: u32, buf: &mut impl EncodeSink) {
     Tag::new(field_number, WireType::LengthDelimited).encode(buf);
     encode_varint(len as u64, buf);
 }
 
 /// Write a group field's `StartGroup` tag.
 #[inline(always)]
-pub fn put_group_start(field_number: u32, buf: &mut impl BufMut) {
+pub fn put_group_start(field_number: u32, buf: &mut impl EncodeSink) {
     Tag::new(field_number, WireType::StartGroup).encode(buf);
 }
 
 /// Write a group field's `EndGroup` tag.
 #[inline(always)]
-pub fn put_group_end(field_number: u32, buf: &mut impl BufMut) {
+pub fn put_group_end(field_number: u32, buf: &mut impl EncodeSink) {
     Tag::new(field_number, WireType::EndGroup).encode(buf);
 }
 
@@ -665,7 +759,7 @@ pub fn put_group_end(field_number: u32, buf: &mut impl BufMut) {
 /// Encode a `string` value as a varint length prefix followed by UTF-8 bytes
 /// (wire type 2).
 #[inline]
-pub fn encode_string(value: &str, buf: &mut impl BufMut) {
+pub fn encode_string(value: &str, buf: &mut impl EncodeSink) {
     encode_varint(value.len() as u64, buf);
     buf.put_slice(value.as_bytes());
 }
@@ -1147,7 +1241,7 @@ pub fn decode_string_to<S: ProtoString>(buf: &mut impl Buf) -> Result<S, DecodeE
 /// Encode a `bytes` value as a varint length prefix followed by raw bytes
 /// (wire type 2).
 #[inline]
-pub fn encode_bytes(value: &[u8], buf: &mut impl BufMut) {
+pub fn encode_bytes(value: &[u8], buf: &mut impl EncodeSink) {
     encode_varint(value.len() as u64, buf);
     buf.put_slice(value);
 }
@@ -1232,11 +1326,11 @@ pub fn decode_bytes_to_bytes(buf: &mut impl Buf) -> Result<Bytes, DecodeError> {
 ///   resets the field to [`Default`] rather than relying on a `Vec`-specific
 ///   `clear`, since a substituted type may be immutable).
 /// - `Send + Sync` — so a message owning such a field stays `Send + Sync`.
-/// - `Deref<Target = [u8]>` and [`AsRef<[u8]>`](AsRef) — generated code borrows
-///   the field as `&[u8]` by plain reference coercion (`&self.field` where
-///   [`encode_bytes`] / [`bytes_encoded_len`] expect `&[u8]`), so the
-///   representation must `Deref` to `[u8]`; `AsRef<[u8]>` is also required for
-///   the call sites that ask for it explicitly.
+/// - `Deref<Target = [u8]>` and [`AsRef<[u8]>`](AsRef) — generated code
+///   reads the field's bytes through these bounds: the size pass borrows
+///   `&[u8]` where [`bytes_encoded_len`] expects it, and the write pass goes
+///   through [`put_shared_bytes_field`] / [`AsSharedBytes`], whose blanket
+///   impl reads via `AsRef<[u8]>`.
 /// - `From<Vec<u8>>` — used by the JSON and view→owned paths to construct the
 ///   field from freshly decoded bytes (binary decode uses
 ///   [`from_wire`](ProtoBytes::from_wire) instead). Note that `From<&[u8]>` is
@@ -1315,6 +1409,31 @@ pub trait ProtoBytes:
     /// value with [`DecodeError::Custom`] (carrying a static reason), or return
     /// any other [`DecodeError`] variant.
     fn from_wire(payload: WirePayload<'_>) -> Result<Self, DecodeError>;
+
+    /// The representation's bytes as a reference-counted [`Bytes`] handle,
+    /// when one exists.
+    ///
+    /// This is the encode-side hook for segmented sinks: a representation
+    /// that stores its bytes as (or can cheaply produce) a `Bytes` returns
+    /// `Some`, letting [`put_shared_bytes_field`] splice the field into a
+    /// [`Rope`](crate::Rope) by reference count.
+    ///
+    /// The default returns `None`, which means "copy me" — always correct.
+    ///
+    /// # Correctness
+    ///
+    /// The returned handle must view **exactly** the bytes of
+    /// `self.as_ref()`. A violation (stale handle, different slicing, a
+    /// reused scratch buffer) produces a corrupt encoding — and only when
+    /// the sink is segmented: contiguous sinks never call the handle, so
+    /// the bug is invisible in ordinary tests. Implementations overriding
+    /// this method should test their encode path against a
+    /// [`Rope`](crate::Rope) explicitly (a `debug_assert` in
+    /// [`put_shared_bytes_field`] catches length mismatches, not aliasing).
+    #[inline]
+    fn as_shared(&self) -> Option<Bytes> {
+        None
+    }
 }
 
 impl ProtoBytes for Vec<u8> {
@@ -1332,6 +1451,11 @@ impl ProtoBytes for Bytes {
         // `bytes::Bytes` field path uses `decode_bytes_to_bytes` for guaranteed
         // zero-copy from a `Bytes`-backed buffer.
         Ok(payload.into_bytes())
+    }
+
+    #[inline]
+    fn as_shared(&self) -> Option<Bytes> {
+        Some(self.clone())
     }
 }
 

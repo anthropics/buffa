@@ -953,8 +953,15 @@ use buffa::Message;
 let bytes: Vec<u8> = msg.encode_to_vec();
 let bytes: buffa::bytes::Bytes = msg.encode_to_bytes();  // zero-copy, for async/networking
 
-// Encode to a BufMut
+// Encode to any sink (every `BufMut` qualifies via a blanket impl)
 msg.encode(&mut buf);
+
+// Segmented ("rope") encode: large `bytes::Bytes` fields become
+// reference-counted segments instead of being copied — hand the segments
+// to a vectored writer (hyper/h2 body frames, `write_vectored`).
+let mut rope = buffa::Rope::new();
+msg.encode(&mut rope);
+for segment in rope.into_segments() { /* send each Bytes frame */ }
 
 // Decode from a byte slice
 let msg = Person::decode_from_slice(&bytes)?;
@@ -981,7 +988,7 @@ Buffa uses a two-pass model to avoid the exponential-time size computation that 
 
 ### Error handling
 
-Encoding is **infallible** — `encode()` and `write_to()` never return errors. The buffer grows as needed via `BufMut`.
+Encoding is **infallible** — `encode()` and `write_to()` never return errors. Contiguous sinks grow as needed via `BufMut`; a [`Rope`](https://docs.rs/buffa/latest/buffa/struct.Rope.html) appends segments.
 
 Decoding returns `Result<T, DecodeError>`. See [`buffa::DecodeError`](https://docs.rs/buffa/latest/buffa/enum.DecodeError.html)
 for the full list of variants (the enum is `#[non_exhaustive]`). Common cases:
@@ -2079,7 +2086,7 @@ impl Message for Int64Range {
         size
     }
 
-    fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl bytes::BufMut) {
+    fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl buffa::EncodeSink) {
         if self.inner.start != 0 {
             buffa::encoding::Tag::new(1, buffa::encoding::WireType::Varint)
                 .encode(buf);

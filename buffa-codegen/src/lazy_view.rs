@@ -392,7 +392,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
             #view_encode_methods
 
             /// Compute size, then write. Primary encode entry point.
-            pub fn encode(&self, buf: &mut impl ::buffa::bytes::BufMut) {
+            pub fn encode(&self, buf: &mut impl ::buffa::EncodeSink) {
                 let mut __cache = ::buffa::SizeCache::new();
                 self.compute_size(&mut __cache);
                 self.write_to(&mut __cache, buf);
