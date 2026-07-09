@@ -1726,8 +1726,8 @@ fn test_message_proto3_optional_bytes_and_bool() {
     );
     // Bytes uses encode_bytes
     assert!(
-        content.contains("put_bytes_field"),
-        "missing put_bytes_field for optional bytes: {content}"
+        content.contains("put_shared_bytes_field"),
+        "missing put_shared_bytes_field for optional bytes: {content}"
     );
 }
 
@@ -1772,8 +1772,8 @@ fn test_message_string_and_bytes_fields() {
         "missing string_encoded_len: {content}"
     );
     assert!(
-        content.contains("put_bytes_field"),
-        "missing put_bytes_field: {content}"
+        content.contains("put_shared_bytes_field"),
+        "missing put_shared_bytes_field: {content}"
     );
     assert!(
         content.contains("merge_bytes"),
@@ -2620,4 +2620,58 @@ fn apply_companions_file_per_package() {
         "file_per_package stitcher missing companion include"
     );
     syn::parse_file(&pkg_file.content).expect("file_per_package output still parses");
+}
+
+#[test]
+fn test_editions_legacy_required_explicit_default_survives() {
+    // Regression guard: `parse_default_value` resolves per-field features,
+    // so an editions LEGACY_REQUIRED field's presence is LegacyRequired, not
+    // the file-level Explicit — the presence gate must accept both or the
+    // declared default silently degrades to the type default. Mirrors the
+    // editions_2024 runtime fixture, which is protoc-version-gated and so
+    // does not run everywhere.
+    use crate::generated::descriptor::{
+        feature_set::FieldPresence, Edition, FeatureSet, FieldOptions,
+    };
+
+    let mut req = make_field("req", 1, Label::LABEL_OPTIONAL, Type::TYPE_INT32);
+    req.default_value = Some("42".to_string());
+    req.options = FieldOptions {
+        features: FeatureSet {
+            field_presence: Some(FieldPresence::LEGACY_REQUIRED),
+            ..Default::default()
+        }
+        .into(),
+        ..Default::default()
+    }
+    .into();
+
+    let file = FileDescriptorProto {
+        name: Some("ed_legacy_default.proto".to_string()),
+        syntax: Some("editions".to_string()),
+        edition: Some(Edition::EDITION_2023),
+        message_type: vec![DescriptorProto {
+            name: Some("Rec".to_string()),
+            field: vec![req],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let files = generate(
+        &[file],
+        &["ed_legacy_default.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("editions legacy_required default should generate");
+    let content = &joined(&files);
+    let compact = content.split_whitespace().collect::<String>();
+
+    assert!(
+        compact.contains("req:42"),
+        "LEGACY_REQUIRED explicit default must reach the Default impl: {content}"
+    );
+    assert!(
+        compact.contains("self.req=42"),
+        "LEGACY_REQUIRED explicit default must reach clear(): {content}"
+    );
 }

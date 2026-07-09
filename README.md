@@ -56,8 +56,6 @@ These are intentionally out of scope:
 
 These are gaps we intend to address in future releases:
 
-- **Closed-enum unknown values in packed-repeated view decode** are silently dropped (not routed to unknown fields). The owned decoder handles this correctly; the view decoder handles singular, optional, oneof, unpacked repeated, and map values correctly. Packed blobs have no per-element tag to borrow, so the zero-copy `UnknownFieldsView<'a>` has no span to reference.
-
 ## Semver and API stability
 
 Buffa is pre-1.0. We follow the [Rust community convention](https://doc.rust-lang.org/cargo/reference/semver.html) for 0.x crates: breaking changes increment the **minor** version (0.1.x → 0.2.0), additive changes increment the **patch** version (0.1.0 → 0.1.1). Pin to a minor version (`buffa = "x.y"`; the full `x.y.z` that `cargo add buffa` writes is equivalent under caret semantics) to avoid surprises.
@@ -169,6 +167,8 @@ let decoded: MyMessage = serde_json::from_str(&json).unwrap();
 | `buffa-descriptor` | Protobuf descriptor types (`FileDescriptorProto`, `DescriptorProto`, ...) |
 | `buffa-codegen` | Code generation from protobuf descriptors |
 | `buffa-build` | `build.rs` helper for invoking codegen via `protoc` |
+| `buffa-remote-derive` | Derive macros implementing the pluggable owned-type traits for newtypes over foreign types |
+| `buffa-yaml` | YAML serialization for buffa messages |
 | `protoc-gen-buffa` | `protoc` plugin binary; also published as [`buf.build/anthropics/buffa`](https://buf.build/anthropics/buffa) |
 | `protoc-gen-buffa-packaging` | `protoc` plugin that emits a `mod.rs` module tree (local-only) |
 

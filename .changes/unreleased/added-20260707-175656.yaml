@@ -1,0 +1,10 @@
+kind: Added
+body: |-
+    **`buffa-remote-derive`: derive macros for newtypes over remote types** (#212, #251).
+    New proc-macro crate with `ProtoString`, `ProtoBytes`, `ProtoList`, `ProtoBox`,
+    and `MapStorage` derives that generate the buffa owned-type trait impls (plus
+    `Deref`/`AsRef`/`From` conversions) for a single-field newtype wrapping a
+    foreign type, mirroring serde's `remote` attribute pattern. Covers the binary
+    codec only; serde/`Arbitrary`/reflection forwarders remain hand-written.
+    Contributed by @rsd-darshan.
+time: 2026-07-07T17:56:56.297034386-07:00

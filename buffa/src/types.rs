@@ -51,9 +51,10 @@
 //! bytes. Use `sint32`/`sint64` (zigzag) when negative values are common.
 //! <https://protobuf.dev/programming-guides/encoding/#signed-ints>
 
+use crate::encode_sink::EncodeSink;
 use alloc::string::String;
 use alloc::vec::Vec;
-use bytes::{Buf, BufMut, Bytes};
+use bytes::{Buf, Bytes};
 
 use crate::encoding::{decode_varint, encode_varint, varint_len, Tag, WireType};
 use crate::error::DecodeError;
@@ -176,7 +177,7 @@ pub(crate) fn zigzag_decode_i64(value: u64) -> i64 {
 /// producing a 10-byte varint. Use [`encode_sint32`] when negative values are
 /// common.
 #[inline]
-pub fn encode_int32(value: i32, buf: &mut impl BufMut) {
+pub fn encode_int32(value: i32, buf: &mut impl EncodeSink) {
     // Sign-extend to i64 then reinterpret as u64 per the protobuf spec.
     encode_varint(value as i64 as u64, buf);
 }
@@ -193,7 +194,7 @@ pub fn decode_int32(buf: &mut impl Buf) -> Result<i32, DecodeError> {
 
 /// Encode an `int64` value as a varint (wire type 0).
 #[inline]
-pub fn encode_int64(value: i64, buf: &mut impl BufMut) {
+pub fn encode_int64(value: i64, buf: &mut impl EncodeSink) {
     encode_varint(value as u64, buf);
 }
 
@@ -206,7 +207,7 @@ pub fn decode_int64(buf: &mut impl Buf) -> Result<i64, DecodeError> {
 
 /// Encode a `uint32` value as a varint (wire type 0).
 #[inline]
-pub fn encode_uint32(value: u32, buf: &mut impl BufMut) {
+pub fn encode_uint32(value: u32, buf: &mut impl EncodeSink) {
     encode_varint(value as u64, buf);
 }
 
@@ -222,7 +223,7 @@ pub fn decode_uint32(buf: &mut impl Buf) -> Result<u32, DecodeError> {
 
 /// Encode a `uint64` value as a varint (wire type 0).
 #[inline]
-pub fn encode_uint64(value: u64, buf: &mut impl BufMut) {
+pub fn encode_uint64(value: u64, buf: &mut impl EncodeSink) {
     encode_varint(value, buf);
 }
 
@@ -238,7 +239,7 @@ pub fn decode_uint64(buf: &mut impl Buf) -> Result<u64, DecodeError> {
 /// magnitude produce short varints. Prefer this over [`encode_int32`] when the
 /// field regularly holds negative values.
 #[inline]
-pub fn encode_sint32(value: i32, buf: &mut impl BufMut) {
+pub fn encode_sint32(value: i32, buf: &mut impl EncodeSink) {
     encode_varint(zigzag_encode_i32(value) as u64, buf);
 }
 
@@ -253,7 +254,7 @@ pub fn decode_sint32(buf: &mut impl Buf) -> Result<i32, DecodeError> {
 
 /// Encode a `sint64` value as a varint using ZigZag encoding (wire type 0).
 #[inline]
-pub fn encode_sint64(value: i64, buf: &mut impl BufMut) {
+pub fn encode_sint64(value: i64, buf: &mut impl EncodeSink) {
     encode_varint(zigzag_encode_i64(value), buf);
 }
 
@@ -268,7 +269,7 @@ pub fn decode_sint64(buf: &mut impl Buf) -> Result<i64, DecodeError> {
 ///
 /// `true` encodes to `0x01`, `false` to `0x00`.
 #[inline]
-pub fn encode_bool(value: bool, buf: &mut impl BufMut) {
+pub fn encode_bool(value: bool, buf: &mut impl EncodeSink) {
     // Both values are < 0x80, so a single byte is a valid varint.
     buf.put_u8(value as u8);
 }
@@ -420,7 +421,7 @@ pub const BOOL_ENCODED_LEN: usize = 1;
 
 /// Encode a `float` value as 4 bytes little-endian (wire type 5).
 #[inline]
-pub fn encode_float(value: f32, buf: &mut impl BufMut) {
+pub fn encode_float(value: f32, buf: &mut impl EncodeSink) {
     buf.put_f32_le(value);
 }
 
@@ -435,7 +436,7 @@ pub fn decode_float(buf: &mut impl Buf) -> Result<f32, DecodeError> {
 
 /// Encode a `fixed32` value as 4 bytes little-endian (wire type 5).
 #[inline]
-pub fn encode_fixed32(value: u32, buf: &mut impl BufMut) {
+pub fn encode_fixed32(value: u32, buf: &mut impl EncodeSink) {
     buf.put_u32_le(value);
 }
 
@@ -453,7 +454,7 @@ pub fn decode_fixed32(buf: &mut impl Buf) -> Result<u32, DecodeError> {
 /// `sfixed32` is a signed 32-bit integer stored as its two's complement
 /// representation in little-endian order — identical bit pattern to `fixed32`.
 #[inline]
-pub fn encode_sfixed32(value: i32, buf: &mut impl BufMut) {
+pub fn encode_sfixed32(value: i32, buf: &mut impl EncodeSink) {
     buf.put_i32_le(value);
 }
 
@@ -472,7 +473,7 @@ pub fn decode_sfixed32(buf: &mut impl Buf) -> Result<i32, DecodeError> {
 
 /// Encode a `double` value as 8 bytes little-endian (wire type 1).
 #[inline]
-pub fn encode_double(value: f64, buf: &mut impl BufMut) {
+pub fn encode_double(value: f64, buf: &mut impl EncodeSink) {
     buf.put_f64_le(value);
 }
 
@@ -487,7 +488,7 @@ pub fn decode_double(buf: &mut impl Buf) -> Result<f64, DecodeError> {
 
 /// Encode a `fixed64` value as 8 bytes little-endian (wire type 1).
 #[inline]
-pub fn encode_fixed64(value: u64, buf: &mut impl BufMut) {
+pub fn encode_fixed64(value: u64, buf: &mut impl EncodeSink) {
     buf.put_u64_le(value);
 }
 
@@ -505,7 +506,7 @@ pub fn decode_fixed64(buf: &mut impl Buf) -> Result<u64, DecodeError> {
 /// `sfixed64` is a signed 64-bit integer stored as its two's complement
 /// representation in little-endian order — identical bit pattern to `fixed64`.
 #[inline]
-pub fn encode_sfixed64(value: i64, buf: &mut impl BufMut) {
+pub fn encode_sfixed64(value: i64, buf: &mut impl EncodeSink) {
     buf.put_i64_le(value);
 }
 
@@ -564,7 +565,7 @@ macro_rules! put_field_fn {
         // site, inlining const-folds the tag to constant byte store(s): one byte
         // for field numbers 1-15, a few for larger numbers.
         #[inline(always)]
-        pub fn $name(field_number: u32, value: $value, buf: &mut impl BufMut) {
+        pub fn $name(field_number: u32, value: $value, buf: &mut impl EncodeSink) {
             Tag::new(field_number, $wire).encode(buf);
             $encode(value, buf);
         }
@@ -632,6 +633,99 @@ put_field_fn!(
     put_bytes_field, &[u8], WireType::LengthDelimited, encode_bytes
 );
 
+/// A value a `bytes` field can encode from: every [`ProtoBytes`]
+/// representation, plus the borrowed `&[u8]` that view types carry.
+///
+/// This exists so [`put_shared_bytes_field`] can serve the duck-typed
+/// `write_to` bodies codegen shares between owned messages and views. The
+/// borrowed form has no owned handle to share ([`as_shared`](Self::as_shared)
+/// is `None`); a [`Rope`](crate::Rope) sink can still capture it zero-copy
+/// through its backing-buffer containment check.
+pub trait AsSharedBytes {
+    /// The value's bytes.
+    fn as_bytes_slice(&self) -> &[u8];
+
+    /// A reference-counted handle to exactly the bytes of
+    /// [`as_bytes_slice`](Self::as_bytes_slice), when one exists.
+    #[inline]
+    fn as_shared(&self) -> Option<Bytes> {
+        None
+    }
+}
+
+impl<B: ProtoBytes> AsSharedBytes for B {
+    #[inline]
+    fn as_bytes_slice(&self) -> &[u8] {
+        self.as_ref()
+    }
+
+    #[inline]
+    fn as_shared(&self) -> Option<Bytes> {
+        ProtoBytes::as_shared(self)
+    }
+}
+
+// View `bytes` fields are `&'a [u8]`. No overlap with the blanket impl:
+// `&[u8]` does not implement `ProtoBytes`, and never can — `ProtoBytes`
+// requires `From<Vec<u8>>`, and `impl From<Vec<u8>> for &[u8]` is
+// orphan-forbidden for every crate (all three types/traits are foreign to
+// any crate that would try), so the disjointness is permanent.
+impl AsSharedBytes for &[u8] {
+    #[inline]
+    fn as_bytes_slice(&self) -> &[u8] {
+        self
+    }
+}
+
+/// Write a tagged `bytes` field, splicing the payload into segmented sinks
+/// by reference count when the value can produce a [`Bytes`] handle.
+///
+/// Generated `write_to` bodies use this for every `bytes` field. The
+/// zero-copy attempt runs only when the sink declares
+/// [`IS_SEGMENTED`](EncodeSink::IS_SEGMENTED) — for contiguous sinks
+/// (`Vec<u8>`, `BytesMut`, every other `BufMut`) the constant is `false`,
+/// the branch const-folds away, and the payload is copied exactly as
+/// [`put_bytes_field`] would, with no refcount traffic. Into a
+/// [`Rope`](crate::Rope), `bytes::Bytes` fields (and custom [`ProtoBytes`]
+/// representations implementing `as_shared`) become refcount-shared
+/// segments; `Vec<u8>` and view `&[u8]` values fall back to
+/// [`EncodeSink::put_slice`], where the rope's backing-buffer capture can
+/// still apply.
+#[inline(always)]
+pub fn put_shared_bytes_field<B: AsSharedBytes, S: EncodeSink>(
+    field_number: u32,
+    value: &B,
+    buf: &mut S,
+) {
+    Tag::new(field_number, WireType::LengthDelimited).encode(buf);
+    encode_shared_bytes(value, buf);
+}
+
+/// Encode a length-delimited `bytes` value (varint length prefix + payload,
+/// no tag), splicing the payload into segmented sinks by reference count
+/// when the value can produce a [`Bytes`] handle.
+///
+/// The tagless sibling of [`put_shared_bytes_field`] and the shared-aware
+/// counterpart of [`encode_bytes`]; map value codecs use it directly (the
+/// map entry writes the value tag itself).
+#[inline(always)]
+pub fn encode_shared_bytes<B: AsSharedBytes, S: EncodeSink>(value: &B, buf: &mut S) {
+    let slice = value.as_bytes_slice();
+    encode_varint(slice.len() as u64, buf);
+    if S::IS_SEGMENTED {
+        if let Some(shared) = value.as_shared() {
+            debug_assert_eq!(
+                shared.len(),
+                slice.len(),
+                "as_shared must view exactly as_bytes_slice's bytes"
+            );
+            buf.put_shared(shared);
+            return;
+        }
+    }
+    buf.put_slice(slice);
+}
+
 /// Write a length-delimited field header: tag + payload-length varint.
 ///
 /// Used for sub-message fields (the payload follows via `write_to`, its
@@ -647,20 +741,20 @@ put_field_fn!(
 /// [`SizeCache::consume_next`](crate::SizeCache::consume_next)) widen with
 /// `u64::from`.
 #[inline(always)]
-pub fn put_len_delimited_header(field_number: u32, len: u64, buf: &mut impl BufMut) {
+pub fn put_len_delimited_header(field_number: u32, len: u64, buf: &mut impl EncodeSink) {
     Tag::new(field_number, WireType::LengthDelimited).encode(buf);
     encode_varint(len, buf);
 }
 
 /// Write a group field's `StartGroup` tag.
 #[inline(always)]
-pub fn put_group_start(field_number: u32, buf: &mut impl BufMut) {
+pub fn put_group_start(field_number: u32, buf: &mut impl EncodeSink) {
     Tag::new(field_number, WireType::StartGroup).encode(buf);
 }
 
 /// Write a group field's `EndGroup` tag.
 #[inline(always)]
-pub fn put_group_end(field_number: u32, buf: &mut impl BufMut) {
+pub fn put_group_end(field_number: u32, buf: &mut impl EncodeSink) {
     Tag::new(field_number, WireType::EndGroup).encode(buf);
 }
 
@@ -671,7 +765,7 @@ pub fn put_group_end(field_number: u32, buf: &mut impl BufMut) {
 /// Encode a `string` value as a varint length prefix followed by UTF-8 bytes
 /// (wire type 2).
 #[inline]
-pub fn encode_string(value: &str, buf: &mut impl BufMut) {
+pub fn encode_string(value: &str, buf: &mut impl EncodeSink) {
     encode_varint(value.len() as u64, buf);
     buf.put_slice(value.as_bytes());
 }
@@ -801,33 +895,110 @@ pub fn merge_string(value: &mut String, buf: &mut impl Buf) -> Result<(), Decode
 /// construct itself directly from the wire — validating (or skipping validation)
 /// and choosing borrow-vs-own on its own terms.
 ///
-/// The decoder hands over `Borrowed` when the field's bytes are contiguous in
-/// the current input chunk (the common case for slice- and `Bytes`-backed
-/// sources) and `Owned` only otherwise (e.g. a field straddling a `Chain`
-/// boundary). A representation validates-and-borrows with
+/// The decoder hands over a borrowed payload when the field's bytes are
+/// contiguous in the current input chunk (the common case for slice- and
+/// `Bytes`-backed sources) and an owned [`Bytes`] only otherwise (e.g. a field
+/// straddling a `Chain` boundary). A representation validates-and-borrows with
 /// [`to_str`](Self::to_str), reads the raw bytes with
 /// [`as_slice`](Self::as_slice) (always zero-copy), or takes ownership with
-/// [`into_bytes`](Self::into_bytes) (zero-copy only for an `Owned` payload —
-/// see that method).
-#[derive(Debug, Clone)]
-pub enum WirePayload<'a> {
-    /// The field's bytes borrowed directly from the input buffer.
-    Borrowed(&'a [u8]),
-    /// The field's bytes owned as `Bytes` (reference-counted). Produced today
-    /// only for multi-chunk sources; a single-chunk source — including a single
-    /// `Bytes` buffer — currently arrives as `Borrowed`.
+/// [`into_bytes`](Self::into_bytes) (zero-copy only for an owned payload — see
+/// that method).
+///
+/// Opaque so that a borrowed payload can carry the surrounding wire-buffer tail
+/// for the slack-aware UTF-8 validator without exposing it to consumers; use the
+/// accessors above and the [`borrowed`](Self::borrowed) / [`owned`](Self::owned)
+/// constructors.
+#[derive(Clone)]
+pub struct WirePayload<'a>(WirePayloadRepr<'a>);
+
+impl core::fmt::Debug for WirePayload<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // Print only the field bytes, never the surrounding tail (which for a
+        // decoder-constructed payload is subsequent fields' wire bytes).
+        f.debug_struct("WirePayload")
+            .field("bytes", &self.as_slice())
+            .field("owned", &self.is_owned())
+            .finish()
+    }
+}
+
+#[derive(Clone)]
+enum WirePayloadRepr<'a> {
+    /// `chunk[..len]` is the field; `chunk[len..]` is the surrounding
+    /// wire-buffer tail (empty when constructed via `WirePayload::borrowed`).
+    /// Invariant: `len <= chunk.len()`.
+    Borrowed {
+        chunk: &'a [u8],
+        len: usize,
+    },
     Owned(Bytes),
 }
 
-impl WirePayload<'_> {
+impl<'a> WirePayload<'a> {
+    /// A payload borrowing exactly `field` (no surrounding wire buffer).
+    ///
+    /// Tests and hand-built payloads use this; the decoder uses an internal
+    /// constructor that also carries the surrounding tail so
+    /// [`to_str`](Self::to_str) can take the slack-aware fast path.
+    #[inline]
+    #[must_use]
+    pub const fn borrowed(field: &'a [u8]) -> Self {
+        Self(WirePayloadRepr::Borrowed {
+            chunk: field,
+            len: field.len(),
+        })
+    }
+
+    /// A payload owning `bytes`.
+    #[inline]
+    #[must_use]
+    pub const fn owned(bytes: Bytes) -> Self {
+        Self(WirePayloadRepr::Owned(bytes))
+    }
+
+    /// `chunk[..len]` is the field; `chunk[len..]` is readable tail. The caller
+    /// has established `len <= chunk.len()` (the EOF check before every call).
+    #[inline]
+    pub(crate) fn borrowed_in(chunk: &'a [u8], len: usize) -> Self {
+        debug_assert!(len <= chunk.len());
+        Self(WirePayloadRepr::Borrowed { chunk, len })
+    }
+
     /// Borrow the field's bytes (zero-copy in both variants).
     #[inline]
     #[must_use]
     pub fn as_slice(&self) -> &[u8] {
-        match self {
-            WirePayload::Borrowed(s) => s,
-            WirePayload::Owned(b) => b,
+        match &self.0 {
+            WirePayloadRepr::Borrowed { chunk, len } => &chunk[..*len],
+            WirePayloadRepr::Owned(b) => b,
         }
+    }
+
+    /// Field length in bytes.
+    #[inline]
+    #[must_use]
+    pub fn len(&self) -> usize {
+        match &self.0 {
+            WirePayloadRepr::Borrowed { len, .. } => *len,
+            WirePayloadRepr::Owned(b) => b.len(),
+        }
+    }
+
+    /// Whether the field is empty.
+    #[inline]
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Whether this payload owns its bytes (and so [`into_bytes`](Self::into_bytes)
+    /// is zero-copy). A `from_wire` impl that wants the [`Bytes`] only when it's
+    /// free can branch on this and fall back to [`as_slice`](Self::as_slice)
+    /// otherwise.
+    #[inline]
+    #[must_use]
+    pub fn is_owned(&self) -> bool {
+        matches!(self.0, WirePayloadRepr::Owned(_))
     }
 
     /// Borrow the payload as a `&str` if it is valid UTF-8.
@@ -835,7 +1006,10 @@ impl WirePayload<'_> {
     /// Convenience for [`ProtoString::from_wire`] implementations; uses
     /// buffa's UTF-8 validator (so it picks up the `fast-utf8` feature when
     /// enabled) and returns the same [`DecodeError::InvalidUtf8`] the
-    /// built-in `String` representation would.
+    /// built-in `String` representation would. For a borrowed payload that
+    /// carries surrounding wire-buffer tail (the decoder's common case) this
+    /// reaches the slack-aware fast path; the `borrowed`/`owned` constructors
+    /// have no tail, so they take the plain validator.
     ///
     /// # Errors
     ///
@@ -843,23 +1017,30 @@ impl WirePayload<'_> {
     #[inline]
     #[must_use = "the validated `&str` is the only way to use the payload as a string"]
     pub fn to_str(&self) -> Result<&str, DecodeError> {
-        validate_str(self.as_slice())
+        match &self.0 {
+            // SAFETY: the `Borrowed` invariant is `len <= chunk.len()`,
+            // satisfying `validate_str_in`'s precondition. Established at
+            // `borrowed_in` (debug-asserted) by the decoder's preceding EOF
+            // check, and at `borrowed` by `len = field.len()`.
+            WirePayloadRepr::Borrowed { chunk, len } => unsafe { validate_str_in(chunk, *len) },
+            WirePayloadRepr::Owned(b) => validate_str(b),
+        }
     }
 
     /// Take ownership of the field's bytes as [`Bytes`].
     ///
-    /// Zero-copy only for an `Owned` payload, which today is produced only for
+    /// Zero-copy only for an owned payload, which today is produced only for
     /// multi-chunk sources — a single-chunk source (including a single `Bytes`
-    /// buffer) arrives as `Borrowed` and is copied here. For a guaranteed
-    /// zero-copy `bytes` field path use the built-in `bytes::Bytes` representation
+    /// buffer) arrives borrowed and is copied here. For a guaranteed zero-copy
+    /// `bytes` field path use the built-in `bytes::Bytes` representation
     /// ([`decode_bytes_to_bytes`]); single-chunk-`Bytes` zero-copy for custom
     /// types is a planned additive enhancement.
     #[inline]
     #[must_use]
     pub fn into_bytes(self) -> Bytes {
-        match self {
-            WirePayload::Borrowed(s) => Bytes::copy_from_slice(s),
-            WirePayload::Owned(b) => b,
+        match self.0 {
+            WirePayloadRepr::Borrowed { chunk, len } => Bytes::copy_from_slice(&chunk[..len]),
+            WirePayloadRepr::Owned(b) => b,
         }
     }
 }
@@ -893,14 +1074,15 @@ pub(crate) fn read_field_payload<R>(
     }
     let chunk = buf.chunk();
     if chunk.len() >= len {
-        // Whole field is contiguous: hand over a borrowed slice (zero-copy).
-        let r = f(WirePayload::Borrowed(&chunk[..len]))?;
+        // Whole field is contiguous: hand over a borrowed payload carrying the
+        // full remaining chunk (so `to_str` can take the slack-aware path).
+        let r = f(WirePayload::borrowed_in(chunk, len))?;
         buf.advance(len);
         Ok(r)
     } else {
         // Field straddles chunk boundaries: take an owned `Bytes` (zero-copy
         // when `buf` is `Bytes`-backed, a copy otherwise).
-        f(WirePayload::Owned(buf.copy_to_bytes(len)))
+        f(WirePayload::owned(buf.copy_to_bytes(len)))
     }
 }
 
@@ -1065,7 +1247,7 @@ pub fn decode_string_to<S: ProtoString>(buf: &mut impl Buf) -> Result<S, DecodeE
 /// Encode a `bytes` value as a varint length prefix followed by raw bytes
 /// (wire type 2).
 #[inline]
-pub fn encode_bytes(value: &[u8], buf: &mut impl BufMut) {
+pub fn encode_bytes(value: &[u8], buf: &mut impl EncodeSink) {
     encode_varint(value.len() as u64, buf);
     buf.put_slice(value);
 }
@@ -1150,11 +1332,11 @@ pub fn decode_bytes_to_bytes(buf: &mut impl Buf) -> Result<Bytes, DecodeError> {
 ///   resets the field to [`Default`] rather than relying on a `Vec`-specific
 ///   `clear`, since a substituted type may be immutable).
 /// - `Send + Sync` — so a message owning such a field stays `Send + Sync`.
-/// - `Deref<Target = [u8]>` and [`AsRef<[u8]>`](AsRef) — generated code borrows
-///   the field as `&[u8]` by plain reference coercion (`&self.field` where
-///   [`encode_bytes`] / [`bytes_encoded_len`] expect `&[u8]`), so the
-///   representation must `Deref` to `[u8]`; `AsRef<[u8]>` is also required for
-///   the call sites that ask for it explicitly.
+/// - `Deref<Target = [u8]>` and [`AsRef<[u8]>`](AsRef) — generated code
+///   reads the field's bytes through these bounds: the size pass borrows
+///   `&[u8]` where [`bytes_encoded_len`] expects it, and the write pass goes
+///   through [`put_shared_bytes_field`] / [`AsSharedBytes`], whose blanket
+///   impl reads via `AsRef<[u8]>`.
 /// - `From<Vec<u8>>` — used by the JSON and view→owned paths to construct the
 ///   field from freshly decoded bytes (binary decode uses
 ///   [`from_wire`](ProtoBytes::from_wire) instead). Note that `From<&[u8]>` is
@@ -1233,6 +1415,31 @@ pub trait ProtoBytes:
     /// value with [`DecodeError::Custom`] (carrying a static reason), or return
     /// any other [`DecodeError`] variant.
     fn from_wire(payload: WirePayload<'_>) -> Result<Self, DecodeError>;
+
+    /// The representation's bytes as a reference-counted [`Bytes`] handle,
+    /// when one exists.
+    ///
+    /// This is the encode-side hook for segmented sinks: a representation
+    /// that stores its bytes as (or can cheaply produce) a `Bytes` returns
+    /// `Some`, letting [`put_shared_bytes_field`] splice the field into a
+    /// [`Rope`](crate::Rope) by reference count.
+    ///
+    /// The default returns `None`, which means "copy me" — always correct.
+    ///
+    /// # Correctness
+    ///
+    /// The returned handle must view **exactly** the bytes of
+    /// `self.as_ref()`. A violation (stale handle, different slicing, a
+    /// reused scratch buffer) produces a corrupt encoding — and only when
+    /// the sink is segmented: contiguous sinks never call the handle, so
+    /// the bug is invisible in ordinary tests. Implementations overriding
+    /// this method should test their encode path against a
+    /// [`Rope`](crate::Rope) explicitly (a `debug_assert` in
+    /// [`put_shared_bytes_field`] catches length mismatches, not aliasing).
+    #[inline]
+    fn as_shared(&self) -> Option<Bytes> {
+        None
+    }
 }
 
 impl ProtoBytes for Vec<u8> {
@@ -1250,6 +1457,11 @@ impl ProtoBytes for Bytes {
         // `bytes::Bytes` field path uses `decode_bytes_to_bytes` for guaranteed
         // zero-copy from a `Bytes`-backed buffer.
         Ok(payload.into_bytes())
+    }
+
+    #[inline]
+    fn as_shared(&self) -> Option<Bytes> {
+        Some(self.clone())
     }
 }
 
@@ -1658,11 +1870,32 @@ mod tests {
 
     #[test]
     fn wire_payload_to_str() {
-        assert_eq!(WirePayload::Borrowed(b"abc").to_str().unwrap(), "abc");
+        assert_eq!(WirePayload::borrowed(b"abc").to_str().unwrap(), "abc");
         assert!(matches!(
-            WirePayload::Borrowed(&[0xFF]).to_str(),
+            WirePayload::borrowed(&[0xFF]).to_str(),
             Err(DecodeError::InvalidUtf8)
         ));
+        // Decoder-constructed payload with surrounding tail: `to_str` reaches
+        // `validate_str_in` and the tail is excluded from the result.
+        let wire = b"abc\x00\x00\x00\x00\x00\x00\x00\x00trailing";
+        assert_eq!(WirePayload::borrowed_in(wire, 3).to_str().unwrap(), "abc");
+        assert_eq!(WirePayload::borrowed_in(wire, 3).as_slice(), b"abc");
+        assert_eq!(WirePayload::borrowed_in(wire, 3).len(), 3);
+        // Tail bytes after an invalid field don't rescue it.
+        assert!(matches!(
+            WirePayload::borrowed_in(b"\xFFtailtailtail", 1).to_str(),
+            Err(DecodeError::InvalidUtf8)
+        ));
+        // Owned path is unchanged.
+        let p = WirePayload::owned(Bytes::from_static(b"hi"));
+        assert_eq!(p.to_str().unwrap(), "hi");
+        assert!(p.is_owned());
+        assert!(!WirePayload::borrowed(b"hi").is_owned());
+        assert!(WirePayload::borrowed(b"").is_empty());
+        // Debug never prints the surrounding tail.
+        let dbg = alloc::format!("{:?}", WirePayload::borrowed_in(wire, 3));
+        assert!(dbg.contains("[97, 98, 99]"), "{dbg}");
+        assert!(!dbg.contains("trailing"), "{dbg}");
     }
 
     /// A custom string representation that enforces an extra invariant in

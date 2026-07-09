@@ -1,0 +1,17 @@
+syntax = "proto2";
+
+package test.openenums_nounknowns;
+
+message OpenEnumNoUnknowns {
+  optional Priority opt = 1;
+  repeated Priority rep = 2;
+  repeated Priority rep_packed = 3 [packed = true];
+  optional Priority closed_control = 4;
+  map<string, Priority> labels = 5;
+}
+
+enum Priority {
+  LOW = 0;
+  MEDIUM = 1;
+  HIGH = 2;
+}

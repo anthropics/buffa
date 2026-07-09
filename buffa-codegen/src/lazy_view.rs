@@ -26,11 +26,11 @@ use crate::impl_message::{
 };
 use crate::message::{is_map_field, rust_path_to_tokens};
 use crate::view::{
-    map_decode_arm, map_to_owned_expr, message_view_has_borrowing_field, oneof_decode_arms,
-    oneof_variant_to_owned, oneof_view_struct_fields, repeated_decode_arm, repeated_to_owned,
-    required_presence, resolve_lazy_view_path, resolve_lazy_view_ty_tokens, resolve_owned_path,
-    scalar_decode_arm, singular_to_owned, view_field_serialize_stmt, view_map_type,
-    view_repeated_type, view_singular_type,
+    custom_view_default_impl, map_decode_arm, map_to_owned_expr, message_view_has_borrowing_field,
+    oneof_decode_arms, oneof_variant_to_owned, oneof_view_struct_fields, repeated_decode_arm,
+    repeated_to_owned, required_presence, resolve_lazy_view_path, resolve_lazy_view_ty_tokens,
+    resolve_owned_path, scalar_decode_arm, singular_to_owned, view_field_serialize_stmt,
+    view_map_type, view_repeated_type, view_singular_type,
 };
 use crate::CodeGenError;
 
@@ -182,13 +182,13 @@ pub(crate) fn generate_lazy_view_with_nesting(
         quote! {}
     };
 
-    let phantom_field =
-        if message_view_has_borrowing_field(ctx, msg, features, ctx.config.preserve_unknown_fields)
-        {
-            quote! {}
-        } else {
-            quote! { #[doc(hidden)] pub __buffa_phantom: ::core::marker::PhantomData<&'a ()>, }
-        };
+    let has_phantom_field =
+        !message_view_has_borrowing_field(ctx, msg, features, ctx.config.preserve_unknown_fields);
+    let phantom_field = if has_phantom_field {
+        quote! { #[doc(hidden)] pub __buffa_phantom: ::core::marker::PhantomData<&'a ()>, }
+    } else {
+        quote! {}
+    };
 
     let owned_path: TokenStream = {
         let dotted = format!(".{proto_fqn}");
@@ -220,6 +220,9 @@ pub(crate) fn generate_lazy_view_with_nesting(
     // Lazy field types never leak redacted payloads through Debug (they print
     // fragment counts), but scalar/string/bytes fields can — reuse the same
     // redaction policy as the eager view.
+    let custom_default_impl =
+        custom_view_default_impl(view_scope, msg, &lazy_ident, has_phantom_field)?;
+    let has_custom_default_impl = custom_default_impl.is_some();
     let any_redacted = lazy_fields.iter().any(|(_, _, redacted)| *redacted);
     let (debug_derive, debug_impl) = if any_redacted {
         let placeholder = crate::message::DEBUG_REDACT_PLACEHOLDER;
@@ -239,7 +242,11 @@ pub(crate) fn generate_lazy_view_with_nesting(
             values.push(quote! { &self.#ident });
         }
         (
-            quote! { #[derive(Clone, Default)] },
+            if has_custom_default_impl {
+                quote! { #[derive(Clone)] }
+            } else {
+                quote! { #[derive(Clone, Default)] }
+            },
             quote! {
                 impl<'a> ::core::fmt::Debug for #lazy_ident<'a> {
                     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -250,6 +257,8 @@ pub(crate) fn generate_lazy_view_with_nesting(
                 }
             },
         )
+    } else if has_custom_default_impl {
+        (quote! { #[derive(Clone, Debug)] }, quote! {})
     } else {
         (quote! { #[derive(Clone, Debug, Default)] }, quote! {})
     };
@@ -272,6 +281,8 @@ pub(crate) fn generate_lazy_view_with_nesting(
         }
 
         #debug_impl
+
+        #custom_default_impl
 
         #non_snake_attr
         impl<'a> #lazy_ident<'a> {
@@ -389,7 +400,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
             /// [`try_encode`](Self::try_encode) for the error-returning
             /// variant.
             #[inline]
-            pub fn encode(&self, buf: &mut impl ::buffa::bytes::BufMut) {
+            pub fn encode(&self, buf: &mut impl ::buffa::EncodeSink) {
                 self.try_encode(buf)
                     .unwrap_or_else(|_| ::buffa::encode_size_overflow())
             }
@@ -406,7 +417,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
             /// encoded size exceeds the limit.
             pub fn try_encode(
                 &self,
-                buf: &mut impl ::buffa::bytes::BufMut,
+                buf: &mut impl ::buffa::EncodeSink,
             ) -> ::core::result::Result<(), ::buffa::EncodeError> {
                 let mut __cache = ::buffa::SizeCache::new();
                 ::buffa::checked_encode_size(self.compute_size(&mut __cache))?;
@@ -452,7 +463,8 @@ pub(crate) fn generate_lazy_view_with_nesting(
             /// Panics if the encoded size exceeds the 2 GiB protobuf limit
             /// ([`::buffa::MAX_MESSAGE_BYTES`]) — see
             /// [`try_encode_to_vec`](Self::try_encode_to_vec) for the
-            /// error-returning variant.
+            /// error-returning variant. In debug builds, also panics if the
+            /// two encode passes disagree on the byte count.
             #[inline]
             #[must_use]
             pub fn encode_to_vec(&self) -> ::buffa::alloc::vec::Vec<u8> {
@@ -477,6 +489,11 @@ pub(crate) fn generate_lazy_view_with_nesting(
             ///
             /// Returns [`::buffa::EncodeError::MessageTooLarge`] if the
             /// encoded size exceeds the limit.
+            ///
+            /// # Panics
+            ///
+            /// In debug builds, panics if the two encode passes disagree
+            /// on the byte count.
             pub fn try_encode_to_vec(
                 &self,
             ) -> ::core::result::Result<::buffa::alloc::vec::Vec<u8>, ::buffa::EncodeError>
@@ -497,7 +514,8 @@ pub(crate) fn generate_lazy_view_with_nesting(
             /// Panics if the encoded size exceeds the 2 GiB protobuf limit
             /// ([`::buffa::MAX_MESSAGE_BYTES`]) — see
             /// [`try_encode_to_bytes`](Self::try_encode_to_bytes) for the
-            /// error-returning variant.
+            /// error-returning variant. In debug builds, also panics if the
+            /// two encode passes disagree on the byte count.
             #[inline]
             #[must_use]
             pub fn encode_to_bytes(&self) -> ::buffa::bytes::Bytes {
@@ -522,6 +540,11 @@ pub(crate) fn generate_lazy_view_with_nesting(
             ///
             /// Returns [`::buffa::EncodeError::MessageTooLarge`] if the
             /// encoded size exceeds the limit.
+            ///
+            /// # Panics
+            ///
+            /// In debug builds, panics if the two encode passes disagree
+            /// on the byte count.
             pub fn try_encode_to_bytes(
                 &self,
             ) -> ::core::result::Result<::buffa::bytes::Bytes, ::buffa::EncodeError> {

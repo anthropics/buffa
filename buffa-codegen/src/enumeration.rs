@@ -121,9 +121,7 @@ pub fn generate_enum(
     // `from_i32` resolves to (so `MyEnum::values()[i].to_i32() ==
     // from_i32(...).unwrap().to_i32()` for unique values).
     let mut value_idents: Vec<Ident> = Vec::new();
-    // Track the best candidate for Default: prefer value == 0 (proto3 default),
-    // fall back to the first primary variant.
-    let mut zero_variant: Option<Ident> = None;
+    // The first primary variant becomes Default (see default_variant below).
     let mut first_variant: Option<Ident> = None;
     // Per-value records for idiomatic CamelCase alias generation, collected only
     // when the feature is enabled. Each entry is
@@ -169,9 +167,6 @@ pub fn generate_enum(
             if first_variant.is_none() {
                 first_variant = Some(variant_ident.clone());
             }
-            if number == 0 && zero_variant.is_none() {
-                zero_variant = Some(variant_ident.clone());
-            }
             variants.push(quote! { #variant_doc #variant_ident = #number });
             from_i32_arms.push(quote! {
                 #number => ::core::option::Option::Some(Self::#variant_ident)
@@ -211,15 +206,15 @@ pub fn generate_enum(
         }
     };
 
-    // Proto3 (and editions): the first enum value must be 0 per spec, so
-    // prefer the zero-valued variant for Default, falling back to first.
-    // Proto2: the first declared value is the default regardless of its
-    // number, so use first_variant unconditionally.
-    let default_variant = if features.enum_type == crate::features::EnumType::Closed {
-        first_variant
-    } else {
-        zero_variant.or(first_variant)
-    };
+    // The default value of an enum type is its first declared value. For
+    // open enums the spec additionally requires that first value to be 0, so
+    // `first_variant` is correct for proto2, proto3, and editions alike —
+    // and, unlike keying off closedness, it survives an enum-type override flipping
+    // a proto2 enum's `enum_type` to OPEN (the declared default must not
+    // change with the representation). Only a hand-built descriptor that
+    // protoc would reject (open enum, non-zero first value) can observe a
+    // difference, and there first-declared is the spec-faithful choice too.
+    let default_variant = first_variant;
     let default_block = match default_variant {
         Some(v) => quote! {
             impl ::core::default::Default for #name_ident {

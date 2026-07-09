@@ -90,7 +90,7 @@ impl<'a> ::buffa::ViewEncode<'a> for DoubleValueView<'a> {
     fn write_to(
         &self,
         _cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -397,7 +397,7 @@ impl<'a> ::buffa::ViewEncode<'a> for FloatValueView<'a> {
     fn write_to(
         &self,
         _cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -704,7 +704,7 @@ impl<'a> ::buffa::ViewEncode<'a> for Int64ValueView<'a> {
     fn write_to(
         &self,
         _cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -1011,7 +1011,7 @@ impl<'a> ::buffa::ViewEncode<'a> for UInt64ValueView<'a> {
     fn write_to(
         &self,
         _cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -1318,7 +1318,7 @@ impl<'a> ::buffa::ViewEncode<'a> for Int32ValueView<'a> {
     fn write_to(
         &self,
         _cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -1625,7 +1625,7 @@ impl<'a> ::buffa::ViewEncode<'a> for UInt32ValueView<'a> {
     fn write_to(
         &self,
         _cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -1932,7 +1932,7 @@ impl<'a> ::buffa::ViewEncode<'a> for BoolValueView<'a> {
     fn write_to(
         &self,
         _cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -2239,7 +2239,7 @@ impl<'a> ::buffa::ViewEncode<'a> for StringValueView<'a> {
     fn write_to(
         &self,
         _cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -2546,12 +2546,12 @@ impl<'a> ::buffa::ViewEncode<'a> for BytesValueView<'a> {
     fn write_to(
         &self,
         _cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
         if !self.value.is_empty() {
-            ::buffa::types::put_bytes_field(1u32, &self.value, buf);
+            ::buffa::types::put_shared_bytes_field(1u32, &self.value, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }

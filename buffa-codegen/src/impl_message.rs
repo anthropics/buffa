@@ -178,11 +178,19 @@ pub(crate) fn closed_enum_decode(buf_expr: &TokenStream, on_known: TokenStream) 
 ///
 /// The `on_unknown` token stream is placed in the `else` block, with `__raw`
 /// still in scope so it can be routed (e.g. to unknown fields storage).
+///
+/// An empty `on_unknown` (unknown-field preservation disabled) collapses to
+/// [`closed_enum_decode`]: emitting a literal `else {}` fails
+/// `clippy::needless_else` under `-D warnings` in consumer crates.
 pub(crate) fn closed_enum_decode_with_unknown(
     buf_expr: &TokenStream,
     on_known: TokenStream,
     on_unknown: TokenStream,
 ) -> TokenStream {
+    if on_unknown.is_empty() {
+        return closed_enum_decode(buf_expr, on_known);
+    }
+
     quote! {
         let __raw = ::buffa::types::decode_int32(#buf_expr)?;
         if let ::core::option::Option::Some(__v) = ::buffa::Enumeration::from_i32(__raw) {
@@ -576,9 +584,9 @@ pub fn generate_message_impl(
         quote! { let size = 0u64; }
     };
     let buf_param = if has_body {
-        quote! { buf: &mut impl ::buffa::bytes::BufMut }
+        quote! { buf: &mut impl ::buffa::EncodeSink }
     } else {
-        quote! { _buf: &mut impl ::buffa::bytes::BufMut }
+        quote! { _buf: &mut impl ::buffa::EncodeSink }
     };
 
     let extension_set_impl = if preserve_unknown_fields {
@@ -899,9 +907,9 @@ pub(crate) fn build_view_encode_methods(
         quote! { let size = 0u64; }
     };
     let buf_param = if has_body {
-        quote! { buf: &mut impl ::buffa::bytes::BufMut }
+        quote! { buf: &mut impl ::buffa::EncodeSink }
     } else {
-        quote! { _buf: &mut impl ::buffa::bytes::BufMut }
+        quote! { _buf: &mut impl ::buffa::EncodeSink }
     };
 
     // On the lazy family these are inherent `pub fn`s, so they need doc
@@ -1171,6 +1179,18 @@ fn scalar_clear_stmt(
         features,
         nesting,
         field_string_repr(ctx, proto_fqn, field_name),
+    )? {
+        return Ok(quote! { self.#ident = #default_expr; });
+    }
+
+    // A closed enum opened by an enum-type override keeps its declared (first-value)
+    // default, which differs from `EnumValue::default()` when non-zero.
+    if let Some(default_expr) = crate::defaults::open_enum_bare_default_value(
+        field,
+        ctx,
+        current_package,
+        features,
+        nesting,
     )? {
         return Ok(quote! { self.#ident = #default_expr; });
     }
@@ -1677,7 +1697,7 @@ fn scalar_write_to_stmt(
             }),
             Type::TYPE_BYTES => Ok(quote! {
                 if let Some(ref v) = self.#ident {
-                    ::buffa::types::put_bytes_field(#field_number, v, buf);
+                    ::buffa::types::put_shared_bytes_field(#field_number, v, buf);
                 }
             }),
             Type::TYPE_ENUM => Ok(quote! {
@@ -1714,12 +1734,12 @@ fn scalar_write_to_stmt(
         Type::TYPE_BYTES => {
             return Ok(if is_proto2_required {
                 quote! {
-                    ::buffa::types::put_bytes_field(#field_number, &self.#ident, buf);
+                    ::buffa::types::put_shared_bytes_field(#field_number, &self.#ident, buf);
                 }
             } else {
                 quote! {
                     if !self.#ident.is_empty() {
-                        ::buffa::types::put_bytes_field(#field_number, &self.#ident, buf);
+                        ::buffa::types::put_shared_bytes_field(#field_number, &self.#ident, buf);
                     }
                 }
             });
@@ -2261,7 +2281,7 @@ fn repeated_write_to_stmt(
                 quote! { ::buffa::types::put_string_field(#field_number, v, buf); }
             }
             Type::TYPE_BYTES => {
-                quote! { ::buffa::types::put_bytes_field(#field_number, v, buf); }
+                quote! { ::buffa::types::put_shared_bytes_field(#field_number, v, buf); }
             }
             Type::TYPE_ENUM => {
                 quote! { ::buffa::types::put_int32_field(#field_number, v.to_i32(), buf); }
@@ -2585,7 +2605,7 @@ fn oneof_write_arm(
         },
         Type::TYPE_BYTES => quote! {
             #enum_ident::#variant_ident(x) => {
-                ::buffa::types::put_bytes_field(#field_number, x, buf);
+                ::buffa::types::put_shared_bytes_field(#field_number, x, buf);
             }
         },
         Type::TYPE_ENUM => quote! {

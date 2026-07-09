@@ -30,6 +30,10 @@
 //! - `filter=services` — only include packages where at least one
 //!   `.proto` declares a `service`. Useful when packaging output from a
 //!   service-stub generator that skips files without services.
+//! - `exclude_package=<pkg>` — drop a proto package (and its subpackages)
+//!   from the module tree. Repeatable; the leading dot is optional. Must
+//!   match the `exclude_package` passed to `protoc-gen-buffa` so the
+//!   `mod.rs` never `include!`s a stitcher the codegen plugin skipped.
 //!
 //! Invoke the plugin once per output tree — use multiple entries in
 //! buf.gen.yaml with different `out:` directories and filters to package
@@ -76,6 +80,29 @@ impl Filter {
     }
 }
 
+/// Package selection: an inclusion [`Filter`] plus a set of package
+/// exclusions applied on top of it. A package is stitched into `mod.rs`
+/// only when the filter includes at least one of its files *and* the package
+/// is not excluded. Exclusions route through
+/// [`buffa_codegen::package_is_excluded`] — the same predicate
+/// `protoc-gen-buffa` uses to drop files from generation — so both plugins
+/// skip exactly the same packages.
+#[derive(Debug, Default)]
+struct Selection {
+    filter: Filter,
+    exclude: Vec<String>,
+}
+
+impl Selection {
+    fn include(&self, fd: &FileDescriptorProto) -> bool {
+        self.filter.include(fd)
+            && !buffa_codegen::package_is_excluded(
+                fd.package.as_deref().unwrap_or(""),
+                &self.exclude,
+            )
+    }
+}
+
 const HELP: &str = "\
 protoc-gen-buffa-packaging — emits a mod.rs module tree for buffa output.
 
@@ -93,7 +120,10 @@ protoc alongside protoc-gen-buffa:
       strategy: all
 
 Options (default: include every package in file_to_generate):
-  filter=services   only include packages declaring at least one service";
+  filter=services       only include packages declaring at least one service
+  exclude_package=<pkg> drop a package (and its subpackages) from the tree;
+                        repeatable, leading dot optional. Must match the
+                        exclude_package passed to protoc-gen-buffa.";
 
 fn main() {
     if let Some(arg) = std::env::args().nth(1) {
@@ -149,7 +179,7 @@ fn run() -> Result<(), String> {
 }
 
 fn generate(request: &CodeGeneratorRequest) -> Result<CodeGeneratorResponse, String> {
-    let filter = parse_filter(request.parameter.as_deref().unwrap_or(""))?;
+    let selection = parse_options(request.parameter.as_deref().unwrap_or(""))?;
 
     // Module tree wires up one `<pkg>.mod.rs` per package; collect the
     // distinct packages of the requested files (filtered).
@@ -158,7 +188,7 @@ fn generate(request: &CodeGeneratorRequest) -> Result<CodeGeneratorResponse, Str
         let fd = find_descriptor(&request.proto_file, proto_name).ok_or_else(|| {
             format!("file_to_generate entry {proto_name:?} has no FileDescriptorProto")
         })?;
-        if filter.include(fd) {
+        if selection.include(fd) {
             packages.insert(fd.package.as_deref().unwrap_or("").to_string());
         }
     }
@@ -185,23 +215,34 @@ fn generate(request: &CodeGeneratorRequest) -> Result<CodeGeneratorResponse, Str
     })
 }
 
-fn parse_filter(params: &str) -> Result<Filter, String> {
-    let mut filter = Filter::default();
+fn parse_options(params: &str) -> Result<Selection, String> {
+    let mut selection = Selection::default();
     for opt in params.split(',').map(str::trim).filter(|s| !s.is_empty()) {
         if let Some(value) = opt.strip_prefix("filter=") {
-            filter = match value.trim() {
+            selection.filter = match value.trim() {
                 "services" => Filter::Services,
                 other => {
                     return Err(format!("unknown filter {other:?}. Supported: services"));
                 }
             };
+        } else if let Some(value) = opt.strip_prefix("exclude_package=") {
+            // Shares protoc-gen-buffa's normalization (one helper in
+            // buffa-codegen), so both plugins drop the same packages and the
+            // mod.rs never references a skipped stitcher. The option key
+            // itself must also stay spelled `exclude_package` in both
+            // plugins — renaming or aliasing it in one without the other
+            // recreates the mismatch the shared helper exists to prevent.
+            selection
+                .exclude
+                .push(buffa_codegen::normalize_exclude_package(value)?);
         } else {
             return Err(format!(
-                "unknown plugin option {opt:?}. Supported: filter=services"
+                "unknown plugin option {opt:?}. \
+                 Supported: filter=services, exclude_package=<pkg>"
             ));
         }
     }
-    Ok(filter)
+    Ok(selection)
 }
 
 fn find_descriptor<'a>(
@@ -292,21 +333,64 @@ mod tests {
 
     #[test]
     fn unknown_filter_errors() {
-        let err = parse_filter("filter=bogus").unwrap_err();
+        let err = parse_options("filter=bogus").unwrap_err();
         assert!(err.contains("bogus"));
     }
 
     #[test]
     fn unknown_option_errors() {
-        let err = parse_filter("bogus_option").unwrap_err();
+        let err = parse_options("bogus_option").unwrap_err();
         assert!(err.contains("bogus_option"));
     }
 
     #[test]
     fn empty_filter_value_errors() {
         // `filter=` with no value hits the unknown-filter arm with `""`.
-        let err = parse_filter("filter=").unwrap_err();
+        let err = parse_options("filter=").unwrap_err();
         assert!(err.contains("unknown filter"));
+    }
+
+    #[test]
+    fn exclude_package_drops_package_and_subpackages() {
+        let req = request(
+            Some("exclude_package=.buf.validate,exclude_package=gnostic"),
+            vec![
+                file("example/user/v1/user.proto", "example.user.v1", false),
+                file("buf/validate/validate.proto", "buf.validate", false),
+                file(
+                    "gnostic/openapi/v3/openapiv3.proto",
+                    "gnostic.openapi.v3",
+                    false,
+                ),
+            ],
+        );
+        let resp = generate(&req).unwrap();
+        let content = resp.file[0].content.as_deref().unwrap();
+        assert!(content.contains("example.user.v1.mod.rs"));
+        assert!(!content.contains("buf.validate.mod.rs"));
+        assert!(!content.contains("gnostic.openapi.v3.mod.rs"));
+    }
+
+    #[test]
+    fn exclude_package_composes_with_services_filter() {
+        // A service package that is also excluded is still dropped.
+        let req = request(
+            Some("filter=services,exclude_package=.secret"),
+            vec![
+                file("foo/v1/svc.proto", "foo.v1", true),
+                file("secret/v1/svc.proto", "secret.v1", true),
+            ],
+        );
+        let resp = generate(&req).unwrap();
+        let content = resp.file[0].content.as_deref().unwrap();
+        assert!(content.contains("foo.v1.mod.rs"));
+        assert!(!content.contains("secret.v1.mod.rs"));
+    }
+
+    #[test]
+    fn empty_exclude_package_errors() {
+        let err = parse_options("exclude_package=").unwrap_err();
+        assert!(err.contains("exclude_package"));
     }
 
     #[test]

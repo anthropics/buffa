@@ -162,8 +162,21 @@ pub(crate) fn reflect_owned_impls(
                     quote! { self.#id.is_set() },
                 ),
                 Type::TYPE_ENUM => {
+                    // Closed enums compare against the type default (which
+                    // need not be zero); enums opened by an enum-type override keep
+                    // their declared default the same way.
                     let has_val = if is_closed_enum(&f_features) {
                         quote! { self.#id != ::core::default::Default::default() }
+                    } else if let Some(default_expr) =
+                        crate::defaults::open_enum_bare_default_value(
+                            field,
+                            ctx,
+                            current_package,
+                            &f_features,
+                            nesting,
+                        )?
+                    {
+                        quote! { self.#id != #default_expr }
                     } else {
                         quote! { self.#id.to_i32() != 0 }
                     };

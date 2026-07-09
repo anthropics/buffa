@@ -742,7 +742,7 @@ mod tests {
         fn compute_size(&self, _cache: &mut crate::SizeCache) -> u32 {
             0
         }
-        fn write_to(&self, _cache: &mut crate::SizeCache, _buf: &mut impl bytes::BufMut) {}
+        fn write_to(&self, _cache: &mut crate::SizeCache, _buf: &mut impl crate::EncodeSink) {}
         fn merge_field(
             &mut self,
             tag: crate::encoding::Tag,
@@ -1263,7 +1263,7 @@ mod tests {
             fn compute_size(&self, _: &mut crate::SizeCache) -> u32 {
                 0
             }
-            fn write_to(&self, _: &mut crate::SizeCache, _: &mut impl bytes::BufMut) {}
+            fn write_to(&self, _: &mut crate::SizeCache, _: &mut impl crate::EncodeSink) {}
             fn merge_field(
                 &mut self,
                 t: crate::encoding::Tag,

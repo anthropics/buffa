@@ -1,0 +1,3 @@
+kind: Fixed
+body: '`buffa-build` Protoc mode now emits `cargo:rerun-if-changed` for imported `.proto` files from the generated descriptor set when they resolve under configured include roots, so editing transitive imports reruns codegen without requiring a clean build. (#275)'
+time: 2026-07-03T00:11:40.000000000Z

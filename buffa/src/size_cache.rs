@@ -433,7 +433,7 @@ impl SizeCachePool {
     /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)) — inherited from
     /// [`Message::encode_with_cache`](crate::Message::encode_with_cache).
     #[inline]
-    pub fn encode<M: crate::Message>(&mut self, msg: &M, buf: &mut impl bytes::BufMut) {
+    pub fn encode<M: crate::Message>(&mut self, msg: &M, buf: &mut impl crate::EncodeSink) {
         self.try_encode(msg, buf)
             .unwrap_or_else(|_| crate::message::encode_size_overflow())
     }
@@ -451,7 +451,7 @@ impl SizeCachePool {
     pub fn encode_view<'a, V: crate::ViewEncode<'a>>(
         &mut self,
         view: &V,
-        buf: &mut impl bytes::BufMut,
+        buf: &mut impl crate::EncodeSink,
     ) {
         self.try_encode_view(view, buf)
             .unwrap_or_else(|_| crate::message::encode_size_overflow())
@@ -497,7 +497,7 @@ impl SizeCachePool {
     pub fn try_encode<M: crate::Message>(
         &mut self,
         msg: &M,
-        buf: &mut impl bytes::BufMut,
+        buf: &mut impl crate::EncodeSink,
     ) -> Result<(), crate::EncodeError> {
         let mut cache = self.acquire();
         let result = msg.try_encode_with_cache(&mut cache, buf);
@@ -523,7 +523,7 @@ impl SizeCachePool {
     pub fn try_encode_view<'a, V: crate::ViewEncode<'a>>(
         &mut self,
         view: &V,
-        buf: &mut impl bytes::BufMut,
+        buf: &mut impl crate::EncodeSink,
     ) -> Result<(), crate::EncodeError> {
         let mut cache = self.acquire();
         let result = view.try_encode_with_cache(&mut cache, buf);

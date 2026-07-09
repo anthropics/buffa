@@ -1,0 +1,14 @@
+kind: Changed
+body: |-
+    **`source_code_info` is stripped from the embedded `FileDescriptorSet`**
+    (#278). Codegen consumes source info for doc comments, but the runtime
+    `DescriptorPool` never reads it, so embedding it only cost binary size —
+    the well-known-types package shrank from 34,939 to 2,428 embedded bytes
+    (-93%). Classified as non-breaking because the bytes were previously only
+    reachable through the reserved `__buffa` sentinel module — but note the
+    content change is silent: code that reached in anyway and forwarded the
+    bytes to something that reads proto comments will see them disappear
+    without a compile error. Consumers that need proto comments at runtime
+    should build a descriptor set directly with
+    `protoc --include_source_info` or `buf build`.
+time: 2026-07-06T17:20:37.619448094-07:00

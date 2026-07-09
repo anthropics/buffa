@@ -1,0 +1,8 @@
+kind: Added
+body: |-
+    **Package-root `FILE_DESCRIPTOR_SET_BYTES` re-export** (#278). The embedded
+    descriptor-set bytes were only reachable through the reserved `__buffa`
+    sentinel module; generated packages now re-export the constant at the package
+    root alongside `descriptor_pool()`, making `pkg::FILE_DESCRIPTOR_SET_BYTES`
+    the supported access path.
+time: 2026-07-06T17:20:37.135834555-07:00

@@ -6,7 +6,8 @@
 //! consumes it) that avoids the exponential-time problem affecting naïve
 //! length-delimited encoders.
 
-use bytes::{Buf, BufMut};
+use crate::encode_sink::EncodeSink;
+use bytes::Buf;
 
 use crate::error::{DecodeError, EncodeError};
 use crate::message_field::DefaultInstance;
@@ -334,9 +335,14 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// lives in the provided encode entry points, so callers driving
     /// `compute_size` / `write_to` directly must validate the size
     /// themselves (via [`checked_encode_size`]).
-    fn write_to(&self, cache: &mut crate::SizeCache, buf: &mut impl BufMut);
+    fn write_to(&self, cache: &mut crate::SizeCache, buf: &mut impl EncodeSink);
 
     /// Compute size, then write. This is the primary encoding API.
+    ///
+    /// The sink can be any [`BufMut`](bytes::BufMut) (contiguous output) or
+    /// a [`Rope`](crate::Rope), which captures large `bytes::Bytes` fields
+    /// as reference-counted segments for zero-copy handoff to networking
+    /// code — see [`encode_sink`](crate::encode_sink).
     ///
     /// # Panics
     ///
@@ -344,7 +350,7 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// ([`MAX_MESSAGE_BYTES`]) — see [`try_encode`](Self::try_encode) for
     /// the error-returning variant.
     #[inline]
-    fn encode(&self, buf: &mut impl BufMut) {
+    fn encode(&self, buf: &mut impl EncodeSink) {
         self.try_encode(buf)
             .unwrap_or_else(|_| encode_size_overflow())
     }
@@ -358,7 +364,7 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     ///
     /// Returns [`EncodeError::MessageTooLarge`] if the encoded size exceeds
     /// [`MAX_MESSAGE_BYTES`].
-    fn try_encode(&self, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+    fn try_encode(&self, buf: &mut impl EncodeSink) -> Result<(), EncodeError> {
         let mut cache = crate::SizeCache::new();
         checked_encode_size(self.compute_size(&mut cache))?;
         self.write_to(&mut cache, buf);
@@ -375,7 +381,7 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// [`try_encode_with_cache`](Self::try_encode_with_cache) for the
     /// error-returning variant.
     #[inline]
-    fn encode_with_cache(&self, cache: &mut crate::SizeCache, buf: &mut impl BufMut) {
+    fn encode_with_cache(&self, cache: &mut crate::SizeCache, buf: &mut impl EncodeSink) {
         self.try_encode_with_cache(cache, buf)
             .unwrap_or_else(|_| encode_size_overflow())
     }
@@ -394,7 +400,7 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     fn try_encode_with_cache(
         &self,
         cache: &mut crate::SizeCache,
-        buf: &mut impl BufMut,
+        buf: &mut impl EncodeSink,
     ) -> Result<(), EncodeError> {
         cache.clear();
         checked_encode_size(self.compute_size(cache))?;
@@ -445,7 +451,7 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// [`try_encode_length_delimited`](Self::try_encode_length_delimited)
     /// for the error-returning variant.
     #[inline]
-    fn encode_length_delimited(&self, buf: &mut impl BufMut) {
+    fn encode_length_delimited(&self, buf: &mut impl EncodeSink) {
         self.try_encode_length_delimited(buf)
             .unwrap_or_else(|_| encode_size_overflow())
     }
@@ -460,7 +466,7 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     ///
     /// Returns [`EncodeError::MessageTooLarge`] if the encoded size exceeds
     /// [`MAX_MESSAGE_BYTES`].
-    fn try_encode_length_delimited(&self, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+    fn try_encode_length_delimited(&self, buf: &mut impl EncodeSink) -> Result<(), EncodeError> {
         let mut cache = crate::SizeCache::new();
         let len = checked_encode_size(self.compute_size(&mut cache))?;
         crate::encoding::encode_varint(len as u64, buf);
@@ -1409,7 +1415,7 @@ mod tests {
             }
         }
 
-        fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl BufMut) {
+        fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl EncodeSink) {
             if self.value != 0 {
                 crate::encoding::Tag::new(1, crate::encoding::WireType::Varint).encode(buf);
                 crate::types::encode_int32(self.value, buf);

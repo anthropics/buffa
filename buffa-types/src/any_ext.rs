@@ -443,7 +443,7 @@ mod tests {
         fn compute_size(&self, _cache: &mut buffa::SizeCache) -> u32 {
             buffa::MAX_MESSAGE_BYTES + 1
         }
-        fn write_to(&self, _cache: &mut buffa::SizeCache, _buf: &mut impl bytes::BufMut) {}
+        fn write_to(&self, _cache: &mut buffa::SizeCache, _buf: &mut impl buffa::EncodeSink) {}
         fn merge_field(
             &mut self,
             tag: buffa::encoding::Tag,

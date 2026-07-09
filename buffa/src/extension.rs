@@ -1613,7 +1613,7 @@ mod tests {
             n += self.unknown.encoded_len();
             n as u32
         }
-        fn write_to(&self, _cache: &mut crate::SizeCache, buf: &mut impl bytes::BufMut) {
+        fn write_to(&self, _cache: &mut crate::SizeCache, buf: &mut impl crate::EncodeSink) {
             use crate::encoding::encode_varint;
             if self.a != 0 {
                 encode_varint(1 << 3, buf);

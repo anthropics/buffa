@@ -1,6 +1,6 @@
 //! Shared test doubles for the crate's `#[cfg(test)]` modules.
 
-use bytes::{Buf, BufMut};
+use bytes::Buf;
 
 use crate::error::DecodeError;
 use crate::message_field::DefaultInstance;
@@ -25,7 +25,7 @@ impl crate::Message for SizedMsg {
     fn compute_size(&self, _cache: &mut crate::SizeCache) -> u32 {
         self.reported_size
     }
-    fn write_to(&self, _cache: &mut crate::SizeCache, _buf: &mut impl BufMut) {}
+    fn write_to(&self, _cache: &mut crate::SizeCache, _buf: &mut impl crate::EncodeSink) {}
     fn merge_field(
         &mut self,
         tag: crate::encoding::Tag,

@@ -107,7 +107,7 @@ impl<'a> ::buffa::ViewEncode<'a> for FileDescriptorSetView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -754,7 +754,7 @@ impl<'a> ::buffa::ViewEncode<'a> for FileDescriptorProtoView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -1563,7 +1563,7 @@ impl<'a> ::buffa::ViewEncode<'a> for DescriptorProtoView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -2083,7 +2083,7 @@ pub mod descriptor_proto {
         fn write_to(
             &self,
             __cache: &mut ::buffa::SizeCache,
-            buf: &mut impl ::buffa::bytes::BufMut,
+            buf: &mut impl ::buffa::EncodeSink,
         ) {
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
@@ -2397,7 +2397,7 @@ pub mod descriptor_proto {
         fn write_to(
             &self,
             _cache: &mut ::buffa::SizeCache,
-            buf: &mut impl ::buffa::bytes::BufMut,
+            buf: &mut impl ::buffa::EncodeSink,
         ) {
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
@@ -2799,7 +2799,7 @@ impl<'a> ::buffa::ViewEncode<'a> for ExtensionRangeOptionsView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -3208,7 +3208,7 @@ pub mod extension_range_options {
         fn write_to(
             &self,
             _cache: &mut ::buffa::SizeCache,
-            buf: &mut impl ::buffa::bytes::BufMut,
+            buf: &mut impl ::buffa::EncodeSink,
         ) {
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
@@ -3750,7 +3750,7 @@ impl<'a> ::buffa::ViewEncode<'a> for FieldDescriptorProtoView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -4219,7 +4219,7 @@ impl<'a> ::buffa::ViewEncode<'a> for OneofDescriptorProtoView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -4646,7 +4646,7 @@ impl<'a> ::buffa::ViewEncode<'a> for EnumDescriptorProtoView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -5025,7 +5025,7 @@ pub mod enum_descriptor_proto {
         fn write_to(
             &self,
             _cache: &mut ::buffa::SizeCache,
-            buf: &mut impl ::buffa::bytes::BufMut,
+            buf: &mut impl ::buffa::EncodeSink,
         ) {
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
@@ -5354,7 +5354,7 @@ impl<'a> ::buffa::ViewEncode<'a> for EnumValueDescriptorProtoView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -5717,7 +5717,7 @@ impl<'a> ::buffa::ViewEncode<'a> for ServiceDescriptorProtoView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -6116,7 +6116,7 @@ impl<'a> ::buffa::ViewEncode<'a> for MethodDescriptorProtoView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -6881,7 +6881,7 @@ impl<'a> ::buffa::ViewEncode<'a> for FileOptionsView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -7667,7 +7667,7 @@ impl<'a> ::buffa::ViewEncode<'a> for MessageOptionsView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -8280,6 +8280,9 @@ impl<'a> ::buffa::MessageView<'a> for FieldOptionsView<'a> {
                             __raw,
                         ) {
                             view.targets.push(__v);
+                        } else {
+                            view.__buffa_unknown_fields
+                                .push_varint(19u32, __raw as u64, ctx)?;
                         }
                     }
                 } else if tag.wire_type() == ::buffa::encoding::WireType::Varint {
@@ -8472,7 +8475,7 @@ impl<'a> ::buffa::ViewEncode<'a> for FieldOptionsView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -9024,7 +9027,7 @@ pub mod field_options {
         fn write_to(
             &self,
             _cache: &mut ::buffa::SizeCache,
-            buf: &mut impl ::buffa::bytes::BufMut,
+            buf: &mut impl ::buffa::EncodeSink,
         ) {
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
@@ -9380,7 +9383,7 @@ pub mod field_options {
         fn write_to(
             &self,
             _cache: &mut ::buffa::SizeCache,
-            buf: &mut impl ::buffa::bytes::BufMut,
+            buf: &mut impl ::buffa::EncodeSink,
         ) {
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
@@ -9763,7 +9766,7 @@ impl<'a> ::buffa::ViewEncode<'a> for OneofOptionsView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -10170,7 +10173,7 @@ impl<'a> ::buffa::ViewEncode<'a> for EnumOptionsView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -10651,7 +10654,7 @@ impl<'a> ::buffa::ViewEncode<'a> for EnumValueOptionsView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -11081,7 +11084,7 @@ impl<'a> ::buffa::ViewEncode<'a> for ServiceOptionsView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -11501,7 +11504,7 @@ impl<'a> ::buffa::ViewEncode<'a> for MethodOptionsView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -11933,7 +11936,7 @@ impl<'a> ::buffa::ViewEncode<'a> for UninterpretedOptionView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -11958,7 +11961,7 @@ impl<'a> ::buffa::ViewEncode<'a> for UninterpretedOptionView<'a> {
             ::buffa::types::put_double_field(6u32, v, buf);
         }
         if let Some(ref v) = self.string_value {
-            ::buffa::types::put_bytes_field(7u32, v, buf);
+            ::buffa::types::put_shared_bytes_field(7u32, v, buf);
         }
         if let Some(ref v) = self.aggregate_value {
             ::buffa::types::put_string_field(8u32, v, buf);
@@ -12320,7 +12323,7 @@ Distinguishes a field that was absent from one explicitly encoded with its defau
         fn write_to(
             &self,
             _cache: &mut ::buffa::SizeCache,
-            buf: &mut impl ::buffa::bytes::BufMut,
+            buf: &mut impl ::buffa::EncodeSink,
         ) {
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
@@ -12757,7 +12760,7 @@ impl<'a> ::buffa::ViewEncode<'a> for FeatureSetView<'a> {
     fn write_to(
         &self,
         _cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -13126,7 +13129,7 @@ pub mod feature_set {
         fn write_to(
             &self,
             _cache: &mut ::buffa::SizeCache,
-            buf: &mut impl ::buffa::bytes::BufMut,
+            buf: &mut impl ::buffa::EncodeSink,
         ) {
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
@@ -13443,7 +13446,7 @@ impl<'a> ::buffa::ViewEncode<'a> for FeatureSetDefaultsView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -13859,7 +13862,7 @@ pub mod feature_set_defaults {
         fn write_to(
             &self,
             __cache: &mut ::buffa::SizeCache,
-            buf: &mut impl ::buffa::bytes::BufMut,
+            buf: &mut impl ::buffa::EncodeSink,
         ) {
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
@@ -14243,7 +14246,7 @@ impl<'a> ::buffa::ViewEncode<'a> for SourceCodeInfoView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -14733,7 +14736,7 @@ pub mod source_code_info {
         fn write_to(
             &self,
             _cache: &mut ::buffa::SizeCache,
-            buf: &mut impl ::buffa::bytes::BufMut,
+            buf: &mut impl ::buffa::EncodeSink,
         ) {
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
@@ -15162,7 +15165,7 @@ impl<'a> ::buffa::ViewEncode<'a> for GeneratedCodeInfoView<'a> {
     fn write_to(
         &self,
         __cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -15527,7 +15530,7 @@ pub mod generated_code_info {
         fn write_to(
             &self,
             _cache: &mut ::buffa::SizeCache,
-            buf: &mut impl ::buffa::bytes::BufMut,
+            buf: &mut impl ::buffa::EncodeSink,
         ) {
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;

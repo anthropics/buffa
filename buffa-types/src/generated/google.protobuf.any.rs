@@ -289,7 +289,7 @@ impl ::buffa::Message for Any {
     fn write_to(
         &self,
         _cache: &mut ::buffa::SizeCache,
-        buf: &mut impl ::buffa::bytes::BufMut,
+        buf: &mut impl ::buffa::EncodeSink,
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
@@ -297,7 +297,7 @@ impl ::buffa::Message for Any {
             ::buffa::types::put_string_field(1u32, &self.type_url, buf);
         }
         if !self.value.is_empty() {
-            ::buffa::types::put_bytes_field(2u32, &self.value, buf);
+            ::buffa::types::put_shared_bytes_field(2u32, &self.value, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }

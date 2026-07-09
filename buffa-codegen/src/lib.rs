@@ -31,6 +31,7 @@ pub(crate) mod features;
 pub(crate) mod field_names;
 #[doc(hidden)]
 pub use buffa_descriptor::generated;
+pub(crate) mod feature_overrides;
 pub mod idents;
 pub(crate) mod impl_message;
 pub(crate) mod impl_text;
@@ -796,6 +797,63 @@ impl ReflectMode {
     }
 }
 
+/// A path-scoped protobuf editions feature override, applied by mutating the
+/// parsed descriptors before generation (see
+/// [`feature_overrides`](CodeGenConfig::feature_overrides)).
+///
+/// Editions unification models proto2 and proto3 as editions with fixed
+/// feature defaults, so an override's semantics are "what this proto would
+/// say had it been migrated to editions and this feature set at this path".
+/// Each variant is admitted only once buffa's codegen, runtime, and
+/// validation handle the descriptor states it can create — the enum is the
+/// allowlist. Overrides never change the wire format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum FeatureOverride {
+    /// Override `features.enum_type` for matching enums or enum fields.
+    ///
+    /// An enum-type path mutates the enum's own descriptor (a spec-valid
+    /// editions construct that also flows into the embedded reflection
+    /// pool); a field path injects a field-level override honored by buffa's
+    /// feature resolution only (`enum_type` is not a legal field target, so
+    /// other runtimes reading the exported descriptors ignore it).
+    EnumType(EnumTypeOverride),
+}
+
+impl FeatureOverride {
+    /// The editions feature name this override sets, as spelled in
+    /// `google.protobuf.FeatureSet` (e.g. for diagnostics).
+    #[must_use]
+    pub fn feature_name(&self) -> &'static str {
+        match self {
+            Self::EnumType(_) => "enum_type",
+        }
+    }
+
+    /// The feature value this override sets, as spelled in the descriptor
+    /// enum (e.g. for diagnostics).
+    #[must_use]
+    pub fn value_name(&self) -> &'static str {
+        match self {
+            Self::EnumType(EnumTypeOverride::Open) => "OPEN",
+        }
+    }
+}
+
+/// Supported values for [`FeatureOverride::EnumType`].
+///
+/// Only `OPEN` is currently supported — closing an open enum would
+/// reintroduce closed-enum unknown-value routing on fields that never had
+/// it, a combination buffa's codegen does not yet validate or test.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum EnumTypeOverride {
+    /// `features.enum_type = OPEN`: matching closed enum fields generate as
+    /// `EnumValue<E>`, making unknown wire values directly visible as
+    /// `EnumValue::Unknown(n)`.
+    Open,
+}
+
 /// Configuration for code generation.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -930,6 +988,30 @@ pub struct CodeGenConfig {
     /// scalar/string/bytes/message rules and substituted into the collection
     /// template.
     pub repeated_fields: Vec<(String, RepeatedRepr)>,
+    /// Path-scoped editions feature overrides, applied by mutating the parsed
+    /// descriptors before generation.
+    ///
+    /// Each entry pairs a fully-qualified proto path prefix with a
+    /// [`FeatureOverride`]. Paths are matched with the same
+    /// proto-segment-aware logic as [`bytes_fields`](Self::bytes_fields): a
+    /// rule may name a type (`".my.pkg.E"`), a field (`".my.pkg.Msg.e"`), a
+    /// package/message prefix, or `"."` for everything the override targets.
+    /// Leading dots are optional, trailing dots are ignored, and
+    /// blank/all-dot entries match nothing. Map enum values match the outer
+    /// map field path; oneof enum variants match the direct field path.
+    ///
+    /// The mutated descriptors are what codegen — and, under reflection, the
+    /// embedded descriptor pool — see, so spec-valid injections (e.g. an
+    /// enum-type [`FeatureOverride::EnumType`] rule) keep runtime reflection
+    /// and descriptor-driven dynamic JSON consistent with the generated
+    /// types; see each variant's docs for its field-scoped semantics. A rule
+    /// that matches nothing is reported as
+    /// [`CodeGenWarning::FeatureOverrideMatchedNothing`] through
+    /// [`generate_with_diagnostics`] (the plain [`generate`] entry point
+    /// discards warnings). Overrides never change the wire format. The
+    /// default is empty, so generated output and semantics are unchanged
+    /// unless configured.
+    pub feature_overrides: Vec<(String, FeatureOverride)>,
     /// Fully-qualified proto paths whose message-typed oneof variants should
     /// **not** be wrapped in `Box<T>`. By default every message/group oneof
     /// variant is boxed (so recursive types compile); entries here opt matching
@@ -1170,7 +1252,7 @@ pub struct CodeGenConfig {
     /// A low-level knob for crates whose generated code is a public interface
     /// (`buffa-types`, the conformance harness). Set directly by `gen_wkt_types`
     /// and exposed through `buffa_build::Config::gate_reflect_on_crate_feature`
-    /// (currently `#[doc(hidden)]`, paired with the experimental vtable flag).
+    /// (currently `#[doc(hidden)]`).
     ///
     /// Defaults to `false`.
     pub gate_reflect_on_crate_feature: bool,
@@ -1347,6 +1429,7 @@ impl Default for CodeGenConfig {
             map_fields: Vec::new(),
             pointer_fields: Vec::new(),
             repeated_fields: Vec::new(),
+            feature_overrides: Vec::new(),
             unboxed_oneof_fields: Vec::new(),
             strict_utf8_mapping: false,
             allow_message_set: false,
@@ -1373,6 +1456,15 @@ impl Default for CodeGenConfig {
 }
 
 impl CodeGenConfig {
+    /// Whether any [`FeatureOverride::EnumType`] rule is configured — the
+    /// gate for the open-enum declared-default machinery (which can only
+    /// fire when a closed enum has been opened by such a rule).
+    pub(crate) fn has_enum_type_overrides(&self) -> bool {
+        self.feature_overrides
+            .iter()
+            .any(|(_, o)| matches!(o, FeatureOverride::EnumType(_)))
+    }
+
     /// Active [`feature_gates::FeatureGates`] for this config.
     ///
     /// Recomputed on each call (cheap — three boolean ANDs); call once at
@@ -1598,6 +1690,20 @@ pub enum CodeGenWarning {
         /// by proto name.
         assignments: Vec<(String, String)>,
     },
+    /// A [`feature_overrides`](CodeGenConfig::feature_overrides) rule matched
+    /// nothing the override targets in the compiled descriptor set, so it
+    /// changed nothing. Usually a typo, a missing nested-message segment, or
+    /// a stale path after a proto rename — the affected paths silently keep
+    /// their default semantics.
+    #[non_exhaustive]
+    FeatureOverrideMatchedNothing {
+        /// The rule's path as configured (post-normalization).
+        rule: String,
+        /// The overridden feature's name (e.g. `"enum_type"`).
+        feature: &'static str,
+        /// The override value (e.g. `"OPEN"`).
+        value: &'static str,
+    },
 }
 
 impl core::fmt::Display for CodeGenWarning {
@@ -1661,6 +1767,18 @@ impl core::fmt::Display for CodeGenWarning {
                     "message `{message_name}`: idiomatic snake_case field names collide; \
                      adjusted: {} (wire/JSON/text names are unaffected)",
                     parts.join(", ")
+                )
+            }
+            Self::FeatureOverrideMatchedNothing {
+                rule,
+                feature,
+                value,
+            } => {
+                write!(
+                    f,
+                    "feature override '{rule}' ({feature} = {value}) matched nothing in \
+                     the compiled set; the affected paths keep their default semantics — \
+                     check the path against the fully-qualified proto names"
                 )
             }
         }
@@ -1978,7 +2096,30 @@ pub fn generate_with_diagnostics(
 
     config.validate_type_name_prefix()?;
 
+    // Feature overrides are applied by mutating the descriptor set up front,
+    // so every downstream consumer — feature resolution, all generation
+    // paths, and the embedded reflection descriptor pool — reads the same
+    // overridden features. With no overrides configured this is a no-op
+    // borrow.
+    let overridden =
+        feature_overrides::apply_feature_overrides(file_descriptors, &config.feature_overrides);
+    let file_descriptors: &[FileDescriptorProto] =
+        overridden.as_ref().map_or(file_descriptors, |o| &o.files);
+
     let ctx = context::CodeGenContext::for_generate(file_descriptors, files_to_generate, config);
+
+    // An inert rule means the user opted a path out of its default semantics
+    // and silently didn't get it — warn per rule so typos surface at build
+    // time instead of as production behavior surprises.
+    if let Some(o) = &overridden {
+        for (rule, ovr) in &o.unmatched {
+            ctx.warn(CodeGenWarning::FeatureOverrideMatchedNothing {
+                rule: rule.clone(),
+                feature: ovr.feature_name(),
+                value: ovr.value_name(),
+            });
+        }
+    }
 
     // Lazy views need the eager view machinery; warn once per run.
     if config.lazy_views && !config.generate_views {
@@ -2515,12 +2656,9 @@ fn generate_package(
         }
         ctx.truncate_warnings(warn_mark);
         occupied.insert("register_types".to_string());
-        // The reflection pool accessor is re-exported at the package root
-        // directly by `generate_package_mod` (not via a ReexportCandidate),
-        // so the dry run doesn't capture it — reserve it explicitly.
-        if ctx.config.generate_reflection {
-            occupied.insert("descriptor_pool".to_string());
-        }
+        // The reflect re-export names (`descriptor_pool`,
+        // `FILE_DESCRIPTOR_SET_BYTES`) are reserved inside
+        // `root_occupied_names` itself.
         let collected = ctx.imports_take_collected();
         ctx.imports_set_resolving(imports::RootImports::assign(&collected, &occupied));
     }
@@ -2667,6 +2805,16 @@ fn root_occupied_names(
                     .prefixed_type_name(e.name.as_deref().unwrap_or("")),
             );
         }
+    }
+    // The reflect surface is re-exported at the package root directly by
+    // `generate_package_mod` (not via a `ReexportCandidate`), so candidates
+    // that could share its names — an extension const named
+    // `file_descriptor_set_bytes` becomes `FILE_DESCRIPTOR_SET_BYTES` —
+    // must be filtered against it here or the two `pub use`s collide
+    // (E0252) in the generated package root.
+    if ctx.config.generate_reflection {
+        occupied.insert("descriptor_pool".to_string());
+        occupied.insert("FILE_DESCRIPTOR_SET_BYTES".to_string());
     }
     occupied
 }
@@ -2869,14 +3017,15 @@ fn generate_package_mod(
     // Reflection: embed the FileDescriptorSet bytes and a lazy pool
     // accessor so per-message `Reflectable` impls have a descriptor pool to
     // resolve against. Lives inside `__buffa` so the impls can reach it via
-    // a relative `__buffa::reflect::descriptor_pool()` path. A package-root
-    // `pub use` re-exports `descriptor_pool` so consumers don't have to
-    // route through the reserved `__buffa` sentinel.
+    // a relative `__buffa::reflect::descriptor_pool()` path. Package-root
+    // `pub use`s re-export `descriptor_pool` and `FILE_DESCRIPTOR_SET_BYTES`
+    // so consumers don't have to route through the reserved `__buffa`
+    // sentinel.
     let (reflect_mod, reflect_reexport) = if ctx.config.generate_reflection {
         let gate = ctx.config.feature_gates().reflect;
         (
             feature_gates::cfg_block(reflect::reflect_pool_module(fds_bytes), gate),
-            feature_gates::cfg_block(reflect::pool_accessor_reexport(&quote! { __buffa }), gate),
+            reflect::reflect_reexports(&quote! { __buffa }, gate),
         )
     } else {
         (TokenStream::new(), TokenStream::new())
@@ -2963,6 +3112,138 @@ pub fn package_to_mod_filename(package: &str) -> String {
         format!("{}.mod.rs", context::SENTINEL_MOD)
     } else {
         format!("{package}.mod.rs")
+    }
+}
+
+/// Returns `true` if `package` is covered by any entry in `excludes`.
+///
+/// Intended for packages that `include_imports` pulls into
+/// `file_to_generate` but that a caller does not want emitted — typically
+/// option-only imports such as `buf.validate` or `gnostic.openapi.v3`, whose
+/// types are referenced only from custom options and never appear as message
+/// fields.
+///
+/// An exclusion matches a package exactly, or as a dotted-path prefix on a
+/// component boundary: `"buf.validate"` covers `buf.validate` and
+/// `buf.validate.foo`, but not `buf.validatex`. Entries are proto package
+/// paths without a leading dot (`buf.validate`, not `.buf.validate`); an
+/// empty entry matches only the unnamed package.
+///
+/// Both `protoc-gen-buffa` (which filters `file_to_generate` before codegen)
+/// and `protoc-gen-buffa-packaging` (which filters the packages it stitches
+/// into `mod.rs`) route their exclusion through this one predicate, so the
+/// two plugins are guaranteed to drop exactly the same set — the invariant
+/// the packaging plugin's "Matching a codegen plugin's output set" note
+/// depends on.
+pub fn package_is_excluded(package: &str, excludes: &[String]) -> bool {
+    excludes.iter().any(|ex| {
+        package == ex
+            || (package.len() > ex.len()
+                && package.starts_with(ex.as_str())
+                && package.as_bytes()[ex.len()] == b'.')
+    })
+}
+
+/// Normalize and validate one `exclude_package` option value: trim
+/// whitespace, strip the optional leading dot, reject an empty result or a
+/// value with empty components (`buf.validate.`, `buf..validate`) — those
+/// could never match a real package, so a typo would otherwise be a silent
+/// no-op.
+///
+/// Both protoc plugins parse their `exclude_package` options through this
+/// one function so their normalization cannot drift — the same reason they
+/// share [`package_is_excluded`].
+///
+/// # Errors
+///
+/// Returns the user-facing message for a malformed value. The error is a
+/// plain `String` (not [`CodeGenError`]) deliberately: this is plugin
+/// option-string parsing, and both plugins' parse layers are
+/// `Result<_, String>` end to end, surfaced verbatim by protoc.
+pub fn normalize_exclude_package(value: &str) -> Result<String, String> {
+    let pkg = value.trim();
+    let pkg = pkg.strip_prefix('.').unwrap_or(pkg);
+    if pkg.is_empty() || pkg.split('.').any(str::is_empty) {
+        return Err(
+            "'exclude_package' requires a non-empty proto package with no \
+             empty components, e.g. exclude_package=.buf.validate"
+                .to_string(),
+        );
+    }
+    Ok(pkg.to_string())
+}
+
+#[cfg(test)]
+mod package_exclusion_tests {
+    use super::package_is_excluded;
+
+    fn ex(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn exact_match_is_excluded() {
+        assert!(package_is_excluded("buf.validate", &ex(&["buf.validate"])));
+    }
+
+    #[test]
+    fn subpackage_matches_on_component_boundary() {
+        assert!(package_is_excluded("gnostic.openapi.v3", &ex(&["gnostic"])));
+        assert!(package_is_excluded(
+            "buf.validate.priv",
+            &ex(&["buf.validate"])
+        ));
+    }
+
+    #[test]
+    fn prefix_without_boundary_does_not_match() {
+        assert!(!package_is_excluded(
+            "buf.validatex",
+            &ex(&["buf.validate"])
+        ));
+        assert!(!package_is_excluded("gnostics", &ex(&["gnostic"])));
+    }
+
+    #[test]
+    fn unrelated_package_is_kept() {
+        assert!(!package_is_excluded(
+            "example.user.v1",
+            &ex(&["buf.validate", "gnostic"])
+        ));
+    }
+
+    #[test]
+    fn empty_exclude_list_keeps_everything() {
+        assert!(!package_is_excluded("buf.validate", &ex(&[])));
+    }
+
+    // An empty exclude entry is unreachable through either plugin
+    // (`normalize_exclude_package` rejects it); this pins the raw
+    // predicate's documented behavior for direct callers.
+    #[test]
+    fn empty_entry_matches_only_the_unnamed_package() {
+        assert!(package_is_excluded("", &ex(&[""])));
+        assert!(!package_is_excluded("foo", &ex(&[""])));
+    }
+
+    #[test]
+    fn normalize_strips_dot_and_rejects_malformed() {
+        use super::normalize_exclude_package;
+        assert_eq!(
+            normalize_exclude_package(".buf.validate").as_deref(),
+            Ok("buf.validate")
+        );
+        assert_eq!(
+            normalize_exclude_package("gnostic").as_deref(),
+            Ok("gnostic")
+        );
+        assert!(normalize_exclude_package("").is_err());
+        assert!(normalize_exclude_package(".").is_err());
+        assert!(normalize_exclude_package("  ").is_err());
+        // Entries that could never match a real package are rejected, not
+        // silently accepted as no-ops.
+        assert!(normalize_exclude_package("buf.validate.").is_err());
+        assert!(normalize_exclude_package("buf..validate").is_err());
     }
 }
 

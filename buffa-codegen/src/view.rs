@@ -44,6 +44,21 @@ fn closed_enum_view_unknown_route(preserve_unknown_fields: bool) -> TokenStream 
     }
 }
 
+/// Token stream that records a closed-enum unknown packed element as
+/// synthetic varint wire bytes in `view.__buffa_unknown_fields`.
+fn closed_enum_view_unknown_varint_route(
+    field_number: u32,
+    preserve_unknown_fields: bool,
+) -> TokenStream {
+    if preserve_unknown_fields {
+        quote! {
+            view.__buffa_unknown_fields.push_varint(#field_number, __raw as u64, ctx)?;
+        }
+    } else {
+        quote! {}
+    }
+}
+
 /// Convert a borrowed bytes view to the owned field type.
 ///
 /// When `use_bytes_type()` is active for this field, emits
@@ -280,13 +295,13 @@ pub(crate) fn generate_view_with_nesting(
     // If no field borrows from 'a (all-scalar message with unknown-fields
     // preservation disabled), inject PhantomData<&'a ()> so the struct's
     // lifetime param is used. decode_view_ctx(buf: &'a [u8]) requires 'a.
-    let phantom_field =
-        if message_view_has_borrowing_field(ctx, msg, features, ctx.config.preserve_unknown_fields)
-        {
-            quote! {}
-        } else {
-            quote! { #[doc(hidden)] pub __buffa_phantom: ::core::marker::PhantomData<&'a ()>, }
-        };
+    let has_phantom_field =
+        !message_view_has_borrowing_field(ctx, msg, features, ctx.config.preserve_unknown_fields);
+    let phantom_field = if has_phantom_field {
+        quote! { #[doc(hidden)] pub __buffa_phantom: ::core::marker::PhantomData<&'a ()>, }
+    } else {
+        quote! {}
+    };
 
     let mod_items = quote! {
         #(#oneof_view_enums)*
@@ -333,6 +348,9 @@ pub(crate) fn generate_view_with_nesting(
     // Like the owned message's Debug impl, the manual impl lists proto fields
     // only — `__buffa_unknown_fields` is deliberately excluded because unknown
     // fields can carry redacted data from a newer schema version.
+    let custom_default_impl =
+        custom_view_default_impl(view_scope, msg, &view_ident, has_phantom_field)?;
+    let has_custom_default_impl = custom_default_impl.is_some();
     let any_redacted = view_fields.iter().any(|(_, _, redacted)| *redacted);
     let (view_debug_derive, view_debug_impl) = if any_redacted {
         let placeholder = crate::message::DEBUG_REDACT_PLACEHOLDER;
@@ -354,7 +372,11 @@ pub(crate) fn generate_view_with_nesting(
             debug_field_values.push(quote! { &self.#ident });
         }
         (
-            quote! { #[derive(Clone, Default)] },
+            if has_custom_default_impl {
+                quote! { #[derive(Clone)] }
+            } else {
+                quote! { #[derive(Clone, Default)] }
+            },
             quote! {
                 impl<'a> ::core::fmt::Debug for #view_ident<'a> {
                     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -365,6 +387,8 @@ pub(crate) fn generate_view_with_nesting(
                 }
             },
         )
+    } else if has_custom_default_impl {
+        (quote! { #[derive(Clone, Debug)] }, quote! {})
     } else {
         (quote! { #[derive(Clone, Debug, Default)] }, quote! {})
     };
@@ -385,6 +409,8 @@ pub(crate) fn generate_view_with_nesting(
         }
 
         #view_debug_impl
+
+        #custom_default_impl
 
         #required_has_impl
 
@@ -476,6 +502,138 @@ pub(crate) fn generate_view_with_nesting(
     };
 
     Ok((top_level, mod_items))
+}
+
+/// Generate a custom `Default` impl for an eager/lazy view struct when a
+/// bare-stored enum field's default differs from the derived one.
+///
+/// Views normally derive `Default`. The exception is a proto2 required
+/// closed enum field opened by an enum-type override: `EnumValue::default()` is
+/// raw wire zero, but the field's declared default is the enum's first value
+/// (or an explicit `[default = ...]`). The owned struct already gets a
+/// custom `Default`; views need the same initializer because decoders start
+/// from `Self::default()`. Returns `None` (derive as usual) when no field
+/// needs it.
+pub(crate) fn custom_view_default_impl(
+    scope: MessageScope<'_>,
+    msg: &DescriptorProto,
+    view_ident: &proc_macro2::Ident,
+    has_phantom_field: bool,
+) -> Result<Option<TokenStream>, CodeGenError> {
+    let ctx = scope.ctx;
+
+    // The triggering condition (bare open enum with a non-wire-zero declared
+    // default) can only arise through an enum-type feature override, so the
+    // default configuration skips the per-field scan entirely.
+    if !ctx.config.has_enum_type_overrides() {
+        return Ok(None);
+    }
+
+    // Mirrors the view struct's member list exactly: direct fields (same
+    // filter as `view_struct_field` mapping), oneof options, unknown fields,
+    // required seen-bit words, phantom.
+    let mut field_inits = Vec::new();
+    let mut has_custom = false;
+    for field in &msg.field {
+        if is_real_oneof_member(field) || !is_supported_field_type(field.r#type.unwrap_or_default())
+        {
+            continue;
+        }
+        let field_name = field
+            .name
+            .as_deref()
+            .ok_or(CodeGenError::MissingField("field.name"))?;
+        let field_ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
+        if let Some(expr) = view_open_enum_default_expr(scope, msg, field)? {
+            has_custom = true;
+            field_inits.push(quote! { #field_ident: #expr, });
+        } else {
+            field_inits.push(quote! { #field_ident: ::core::default::Default::default(), });
+        }
+    }
+    if !has_custom {
+        return Ok(None);
+    }
+
+    // Same membership rule as `oneof_view_struct_fields`: a oneof member
+    // exists only when the oneof is named AND has real members (nameless
+    // oneofs are skipped there via `resolve_oneof_idents`, not errored).
+    for (idx, oneof) in msg.oneof_decl.iter().enumerate() {
+        let Some(oneof_name) = oneof.name.as_deref() else {
+            continue;
+        };
+        let has_real = msg
+            .field
+            .iter()
+            .any(|f| is_real_oneof_member(f) && f.oneof_index == Some(idx as i32));
+        if has_real {
+            let ident = ctx.oneof_ident(oneof_name);
+            field_inits.push(quote! { #ident: ::core::default::Default::default(), });
+        }
+    }
+
+    if ctx.config.preserve_unknown_fields {
+        field_inits.push(quote! {
+            __buffa_unknown_fields: ::core::default::Default::default(),
+        });
+    }
+
+    let required_fields = required_view_fields(scope, msg);
+    let bit_count = required_fields.iter().filter(|r| r.bit.is_some()).count();
+    for word in 0..bit_count.div_ceil(64) {
+        let ident = required_seen_word_ident(word);
+        field_inits.push(quote! { #ident: 0, });
+    }
+
+    if has_phantom_field {
+        field_inits.push(quote! {
+            __buffa_phantom: ::core::marker::PhantomData,
+        });
+    }
+
+    Ok(Some(quote! {
+        impl<'a> ::core::default::Default for #view_ident<'a> {
+            fn default() -> Self {
+                Self {
+                    #(#field_inits)*
+                }
+            }
+        }
+    }))
+}
+
+/// The non-derived default expression for a view field, if it needs one:
+/// a bare-stored (required) enum field with open representation whose
+/// declared default differs from wire zero. `None` for everything else.
+fn view_open_enum_default_expr(
+    scope: MessageScope<'_>,
+    msg: &DescriptorProto,
+    field: &FieldDescriptorProto,
+) -> Result<Option<TokenStream>, CodeGenError> {
+    let MessageScope {
+        ctx,
+        current_package,
+        features: parent_features,
+        nesting,
+        ..
+    } = scope;
+    if field.label.unwrap_or_default() == Label::LABEL_REPEATED || is_map_field(msg, field) {
+        return Ok(None);
+    }
+
+    let field_features = crate::features::resolve_field(ctx, field, parent_features);
+    let ty = effective_type(ctx, field, &field_features);
+    if ty != Type::TYPE_ENUM || is_explicit_presence_scalar(field, ty, &field_features) {
+        return Ok(None);
+    }
+
+    crate::defaults::open_enum_bare_default_value(
+        field,
+        ctx,
+        current_package,
+        &field_features,
+        nesting,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1399,7 +1557,13 @@ pub(crate) fn repeated_decode_arm(
     let push_known = quote! { view.#ident.push(__v); };
     let packed_elem = if ty == Type::TYPE_ENUM {
         if closed {
-            closed_enum_decode(&quote! { &mut pcur }, push_known.clone())
+            let unknown_route =
+                closed_enum_view_unknown_varint_route(field_number, preserve_unknown_fields);
+            closed_enum_decode_with_unknown(
+                &quote! { &mut pcur },
+                push_known.clone(),
+                unknown_route,
+            )
         } else {
             quote! { view.#ident.push(::buffa::EnumValue::from(::buffa::types::decode_int32_packed(&mut pcur)?)); }
         }
@@ -1433,7 +1597,8 @@ pub(crate) fn repeated_decode_arm(
         if closed {
             // Unpacked: each element has its own tag, so `before_tag` captures
             // the per-element span. Packed (above) can't do this — the tag
-            // covers the whole blob — so packed unknowns are still dropped.
+            // covers the whole blob — so packed unknowns are recorded as
+            // synthetic varint records instead.
             let unknown_route = closed_enum_view_unknown_route(preserve_unknown_fields);
             closed_enum_decode_with_unknown(&quote! { &mut cur }, push_known, unknown_route)
         } else {

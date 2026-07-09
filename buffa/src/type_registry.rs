@@ -738,7 +738,7 @@ mod tests {
                     0
                 }
             }
-            fn write_to(&self, _cache: &mut crate::SizeCache, buf: &mut impl bytes::BufMut) {
+            fn write_to(&self, _cache: &mut crate::SizeCache, buf: &mut impl crate::EncodeSink) {
                 if self.n != 0 {
                     crate::encoding::Tag::new(1, crate::encoding::WireType::Varint).encode(buf);
                     crate::encoding::encode_varint(self.n as i64 as u64, buf);

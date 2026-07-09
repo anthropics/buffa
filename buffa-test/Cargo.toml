@@ -17,7 +17,7 @@ buffa = { workspace = true, features = ["std", "json", "text"] }
 # generated with `generate_text(true)` and the pool decodes the WKT
 # descriptors that need it.
 buffa-descriptor = { workspace = true, features = ["reflect", "json", "std"] }
-buffa-types = { workspace = true, features = ["json", "chrono"] }
+buffa-types = { workspace = true, features = ["json", "chrono", "jiff"] }
 # The SmolStr preset crate, used by the string_type fixtures and as the template
 # for the crate-local newtypes in `reprs`.
 buffa-smolstr = { workspace = true, features = ["serde"] }

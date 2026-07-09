@@ -32,10 +32,14 @@ pub fn parse_default_value(
         _ => return Ok(None),
     };
 
-    // Custom defaults only apply to fields with explicit presence (proto2,
-    // or editions with `features.field_presence = EXPLICIT`). Proto3 implicit
-    // fields and editions with implicit presence ignore `default_value`.
-    if features.field_presence != crate::features::FieldPresence::Explicit {
+    // Custom defaults apply to fields with explicit storage semantics:
+    // proto2, editions `EXPLICIT`, and editions `LEGACY_REQUIRED` (required
+    // fields carry declared defaults exactly like proto2 `required`). Proto3
+    // implicit fields and editions implicit presence ignore `default_value`.
+    if !matches!(
+        features.field_presence,
+        crate::features::FieldPresence::Explicit | crate::features::FieldPresence::LegacyRequired
+    ) {
         return Ok(None);
     }
 
@@ -125,13 +129,87 @@ pub fn parse_default_value(
             // e.g. `[default = type]` → `r#type` and `[default = Self]` → `Self_`
             // match the actual variant ident emitted in the enum definition.
             let variant_ident = crate::message::make_field_ident(default_str);
-            // Proto2 enum fields use bare E (closed enums).
-            quote! { #ty::#variant_ident }
+            // Closed enum fields store bare `E`; open representation (native
+            // or via an enum-type feature override) stores `EnumValue<E>`.
+            if features.enum_type == crate::features::EnumType::Open {
+                quote! { ::buffa::EnumValue::Known(#ty::#variant_ident) }
+            } else {
+                quote! { #ty::#variant_ident }
+            }
         }
         _ => return Ok(None),
     };
 
     Ok(Some(expr))
+}
+
+/// Generated default expression for a bare-stored enum field whose default
+/// differs from `EnumValue::<E>::default()` (raw wire zero).
+///
+/// Fires only for *required* (proto2 `required` / editions `LEGACY_REQUIRED`)
+/// open-representation enum fields with either an explicit proto
+/// `default_value` or a non-zero first declared enum value. Both can only
+/// originate from proto2/closed declarations — the spec pins genuinely-open
+/// enums' first value to zero, and implicit-presence fields cannot reference
+/// closed enums — so in practice this covers closed enums opened by
+/// [`FeatureOverride::EnumType`](crate::FeatureOverride), where the declared
+/// default must survive the representation change. Returns `Ok(None)`
+/// everywhere else, so ordinary open-enum output is untouched. The required
+/// gate lives here (not in callers) so every surface that consults this —
+/// owned `Default`, `clear()`, view `Default`, reflection `has()` — agrees by
+/// construction.
+///
+/// Extern (`extern_path`) enums are not in the compilation set, so their
+/// first declared value is unknown; an opened extern required enum field
+/// falls back to the wire-zero default (consistently across all surfaces)
+/// unless it carries an explicit `default_value`.
+pub fn open_enum_bare_default_value(
+    field: &FieldDescriptorProto,
+    ctx: &CodeGenContext,
+    current_package: &str,
+    features: &ResolvedFeatures,
+    nesting: usize,
+) -> Result<Option<TokenStream>, CodeGenError> {
+    use crate::generated::descriptor::field_descriptor_proto::Type;
+
+    if field.r#type.unwrap_or_default() != Type::TYPE_ENUM
+        || features.enum_type != crate::features::EnumType::Open
+        || !crate::impl_message::is_required_field(field, features)
+    {
+        return Ok(None);
+    }
+
+    if let Some(expr) = parse_default_value(
+        field,
+        ctx,
+        current_package,
+        features,
+        nesting,
+        crate::StringRepr::String,
+    )? {
+        return Ok(Some(expr));
+    }
+
+    let type_name = field
+        .type_name
+        .as_deref()
+        .ok_or(CodeGenError::MissingField("field.type_name"))?;
+    if ctx.enum_first_value(type_name).unwrap_or(0) == 0 {
+        return Ok(None);
+    }
+
+    let path_str = ctx
+        .rust_type_relative(type_name, current_package, nesting)
+        .ok_or_else(|| {
+            CodeGenError::Other(format!(
+                "enum type '{type_name}' not found in descriptor set"
+            ))
+        })?;
+    let ty = crate::message::rust_path_to_tokens(&path_str);
+    // The generated enum's `Default` is its first declared value.
+    Ok(Some(quote! {
+        ::buffa::EnumValue::Known(<#ty as ::core::default::Default>::default())
+    }))
 }
 
 /// Parse a float/double default value, handling special values "inf", "-inf", "nan".
