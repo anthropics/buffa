@@ -39,8 +39,12 @@ jobs:
           # noreply@anthropic.com is the email AI assistants use on
           # Co-authored-by trailers (e.g. Claude). Allowlisting it suppresses
           # the synthetic co-author from the CLA check; the PR opener still
-          # has to sign.
-          allowlist: "iainmcgin,dependabot[bot],github-actions[bot],renovate[bot],noreply@anthropic.com"
+          # has to sign. anthropic-oss-manager[bot] is the repository
+          # maintenance agent (introduced in
+          # https://github.com/anthropics/buffa/discussions/285); bots cannot
+          # sign a CLA, and its contributions are Anthropic-authored by
+          # construction.
+          allowlist: "iainmcgin,dependabot[bot],github-actions[bot],renovate[bot],anthropic-oss-manager[bot],noreply@anthropic.com"
 
       # Merge queue support. The CLA action above only runs on
       # pull_request_target, so without this step the required "CLAAssistant"
