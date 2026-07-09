@@ -1,6 +1,6 @@
 kind: Added
 body: |-
-    **`buffa-remote-derive`: optional `as_shared` override on `derive(ProtoBytes)`**.
+    **`buffa-remote-derive`: optional `as_shared` override on `derive(ProtoBytes)`** (#294).
     `#[buffa(remote = ..., as_shared = path)]` generates the encode-side
     `ProtoBytes::as_shared` hook, letting a remote bytes newtype that stores a
     `bytes::Bytes` splice into segmented (`Rope`) sinks by reference count
