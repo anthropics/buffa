@@ -40,11 +40,12 @@ pub fn parse(input: &DeriveInput) -> syn::Result<RemoteField> {
 
 /// Like [`parse`], but also collects any of `allowed_overrides` present in
 /// `#[buffa(remote = ..., key = path, ...)]` as `syn::Path`s — used by derives
-/// (`ProtoBox`, `MapStorage`) whose reference implementations call **inherent**
-/// methods on the remote type (e.g. `into_inner()`, `insert()`) rather than
-/// trait methods, so the method path can't be synthesized generically and
-/// instead defaults to the common naming convention with an escape hatch to
-/// override it.
+/// whose generated impl needs a caller-supplied method path. Two modes exist:
+/// replacing a conventional inherent-method default (`ProtoBox`'s
+/// `new`/`into_inner`, `MapStorage`'s `len`/`insert`/`clear`/`iter`, resolved
+/// through [`overridable_call`]), and enabling an optional hook with no
+/// default at all (`ProtoBytes`'s `as_shared`, where an absent key means the
+/// method is not generated and the trait default applies).
 pub fn parse_with_overrides(
     input: &DeriveInput,
     allowed_overrides: &[&str],

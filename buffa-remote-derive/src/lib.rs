@@ -87,6 +87,21 @@
 //! payload, and the common single-chunk source arrives borrowed and is
 //! copied there too. When that copy matters, use the built-in `bytes::Bytes`
 //! representation for the field rather than a custom type.
+//!
+//! The encode side has the mirror-image limitation with an escape hatch: by
+//! default the generated `ProtoBytes` impl inherits the trait's `as_shared`
+//! default of `None`, so encoding into a segmented sink (`buffa::Rope`)
+//! copies the payload instead of splicing it by reference count. A remote
+//! type that stores (or can cheaply produce) a `bytes::Bytes` handle can name
+//! the callable via `#[buffa(remote = ..., as_shared = path)]`; it is called
+//! as a free function on the wrapped field — `path(&self.0)` or
+//! `path(&self.field)` — and must have the shape `fn(&Remote) ->
+//! Option<bytes::Bytes>`. A signature mismatch is a type error at the
+//! generated call site, not a special diagnostic from this macro. The
+//! returned handle must satisfy `buffa::ProtoBytes::as_shared`'s correctness
+//! contract, and only a segmented sink ever calls it — test against a
+//! `Rope` explicitly.
+//!
 //! `ProtoList` additionally requires the
 //! remote collection to implement `Extend<T>` (used
 //! to implement `push`); its generated `clear` reinitializes the field via
@@ -107,6 +122,9 @@
 //! `MapStorage`) don't give a generic derive enough to call through to
 //! `new`/`into_inner`/`insert`/`clear`/`iter`/`len` the way `From`/
 //! `FromIterator`/`Extend` did for `ProtoString`/`ProtoBytes`/`ProtoList`.
+//! (`ProtoBytes`'s `as_shared` key is a different kind of override — an
+//! opt-in over a working trait default, not a renamed inherent method —
+//! and is documented above.)
 //!
 //! So these two derives default to the near-universal naming convention
 //! (`Type::new`/`Type::into_inner` for pointers — `Rc`, `Arc`,
@@ -153,7 +171,9 @@
 //!
 //! To override a default, name the method explicitly:
 //! `#[buffa(remote = ..., into_inner = MyType::unwrap)]` for `ProtoBox`, or
-//! any of `len`/`insert`/`clear`/`iter` for `MapStorage`. The override path is
+//! any of `len`/`insert`/`clear`/`iter` for `MapStorage`. (The full key
+//! catalog is these plus `ProtoBytes`'s `as_shared`, covered earlier; the
+//! other derives accept no extra keys.) The override path is
 //! called the same way the default is — as a free function taking the
 //! receiver as its first argument (`Type::method(&self.0, ...)`) — so it
 //! **must** accept the same receiver as the method it replaces: `new` takes
@@ -195,7 +215,10 @@ pub fn derive_proto_string(input: TokenStream) -> TokenStream {
 
 /// See the [crate-level docs](crate). Generates `Deref<Target = [u8]>`,
 /// `AsRef<[u8]>`, `From<Vec<u8>>`, and `buffa::ProtoBytes` for a single-field
-/// newtype wrapping the type named by `#[buffa(remote = ...)]`.
+/// newtype wrapping the type named by `#[buffa(remote = ...)]`. An optional
+/// `as_shared = path` key generates the encode-side
+/// `buffa::ProtoBytes::as_shared` override — see the crate docs for the
+/// callable's contract.
 #[proc_macro_derive(ProtoBytes, attributes(buffa))]
 pub fn derive_proto_bytes(input: TokenStream) -> TokenStream {
     expand(input, bytes::derive)
