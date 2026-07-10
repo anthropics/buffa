@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use buffa::DecodeError;
 use buffa_descriptor::reflect::{
     DynamicMessage, MapKey, MapValue, ReflectError, ReflectMessage, ReflectMessageMut, Value,
 };
@@ -15,6 +16,26 @@ const FDS_BYTES: &[u8] = include_bytes!("protos/reflect_test.fds");
 
 fn pool() -> Arc<DescriptorPool> {
     Arc::new(DescriptorPool::decode(FDS_BYTES).expect("pool builds from protoc FDS"))
+}
+
+fn assert_oneof_member_survives_decode_error(
+    initial_number: u32,
+    initial_value: Value,
+    replacement: &[u8],
+    expected_error: DecodeError,
+) {
+    let p = pool();
+    let oneof_idx = p.message_index("reflect.test.OneOf").unwrap();
+    let md = p.message_by_name("reflect.test.OneOf").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), oneof_idx);
+    msg.set(md.field(initial_number).unwrap(), initial_value.clone());
+
+    assert_eq!(msg.merge(replacement), Err(expected_error));
+    assert_eq!(msg.field_by_number(initial_number), Some(&initial_value));
+    assert_eq!(
+        msg.which_oneof(&md.oneofs()[0]).unwrap().number(),
+        initial_number
+    );
 }
 
 #[test]
@@ -344,6 +365,50 @@ fn which_oneof_resolves_set_member() {
     let active = msg.which_oneof(oneof).expect("a member is set");
     assert_eq!(active.number(), 1);
     assert_eq!(active.name(), "num");
+}
+
+#[test]
+fn malformed_oneof_varint_preserves_previous_member() {
+    // field 1 (num), followed by a varint with no terminating byte.
+    assert_oneof_member_survives_decode_error(
+        2,
+        Value::String("Alice".into()),
+        &[0x08, 0x80],
+        DecodeError::UnexpectedEof,
+    );
+}
+
+#[test]
+fn truncated_oneof_message_preserves_previous_member() {
+    // field 3 (msg), length 2, but only one payload byte is available.
+    assert_oneof_member_survives_decode_error(
+        2,
+        Value::String("Alice".into()),
+        &[0x1a, 0x02, 0x0a],
+        DecodeError::UnexpectedEof,
+    );
+}
+
+#[test]
+fn wrong_oneof_group_terminator_preserves_previous_member() {
+    // field 3 (msg) starts a group, then ends with field 2 instead of field 3.
+    assert_oneof_member_survives_decode_error(
+        2,
+        Value::String("Alice".into()),
+        &[0x1b, 0x08, 0x01, 0x14],
+        DecodeError::InvalidEndGroup(2),
+    );
+}
+
+#[test]
+fn invalid_utf8_oneof_replacement_preserves_previous_member() {
+    // field 2 (text) contains an invalid UTF-8 byte and replaces field 1.
+    assert_oneof_member_survives_decode_error(
+        1,
+        Value::I32(42),
+        &[0x12, 0x01, 0xff],
+        DecodeError::InvalidUtf8,
+    );
 }
 
 #[test]

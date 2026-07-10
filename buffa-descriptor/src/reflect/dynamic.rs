@@ -297,22 +297,28 @@ impl DynamicMessage {
         }
         match kind {
             FieldKind::Singular(sk) => {
-                // Oneof semantics: setting any member clears all other members
-                // of the same oneof. Synthetic oneofs (proto3 `optional`) have
-                // a single member so this is a no-op for them.
-                if let Some(oi) = oneof_index {
-                    self.clear_other_oneof_members(oi, number);
-                }
                 // Singular message merge semantics: when the same field appears
                 // multiple times on the wire, the parser merges the messages
                 // (each sub-field merged) rather than replacing wholesale.
-                if let SingularKind::Message(midx) = sk {
-                    if let Some(Value::Message(_)) = self.fields.get(&number) {
-                        // Decode the new bytes into the existing message.
-                        return self.merge_into_existing_message(number, midx, tag, buf, ctx);
+                // Decode before clearing oneof siblings. A malformed
+                // replacement must not destroy the previously valid member.
+                let v = match sk {
+                    SingularKind::Message(_) => {
+                        if let Some(Value::Message(existing)) = self.fields.get(&number) {
+                            self.decode_merged_message(existing, tag, buf, ctx)?
+                        } else {
+                            self.decode_element(sk, tag, buf, ctx)?
+                        }
                     }
+                    _ => self.decode_element(sk, tag, buf, ctx)?,
+                };
+                // Oneof semantics: setting any member clears all other members
+                // of the same oneof. Synthetic oneofs (proto3 `optional`) have
+                // a single member so this is a no-op for them. The clear is
+                // deliberately after decoding succeeds.
+                if let Some(oi) = oneof_index {
+                    self.clear_other_oneof_members(oi, number);
                 }
-                let v = self.decode_element(sk, tag, buf, ctx)?;
                 self.fields.insert(number, v);
             }
             FieldKind::List(sk) => {
@@ -344,24 +350,18 @@ impl DynamicMessage {
         }
     }
 
-    /// Merge new wire bytes for a singular message field into the existing
-    /// `Value::Message` at `number`, instead of replacing it.
-    fn merge_into_existing_message(
-        &mut self,
-        number: u32,
-        midx: MessageIndex,
+    /// Decode new wire bytes for a singular message field into a temporary
+    /// clone of its existing value, instead of replacing it or mutating the
+    /// stored value before decoding succeeds.
+    fn decode_merged_message(
+        &self,
+        existing: &DynamicMessage,
         tag: Tag,
         buf: &mut impl Buf,
         ctx: DecodeContext<'_>,
-    ) -> Result<(), DecodeError> {
-        let _ = midx;
+    ) -> Result<Value, DecodeError> {
         let ctx = ctx.descend()?;
-        // Take the existing message out of the map so we can borrow `self`
-        // immutably for the descriptor lookup while merging into it.
-        let Some(Value::Message(mut existing)) = self.fields.remove(&number) else {
-            // Caller checked this — defensive.
-            return Ok(());
-        };
+        let mut merged = existing.clone();
         let result = match tag.wire_type() {
             WireType::LengthDelimited => {
                 let len = decode_varint(buf)?;
@@ -370,19 +370,16 @@ impl DynamicMessage {
                     return Err(DecodeError::UnexpectedEof);
                 }
                 let mut sub = buf.copy_to_bytes(len);
-                existing.merge_buf(&mut sub, ctx)
+                merged.merge_buf(&mut sub, ctx)
             }
-            WireType::StartGroup => existing.merge_group(buf, tag.field_number(), ctx),
+            WireType::StartGroup => merged.merge_group(buf, tag.field_number(), ctx),
             wt => Err(DecodeError::WireTypeMismatch {
-                field_number: number,
+                field_number: tag.field_number(),
                 expected: WireType::LengthDelimited as u8,
                 actual: wt as u8,
             }),
         };
-        // Put the (possibly partially-merged) message back regardless of
-        // outcome, so a decode error doesn't silently drop earlier data.
-        self.fields.insert(number, Value::Message(existing));
-        result
+        result.map(|()| Value::Message(merged))
     }
 
     fn merge_list_field(
