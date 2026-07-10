@@ -75,6 +75,17 @@ pub enum PoolError {
     /// limit of the internal field-number lookup table behind
     /// [`MessageDescriptor::field`].
     TooManyFields { message: String, count: usize },
+    /// Two fields in one message declare the same field number.
+    DuplicateFieldNumber { message: String, number: u32 },
+    /// Two fields in one message claim the same proto or JSON name.
+    DuplicateFieldName { message: String, name: String },
+    /// A field refers to a oneof declaration that does not exist in its
+    /// containing message.
+    InvalidOneofIndex {
+        message: String,
+        field: String,
+        index: i32,
+    },
     /// A field number is outside the valid range
     /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`), or an extension range has
     /// a negative bound.
@@ -109,6 +120,26 @@ impl core::fmt::Display for PoolError {
                     "message {message} has {count} fields, exceeding the u16 limit"
                 )
             }
+            Self::DuplicateFieldNumber { message, number } => {
+                write!(
+                    f,
+                    "message {message} declares field number {number} more than once"
+                )
+            }
+            Self::DuplicateFieldName { message, name } => {
+                write!(
+                    f,
+                    "message {message} declares field name {name:?} more than once"
+                )
+            }
+            Self::InvalidOneofIndex {
+                message,
+                field,
+                index,
+            } => write!(
+                f,
+                "field {field} in message {message} has invalid oneof index {index}"
+            ),
             Self::InvalidFieldNumber { field, number } => {
                 write!(f, "field {field} has invalid field number {number}")
             }
@@ -194,9 +225,9 @@ impl DescriptorPool {
     ///
     /// # Errors
     ///
-    /// Returns a [`PoolError`] if any type name fails to resolve, a name is
-    /// declared twice, a message exceeds 65 535 fields, or a map entry is
-    /// malformed.
+    /// Returns a [`PoolError`] if any type name fails to resolve, a name or
+    /// field identity is declared twice, a oneof index is invalid, a message
+    /// exceeds 65 535 fields, or a map entry is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -215,7 +246,8 @@ impl DescriptorPool {
     /// Returns [`PoolError::Decode`] if the bytes are not a well-formed
     /// `FileDescriptorSet`, or any other [`PoolError`] on a structural
     /// validation failure (dangling type names, out-of-range field numbers,
-    /// duplicate types, malformed map entries).
+    /// duplicate types or field identities, invalid oneof indices, malformed
+    /// map entries).
     pub fn decode(bytes: &[u8]) -> Result<Self, PoolError> {
         use buffa::Message;
         let set = FileDescriptorSet::decode_from_slice(bytes)?;
@@ -746,8 +778,40 @@ impl DescriptorPool {
         let mut fields = Vec::with_capacity(field_count);
         let mut field_by_number: Vec<(u32, u16)> = Vec::with_capacity(field_count);
         let mut field_by_name: Vec<(String, u16)> = Vec::with_capacity(field_count * 2);
+        let mut field_numbers: BTreeMap<u32, usize> = BTreeMap::new();
+        let mut field_names: BTreeMap<String, usize> = BTreeMap::new();
         for (i, f) in msg.field.iter().enumerate() {
+            if let Some(oneof_index) = f.oneof_index {
+                let valid = usize::try_from(oneof_index)
+                    .ok()
+                    .is_some_and(|index| index < oneofs.len());
+                if !valid {
+                    return Err(PoolError::InvalidOneofIndex {
+                        message: fqn.clone(),
+                        field: format!("{fqn}.{}", f.name.as_deref().unwrap_or("")),
+                        index: oneof_index,
+                    });
+                }
+            }
             let fd = self.link_field(&fqn, f, &msg_features, Some(msg))?;
+            if field_numbers.insert(fd.number, i).is_some() {
+                return Err(PoolError::DuplicateFieldNumber {
+                    message: fqn.clone(),
+                    number: fd.number,
+                });
+            }
+            if field_names.insert(fd.name.clone(), i).is_some() {
+                return Err(PoolError::DuplicateFieldName {
+                    message: fqn.clone(),
+                    name: fd.name.clone(),
+                });
+            }
+            if fd.json_name != fd.name && field_names.insert(fd.json_name.clone(), i).is_some() {
+                return Err(PoolError::DuplicateFieldName {
+                    message: fqn.clone(),
+                    name: fd.json_name.clone(),
+                });
+            }
             let i16 = i as u16;
             // Wire up oneof membership.
             if let Some(oneof_idx) = fd.oneof_index {

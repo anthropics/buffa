@@ -14,12 +14,75 @@
 use std::sync::Arc;
 
 use buffa::editions::{EnumType, FieldPresence};
-use buffa_descriptor::{DescriptorPool, FieldKind, ScalarType, SingularKind};
+use buffa_descriptor::{DescriptorPool, FieldKind, PoolError, ScalarType, SingularKind};
 
 const FDS_BYTES: &[u8] = include_bytes!("protos/reflect_test.fds");
 
 fn pool() -> Arc<DescriptorPool> {
     Arc::new(DescriptorPool::decode(FDS_BYTES).expect("pool builds from protoc FDS"))
+}
+
+fn scalar_field(
+    name: &str,
+    number: i32,
+    ty: buffa_descriptor::generated::descriptor::field_descriptor_proto::Type,
+) -> buffa_descriptor::generated::descriptor::FieldDescriptorProto {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
+    use buffa_descriptor::generated::descriptor::FieldDescriptorProto;
+
+    FieldDescriptorProto {
+        name: Some(name.into()),
+        number: Some(number),
+        label: Some(Label::LABEL_OPTIONAL),
+        r#type: Some(ty),
+        ..Default::default()
+    }
+}
+
+fn assert_rejected_without_mutating_pool(
+    file_name: &str,
+    full_message_name: &str,
+    message: buffa_descriptor::generated::descriptor::DescriptorProto,
+    assert_error: impl FnOnce(&PoolError),
+) {
+    use buffa_descriptor::generated::descriptor::{FileDescriptorProto, FileDescriptorSet};
+
+    let mut p = DescriptorPool::decode(FDS_BYTES).unwrap();
+    let baseline_message_count = p.messages().len();
+    let baseline_file_count = p.files().len();
+    let baseline_field_count = p
+        .message_by_name("reflect.test.Scalars")
+        .unwrap()
+        .fields()
+        .len();
+    let baseline_field_name = p
+        .message_by_name("reflect.test.Scalars")
+        .unwrap()
+        .field(3)
+        .unwrap()
+        .name()
+        .to_owned();
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some(file_name.into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![message],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let err = p.add_file_descriptor_set(set).unwrap_err();
+    assert_error(&err);
+
+    assert_eq!(p.messages().len(), baseline_message_count);
+    assert_eq!(p.files().len(), baseline_file_count);
+    assert!(p.file_by_name(file_name).is_none());
+    assert!(p.message_by_name(full_message_name).is_none());
+    let existing = p.message_by_name("reflect.test.Scalars").unwrap();
+    assert_eq!(existing.fields().len(), baseline_field_count);
+    assert_eq!(existing.field(3).unwrap().name(), baseline_field_name);
 }
 
 #[test]
@@ -285,6 +348,175 @@ fn failed_add_does_not_mutate_pool_and_retry_succeeds() {
     assert_eq!(retry.field(1).unwrap().name(), "ok");
     assert_eq!(p.messages().len(), baseline_message_count + 1);
     assert_eq!(p.files().len(), baseline_file_count + 1);
+}
+
+#[test]
+fn duplicate_field_numbers_are_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    assert_rejected_without_mutating_pool(
+        "duplicate-number.proto",
+        "invalid.test.BadNumber",
+        DescriptorProto {
+            name: Some("BadNumber".into()),
+            field: vec![
+                scalar_field("count", 1, Type::TYPE_INT32),
+                scalar_field("label", 1, Type::TYPE_STRING),
+            ],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::DuplicateFieldNumber { message, number }
+                    if message == "invalid.test.BadNumber" && *number == 1
+            ));
+        },
+    );
+}
+
+#[test]
+fn duplicate_proto_field_names_are_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    assert_rejected_without_mutating_pool(
+        "duplicate-proto-name.proto",
+        "invalid.test.BadProtoName",
+        DescriptorProto {
+            name: Some("BadProtoName".into()),
+            field: vec![
+                scalar_field("same", 1, Type::TYPE_INT32),
+                scalar_field("same", 2, Type::TYPE_STRING),
+            ],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::DuplicateFieldName { message, name }
+                    if message == "invalid.test.BadProtoName" && name == "same"
+            ));
+        },
+    );
+}
+
+#[test]
+fn duplicate_json_field_names_are_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    let mut first = scalar_field("first", 1, Type::TYPE_INT32);
+    first.json_name = Some("sameName".into());
+    let mut second = scalar_field("second", 2, Type::TYPE_STRING);
+    second.json_name = Some("sameName".into());
+
+    assert_rejected_without_mutating_pool(
+        "duplicate-json-name.proto",
+        "invalid.test.BadJsonName",
+        DescriptorProto {
+            name: Some("BadJsonName".into()),
+            field: vec![first, second],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::DuplicateFieldName { message, name }
+                    if message == "invalid.test.BadJsonName" && name == "sameName"
+            ));
+        },
+    );
+}
+
+#[test]
+fn proto_and_json_field_name_collisions_are_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    let mut first = scalar_field("first", 1, Type::TYPE_INT32);
+    first.json_name = Some("sharedName".into());
+    let second = scalar_field("sharedName", 2, Type::TYPE_STRING);
+
+    assert_rejected_without_mutating_pool(
+        "cross-name-collision.proto",
+        "invalid.test.BadCrossName",
+        DescriptorProto {
+            name: Some("BadCrossName".into()),
+            field: vec![first, second],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::DuplicateFieldName { message, name }
+                    if message == "invalid.test.BadCrossName" && name == "sharedName"
+            ));
+        },
+    );
+}
+
+#[test]
+fn positive_out_of_range_oneof_indices_are_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    let mut field = scalar_field("member", 1, Type::TYPE_INT32);
+    field.oneof_index = Some(1);
+
+    assert_rejected_without_mutating_pool(
+        "positive-oneof-index.proto",
+        "invalid.test.BadPositiveOneof",
+        DescriptorProto {
+            name: Some("BadPositiveOneof".into()),
+            field: vec![field],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::InvalidOneofIndex {
+                    message,
+                    field,
+                    index,
+                } if message == "invalid.test.BadPositiveOneof"
+                    && field == "invalid.test.BadPositiveOneof.member"
+                    && *index == 1
+            ));
+        },
+    );
+}
+
+#[test]
+fn negative_oneof_indices_are_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    let mut field = scalar_field("member", 1, Type::TYPE_INT32);
+    field.oneof_index = Some(-1);
+
+    assert_rejected_without_mutating_pool(
+        "negative-oneof-index.proto",
+        "invalid.test.BadNegativeOneof",
+        DescriptorProto {
+            name: Some("BadNegativeOneof".into()),
+            field: vec![field],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::InvalidOneofIndex {
+                    message,
+                    field,
+                    index,
+                } if message == "invalid.test.BadNegativeOneof"
+                    && field == "invalid.test.BadNegativeOneof.member"
+                    && *index == -1
+            ));
+        },
+    );
 }
 
 #[test]
