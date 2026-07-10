@@ -24,7 +24,7 @@
 //! to the linked structures.
 
 use alloc::boxed::Box;
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -69,7 +69,7 @@ pub enum PoolError {
     /// A field's `type_name` resolved to the wrong kind (e.g. a `TYPE_ENUM`
     /// field referencing a message). Carries the name and the field.
     WrongTypeKind { type_name: String, field: String },
-    /// Two messages or enums declared the same fully-qualified name.
+    /// Two declarations share the same fully-qualified symbol name.
     DuplicateName(String),
     /// A message has more than 65 535 fields, exceeding the `u16` index
     /// limit of the internal field-number lookup table behind
@@ -86,6 +86,10 @@ pub enum PoolError {
     /// protoc rejects this within one compilation unit, but it can arise
     /// when merging independently-compiled `FileDescriptorSet`s.
     DuplicateExtensionNumber { extendee: String, number: u32 },
+    /// Two methods in one service have the same proto name.
+    DuplicateMethodName { service: String, name: String },
+    /// Two enum values in the same symbol scope have the same proto name.
+    DuplicateEnumValueName { enum_name: String, name: String },
 }
 
 impl core::fmt::Display for PoolError {
@@ -102,7 +106,7 @@ impl core::fmt::Display for PoolError {
                     "type name {type_name:?} on field {field} resolves to the wrong kind"
                 )
             }
-            Self::DuplicateName(name) => write!(f, "duplicate type name {name:?}"),
+            Self::DuplicateName(name) => write!(f, "duplicate symbol name {name:?}"),
             Self::TooManyFields { message, count } => {
                 write!(
                     f,
@@ -120,6 +124,15 @@ impl core::fmt::Display for PoolError {
                     f,
                     "more than one extension claims field number {number} on {extendee}"
                 )
+            }
+            Self::DuplicateMethodName { service, name } => {
+                write!(
+                    f,
+                    "service {service} declares method {name:?} more than once"
+                )
+            }
+            Self::DuplicateEnumValueName { enum_name, name } => {
+                write!(f, "enum {enum_name} declares value {name:?} more than once")
             }
         }
     }
@@ -148,6 +161,16 @@ enum Definition {
     Enum(EnumIndex),
 }
 
+#[derive(Clone, Copy, Debug)]
+enum SymbolKind {
+    Message,
+    Enum,
+    Service,
+    Method,
+    Extension,
+    EnumValue,
+}
+
 /// A pool of linked, feature-resolved protobuf descriptors.
 ///
 /// Built from one or more `FileDescriptorProto`s via [`DescriptorPool::new`]
@@ -168,6 +191,8 @@ pub struct DescriptorPool {
     extensions: Vec<ExtensionDescriptor>,
     /// FQN (no leading dot) → definition lookup.
     by_name: BTreeMap<String, Definition>,
+    /// Every registered symbol FQN, including methods and enum values.
+    symbols: BTreeMap<String, SymbolKind>,
     /// Service FQN (no leading dot) → index. Separate from `by_name`
     /// because `Definition` is `MessageIndex`-or-`EnumIndex` and services
     /// are linked in a single pass after types resolve.
@@ -194,7 +219,7 @@ impl DescriptorPool {
     ///
     /// # Errors
     ///
-    /// Returns a [`PoolError`] if any type name fails to resolve, a name is
+    /// Returns a [`PoolError`] if any type name fails to resolve, a symbol is
     /// declared twice, a message exceeds 65 535 fields, or a map entry is
     /// malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
@@ -215,7 +240,7 @@ impl DescriptorPool {
     /// Returns [`PoolError::Decode`] if the bytes are not a well-formed
     /// `FileDescriptorSet`, or any other [`PoolError`] on a structural
     /// validation failure (dangling type names, out-of-range field numbers,
-    /// duplicate types, malformed map entries).
+    /// duplicate symbols, or malformed map entries).
     pub fn decode(bytes: &[u8]) -> Result<Self, PoolError> {
         use buffa::Message;
         let set = FileDescriptorSet::decode_from_slice(bytes)?;
@@ -630,6 +655,13 @@ impl DescriptorPool {
 
     // ── Pass 1: register names ──────────────────────────────────────────────
 
+    fn register_symbol(&mut self, fqn: &str, kind: SymbolKind) -> Result<(), PoolError> {
+        if self.symbols.insert(fqn.to_string(), kind).is_some() {
+            return Err(PoolError::DuplicateName(fqn.to_string()));
+        }
+        Ok(())
+    }
+
     fn register_message(
         &mut self,
         parent_fqn: &str,
@@ -641,6 +673,7 @@ impl DescriptorPool {
         } else {
             format!("{parent_fqn}.{name}")
         };
+        self.register_symbol(&fqn, SymbolKind::Message)?;
         let idx = MessageIndex(
             u32::try_from(self.messages.len()).expect("pool message count fits in u32"),
         );
@@ -681,6 +714,7 @@ impl DescriptorPool {
         } else {
             format!("{parent_fqn}.{name}")
         };
+        self.register_symbol(&fqn, SymbolKind::Enum)?;
         let idx = EnumIndex(u32::try_from(self.enums.len()).expect("pool enum count fits in u32"));
         if self
             .by_name
@@ -848,15 +882,34 @@ impl DescriptorPool {
         };
         let enum_features = features::resolve_child(parent_features, features::enum_features(e));
         let idx = self.enum_index(&fqn).expect("enum registered in pass 1");
-        let values: Vec<EnumValueDescriptor> = e
-            .value
-            .iter()
-            .map(|v| EnumValueDescriptor {
-                name: v.name.clone().unwrap_or_default(),
+        let mut value_names = BTreeSet::new();
+        let mut values = Vec::with_capacity(e.value.len());
+        for v in &e.value {
+            let value_name = v.name.clone().unwrap_or_default();
+            if !value_names.insert(value_name.clone()) {
+                return Err(PoolError::DuplicateEnumValueName {
+                    enum_name: fqn.clone(),
+                    name: value_name,
+                });
+            }
+            let value_fqn = if parent_fqn.is_empty() {
+                value_name.clone()
+            } else {
+                format!("{parent_fqn}.{value_name}")
+            };
+            if matches!(self.symbols.get(&value_fqn), Some(SymbolKind::EnumValue)) {
+                return Err(PoolError::DuplicateEnumValueName {
+                    enum_name: fqn.clone(),
+                    name: value_name,
+                });
+            }
+            self.register_symbol(&value_fqn, SymbolKind::EnumValue)?;
+            values.push(EnumValueDescriptor {
+                name: value_name,
                 number: v.number.unwrap_or(0),
                 options: clone_options(&v.options),
-            })
-            .collect();
+            });
+        }
         self.enums[idx.0 as usize] = EnumDescriptor {
             full_name: fqn,
             values,
@@ -877,28 +930,30 @@ impl DescriptorPool {
         } else {
             format!("{parent_fqn}.{name}")
         };
-        if self.service_by_name.contains_key(&fqn) {
-            return Err(PoolError::DuplicateName(fqn));
+        let mut method_names = BTreeSet::new();
+        let mut methods = Vec::with_capacity(svc.method.len());
+        for m in &svc.method {
+            let mname = m.name.as_deref().unwrap_or("").to_string();
+            if !method_names.insert(mname.clone()) {
+                return Err(PoolError::DuplicateMethodName {
+                    service: fqn.clone(),
+                    name: mname,
+                });
+            }
+            let method_fqn = format!("{fqn}.{}", m.name.as_deref().unwrap_or(""));
+            self.register_symbol(&method_fqn, SymbolKind::Method)?;
+            let input = self.resolve_message_type_name(m.input_type.as_deref(), &method_fqn)?;
+            let output = self.resolve_message_type_name(m.output_type.as_deref(), &method_fqn)?;
+            methods.push(MethodDescriptor {
+                name: mname,
+                input,
+                output,
+                client_streaming: m.client_streaming.unwrap_or(false),
+                server_streaming: m.server_streaming.unwrap_or(false),
+                options: clone_options(&m.options),
+            });
         }
-        let methods = svc
-            .method
-            .iter()
-            .map(|m| {
-                let mname = m.name.as_deref().unwrap_or("");
-                let method_fqn = format!("{fqn}.{mname}");
-                let input = self.resolve_message_type_name(m.input_type.as_deref(), &method_fqn)?;
-                let output =
-                    self.resolve_message_type_name(m.output_type.as_deref(), &method_fqn)?;
-                Ok(MethodDescriptor {
-                    name: mname.to_string(),
-                    input,
-                    output,
-                    client_streaming: m.client_streaming.unwrap_or(false),
-                    server_streaming: m.server_streaming.unwrap_or(false),
-                    options: clone_options(&m.options),
-                })
-            })
-            .collect::<Result<Vec<_>, PoolError>>()?;
+        self.register_symbol(&fqn, SymbolKind::Service)?;
         let idx = ServiceIndex(
             u32::try_from(self.services.len()).expect("pool service count fits in u32"),
         );
@@ -926,16 +981,7 @@ impl DescriptorPool {
         } else {
             format!("{scope_fqn}.{name}")
         };
-        // Protobuf has a single symbol space per scope: an extension cannot
-        // share an FQN with another extension, a message, an enum, or a
-        // service. A spec-compliant protoc enforces this; the input is no
-        // longer trusted to come from protoc.
-        if self.extension_by_name.contains_key(&fqn)
-            || self.by_name.contains_key(&fqn)
-            || self.service_by_name.contains_key(&fqn)
-        {
-            return Err(PoolError::DuplicateName(fqn));
-        }
+        self.register_symbol(&fqn, SymbolKind::Extension)?;
         let extendee = self.resolve_message_type_name(ext.extendee.as_deref(), &fqn)?;
         // The field links exactly like a declared field. `containing_msg` is
         // `None` because extensions cannot be map fields (a map requires a

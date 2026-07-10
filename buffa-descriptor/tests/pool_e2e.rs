@@ -14,12 +14,52 @@
 use std::sync::Arc;
 
 use buffa::editions::{EnumType, FieldPresence};
-use buffa_descriptor::{DescriptorPool, FieldKind, ScalarType, SingularKind};
+use buffa_descriptor::{DescriptorPool, FieldKind, PoolError, ScalarType, SingularKind};
 
 const FDS_BYTES: &[u8] = include_bytes!("protos/reflect_test.fds");
 
 fn pool() -> Arc<DescriptorPool> {
     Arc::new(DescriptorPool::decode(FDS_BYTES).expect("pool builds from protoc FDS"))
+}
+
+fn assert_rejected_without_mutating_pool(
+    file_name: &str,
+    symbol_name: &str,
+    set: buffa_descriptor::generated::descriptor::FileDescriptorSet,
+    assert_error: impl FnOnce(&PoolError),
+) {
+    let mut p = DescriptorPool::decode(FDS_BYTES).unwrap();
+    let baseline_message_count = p.messages().len();
+    let baseline_enum_count = p.enums().len();
+    let baseline_service_count = p.services().len();
+    let baseline_extension_count = p.extensions().len();
+    let baseline_file_count = p.files().len();
+    let baseline_field_name = p
+        .message_by_name("reflect.test.Scalars")
+        .unwrap()
+        .field(3)
+        .unwrap()
+        .name()
+        .to_owned();
+
+    let err = p.add_file_descriptor_set(set).unwrap_err();
+    assert_error(&err);
+
+    assert_eq!(p.messages().len(), baseline_message_count);
+    assert_eq!(p.enums().len(), baseline_enum_count);
+    assert_eq!(p.services().len(), baseline_service_count);
+    assert_eq!(p.extensions().len(), baseline_extension_count);
+    assert_eq!(p.files().len(), baseline_file_count);
+    assert!(p.file_by_name(file_name).is_none());
+    assert!(p.file_containing_symbol(symbol_name).is_none());
+    assert_eq!(
+        p.message_by_name("reflect.test.Scalars")
+            .unwrap()
+            .field(3)
+            .unwrap()
+            .name(),
+        baseline_field_name
+    );
 }
 
 #[test]
@@ -285,6 +325,221 @@ fn failed_add_does_not_mutate_pool_and_retry_succeeds() {
     assert_eq!(retry.field(1).unwrap().name(), "ok");
     assert_eq!(p.messages().len(), baseline_message_count + 1);
     assert_eq!(p.files().len(), baseline_file_count + 1);
+}
+
+#[test]
+fn message_and_service_symbol_collisions_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet, ServiceDescriptorProto,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("message-service-collision.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Foo".into()),
+                ..Default::default()
+            }],
+            service: vec![ServiceDescriptorProto {
+                name: Some("Foo".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_rejected_without_mutating_pool(
+        "message-service-collision.proto",
+        "invalid.test.Foo",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::DuplicateName(name) if name == "invalid.test.Foo"
+            ));
+        },
+    );
+}
+
+#[test]
+fn enum_and_service_symbol_collisions_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, EnumValueDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        ServiceDescriptorProto,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("enum-service-collision.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Foo".into()),
+                value: vec![EnumValueDescriptorProto {
+                    name: Some("FOO_UNSPECIFIED".into()),
+                    number: Some(0),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            service: vec![ServiceDescriptorProto {
+                name: Some("Foo".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_rejected_without_mutating_pool(
+        "enum-service-collision.proto",
+        "invalid.test.Foo",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::DuplicateName(name) if name == "invalid.test.Foo"
+            ));
+        },
+    );
+}
+
+#[test]
+fn duplicate_rpc_method_names_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{
+        FileDescriptorProto, FileDescriptorSet, MethodDescriptorProto, ServiceDescriptorProto,
+    };
+
+    let method = || MethodDescriptorProto {
+        name: Some("Run".into()),
+        input_type: Some(".reflect.test.Inner".into()),
+        output_type: Some(".reflect.test.Inner".into()),
+        ..Default::default()
+    };
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("duplicate-method.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            service: vec![ServiceDescriptorProto {
+                name: Some("Gateway".into()),
+                method: vec![method(), method()],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_rejected_without_mutating_pool(
+        "duplicate-method.proto",
+        "invalid.test.Gateway.Run",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::DuplicateMethodName { service, name }
+                    if service == "invalid.test.Gateway" && name == "Run"
+            ));
+        },
+    );
+}
+
+#[test]
+fn duplicate_enum_value_names_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, EnumValueDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("duplicate-enum-value.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Status".into()),
+                value: vec![
+                    EnumValueDescriptorProto {
+                        name: Some("UNKNOWN".into()),
+                        number: Some(0),
+                        ..Default::default()
+                    },
+                    EnumValueDescriptorProto {
+                        name: Some("UNKNOWN".into()),
+                        number: Some(1),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_rejected_without_mutating_pool(
+        "duplicate-enum-value.proto",
+        "invalid.test.Status",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::DuplicateEnumValueName { enum_name, name }
+                    if enum_name == "invalid.test.Status" && name == "UNKNOWN"
+            ));
+        },
+    );
+}
+
+#[test]
+fn method_fqn_collisions_with_registered_symbols_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet, MethodDescriptorProto,
+        ServiceDescriptorProto,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("method-symbol-collision.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Gateway".into()),
+                nested_type: vec![DescriptorProto {
+                    name: Some("Run".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            service: vec![ServiceDescriptorProto {
+                name: Some("Gateway".into()),
+                method: vec![MethodDescriptorProto {
+                    name: Some("Run".into()),
+                    input_type: Some(".reflect.test.Inner".into()),
+                    output_type: Some(".reflect.test.Inner".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_rejected_without_mutating_pool(
+        "method-symbol-collision.proto",
+        "invalid.test.Gateway.Run",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::DuplicateName(name) if name == "invalid.test.Gateway.Run"
+            ));
+        },
+    );
 }
 
 #[test]
