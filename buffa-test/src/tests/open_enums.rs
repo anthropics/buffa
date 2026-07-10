@@ -398,7 +398,7 @@ fn enum_rule_opens_runtime_descriptor_pool() {
 }
 
 #[test]
-fn open_enum_override_vtable_reflection_reports_presence() {
+fn open_enum_override_vtable_reflection_preserves_runtime_closed_semantics() {
     use crate::open_enums::{OpenEnumContexts, OpenEnumContextsView};
     use buffa_descriptor::reflect::{ReflectMessage, Reflectable, ValueRef};
 
@@ -414,8 +414,15 @@ fn open_enum_override_vtable_reflection_reports_presence() {
     assert!(!reflected.has(closed_control));
 
     let dynamic = reflected.to_dynamic();
-    assert!(dynamic.has(opt));
-    assert!(matches!(dynamic.get(opt), ValueRef::EnumNumber(99)));
+    // Vtable reflection sees the generated field-level override, but the
+    // DynamicMessage pool keeps the enum itself closed. Binary reflection
+    // therefore routes the unknown value to unknown_fields.
+    assert!(!dynamic.has(opt));
+    assert!(matches!(dynamic.get(opt), ValueRef::EnumNumber(0)));
+    assert!(matches!(
+        dynamic.unknown_fields().iter().find(|field| field.number == 1),
+        Some(field) if matches!(field.data, buffa::UnknownFieldData::Varint(99))
+    ));
 
     let view = OpenEnumContextsView::decode_view(&wire).unwrap();
     let reflected_view: &dyn ReflectMessage = &view;

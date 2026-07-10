@@ -6,7 +6,8 @@
 //!
 //! ```sh
 //! protoc --include_imports --descriptor_set_out=reflect_test.fds \
-//!     reflect_test.proto editions_test.proto
+//!     reflect_test.proto reflect_test_ext.proto editions_test.proto \
+//!     closed_enum_test.proto
 //! ```
 
 #![cfg(feature = "reflect")]
