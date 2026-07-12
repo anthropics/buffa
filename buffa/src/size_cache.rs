@@ -216,6 +216,16 @@ impl SizeCache {
     /// `write_to` traversal diverges from `compute_size` traversal. For
     /// generated code this indicates a codegen bug; for manual `Message`
     /// implementations it indicates a traversal-order mismatch.
+    ///
+    /// In debug builds, also panics if the cached size exceeds the 2 GiB
+    /// protobuf limit ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)):
+    /// every slot is a sub-message length about to become a wire length
+    /// prefix, and no conforming decoder accepts a prefix above the limit.
+    /// This can only fire when `compute_size`/`write_to` are driven directly
+    /// with an over-limit sub-message — the provided `Message::encode*`
+    /// entry points reject over-limit messages before `write_to` runs, so
+    /// (like the two-pass byte ledger) the check is debug-only rather than a
+    /// release-mode branch on every nested-message write.
     #[inline]
     #[track_caller]
     pub fn consume_next(&mut self) -> u32 {
@@ -224,7 +234,7 @@ impl SizeCache {
             Self::overrun(idx, self.len);
         }
         self.cursor += 1;
-        if idx < INLINE_CAP {
+        let size = if idx < INLINE_CAP {
             // SAFETY: `idx < self.len` (checked above) and, per the type
             // invariant, every inline slot at an index `< len` was initialized
             // by `reserve` before `len` advanced past it (and possibly
@@ -232,7 +242,13 @@ impl SizeCache {
             unsafe { self.inline[idx].assume_init() }
         } else {
             self.spill[idx - INLINE_CAP]
-        }
+        };
+        debug_assert!(
+            size <= crate::MAX_MESSAGE_BYTES,
+            "SizeCache slot holds a sub-message length of {size} bytes, \
+             which exceeds the 2 GiB protobuf limit"
+        );
+        size
     }
 
     #[cold]
@@ -394,37 +410,125 @@ impl SizeCachePool {
     /// Compute a message's encoded length, reusing a pooled spill buffer.
     ///
     /// The pooled equivalent of [`Message::encoded_len`](crate::Message::encoded_len).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)), matching the
+    /// non-pooled entry point.
     #[inline]
     #[must_use]
     pub fn encoded_len<M: crate::Message>(&mut self, msg: &M) -> u32 {
-        let mut cache = self.acquire();
-        let len = msg.compute_size(&mut cache);
-        self.release(cache);
-        len
+        self.try_encoded_len(msg)
+            .unwrap_or_else(|_| crate::message::encode_size_overflow())
     }
 
     /// Encode a message into `buf`, reusing a pooled spill buffer.
     ///
     /// The pooled equivalent of [`Message::encode`](crate::Message::encode).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)) — inherited from
+    /// [`Message::encode_with_cache`](crate::Message::encode_with_cache).
     #[inline]
     pub fn encode<M: crate::Message>(&mut self, msg: &M, buf: &mut impl crate::EncodeSink) {
-        let mut cache = self.acquire();
-        msg.encode_with_cache(&mut cache, buf);
-        self.release(cache);
+        self.try_encode(msg, buf)
+            .unwrap_or_else(|_| crate::message::encode_size_overflow())
     }
 
     /// Encode a borrowed message view into `buf`, reusing a pooled spill buffer.
     ///
     /// The pooled equivalent of [`ViewEncode::encode`](crate::ViewEncode::encode).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)) — inherited from
+    /// [`ViewEncode::encode_with_cache`](crate::ViewEncode::encode_with_cache).
     #[inline]
     pub fn encode_view<'a, V: crate::ViewEncode<'a>>(
         &mut self,
         view: &V,
         buf: &mut impl crate::EncodeSink,
     ) {
+        self.try_encode_view(view, buf)
+            .unwrap_or_else(|_| crate::message::encode_size_overflow())
+    }
+
+    /// Compute a message's encoded length, returning an error instead of
+    /// panicking if it exceeds the 2 GiB protobuf limit
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)).
+    ///
+    /// The pooled equivalent of
+    /// [`Message::try_encoded_len`](crate::Message::try_encoded_len).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EncodeError::MessageTooLarge`](crate::EncodeError::MessageTooLarge)
+    /// if the encoded size exceeds the limit.
+    #[inline]
+    pub fn try_encoded_len<M: crate::Message>(
+        &mut self,
+        msg: &M,
+    ) -> Result<u32, crate::EncodeError> {
         let mut cache = self.acquire();
-        view.encode_with_cache(&mut cache, buf);
+        let len = msg.compute_size(&mut cache);
         self.release(cache);
+        crate::message::checked_encode_size(len)
+    }
+
+    /// Encode a message into `buf`, returning an error instead of panicking
+    /// if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)). Reuses a pooled
+    /// spill buffer.
+    ///
+    /// The pooled equivalent of
+    /// [`Message::try_encode`](crate::Message::try_encode). On `Err`,
+    /// nothing is written to `buf` and the pooled buffer is returned to the
+    /// pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EncodeError::MessageTooLarge`](crate::EncodeError::MessageTooLarge)
+    /// if the encoded size exceeds the limit.
+    #[inline]
+    pub fn try_encode<M: crate::Message>(
+        &mut self,
+        msg: &M,
+        buf: &mut impl crate::EncodeSink,
+    ) -> Result<(), crate::EncodeError> {
+        let mut cache = self.acquire();
+        let result = msg.try_encode_with_cache(&mut cache, buf);
+        self.release(cache);
+        result
+    }
+
+    /// Encode a borrowed message view into `buf`, returning an error
+    /// instead of panicking if the encoded size exceeds the 2 GiB protobuf
+    /// limit ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)). Reuses a
+    /// pooled spill buffer.
+    ///
+    /// The pooled equivalent of
+    /// [`ViewEncode::try_encode`](crate::ViewEncode::try_encode). On `Err`,
+    /// nothing is written to `buf` and the pooled buffer is returned to the
+    /// pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EncodeError::MessageTooLarge`](crate::EncodeError::MessageTooLarge)
+    /// if the encoded size exceeds the limit.
+    #[inline]
+    pub fn try_encode_view<'a, V: crate::ViewEncode<'a>>(
+        &mut self,
+        view: &V,
+        buf: &mut impl crate::EncodeSink,
+    ) -> Result<(), crate::EncodeError> {
+        let mut cache = self.acquire();
+        let result = view.try_encode_with_cache(&mut cache, buf);
+        self.release(cache);
+        result
     }
 }
 
@@ -696,5 +800,27 @@ mod tests {
         let s = c.reserve();
         c.set(s, 9);
         assert_eq!(c.consume_next(), 9);
+    }
+
+    #[test]
+    fn consume_next_allows_exactly_max_message_bytes() {
+        let mut c = SizeCache::new();
+        let s = c.reserve();
+        c.set(s, crate::MAX_MESSAGE_BYTES);
+        assert_eq!(c.consume_next(), crate::MAX_MESSAGE_BYTES);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "exceeds the 2 GiB protobuf limit")]
+    fn consume_next_rejects_oversized_slot() {
+        // A slot above the limit would become an invalid wire length
+        // prefix. The entry points reject such messages before write_to
+        // runs; this debug-only backstop covers direct compute_size/write_to
+        // drivers.
+        let mut c = SizeCache::new();
+        let s = c.reserve();
+        c.set(s, crate::MAX_MESSAGE_BYTES + 1);
+        c.consume_next();
     }
 }

@@ -159,15 +159,15 @@ impl<'a> ::buffa::ViewEncode<'a> for DurationView<'a> {
     fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let mut size = 0u32;
+        let mut size = 0u64;
         if self.seconds != 0i64 {
-            size += 1u32 + ::buffa::types::int64_encoded_len(self.seconds) as u32;
+            size += 1u64 + ::buffa::types::int64_encoded_len(self.seconds) as u64;
         }
         if self.nanos != 0i32 {
-            size += 1u32 + ::buffa::types::int32_encoded_len(self.nanos) as u32;
+            size += 1u64 + ::buffa::types::int32_encoded_len(self.nanos) as u64;
         }
-        size += self.__buffa_unknown_fields.encoded_len() as u32;
-        size
+        size += self.__buffa_unknown_fields.encoded_len() as u64;
+        ::buffa::saturate_size(size)
     }
     #[allow(clippy::needless_borrow)]
     fn write_to(
@@ -235,7 +235,9 @@ impl DurationOwnedView {
     ///
     /// # Errors
     ///
-    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// Returns [`::buffa::DecodeError::MessageTooLarge`] if the
+    /// message's encoded size exceeds the 2 GiB protobuf limit, or
+    /// another [`::buffa::DecodeError`] if the re-encoded bytes are
     /// somehow invalid (should not happen for well-formed messages).
     pub fn from_owned(
         msg: &super::super::Duration,

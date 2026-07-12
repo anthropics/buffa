@@ -226,6 +226,8 @@ pub mod message_field;
 pub mod message_set;
 pub mod oneof;
 mod size_cache;
+#[cfg(test)]
+pub(crate) mod test_doubles;
 #[cfg(feature = "text")]
 pub mod text;
 #[cfg(any(feature = "json", feature = "text"))]
@@ -251,9 +253,11 @@ pub use extension::{Extension, ExtensionCodec, ExtensionSet};
 pub use foldhash;
 pub use map_codec::{Map, MapStorage};
 pub use message::{
-    DecodeContext, DecodeOptions, Message, MessageName, DEFAULT_UNKNOWN_FIELD_LIMIT,
-    RECURSION_LIMIT,
+    checked_encode_size, saturate_size, DecodeContext, DecodeOptions, Message, MessageName,
+    DEFAULT_UNKNOWN_FIELD_LIMIT, MAX_MESSAGE_BYTES, RECURSION_LIMIT,
 };
+#[doc(hidden)]
+pub use message::{debug_assert_two_pass, encode_size_overflow};
 pub use message_field::{DefaultInstance, Inline, MessageField, ProtoBox};
 pub use oneof::Oneof;
 pub use size_cache::{SizeCache, SizeCachePool};
