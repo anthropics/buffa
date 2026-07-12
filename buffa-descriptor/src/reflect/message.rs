@@ -244,6 +244,23 @@ pub trait ReflectMessageMut: ReflectMessage {
     /// [`ReflectError::FieldNotMember`] or
     /// [`ReflectError::WrongValueKind`] rather than mutating invalid state
     /// ([`DynamicMessage`] does both).
+    ///
+    /// A `Value::Message` of the field's own type but from a *different*
+    /// [`DescriptorPool`](crate::DescriptorPool) is not an error:
+    /// [`DynamicMessage`] adopts it into its own pool. Cross-crate reflection
+    /// produces such values by construction — a generated type reflects
+    /// against its defining crate's pool — so the vtable rebuild walk
+    /// (`for_each_set` + `set(fd, vr.to_owned())`) depends on the adoption.
+    /// Callers that want to reject values not built from their own pool must
+    /// compare [`ReflectMessage::pool`] themselves; adoption is keyed on the
+    /// message's full name, so a value of a *different* type is still
+    /// [`ReflectError::WrongValueKind`] whatever pool it came from.
+    ///
+    /// # Performance
+    ///
+    /// Adopting a foreign message costs one wire round-trip, O(size of the
+    /// subtree). Values already homed in the target pool — everything the
+    /// decoder and the JSON parser produce — pass through untouched.
     fn try_set(
         &mut self,
         field: &FieldDescriptor,
