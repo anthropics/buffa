@@ -200,6 +200,7 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.bytes_type_custom(path)` / `.bytes_type_custom_in(path, &[...])` | — | Use a custom `bytes` representation by Rust path |
 | `.generate_reflection(bool)` | `false` | Emit reflection support (vtable mode) plus an embedded per-package descriptor pool (see [Runtime reflection](#runtime-reflection)) |
 | `.reflect_mode(mode)` | `Off` | Finer-grained reflection selector: `ReflectMode::{Off, Bridge, VTable}` |
+| `.shared_descriptor_pool(bool)` | `false` | Embed the reflection descriptor set once (as an `include_bytes!` sidecar) instead of per package; every package delegates to it. Requires `.include_file(...)` and reflection. With a checked-in `out_dir`, commit the emitted `*.descriptor_set.binpb` sidecar alongside the generated `.rs`. See [Runtime reflection](#runtime-reflection) |
 | `.idiomatic_enum_aliases(bool)` | `true` | Emit `UpperCamelCase` associated-const aliases for enum values (see the aliases note under `EnumValue<T>`) |
 | `.file_per_package(bool)` | `false` | Emit one `<dotted.package>.rs` per package instead of per-proto-file content + a stitcher |
 | `.idiomatic_imports(bool)` | `false` | **Experimental.** Emit `use`-backed short type names at the package root (struct fields read `MessageField<Timestamp>` instead of fully-qualified paths). Requires `.file_per_package(true)`. Only type declarations are shortened — impl bodies and nested modules stay fully qualified — and the generated file must keep its `#[allow]` wrapper (the short names coexist with qualified impl-body paths, which `unused_qualifications` would otherwise flag) |
@@ -1968,6 +1969,20 @@ reads source info, and keeping it can multiply the embedded bytes an order of
 magnitude (14x for the comment-heavy well-known-types package). If you need
 proto comments at runtime, or a set scoped to specific files, build a
 descriptor set directly with `protoc --include_source_info` or `buf build`.
+
+Because the embedded set covers the whole codegen run, a multi-package run
+duplicates the same bytes once per package — for large proto trees that
+duplication dominates crate size. **`shared_descriptor_pool`** embeds the set
+once instead: a single `__buffa_fds` module at the module-tree root holds the
+one `FILE_DESCRIPTOR_SET_BYTES` copy and the one lazily-built pool, and every
+package's `descriptor_pool()` / `FILE_DESCRIPTOR_SET_BYTES` delegates to it —
+the per-package API is unchanged, but all packages observe the same pool
+instance. From `build.rs`, enable it with `.shared_descriptor_pool(true)`
+(requires `.include_file(...)` and reflection; the descriptor set is written
+as a `*.descriptor_set.binpb` sidecar and `include_bytes!`-d, so commit the
+sidecar alongside a checked-in `out_dir`). Packages generated with the option
+*off* silently keep building their own separate pools — set it uniformly
+across a tree.
 
 Two Cargo notes:
 

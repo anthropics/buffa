@@ -754,6 +754,21 @@ fn main() {
         .compile()
         .expect("buffa_build failed for lazy_views_lean.proto");
 
+    // Shared descriptor pool, `$OUT_DIR` mode — the real build-script flow:
+    // cargo sets OUT_DIR, the descriptor-set sidecar is written there, and the
+    // include file references it via `concat!(env!("OUT_DIR"), ...)`. Proves
+    // the sidecar lands exactly where the emitted path expects at consumer
+    // compile time (the explicit-out_dir flavor is covered by buffa-build's
+    // own unit tests).
+    buffa_build::Config::new()
+        .files(&["protos/shared_pool_a.proto", "protos/shared_pool_b.proto"])
+        .includes(&["protos/"])
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .include_file("sharedpool_include.rs")
+        .shared_descriptor_pool(true)
+        .compile()
+        .expect("buffa_build failed for shared_pool protos");
+
     // Edition 2024 — requires protoc v30+ (stabilized edition 2024).
     // Older protoc rejects it with "later than the maximum supported edition".
     // Skip gracefully on older protoc so the crate still builds; tests are

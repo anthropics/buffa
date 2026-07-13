@@ -454,14 +454,15 @@ impl Config {
     ///
     /// # Build time and binary size
     ///
-    /// Each generated package embeds its own copy of the full
+    /// By default each generated package embeds its own copy of the full
     /// `FileDescriptorSet` (transitive closure). For a single-package
     /// crate this is one copy. For a multi-package codegen run the bytes
-    /// duplicate per package — measurable for large proto trees. The
-    /// serialization happens once per `compile()` call (not per package),
-    /// so build-time CPU does not scale with package count. Vtable mode also
-    /// emits an `impl ReflectMessage` per type, so it produces more code than
-    /// bridge mode.
+    /// duplicate per package — measurable for large proto trees;
+    /// [`shared_descriptor_pool`](Self::shared_descriptor_pool) collapses that
+    /// to one `include_bytes!` sidecar. The serialization happens once per
+    /// `compile()` call (not per package), so build-time CPU does not scale
+    /// with package count. Vtable mode also emits an `impl ReflectMessage` per
+    /// type, so it produces more code than bridge mode.
     ///
     /// [`ReflectCow`]: https://docs.rs/buffa-descriptor/latest/buffa_descriptor/reflect/enum.ReflectCow.html
     /// [`DynamicMessage`]: https://docs.rs/buffa-descriptor/latest/buffa_descriptor/reflect/struct.DynamicMessage.html
@@ -519,6 +520,34 @@ impl Config {
     #[must_use]
     pub fn reflect_mode(mut self, mode: ReflectMode) -> Self {
         mode.apply(&mut self.codegen_config);
+        self
+    }
+
+    /// Deduplicate the embedded reflection descriptor pool across packages.
+    ///
+    /// With reflection enabled, each package normally embeds its own copy of
+    /// the full-closure `FileDescriptorSet`. For a multi-package build those
+    /// copies are identical, so a large proto tree carries the same bytes once
+    /// per package. When this is on, the descriptor set is written once as a
+    /// binary sidecar next to the generated tree and `include_bytes!`-d by a
+    /// single shared `__buffa_fds` module; every package's `descriptor_pool()`
+    /// / `FILE_DESCRIPTOR_SET_BYTES` delegates to it. This removes both the
+    /// per-package duplication and the byte-literal source expansion.
+    ///
+    /// The sidecar is named `<include-file-stem>.descriptor_set.binpb` (so
+    /// `.include_file("gen_mod.rs")` writes `gen_mod.descriptor_set.binpb`)
+    /// and lands in the output directory next to the include file. With a
+    /// checked-in [`out_dir`](Self::out_dir), commit the sidecar alongside
+    /// the generated `.rs` files — the `include_bytes!` resolves relative to
+    /// the include file, so the pair must travel together.
+    ///
+    /// Requires [`include_file`](Self::include_file) (the shared module is
+    /// emitted into that file at the tree root) and reflection to be enabled;
+    /// [`compile`](Self::compile) errors otherwise. See
+    /// [`CodeGenConfig::shared_descriptor_pool`].
+    #[must_use]
+    pub fn shared_descriptor_pool(mut self, enabled: bool) -> Self {
+        self.codegen_config.shared_descriptor_pool = enabled;
         self
     }
 
@@ -1663,6 +1692,10 @@ impl Config {
     ///
     /// Returns an error if:
     /// - `OUT_DIR` is not set and no `out_dir` was configured
+    /// - [`shared_descriptor_pool`](Self::shared_descriptor_pool) is set
+    ///   without reflection enabled, without
+    ///   [`include_file`](Self::include_file), or with an `include_file`
+    ///   lacking a file-name stem (the sidecar is named after it)
     /// - `protoc` or `buf` cannot be found on `PATH` (when using those sources)
     /// - the proto compiler exits with a non-zero status (syntax errors,
     ///   missing imports, etc.)
@@ -1671,6 +1704,38 @@ impl Config {
     /// - code generation fails (e.g. unsupported proto feature)
     /// - the output directory cannot be created or written to
     pub fn compile(self) -> Result<(), Box<dyn std::error::Error>> {
+        // Validate the shared-pool prerequisites before doing any work, and
+        // check reflection first so the error names the actually-missing
+        // prerequisite rather than a downstream one. `generate_reflection` is
+        // also enforced in `buffa-codegen`, but catching it here gives a
+        // buffa-build-shaped message.
+        if self.codegen_config.shared_descriptor_pool {
+            if !self.codegen_config.generate_reflection {
+                return Err("shared_descriptor_pool requires reflection to be enabled \
+                            (call generate_reflection(true) or reflect_mode(...))"
+                    .into());
+            }
+            // The shared `__buffa_fds` module is emitted into the include file
+            // at the tree root; without it the per-package delegations have
+            // nothing to resolve against.
+            let Some(include_name) = self.include_file.as_deref() else {
+                return Err("shared_descriptor_pool requires include_file to be set \
+                            (the shared descriptor module is emitted into it)"
+                    .into());
+            };
+            // The sidecar is named after the include file's stem; reject names
+            // without one ("", ".", "..") here rather than writing a stray
+            // misnamed sidecar before the include-file write fails.
+            if Path::new(include_name).file_stem().is_none() {
+                return Err(format!(
+                    "shared_descriptor_pool requires include_file to have a file name \
+                     (the descriptor-set sidecar is named after its stem); \
+                     got {include_name:?}"
+                )
+                .into());
+            }
+        }
+
         // When out_dir is explicitly set, the include file should use
         // relative `include!("foo.rs")` paths (the index is a sibling of the
         // generated files). When defaulted to $OUT_DIR, keep the
@@ -1761,9 +1826,61 @@ impl Config {
             }
         }
 
+        // Shared-pool mode needs a tree root to host the one `__buffa_fds`
+        // module; that root is the include file. The reflection and
+        // include-file prerequisites were validated up front, so the flag can
+        // be read directly here.
+        let shared_pool = self.codegen_config.shared_descriptor_pool;
+
         // Generate the include file if requested.
         if let Some(ref include_name) = self.include_file {
-            let include_content = generate_include_file(&output_entries, relative_includes);
+            let tree = generate_include_file(&output_entries, relative_includes);
+            let include_content = if shared_pool {
+                // Embed the descriptor set once, at the tree root, instead of a
+                // per-package copy. Write it as a binary sidecar and
+                // `include_bytes!` it from the shared `__buffa_fds` module, so
+                // the bytes never expand into Rust byte-literal source. Every
+                // package's `__buffa::reflect` delegates to that module.
+                // Derive the sidecar name from the include file so two
+                // compile() calls sharing an out_dir but writing different
+                // include files don't clobber each other's descriptor set.
+                let sidecar = format!(
+                    "{}.descriptor_set.binpb",
+                    Path::new(include_name)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .expect("validated up front: include_file has a UTF-8 file-name stem")
+                );
+                let fds_bytes = buffa_codegen::encode_descriptor_set(
+                    &fds.file,
+                    &self.codegen_config.feature_overrides,
+                );
+                write_if_changed(&out_dir.join(&sidecar), &fds_bytes)?;
+                let mode = if relative_includes {
+                    buffa_codegen::IncludeMode::Relative("")
+                } else {
+                    buffa_codegen::IncludeMode::OutDir
+                };
+                let root = buffa_codegen::shared_descriptor_root_module(
+                    &fds_bytes,
+                    buffa_codegen::FdsEmbedding::Sidecar {
+                        file_name: &sidecar,
+                        mode,
+                    },
+                    self.codegen_config.reflect_feature_gate(),
+                );
+                // Keep the tree's `// @generated` marker on line 1 —
+                // first-line generated-file detection (rustfmt's five-line
+                // window, diff-collapse heuristics) misses a mid-file marker —
+                // and put the shared root module between the header and the
+                // `include!` items, mirroring the packaging plugin's splice.
+                let (header, items) = tree
+                    .split_once('\n')
+                    .expect("generate_module_tree output starts with a header line");
+                format!("{header}\n{root}{items}")
+            } else {
+                tree
+            };
             let include_path = out_dir.join(include_name);
             write_if_changed(&include_path, include_content.as_bytes())?;
         }
@@ -2076,6 +2193,149 @@ mod tests {
         assert_eq!(names.views, "zero-copy");
         assert_eq!(names.text, "textproto");
         assert_eq!(names.reflect, "reflection");
+    }
+
+    #[test]
+    fn shared_descriptor_pool_requires_include_file() {
+        // The shared root module has no home without an include file, so
+        // compile() must reject the combination before doing any work.
+        let err = Config::new()
+            .generate_reflection(true)
+            .shared_descriptor_pool(true)
+            .out_dir("unused")
+            .compile()
+            .expect_err("shared_descriptor_pool without include_file must error");
+        assert!(
+            err.to_string().contains("include_file"),
+            "error should name the missing include_file: {err}"
+        );
+    }
+
+    #[test]
+    fn shared_descriptor_pool_setter_reaches_codegen_config() {
+        let config = Config::new().shared_descriptor_pool(true).codegen_config;
+        assert!(config.shared_descriptor_pool);
+    }
+
+    #[test]
+    fn shared_descriptor_pool_rejects_stemless_include_file() {
+        // The sidecar is named after the include file's stem; a name without
+        // one ("", ".", "..") must fail up front rather than writing a
+        // misnamed stray sidecar before the include-file write errors.
+        let err = Config::new()
+            .generate_reflection(true)
+            .shared_descriptor_pool(true)
+            .include_file("..")
+            .out_dir("unused")
+            .compile()
+            .expect_err("shared_descriptor_pool with a stemless include_file must error");
+        assert!(
+            err.to_string().contains("file name"),
+            "error should name the degenerate include_file: {err}"
+        );
+    }
+
+    #[test]
+    fn shared_descriptor_pool_requires_reflection() {
+        // Checked before include_file so the error names the first missing
+        // prerequisite.
+        let err = Config::new()
+            .shared_descriptor_pool(true)
+            .include_file("gen_mod.rs")
+            .out_dir("unused")
+            .compile()
+            .expect_err("shared_descriptor_pool without reflection must error");
+        assert!(
+            err.to_string().contains("reflection"),
+            "error should name the missing reflection prerequisite: {err}"
+        );
+    }
+
+    #[test]
+    fn shared_descriptor_pool_writes_sidecar_and_shared_root() {
+        use buffa_codegen::generated::descriptor::field_descriptor_proto::{Label, Type};
+        use buffa_codegen::generated::descriptor::{
+            DescriptorProto, FieldDescriptorProto, FileDescriptorProto,
+        };
+
+        // A minimal one-package descriptor set, fed through descriptor_set()
+        // so the test needs no protoc.
+        let file = FileDescriptorProto {
+            name: Some("foo/v1/thing.proto".into()),
+            package: Some("foo.v1".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Thing".into()),
+                field: vec![FieldDescriptorProto {
+                    name: Some("id".into()),
+                    number: Some(1),
+                    label: Some(Label::LABEL_OPTIONAL),
+                    r#type: Some(Type::TYPE_INT32),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let fds_bytes = buffa_codegen::encode_descriptor_set(std::slice::from_ref(&file), &[]);
+
+        let dir = tempfile::tempdir().unwrap();
+        let fds_path = dir.path().join("set.binpb");
+        std::fs::write(&fds_path, &fds_bytes).unwrap();
+        let out = dir.path().join("gen");
+
+        Config::new()
+            .descriptor_set(&fds_path)
+            .files(&["foo/v1/thing.proto"])
+            .out_dir(&out)
+            .include_file("gen_mod.rs")
+            .generate_reflection(true)
+            .shared_descriptor_pool(true)
+            .compile()
+            .expect("shared-pool compile should succeed");
+
+        // The sidecar is named after the include file's stem and carries the
+        // same bytes the generated code was built against.
+        let sidecar = std::fs::read(out.join("gen_mod.descriptor_set.binpb"))
+            .expect("sidecar must be written next to the include file");
+        assert_eq!(sidecar, fds_bytes);
+
+        // The include file hosts the shared root and `include_bytes!`s the
+        // sidecar (out_dir is explicit, so paths are include-file-relative)
+        // instead of inlining the descriptor bytes as a source literal.
+        let include = std::fs::read_to_string(out.join("gen_mod.rs")).unwrap();
+        // The generated-file marker must stay on line 1 (first-line `@generated`
+        // detection: rustfmt, diff-collapsing heuristics), with the shared root
+        // module below it.
+        assert!(
+            include.starts_with("// @generated"),
+            "include file must lead with the @generated marker: {include}"
+        );
+        assert!(include.contains("pub mod __buffa_fds"), "{include}");
+        // (Two containment checks rather than one exact call text —
+        // prettyplease may wrap the macro call across lines.)
+        assert!(include.contains("include_bytes!"), "{include}");
+        assert!(
+            include.contains("\"gen_mod.descriptor_set.binpb\""),
+            "{include}"
+        );
+        assert!(
+            !include.contains("FILE_DESCRIPTOR_SET_BYTES: &[u8] = b\""),
+            "sidecar mode must not inline the bytes: {include}"
+        );
+
+        // The package's `__buffa::reflect` surface (authored by the package
+        // stitcher) delegates to the shared root instead of embedding its own
+        // copy of the descriptor set.
+        let pkg = std::fs::read_to_string(out.join("foo.v1.mod.rs")).unwrap();
+        assert!(
+            pkg.contains("__buffa_fds"),
+            "package reflect surface must delegate to the shared root: {pkg}"
+        );
+        assert!(
+            !pkg.contains("FILE_DESCRIPTOR_SET_BYTES: &[u8] = b\""),
+            "package must not embed its own descriptor copy: {pkg}"
+        );
     }
 
     #[test]
