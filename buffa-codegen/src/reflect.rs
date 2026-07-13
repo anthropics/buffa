@@ -175,8 +175,12 @@ pub(crate) fn encode_fds_once(file_descriptors: &[FileDescriptorProto]) -> Vec<u
 ///
 /// `fds_bytes` is the pre-serialized `FileDescriptorSet` for the **full**
 /// codegen run (the transitive closure), encoded once via [`encode_fds_once`]
-/// and shared across packages. Each package still embeds its own copy of the
-/// bytes; per-package binary-size deduplication is a planned follow-up.
+/// and shared across packages. This is the per-package embedding used by
+/// default; each package embeds its own copy of the bytes. To deduplicate
+/// across packages, enable
+/// [`shared_descriptor_pool`](crate::CodeGenConfig::shared_descriptor_pool),
+/// which emits [`reflect_pool_module_shared`] delegations instead and one
+/// [`shared_root_module`] at the tree root.
 pub(crate) fn reflect_pool_module(fds_bytes: &[u8]) -> TokenStream {
     let byte_literals = fds_bytes.iter().map(|b| quote! { #b });
     quote! {
@@ -213,6 +217,147 @@ pub(crate) fn reflect_pool_module(fds_bytes: &[u8]) -> TokenStream {
                             .expect("embedded FileDescriptorSet is well-formed"),
                     )
                 })
+            }
+        }
+    }
+}
+
+/// The reserved module name of the shared descriptor root, placed at the
+/// module-tree root in shared-pool mode. Reserved against user package/type
+/// names by `validate_shared_root_name` when the mode is on, the same way
+/// [`SENTINEL_MOD`](crate::context::SENTINEL_MOD) reserves `__buffa`.
+pub(crate) const SHARED_ROOT_MOD: &str = "__buffa_fds";
+
+/// How the shared root module obtains the `FileDescriptorSet` bytes.
+///
+/// Both forms produce byte-identical runtime data; they differ only in how the
+/// bytes reach the compiled crate — and in generated-source size.
+pub(crate) enum FdsSource<'a> {
+    /// Embed the bytes as a Rust byte-literal array. Self-contained (no
+    /// sidecar file), but each descriptor byte costs several bytes of source.
+    Inline(&'a [u8]),
+    /// `include_bytes!` a binary file the caller writes alongside the
+    /// generated tree. The payload is the argument to `include_bytes!` —
+    /// a `"name"` string literal for a sibling file, or
+    /// `concat!(env!("OUT_DIR"), "/name")` for build-script output. Keeps the
+    /// descriptor bytes out of the Rust source entirely.
+    IncludeBytes(TokenStream),
+}
+
+/// Generate the single shared descriptor module (`__buffa_fds`) that lives at
+/// the module-tree root in shared-pool mode. Holds the one
+/// `FILE_DESCRIPTOR_SET_BYTES` copy and the one lazily-built
+/// [`DescriptorPool`](buffa_descriptor::DescriptorPool) every package delegates
+/// to (see [`reflect_pool_module_shared`]).
+pub(crate) fn shared_root_module(source: FdsSource<'_>) -> TokenStream {
+    let const_value = match source {
+        FdsSource::Inline(fds_bytes) => {
+            let byte_literals = fds_bytes.iter().map(|b| quote! { #b });
+            quote! { &[#(#byte_literals),*] }
+        }
+        FdsSource::IncludeBytes(arg) => quote! { include_bytes!(#arg) },
+    };
+    let root = quote::format_ident!("{SHARED_ROOT_MOD}");
+    quote! {
+        /// Crate-wide reflection descriptor pool, embedded once for the whole
+        /// generated module tree. Every package's `__buffa::reflect` surface
+        /// re-exports and delegates here, so a multi-package run carries one
+        /// copy of the `FileDescriptorSet` instead of one per package.
+        pub mod #root {
+            /// The serialized `FileDescriptorSet` for this codegen run,
+            /// including transitive dependencies, with `source_code_info`
+            /// stripped. The single embedded copy for the generated tree.
+            pub const FILE_DESCRIPTOR_SET_BYTES: &[u8] = #const_value;
+
+            /// The one lazily-built descriptor pool for the whole tree, built
+            /// from [`FILE_DESCRIPTOR_SET_BYTES`] on first access.
+            ///
+            /// # Panics
+            ///
+            /// Panics on first access if the embedded bytes are malformed —
+            /// they're emitted by `buffa-codegen` from the same descriptors it
+            /// generated this code from, so a panic indicates a codegen bug,
+            /// not consumer input.
+            pub fn descriptor_pool() -> &'static ::buffa::alloc::sync::Arc<::buffa_descriptor::DescriptorPool> {
+                static POOL: ::std::sync::OnceLock<
+                    ::buffa::alloc::sync::Arc<::buffa_descriptor::DescriptorPool>,
+                > = ::std::sync::OnceLock::new();
+                POOL.get_or_init(|| {
+                    ::buffa::alloc::sync::Arc::new(
+                        ::buffa_descriptor::DescriptorPool::decode(FILE_DESCRIPTOR_SET_BYTES)
+                            .expect("embedded FileDescriptorSet is well-formed"),
+                    )
+                })
+            }
+        }
+    }
+}
+
+/// The number of `super::` hops from inside a package's
+/// `__buffa::reflect` module up to the module-tree root, where the shared
+/// [`shared_root_module`] lives.
+///
+/// The delegating `descriptor_pool()` body sits two module levels below the
+/// package leaf (`__buffa`, then `reflect`), so it needs one `super` per
+/// package segment plus those two. The unnamed root package has depth 0, so
+/// its reflect module still needs the two fixed hops.
+///
+/// The segment count mirrors [`generate_module_tree`](crate::generate_module_tree)
+/// exactly (empty package → 0, otherwise one per `.`-split part) so the
+/// delegation depth can never drift from the actual `pub mod` nesting the tree
+/// builder emits.
+fn shared_pool_supers(package: &str) -> usize {
+    let segments = if package.is_empty() {
+        0
+    } else {
+        package.split('.').count()
+    };
+    segments + 2
+}
+
+/// Build the relative path from a package's `__buffa::reflect` module to the
+/// root `__buffa_fds` module, e.g. `super::super::super::super::__buffa_fds`
+/// for a two-segment package.
+fn shared_root_path(package: &str) -> TokenStream {
+    let root = quote::format_ident!("{SHARED_ROOT_MOD}");
+    let mut path = quote! { #root };
+    for _ in 0..shared_pool_supers(package) {
+        path = quote! { super::#path };
+    }
+    path
+}
+
+/// Generate a package's `__buffa::reflect` submodule in **shared-pool mode**:
+/// instead of embedding its own `FILE_DESCRIPTOR_SET_BYTES` copy, it
+/// delegates to the single [`shared_root_module`] at the module-tree root.
+///
+/// The `FILE_DESCRIPTOR_SET_BYTES` constant and `descriptor_pool()` accessor
+/// keep their names and package-relative paths, so every consumer path that
+/// worked against the per-package embedding still resolves — it just aliases
+/// the one shared copy. `package` is the proto package this module belongs to,
+/// used only to compute the `super::` depth to the root.
+pub(crate) fn reflect_pool_module_shared(package: &str) -> TokenStream {
+    let root = shared_root_path(package);
+    quote! {
+        /// Reflection support: this package's view onto the crate-wide
+        /// descriptor pool. In shared-pool mode the bytes and pool live once
+        /// at the module-tree root (`__buffa_fds`); this module re-exports
+        /// them so the per-package [`Reflectable`](::buffa_descriptor::reflect::Reflectable)
+        /// paths keep resolving.
+        pub mod reflect {
+            /// The serialized `FileDescriptorSet` for this codegen run.
+            /// Re-exported from the shared root module so
+            /// `pkg::FILE_DESCRIPTOR_SET_BYTES` keeps working; the bytes are
+            /// embedded once for the whole generated tree.
+            pub use #root::FILE_DESCRIPTOR_SET_BYTES;
+
+            /// The crate-wide descriptor pool, shared by every package's
+            /// `Reflectable` impls. Delegates to the single lazily-built pool
+            /// at the module-tree root, so all packages observe the same
+            /// [`DescriptorPool`](::buffa_descriptor::DescriptorPool)
+            /// instance.
+            pub fn descriptor_pool() -> &'static ::buffa::alloc::sync::Arc<::buffa_descriptor::DescriptorPool> {
+                #root::descriptor_pool()
             }
         }
     }
@@ -267,10 +412,10 @@ pub(crate) fn reflect_reexports(buffa_path: &TokenStream, gate: Option<&str>) ->
 const _: usize = {
     // Documentation breadcrumb: the byte literal embedding produces ~3 bytes
     // of source per descriptor byte (`123, ` for each). A 50KB FDS → ~150KB
-    // of source, which prettyplease and rustc handle without issue. If a
-    // consumer's FDS is large enough that this matters, the dedup follow-up
-    // (hoist to a crate-root `include_bytes!` of a build-script output) is
-    // the right fix.
+    // of source, which prettyplease and rustc handle without issue. When a
+    // consumer's FDS is large enough that this matters — or a multi-package
+    // run would duplicate it — `shared_descriptor_pool` hoists one copy to a
+    // tree-root module.
     0
 };
 
@@ -347,6 +492,83 @@ mod tests {
                 "re-export missing its own #[cfg] gate"
             );
         }
+    }
+
+    #[test]
+    fn shared_pool_supers_counts_package_depth_plus_two() {
+        // The delegating `descriptor_pool()` body sits inside
+        // `<pkg>::__buffa::reflect`, two module levels below the package
+        // leaf. Reaching the tree root (where `__buffa_fds` lives) therefore
+        // needs one `super` per package segment plus two.
+        assert_eq!(shared_pool_supers(""), 2, "root package: __buffa + reflect");
+        assert_eq!(shared_pool_supers("foo"), 3);
+        assert_eq!(shared_pool_supers("foo.v1"), 4);
+        assert_eq!(shared_pool_supers("a.b.c.d"), 6);
+    }
+
+    #[test]
+    fn reflect_pool_module_shared_delegates_without_embedding_bytes() {
+        let tokens = reflect_pool_module_shared("foo.v1");
+        let parsed = syn::parse2::<syn::ItemMod>(tokens.clone());
+        assert!(parsed.is_ok(), "generated module must parse: {tokens}");
+        let rendered = tokens.to_string();
+        // Delegates to the single root module rather than owning bytes.
+        assert!(
+            rendered.contains("__buffa_fds"),
+            "shared pool must reference the root module: {rendered}"
+        );
+        // `foo.v1` is two segments deep, so the path climbs four `super`s.
+        assert!(
+            rendered.contains("super :: super :: super :: super :: __buffa_fds"),
+            "delegation path must climb package depth + 2 supers: {rendered}"
+        );
+        // The whole point: no per-package byte-literal array.
+        assert!(
+            !rendered.contains("FILE_DESCRIPTOR_SET_BYTES : & [u8] = &"),
+            "shared mode must not embed a per-package byte array: {rendered}"
+        );
+        // Consumer paths preserved: the constant is still reachable here (as a
+        // re-export) and the accessor is still named `descriptor_pool`.
+        assert!(rendered.contains("FILE_DESCRIPTOR_SET_BYTES"));
+        assert!(rendered.contains("descriptor_pool"));
+    }
+
+    #[test]
+    fn shared_root_module_inline_embeds_bytes_once() {
+        let bytes = encode_fds_once(&[FileDescriptorProto {
+            name: Some("test.proto".into()),
+            package: Some("test".into()),
+            ..Default::default()
+        }]);
+        let tokens = shared_root_module(FdsSource::Inline(&bytes));
+        let parsed = syn::parse2::<syn::ItemMod>(tokens.clone());
+        assert!(parsed.is_ok(), "root module must parse: {tokens}");
+        let rendered = tokens.to_string();
+        assert!(rendered.contains("__buffa_fds"), "{rendered}");
+        assert!(rendered.contains("FILE_DESCRIPTOR_SET_BYTES"));
+        assert!(rendered.contains("descriptor_pool"));
+        // Inline mode embeds the byte-literal array (one copy for the tree).
+        assert!(
+            rendered.contains("FILE_DESCRIPTOR_SET_BYTES : & [u8] = &"),
+            "inline root must define the byte array: {rendered}"
+        );
+        assert!(!rendered.contains("include_bytes"));
+    }
+
+    #[test]
+    fn shared_root_module_include_bytes_references_sidecar() {
+        let tokens = shared_root_module(FdsSource::IncludeBytes(quote! { "descriptor_set.binpb" }));
+        let parsed = syn::parse2::<syn::ItemMod>(tokens.clone());
+        assert!(parsed.is_ok(), "root module must parse: {tokens}");
+        let rendered = tokens.to_string();
+        assert!(rendered.contains("__buffa_fds"));
+        assert!(rendered.contains("include_bytes !"), "{rendered}");
+        assert!(rendered.contains("descriptor_set.binpb"), "{rendered}");
+        // No decimal byte-literal array in include_bytes mode — the source-size win.
+        assert!(
+            !rendered.contains("FILE_DESCRIPTOR_SET_BYTES : & [u8] = & ["),
+            "include_bytes mode must not inline a byte array: {rendered}"
+        );
     }
 
     #[test]
