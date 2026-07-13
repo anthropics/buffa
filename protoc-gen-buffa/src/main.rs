@@ -308,6 +308,16 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                     ));
                 }
             },
+            // `shared_descriptor_pool=true` deduplicates the embedded
+            // reflection descriptor set: per-package `__buffa::reflect` modules
+            // delegate to one shared `__buffa_fds` root module (emitted by
+            // protoc-gen-buffa-packaging), instead of each embedding its own
+            // copy. Requires `reflection`/`reflect_mode` on, and the packaging
+            // plugin must be run with a matching `shared_descriptor_pool=true`
+            // so the root module actually gets emitted.
+            "shared_descriptor_pool" => {
+                codegen.shared_descriptor_pool = parse_bool("shared_descriptor_pool", value)?
+            }
             "file_per_package" => codegen.file_per_package = parse_bool("file_per_package", value)?,
             // Experimental: `use`-backed short type names at the package
             // root. Requires file_per_package=true (rejected by codegen
@@ -404,6 +414,66 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                 ))
             }
         }
+    }
+
+    // Without reflection there is no embedded descriptor pool to share.
+    // Codegen core rejects this too, but its message names the CodeGenConfig
+    // field (`generate_reflection`), which a buf.gen.yaml user never sees —
+    // reject here with plugin-option vocabulary instead.
+    if codegen.shared_descriptor_pool && !codegen.generate_reflection {
+        return Err("shared_descriptor_pool requires reflection to be enabled \
+                    (pass reflection=true or reflect_mode=bridge|vtable)"
+            .to_string());
+    }
+
+    // file_per_package is the packaging-plugin-free workflow (its per-package
+    // files are self-contained, so no mod.rs is generated for it), which means
+    // no process ever emits the shared `__buffa_fds` root module the
+    // per-package delegations point at — the consumer crate would fail with an
+    // unresolved `__buffa_fds`. Reject the combination up front.
+    if codegen.shared_descriptor_pool && codegen.file_per_package {
+        return Err("shared_descriptor_pool is not supported together with \
+                    file_per_package (the shared __buffa_fds root module is emitted by \
+                    protoc-gen-buffa-packaging's mod.rs, which the file_per_package \
+                    workflow does not use); drop one of the two options, or use \
+                    buffa-build for a shared pool without the packaging plugin"
+            .to_string());
+    }
+
+    // The shared root module lives in protoc-gen-buffa-packaging's output,
+    // which has no access to this plugin's feature-gate config — so it can't
+    // wrap the root in the same `#[cfg(feature = "…")]` the per-package
+    // delegations would carry. That would leave the descriptor bytes compiling
+    // (and the pool decoding) even with the reflect feature off, defeating the
+    // gate. Reject the combination rather than emit a silently-broken tree.
+    // (`buffa-build` supports gate + shared because it emits the root itself.)
+    // Only `gate_impls` needs checking: `gate_reflect_on_crate_feature` has no
+    // plugin-option spelling, so it can't be set on this path — a future
+    // option mapping to it must extend this rejection.
+    if codegen.shared_descriptor_pool && codegen.gate_impls_on_crate_features {
+        return Err("shared_descriptor_pool is not supported together with \
+                    gate_impls=true on the protoc plugin path (the packaging plugin \
+                    cannot gate the shared module); use buffa-build for gated shared \
+                    pools, or drop the gate"
+            .to_string());
+    }
+
+    // Feature overrides (`open_enums_in` / `override_feature_in`) mutate the
+    // descriptors before the embedded reflection set is built. The shared root
+    // module is emitted by protoc-gen-buffa-packaging, a separate process that
+    // never receives these options, so it would embed the un-overridden set and
+    // disagree with the generated code. Reject rather than emit a mismatched
+    // pool. (`buffa-build` supports overrides + shared: one process, it applies
+    // the overrides to the shared copy itself.)
+    if codegen.shared_descriptor_pool && !codegen.feature_overrides.is_empty() {
+        return Err(
+            "shared_descriptor_pool is not supported together with feature \
+                    overrides (open_enums_in / override_feature_in) on the protoc plugin \
+                    path (the packaging plugin cannot see the overrides, so the shared \
+                    descriptor pool would not match the generated code); use buffa-build \
+                    for shared pools with overrides, or drop shared_descriptor_pool"
+                .to_string(),
+        );
     }
 
     Ok(PluginConfig {
@@ -928,5 +998,58 @@ mod tests {
     fn allow_message_set_default_is_false() {
         let config = parse_config("").unwrap();
         assert!(!config.codegen.allow_message_set);
+    }
+
+    #[test]
+    fn shared_descriptor_pool_rejects_feature_overrides() {
+        // The packaging plugin can't see feature overrides, so it can't
+        // reproduce them in the shared root — reject rather than emit a pool
+        // that disagrees with the generated code.
+        let err =
+            parse_config("reflection=true,shared_descriptor_pool=true,open_enums_in=.pkg.Color")
+                .err()
+                .expect("shared_descriptor_pool + overrides must be rejected");
+        assert!(err.contains("feature overrides"), "{err}");
+    }
+
+    #[test]
+    fn shared_descriptor_pool_without_overrides_is_ok() {
+        let config = parse_config("reflection=true,shared_descriptor_pool=true").unwrap();
+        assert!(config.codegen.shared_descriptor_pool);
+    }
+
+    #[test]
+    fn shared_descriptor_pool_rejects_feature_gating() {
+        // The packaging plugin never sees this plugin's gate config, so it
+        // can't wrap the shared root in the matching `#[cfg]` — reject with
+        // the option spelling the user actually wrote.
+        let err = parse_config("reflection=true,shared_descriptor_pool=true,gate_impls=true")
+            .err()
+            .expect("shared_descriptor_pool + gate_impls must be rejected");
+        assert!(err.contains("gate_impls=true"), "{err}");
+    }
+
+    #[test]
+    fn shared_descriptor_pool_rejects_file_per_package() {
+        // file_per_package is the packaging-plugin-free workflow, so no
+        // process ever emits the shared `__buffa_fds` root the per-package
+        // delegations point at — the consumer crate would fail with an
+        // unresolved module. Reject up front instead.
+        let err = parse_config("reflection=true,shared_descriptor_pool=true,file_per_package=true")
+            .err()
+            .expect("shared_descriptor_pool + file_per_package must be rejected");
+        assert!(err.contains("file_per_package"), "{err}");
+    }
+
+    #[test]
+    fn shared_descriptor_pool_requires_reflection() {
+        // Without reflection there is no embedded pool to share. Catch it
+        // here with plugin-option vocabulary (reflection= / reflect_mode=)
+        // instead of letting codegen core reject with the CodeGenConfig
+        // field name, which a buf.gen.yaml user never sees.
+        let err = parse_config("shared_descriptor_pool=true")
+            .err()
+            .expect("shared_descriptor_pool without reflection must be rejected");
+        assert!(err.contains("reflection=true"), "{err}");
     }
 }

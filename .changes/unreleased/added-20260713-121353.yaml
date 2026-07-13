@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`shared_descriptor_pool=true` plugin option** on `protoc-gen-buffa` and `protoc-gen-buffa-packaging` — enables the shared descriptor pool (see `CodeGenConfig::shared_descriptor_pool`) on the plugin path. Set it on both plugins (same name on both, like `exclude_package`). Rejected together with feature overrides, feature-gating, or `file_per_package`, which the plugin path cannot support.
+time: 2026-07-13T12:13:53.208712-04:00
