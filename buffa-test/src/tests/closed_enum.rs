@@ -140,6 +140,27 @@ fn test_closed_enum_repeated_packed_unknown_to_unknown_fields() {
 }
 
 #[test]
+fn test_owned_closed_enum_repeated_packed_unknowns_consume_unknown_field_limit() {
+    use crate::proto2::ClosedEnumContexts;
+    use buffa::encoding::{encode_varint, Tag, WireType};
+
+    let mut payload = Vec::new();
+    encode_varint(99, &mut payload);
+    encode_varint(100, &mut payload);
+    let mut wire = Vec::new();
+    Tag::new(3, WireType::LengthDelimited).encode(&mut wire);
+    encode_varint(payload.len() as u64, &mut wire);
+    wire.extend_from_slice(&payload);
+
+    let err = buffa::DecodeOptions::new()
+        .with_unknown_field_limit(1)
+        .decode_from_slice::<ClosedEnumContexts>(&wire)
+        .unwrap_err();
+
+    assert_eq!(err, buffa::DecodeError::UnknownFieldLimitExceeded);
+}
+
+#[test]
 fn test_closed_enum_oneof_unknown_to_unknown_fields() {
     use crate::proto2::ClosedEnumContexts;
     // Field 4 (oneof Priority) with value 99.
