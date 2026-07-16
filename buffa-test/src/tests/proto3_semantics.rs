@@ -434,6 +434,58 @@ fn repeated_mixed_packed_and_unpacked_on_wire() {
     assert_eq!(decoded.ints, vec![1, 2, 3, 4, 5]);
 }
 
+/// A packed fixed-width payload decodes in one bulk copy when it sits in the
+/// current chunk, and through the per-element loop when it does not. The two
+/// must agree: the owned decoder is generic over `Buf`, so which one runs is
+/// the caller's buffer layout, not the wire's.
+#[test]
+fn repeated_packed_fixed_width_decodes_the_same_from_a_split_buffer() {
+    use bytes::Buf;
+
+    let msg = RepeatedPacking {
+        doubles: vec![1.5, -2.25, f64::MAX, 0.0, f64::MIN_POSITIVE],
+        fixeds: vec![7, 0, u32::MAX],
+        ..Default::default()
+    };
+    let wire = msg.encode_to_vec();
+
+    let contiguous = RepeatedPacking::decode(&mut wire.as_slice()).unwrap();
+    assert_eq!(contiguous, msg);
+
+    // Split at every byte, so each split lands the boundary somewhere different
+    // within the packed payloads — including mid-element.
+    for split in 1..wire.len() {
+        let mut chained = bytes::Bytes::copy_from_slice(&wire[..split])
+            .chain(bytes::Bytes::copy_from_slice(&wire[split..]));
+        let decoded = RepeatedPacking::decode(&mut chained)
+            .unwrap_or_else(|e| panic!("split at {split} failed to decode: {e:?}"));
+        assert_eq!(decoded, msg, "split at {split} decoded differently");
+    }
+}
+
+/// Packed fixed-width fields accumulate across occurrences, as the spec
+/// requires: a field appearing twice concatenates rather than replacing. The
+/// bulk path reserves per occurrence, so this pins that the reserve is additive
+/// rather than a truncating resize.
+#[test]
+fn repeated_packed_fixed_width_accumulates_across_occurrences() {
+    use buffa::encoding::{encode_varint, Tag, WireType};
+
+    let mut wire = Vec::new();
+    for chunk in [[1.5f64, 2.5], [3.5, 4.5]] {
+        let mut payload = Vec::new();
+        for v in chunk {
+            payload.extend_from_slice(&v.to_le_bytes());
+        }
+        Tag::new(4, WireType::LengthDelimited).encode(&mut wire);
+        encode_varint(payload.len() as u64, &mut wire);
+        wire.extend_from_slice(&payload);
+    }
+
+    let decoded = RepeatedPacking::decode(&mut wire.as_slice()).unwrap();
+    assert_eq!(decoded.doubles, vec![1.5, 2.5, 3.5, 4.5]);
+}
+
 #[test]
 fn repeated_empty_encodes_nothing() {
     let msg = RepeatedPacking {
