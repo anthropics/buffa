@@ -362,7 +362,7 @@ impl DynamicMessage {
             // Caller checked this — defensive.
             return Ok(());
         };
-        let result = match tag.wire_type() {
+        let result = (|| match tag.wire_type() {
             WireType::LengthDelimited => {
                 let len = decode_varint(buf)?;
                 let len = usize::try_from(len).map_err(|_| DecodeError::MessageTooLarge)?;
@@ -378,7 +378,7 @@ impl DynamicMessage {
                 expected: WireType::LengthDelimited as u8,
                 actual: wt as u8,
             }),
-        };
+        })();
         // Put the (possibly partially-merged) message back regardless of
         // outcome, so a decode error doesn't silently drop earlier data.
         self.fields.insert(number, Value::Message(existing));
