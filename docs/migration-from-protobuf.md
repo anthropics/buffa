@@ -362,4 +362,4 @@ Features in `protobuf` v3/v4 that buffa does not support:
 | Lite runtime | Not applicable (buffa is already lightweight) |
 | `proto!` construction macro (v4) | Not supported |
 | Service generation | Planned |
-| `#[derive(Message)]` | Not provided. Implement `Message` by hand and use `extern_path`. |
+| `#[derive(Message)]` | No derive; generate from `.proto` or use `extern_path` for an existing Rust type. |

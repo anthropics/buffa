@@ -4,9 +4,9 @@ A step-by-step guide for migrating an existing prost-based project to buffa.
 
 ## Where is `#[derive(Message)]`?
 
-For application code, buffa intentionally generates message types from `.proto` files instead of treating Rust attributes as the schema. Keeping `.proto` as the source of truth preserves protobuf's cross-language contract and its surrounding tooling, including schema registries and breaking-change checks. To attach buffa implementations to an existing Rust type while retaining that schema, use [`extern_path` and the custom-type options](guide.md#custom-type-implementations).
+Buffa generates message types from `.proto` files instead of treating Rust attributes as the schema. Keeping `.proto` as the source of truth preserves protobuf's cross-language contract and its surrounding tooling, including schema registries and breaking-change checks. To attach buffa implementations to an existing Rust type while retaining that schema, use [`extern_path` and the custom-type options](guide.md#custom-type-implementations).
 
-For self-contained tests and examples, [issue #226](https://github.com/anthropics/buffa/issues/226) proposes `buffa-test-fixtures`, a deliberately limited derive separate from production code generation. It is not currently available.
+A limited derive for self-contained tests and examples is under discussion in [#226](https://github.com/anthropics/buffa/issues/226).
 
 ## 1. Swap dependencies
 
@@ -292,7 +292,7 @@ Features that prost supports but buffa does not (yet):
 | `type_attribute(path, attr)` | Supported. Same API, plus `message_attribute` / `enum_attribute` / `oneof_attribute` for narrower targeting. (For serde, prefer `generate_json(true)`, which emits the proto3-canonical JSON impls.) |
 | `field_attribute(path, attr)` | Supported. Same API. |
 | `service_generator(...)` | Not supported. Services codegen is planned. |
-| `#[derive(prost::Message)]` | No production derive; generate from `.proto` or use `extern_path` for an existing Rust type. See [Where is `#[derive(Message)]`?](#where-is-derivemessage). |
+| `#[derive(prost::Message)]` | No derive; generate from `.proto` or use `extern_path` for an existing Rust type. See [Where is `#[derive(Message)]`?](#where-is-derivemessage). |
 | `prost::Name` trait | `buffa::MessageName` — same shape (`PACKAGE`, `NAME`, plus `FULL_NAME` and `TYPE_URL`), but all four are `&'static str` consts computed at codegen time rather than runtime `format!` calls. Replace `M::full_name()` with `M::FULL_NAME` and `M::type_url()` with `M::TYPE_URL`. Implemented for both owned messages and view types. |
 
 Features that buffa has but prost does not:

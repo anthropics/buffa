@@ -63,31 +63,30 @@ pub trait Enumeration: Clone + Copy + PartialEq + Eq + Hash + fmt::Debug {
 /// [`Known`](Self::Known); unrecognized integers are preserved as
 /// [`Unknown`](Self::Unknown).
 ///
-/// ```rust,no_run
-/// use buffa::{Enumeration, EnumValue};
-///
-/// #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-/// enum Status {
-///     Active,
-/// }
-///
-/// impl Enumeration for Status {
-///     fn from_i32(value: i32) -> Option<Self> {
-///         (value == 1).then_some(Self::Active)
-///     }
-///
-///     fn to_i32(&self) -> i32 {
-///         1
-///     }
-///
-///     fn proto_name(&self) -> &'static str {
-///         "ACTIVE"
-///     }
-/// }
-///
+/// ```rust
+/// # use buffa::Enumeration;
+/// use buffa::EnumValue;
+/// # // `Status` stands in for a generated enum.
+/// # #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// # enum Status {
+/// #     Active,
+/// # }
+/// # impl Enumeration for Status {
+/// #     fn from_i32(value: i32) -> Option<Self> {
+/// #         (value == 1).then_some(Self::Active)
+/// #     }
+/// #     fn to_i32(&self) -> i32 {
+/// #         1
+/// #     }
+/// #     fn proto_name(&self) -> &'static str {
+/// #         "ACTIVE"
+/// #     }
+/// # }
+/// // A variant converts into a known value.
 /// let known: EnumValue<Status> = Status::Active.into();
 /// assert_eq!(known, EnumValue::Known(Status::Active));
 ///
+/// // An integer off the wire that no variant matches is preserved as-is.
 /// let unknown: EnumValue<Status> = 99.into();
 /// assert_eq!(unknown, EnumValue::Unknown(99));
 /// ```
