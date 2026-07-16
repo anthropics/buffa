@@ -743,10 +743,10 @@ println!("{}", msg.address.street);  // "" if address is unset
 if msg.address.is_set() { /* address was explicitly set */ }
 
 // Setting
-msg.address = MessageField::some(Address {
+msg.address = Address {
     street: "123 Main St".into(),
     ..Default::default()
-});
+}.into();
 
 // Or initialize-and-mutate
 msg.address.get_or_insert_default().street = "123 Main St".into();
@@ -763,7 +763,13 @@ msg.address = MessageField::none();
 // Interop with Option
 let opt: Option<&Address> = msg.address.as_option();
 let taken: Option<Address> = msg.address.take();
+
+// From an Option
+let maybe_address = Some(Address::default());
+msg.address = maybe_address.into();
 ```
+
+See the [`MessageField` rustdoc](https://docs.rs/buffa/latest/buffa/struct.MessageField.html#construction-and-conversion) for the complete construction and consuming-conversion examples.
 
 ### `EnumValue<T>` — type-safe open enums
 
@@ -785,8 +791,8 @@ pub status: EnumValue<Status>,
 
 ```rust,ignore
 // Setting
-msg.status = EnumValue::from(Status::ACTIVE);
-msg.status = EnumValue::from(42);  // Unknown(42) if not a known variant
+msg.status = Status::ACTIVE.into();
+msg.status = 42.into();  // Unknown(42) if not a known variant
 
 // Direct comparison (EnumValue<E> implements PartialEq<E>)
 if msg.status == Status::ACTIVE { /* ... */ }
@@ -988,7 +994,23 @@ Buffa uses a two-pass model to avoid the exponential-time size computation that 
 
 ### Error handling
 
-Encoding is **infallible** — `encode()` and `write_to()` never return errors. Contiguous sinks grow as needed via `BufMut`; a [`Rope`](https://docs.rs/buffa/latest/buffa/struct.Rope.html) appends segments.
+Encoding has exactly one failure condition: the protobuf specification caps
+any message at **2 GiB** (`buffa::MAX_MESSAGE_BYTES`), and buffa refuses to
+produce over-limit output that no conforming decoder — including its own —
+would read back. `encode()`, `encode_to_vec()`, `encode_to_bytes()`,
+`encode_length_delimited()`, `encode_with_cache()`, and `encoded_len()`
+**panic** on an over-limit message (before anything is written); each has a
+`try_`-prefixed twin
+(`try_encode()`, `try_encode_with_cache()`, `try_encode_to_vec()`,
+`try_encode_to_bytes()`, `try_encode_length_delimited()`,
+`try_encoded_len()`) that returns `Err(EncodeError::MessageTooLarge)`
+instead. Writers that can grow without
+bound (logs, snapshots, accumulators) should use the `try_*` variants and
+split or shrink on error. This is the only encode error today (the enum is
+`#[non_exhaustive]`, so match with a wildcard arm) — contiguous sinks grow
+as needed via `BufMut`; a
+[`Rope`](https://docs.rs/buffa/latest/buffa/struct.Rope.html) appends
+segments.
 
 Decoding returns `Result<T, DecodeError>`. See [`buffa::DecodeError`](https://docs.rs/buffa/latest/buffa/enum.DecodeError.html)
 for the full list of variants (the enum is `#[non_exhaustive]`). Common cases:
@@ -1664,6 +1686,14 @@ field_opts.set_extension(&FIELD, my_rules);
 field_opts.clear_extension(&FIELD);
 ```
 
+Message-typed extension values are encoded to wire bytes on `set`, so
+`set_extension()` panics if the value's encoded size exceeds the 2 GiB
+protobuf limit; `try_set_extension()` returns
+`Err(EncodeError::MessageTooLarge)` instead and leaves the extendee
+unchanged. (Scalar-typed extensions cannot fail.) `Any::pack` has the same
+shape: it panics on an over-limit message, and `Any::try_pack` is the
+error-returning twin.
+
 ### Extendee identity check
 
 `extension()`, `set_extension()`, and `clear_extension()` **panic** if you
@@ -2076,14 +2106,18 @@ impl Message for Int64Range {
         //   let slot = cache.reserve();
         //   let inner = self.m.compute_size(cache);
         //   cache.set(slot, inner);
-        let mut size = 0u32;
+        //
+        // Accumulate in u64 and saturate at return — the same pattern
+        // generated code uses — so an over-limit message surfaces at the
+        // encode entry points' 2 GiB check instead of wrapping silently.
+        let mut size = 0u64;
         if self.inner.start != 0 {
-            size += 1 + buffa::types::int64_encoded_len(self.inner.start) as u32;
+            size += 1 + buffa::types::int64_encoded_len(self.inner.start) as u64;
         }
         if self.inner.end != 0 {
-            size += 1 + buffa::types::int64_encoded_len(self.inner.end) as u32;
+            size += 1 + buffa::types::int64_encoded_len(self.inner.end) as u64;
         }
-        size
+        buffa::saturate_size(size)
     }
 
     fn write_to(&self, _cache: &mut SizeCache, buf: &mut impl buffa::EncodeSink) {

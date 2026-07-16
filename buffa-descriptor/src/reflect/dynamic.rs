@@ -194,12 +194,22 @@ impl DynamicMessage {
         }
     }
 
-    fn validate_field_value(
+    /// Check `value` against `field`'s descriptor and adopt it into this
+    /// message's pool, returning the value to store.
+    ///
+    /// Scalars and enums carry no pool. A message value already homed here
+    /// (pointer identity — the common case) passes through untouched; one of
+    /// the same type from a different pool is re-homed by a wire round-trip.
+    /// Adoption is keyed on the message's full name, so a genuinely wrong type
+    /// is still rejected whatever pool it came from. See
+    /// [`ReflectMessageMut::try_set`] for why a foreign pool is the normal
+    /// shape of cross-crate reflection rather than caller error.
+    fn adopt_field_value(
         &self,
         field: &FieldDescriptor,
-        value: &Value,
-    ) -> Result<(), ReflectError> {
-        validate_value_shape(field.kind, value, &self.pool).map_err(|err| {
+        value: Value,
+    ) -> Result<Value, ReflectError> {
+        adopt_value(field.kind, value, &self.pool).map_err(|err| {
             ReflectError::wrong_value_kind(
                 self.message_descriptor(),
                 field,
@@ -297,22 +307,31 @@ impl DynamicMessage {
         }
         match kind {
             FieldKind::Singular(sk) => {
+                // Singular message merge semantics: when the same field appears
+                // multiple times on the wire, the parser merges the messages
+                // (each sub-field merged) rather than replacing wholesale.
+                if let SingularKind::Message(midx) = sk {
+                    if let Some(Value::Message(_)) = self.fields.get(&number) {
+                        // This member already holds the oneof, so no sibling is
+                        // set and the clear below has nothing to do. Merging in
+                        // place keeps a partially merged value on error, which
+                        // is what the owned decoder leaves behind.
+                        if let Some(oi) = oneof_index {
+                            self.clear_other_oneof_members(oi, number);
+                        }
+                        // Decode the new bytes into the existing message.
+                        return self.merge_into_existing_message(number, midx, tag, buf, ctx);
+                    }
+                }
+                // Decode before clearing: a replacement that fails to decode
+                // must leave the oneof member that is currently set intact.
+                let v = self.decode_element(sk, tag, buf, ctx)?;
                 // Oneof semantics: setting any member clears all other members
                 // of the same oneof. Synthetic oneofs (proto3 `optional`) have
                 // a single member so this is a no-op for them.
                 if let Some(oi) = oneof_index {
                     self.clear_other_oneof_members(oi, number);
                 }
-                // Singular message merge semantics: when the same field appears
-                // multiple times on the wire, the parser merges the messages
-                // (each sub-field merged) rather than replacing wholesale.
-                if let SingularKind::Message(midx) = sk {
-                    if let Some(Value::Message(_)) = self.fields.get(&number) {
-                        // Decode the new bytes into the existing message.
-                        return self.merge_into_existing_message(number, midx, tag, buf, ctx);
-                    }
-                }
-                let v = self.decode_element(sk, tag, buf, ctx)?;
                 self.fields.insert(number, v);
             }
             FieldKind::List(sk) => {
@@ -362,7 +381,7 @@ impl DynamicMessage {
             // Caller checked this — defensive.
             return Ok(());
         };
-        let result = match tag.wire_type() {
+        let result = (|| match tag.wire_type() {
             WireType::LengthDelimited => {
                 let len = decode_varint(buf)?;
                 let len = usize::try_from(len).map_err(|_| DecodeError::MessageTooLarge)?;
@@ -378,7 +397,7 @@ impl DynamicMessage {
                 expected: WireType::LengthDelimited as u8,
                 actual: wt as u8,
             }),
-        };
+        })();
         // Put the (possibly partially-merged) message back regardless of
         // outcome, so a decode error doesn't silently drop earlier data.
         self.fields.insert(number, Value::Message(existing));
@@ -564,20 +583,55 @@ impl DynamicMessage {
 
     /// Encode this message into `buf`.
     ///
+    /// The size check costs a full [`encoded_len`](Self::encoded_len) walk
+    /// before the write pass (the single-pass descriptor-driven codec has no
+    /// size cache to reuse). [`encode_to_vec`](Self::encode_to_vec) pays no
+    /// extra walk — it needs the length for its allocation anyway.
+    ///
     /// A stored `Value` whose shape does not match its field descriptor —
     /// only reachable by bypassing [`try_set`]'s validation via
     /// [`field_by_number_mut`](Self::field_by_number_mut) /
     /// [`field_mut`](Self::field_mut) — is silently omitted, as the whole
     /// field: one invalid element suppresses its entire repeated/map field.
-    /// A nested `Value::Message` counts as invalid unless it was built from
-    /// the *same* [`DescriptorPool`] instance (pointer identity, not
-    /// full-name equality). [`encoded_len`](Self::encoded_len) applies the
-    /// same rule, so length and bytes always agree. The JSON serializer
-    /// represents the same invalid values as `null` rather than omitting
-    /// the field.
+    /// A nested `Value::Message` counts as invalid unless it lives in this
+    /// message's own [`DescriptorPool`] instance (pointer identity, not
+    /// full-name equality); `try_set` guarantees that by adopting foreign
+    /// messages on the way in, so only the `field_mut` bypass can leave one
+    /// here. [`encoded_len`](Self::encoded_len) applies the same rule, so
+    /// length and bytes always agree. The JSON serializer represents the same
+    /// invalid values as `null` rather than omitting the field.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`buffa::MAX_MESSAGE_BYTES`]): no conforming decoder — including
+    /// buffa's own — would accept the output. See
+    /// [`try_encode`](Self::try_encode) for the error-returning variant.
     ///
     /// [`try_set`]: crate::reflect::ReflectMessageMut::try_set
     pub fn encode(&self, buf: &mut impl buffa::EncodeSink) {
+        self.try_encode(buf)
+            .unwrap_or_else(|_| buffa::encode_size_overflow())
+    }
+
+    /// Encode, returning an error instead of panicking if the encoded size
+    /// exceeds the 2 GiB protobuf limit ([`buffa::MAX_MESSAGE_BYTES`]).
+    ///
+    /// On `Err`, nothing is written to `buf`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`buffa::EncodeError::MessageTooLarge`] if the encoded size
+    /// exceeds the limit.
+    pub fn try_encode(&self, buf: &mut impl buffa::EncodeSink) -> Result<(), buffa::EncodeError> {
+        Self::checked_encode_size(self.encoded_len())?;
+        self.encode_unchecked(buf);
+        Ok(())
+    }
+
+    /// Encode without the size check; callers must have validated
+    /// `encoded_len()` against the 2 GiB limit already.
+    fn encode_unchecked(&self, buf: &mut impl buffa::EncodeSink) {
         for (&number, value) in &self.fields {
             // Skip if neither the descriptor nor the extension index
             // recognizes this number anymore (defensive — the fields map
@@ -593,11 +647,45 @@ impl DynamicMessage {
     }
 
     /// Encode this message to a fresh `Vec<u8>`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`buffa::MAX_MESSAGE_BYTES`]). See
+    /// [`try_encode_to_vec`](Self::try_encode_to_vec) for the
+    /// error-returning variant.
     #[must_use]
     pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(self.encoded_len());
-        self.encode(&mut buf);
-        buf
+        self.try_encode_to_vec()
+            .unwrap_or_else(|_| buffa::encode_size_overflow())
+    }
+
+    /// Encode to a fresh `Vec<u8>`, returning an error instead of panicking
+    /// if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`buffa::MAX_MESSAGE_BYTES`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`buffa::EncodeError::MessageTooLarge`] if the encoded size
+    /// exceeds the limit.
+    pub fn try_encode_to_vec(&self) -> Result<Vec<u8>, buffa::EncodeError> {
+        let len = Self::checked_encode_size(self.encoded_len())?;
+        let mut buf = Vec::with_capacity(len);
+        self.encode_unchecked(&mut buf);
+        Ok(buf)
+    }
+
+    /// Validate an encoded size against the 2 GiB protobuf limit.
+    ///
+    /// The single-pass descriptor-driven codec computes sizes in `usize`,
+    /// which is exact on 64-bit hosts — unlike the generated two-pass codec
+    /// there is no `u32` arithmetic to saturate. This adapts the `usize`
+    /// domain onto the shared [`buffa::checked_encode_size`] guard (via
+    /// [`buffa::saturate_size`], so a value past `u32::MAX` still trips the
+    /// check) rather than restating the comparison here.
+    fn checked_encode_size(len: usize) -> Result<usize, buffa::EncodeError> {
+        buffa::checked_encode_size(buffa::saturate_size(len as u64))?;
+        Ok(len)
     }
 
     /// Compute the encoded length.
@@ -605,6 +693,14 @@ impl DynamicMessage {
     /// Applies the same invalid-value omission rule as
     /// [`encode`](Self::encode), so the result always matches the bytes
     /// `encode` writes.
+    ///
+    /// Unlike [`Message::encoded_len`](buffa::Message::encoded_len), this
+    /// does **not** enforce the 2 GiB limit: the `usize` result is exact
+    /// (there is no `u32` saturation that could turn an over-limit size
+    /// into a lie), so the check lives only in the encode entry points.
+    /// Use [`try_encode_to_vec`](Self::try_encode_to_vec) or compare
+    /// against [`buffa::MAX_MESSAGE_BYTES`] if you need the guard before
+    /// writing.
     #[must_use]
     pub fn encoded_len(&self) -> usize {
         let mut len = self.unknown.encoded_len();
@@ -627,7 +723,9 @@ impl DynamicMessage {
     ///
     /// Panics if `msg.encode_to_vec()` produces bytes that fail to decode
     /// against `msg_idx`'s descriptor. This indicates a mismatch between the
-    /// descriptor in the pool and the generated `Message` impl.
+    /// descriptor in the pool and the generated `Message` impl. Also panics
+    /// (inside `encode_to_vec`) if `msg`'s encoded size exceeds the 2 GiB
+    /// protobuf limit ([`buffa::MAX_MESSAGE_BYTES`]).
     #[must_use]
     pub fn from_message<M: Message>(
         msg: &M,
@@ -647,7 +745,11 @@ impl DynamicMessage {
     /// `M` — typically a descriptor mismatch between the pool and the
     /// generated type.
     pub fn to_message<M: Message + Default>(&self) -> Result<M, DecodeError> {
-        let bytes = self.encode_to_vec();
+        // An over-limit snapshot cannot become valid wire bytes; surface the
+        // mirror decode error instead of panicking inside a fallible API.
+        let bytes = self
+            .try_encode_to_vec()
+            .map_err(|_| DecodeError::MessageTooLarge)?;
         let mut m = M::default();
         m.merge_from_slice(&bytes)?;
         Ok(m)
@@ -812,7 +914,9 @@ impl DynamicMessage {
     ///
     /// [`AnyError::AnyNotRegistered`] if the pool does not contain
     /// `google.protobuf.Any` (e.g. a `FileDescriptorSet` built without the
-    /// well-known types).
+    /// well-known types). [`AnyError::MessageTooLarge`] if this message's
+    /// encoded size exceeds the 2 GiB protobuf limit
+    /// ([`buffa::MAX_MESSAGE_BYTES`]).
     pub fn pack_any(&self) -> Result<DynamicMessage, AnyError> {
         let any_idx = self
             .pool
@@ -823,8 +927,11 @@ impl DynamicMessage {
             self.message_descriptor().full_name
         );
         let mut any = DynamicMessage::new(Arc::clone(&self.pool), any_idx);
+        let bytes = self
+            .try_encode_to_vec()
+            .map_err(|_| AnyError::MessageTooLarge)?;
         any.insert_value(1, Value::String(type_url));
-        any.insert_value(2, Value::Bytes(self.encode_to_vec()));
+        any.insert_value(2, Value::Bytes(bytes));
         Ok(any)
     }
 
@@ -861,7 +968,8 @@ impl DynamicMessage {
         O: Message + buffa::MessageName,
     {
         let idx = pool.message_index(O::FULL_NAME)?;
-        Self::decode(pool, idx, &options.encode_to_vec()).ok()
+        let bytes = options.try_encode_to_vec().ok()?;
+        Self::decode(pool, idx, &bytes).ok()
     }
 }
 
@@ -889,6 +997,10 @@ pub enum AnyError {
         /// The unresolvable type URL.
         type_url: String,
     },
+    /// The message being packed encodes past the 2 GiB protobuf limit
+    /// ([`buffa::MAX_MESSAGE_BYTES`]), so it cannot become a valid
+    /// `Any.value` payload.
+    MessageTooLarge,
     /// The wrapped `value` bytes failed to decode against the resolved type.
     Decode {
         /// The `type_url` that resolved before the decode failed.
@@ -908,6 +1020,9 @@ impl core::fmt::Display for AnyError {
                 write!(f, "google.protobuf.Any is not registered in the pool")
             }
             Self::MissingTypeUrl => write!(f, "Any has no type_url"),
+            Self::MessageTooLarge => {
+                write!(f, "packed message exceeds the 2 GiB protobuf limit")
+            }
             Self::UnknownType { type_url } => {
                 write!(f, "Any type_url {type_url:?} not registered in the pool")
             }
@@ -1003,7 +1118,7 @@ impl ReflectMessage for DynamicMessage {
 impl ReflectMessageMut for DynamicMessage {
     fn try_set(&mut self, field: &FieldDescriptor, value: Value) -> Result<(), ReflectError> {
         self.validate_field_descriptor(field)?;
-        self.validate_field_value(field, &value)?;
+        let value = self.adopt_field_value(field, value)?;
         // Setting a oneof member must clear its siblings, otherwise a
         // subsequent encode writes multiple oneof members onto the wire,
         // which violates the proto spec. The wire decoder and the JSON
@@ -1069,6 +1184,141 @@ struct ValueShapeMismatch {
     actual: String,
 }
 
+/// Adopt a value into `pool`: validate its shape and re-home any message it
+/// carries that belongs to a different pool. See
+/// [`DynamicMessage::adopt_field_value`] for why re-homing rather than
+/// rejecting is the right rule.
+///
+/// A value that is already well-shaped and wholly homed in `pool` — every
+/// value the decoder and the JSON parser produce — is returned untouched, so
+/// the common path allocates nothing, not even for repeated and map fields.
+/// Only a genuinely foreign message pays the rebuild and the round-trip.
+fn adopt_value(
+    kind: FieldKind,
+    value: Value,
+    pool: &Arc<DescriptorPool>,
+) -> Result<Value, ValueShapeMismatch> {
+    // The strict check *is* the "already homed, already well-shaped" predicate:
+    // it is what the encoder applies to stored values.
+    if validate_value_shape(kind, &value, pool).is_ok() {
+        return Ok(value);
+    }
+    match kind {
+        FieldKind::Singular(sk) => adopt_singular(sk, value, pool),
+        FieldKind::List(sk) => {
+            let Value::List(items) = value else {
+                return Err(field_shape_mismatch(kind, pool, value_shape(&value)));
+            };
+            items
+                .into_iter()
+                .map(|item| adopt_singular(sk, item, pool))
+                .collect::<Result<Vec<_>, _>>()
+                .map(Value::List)
+                .map_err(|err| {
+                    field_shape_mismatch(kind, pool, format!("list element {}", err.actual))
+                })
+        }
+        FieldKind::Map { key, value: vk } => {
+            let Value::Map(entries) = value else {
+                return Err(field_shape_mismatch(kind, pool, value_shape(&value)));
+            };
+            entries
+                .into_entries()
+                .into_iter()
+                .map(|(map_key, map_value)| {
+                    if !map_key_matches_scalar(key, &map_key) {
+                        return Err(field_shape_mismatch(
+                            kind,
+                            pool,
+                            format!("map key {}", map_key_shape(&map_key)),
+                        ));
+                    }
+                    let adopted = adopt_singular(vk, map_value, pool).map_err(|err| {
+                        field_shape_mismatch(kind, pool, format!("map value {}", err.actual))
+                    })?;
+                    Ok((map_key, adopted))
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(|entries| Value::Map(MapValue::from_entries(entries)))
+        }
+    }
+}
+
+fn adopt_singular(
+    kind: SingularKind,
+    value: Value,
+    pool: &Arc<DescriptorPool>,
+) -> Result<Value, ValueShapeMismatch> {
+    let SingularKind::Message(midx) = kind else {
+        // Scalars and enums are pool-free: shape is the whole contract.
+        return if validate_singular_shape(kind, &value, pool).is_ok() {
+            Ok(value)
+        } else {
+            Err(ValueShapeMismatch {
+                expected: singular_kind_name(kind, pool),
+                actual: value_shape(&value),
+            })
+        };
+    };
+    let Value::Message(msg) = value else {
+        return Err(ValueShapeMismatch {
+            expected: singular_kind_name(kind, pool),
+            actual: value_shape(&value),
+        });
+    };
+    if Arc::ptr_eq(&msg.pool, pool) && msg.msg_idx == midx {
+        return Ok(Value::Message(msg));
+    }
+    rehome_message(msg, midx, pool).map(Value::Message)
+}
+
+/// Re-home a message from a foreign pool into `pool` as `midx`.
+///
+/// Same full name is the adoption test — the criterion protobuf itself uses to
+/// identify a type across compilations (it is what `Any`'s type URL carries).
+/// The wire round-trip re-homes the whole subtree in one decode, so nested
+/// messages need no separate walk.
+///
+/// Equal full names are taken to mean equal schemas, as everywhere else that
+/// protobuf resolves a type by name. Two pools that disagree on the fields of
+/// a same-named type reinterpret the bytes against the target's schema:
+/// whatever it does not recognize lands in unknown fields and is re-emitted
+/// intact on the next encode.
+fn rehome_message(
+    msg: DynamicMessage,
+    midx: MessageIndex,
+    pool: &Arc<DescriptorPool>,
+) -> Result<DynamicMessage, ValueShapeMismatch> {
+    let expected = pool.message(midx);
+    let mismatch = |actual: &str| ValueShapeMismatch {
+        expected: format!("message {}", expected.full_name()),
+        actual: actual.to_owned(),
+    };
+    let full_name = msg.message_descriptor().full_name().to_owned();
+    if full_name != expected.full_name() {
+        return Err(mismatch(&format!("message {full_name}")));
+    }
+    // Fallible, not `encode_to_vec`: a message over the 2 GiB protobuf limit
+    // would panic there, and an oversized value handed to `set` gets the same
+    // rejection as any other value this pool cannot hold. Depth is not checked
+    // here — encoding recurses, so a message nested past the stack's tolerance
+    // overflows, as it would on any other encode of that value.
+    let bytes = msg.try_encode_to_vec().map_err(|_| {
+        mismatch(&format!(
+            "message {full_name} exceeding the {} byte encode limit",
+            buffa::MAX_MESSAGE_BYTES
+        ))
+    })?;
+    // The round-trip decode applies the standard recursion limit, so report
+    // what it said: a message nested deeper than the limit is rejected here,
+    // and "incompatible pool" would name the wrong cause.
+    DynamicMessage::decode(Arc::clone(pool), midx, &bytes).map_err(|err| {
+        mismatch(&format!(
+            "message {full_name} this pool cannot decode ({err})"
+        ))
+    })
+}
+
 fn validate_value_shape(
     kind: FieldKind,
     value: &Value,
@@ -1122,9 +1372,11 @@ fn validate_singular_shape(
         // *field's* enum descriptor, so a foreign or unknown number cannot
         // corrupt output.
         SingularKind::Enum(_) => matches!(value, Value::EnumNumber(_)),
-        // Pointer identity, not full-name equality: a structurally-identical
-        // message built from a different pool instance is foreign, matching
-        // `FieldNotMember`'s identity philosophy.
+        // Pointer identity, not full-name equality. This is the encode-time
+        // check, and by then every value that entered through `try_set` has
+        // been adopted into this pool, so a foreign message here means the
+        // `field_mut` bypass put it there — omit it rather than encode a
+        // value whose descriptors we cannot trust.
         SingularKind::Message(midx) => match value {
             Value::Message(msg) => Arc::ptr_eq(&msg.pool, pool) && msg.msg_idx == midx,
             _ => false,
@@ -1587,13 +1839,17 @@ fn encode_singular_with_tag(
         }
         (SingularKind::Message(_), Value::Message(m)) => {
             Tag::new(number, singular_wire_type(kind, delimited)).encode(buf);
+            // encode_unchecked: nested sizes are covered by the top-level
+            // entry point's 2 GiB check (a parent is at least as large as
+            // any child), and re-checking here would add a size walk per
+            // nesting level.
             if delimited {
-                m.encode(buf);
+                m.encode_unchecked(buf);
                 Tag::new(number, WireType::EndGroup).encode(buf);
             } else {
                 let len = m.encoded_len();
                 encode_varint(len as u64, buf);
-                m.encode(buf);
+                m.encode_unchecked(buf);
             }
         }
         _ => {}
@@ -1664,10 +1920,11 @@ fn encode_packed_element(kind: SingularKind, v: &Value, buf: &mut impl buffa::En
         (SingularKind::Scalar(s), v) => encode_scalar(s, v, buf),
         (SingularKind::Enum(_), Value::EnumNumber(n)) => encode_int32(*n, buf),
         (SingularKind::Message(_), Value::Message(m)) => {
-            // Map values are length-prefixed messages.
+            // Map values are length-prefixed messages. encode_unchecked:
+            // covered by the top-level entry point's 2 GiB check.
             let len = m.encoded_len();
             encode_varint(len as u64, buf);
-            m.encode(buf);
+            m.encode_unchecked(buf);
         }
         _ => {}
     }
@@ -1740,4 +1997,32 @@ const _: fn(EnumIndex) = |_| {};
 /// Compute the encoded length of a tag without writing it.
 fn tag_len(field_number: u32, wt: WireType) -> usize {
     uint64_encoded_len(((field_number as u64) << 3) | (wt as u64))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DynamicMessage;
+
+    // The encode entry points funnel through `checked_encode_size`;
+    // exercising the over-limit path end-to-end would require materializing
+    // >2 GiB of field data, so the usize adapter over the shared guard is
+    // tested directly (the e2e encode paths are covered in
+    // `tests/dynamic_e2e.rs`, and the shared guard's own boundary in
+    // `buffa::message`).
+
+    #[test]
+    fn checked_encode_size_boundary() {
+        let max = buffa::MAX_MESSAGE_BYTES as usize;
+        assert_eq!(DynamicMessage::checked_encode_size(max), Ok(max));
+        assert_eq!(
+            DynamicMessage::checked_encode_size(max + 1),
+            Err(buffa::EncodeError::MessageTooLarge)
+        );
+        // Past u32::MAX the adapter saturates rather than wrapping.
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(
+            DynamicMessage::checked_encode_size(u32::MAX as usize + 1),
+            Err(buffa::EncodeError::MessageTooLarge)
+        );
+    }
 }

@@ -656,9 +656,12 @@ pub mod helpers {
         M: crate::Message + Default + for<'de> serde::Deserialize<'de>,
     {
         let m: M = serde_json::from_value(v).map_err(|e| alloc::format!("field {n}: {e}"))?;
+        let bytes = m
+            .try_encode_to_vec()
+            .map_err(|e| alloc::format!("field {n}: {e}"))?;
         Ok(alloc::vec![UnknownField {
             number: n,
-            data: UnknownFieldData::LengthDelimited(m.encode_to_vec()),
+            data: UnknownFieldData::LengthDelimited(bytes),
         }])
     }
 

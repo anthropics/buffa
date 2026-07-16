@@ -461,6 +461,10 @@ fn test_view_repeated_message_field() {
         content.contains("fn merge_view_field"),
         "missing merge_view_field impl: {content}"
     );
+    assert!(
+        content.contains("#[inline]\n    fn merge_view_field"),
+        "merge_view_field must inline into the cross-crate decode loop: {content}"
+    );
 }
 
 #[test]
