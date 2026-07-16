@@ -325,20 +325,43 @@ fn pad(line: &str) -> String {
     }
 }
 
-/// An indented-code-block line: 4+ spaces or a tab (CommonMark).
+/// Width of one indentation level, in columns (CommonMark's tab stop).
+const INDENT_COLUMNS: usize = 4;
+
+/// Byte offset at which `line` reaches `columns` of leading whitespace, with
+/// tabs advancing to the next multiple of [`INDENT_COLUMNS`] as CommonMark
+/// requires. `None` if the leading whitespace never gets that far, so a line
+/// mixing spaces and tabs (`"  \t"` reaches column 4) is measured the way
+/// rustdoc measures it rather than by counting literal spaces.
+fn indent_split(line: &str, columns: usize) -> Option<usize> {
+    let mut column = 0;
+    for (offset, ch) in line.char_indices() {
+        if column >= columns {
+            return Some(offset);
+        }
+        column += match ch {
+            ' ' => 1,
+            '\t' => INDENT_COLUMNS - (column % INDENT_COLUMNS),
+            _ => return None,
+        };
+    }
+    (column >= columns).then_some(line.len())
+}
+
+/// An indented-code-block line: leading whitespace reaching 4+ columns.
 fn is_indented(line: &str) -> bool {
-    line.starts_with("    ") || line.starts_with('\t')
+    indent_split(line, INDENT_COLUMNS).is_some()
 }
 
 /// Remove one level of code-block indentation, but keep it on a line that
-/// would otherwise read as a fence marker — inside the synthetic ```text
-/// fence a de-indented ``` run would close it early, while CommonMark
-/// ignores fence markers indented 4+ spaces.
+/// would otherwise read as a fence marker — inside the synthetic
+/// ```` ```text ```` fence a de-indented ```` ``` ```` run would close it
+/// early, while CommonMark ignores fence markers indented 4+ spaces.
 fn strip_indent(line: &str) -> String {
-    let stripped = line
-        .strip_prefix("    ")
-        .or_else(|| line.strip_prefix('\t'))
-        .unwrap_or(line);
+    let Some(offset) = indent_split(line, INDENT_COLUMNS) else {
+        return line.to_string();
+    };
+    let stripped = &line[offset..];
     if stripped.trim_start().starts_with("```") {
         line.to_string()
     } else {
@@ -1220,6 +1243,28 @@ mod tests {
     }
 
     #[test]
+    fn test_doc_indent_measured_in_columns_not_literal_spaces() {
+        // CommonMark expands a tab to the next 4-column stop, so 1-3 spaces
+        // followed by a tab reaches column 4 and is an indented code block —
+        // rustdoc compiles such a line as a doctest unless it is fenced.
+        for prefix in [" \t", "  \t", "   \t", "\t"] {
+            let out = doc_tokens(&format!("{prefix}this is not rust !!!"));
+            assert!(
+                out.contains("```text"),
+                "{prefix:?} reaches column 4 and must be fenced: {out}"
+            );
+        }
+        // Under four columns stays prose.
+        for prefix in [" ", "  ", "   "] {
+            let out = doc_tokens(&format!("{prefix}just prose"));
+            assert!(
+                !out.contains("```text"),
+                "{prefix:?} is under column 4 and must stay prose: {out}"
+            );
+        }
+    }
+
+    #[test]
     fn test_doc_empty_input() {
         assert_eq!(doc_tokens(""), "");
     }
@@ -1607,7 +1652,7 @@ mod tests {
     /// `should_panic` runs, `compile_fail` inverts the verdict, an error code
     /// or an mdBook-style word keeps the block Rust, and `ignore-<target>` is
     /// a target *list* that replaces a plain `ignore`, so the block compiles
-    /// on every other target. Verified against rustdoc directly.
+    /// on every other target.
     #[test]
     fn test_fence_info_strings_are_made_inert() {
         let cases = [
