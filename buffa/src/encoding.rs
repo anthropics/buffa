@@ -204,6 +204,44 @@ pub fn count_varints(payload: &[u8]) -> usize {
     payload.iter().filter(|&&b| b < 0x80).count()
 }
 
+/// Drive a well-formed packed varint payload element-by-element with the
+/// per-element dispatch hoisted out of the loop.
+///
+/// Precondition (checked by the caller): the payload's final byte has its
+/// continuation bit clear. Every suffix of such a payload also ends with a
+/// clear continuation bit, so the slice decoder's precondition holds at every
+/// element position and the loop needs no per-element chunk or remaining
+/// checks — the 1-2-byte common cases decode inline, longer elements fall
+/// through to the unrolled slice decoder.
+#[inline]
+pub(crate) fn for_each_packed_varint(
+    payload: &[u8],
+    mut f: impl FnMut(u64),
+) -> Result<(), DecodeError> {
+    debug_assert!(payload.is_empty() || payload[payload.len() - 1] < 0x80);
+    let mut i = 0;
+    while i < payload.len() {
+        let b0 = payload[i];
+        if b0 < 0x80 {
+            f(u64::from(b0));
+            i += 1;
+            continue;
+        }
+        // payload[i + 1] is in bounds: b0 has its continuation bit set, and
+        // the final byte does not, so i + 1 < payload.len().
+        let b1 = payload[i + 1];
+        if b1 < 0x80 {
+            f(u64::from(b0 & 0x7f) | u64::from(b1) << 7);
+            i += 2;
+            continue;
+        }
+        let (value, advance) = decode_varint_slice_always(&payload[i..])?;
+        f(value);
+        i += advance;
+    }
+    Ok(())
+}
+
 /// Decode a varint from a buffer.
 ///
 /// Uses a chunk-based strategy for performance:

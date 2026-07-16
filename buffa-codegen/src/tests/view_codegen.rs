@@ -469,10 +469,9 @@ fn test_view_repeated_message_field() {
 
 #[test]
 fn test_view_packed_varint_loop_uses_force_inlined_decoder() {
-    // View-path packed varint loops use the force-inlined `decode_*_packed`
-    // decoders against the packed cursor; the unpacked fallback keeps the
-    // plain decoders, and fixed-width packed payloads decode via the bulk
-    // extenders instead of a loop.
+    // View-path packed payloads decode via the bulk extenders (plain
+    // varint and fixed-width families); the unpacked fallback keeps the
+    // plain per-element decoders.
     let mut file = proto3_file("packed_view_inline.proto");
     file.message_type.push(DescriptorProto {
         name: Some("PackedViewInline".to_string()),
@@ -490,8 +489,8 @@ fn test_view_packed_varint_loop_uses_force_inlined_decoder() {
     .expect("should generate");
     let content = &joined(&files);
     assert!(
-        content.contains("decode_uint64_packed(&mut pcur)"),
-        "view packed uint64 loop must use the force-inlined decoder: {content}"
+        content.contains("extend_packed_uint64(") && content.contains("view.ids.as_mut_vec()"),
+        "view packed uint64 payload must decode via the bulk extender: {content}"
     );
     assert!(
         content.contains("decode_uint64(&mut cur)"),
@@ -534,15 +533,20 @@ fn test_view_packed_scalar_reserves_capacity() {
     )
     .expect("should generate");
     let content = &joined(&files);
-    // Varint kinds reserve the exact element count via count_varints (a
-    // varint is 1-10 bytes, so the byte length is not the count).
+    // Varint kinds decode via the bulk extenders, which reserve the counted
+    // element count internally (a varint is 1-10 bytes, so the byte length
+    // is not the count).
     assert!(
-        content.contains("view.ids.reserve(::buffa::encoding::count_varints(payload));"),
-        "varint packed view must reserve the counted element count: {content}"
+        content.contains("extend_packed_uint32(") && content.contains("view.ids.as_mut_vec()"),
+        "uint32 packed view must decode via the bulk extender: {content}"
     );
     assert!(
-        content.contains("view.flags.reserve(::buffa::encoding::count_varints(payload));"),
-        "bool packed view must reserve the counted element count: {content}"
+        content.contains("extend_packed_bool(") && content.contains("view.flags.as_mut_vec()"),
+        "bool packed view must decode via the bulk extender: {content}"
+    );
+    assert!(
+        !content.contains("view.ids.reserve("),
+        "uint32 packed view must not emit a separate reserve: {content}"
     );
     // Fixed-width kinds decode via the bulk extenders, which validate
     // alignment and reserve the exact element count internally — the arm

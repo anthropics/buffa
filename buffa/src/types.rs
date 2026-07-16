@@ -371,6 +371,77 @@ pub fn decode_bool_packed(buf: &mut impl Buf) -> Result<bool, DecodeError> {
 }
 
 // ---------------------------------------------------------------------------
+// Bulk packed decode — varint types
+// ---------------------------------------------------------------------------
+
+/// Stamp a bulk packed-payload extender over a varint-family element type.
+macro_rules! extend_packed_varint_fn {
+    ($(#[$doc:meta])* $name:ident, $ty:ty, $decode_one:ident, $conv:expr) => {
+        $(#[$doc])*
+        ///
+        /// Requires the payload's final byte to have its continuation bit
+        /// clear (true of every well-formed packed payload); payloads that
+        /// violate it fall back to the per-element decoder so truncated
+        /// trailing elements keep their exact error and partial-extension
+        /// behavior.
+        ///
+        /// `reserve` is the caller's pre-allocation hint: generated view
+        /// code passes the exact count from
+        /// [`crate::encoding::count_varints`], generated owned code passes
+        /// the payload byte length (an upper bound) — each path keeps the
+        /// allocation policy it had with the per-element loop.
+        #[inline]
+        pub fn $name(payload: &[u8], out: &mut Vec<$ty>, reserve: usize) -> Result<(), DecodeError> {
+            out.reserve(reserve);
+            match payload.last() {
+                None => Ok(()),
+                Some(&last) if last < 0x80 => {
+                    crate::encoding::for_each_packed_varint(payload, |v| out.push($conv(v)))
+                }
+                Some(_) => {
+                    // Unterminated trailing element: per-element loop for
+                    // exact error parity.
+                    let mut cur = payload;
+                    while !cur.is_empty() {
+                        out.push($decode_one(&mut cur)?);
+                    }
+                    Ok(())
+                }
+            }
+        }
+    };
+}
+
+extend_packed_varint_fn!(
+    /// Decode an entire packed `int32` payload into `out` in one pass.
+    extend_packed_int32, i32, decode_int32, |v| v as i32
+);
+extend_packed_varint_fn!(
+    /// Decode an entire packed `int64` payload into `out` in one pass.
+    extend_packed_int64, i64, decode_int64, |v| v as i64
+);
+extend_packed_varint_fn!(
+    /// Decode an entire packed `uint32` payload into `out` in one pass.
+    extend_packed_uint32, u32, decode_uint32, |v| v as u32
+);
+extend_packed_varint_fn!(
+    /// Decode an entire packed `uint64` payload into `out` in one pass.
+    extend_packed_uint64, u64, decode_uint64, |v| v
+);
+extend_packed_varint_fn!(
+    /// Decode an entire packed `sint32` payload into `out` in one pass.
+    extend_packed_sint32, i32, decode_sint32, |v| zigzag_decode_i32(v as u32)
+);
+extend_packed_varint_fn!(
+    /// Decode an entire packed `sint64` payload into `out` in one pass.
+    extend_packed_sint64, i64, decode_sint64, zigzag_decode_i64
+);
+extend_packed_varint_fn!(
+    /// Decode an entire packed `bool` payload into `out` in one pass.
+    extend_packed_bool, bool, decode_bool, |v| v != 0
+);
+
+// ---------------------------------------------------------------------------
 // Encoded size helpers — varint types
 // ---------------------------------------------------------------------------
 
@@ -3304,8 +3375,13 @@ mod tests {
                 Err(e) => break Err(e),
             }
         };
-        assert_eq!(bulk_res.is_ok(), elem_res.is_ok(), "accept/reject parity");
-        if bulk_res.is_ok() {
+        let bulk_ok = bulk_res.is_ok();
+        assert_eq!(
+            bulk_res.err(),
+            elem_res.err(),
+            "accept/reject and error-variant parity"
+        );
+        if bulk_ok {
             assert_eq!(bulk.len(), elems.len());
             for (a, b) in bulk.iter().zip(&elems) {
                 assert_eq!(a.to_bits(), b.to_bits(), "bit-exact element parity");
@@ -3391,5 +3467,97 @@ mod tests {
         extend_packed_sfixed64(&p64, &mut out_i64).unwrap();
         assert_eq!(out_i64, vec![0, 1, -1]);
         assert!(extend_packed_sfixed64(&p64[..23], &mut Vec::new()).is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // bulk packed varint extender tests
+    // -----------------------------------------------------------------------
+
+    fn per_element_u32(payload: &[u8]) -> Result<Vec<u32>, DecodeError> {
+        let mut out = Vec::new();
+        let mut cur = payload;
+        while !cur.is_empty() {
+            out.push(decode_uint32(&mut cur)?);
+        }
+        Ok(out)
+    }
+
+    fn check_bulk_u32(payload: &[u8]) {
+        let mut bulk = Vec::new();
+        let bulk_res =
+            extend_packed_uint32(payload, &mut bulk, crate::encoding::count_varints(payload));
+        let elem_res = per_element_u32(payload);
+        assert_eq!(
+            bulk_res.err(),
+            elem_res.as_ref().err().cloned(),
+            "accept/reject and error-variant parity for {payload:?}"
+        );
+        if let Ok(elems) = elem_res {
+            assert_eq!(bulk, elems, "element parity for {payload:?}");
+        }
+    }
+
+    #[test]
+    fn test_extend_packed_uint32_matches_per_element() {
+        let mut payload = Vec::new();
+        for v in [0u32, 1, 127, 128, 16383, 16384, 65535, u32::MAX] {
+            encode_uint32(v, &mut payload);
+        }
+        check_bulk_u32(&payload);
+        check_bulk_u32(&[]);
+        for cut in 1..payload.len() {
+            check_bulk_u32(&payload[..cut]);
+        }
+        // Overlong but terminated encodings parity (e.g. 0 as [0x80, 0x00]).
+        check_bulk_u32(&[0x80, 0x00, 0x81, 0x00]);
+        // 10-byte and 11-byte elements (VarintTooLong parity).
+        check_bulk_u32(&[0xFF; 9].iter().copied().chain([0x01]).collect::<Vec<_>>());
+        check_bulk_u32(&[0xFF; 10].iter().copied().chain([0x01]).collect::<Vec<_>>());
+        // All-continuation payload (unterminated tail -> per-element fallback).
+        check_bulk_u32(&[0xFF; 4]);
+    }
+
+    #[test]
+    fn test_extend_packed_varint_family_conversions() {
+        // int64 sign-extension: -1 encodes as 10 bytes.
+        let mut p = Vec::new();
+        encode_int64(-1, &mut p);
+        encode_int64(5, &mut p);
+        let mut out_i64 = Vec::new();
+        extend_packed_int64(&p, &mut out_i64, p.len()).unwrap();
+        assert_eq!(out_i64, vec![-1, 5]);
+
+        // int32 truncation through the same wire bytes.
+        let mut out_i32 = Vec::new();
+        extend_packed_int32(&p, &mut out_i32, p.len()).unwrap();
+        assert_eq!(out_i32, vec![-1, 5]);
+
+        // sint32/sint64 zigzag.
+        let mut pz = Vec::new();
+        encode_sint32(-2, &mut pz);
+        encode_sint64(i64::MIN, &mut pz);
+        let mut out_s32 = Vec::new();
+        extend_packed_sint32(&pz, &mut out_s32, pz.len()).unwrap();
+        let mut cur: &[u8] = &pz;
+        let want_s32 = vec![
+            decode_sint32(&mut cur).unwrap(),
+            decode_sint32(&mut cur).unwrap(),
+        ];
+        assert_eq!(out_s32, want_s32);
+        let mut out_s64 = Vec::new();
+        extend_packed_sint64(&pz, &mut out_s64, pz.len()).unwrap();
+        assert_eq!(out_s64[1], i64::MIN);
+
+        // bool: nonzero (incl. overlong) is true.
+        let mut out_b = Vec::new();
+        extend_packed_bool(&[0x00, 0x01, 0x80, 0x01], &mut out_b, 4).unwrap();
+        assert_eq!(out_b, vec![false, true, true]);
+
+        // uint64 max round-trip.
+        let mut pm = Vec::new();
+        encode_uint64(u64::MAX, &mut pm);
+        let mut out_u64 = Vec::new();
+        extend_packed_uint64(&pm, &mut out_u64, pm.len()).unwrap();
+        assert_eq!(out_u64, vec![u64::MAX]);
     }
 }

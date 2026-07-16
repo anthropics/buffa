@@ -1267,15 +1267,24 @@ impl ::buffa::Message for FileDescriptorProto {
                             ::buffa::DecodeError::UnexpectedEof,
                         );
                     }
-                    self.public_dependency.reserve(len);
-                    let mut limited = buf.take(len);
-                    while limited.has_remaining() {
-                        self.public_dependency
-                            .push(::buffa::types::decode_int32_packed(&mut limited)?);
-                    }
-                    let leftover = limited.remaining();
-                    if leftover > 0 {
-                        limited.advance(leftover);
+                    if buf.chunk().len() >= len {
+                        ::buffa::types::extend_packed_int32(
+                            &buf.chunk()[..len],
+                            &mut self.public_dependency,
+                            len,
+                        )?;
+                        buf.advance(len);
+                    } else {
+                        self.public_dependency.reserve(len);
+                        let mut limited = buf.take(len);
+                        while limited.has_remaining() {
+                            self.public_dependency
+                                .push(::buffa::types::decode_int32_packed(&mut limited)?);
+                        }
+                        let leftover = limited.remaining();
+                        if leftover > 0 {
+                            limited.advance(leftover);
+                        }
                     }
                 } else if tag.wire_type() == ::buffa::encoding::WireType::Varint {
                     self.public_dependency.push(::buffa::types::decode_int32(buf)?);
@@ -1298,15 +1307,24 @@ impl ::buffa::Message for FileDescriptorProto {
                             ::buffa::DecodeError::UnexpectedEof,
                         );
                     }
-                    self.weak_dependency.reserve(len);
-                    let mut limited = buf.take(len);
-                    while limited.has_remaining() {
-                        self.weak_dependency
-                            .push(::buffa::types::decode_int32_packed(&mut limited)?);
-                    }
-                    let leftover = limited.remaining();
-                    if leftover > 0 {
-                        limited.advance(leftover);
+                    if buf.chunk().len() >= len {
+                        ::buffa::types::extend_packed_int32(
+                            &buf.chunk()[..len],
+                            &mut self.weak_dependency,
+                            len,
+                        )?;
+                        buf.advance(len);
+                    } else {
+                        self.weak_dependency.reserve(len);
+                        let mut limited = buf.take(len);
+                        while limited.has_remaining() {
+                            self.weak_dependency
+                                .push(::buffa::types::decode_int32_packed(&mut limited)?);
+                        }
+                        let leftover = limited.remaining();
+                        if leftover > 0 {
+                            limited.advance(leftover);
+                        }
                     }
                 } else if tag.wire_type() == ::buffa::encoding::WireType::Varint {
                     self.weak_dependency.push(::buffa::types::decode_int32(buf)?);
@@ -19079,15 +19097,24 @@ pub mod source_code_info {
                                 ::buffa::DecodeError::UnexpectedEof,
                             );
                         }
-                        self.path.reserve(len);
-                        let mut limited = buf.take(len);
-                        while limited.has_remaining() {
-                            self.path
-                                .push(::buffa::types::decode_int32_packed(&mut limited)?);
-                        }
-                        let leftover = limited.remaining();
-                        if leftover > 0 {
-                            limited.advance(leftover);
+                        if buf.chunk().len() >= len {
+                            ::buffa::types::extend_packed_int32(
+                                &buf.chunk()[..len],
+                                &mut self.path,
+                                len,
+                            )?;
+                            buf.advance(len);
+                        } else {
+                            self.path.reserve(len);
+                            let mut limited = buf.take(len);
+                            while limited.has_remaining() {
+                                self.path
+                                    .push(::buffa::types::decode_int32_packed(&mut limited)?);
+                            }
+                            let leftover = limited.remaining();
+                            if leftover > 0 {
+                                limited.advance(leftover);
+                            }
                         }
                     } else if tag.wire_type() == ::buffa::encoding::WireType::Varint {
                         self.path.push(::buffa::types::decode_int32(buf)?);
@@ -19110,15 +19137,24 @@ pub mod source_code_info {
                                 ::buffa::DecodeError::UnexpectedEof,
                             );
                         }
-                        self.span.reserve(len);
-                        let mut limited = buf.take(len);
-                        while limited.has_remaining() {
-                            self.span
-                                .push(::buffa::types::decode_int32_packed(&mut limited)?);
-                        }
-                        let leftover = limited.remaining();
-                        if leftover > 0 {
-                            limited.advance(leftover);
+                        if buf.chunk().len() >= len {
+                            ::buffa::types::extend_packed_int32(
+                                &buf.chunk()[..len],
+                                &mut self.span,
+                                len,
+                            )?;
+                            buf.advance(len);
+                        } else {
+                            self.span.reserve(len);
+                            let mut limited = buf.take(len);
+                            while limited.has_remaining() {
+                                self.span
+                                    .push(::buffa::types::decode_int32_packed(&mut limited)?);
+                            }
+                            let leftover = limited.remaining();
+                            if leftover > 0 {
+                                limited.advance(leftover);
+                            }
                         }
                     } else if tag.wire_type() == ::buffa::encoding::WireType::Varint {
                         self.span.push(::buffa::types::decode_int32(buf)?);
@@ -19715,15 +19751,24 @@ pub mod generated_code_info {
                                 ::buffa::DecodeError::UnexpectedEof,
                             );
                         }
-                        self.path.reserve(len);
-                        let mut limited = buf.take(len);
-                        while limited.has_remaining() {
-                            self.path
-                                .push(::buffa::types::decode_int32_packed(&mut limited)?);
-                        }
-                        let leftover = limited.remaining();
-                        if leftover > 0 {
-                            limited.advance(leftover);
+                        if buf.chunk().len() >= len {
+                            ::buffa::types::extend_packed_int32(
+                                &buf.chunk()[..len],
+                                &mut self.path,
+                                len,
+                            )?;
+                            buf.advance(len);
+                        } else {
+                            self.path.reserve(len);
+                            let mut limited = buf.take(len);
+                            while limited.has_remaining() {
+                                self.path
+                                    .push(::buffa::types::decode_int32_packed(&mut limited)?);
+                            }
+                            let leftover = limited.remaining();
+                            if leftover > 0 {
+                                limited.advance(leftover);
+                            }
                         }
                     } else if tag.wire_type() == ::buffa::encoding::WireType::Varint {
                         self.path.push(::buffa::types::decode_int32(buf)?);

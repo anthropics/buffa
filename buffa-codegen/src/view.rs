@@ -18,10 +18,11 @@ use crate::context::{ancillary_prefix, AncillaryKind, CodeGenContext, MessageSco
 use crate::features::ResolvedFeatures;
 use crate::impl_message::{
     closed_enum_decode, closed_enum_decode_with_unknown, decode_fn_token, effective_type,
-    effective_type_in_map_entry, extend_packed_fn_token, field_string_repr, find_map_entry_fields,
-    is_explicit_presence_scalar, is_packed_type, is_real_oneof_member, is_required_field,
-    is_supported_field_type, map_string_repr, map_value_bytes_repr, packed_decode_fn_token,
-    validated_field_number, wire_type_check, wire_type_token,
+    effective_type_in_map_entry, extend_packed_fn_token, extend_packed_varint_fn_token,
+    field_string_repr, find_map_entry_fields, is_explicit_presence_scalar, is_packed_type,
+    is_real_oneof_member, is_required_field, is_supported_field_type, map_string_repr,
+    map_value_bytes_repr, packed_decode_fn_token, validated_field_number, wire_type_check,
+    wire_type_token,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident, rust_path_to_tokens};
 use crate::oneof::{is_null_value_field, serde_helper_path};
@@ -1610,11 +1611,14 @@ pub(crate) fn repeated_decode_arm(
         quote! { view.#ident.push(#dfn(&mut cur)?); }
     };
 
-    // Fixed-width payloads decode in one bulk call (alignment check +
-    // exact reserve + bulk convert inside the extender); varint-family
-    // payloads keep the per-element loop.
+    // Fixed-width and plain-varint payloads decode in one bulk call
+    // (validation, exact reserve, and the element loop live inside the
+    // extender); enums keep the per-element loop for unknown-value routing.
     let packed_body = if let Some(extend_fn) = extend_packed_fn_token(ty) {
         quote! { #extend_fn(payload, view.#ident.as_mut_vec())?; }
+    } else if let Some(extend_fn) = extend_packed_varint_fn_token(ty) {
+        // The exact-count reserve policy this path had with the loop.
+        quote! { #extend_fn(payload, view.#ident.as_mut_vec(), ::buffa::encoding::count_varints(payload))?; }
     } else {
         quote! {
             #reserve_stmt

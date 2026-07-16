@@ -1482,6 +1482,22 @@ pub(crate) fn extend_packed_fn_token(ty: Type) -> Option<TokenStream> {
     }
 }
 
+/// Bulk packed-payload extender for plain varint-family types (`None` for
+/// enums, whose decode interleaves unknown-value routing, and for the
+/// fixed-width family, which `extend_packed_fn_token` covers).
+pub(crate) fn extend_packed_varint_fn_token(ty: Type) -> Option<TokenStream> {
+    match ty {
+        Type::TYPE_INT32 => Some(quote! { ::buffa::types::extend_packed_int32 }),
+        Type::TYPE_INT64 => Some(quote! { ::buffa::types::extend_packed_int64 }),
+        Type::TYPE_UINT32 => Some(quote! { ::buffa::types::extend_packed_uint32 }),
+        Type::TYPE_UINT64 => Some(quote! { ::buffa::types::extend_packed_uint64 }),
+        Type::TYPE_SINT32 => Some(quote! { ::buffa::types::extend_packed_sint32 }),
+        Type::TYPE_SINT64 => Some(quote! { ::buffa::types::extend_packed_sint64 }),
+        Type::TYPE_BOOL => Some(quote! { ::buffa::types::extend_packed_bool }),
+        _ => None,
+    }
+}
+
 pub(crate) fn is_non_default_expr(ty: Type, field_ident: &Ident) -> TokenStream {
     match ty {
         Type::TYPE_INT32 | Type::TYPE_SINT32 | Type::TYPE_SFIXED32 => {
@@ -2508,18 +2524,23 @@ fn repeated_merge_arm(
             limited.advance(leftover);
         }
     };
-    // Fixed-width elements into the default `Vec` decode in one bulk call
-    // when the payload is contiguous in the current chunk (always true for
-    // slice-backed buffers); fragmented buffers fall back to the loop.
-    let bulk_extend = if repr.is_default() {
-        extend_packed_fn_token(ty)
-    } else {
+    // Fixed-width and plain-varint elements into the default `Vec` decode
+    // in one bulk call when the payload is contiguous in the current chunk
+    // (always true for slice-backed buffers); fragmented buffers, custom
+    // list representations, and enums fall back to the loop.
+    let bulk_call = if !repr.is_default() {
         None
+    } else if let Some(extend_fn) = extend_packed_fn_token(ty) {
+        Some(quote! { #extend_fn(&buf.chunk()[..len], &mut self.#ident)?; })
+    } else {
+        // The byte-length reserve policy this path had with the loop.
+        extend_packed_varint_fn_token(ty)
+            .map(|extend_fn| quote! { #extend_fn(&buf.chunk()[..len], &mut self.#ident, len)?; })
     };
-    let packed_body = if let Some(extend_fn) = bulk_extend {
+    let packed_body = if let Some(bulk_call) = bulk_call {
         quote! {
             if buf.chunk().len() >= len {
-                #extend_fn(&buf.chunk()[..len], &mut self.#ident)?;
+                #bulk_call
                 buf.advance(len);
             } else {
                 #packed_loop
