@@ -23,7 +23,7 @@ buffa-build = { path = "../../buffa-build" }
 criterion = "0.5"
 
 [features]
-default = ["api_response", "log_record", "analytics_event", "google_message1", "media_frame", "packed_tile", "mesh", "reflect", "lazy"]
+default = ["api_response", "log_record", "analytics_event", "google_message1", "media_frame", "packed_tile", "mesh", "column_batch", "reflect", "lazy"]
 api_response = []
 log_record = []
 analytics_event = []
@@ -31,6 +31,7 @@ google_message1 = []
 media_frame = []
 packed_tile = []
 mesh = []
+column_batch = []
 reflect = []
 lazy = []
 # `iso` gates the per-message isolated targets out of the default `task bench` run.
@@ -39,12 +40,12 @@ iso = []
 [[bench]]
 name = "protobuf"
 harness = false
-required-features = ["api_response", "log_record", "analytics_event", "google_message1", "media_frame", "packed_tile", "mesh", "lazy"]
+required-features = ["api_response", "log_record", "analytics_event", "google_message1", "media_frame", "packed_tile", "mesh", "column_batch", "lazy"]
 
 [[bench]]
 name = "reflect"
 harness = false
-required-features = ["api_response", "log_record", "analytics_event", "google_message1", "media_frame", "packed_tile", "mesh", "reflect", "lazy"]
+required-features = ["api_response", "log_record", "analytics_event", "google_message1", "media_frame", "packed_tile", "mesh", "column_batch", "reflect", "lazy"]
 
 [[bench]]
 name = "api_response"
@@ -92,3 +93,8 @@ required-features = ["iso", "mesh"]
 [profile.bench]
 lto = true
 codegen-units = 1
+
+[[bench]]
+name = "column_batch"
+harness = false
+required-features = ["iso", "column_batch"]

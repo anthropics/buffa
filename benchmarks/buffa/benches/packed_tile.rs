@@ -9,6 +9,7 @@
     feature = "media_frame",
     feature = "google_message1",
     feature = "mesh",
+    feature = "column_batch",
     feature = "reflect",
     feature = "lazy"
 ))]

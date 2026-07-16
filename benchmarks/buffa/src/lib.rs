@@ -11,7 +11,8 @@
     feature = "analytics_event",
     feature = "media_frame",
     feature = "packed_tile",
-    feature = "mesh"
+    feature = "mesh",
+    feature = "column_batch"
 ))]
 #[allow(
     clippy::derivable_impls,

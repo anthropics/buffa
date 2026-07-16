@@ -9,6 +9,7 @@
     feature = "media_frame",
     feature = "packed_tile",
     feature = "mesh",
+    feature = "column_batch",
     feature = "reflect",
     feature = "lazy"
 ))]

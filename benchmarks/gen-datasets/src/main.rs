@@ -239,6 +239,35 @@ fn gen_packed_signed(rng: &mut impl Rng) -> PackedSigned {
     }
 }
 
+/// A columnar batch: 1024 rows, each column contiguous on the wire.
+///
+/// The values are chosen so each column lands in the varint or fixed-width
+/// regime the message documents. Timestamps are absolute epoch nanos around a
+/// fixed instant, so they encode to 9 bytes each; dictionary indices stay under
+/// the 32-entry dictionary, so they encode to one byte.
+fn gen_column_batch(rng: &mut impl Rng) -> ColumnBatch {
+    const ROWS: usize = 1024;
+    const DICT_LEN: usize = 32;
+    // A fixed instant (2026-01-01T00:00:00Z in nanos) so timestamps are wide
+    // varints rather than the small values a delta encoding would give.
+    const BASE_NANOS: i64 = 1_767_225_600_000_000_000;
+
+    ColumnBatch {
+        symbol_dict: (0..DICT_LEN)
+            .map(|_| random_string(rng, 4, 12))
+            .collect(),
+        symbol_ids: (0..ROWS)
+            .map(|_| rng.random_range(0..DICT_LEN as u32))
+            .collect(),
+        timestamps: (0..ROWS)
+            .map(|i| BASE_NANOS + (i as i64) * 1_000_000 + rng.random_range(0..1_000))
+            .collect(),
+        values: (0..ROWS).map(|_| rng.random_range(-1.0e6..1.0e6)).collect(),
+        weights: (0..ROWS).map(|_| rng.random()).collect(),
+        ..Default::default()
+    }
+}
+
 fn write_dataset<M: Message>(name: &str, message_name: &str, output_dir: &Path, payloads: Vec<M>) {
     let encoded_payloads: Vec<Vec<u8>> = payloads.iter().map(|m| m.encode_to_vec()).collect();
 
@@ -325,6 +354,15 @@ fn main() {
         "bench.TriMesh",
         output_dir,
         (0..NUM_PAYLOADS).map(|_| gen_mesh(&mut rng)).collect(),
+    );
+
+    write_dataset(
+        "column_batch",
+        "bench.ColumnBatch",
+        output_dir,
+        (0..NUM_PAYLOADS)
+            .map(|_| gen_column_batch(&mut rng))
+            .collect(),
     );
 
     println!("Datasets written to {}", output_dir.display());

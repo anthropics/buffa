@@ -9,6 +9,7 @@
     feature = "media_frame",
     feature = "packed_tile",
     feature = "google_message1",
+    feature = "column_batch",
     feature = "reflect",
     feature = "lazy"
 ))]

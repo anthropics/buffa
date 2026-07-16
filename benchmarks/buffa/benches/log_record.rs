@@ -9,6 +9,7 @@
     feature = "packed_tile",
     feature = "mesh",
     feature = "google_message1",
+    feature = "column_batch",
     feature = "reflect",
     feature = "lazy"
 ))]

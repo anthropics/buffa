@@ -141,3 +141,27 @@ message PackedSigned {
   repeated int32 deltas = 1;     // negative -> 10-byte varints each
   repeated int64 wide_deltas = 2;  // negative -> 10-byte varints each
 }
+
+// A columnar record batch: one field per column, holding every row's value for
+// that column, which is how analytics and telemetry pipelines put data on the
+// wire (Arrow and Parquet readers included). It exists because every other
+// packed message here carries a handful of elements per field — PackedTile's
+// widest is 20 — and packed decoding has two regimes: short arrays sit under
+// per-field dispatch overhead, while long ones are dominated by per-element
+// work. Only this message measures the second.
+//
+// The columns are chosen to cover each decode path a batch actually exercises:
+// a dictionary-encoded string column (how columnar formats keep repeated labels
+// cheap), an index column of 1-2 byte varints, a timestamp column of 9-byte
+// varints, and float and double value columns for the two packed fixed widths.
+// Target payload: ~24KB (1024 rows, 32-symbol dictionary).
+message ColumnBatch {
+  // Dictionary-encoded label column: the distinct values, then one index per
+  // row. Short strings, so the borrow path sees many small spans.
+  repeated string symbol_dict = 1;
+  repeated uint32 symbol_ids = 2;  // packed, 1-2 byte varints
+
+  repeated int64 timestamps = 3;  // packed, absolute epoch nanos -> 9-byte varints
+  repeated double values = 4;     // packed fixed64
+  repeated float weights = 5;     // packed fixed32
+}

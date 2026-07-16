@@ -13,6 +13,7 @@ fn main() {
         ("MEDIA_FRAME", "../proto/iso/media_frame.proto"),
         ("PACKED_TILE", "../proto/iso/packed_tile.proto"),
         ("MESH", "../proto/iso/mesh.proto"),
+        ("COLUMN_BATCH", "../proto/iso/column_batch.proto"),
         (
             "GOOGLE_MESSAGE1",
             "../proto/benchmark_message1_proto3.proto",

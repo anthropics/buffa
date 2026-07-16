@@ -7,8 +7,8 @@ use bench_buffa::bench::__buffa::lazy_view::{
     AnalyticsEventLazyView, ApiResponseLazyView, LogRecordLazyView, MediaFrameLazyView,
 };
 use bench_buffa::bench::__buffa::view::{
-    analytics_event::PropertyView, AnalyticsEventView, ApiResponseView, LogRecordView,
-    MediaFrameView, PackedSignedView, PackedTileView, TriMeshView,
+    analytics_event::PropertyView, AnalyticsEventView, ApiResponseView, ColumnBatchView,
+    LogRecordView, MediaFrameView, PackedSignedView, PackedTileView, TriMeshView,
 };
 use bench_buffa::bench::__buffa::{oneof, view::oneof as view_oneof};
 use bench_buffa::bench::*;
@@ -714,6 +714,36 @@ fn bench_packed_signed_view(c: &mut Criterion) {
     group.finish();
 }
 
+// Long packed columns: the regime the other packed messages leave uncovered.
+// PackedTile's arrays are 4-20 elements, where per-field dispatch dominates and
+// per-element decode cost is invisible; a batch carries 1024 per column, so the
+// per-element work is what the number measures.
+fn bench_column_batch(c: &mut Criterion) {
+    benchmark_decode::<ColumnBatch>(
+        c,
+        "buffa/column_batch",
+        include_bytes!("../../datasets/column_batch.pb"),
+    );
+}
+
+fn bench_column_batch_view(c: &mut Criterion) {
+    let dataset = load_dataset(include_bytes!("../../datasets/column_batch.pb"));
+    let bytes = total_payload_bytes(&dataset);
+    let mut group = c.benchmark_group("buffa/column_batch");
+    group.throughput(Throughput::Bytes(bytes));
+
+    group.bench_function("decode_view", |b| {
+        b.iter(|| {
+            for payload in &dataset.payload {
+                let view = ColumnBatchView::decode_view(payload).unwrap();
+                criterion::black_box(&view);
+            }
+        });
+    });
+
+    group.finish();
+}
+
 fn bench_api_response_json(c: &mut Criterion) {
     benchmark_json::<ApiResponse>(
         c,
@@ -764,6 +794,7 @@ criterion_group!(
     bench_packed_tile,
     bench_mesh,
     bench_packed_signed,
+    bench_column_batch,
 );
 
 criterion_group!(
@@ -776,6 +807,7 @@ criterion_group!(
     bench_packed_tile_view,
     bench_mesh_view,
     bench_packed_signed_view,
+    bench_column_batch_view,
     bench_api_response_view_encode,
     bench_log_record_view_encode,
     bench_analytics_event_view_encode,
