@@ -260,7 +260,11 @@ pub trait ReflectMessageMut: ReflectMessage {
     ///
     /// Adopting a foreign message costs one wire round-trip, O(size of the
     /// subtree). Values already homed in the target pool — everything the
-    /// decoder and the JSON parser produce — pass through untouched.
+    /// decoder and the JSON parser produce — pass through untouched, so a
+    /// rebuild pays only for the fields that actually cross a pool boundary.
+    /// On the vtable path that is two round-trips for such a field rather than
+    /// one, because `to_owned` has already materialized the subtree in its
+    /// defining pool before this call re-homes it.
     fn try_set(
         &mut self,
         field: &FieldDescriptor,

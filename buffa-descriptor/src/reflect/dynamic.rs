@@ -1290,17 +1290,24 @@ fn rehome_message(
         return Err(mismatch(&format!("message {full_name}")));
     }
     // Fallible, not `encode_to_vec`: a message over the 2 GiB protobuf limit
-    // would panic there, and a value handed to `set` must never take the
-    // process down — the caller gets the same rejection as any other value
-    // this pool cannot hold.
+    // would panic there, and an oversized value handed to `set` gets the same
+    // rejection as any other value this pool cannot hold. Depth is not checked
+    // here — encoding recurses, so a message nested past the stack's tolerance
+    // overflows, as it would on any other encode of that value.
     let bytes = msg.try_encode_to_vec().map_err(|_| {
         mismatch(&format!(
             "message {full_name} exceeding the {} byte encode limit",
             buffa::MAX_MESSAGE_BYTES
         ))
     })?;
-    DynamicMessage::decode(Arc::clone(pool), midx, &bytes)
-        .map_err(|_| mismatch(&format!("message {full_name} from an incompatible pool")))
+    // The round-trip decode applies the standard recursion limit, so report
+    // what it said: a message nested deeper than the limit is rejected here,
+    // and "incompatible pool" would name the wrong cause.
+    DynamicMessage::decode(Arc::clone(pool), midx, &bytes).map_err(|err| {
+        mismatch(&format!(
+            "message {full_name} this pool cannot decode ({err})"
+        ))
+    })
 }
 
 fn validate_value_shape(
