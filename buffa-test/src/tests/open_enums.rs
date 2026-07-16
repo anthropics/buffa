@@ -397,6 +397,12 @@ fn enum_rule_opens_runtime_descriptor_pool() {
     assert!(matches!(dynamic.get(field), ValueRef::EnumNumber(99)));
 }
 
+/// A field-level `enum_type:OPEN` override is invisible to the runtime pool:
+/// openness resolves per enum, and `FieldDescriptor` carries no override, so
+/// reflection applies the enum's own closed semantics where the generated code
+/// applies the field's. The two decoders disagree here — tracked in
+/// <https://github.com/anthropics/buffa/issues/316>. This test pins the
+/// current reflective behaviour so the split is visible rather than silent.
 #[test]
 fn open_enum_override_vtable_reflection_preserves_runtime_closed_semantics() {
     use crate::open_enums::{OpenEnumContexts, OpenEnumContextsView};
