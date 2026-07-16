@@ -40,7 +40,9 @@ use crate::generated::descriptor::{
     DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto,
     FileDescriptorSet, ServiceDescriptorProto,
 };
-use buffa::editions::{EnumType, FieldPresence, MessageEncoding, RepeatedFieldEncoding};
+use buffa::editions::{
+    EnumType, FieldPresence, JsonFormat, MessageEncoding, RepeatedFieldEncoding,
+};
 use buffa::MessageField;
 
 /// Clone a descriptor's raw `*Options` into a boxed `Option`, the form the
@@ -780,6 +782,22 @@ impl DescriptorPool {
         let mut field_by_name: Vec<(String, u16)> = Vec::with_capacity(field_count * 2);
         let mut field_numbers: BTreeMap<u32, usize> = BTreeMap::new();
         let mut field_names: BTreeMap<String, usize> = BTreeMap::new();
+        // Two fields resolving to one JSON name make JSON lookup ambiguous, but
+        // protobuf permits it where JSON is best-effort: protoc emits such a
+        // set for proto2 with only a warning, and honours
+        // `deprecated_legacy_json_field_conflicts` to opt a proto3 or editions
+        // message back into that leniency. Enforcing here regardless would
+        // reject descriptor sets protoc produced, so gate on the same signals
+        // it uses — `json_format` already resolves to `LegacyBestEffort` for
+        // proto2 and `Allow` for proto3 and editions. protoc rejects every
+        // conflict this leaves through, so the check still catches ambiguity in
+        // a hand-built or third-party set without ever refusing protoc's own
+        // output.
+        let enforce_json_names = msg_features.json_format == JsonFormat::Allow
+            && !msg
+                .options
+                .deprecated_legacy_json_field_conflicts
+                .unwrap_or(false);
         for (i, f) in msg.field.iter().enumerate() {
             if let Some(oneof_index) = f.oneof_index {
                 let valid = usize::try_from(oneof_index)
@@ -806,7 +824,10 @@ impl DescriptorPool {
                     name: fd.name.clone(),
                 });
             }
-            if fd.json_name != fd.name && field_names.insert(fd.json_name.clone(), i).is_some() {
+            if enforce_json_names
+                && fd.json_name != fd.name
+                && field_names.insert(fd.json_name.clone(), i).is_some()
+            {
                 return Err(PoolError::DuplicateFieldName {
                     message: fqn.clone(),
                     name: fd.json_name.clone(),

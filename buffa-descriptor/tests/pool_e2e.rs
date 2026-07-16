@@ -612,3 +612,102 @@ fn extensions_link() {
     let inner = p.message_index("reflect.test.Inner").unwrap();
     assert_eq!(p.extensions_of(inner).count(), 0);
 }
+
+/// Build a one-message file with the given syntax and add it to a fresh pool.
+fn add_message_with_syntax(
+    syntax: &str,
+    message: buffa_descriptor::generated::descriptor::DescriptorProto,
+) -> Result<(), PoolError> {
+    use buffa_descriptor::generated::descriptor::{FileDescriptorProto, FileDescriptorSet};
+
+    let mut p = DescriptorPool::decode(FDS_BYTES).unwrap();
+    p.add_file_descriptor_set(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("json-name-leniency.proto".into()),
+            package: Some("lenient.test".into()),
+            syntax: Some(syntax.into()),
+            message_type: vec![message],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+}
+
+/// Two fields resolving to one JSON name is ambiguous, but protobuf permits it
+/// where JSON is best-effort, and protoc emits such a descriptor set with only
+/// a warning. Rejecting it here would refuse input protoc produced, so proto2
+/// keeps the leniency its `json_format` feature already resolves to.
+#[test]
+fn proto2_json_name_conflicts_are_accepted_as_protoc_emits_them() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    let mut first = scalar_field("first", 1, Type::TYPE_INT32);
+    first.json_name = Some("sameName".into());
+    let mut second = scalar_field("second", 2, Type::TYPE_STRING);
+    second.json_name = Some("sameName".into());
+
+    add_message_with_syntax(
+        "proto2",
+        DescriptorProto {
+            name: Some("LegacyJsonName".into()),
+            field: vec![first, second],
+            ..Default::default()
+        },
+    )
+    .expect("proto2 JSON-name conflicts are best-effort, and protoc emits them");
+}
+
+/// `deprecated_legacy_json_field_conflicts` is protoc's own opt-out: it
+/// downgrades the conflict to a warning and emits the set. Honour it rather
+/// than reject a descriptor set the author explicitly asked protoc to produce.
+#[test]
+fn deprecated_legacy_json_field_conflicts_opts_a_proto3_message_out() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{DescriptorProto, MessageOptions};
+
+    let mut first = scalar_field("first", 1, Type::TYPE_INT32);
+    first.json_name = Some("sameName".into());
+    let mut second = scalar_field("second", 2, Type::TYPE_STRING);
+    second.json_name = Some("sameName".into());
+
+    add_message_with_syntax(
+        "proto3",
+        DescriptorProto {
+            name: Some("OptedOut".into()),
+            field: vec![first, second],
+            options: MessageOptions {
+                deprecated_legacy_json_field_conflicts: Some(true),
+                ..Default::default()
+            }
+            .into(),
+            ..Default::default()
+        },
+    )
+    .expect("the message opted out of JSON-name conflict checking");
+}
+
+/// The leniency is scoped to JSON names: a duplicate *proto* field name is
+/// invalid in every syntax and protoc never emits one.
+#[test]
+fn proto2_still_rejects_duplicate_proto_field_names() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    let err = add_message_with_syntax(
+        "proto2",
+        DescriptorProto {
+            name: Some("DupProtoName".into()),
+            field: vec![
+                scalar_field("same", 1, Type::TYPE_INT32),
+                scalar_field("same", 2, Type::TYPE_STRING),
+            ],
+            ..Default::default()
+        },
+    )
+    .expect_err("a duplicate proto field name is invalid whatever the syntax");
+    assert!(matches!(
+        err,
+        PoolError::DuplicateFieldName { ref name, .. } if name == "same"
+    ));
+}
