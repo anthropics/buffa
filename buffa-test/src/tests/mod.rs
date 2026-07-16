@@ -23,6 +23,35 @@ pub(super) fn varint_field(num: u32, v: u64) -> Vec<u8> {
     wire
 }
 
+/// Encode repeated unpacked occurrences of field `num`, one varint each.
+pub(super) fn repeated_varint_field(num: u32, values: &[u64]) -> Vec<u8> {
+    let mut wire = Vec::new();
+    for value in values {
+        wire.extend(varint_field(num, *value));
+    }
+    wire
+}
+
+/// Encode field `num` as a length-delimited record wrapping `payload`.
+pub(super) fn length_delimited_field(num: u32, payload: &[u8]) -> Vec<u8> {
+    use buffa::encoding::{encode_varint, Tag, WireType};
+    let mut wire = Vec::new();
+    Tag::new(num, WireType::LengthDelimited).encode(&mut wire);
+    encode_varint(payload.len() as u64, &mut wire);
+    wire.extend_from_slice(payload);
+    wire
+}
+
+/// Encode field `num` as a packed varint payload.
+pub(super) fn packed_field(num: u32, values: &[u64]) -> Vec<u8> {
+    use buffa::encoding::encode_varint;
+    let mut payload = Vec::new();
+    for value in values {
+        encode_varint(*value, &mut payload);
+    }
+    length_delimited_field(num, &payload)
+}
+
 mod any_type_url;
 mod arbitrary_bytes;
 mod basic;

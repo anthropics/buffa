@@ -520,8 +520,11 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
         .ignore_unknown_fields(ignore_unknown)
         .deserialize(inner_json)
         .map_err(|e| D::Error::custom(format!("Any inner deserialize failed: {e}")))?;
+    let inner_bytes = inner
+        .try_encode_to_vec()
+        .map_err(|e| D::Error::custom(format!("Any inner re-encode failed: {e}")))?;
     any.set_by_number(1, Value::String(type_url));
-    any.set_by_number(2, Value::Bytes(inner.encode_to_vec()));
+    any.set_by_number(2, Value::Bytes(inner_bytes));
     Ok(any)
 }
 

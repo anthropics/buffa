@@ -95,7 +95,7 @@ The macro argument is the dotted protobuf package name. For multi-package builds
 
  // Encode
 -let bytes = msg.write_to_bytes()?;
-+let bytes = msg.encode_to_vec();   // infallible, no Result
++let bytes = msg.encode_to_vec();   // no Result; panics only past the 2 GiB limit (see try_encode_to_vec)
 
  // Merge
 -msg.merge_from_bytes(&more_bytes)?;
@@ -122,7 +122,7 @@ The macro argument is the dotted protobuf package name. For multi-package builds
 
  // Encode
 -let bytes = msg.serialize()?;
-+let bytes = msg.encode_to_vec();   // infallible
++let bytes = msg.encode_to_vec();   // no Result; panics only past the 2 GiB limit
 ```
 
 ## 4. Optional message fields
@@ -362,4 +362,4 @@ Features in `protobuf` v3/v4 that buffa does not support:
 | Lite runtime | Not applicable (buffa is already lightweight) |
 | `proto!` construction macro (v4) | Not supported |
 | Service generation | Planned |
-| `#[derive(Message)]` | Not provided. Implement `Message` by hand and use `extern_path`. |
+| `#[derive(Message)]` | No derive; generate from `.proto` or use `extern_path` for an existing Rust type. |

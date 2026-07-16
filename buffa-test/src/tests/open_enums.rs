@@ -1,32 +1,7 @@
 //! `open_enums_in` closed-enum representation override.
 
-use super::varint_field;
+use super::{length_delimited_field, packed_field, varint_field};
 use buffa::{EnumValue, Message, MessageView};
-
-fn packed_field(num: u32, values: &[u64]) -> Vec<u8> {
-    use buffa::encoding::{encode_varint, Tag, WireType};
-
-    let mut payload = Vec::new();
-    for value in values {
-        encode_varint(*value, &mut payload);
-    }
-
-    let mut wire = Vec::new();
-    Tag::new(num, WireType::LengthDelimited).encode(&mut wire);
-    encode_varint(payload.len() as u64, &mut wire);
-    wire.extend_from_slice(&payload);
-    wire
-}
-
-fn length_delimited_field(num: u32, payload: &[u8]) -> Vec<u8> {
-    use buffa::encoding::{encode_varint, Tag, WireType};
-
-    let mut wire = Vec::new();
-    Tag::new(num, WireType::LengthDelimited).encode(&mut wire);
-    encode_varint(payload.len() as u64, &mut wire);
-    wire.extend_from_slice(payload);
-    wire
-}
 
 fn map_enum_entry(num: u32, key: &str, value: u64) -> Vec<u8> {
     use buffa::encoding::{encode_varint, Tag, WireType};

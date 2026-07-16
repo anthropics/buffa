@@ -23,11 +23,15 @@ pub enum DecodeError {
     #[error("invalid field number")]
     InvalidFieldNumber,
 
-    /// The message or sub-message length exceeded the configured size limit.
+    /// The message or sub-message length exceeded the size limit.
     ///
-    /// By default, the limit is 2 GiB. Use [`DecodeOptions::with_max_message_size`](crate::DecodeOptions::with_max_message_size)
-    /// to set a lower limit for untrusted input.
-    #[error("message length exceeds configured size limit")]
+    /// By default, the limit is the 2 GiB protobuf maximum. Use
+    /// [`DecodeOptions::with_max_message_size`](crate::DecodeOptions::with_max_message_size)
+    /// to set a lower limit for untrusted input. Fallible re-encode paths
+    /// ([`OwnedView::from_owned`](crate::view::OwnedView::from_owned)) also
+    /// surface an over-limit *encode* through this variant, mirroring
+    /// [`EncodeError::MessageTooLarge`].
+    #[error("message length exceeds the size limit (2 GiB protobuf maximum, or a configured DecodeOptions limit)")]
     MessageTooLarge,
 
     /// The wire type of an incoming field did not match the type expected for
@@ -92,11 +96,24 @@ pub enum DecodeError {
 
 /// An error that occurred while encoding a protobuf message.
 ///
-/// Currently uninhabited — encoding is infallible with the present
-/// implementation. The type is retained and `#[non_exhaustive]` for forward
-/// compatibility: if a fallible encode path is added in future (e.g.
-/// `try_encode` with a fixed-capacity buffer), new variants will be added
-/// here without a breaking change to the type name.
+/// Returned by the `try_encode*` family
+/// ([`Message::try_encode`](crate::Message::try_encode) and friends). The
+/// panicking entry points ([`Message::encode`](crate::Message::encode) and
+/// friends) raise the same conditions as panics instead.
+///
+/// The enum is `#[non_exhaustive]`: further variants (e.g. for a
+/// fixed-capacity buffer encode path) may be added without a breaking
+/// change to the type name.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
-pub enum EncodeError {}
+pub enum EncodeError {
+    /// The message's encoded size exceeds the 2 GiB protobuf limit
+    /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)).
+    ///
+    /// Encoding such a message would produce bytes that no conforming
+    /// protobuf decoder — including buffa's own, which returns the mirror
+    /// error [`DecodeError::MessageTooLarge`] — will accept. Shrink or
+    /// split the message instead.
+    #[error("message encoded size exceeds the 2 GiB protobuf limit")]
+    MessageTooLarge,
+}

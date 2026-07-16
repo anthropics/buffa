@@ -12,7 +12,6 @@ mod gen;
 use buffa::Message;
 use gen::buffa::examples::context::v1::RequestContext;
 use gen::buffa::examples::log::v1::{LogBatch, LogEntry, Severity};
-use std::collections::HashMap;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -78,10 +77,12 @@ fn cmd_write(file_path: &str) {
         user_id: "user-42".into(),
         method: "POST".into(),
         path: "/api/v1/items".into(),
-        metadata: HashMap::from([
+        metadata: [
             ("region".into(), "us-east-1".into()),
             ("version".into(), "1.2.3".into()),
-        ]),
+        ]
+        .into_iter()
+        .collect(),
         ..Default::default()
     };
 
@@ -92,10 +93,12 @@ fn cmd_write(file_path: &str) {
             message: "Request received".into(),
             logger: "http::server".into(),
             context: buffa::MessageField::some(ctx.clone()),
-            fields: HashMap::from([
+            fields: [
                 ("content_type".into(), "application/json".into()),
                 ("content_length".into(), "1024".into()),
-            ]),
+            ]
+            .into_iter()
+            .collect(),
             ..Default::default()
         },
         LogEntry {
@@ -112,10 +115,12 @@ fn cmd_write(file_path: &str) {
             message: "Slow query detected".into(),
             logger: "db::query".into(),
             context: buffa::MessageField::some(ctx.clone()),
-            fields: HashMap::from([
+            fields: [
                 ("query_ms".into(), "1523".into()),
                 ("table".into(), "items".into()),
-            ]),
+            ]
+            .into_iter()
+            .collect(),
             ..Default::default()
         },
         LogEntry {
@@ -123,7 +128,9 @@ fn cmd_write(file_path: &str) {
             severity: buffa::EnumValue::Known(Severity::ERROR),
             message: "Failed to write to cache".into(),
             logger: "cache::redis".into(),
-            fields: HashMap::from([("error".into(), "connection refused".into())]),
+            fields: [("error".into(), "connection refused".into())]
+                .into_iter()
+                .collect(),
             ..Default::default()
         },
     ];

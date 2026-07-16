@@ -66,6 +66,7 @@ mod proto2;
 mod reexports;
 mod reflect_view;
 mod repeated_type;
+mod size_arithmetic;
 mod view_codegen;
 
 /// Wrap paths as `EnumType(Open)` feature overrides — the shape used by the

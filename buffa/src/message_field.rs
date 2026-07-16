@@ -275,6 +275,34 @@ const _: fn() = || {
 /// // Clear:
 /// msg.inner = MessageField::none();
 /// ```
+///
+/// # Construction and conversion
+///
+/// [`From`] conversions are the idiomatic way to populate a generated message
+/// field. They accept both a message value and an [`Option`] of one. Reading
+/// goes the other way through [`Deref`], so a field whose
+/// message type implements [`DefaultInstance`] needs no unwrapping at all.
+///
+/// ```rust
+/// # use buffa::__doctest_fixtures::Person;
+/// use buffa::MessageField;
+///
+/// // A value converts straight into a set field.
+/// let field: MessageField<Person> = Person { name: "Ada".into(), id: 1 }.into();
+/// // Reading goes through `Deref`, so no unwrapping ceremony.
+/// assert_eq!(field.name, "Ada");
+///
+/// // An `Option` converts too, so `map` chains land directly in the field.
+/// let field: MessageField<Person> = Some("Grace")
+///     .map(|name| Person { name: name.into(), id: 2 })
+///     .into();
+/// assert_eq!(field.id, 2);
+///
+/// // An unset field derefs to the default instance rather than panicking.
+/// let empty: MessageField<Person> = None.into();
+/// assert!(empty.is_unset());
+/// assert_eq!(empty.name, "");
+/// ```
 pub struct MessageField<T: Default, P = Box<T>> {
     inner: Option<P>,
     _marker: core::marker::PhantomData<T>,
