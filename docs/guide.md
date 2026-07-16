@@ -743,10 +743,10 @@ println!("{}", msg.address.street);  // "" if address is unset
 if msg.address.is_set() { /* address was explicitly set */ }
 
 // Setting
-msg.address = MessageField::some(Address {
+msg.address = Address {
     street: "123 Main St".into(),
     ..Default::default()
-});
+}.into();
 
 // Or initialize-and-mutate
 msg.address.get_or_insert_default().street = "123 Main St".into();
@@ -763,7 +763,13 @@ msg.address = MessageField::none();
 // Interop with Option
 let opt: Option<&Address> = msg.address.as_option();
 let taken: Option<Address> = msg.address.take();
+
+// From an Option
+let maybe_address = Some(Address::default());
+msg.address = maybe_address.into();
 ```
+
+See the [`MessageField` rustdoc](https://docs.rs/buffa/latest/buffa/struct.MessageField.html#construction-and-conversion) for the complete construction and consuming-conversion examples.
 
 ### `EnumValue<T>` — type-safe open enums
 
@@ -785,8 +791,8 @@ pub status: EnumValue<Status>,
 
 ```rust,ignore
 // Setting
-msg.status = EnumValue::from(Status::ACTIVE);
-msg.status = EnumValue::from(42);  // Unknown(42) if not a known variant
+msg.status = Status::ACTIVE.into();
+msg.status = 42.into();  // Unknown(42) if not a known variant
 
 // Direct comparison (EnumValue<E> implements PartialEq<E>)
 if msg.status == Status::ACTIVE { /* ... */ }

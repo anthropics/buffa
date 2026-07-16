@@ -210,6 +210,7 @@ pub(crate) fn closed_enum_unknown_route(
 ) -> TokenStream {
     if preserve_unknown_fields {
         quote! {
+            ctx.register_unknown_field()?;
             self.__buffa_unknown_fields.push(::buffa::UnknownField {
                 number: #field_number,
                 data: ::buffa::UnknownFieldData::Varint(__raw as u64),

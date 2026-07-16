@@ -1340,6 +1340,7 @@ impl ::buffa::Message for FileDescriptorProto {
                 ) {
                     self.edition = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 14u32,
@@ -2046,6 +2047,7 @@ impl ::buffa::Message for DescriptorProto {
                 ) {
                     self.visibility = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 11u32,
@@ -2987,6 +2989,7 @@ impl ::buffa::Message for ExtensionRangeOptions {
                 ) {
                     self.verification = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 3u32,
@@ -4315,6 +4318,7 @@ impl ::buffa::Message for FieldDescriptorProto {
                 ) {
                     self.label = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 4u32,
@@ -4333,6 +4337,7 @@ impl ::buffa::Message for FieldDescriptorProto {
                 ) {
                     self.r#type = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 5u32,
@@ -5526,6 +5531,7 @@ impl ::buffa::Message for EnumDescriptorProto {
                 ) {
                     self.visibility = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 6u32,
@@ -7646,6 +7652,7 @@ impl ::buffa::Message for FileOptions {
                 ) {
                     self.optimize_for = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 9u32,
@@ -9922,6 +9929,7 @@ impl ::buffa::Message for FieldOptions {
                 ) {
                     self.ctype = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 1u32,
@@ -9967,6 +9975,7 @@ impl ::buffa::Message for FieldOptions {
                 ) {
                     self.jstype = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 6u32,
@@ -10012,6 +10021,7 @@ impl ::buffa::Message for FieldOptions {
                 ) {
                     self.retention = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 17u32,
@@ -10038,6 +10048,7 @@ impl ::buffa::Message for FieldOptions {
                         ) {
                             self.targets.push(__v);
                         } else {
+                            ctx.register_unknown_field()?;
                             self.__buffa_unknown_fields
                                 .push(::buffa::UnknownField {
                                     number: 19u32,
@@ -10056,6 +10067,7 @@ impl ::buffa::Message for FieldOptions {
                     ) {
                         self.targets.push(__v);
                     } else {
+                        ctx.register_unknown_field()?;
                         self.__buffa_unknown_fields
                             .push(::buffa::UnknownField {
                                 number: 19u32,
@@ -11518,6 +11530,7 @@ pub mod field_options {
                     ) {
                         self.edition = ::core::option::Option::Some(__v);
                     } else {
+                        ctx.register_unknown_field()?;
                         self.__buffa_unknown_fields
                             .push(::buffa::UnknownField {
                                 number: 3u32,
@@ -11820,6 +11833,7 @@ pub mod field_options {
                     ) {
                         self.edition_introduced = ::core::option::Option::Some(__v);
                     } else {
+                        ctx.register_unknown_field()?;
                         self.__buffa_unknown_fields
                             .push(::buffa::UnknownField {
                                 number: 1u32,
@@ -11838,6 +11852,7 @@ pub mod field_options {
                     ) {
                         self.edition_deprecated = ::core::option::Option::Some(__v);
                     } else {
+                        ctx.register_unknown_field()?;
                         self.__buffa_unknown_fields
                             .push(::buffa::UnknownField {
                                 number: 2u32,
@@ -11868,6 +11883,7 @@ pub mod field_options {
                     ) {
                         self.edition_removed = ::core::option::Option::Some(__v);
                     } else {
+                        ctx.register_unknown_field()?;
                         self.__buffa_unknown_fields
                             .push(::buffa::UnknownField {
                                 number: 4u32,
@@ -14226,6 +14242,7 @@ impl ::buffa::Message for MethodOptions {
                 ) {
                     self.idempotency_level = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 34u32,
@@ -15711,6 +15728,7 @@ impl ::buffa::Message for FeatureSet {
                 ) {
                     self.field_presence = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 1u32,
@@ -15729,6 +15747,7 @@ impl ::buffa::Message for FeatureSet {
                 ) {
                     self.enum_type = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 2u32,
@@ -15747,6 +15766,7 @@ impl ::buffa::Message for FeatureSet {
                 ) {
                     self.repeated_field_encoding = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 3u32,
@@ -15765,6 +15785,7 @@ impl ::buffa::Message for FeatureSet {
                 ) {
                     self.utf8_validation = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 4u32,
@@ -15783,6 +15804,7 @@ impl ::buffa::Message for FeatureSet {
                 ) {
                     self.message_encoding = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 5u32,
@@ -15801,6 +15823,7 @@ impl ::buffa::Message for FeatureSet {
                 ) {
                     self.json_format = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 6u32,
@@ -15819,6 +15842,7 @@ impl ::buffa::Message for FeatureSet {
                 ) {
                     self.enforce_naming_style = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 7u32,
@@ -15837,6 +15861,7 @@ impl ::buffa::Message for FeatureSet {
                 ) {
                     self.default_symbol_visibility = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 8u32,
@@ -17928,6 +17953,7 @@ impl ::buffa::Message for FeatureSetDefaults {
                 ) {
                     self.minimum_edition = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 4u32,
@@ -17946,6 +17972,7 @@ impl ::buffa::Message for FeatureSetDefaults {
                 ) {
                     self.maximum_edition = ::core::option::Option::Some(__v);
                 } else {
+                    ctx.register_unknown_field()?;
                     self.__buffa_unknown_fields
                         .push(::buffa::UnknownField {
                             number: 5u32,
@@ -18235,6 +18262,7 @@ pub mod feature_set_defaults {
                     ) {
                         self.edition = ::core::option::Option::Some(__v);
                     } else {
+                        ctx.register_unknown_field()?;
                         self.__buffa_unknown_fields
                             .push(::buffa::UnknownField {
                                 number: 3u32,
@@ -19749,6 +19777,7 @@ pub mod generated_code_info {
                     ) {
                         self.semantic = ::core::option::Option::Some(__v);
                     } else {
+                        ctx.register_unknown_field()?;
                         self.__buffa_unknown_fields
                             .push(::buffa::UnknownField {
                                 number: 5u32,

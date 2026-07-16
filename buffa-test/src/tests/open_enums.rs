@@ -1,32 +1,7 @@
 //! `open_enums_in` closed-enum representation override.
 
-use super::varint_field;
+use super::{length_delimited_field, packed_field, varint_field};
 use buffa::{EnumValue, Message, MessageView};
-
-fn packed_field(num: u32, values: &[u64]) -> Vec<u8> {
-    use buffa::encoding::{encode_varint, Tag, WireType};
-
-    let mut payload = Vec::new();
-    for value in values {
-        encode_varint(*value, &mut payload);
-    }
-
-    let mut wire = Vec::new();
-    Tag::new(num, WireType::LengthDelimited).encode(&mut wire);
-    encode_varint(payload.len() as u64, &mut wire);
-    wire.extend_from_slice(&payload);
-    wire
-}
-
-fn length_delimited_field(num: u32, payload: &[u8]) -> Vec<u8> {
-    use buffa::encoding::{encode_varint, Tag, WireType};
-
-    let mut wire = Vec::new();
-    Tag::new(num, WireType::LengthDelimited).encode(&mut wire);
-    encode_varint(payload.len() as u64, &mut wire);
-    wire.extend_from_slice(payload);
-    wire
-}
 
 fn map_enum_entry(num: u32, key: &str, value: u64) -> Vec<u8> {
     use buffa::encoding::{encode_varint, Tag, WireType};
@@ -397,8 +372,14 @@ fn enum_rule_opens_runtime_descriptor_pool() {
     assert!(matches!(dynamic.get(field), ValueRef::EnumNumber(99)));
 }
 
+/// A field-level `enum_type:OPEN` override is invisible to the runtime pool:
+/// openness resolves per enum, and `FieldDescriptor` carries no override, so
+/// reflection applies the enum's own closed semantics where the generated code
+/// applies the field's. The two decoders disagree here — tracked in
+/// <https://github.com/anthropics/buffa/issues/316>. This test pins the
+/// current reflective behaviour so the split is visible rather than silent.
 #[test]
-fn open_enum_override_vtable_reflection_reports_presence() {
+fn open_enum_override_vtable_reflection_preserves_runtime_closed_semantics() {
     use crate::open_enums::{OpenEnumContexts, OpenEnumContextsView};
     use buffa_descriptor::reflect::{ReflectMessage, Reflectable, ValueRef};
 
@@ -414,8 +395,15 @@ fn open_enum_override_vtable_reflection_reports_presence() {
     assert!(!reflected.has(closed_control));
 
     let dynamic = reflected.to_dynamic();
-    assert!(dynamic.has(opt));
-    assert!(matches!(dynamic.get(opt), ValueRef::EnumNumber(99)));
+    // Vtable reflection sees the generated field-level override, but the
+    // DynamicMessage pool keeps the enum itself closed. Binary reflection
+    // therefore routes the unknown value to unknown_fields.
+    assert!(!dynamic.has(opt));
+    assert!(matches!(dynamic.get(opt), ValueRef::EnumNumber(0)));
+    assert!(matches!(
+        dynamic.unknown_fields().iter().find(|field| field.number == 1),
+        Some(field) if matches!(field.data, buffa::UnknownFieldData::Varint(99))
+    ));
 
     let view = OpenEnumContextsView::decode_view(&wire).unwrap();
     let reflected_view: &dyn ReflectMessage = &view;

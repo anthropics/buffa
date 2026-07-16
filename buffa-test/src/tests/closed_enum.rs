@@ -1,7 +1,7 @@
 //! Closed-enum unknown-value routing to unknown_fields (proto spec).
 //! Covers owned decoder (optional/repeated/oneof) and view decoder parity.
 
-use super::varint_field;
+use super::{length_delimited_field, packed_field, repeated_varint_field, varint_field};
 use buffa::Message;
 
 fn priority_map_entry_wire(key: &str, values: &[u64]) -> (Vec<u8>, Vec<u8>) {
@@ -137,6 +137,88 @@ fn test_closed_enum_repeated_packed_unknown_to_unknown_fields() {
         unknowns[0].data,
         buffa::UnknownFieldData::Varint(99)
     ));
+}
+
+/// Singular, unpacked-repeated, packed-repeated and oneof closed-enum fields
+/// share one unknown-value route in the owned decoder, which charges the
+/// unknown-field allowance once per preserved value. Each case carries two
+/// unknown values: a limit of two admits both, a limit of one rejects the
+/// second. Map values take a separate route — see the map test below.
+#[test]
+fn test_owned_closed_enum_unknowns_charge_one_limit_slot_per_value() {
+    use crate::proto2::ClosedEnumContexts;
+
+    let cases = [
+        ("singular", repeated_varint_field(1, &[99, 100])),
+        ("repeated unpacked", repeated_varint_field(2, &[99, 100])),
+        ("repeated packed", packed_field(3, &[99, 100])),
+        ("oneof", repeated_varint_field(4, &[99, 100])),
+    ];
+
+    for (context, wire) in cases {
+        let msg = buffa::DecodeOptions::new()
+            .with_unknown_field_limit(2)
+            .decode_from_slice::<ClosedEnumContexts>(&wire)
+            .unwrap_or_else(|e| panic!("{context}: two unknowns must fit a limit of two: {e:?}"));
+        let preserved: Vec<_> = msg
+            .__buffa_unknown_fields
+            .iter()
+            .map(|u| match u.data {
+                buffa::UnknownFieldData::Varint(v) => v,
+                ref other => panic!("{context}: unexpected unknown payload {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            preserved,
+            vec![99, 100],
+            "{context}: both unknown values must be preserved, each charging one slot"
+        );
+
+        let err = buffa::DecodeOptions::new()
+            .with_unknown_field_limit(1)
+            .decode_from_slice::<ClosedEnumContexts>(&wire)
+            .unwrap_err();
+        assert_eq!(
+            err,
+            buffa::DecodeError::UnknownFieldLimitExceeded,
+            "{context}: the second unknown value must exceed a limit of one"
+        );
+    }
+}
+
+/// Closed-enum map values route through `merge_entry_with_unknowns`, which
+/// preserves the whole entry and charges the allowance once per entry rather
+/// than once per value. Two entries carrying unknown values fit a limit of
+/// two; a limit of one rejects the second.
+#[test]
+fn test_owned_closed_enum_unknown_map_entries_charge_one_limit_slot_per_entry() {
+    use crate::proto2::ViewCoverage;
+
+    let mut wire = varint_field(1, 2); // ViewCoverage.level = HIGH.
+    for key in ["a", "b"] {
+        let mut entry = Vec::new();
+        buffa::encoding::Tag::new(1, buffa::encoding::WireType::LengthDelimited).encode(&mut entry);
+        buffa::types::encode_string(key, &mut entry);
+        entry.extend(varint_field(2, 99));
+        wire.extend(length_delimited_field(3, &entry));
+    }
+
+    let msg = buffa::DecodeOptions::new()
+        .with_unknown_field_limit(2)
+        .decode_from_slice::<ViewCoverage>(&wire)
+        .expect("two unknown map entries must fit a limit of two");
+    assert!(msg.priorities.is_empty(), "unknown values must not insert");
+    assert_eq!(
+        msg.__buffa_unknown_fields.iter().count(),
+        2,
+        "each unknown entry must be preserved and charge one slot"
+    );
+
+    let err = buffa::DecodeOptions::new()
+        .with_unknown_field_limit(1)
+        .decode_from_slice::<ViewCoverage>(&wire)
+        .unwrap_err();
+    assert_eq!(err, buffa::DecodeError::UnknownFieldLimitExceeded);
 }
 
 #[test]

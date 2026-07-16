@@ -379,3 +379,39 @@ jobs:
           --failure_list conformance/known_failures_view.txt
           --maximum_edition 2024
           /tmp/buffa-conformance-std
+
+      - name: Run conformance tests (via-lazy)
+        env:
+          BUFFA_VIA_LAZY: "1"
+        run: >-
+          conformance_test_runner
+          --failure_list conformance/known_failures_lazy.txt
+          --maximum_edition 2024
+          /tmp/buffa-conformance-std
+
+      - name: Run conformance tests (view-json)
+        env:
+          BUFFA_VIEW_JSON: "1"
+        run: >-
+          conformance_test_runner
+          --failure_list conformance/known_failures_view_json.txt
+          --maximum_edition 2024
+          /tmp/buffa-conformance-std
+
+      - name: Run conformance tests (via-reflect)
+        env:
+          BUFFA_VIA_REFLECT: "1"
+        run: >-
+          conformance_test_runner
+          --failure_list conformance/known_failures_reflect.txt
+          --maximum_edition 2024
+          /tmp/buffa-conformance-std
+
+      - name: Run conformance tests (via-vtable)
+        env:
+          BUFFA_VIA_VTABLE: "1"
+        run: >-
+          conformance_test_runner
+          --failure_list conformance/known_failures_view_vtable.txt
+          --maximum_edition 2024
+          /tmp/buffa-conformance-std

@@ -452,6 +452,16 @@ impl MapValue {
     pub fn entries(&self) -> &[(MapKey, Value)] {
         &self.entries
     }
+
+    /// Consume the map into its sorted, de-duplicated entries, for rebuilding
+    /// a map whose values must be transformed by value rather than cloned.
+    ///
+    /// Feeding the result back to [`from_entries`](Self::from_entries)
+    /// reconstructs the same map.
+    #[must_use]
+    pub fn into_entries(self) -> Vec<(MapKey, Value)> {
+        self.entries
+    }
 }
 
 impl FromIterator<(MapKey, Value)> for MapValue {

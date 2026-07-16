@@ -242,9 +242,12 @@ pub trait MessageView<'a>: Sized {
     /// [`decode_view_with_ctx`](Self::decode_view_with_ctx) to decode by hand
     /// never reaches the provided loop, so it can satisfy the trait with a
     /// one-line `Ok(cur)` stub. The canonical shape is a match on
-    /// `tag.field_number()`:
+    /// `tag.field_number()`. Mark the method `#[inline]`: the provided loop
+    /// calls it once per field across the crate boundary, so the hint lets the
+    /// optimizer fold the match into that loop.
     ///
     /// ```rust,ignore
+    /// #[inline]
     /// fn merge_view_field(
     ///     &mut self,
     ///     tag: buffa::encoding::Tag,
@@ -2029,12 +2032,21 @@ impl<'a> UnknownFieldsView<'a> {
     /// coalescing saves memory (no allocation, no `Vec` slot), not
     /// allowance.
     ///
+    /// Marked `#[cold]`: every caller is an exceptional-value route — the
+    /// unrecognized-field arm of a generated view merge, and the arms that
+    /// preserve an unrecognized value of a closed enum (singular and map
+    /// entry). None runs when the payload matches the schema, so the loop
+    /// that inlines around them is laid out as though they never do.
+    /// Decoding from a newer producer does take these routes, once per field
+    /// it added, and pays for that choice.
+    ///
     /// # Errors
     ///
     /// Returns [`DecodeError::UnknownFieldLimitExceeded`] when the allowance
     /// is exhausted, or [`DecodeError::UnexpectedEof`] if `span_len` exceeds
     /// `tail`.
     #[doc(hidden)]
+    #[cold]
     pub fn push_record(
         &mut self,
         tail: &'a [u8],
@@ -2068,7 +2080,17 @@ impl<'a> UnknownFieldsView<'a> {
         Ok(())
     }
 
+    /// Preserve one unrecognized value of a closed enum as synthetic varint
+    /// wire bytes.
+    ///
+    /// Marked `#[cold]`: the sole caller is the per-element route for a closed
+    /// enum whose wire value names no variant — reached from a *recognized*
+    /// field, including inside a packed element loop, so it can run more than
+    /// once per message against a newer producer's data. It builds a `Vec` per
+    /// value regardless, which dwarfs what the size-optimized body this
+    /// attribute asks for costs.
     #[doc(hidden)]
+    #[cold]
     pub fn push_varint(
         &mut self,
         field_number: u32,
