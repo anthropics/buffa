@@ -466,8 +466,9 @@ fn test_view_repeated_message_field() {
 #[test]
 fn test_view_packed_varint_loop_uses_force_inlined_decoder() {
     // View-path packed varint loops use the force-inlined `decode_*_packed`
-    // decoders against the packed cursor; the unpacked fallback and
-    // fixed-width loops keep the plain decoders.
+    // decoders against the packed cursor; the unpacked fallback keeps the
+    // plain decoders, and fixed-width packed payloads decode via the bulk
+    // extenders instead of a loop.
     let mut file = proto3_file("packed_view_inline.proto");
     file.message_type.push(DescriptorProto {
         name: Some("PackedViewInline".to_string()),
@@ -493,8 +494,12 @@ fn test_view_packed_varint_loop_uses_force_inlined_decoder() {
         "view unpacked fallback must keep the plain decoder: {content}"
     );
     assert!(
-        content.contains("decode_fixed32(&mut pcur)"),
-        "view fixed32 packed loop must keep the plain decoder: {content}"
+        content.contains("extend_packed_fixed32(") && content.contains("view.hashes.as_mut_vec()"),
+        "view fixed32 packed payload must decode via the bulk extender: {content}"
+    );
+    assert!(
+        content.contains("decode_fixed32(&mut cur)"),
+        "view fixed32 unpacked fallback must keep the plain decoder: {content}"
     );
 }
 
@@ -535,23 +540,29 @@ fn test_view_packed_scalar_reserves_capacity() {
         content.contains("view.flags.reserve(::buffa::encoding::count_varints(payload));"),
         "bool packed view must reserve the counted element count: {content}"
     );
-    // 4-byte fixed kinds reserve payload.len() / 4.
+    // Fixed-width kinds decode via the bulk extenders, which validate
+    // alignment and reserve the exact element count internally — the arm
+    // itself must not emit a reserve call or a decode loop.
     assert!(
-        content.contains("view.ratios.reserve(payload.len() / 4usize);"),
-        "float packed view must reserve the exact element count: {content}"
+        content.contains("extend_packed_float(") && content.contains("view.ratios.as_mut_vec()"),
+        "float packed view must decode via the bulk extender: {content}"
     );
     assert!(
-        content.contains("view.hashes.reserve(payload.len() / 4usize);"),
-        "fixed32 packed view must reserve the exact element count: {content}"
-    );
-    // 8-byte fixed kinds reserve payload.len() / 8.
-    assert!(
-        content.contains("view.scores.reserve(payload.len() / 8usize);"),
-        "double packed view must reserve the exact element count: {content}"
+        content.contains("extend_packed_fixed32(") && content.contains("view.hashes.as_mut_vec()"),
+        "fixed32 packed view must decode via the bulk extender: {content}"
     );
     assert!(
-        content.contains("view.offsets.reserve(payload.len() / 8usize);"),
-        "sfixed64 packed view must reserve the exact element count: {content}"
+        content.contains("extend_packed_double(") && content.contains("view.scores.as_mut_vec()"),
+        "double packed view must decode via the bulk extender: {content}"
+    );
+    assert!(
+        content.contains("extend_packed_sfixed64(")
+            && content.contains("view.offsets.as_mut_vec()"),
+        "sfixed64 packed view must decode via the bulk extender: {content}"
+    );
+    assert!(
+        !content.contains("view.ratios.reserve("),
+        "float packed view must not emit a separate reserve: {content}"
     );
     // Non-packable repeated types (string/bytes/message) must not emit
     // a packed-reserve call — there is no packed wire payload for them.

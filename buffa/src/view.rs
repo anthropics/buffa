@@ -1685,6 +1685,13 @@ impl<'a, T> RepeatedView<'a, T> {
         self.elements.reserve(additional);
     }
 
+    /// Mutable access to the backing vec (used by generated `decode_view`
+    /// code to decode packed fixed-width payloads in one bulk call).
+    #[doc(hidden)]
+    pub fn as_mut_vec(&mut self) -> &mut alloc::vec::Vec<T> {
+        &mut self.elements
+    }
+
     /// Returns an iterator over the elements.
     pub fn iter(&self) -> core::slice::Iter<'_, T> {
         self.elements.iter()

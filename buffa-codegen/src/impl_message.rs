@@ -1464,6 +1464,23 @@ pub(crate) fn packed_decode_fn_token(ty: Type) -> TokenStream {
     }
 }
 
+/// Bulk packed-payload extender for fixed-width types: decodes an entire
+/// contiguous payload in one call (`None` for varint-family types, whose
+/// element count is not derivable from the byte length). The extenders
+/// validate alignment, reserve exactly, and bulk-convert — see
+/// `buffa::types::extend_packed_double` and siblings.
+pub(crate) fn extend_packed_fn_token(ty: Type) -> Option<TokenStream> {
+    match ty {
+        Type::TYPE_FLOAT => Some(quote! { ::buffa::types::extend_packed_float }),
+        Type::TYPE_FIXED32 => Some(quote! { ::buffa::types::extend_packed_fixed32 }),
+        Type::TYPE_SFIXED32 => Some(quote! { ::buffa::types::extend_packed_sfixed32 }),
+        Type::TYPE_DOUBLE => Some(quote! { ::buffa::types::extend_packed_double }),
+        Type::TYPE_FIXED64 => Some(quote! { ::buffa::types::extend_packed_fixed64 }),
+        Type::TYPE_SFIXED64 => Some(quote! { ::buffa::types::extend_packed_sfixed64 }),
+        _ => None,
+    }
+}
+
 pub(crate) fn is_non_default_expr(ty: Type, field_ident: &Ident) -> TokenStream {
     match ty {
         Type::TYPE_INT32 | Type::TYPE_SINT32 | Type::TYPE_SFIXED32 => {
@@ -2471,6 +2488,46 @@ fn repeated_merge_arm(
         quote! { ::buffa::ProtoList::reserve(&mut self.#ident, #amount); }
     };
 
+    // Per-element decode through a length-limited sub-buffer: the general
+    // path for varint-family elements, custom list representations, and
+    // fragmented buffers.
+    let packed_loop = quote! {
+        #reserve_stmt
+        let mut limited = buf.take(len);
+        while limited.has_remaining() {
+            #decode_packed_elem
+        }
+        // Advance past any trailing bytes left by the decode loop.
+        // This fires when a malformed packed payload has a length not
+        // aligned to the element size for fixed-size types; for varint
+        // types, `decode_fn` above will already have returned an error
+        // via `UnexpectedEof`, so this branch is dead for valid input.
+        let leftover = limited.remaining();
+        if leftover > 0 {
+            limited.advance(leftover);
+        }
+    };
+    // Fixed-width elements into the default `Vec` decode in one bulk call
+    // when the payload is contiguous in the current chunk (always true for
+    // slice-backed buffers); fragmented buffers fall back to the loop.
+    let bulk_extend = if repr.is_default() {
+        extend_packed_fn_token(ty)
+    } else {
+        None
+    };
+    let packed_body = if let Some(extend_fn) = bulk_extend {
+        quote! {
+            if buf.chunk().len() >= len {
+                #extend_fn(&buf.chunk()[..len], &mut self.#ident)?;
+                buf.advance(len);
+            } else {
+                #packed_loop
+            }
+        }
+    } else {
+        packed_loop
+    };
+
     Ok(quote! {
         #field_number => {
             #list_use
@@ -2482,20 +2539,7 @@ fn repeated_merge_arm(
                 if buf.remaining() < len {
                     return ::core::result::Result::Err(::buffa::DecodeError::UnexpectedEof);
                 }
-                #reserve_stmt
-                let mut limited = buf.take(len);
-                while limited.has_remaining() {
-                    #decode_packed_elem
-                }
-                // Advance past any trailing bytes left by the decode loop.
-                // This fires when a malformed packed payload has a length not
-                // aligned to the element size for fixed-size types; for varint
-                // types, `decode_fn` above will already have returned an error
-                // via `UnexpectedEof`, so this branch is dead for valid input.
-                let leftover = limited.remaining();
-                if leftover > 0 {
-                    limited.advance(leftover);
-                }
+                #packed_body
             } else if tag.wire_type() == #element_wire_type {
                 // Unpacked (backward compatibility with older encoders).
                 #decode_unpacked_elem

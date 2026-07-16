@@ -18,7 +18,7 @@ use crate::context::{ancillary_prefix, AncillaryKind, CodeGenContext, MessageSco
 use crate::features::ResolvedFeatures;
 use crate::impl_message::{
     closed_enum_decode, closed_enum_decode_with_unknown, decode_fn_token, effective_type,
-    effective_type_in_map_entry, field_string_repr, find_map_entry_fields,
+    effective_type_in_map_entry, extend_packed_fn_token, field_string_repr, find_map_entry_fields,
     is_explicit_presence_scalar, is_packed_type, is_real_oneof_member, is_required_field,
     is_supported_field_type, map_string_repr, map_value_bytes_repr, packed_decode_fn_token,
     validated_field_number, wire_type_check, wire_type_token,
@@ -1609,14 +1609,25 @@ pub(crate) fn repeated_decode_arm(
         quote! { view.#ident.push(#dfn(&mut cur)?); }
     };
 
+    // Fixed-width payloads decode in one bulk call (alignment check +
+    // exact reserve + bulk convert inside the extender); varint-family
+    // payloads keep the per-element loop.
+    let packed_body = if let Some(extend_fn) = extend_packed_fn_token(ty) {
+        quote! { #extend_fn(payload, view.#ident.as_mut_vec())?; }
+    } else {
+        quote! {
+            #reserve_stmt
+            let mut pcur: &[u8] = payload;
+            while !pcur.is_empty() { #packed_elem }
+        }
+    };
+
     Ok(quote! {
         #field_number => {
             if tag.wire_type() == ::buffa::encoding::WireType::LengthDelimited {
                 // Packed: extract payload, decode elements via local cursor.
                 let payload = ::buffa::types::borrow_bytes(&mut cur)?;
-                #reserve_stmt
-                let mut pcur: &[u8] = payload;
-                while !pcur.is_empty() { #packed_elem }
+                #packed_body
             } else if tag.wire_type() == #elem_wire_type {
                 // Unpacked (backward-compat with old encoders).
                 #unpacked_elem

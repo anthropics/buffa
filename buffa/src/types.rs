@@ -520,6 +520,65 @@ pub fn decode_sfixed64(buf: &mut impl Buf) -> Result<i64, DecodeError> {
 }
 
 // ---------------------------------------------------------------------------
+// Bulk packed decode — fixed-width types
+// ---------------------------------------------------------------------------
+
+/// Stamp a bulk packed-payload extender over a fixed-width element type.
+macro_rules! extend_packed_fixed_fn {
+    ($(#[$doc:meta])* $name:ident, $ty:ty, $width:expr) => {
+        $(#[$doc])*
+        ///
+        /// The payload length is validated against the element width up
+        /// front, so a malformed payload fails with [`DecodeError::UnexpectedEof`]
+        /// — the same error the per-element loop produces at the trailing
+        /// partial element — and leaves `out` unmodified rather than
+        /// partially extended.
+        ///
+        /// `from_le_bytes` over [`slice::chunks_exact`] is endian-correct on
+        /// every target and compiles to a bulk copy on little-endian ones,
+        /// which is where the win over the per-element loop comes from: one
+        /// bounds regime for the whole payload instead of a remaining-bytes
+        /// check per element.
+        #[inline]
+        pub fn $name(payload: &[u8], out: &mut Vec<$ty>) -> Result<(), DecodeError> {
+            if payload.len() % $width != 0 {
+                return Err(DecodeError::UnexpectedEof);
+            }
+            out.reserve(payload.len() / $width);
+            out.extend(payload.chunks_exact($width).map(|chunk| {
+                <$ty>::from_le_bytes(chunk.try_into().expect("chunks_exact yields width-sized chunks"))
+            }));
+            Ok(())
+        }
+    };
+}
+
+extend_packed_fixed_fn!(
+    /// Decode an entire packed `float` payload into `out` in one pass.
+    extend_packed_float, f32, 4
+);
+extend_packed_fixed_fn!(
+    /// Decode an entire packed `fixed32` payload into `out` in one pass.
+    extend_packed_fixed32, u32, 4
+);
+extend_packed_fixed_fn!(
+    /// Decode an entire packed `sfixed32` payload into `out` in one pass.
+    extend_packed_sfixed32, i32, 4
+);
+extend_packed_fixed_fn!(
+    /// Decode an entire packed `double` payload into `out` in one pass.
+    extend_packed_double, f64, 8
+);
+extend_packed_fixed_fn!(
+    /// Decode an entire packed `fixed64` payload into `out` in one pass.
+    extend_packed_fixed64, u64, 8
+);
+extend_packed_fixed_fn!(
+    /// Decode an entire packed `sfixed64` payload into `out` in one pass.
+    extend_packed_sfixed64, i64, 8
+);
+
+// ---------------------------------------------------------------------------
 // Encoded size helpers (fixed-width types are constant-size)
 // ---------------------------------------------------------------------------
 
@@ -3223,5 +3282,114 @@ mod tests {
     fn borrow_bytes_rejects_oversized_length_on_32bit() {
         let mut buf: &[u8] = OVERSIZED_VARINT;
         assert_eq!(borrow_bytes(&mut buf), Err(DecodeError::MessageTooLarge));
+    }
+
+    // -----------------------------------------------------------------------
+    // bulk packed fixed-width extender tests
+    // -----------------------------------------------------------------------
+
+    /// Differential harness: the bulk extender must agree with the
+    /// per-element decoder on every payload, valid or not.
+    fn check_bulk_double(payload: &[u8]) {
+        let mut bulk = Vec::new();
+        let bulk_res = extend_packed_double(payload, &mut bulk);
+        let mut elems = Vec::new();
+        let mut cur = payload;
+        let elem_res = loop {
+            if cur.is_empty() {
+                break Ok(());
+            }
+            match decode_double(&mut cur) {
+                Ok(v) => elems.push(v),
+                Err(e) => break Err(e),
+            }
+        };
+        assert_eq!(bulk_res.is_ok(), elem_res.is_ok(), "accept/reject parity");
+        if bulk_res.is_ok() {
+            assert_eq!(bulk.len(), elems.len());
+            for (a, b) in bulk.iter().zip(&elems) {
+                assert_eq!(a.to_bits(), b.to_bits(), "bit-exact element parity");
+            }
+        }
+    }
+
+    #[test]
+    fn test_extend_packed_double_matches_per_element() {
+        let mut payload = Vec::new();
+        for v in [
+            0.0f64,
+            -0.0,
+            1.0,
+            -1.5,
+            f64::NAN,
+            f64::INFINITY,
+            f64::MIN_POSITIVE,
+            1.0e308,
+        ] {
+            encode_double(v, &mut payload);
+        }
+        check_bulk_double(&payload);
+        check_bulk_double(&[]);
+        // Misaligned payloads: every truncation of a valid payload.
+        for cut in 1..payload.len() {
+            check_bulk_double(&payload[..cut]);
+        }
+    }
+
+    #[test]
+    fn test_extend_packed_double_error_leaves_out_unmodified() {
+        let mut out = vec![42.0f64];
+        let misaligned = [0u8; 9];
+        assert!(extend_packed_double(&misaligned, &mut out).is_err());
+        assert_eq!(out, vec![42.0], "failed decode must not partially extend");
+    }
+
+    #[test]
+    fn test_extend_packed_double_appends() {
+        let mut payload = Vec::new();
+        encode_double(2.5, &mut payload);
+        let mut out = vec![1.0f64];
+        extend_packed_double(&payload, &mut out).unwrap();
+        assert_eq!(
+            out,
+            vec![1.0, 2.5],
+            "extender appends after existing elements"
+        );
+    }
+
+    #[test]
+    fn test_extend_packed_fixed32_family_roundtrip() {
+        let mut p32 = Vec::new();
+        for v in [0u32, 1, 0xDEAD_BEEF, u32::MAX] {
+            encode_fixed32(v, &mut p32);
+        }
+        let mut out_u32 = Vec::new();
+        extend_packed_fixed32(&p32, &mut out_u32).unwrap();
+        assert_eq!(out_u32, vec![0, 1, 0xDEAD_BEEF, u32::MAX]);
+
+        let mut out_i32 = Vec::new();
+        extend_packed_sfixed32(&p32, &mut out_i32).unwrap();
+        assert_eq!(out_i32, vec![0, 1, 0xDEAD_BEEFu32 as i32, -1]);
+
+        let mut out_f32 = Vec::new();
+        extend_packed_float(&p32, &mut out_f32).unwrap();
+        assert_eq!(out_f32.len(), 4);
+        assert!(extend_packed_float(&p32[..5], &mut Vec::new()).is_err());
+    }
+
+    #[test]
+    fn test_extend_packed_fixed64_family_roundtrip() {
+        let mut p64 = Vec::new();
+        for v in [0u64, 1, u64::MAX] {
+            encode_fixed64(v, &mut p64);
+        }
+        let mut out_u64 = Vec::new();
+        extend_packed_fixed64(&p64, &mut out_u64).unwrap();
+        assert_eq!(out_u64, vec![0, 1, u64::MAX]);
+
+        let mut out_i64 = Vec::new();
+        extend_packed_sfixed64(&p64, &mut out_i64).unwrap();
+        assert_eq!(out_i64, vec![0, 1, -1]);
+        assert!(extend_packed_sfixed64(&p64[..23], &mut Vec::new()).is_err());
     }
 }
