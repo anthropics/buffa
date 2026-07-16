@@ -1,0 +1,24 @@
+syntax = "proto2";
+
+package reflect.closed;
+
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  ACTIVE = 1;
+}
+
+message Contexts {
+  extensions 100 to max;
+
+  optional Status singular = 1;
+  repeated Status unpacked = 2;
+  repeated Status packed = 3 [packed = true];
+  oneof choice {
+    Status selected = 4;
+  }
+  map<string, Status> labels = 5;
+}
+
+extend Contexts {
+  optional Status extension_status = 100;
+}

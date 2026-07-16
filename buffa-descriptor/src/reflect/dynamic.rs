@@ -23,6 +23,7 @@ use crate::{
     ScalarType, SingularKind,
 };
 use buffa::bytes::Buf;
+use buffa::editions::EnumType;
 use buffa::encoding::{
     decode_unknown_field, decode_varint, encode_varint, skip_field_depth, Tag, WireType,
 };
@@ -35,7 +36,10 @@ use buffa::types::{
     sint64_encoded_len, uint32_encoded_len, uint64_encoded_len,
 };
 use buffa::unknown_fields::UnknownFields;
-use buffa::{DecodeContext, DecodeError, Message, DEFAULT_UNKNOWN_FIELD_LIMIT, RECURSION_LIMIT};
+use buffa::{
+    DecodeContext, DecodeError, Message, UnknownField, UnknownFieldData,
+    DEFAULT_UNKNOWN_FIELD_LIMIT, RECURSION_LIMIT,
+};
 
 use super::message::{ReflectCow, ReflectError, ReflectMessage, ReflectMessageMut};
 use super::value::{MapKey, MapValue, Value, ValueRef};
@@ -178,6 +182,31 @@ impl DynamicMessage {
         None
     }
 
+    fn enum_value_is_known(&self, eidx: EnumIndex, value: i32) -> bool {
+        let ed = self.pool.enumeration(eidx);
+        ed.enum_type() == EnumType::Open || ed.value(value).is_some()
+    }
+
+    fn record_unknown(
+        &mut self,
+        number: u32,
+        data: UnknownFieldData,
+        ctx: DecodeContext<'_>,
+    ) -> Result<(), DecodeError> {
+        ctx.register_unknown_field()?;
+        self.unknown.push(UnknownField { number, data });
+        Ok(())
+    }
+
+    fn record_unknown_enum(
+        &mut self,
+        number: u32,
+        value: i32,
+        ctx: DecodeContext<'_>,
+    ) -> Result<(), DecodeError> {
+        self.record_unknown(number, UnknownFieldData::Varint(value as u64), ctx)
+    }
+
     fn field_descriptor_is_member(&self, field: &FieldDescriptor) -> bool {
         self.field_or_extension(field.number())
             .is_some_and(|f| core::ptr::eq(f, field))
@@ -305,6 +334,22 @@ impl DynamicMessage {
             self.unknown.push(decode_unknown_field(tag, buf, ctx)?);
             return Ok(());
         }
+        // Closed enums cannot expose unknown numeric values as ordinary
+        // field values. Decode the raw number before applying oneof
+        // last-wins semantics so an unknown value leaves an existing oneof
+        // member untouched and is retained as an unknown field instead.
+        if let FieldKind::Singular(SingularKind::Enum(eidx)) = kind {
+            let raw = decode_int32(buf)?;
+            if !self.enum_value_is_known(eidx, raw) {
+                self.record_unknown_enum(number, raw, ctx)?;
+                return Ok(());
+            }
+            if let Some(oi) = oneof_index {
+                self.clear_other_oneof_members(oi, number);
+            }
+            self.fields.insert(number, Value::EnumNumber(raw));
+            return Ok(());
+        }
         match kind {
             FieldKind::Singular(sk) => {
                 // Singular message merge semantics: when the same field appears
@@ -412,6 +457,11 @@ impl DynamicMessage {
         buf: &mut impl Buf,
         ctx: DecodeContext<'_>,
     ) -> Result<(), DecodeError> {
+        if let SingularKind::Enum(eidx) = elem {
+            if self.pool.enumeration(eidx).enum_type() == EnumType::Closed {
+                return self.merge_closed_enum_list(number, eidx, tag, buf, ctx);
+            }
+        }
         let list = match self
             .fields
             .entry(number)
@@ -460,6 +510,52 @@ impl DynamicMessage {
         Ok(())
     }
 
+    fn merge_closed_enum_list(
+        &mut self,
+        number: u32,
+        eidx: EnumIndex,
+        tag: Tag,
+        buf: &mut impl Buf,
+        ctx: DecodeContext<'_>,
+    ) -> Result<(), DecodeError> {
+        let mut known = Vec::new();
+        if tag.wire_type() == WireType::LengthDelimited {
+            let len = decode_varint(buf)?;
+            let len = usize::try_from(len).map_err(|_| DecodeError::MessageTooLarge)?;
+            if buf.remaining() < len {
+                return Err(DecodeError::UnexpectedEof);
+            }
+            let mut packed = buf.copy_to_bytes(len);
+            while packed.has_remaining() {
+                let raw = decode_int32(&mut packed)?;
+                if self.enum_value_is_known(eidx, raw) {
+                    known.push(Value::EnumNumber(raw));
+                } else {
+                    self.record_unknown_enum(number, raw, ctx)?;
+                }
+            }
+        } else {
+            let raw = decode_int32(buf)?;
+            if self.enum_value_is_known(eidx, raw) {
+                known.push(Value::EnumNumber(raw));
+            } else {
+                self.record_unknown_enum(number, raw, ctx)?;
+            }
+        }
+        if known.is_empty() {
+            return Ok(());
+        }
+        match self
+            .fields
+            .entry(number)
+            .or_insert_with(|| Value::List(Vec::new()))
+        {
+            Value::List(list) => list.extend(known),
+            other => *other = Value::List(known),
+        }
+        Ok(())
+    }
+
     fn merge_map_field(
         &mut self,
         number: u32,
@@ -475,6 +571,11 @@ impl DynamicMessage {
             // Unexpected wire type — skip and preserve as unknown.
             self.unknown.push(decode_unknown_field(tag, buf, ctx)?);
             return Ok(());
+        }
+        if let SingularKind::Enum(eidx) = value_kind {
+            if self.pool.enumeration(eidx).enum_type() == EnumType::Closed {
+                return self.merge_closed_enum_map_field(number, key_ty, eidx, buf, ctx);
+            }
         }
         let len = decode_varint(buf)?;
         let len = usize::try_from(len).map_err(|_| DecodeError::MessageTooLarge)?;
@@ -506,6 +607,68 @@ impl DynamicMessage {
         }
         let k = key.unwrap_or_else(|| default_map_key(key_ty));
         let v = value.unwrap_or_else(|| default_value(value_kind, &self.pool));
+        match self
+            .fields
+            .entry(number)
+            .or_insert_with(|| Value::Map(MapValue::new()))
+        {
+            Value::Map(m) => {
+                m.insert(k, v);
+            }
+            other => {
+                let mut m = MapValue::new();
+                m.insert(k, v);
+                *other = Value::Map(m);
+            }
+        }
+        Ok(())
+    }
+
+    fn merge_closed_enum_map_field(
+        &mut self,
+        number: u32,
+        key_ty: ScalarType,
+        eidx: EnumIndex,
+        buf: &mut impl Buf,
+        ctx: DecodeContext<'_>,
+    ) -> Result<(), DecodeError> {
+        let len = decode_varint(buf)?;
+        let len = usize::try_from(len).map_err(|_| DecodeError::MessageTooLarge)?;
+        if buf.remaining() < len {
+            return Err(DecodeError::UnexpectedEof);
+        }
+        let entry = buf.copy_to_bytes(len);
+        let mut entry_buf = entry.clone();
+        let mut key: Option<MapKey> = None;
+        let mut value: Option<Value> = None;
+        let mut value_unknown = false;
+        while entry_buf.has_remaining() {
+            let entry_tag = Tag::decode(&mut entry_buf)?;
+            match entry_tag.field_number() {
+                1 => key = Some(decode_map_key(key_ty, entry_tag, &mut entry_buf)?),
+                2 => {
+                    let raw = decode_int32(&mut entry_buf)?;
+                    if self.enum_value_is_known(eidx, raw) {
+                        value = Some(Value::EnumNumber(raw));
+                        value_unknown = false;
+                    } else {
+                        value = None;
+                        value_unknown = true;
+                    }
+                }
+                _ => skip_field_depth(entry_tag, &mut entry_buf, ctx.depth())?,
+            }
+        }
+        if value_unknown {
+            self.record_unknown(
+                number,
+                UnknownFieldData::LengthDelimited(entry.to_vec()),
+                ctx,
+            )?;
+            return Ok(());
+        }
+        let k = key.unwrap_or_else(|| default_map_key(key_ty));
+        let v = value.unwrap_or_else(|| default_value(SingularKind::Enum(eidx), &self.pool));
         match self
             .fields
             .entry(number)

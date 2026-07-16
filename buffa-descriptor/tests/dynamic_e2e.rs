@@ -19,6 +19,46 @@ fn pool() -> Arc<DescriptorPool> {
     Arc::new(DescriptorPool::decode(FDS_BYTES).expect("pool builds from protoc FDS"))
 }
 
+fn varint_field(number: u32, value: i32) -> Vec<u8> {
+    use buffa::encoding::{encode_varint, Tag, WireType};
+
+    let mut wire = Vec::new();
+    Tag::new(number, WireType::Varint).encode(&mut wire);
+    encode_varint(value as u64, &mut wire);
+    wire
+}
+
+fn packed_field(number: u32, values: &[i32]) -> Vec<u8> {
+    use buffa::encoding::{encode_varint, Tag, WireType};
+
+    let mut payload = Vec::new();
+    for &value in values {
+        encode_varint(value as u64, &mut payload);
+    }
+    let mut wire = Vec::new();
+    Tag::new(number, WireType::LengthDelimited).encode(&mut wire);
+    encode_varint(payload.len() as u64, &mut wire);
+    wire.extend_from_slice(&payload);
+    wire
+}
+
+fn map_status_entry(key: &str, values: &[i32]) -> (Vec<u8>, Vec<u8>) {
+    use buffa::encoding::{encode_varint, Tag, WireType};
+
+    let mut entry = Vec::new();
+    Tag::new(1, WireType::LengthDelimited).encode(&mut entry);
+    buffa::types::encode_string(key, &mut entry);
+    for &value in values {
+        Tag::new(2, WireType::Varint).encode(&mut entry);
+        encode_varint(value as u64, &mut entry);
+    }
+    let mut wire = Vec::new();
+    Tag::new(5, WireType::LengthDelimited).encode(&mut wire);
+    encode_varint(entry.len() as u64, &mut wire);
+    wire.extend_from_slice(&entry);
+    (entry, wire)
+}
+
 fn assert_oneof_member_survives_decode_error(
     initial_number: u32,
     initial_value: Value,
@@ -183,6 +223,141 @@ fn dynamic_message_containers_round_trip() {
 
     // The encoded length should match the actual bytes written.
     assert_eq!(msg.encoded_len(), bytes.len());
+}
+
+#[test]
+fn closed_enum_unknown_singular_oneof_and_extension_values_are_unknown() {
+    let p = pool();
+    let idx = p.message_index("reflect.closed.Contexts").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+    let mut wire = varint_field(1, 99);
+    wire.extend(varint_field(4, 99));
+    wire.extend(varint_field(100, 99));
+
+    msg.merge(&wire).unwrap();
+
+    assert!(msg.field_by_number(1).is_none());
+    assert!(msg.field_by_number(4).is_none());
+    assert!(msg.field_by_number(100).is_none());
+    let unknowns: Vec<_> = msg.unknown_fields().iter().collect();
+    assert_eq!(unknowns.len(), 3);
+    assert_eq!(
+        unknowns
+            .iter()
+            .map(|field| field.number)
+            .collect::<Vec<_>>(),
+        vec![1, 4, 100]
+    );
+    assert!(unknowns
+        .iter()
+        .all(|field| matches!(field.data, buffa::UnknownFieldData::Varint(99))));
+    assert_eq!(msg.encode_to_vec(), wire);
+}
+
+#[test]
+fn editions_closed_enum_unknown_value_is_unknown() {
+    let p = pool();
+    let idx = p.message_index("reflect.editions.Editions").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+
+    msg.merge(&varint_field(5, 99)).unwrap();
+
+    assert!(msg.field_by_number(5).is_none());
+    assert!(matches!(
+        msg.unknown_fields().iter().next().map(|field| &field.data),
+        Some(buffa::UnknownFieldData::Varint(99))
+    ));
+}
+
+#[test]
+fn closed_enum_unknown_unpacked_repeated_values_are_unknown() {
+    let p = pool();
+    let idx = p.message_index("reflect.closed.Contexts").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+    let mut wire = varint_field(2, 0);
+    wire.extend(varint_field(2, 99));
+    wire.extend(varint_field(2, 1));
+    wire.extend(varint_field(2, 42));
+
+    msg.merge(&wire).unwrap();
+
+    assert_eq!(
+        msg.field_by_number(2),
+        Some(&Value::List(vec![
+            Value::EnumNumber(0),
+            Value::EnumNumber(1)
+        ]))
+    );
+    let unknowns: Vec<_> = msg
+        .unknown_fields()
+        .iter()
+        .filter(|field| field.number == 2)
+        .collect();
+    assert_eq!(unknowns.len(), 2);
+    assert!(matches!(
+        unknowns[0].data,
+        buffa::UnknownFieldData::Varint(99)
+    ));
+    assert!(matches!(
+        unknowns[1].data,
+        buffa::UnknownFieldData::Varint(42)
+    ));
+}
+
+#[test]
+fn closed_enum_unknown_packed_repeated_values_are_unknown() {
+    let p = pool();
+    let idx = p.message_index("reflect.closed.Contexts").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+    let wire = packed_field(3, &[0, 99, 1]);
+
+    msg.merge(&wire).unwrap();
+
+    assert_eq!(
+        msg.field_by_number(3),
+        Some(&Value::List(vec![
+            Value::EnumNumber(0),
+            Value::EnumNumber(1)
+        ]))
+    );
+    let unknowns: Vec<_> = msg
+        .unknown_fields()
+        .iter()
+        .filter(|field| field.number == 3)
+        .collect();
+    assert_eq!(unknowns.len(), 1);
+    assert!(matches!(
+        unknowns[0].data,
+        buffa::UnknownFieldData::Varint(99)
+    ));
+}
+
+#[test]
+fn closed_enum_map_unknown_values_preserve_whole_entries() {
+    let p = pool();
+    let idx = p.message_index("reflect.closed.Contexts").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+    let (bad_entry, mut wire) = map_status_entry("bad", &[1, 99]);
+    let (_, good_wire) = map_status_entry("ok", &[99, 1]);
+    wire.extend_from_slice(&good_wire);
+
+    msg.merge(&wire).unwrap();
+
+    let Some(Value::Map(labels)) = msg.field_by_number(5) else {
+        panic!("labels map missing");
+    };
+    assert!(labels.get_str("bad").is_none());
+    assert_eq!(labels.get_str("ok"), Some(&Value::EnumNumber(1)));
+    let unknowns: Vec<_> = msg
+        .unknown_fields()
+        .iter()
+        .filter(|field| field.number == 5)
+        .collect();
+    assert_eq!(unknowns.len(), 1);
+    assert!(matches!(
+        &unknowns[0].data,
+        buffa::UnknownFieldData::LengthDelimited(payload) if payload == &bad_entry
+    ));
 }
 
 #[test]
