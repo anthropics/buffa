@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use buffa::encoding::{encode_varint, Tag, WireType};
 use buffa::DecodeError;
 use buffa_descriptor::reflect::{
     DynamicMessage, MapKey, MapValue, ReflectError, ReflectMessage, ReflectMessageMut, Value,
@@ -36,6 +37,58 @@ fn assert_oneof_member_survives_decode_error(
         msg.which_oneof(&md.oneofs()[0]).unwrap().number(),
         initial_number
     );
+}
+
+fn message_with_valid_nested() -> DynamicMessage {
+    let p = pool();
+    let containers_idx = p.message_index("reflect.test.Containers").unwrap();
+    let inner_idx = p.message_index("reflect.test.Inner").unwrap();
+    let inner_md = p.message_by_name("reflect.test.Inner").unwrap();
+    let containers_md = p.message_by_name("reflect.test.Containers").unwrap();
+
+    let mut inner = DynamicMessage::new(Arc::clone(&p), inner_idx);
+    inner.set(inner_md.field(1).unwrap(), Value::String("first".into()));
+    let mut msg = DynamicMessage::new(Arc::clone(&p), containers_idx);
+    msg.set(containers_md.field(5).unwrap(), Value::Message(inner));
+
+    let bytes = msg.encode_to_vec();
+    DynamicMessage::decode(Arc::clone(&p), containers_idx, &bytes).unwrap()
+}
+
+fn assert_nested_id(msg: &DynamicMessage, expected: &str) {
+    let Some(Value::Message(nested)) = msg.field_by_number(5) else {
+        panic!("nested message missing");
+    };
+    assert!(matches!(
+        nested.field_by_number(1),
+        Some(Value::String(value)) if value.as_str() == expected
+    ));
+}
+
+fn nested_occurrence(inner: &[u8]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    Tag::new(5, WireType::LengthDelimited).encode(&mut bytes);
+    encode_varint(inner.len() as u64, &mut bytes);
+    bytes.extend_from_slice(inner);
+    bytes
+}
+
+fn message_with_valid_group() -> DynamicMessage {
+    let p = pool();
+    let idx = p.message_index("reflect.ext.Extendable").unwrap();
+    let mut bytes = Vec::new();
+    Tag::new(120, WireType::StartGroup).encode(&mut bytes);
+    Tag::new(1, WireType::Varint).encode(&mut bytes);
+    encode_varint(77, &mut bytes);
+    Tag::new(120, WireType::EndGroup).encode(&mut bytes);
+    DynamicMessage::decode(Arc::clone(&p), idx, &bytes).unwrap()
+}
+
+fn assert_group_value(msg: &DynamicMessage) {
+    let Some(Value::Message(group)) = msg.field_by_number(120) else {
+        panic!("group message missing");
+    };
+    assert_eq!(group.field_by_number(1), Some(&Value::I32(77)));
 }
 
 #[test]
@@ -130,6 +183,71 @@ fn dynamic_message_containers_round_trip() {
 
     // The encoded length should match the actual bytes written.
     assert_eq!(msg.encoded_len(), bytes.len());
+}
+
+#[test]
+fn merge_keeps_existing_nested_message_when_length_varint_is_truncated() {
+    let mut msg = message_with_valid_nested();
+    let mut malformed = Vec::new();
+    Tag::new(5, WireType::LengthDelimited).encode(&mut malformed);
+    malformed.push(0x80);
+
+    assert_eq!(msg.merge(&malformed), Err(DecodeError::UnexpectedEof));
+    assert_nested_id(&msg, "first");
+}
+
+#[test]
+fn merge_keeps_existing_nested_message_when_declared_length_is_too_large() {
+    let mut msg = message_with_valid_nested();
+    let mut malformed = Vec::new();
+    Tag::new(5, WireType::LengthDelimited).encode(&mut malformed);
+    malformed.push(2);
+    malformed.push(0x0a);
+
+    assert_eq!(msg.merge(&malformed), Err(DecodeError::UnexpectedEof));
+    assert_nested_id(&msg, "first");
+}
+
+#[cfg(target_pointer_width = "32")]
+#[test]
+fn merge_keeps_existing_nested_message_when_length_does_not_fit_usize() {
+    let mut msg = message_with_valid_nested();
+    let mut malformed = Vec::new();
+    Tag::new(5, WireType::LengthDelimited).encode(&mut malformed);
+    encode_varint(u64::MAX, &mut malformed);
+
+    assert_eq!(msg.merge(&malformed), Err(DecodeError::MessageTooLarge));
+    assert_nested_id(&msg, "first");
+}
+
+#[test]
+fn merge_keeps_existing_nested_message_when_nested_payload_is_malformed() {
+    let mut msg = message_with_valid_nested();
+    let malformed = nested_occurrence(&[0x0a, 0x02, b'x']);
+
+    assert_eq!(msg.merge(&malformed), Err(DecodeError::UnexpectedEof));
+    assert_nested_id(&msg, "first");
+}
+
+#[test]
+fn merge_keeps_existing_nested_message_when_wrong_wire_type_is_truncated() {
+    let mut msg = message_with_valid_nested();
+    let mut malformed = Vec::new();
+    Tag::new(5, WireType::Varint).encode(&mut malformed);
+
+    assert_eq!(msg.merge(&malformed), Err(DecodeError::UnexpectedEof));
+    assert_nested_id(&msg, "first");
+}
+
+#[test]
+fn merge_keeps_existing_group_when_group_payload_is_malformed() {
+    let mut msg = message_with_valid_group();
+    let mut malformed = Vec::new();
+    Tag::new(120, WireType::StartGroup).encode(&mut malformed);
+    Tag::new(1, WireType::Varint).encode(&mut malformed);
+
+    assert_eq!(msg.merge(&malformed), Err(DecodeError::UnexpectedEof));
+    assert_group_value(&msg);
 }
 
 #[test]

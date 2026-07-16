@@ -300,22 +300,25 @@ impl DynamicMessage {
                 // Singular message merge semantics: when the same field appears
                 // multiple times on the wire, the parser merges the messages
                 // (each sub-field merged) rather than replacing wholesale.
-                // Decode before clearing oneof siblings. A malformed
-                // replacement must not destroy the previously valid member.
-                let v = match sk {
-                    SingularKind::Message(_) => {
-                        if let Some(Value::Message(existing)) = self.fields.get(&number) {
-                            self.decode_merged_message(existing, tag, buf, ctx)?
-                        } else {
-                            self.decode_element(sk, tag, buf, ctx)?
+                if let SingularKind::Message(midx) = sk {
+                    if let Some(Value::Message(_)) = self.fields.get(&number) {
+                        // This member already holds the oneof, so no sibling is
+                        // set and the clear below has nothing to do. Merging in
+                        // place keeps a partially merged value on error, which
+                        // is what the owned decoder leaves behind.
+                        if let Some(oi) = oneof_index {
+                            self.clear_other_oneof_members(oi, number);
                         }
+                        // Decode the new bytes into the existing message.
+                        return self.merge_into_existing_message(number, midx, tag, buf, ctx);
                     }
-                    _ => self.decode_element(sk, tag, buf, ctx)?,
-                };
+                }
+                // Decode before clearing: a replacement that fails to decode
+                // must leave the oneof member that is currently set intact.
+                let v = self.decode_element(sk, tag, buf, ctx)?;
                 // Oneof semantics: setting any member clears all other members
                 // of the same oneof. Synthetic oneofs (proto3 `optional`) have
-                // a single member so this is a no-op for them. The clear is
-                // deliberately after decoding succeeds.
+                // a single member so this is a no-op for them.
                 if let Some(oi) = oneof_index {
                     self.clear_other_oneof_members(oi, number);
                 }
@@ -350,19 +353,25 @@ impl DynamicMessage {
         }
     }
 
-    /// Decode new wire bytes for a singular message field into a temporary
-    /// clone of its existing value, instead of replacing it or mutating the
-    /// stored value before decoding succeeds.
-    fn decode_merged_message(
-        &self,
-        existing: &DynamicMessage,
+    /// Merge new wire bytes for a singular message field into the existing
+    /// `Value::Message` at `number`, instead of replacing it.
+    fn merge_into_existing_message(
+        &mut self,
+        number: u32,
+        midx: MessageIndex,
         tag: Tag,
         buf: &mut impl Buf,
         ctx: DecodeContext<'_>,
-    ) -> Result<Value, DecodeError> {
+    ) -> Result<(), DecodeError> {
+        let _ = midx;
         let ctx = ctx.descend()?;
-        let mut merged = existing.clone();
-        let result = match tag.wire_type() {
+        // Take the existing message out of the map so we can borrow `self`
+        // immutably for the descriptor lookup while merging into it.
+        let Some(Value::Message(mut existing)) = self.fields.remove(&number) else {
+            // Caller checked this — defensive.
+            return Ok(());
+        };
+        let result = (|| match tag.wire_type() {
             WireType::LengthDelimited => {
                 let len = decode_varint(buf)?;
                 let len = usize::try_from(len).map_err(|_| DecodeError::MessageTooLarge)?;
@@ -370,16 +379,19 @@ impl DynamicMessage {
                     return Err(DecodeError::UnexpectedEof);
                 }
                 let mut sub = buf.copy_to_bytes(len);
-                merged.merge_buf(&mut sub, ctx)
+                existing.merge_buf(&mut sub, ctx)
             }
-            WireType::StartGroup => merged.merge_group(buf, tag.field_number(), ctx),
+            WireType::StartGroup => existing.merge_group(buf, tag.field_number(), ctx),
             wt => Err(DecodeError::WireTypeMismatch {
-                field_number: tag.field_number(),
+                field_number: number,
                 expected: WireType::LengthDelimited as u8,
                 actual: wt as u8,
             }),
-        };
-        result.map(|()| Value::Message(merged))
+        })();
+        // Put the (possibly partially-merged) message back regardless of
+        // outcome, so a decode error doesn't silently drop earlier data.
+        self.fields.insert(number, Value::Message(existing));
+        result
     }
 
     fn merge_list_field(
@@ -561,6 +573,11 @@ impl DynamicMessage {
 
     /// Encode this message into `buf`.
     ///
+    /// The size check costs a full [`encoded_len`](Self::encoded_len) walk
+    /// before the write pass (the single-pass descriptor-driven codec has no
+    /// size cache to reuse). [`encode_to_vec`](Self::encode_to_vec) pays no
+    /// extra walk — it needs the length for its allocation anyway.
+    ///
     /// A stored `Value` whose shape does not match its field descriptor —
     /// only reachable by bypassing [`try_set`]'s validation via
     /// [`field_by_number_mut`](Self::field_by_number_mut) /
@@ -573,8 +590,37 @@ impl DynamicMessage {
     /// represents the same invalid values as `null` rather than omitting
     /// the field.
     ///
+    /// # Panics
+    ///
+    /// Panics if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`buffa::MAX_MESSAGE_BYTES`]): no conforming decoder — including
+    /// buffa's own — would accept the output. See
+    /// [`try_encode`](Self::try_encode) for the error-returning variant.
+    ///
     /// [`try_set`]: crate::reflect::ReflectMessageMut::try_set
     pub fn encode(&self, buf: &mut impl buffa::EncodeSink) {
+        self.try_encode(buf)
+            .unwrap_or_else(|_| buffa::encode_size_overflow())
+    }
+
+    /// Encode, returning an error instead of panicking if the encoded size
+    /// exceeds the 2 GiB protobuf limit ([`buffa::MAX_MESSAGE_BYTES`]).
+    ///
+    /// On `Err`, nothing is written to `buf`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`buffa::EncodeError::MessageTooLarge`] if the encoded size
+    /// exceeds the limit.
+    pub fn try_encode(&self, buf: &mut impl buffa::EncodeSink) -> Result<(), buffa::EncodeError> {
+        Self::checked_encode_size(self.encoded_len())?;
+        self.encode_unchecked(buf);
+        Ok(())
+    }
+
+    /// Encode without the size check; callers must have validated
+    /// `encoded_len()` against the 2 GiB limit already.
+    fn encode_unchecked(&self, buf: &mut impl buffa::EncodeSink) {
         for (&number, value) in &self.fields {
             // Skip if neither the descriptor nor the extension index
             // recognizes this number anymore (defensive — the fields map
@@ -590,11 +636,45 @@ impl DynamicMessage {
     }
 
     /// Encode this message to a fresh `Vec<u8>`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`buffa::MAX_MESSAGE_BYTES`]). See
+    /// [`try_encode_to_vec`](Self::try_encode_to_vec) for the
+    /// error-returning variant.
     #[must_use]
     pub fn encode_to_vec(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(self.encoded_len());
-        self.encode(&mut buf);
-        buf
+        self.try_encode_to_vec()
+            .unwrap_or_else(|_| buffa::encode_size_overflow())
+    }
+
+    /// Encode to a fresh `Vec<u8>`, returning an error instead of panicking
+    /// if the encoded size exceeds the 2 GiB protobuf limit
+    /// ([`buffa::MAX_MESSAGE_BYTES`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`buffa::EncodeError::MessageTooLarge`] if the encoded size
+    /// exceeds the limit.
+    pub fn try_encode_to_vec(&self) -> Result<Vec<u8>, buffa::EncodeError> {
+        let len = Self::checked_encode_size(self.encoded_len())?;
+        let mut buf = Vec::with_capacity(len);
+        self.encode_unchecked(&mut buf);
+        Ok(buf)
+    }
+
+    /// Validate an encoded size against the 2 GiB protobuf limit.
+    ///
+    /// The single-pass descriptor-driven codec computes sizes in `usize`,
+    /// which is exact on 64-bit hosts — unlike the generated two-pass codec
+    /// there is no `u32` arithmetic to saturate. This adapts the `usize`
+    /// domain onto the shared [`buffa::checked_encode_size`] guard (via
+    /// [`buffa::saturate_size`], so a value past `u32::MAX` still trips the
+    /// check) rather than restating the comparison here.
+    fn checked_encode_size(len: usize) -> Result<usize, buffa::EncodeError> {
+        buffa::checked_encode_size(buffa::saturate_size(len as u64))?;
+        Ok(len)
     }
 
     /// Compute the encoded length.
@@ -602,6 +682,14 @@ impl DynamicMessage {
     /// Applies the same invalid-value omission rule as
     /// [`encode`](Self::encode), so the result always matches the bytes
     /// `encode` writes.
+    ///
+    /// Unlike [`Message::encoded_len`](buffa::Message::encoded_len), this
+    /// does **not** enforce the 2 GiB limit: the `usize` result is exact
+    /// (there is no `u32` saturation that could turn an over-limit size
+    /// into a lie), so the check lives only in the encode entry points.
+    /// Use [`try_encode_to_vec`](Self::try_encode_to_vec) or compare
+    /// against [`buffa::MAX_MESSAGE_BYTES`] if you need the guard before
+    /// writing.
     #[must_use]
     pub fn encoded_len(&self) -> usize {
         let mut len = self.unknown.encoded_len();
@@ -624,7 +712,9 @@ impl DynamicMessage {
     ///
     /// Panics if `msg.encode_to_vec()` produces bytes that fail to decode
     /// against `msg_idx`'s descriptor. This indicates a mismatch between the
-    /// descriptor in the pool and the generated `Message` impl.
+    /// descriptor in the pool and the generated `Message` impl. Also panics
+    /// (inside `encode_to_vec`) if `msg`'s encoded size exceeds the 2 GiB
+    /// protobuf limit ([`buffa::MAX_MESSAGE_BYTES`]).
     #[must_use]
     pub fn from_message<M: Message>(
         msg: &M,
@@ -644,7 +734,11 @@ impl DynamicMessage {
     /// `M` — typically a descriptor mismatch between the pool and the
     /// generated type.
     pub fn to_message<M: Message + Default>(&self) -> Result<M, DecodeError> {
-        let bytes = self.encode_to_vec();
+        // An over-limit snapshot cannot become valid wire bytes; surface the
+        // mirror decode error instead of panicking inside a fallible API.
+        let bytes = self
+            .try_encode_to_vec()
+            .map_err(|_| DecodeError::MessageTooLarge)?;
         let mut m = M::default();
         m.merge_from_slice(&bytes)?;
         Ok(m)
@@ -809,7 +903,9 @@ impl DynamicMessage {
     ///
     /// [`AnyError::AnyNotRegistered`] if the pool does not contain
     /// `google.protobuf.Any` (e.g. a `FileDescriptorSet` built without the
-    /// well-known types).
+    /// well-known types). [`AnyError::MessageTooLarge`] if this message's
+    /// encoded size exceeds the 2 GiB protobuf limit
+    /// ([`buffa::MAX_MESSAGE_BYTES`]).
     pub fn pack_any(&self) -> Result<DynamicMessage, AnyError> {
         let any_idx = self
             .pool
@@ -820,8 +916,11 @@ impl DynamicMessage {
             self.message_descriptor().full_name
         );
         let mut any = DynamicMessage::new(Arc::clone(&self.pool), any_idx);
+        let bytes = self
+            .try_encode_to_vec()
+            .map_err(|_| AnyError::MessageTooLarge)?;
         any.insert_value(1, Value::String(type_url));
-        any.insert_value(2, Value::Bytes(self.encode_to_vec()));
+        any.insert_value(2, Value::Bytes(bytes));
         Ok(any)
     }
 
@@ -858,7 +957,8 @@ impl DynamicMessage {
         O: Message + buffa::MessageName,
     {
         let idx = pool.message_index(O::FULL_NAME)?;
-        Self::decode(pool, idx, &options.encode_to_vec()).ok()
+        let bytes = options.try_encode_to_vec().ok()?;
+        Self::decode(pool, idx, &bytes).ok()
     }
 }
 
@@ -886,6 +986,10 @@ pub enum AnyError {
         /// The unresolvable type URL.
         type_url: String,
     },
+    /// The message being packed encodes past the 2 GiB protobuf limit
+    /// ([`buffa::MAX_MESSAGE_BYTES`]), so it cannot become a valid
+    /// `Any.value` payload.
+    MessageTooLarge,
     /// The wrapped `value` bytes failed to decode against the resolved type.
     Decode {
         /// The `type_url` that resolved before the decode failed.
@@ -905,6 +1009,9 @@ impl core::fmt::Display for AnyError {
                 write!(f, "google.protobuf.Any is not registered in the pool")
             }
             Self::MissingTypeUrl => write!(f, "Any has no type_url"),
+            Self::MessageTooLarge => {
+                write!(f, "packed message exceeds the 2 GiB protobuf limit")
+            }
             Self::UnknownType { type_url } => {
                 write!(f, "Any type_url {type_url:?} not registered in the pool")
             }
@@ -1584,13 +1691,17 @@ fn encode_singular_with_tag(
         }
         (SingularKind::Message(_), Value::Message(m)) => {
             Tag::new(number, singular_wire_type(kind, delimited)).encode(buf);
+            // encode_unchecked: nested sizes are covered by the top-level
+            // entry point's 2 GiB check (a parent is at least as large as
+            // any child), and re-checking here would add a size walk per
+            // nesting level.
             if delimited {
-                m.encode(buf);
+                m.encode_unchecked(buf);
                 Tag::new(number, WireType::EndGroup).encode(buf);
             } else {
                 let len = m.encoded_len();
                 encode_varint(len as u64, buf);
-                m.encode(buf);
+                m.encode_unchecked(buf);
             }
         }
         _ => {}
@@ -1661,10 +1772,11 @@ fn encode_packed_element(kind: SingularKind, v: &Value, buf: &mut impl buffa::En
         (SingularKind::Scalar(s), v) => encode_scalar(s, v, buf),
         (SingularKind::Enum(_), Value::EnumNumber(n)) => encode_int32(*n, buf),
         (SingularKind::Message(_), Value::Message(m)) => {
-            // Map values are length-prefixed messages.
+            // Map values are length-prefixed messages. encode_unchecked:
+            // covered by the top-level entry point's 2 GiB check.
             let len = m.encoded_len();
             encode_varint(len as u64, buf);
-            m.encode(buf);
+            m.encode_unchecked(buf);
         }
         _ => {}
     }
@@ -1737,4 +1849,32 @@ const _: fn(EnumIndex) = |_| {};
 /// Compute the encoded length of a tag without writing it.
 fn tag_len(field_number: u32, wt: WireType) -> usize {
     uint64_encoded_len(((field_number as u64) << 3) | (wt as u64))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DynamicMessage;
+
+    // The encode entry points funnel through `checked_encode_size`;
+    // exercising the over-limit path end-to-end would require materializing
+    // >2 GiB of field data, so the usize adapter over the shared guard is
+    // tested directly (the e2e encode paths are covered in
+    // `tests/dynamic_e2e.rs`, and the shared guard's own boundary in
+    // `buffa::message`).
+
+    #[test]
+    fn checked_encode_size_boundary() {
+        let max = buffa::MAX_MESSAGE_BYTES as usize;
+        assert_eq!(DynamicMessage::checked_encode_size(max), Ok(max));
+        assert_eq!(
+            DynamicMessage::checked_encode_size(max + 1),
+            Err(buffa::EncodeError::MessageTooLarge)
+        );
+        // Past u32::MAX the adapter saturates rather than wrapping.
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(
+            DynamicMessage::checked_encode_size(u32::MAX as usize + 1),
+            Err(buffa::EncodeError::MessageTooLarge)
+        );
+    }
 }

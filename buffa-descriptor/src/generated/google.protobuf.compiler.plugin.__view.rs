@@ -32,6 +32,7 @@ impl<'a> ::buffa::MessageView<'a> for VersionView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         <Self as ::buffa::MessageView>::decode_view_ctx(buf, ctx)
     }
+    #[inline]
     fn merge_view_field(
         &mut self,
         tag: ::buffa::encoding::Tag,
@@ -108,21 +109,21 @@ impl<'a> ::buffa::ViewEncode<'a> for VersionView<'a> {
     fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let mut size = 0u32;
+        let mut size = 0u64;
         if let Some(v) = self.major {
-            size += 1u32 + ::buffa::types::int32_encoded_len(v) as u32;
+            size += 1u64 + ::buffa::types::int32_encoded_len(v) as u64;
         }
         if let Some(v) = self.minor {
-            size += 1u32 + ::buffa::types::int32_encoded_len(v) as u32;
+            size += 1u64 + ::buffa::types::int32_encoded_len(v) as u64;
         }
         if let Some(v) = self.patch {
-            size += 1u32 + ::buffa::types::int32_encoded_len(v) as u32;
+            size += 1u64 + ::buffa::types::int32_encoded_len(v) as u64;
         }
         if let Some(ref v) = self.suffix {
-            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+            size += 1u64 + ::buffa::types::string_encoded_len(v) as u64;
         }
-        size += self.__buffa_unknown_fields.encoded_len() as u32;
-        size
+        size += self.__buffa_unknown_fields.encoded_len() as u64;
+        ::buffa::saturate_size(size)
     }
     #[allow(clippy::needless_borrow)]
     fn write_to(
@@ -230,7 +231,9 @@ impl VersionOwnedView {
     ///
     /// # Errors
     ///
-    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// Returns [`::buffa::DecodeError::MessageTooLarge`] if the
+    /// message's encoded size exceeds the 2 GiB protobuf limit, or
+    /// another [`::buffa::DecodeError`] if the re-encoded bytes are
     /// somehow invalid (should not happen for well-formed messages).
     pub fn from_owned(
         msg: &super::super::Version,
@@ -390,6 +393,7 @@ impl<'a> ::buffa::MessageView<'a> for CodeGeneratorRequestView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         <Self as ::buffa::MessageView>::decode_view_ctx(buf, ctx)
     }
+    #[inline]
     fn merge_view_field(
         &mut self,
         tag: ::buffa::encoding::Tag,
@@ -530,39 +534,39 @@ impl<'a> ::buffa::ViewEncode<'a> for CodeGeneratorRequestView<'a> {
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let mut size = 0u32;
+        let mut size = 0u64;
         for v in &self.file_to_generate {
-            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+            size += 1u64 + ::buffa::types::string_encoded_len(v) as u64;
         }
         if let Some(ref v) = self.parameter {
-            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+            size += 1u64 + ::buffa::types::string_encoded_len(v) as u64;
         }
         if self.compiler_version.is_set() {
             let __slot = __cache.reserve();
             let inner_size = self.compiler_version.compute_size(__cache);
             __cache.set(__slot, inner_size);
             size
-                += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32
-                    + inner_size;
+                += 1u64 + ::buffa::encoding::varint_len(inner_size as u64) as u64
+                    + inner_size as u64;
         }
         for v in &self.proto_file {
             let __slot = __cache.reserve();
             let inner_size = v.compute_size(__cache);
             __cache.set(__slot, inner_size);
             size
-                += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32
-                    + inner_size;
+                += 1u64 + ::buffa::encoding::varint_len(inner_size as u64) as u64
+                    + inner_size as u64;
         }
         for v in &self.source_file_descriptors {
             let __slot = __cache.reserve();
             let inner_size = v.compute_size(__cache);
             __cache.set(__slot, inner_size);
             size
-                += 2u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32
-                    + inner_size;
+                += 2u64 + ::buffa::encoding::varint_len(inner_size as u64) as u64
+                    + inner_size as u64;
         }
-        size += self.__buffa_unknown_fields.encoded_len() as u32;
-        size
+        size += self.__buffa_unknown_fields.encoded_len() as u64;
+        ::buffa::saturate_size(size)
     }
     #[allow(clippy::needless_borrow)]
     fn write_to(
@@ -579,15 +583,27 @@ impl<'a> ::buffa::ViewEncode<'a> for CodeGeneratorRequestView<'a> {
             ::buffa::types::put_string_field(2u32, v, buf);
         }
         if self.compiler_version.is_set() {
-            ::buffa::types::put_len_delimited_header(3u32, __cache.consume_next(), buf);
+            ::buffa::types::put_len_delimited_header(
+                3u32,
+                u64::from(__cache.consume_next()),
+                buf,
+            );
             self.compiler_version.write_to(__cache, buf);
         }
         for v in &self.proto_file {
-            ::buffa::types::put_len_delimited_header(15u32, __cache.consume_next(), buf);
+            ::buffa::types::put_len_delimited_header(
+                15u32,
+                u64::from(__cache.consume_next()),
+                buf,
+            );
             v.write_to(__cache, buf);
         }
         for v in &self.source_file_descriptors {
-            ::buffa::types::put_len_delimited_header(17u32, __cache.consume_next(), buf);
+            ::buffa::types::put_len_delimited_header(
+                17u32,
+                u64::from(__cache.consume_next()),
+                buf,
+            );
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -692,7 +708,9 @@ impl CodeGeneratorRequestOwnedView {
     ///
     /// # Errors
     ///
-    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// Returns [`::buffa::DecodeError::MessageTooLarge`] if the
+    /// message's encoded size exceeds the 2 GiB protobuf limit, or
+    /// another [`::buffa::DecodeError`] if the re-encoded bytes are
     /// somehow invalid (should not happen for well-formed messages).
     pub fn from_owned(
         msg: &super::super::CodeGeneratorRequest,
@@ -883,6 +901,7 @@ impl<'a> ::buffa::MessageView<'a> for CodeGeneratorResponseView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         <Self as ::buffa::MessageView>::decode_view_ctx(buf, ctx)
     }
+    #[inline]
     fn merge_view_field(
         &mut self,
         tag: ::buffa::encoding::Tag,
@@ -985,29 +1004,29 @@ impl<'a> ::buffa::ViewEncode<'a> for CodeGeneratorResponseView<'a> {
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        let mut size = 0u32;
+        let mut size = 0u64;
         if let Some(ref v) = self.error {
-            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+            size += 1u64 + ::buffa::types::string_encoded_len(v) as u64;
         }
         if let Some(v) = self.supported_features {
-            size += 1u32 + ::buffa::types::uint64_encoded_len(v) as u32;
+            size += 1u64 + ::buffa::types::uint64_encoded_len(v) as u64;
         }
         if let Some(v) = self.minimum_edition {
-            size += 1u32 + ::buffa::types::int32_encoded_len(v) as u32;
+            size += 1u64 + ::buffa::types::int32_encoded_len(v) as u64;
         }
         if let Some(v) = self.maximum_edition {
-            size += 1u32 + ::buffa::types::int32_encoded_len(v) as u32;
+            size += 1u64 + ::buffa::types::int32_encoded_len(v) as u64;
         }
         for v in &self.file {
             let __slot = __cache.reserve();
             let inner_size = v.compute_size(__cache);
             __cache.set(__slot, inner_size);
             size
-                += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32
-                    + inner_size;
+                += 1u64 + ::buffa::encoding::varint_len(inner_size as u64) as u64
+                    + inner_size as u64;
         }
-        size += self.__buffa_unknown_fields.encoded_len() as u32;
-        size
+        size += self.__buffa_unknown_fields.encoded_len() as u64;
+        ::buffa::saturate_size(size)
     }
     #[allow(clippy::needless_borrow)]
     fn write_to(
@@ -1030,7 +1049,11 @@ impl<'a> ::buffa::ViewEncode<'a> for CodeGeneratorResponseView<'a> {
             ::buffa::types::put_int32_field(4u32, v, buf);
         }
         for v in &self.file {
-            ::buffa::types::put_len_delimited_header(15u32, __cache.consume_next(), buf);
+            ::buffa::types::put_len_delimited_header(
+                15u32,
+                u64::from(__cache.consume_next()),
+                buf,
+            );
             v.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -1140,7 +1163,9 @@ impl CodeGeneratorResponseOwnedView {
     ///
     /// # Errors
     ///
-    /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+    /// Returns [`::buffa::DecodeError::MessageTooLarge`] if the
+    /// message's encoded size exceeds the 2 GiB protobuf limit, or
+    /// another [`::buffa::DecodeError`] if the re-encoded bytes are
     /// somehow invalid (should not happen for well-formed messages).
     pub fn from_owned(
         msg: &super::super::CodeGeneratorResponse,
@@ -1350,6 +1375,7 @@ pub mod code_generator_response {
         ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
             <Self as ::buffa::MessageView>::decode_view_ctx(buf, ctx)
         }
+        #[inline]
         fn merge_view_field(
             &mut self,
             tag: ::buffa::encoding::Tag,
@@ -1460,26 +1486,26 @@ pub mod code_generator_response {
         fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            let mut size = 0u32;
+            let mut size = 0u64;
             if let Some(ref v) = self.name {
-                size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+                size += 1u64 + ::buffa::types::string_encoded_len(v) as u64;
             }
             if let Some(ref v) = self.insertion_point {
-                size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+                size += 1u64 + ::buffa::types::string_encoded_len(v) as u64;
             }
             if let Some(ref v) = self.content {
-                size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+                size += 1u64 + ::buffa::types::string_encoded_len(v) as u64;
             }
             if self.generated_code_info.is_set() {
                 let __slot = __cache.reserve();
                 let inner_size = self.generated_code_info.compute_size(__cache);
                 __cache.set(__slot, inner_size);
                 size
-                    += 2u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32
-                        + inner_size;
+                    += 2u64 + ::buffa::encoding::varint_len(inner_size as u64) as u64
+                        + inner_size as u64;
             }
-            size += self.__buffa_unknown_fields.encoded_len() as u32;
-            size
+            size += self.__buffa_unknown_fields.encoded_len() as u64;
+            ::buffa::saturate_size(size)
         }
         #[allow(clippy::needless_borrow)]
         fn write_to(
@@ -1501,7 +1527,7 @@ pub mod code_generator_response {
             if self.generated_code_info.is_set() {
                 ::buffa::types::put_len_delimited_header(
                     16u32,
-                    __cache.consume_next(),
+                    u64::from(__cache.consume_next()),
                     buf,
                 );
                 self.generated_code_info.write_to(__cache, buf);
@@ -1597,7 +1623,9 @@ pub mod code_generator_response {
         ///
         /// # Errors
         ///
-        /// Returns [`::buffa::DecodeError`] if the re-encoded bytes are
+        /// Returns [`::buffa::DecodeError::MessageTooLarge`] if the
+        /// message's encoded size exceeds the 2 GiB protobuf limit, or
+        /// another [`::buffa::DecodeError`] if the re-encoded bytes are
         /// somehow invalid (should not happen for well-formed messages).
         pub fn from_owned(
             msg: &super::super::super::code_generator_response::File,
