@@ -223,11 +223,39 @@ tasks:
   verify:
     desc: >-
       Run the full pre-commit verification pipeline: clippy, markdownlint,
-      tests, then conformance suite.  Stops on first failure.
+      rustdoc, tests, then conformance suite.  Stops on first failure.
     cmds:
       - task: lint
+      - task: doc
       - task: test
       - task: conformance
+
+  doc:
+    desc: >-
+      Build workspace docs with rustdoc warnings as errors — the local
+      mirror of the CI "Rustdoc (deny warnings)" step. Protoc precedence:
+      an explicit $PROTOC, then the .local/ protoc (from install-protoc;
+      re-run that after a protobuf version bump to stay CI-matched), then
+      the system protoc (buffa-build's own default). The .local protoc
+      lets buffa-test generate its edition 2024 protos even when the
+      system protoc is too old for them.
+    vars:
+      # Not `deps: [install-protoc]` (the test-local pattern): go-task
+      # checks preconditions even when a dep's status is satisfied, which
+      # would make `task verify` demand gh auth on every run.
+      DOC_PROTOC:
+        sh: |
+          if [ -n "${PROTOC:-}" ]; then echo "$PROTOC"
+          elif [ -x '{{.ROOT_DIR}}/.local/bin/protoc' ]; then echo '{{.ROOT_DIR}}/.local/bin/protoc'
+          else echo protoc
+          fi
+    cmds:
+      # Command-line assignments rather than task-level `env:` — the OS
+      # environment outranks `env:`, so an exported RUSTDOCFLAGS would
+      # silently drop -D warnings (and an exported-empty PROTOC would
+      # break the build).
+      - RUSTDOCFLAGS='-D warnings' PROTOC='{{.DOC_PROTOC}}'
+        cargo doc --workspace --all-features --no-deps
 
   test:
     desc: Run the workspace test suite.
