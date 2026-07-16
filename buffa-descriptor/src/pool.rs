@@ -24,7 +24,7 @@
 //! to the linked structures.
 
 use alloc::boxed::Box;
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -40,7 +40,9 @@ use crate::generated::descriptor::{
     DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto,
     FileDescriptorSet, ServiceDescriptorProto,
 };
-use buffa::editions::{EnumType, FieldPresence, MessageEncoding, RepeatedFieldEncoding};
+use buffa::editions::{
+    EnumType, FieldPresence, JsonFormat, MessageEncoding, RepeatedFieldEncoding,
+};
 use buffa::MessageField;
 
 /// Clone a descriptor's raw `*Options` into a boxed `Option`, the form the
@@ -69,12 +71,23 @@ pub enum PoolError {
     /// A field's `type_name` resolved to the wrong kind (e.g. a `TYPE_ENUM`
     /// field referencing a message). Carries the name and the field.
     WrongTypeKind { type_name: String, field: String },
-    /// Two messages or enums declared the same fully-qualified name.
+    /// Two declarations share the same fully-qualified symbol name.
     DuplicateName(String),
     /// A message has more than 65 535 fields, exceeding the `u16` index
     /// limit of the internal field-number lookup table behind
     /// [`MessageDescriptor::field`].
     TooManyFields { message: String, count: usize },
+    /// Two fields in one message declare the same field number.
+    DuplicateFieldNumber { message: String, number: u32 },
+    /// Two fields in one message claim the same proto or JSON name.
+    DuplicateFieldName { message: String, name: String },
+    /// A field refers to a oneof declaration that does not exist in its
+    /// containing message.
+    InvalidOneofIndex {
+        message: String,
+        field: String,
+        index: i32,
+    },
     /// A field number is outside the valid range
     /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`), or an extension range has
     /// a negative bound.
@@ -86,6 +99,10 @@ pub enum PoolError {
     /// protoc rejects this within one compilation unit, but it can arise
     /// when merging independently-compiled `FileDescriptorSet`s.
     DuplicateExtensionNumber { extendee: String, number: u32 },
+    /// Two methods in one service have the same proto name.
+    DuplicateMethodName { service: String, name: String },
+    /// Two enum values in the same symbol scope have the same proto name.
+    DuplicateEnumValueName { enum_name: String, name: String },
 }
 
 impl core::fmt::Display for PoolError {
@@ -102,13 +119,33 @@ impl core::fmt::Display for PoolError {
                     "type name {type_name:?} on field {field} resolves to the wrong kind"
                 )
             }
-            Self::DuplicateName(name) => write!(f, "duplicate type name {name:?}"),
+            Self::DuplicateName(name) => write!(f, "duplicate symbol name {name:?}"),
             Self::TooManyFields { message, count } => {
                 write!(
                     f,
                     "message {message} has {count} fields, exceeding the u16 limit"
                 )
             }
+            Self::DuplicateFieldNumber { message, number } => {
+                write!(
+                    f,
+                    "message {message} declares field number {number} more than once"
+                )
+            }
+            Self::DuplicateFieldName { message, name } => {
+                write!(
+                    f,
+                    "message {message} declares field name {name:?} more than once"
+                )
+            }
+            Self::InvalidOneofIndex {
+                message,
+                field,
+                index,
+            } => write!(
+                f,
+                "field {field} in message {message} has invalid oneof index {index}"
+            ),
             Self::InvalidFieldNumber { field, number } => {
                 write!(f, "field {field} has invalid field number {number}")
             }
@@ -120,6 +157,15 @@ impl core::fmt::Display for PoolError {
                     f,
                     "more than one extension claims field number {number} on {extendee}"
                 )
+            }
+            Self::DuplicateMethodName { service, name } => {
+                write!(
+                    f,
+                    "service {service} declares method {name:?} more than once"
+                )
+            }
+            Self::DuplicateEnumValueName { enum_name, name } => {
+                write!(f, "enum {enum_name} declares value {name:?} more than once")
             }
         }
     }
@@ -148,6 +194,16 @@ enum Definition {
     Enum(EnumIndex),
 }
 
+#[derive(Clone, Copy, Debug)]
+enum SymbolKind {
+    Message,
+    Enum,
+    Service,
+    Method,
+    Extension,
+    EnumValue,
+}
+
 /// A pool of linked, feature-resolved protobuf descriptors.
 ///
 /// Built from one or more `FileDescriptorProto`s via [`DescriptorPool::new`]
@@ -168,6 +224,8 @@ pub struct DescriptorPool {
     extensions: Vec<ExtensionDescriptor>,
     /// FQN (no leading dot) → definition lookup.
     by_name: BTreeMap<String, Definition>,
+    /// Every registered symbol FQN, including methods and enum values.
+    symbols: BTreeMap<String, SymbolKind>,
     /// Service FQN (no leading dot) → index. Separate from `by_name`
     /// because `Definition` is `MessageIndex`-or-`EnumIndex` and services
     /// are linked in a single pass after types resolve.
@@ -194,9 +252,9 @@ impl DescriptorPool {
     ///
     /// # Errors
     ///
-    /// Returns a [`PoolError`] if any type name fails to resolve, a name is
-    /// declared twice, a message exceeds 65 535 fields, or a map entry is
-    /// malformed.
+    /// Returns a [`PoolError`] if any type name fails to resolve, a symbol or
+    /// field identity is declared twice, a oneof index is invalid, a message
+    /// exceeds 65 535 fields, or a map entry is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -215,7 +273,8 @@ impl DescriptorPool {
     /// Returns [`PoolError::Decode`] if the bytes are not a well-formed
     /// `FileDescriptorSet`, or any other [`PoolError`] on a structural
     /// validation failure (dangling type names, out-of-range field numbers,
-    /// duplicate types, malformed map entries).
+    /// duplicate symbols or field identities, invalid oneof indices, or
+    /// malformed map entries).
     pub fn decode(bytes: &[u8]) -> Result<Self, PoolError> {
         use buffa::Message;
         let set = FileDescriptorSet::decode_from_slice(bytes)?;
@@ -630,6 +689,13 @@ impl DescriptorPool {
 
     // ── Pass 1: register names ──────────────────────────────────────────────
 
+    fn register_symbol(&mut self, fqn: &str, kind: SymbolKind) -> Result<(), PoolError> {
+        if self.symbols.insert(fqn.to_string(), kind).is_some() {
+            return Err(PoolError::DuplicateName(fqn.to_string()));
+        }
+        Ok(())
+    }
+
     fn register_message(
         &mut self,
         parent_fqn: &str,
@@ -641,6 +707,7 @@ impl DescriptorPool {
         } else {
             format!("{parent_fqn}.{name}")
         };
+        self.register_symbol(&fqn, SymbolKind::Message)?;
         let idx = MessageIndex(
             u32::try_from(self.messages.len()).expect("pool message count fits in u32"),
         );
@@ -681,6 +748,7 @@ impl DescriptorPool {
         } else {
             format!("{parent_fqn}.{name}")
         };
+        self.register_symbol(&fqn, SymbolKind::Enum)?;
         let idx = EnumIndex(u32::try_from(self.enums.len()).expect("pool enum count fits in u32"));
         if self
             .by_name
@@ -746,8 +814,59 @@ impl DescriptorPool {
         let mut fields = Vec::with_capacity(field_count);
         let mut field_by_number: Vec<(u32, u16)> = Vec::with_capacity(field_count);
         let mut field_by_name: Vec<(String, u16)> = Vec::with_capacity(field_count * 2);
+        let mut field_numbers: BTreeMap<u32, usize> = BTreeMap::new();
+        let mut field_names: BTreeMap<String, usize> = BTreeMap::new();
+        // Two fields resolving to one JSON name make JSON lookup ambiguous, but
+        // protobuf permits it where JSON is best-effort: protoc emits such a
+        // set for proto2 with only a warning, and honours
+        // `deprecated_legacy_json_field_conflicts` to opt a proto3 or editions
+        // message back into that leniency. Enforcing here regardless would
+        // reject descriptor sets protoc produced, so gate on the same signals
+        // it uses — `json_format` already resolves to `LegacyBestEffort` for
+        // proto2 and `Allow` for proto3 and editions. protoc rejects every
+        // conflict this leaves through, so the check still catches ambiguity in
+        // a hand-built or third-party set without ever refusing protoc's own
+        // output.
+        let enforce_json_names = msg_features.json_format == JsonFormat::Allow
+            && !msg
+                .options
+                .deprecated_legacy_json_field_conflicts
+                .unwrap_or(false);
         for (i, f) in msg.field.iter().enumerate() {
+            if let Some(oneof_index) = f.oneof_index {
+                let valid = usize::try_from(oneof_index)
+                    .ok()
+                    .is_some_and(|index| index < oneofs.len());
+                if !valid {
+                    return Err(PoolError::InvalidOneofIndex {
+                        message: fqn.clone(),
+                        field: format!("{fqn}.{}", f.name.as_deref().unwrap_or("")),
+                        index: oneof_index,
+                    });
+                }
+            }
             let fd = self.link_field(&fqn, f, &msg_features, Some(msg))?;
+            if field_numbers.insert(fd.number, i).is_some() {
+                return Err(PoolError::DuplicateFieldNumber {
+                    message: fqn.clone(),
+                    number: fd.number,
+                });
+            }
+            if field_names.insert(fd.name.clone(), i).is_some() {
+                return Err(PoolError::DuplicateFieldName {
+                    message: fqn.clone(),
+                    name: fd.name.clone(),
+                });
+            }
+            if enforce_json_names
+                && fd.json_name != fd.name
+                && field_names.insert(fd.json_name.clone(), i).is_some()
+            {
+                return Err(PoolError::DuplicateFieldName {
+                    message: fqn.clone(),
+                    name: fd.json_name.clone(),
+                });
+            }
             let i16 = i as u16;
             // Wire up oneof membership.
             if let Some(oneof_idx) = fd.oneof_index {
@@ -848,15 +967,34 @@ impl DescriptorPool {
         };
         let enum_features = features::resolve_child(parent_features, features::enum_features(e));
         let idx = self.enum_index(&fqn).expect("enum registered in pass 1");
-        let values: Vec<EnumValueDescriptor> = e
-            .value
-            .iter()
-            .map(|v| EnumValueDescriptor {
-                name: v.name.clone().unwrap_or_default(),
+        let mut value_names = BTreeSet::new();
+        let mut values = Vec::with_capacity(e.value.len());
+        for v in &e.value {
+            let value_name = v.name.clone().unwrap_or_default();
+            if !value_names.insert(value_name.clone()) {
+                return Err(PoolError::DuplicateEnumValueName {
+                    enum_name: fqn.clone(),
+                    name: value_name,
+                });
+            }
+            let value_fqn = if parent_fqn.is_empty() {
+                value_name.clone()
+            } else {
+                format!("{parent_fqn}.{value_name}")
+            };
+            if matches!(self.symbols.get(&value_fqn), Some(SymbolKind::EnumValue)) {
+                return Err(PoolError::DuplicateEnumValueName {
+                    enum_name: fqn.clone(),
+                    name: value_name,
+                });
+            }
+            self.register_symbol(&value_fqn, SymbolKind::EnumValue)?;
+            values.push(EnumValueDescriptor {
+                name: value_name,
                 number: v.number.unwrap_or(0),
                 options: clone_options(&v.options),
-            })
-            .collect();
+            });
+        }
         self.enums[idx.0 as usize] = EnumDescriptor {
             full_name: fqn,
             values,
@@ -877,28 +1015,30 @@ impl DescriptorPool {
         } else {
             format!("{parent_fqn}.{name}")
         };
-        if self.service_by_name.contains_key(&fqn) {
-            return Err(PoolError::DuplicateName(fqn));
+        let mut method_names = BTreeSet::new();
+        let mut methods = Vec::with_capacity(svc.method.len());
+        for m in &svc.method {
+            let mname = m.name.as_deref().unwrap_or("").to_string();
+            if !method_names.insert(mname.clone()) {
+                return Err(PoolError::DuplicateMethodName {
+                    service: fqn.clone(),
+                    name: mname,
+                });
+            }
+            let method_fqn = format!("{fqn}.{}", m.name.as_deref().unwrap_or(""));
+            self.register_symbol(&method_fqn, SymbolKind::Method)?;
+            let input = self.resolve_message_type_name(m.input_type.as_deref(), &method_fqn)?;
+            let output = self.resolve_message_type_name(m.output_type.as_deref(), &method_fqn)?;
+            methods.push(MethodDescriptor {
+                name: mname,
+                input,
+                output,
+                client_streaming: m.client_streaming.unwrap_or(false),
+                server_streaming: m.server_streaming.unwrap_or(false),
+                options: clone_options(&m.options),
+            });
         }
-        let methods = svc
-            .method
-            .iter()
-            .map(|m| {
-                let mname = m.name.as_deref().unwrap_or("");
-                let method_fqn = format!("{fqn}.{mname}");
-                let input = self.resolve_message_type_name(m.input_type.as_deref(), &method_fqn)?;
-                let output =
-                    self.resolve_message_type_name(m.output_type.as_deref(), &method_fqn)?;
-                Ok(MethodDescriptor {
-                    name: mname.to_string(),
-                    input,
-                    output,
-                    client_streaming: m.client_streaming.unwrap_or(false),
-                    server_streaming: m.server_streaming.unwrap_or(false),
-                    options: clone_options(&m.options),
-                })
-            })
-            .collect::<Result<Vec<_>, PoolError>>()?;
+        self.register_symbol(&fqn, SymbolKind::Service)?;
         let idx = ServiceIndex(
             u32::try_from(self.services.len()).expect("pool service count fits in u32"),
         );
@@ -926,16 +1066,7 @@ impl DescriptorPool {
         } else {
             format!("{scope_fqn}.{name}")
         };
-        // Protobuf has a single symbol space per scope: an extension cannot
-        // share an FQN with another extension, a message, an enum, or a
-        // service. A spec-compliant protoc enforces this; the input is no
-        // longer trusted to come from protoc.
-        if self.extension_by_name.contains_key(&fqn)
-            || self.by_name.contains_key(&fqn)
-            || self.service_by_name.contains_key(&fqn)
-        {
-            return Err(PoolError::DuplicateName(fqn));
-        }
+        self.register_symbol(&fqn, SymbolKind::Extension)?;
         let extendee = self.resolve_message_type_name(ext.extendee.as_deref(), &fqn)?;
         // The field links exactly like a declared field. `containing_msg` is
         // `None` because extensions cannot be map fields (a map requires a

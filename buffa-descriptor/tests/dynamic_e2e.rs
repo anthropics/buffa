@@ -59,6 +59,26 @@ fn map_status_entry(key: &str, values: &[i32]) -> (Vec<u8>, Vec<u8>) {
     (entry, wire)
 }
 
+fn assert_oneof_member_survives_decode_error(
+    initial_number: u32,
+    initial_value: Value,
+    replacement: &[u8],
+    expected_error: DecodeError,
+) {
+    let p = pool();
+    let oneof_idx = p.message_index("reflect.test.OneOf").unwrap();
+    let md = p.message_by_name("reflect.test.OneOf").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), oneof_idx);
+    msg.set(md.field(initial_number).unwrap(), initial_value.clone());
+
+    assert_eq!(msg.merge(replacement), Err(expected_error));
+    assert_eq!(msg.field_by_number(initial_number), Some(&initial_value));
+    assert_eq!(
+        msg.which_oneof(&md.oneofs()[0]).unwrap().number(),
+        initial_number
+    );
+}
+
 fn message_with_valid_nested() -> DynamicMessage {
     let p = pool();
     let containers_idx = p.message_index("reflect.test.Containers").unwrap();
@@ -641,6 +661,50 @@ fn which_oneof_resolves_set_member() {
 }
 
 #[test]
+fn malformed_oneof_varint_preserves_previous_member() {
+    // field 1 (num), followed by a varint with no terminating byte.
+    assert_oneof_member_survives_decode_error(
+        2,
+        Value::String("Alice".into()),
+        &[0x08, 0x80],
+        DecodeError::UnexpectedEof,
+    );
+}
+
+#[test]
+fn truncated_oneof_message_preserves_previous_member() {
+    // field 3 (msg), length 2, but only one payload byte is available.
+    assert_oneof_member_survives_decode_error(
+        2,
+        Value::String("Alice".into()),
+        &[0x1a, 0x02, 0x0a],
+        DecodeError::UnexpectedEof,
+    );
+}
+
+#[test]
+fn wrong_oneof_group_terminator_preserves_previous_member() {
+    // field 3 (msg) starts a group, then ends with field 2 instead of field 3.
+    assert_oneof_member_survives_decode_error(
+        2,
+        Value::String("Alice".into()),
+        &[0x1b, 0x08, 0x01, 0x14],
+        DecodeError::InvalidEndGroup(2),
+    );
+}
+
+#[test]
+fn invalid_utf8_oneof_replacement_preserves_previous_member() {
+    // field 2 (text) contains an invalid UTF-8 byte and replaces field 1.
+    assert_oneof_member_survives_decode_error(
+        1,
+        Value::I32(42),
+        &[0x12, 0x01, 0xff],
+        DecodeError::InvalidUtf8,
+    );
+}
+
+#[test]
 fn unknown_fields_reachable_through_dyn_reflect_message() {
     // The PII-interceptor case: a recursive walk over `&dyn ReflectMessage`
     // must be able to reach the unknown fields of *nested* messages, not
@@ -972,4 +1036,252 @@ fn set_panics_on_foreign_field_descriptor() {
 
     let mut msg = DynamicMessage::new(Arc::clone(&p), owner_idx);
     msg.set(foreign, Value::String("boom".into()));
+}
+
+// ── Cross-pool message values (issue #297) ─────────────────────────────────
+
+/// A nested message built against a *different* pool instance of the same
+/// schema is re-homed on `set`, not rejected — the adoption rule documented on
+/// `ReflectMessageMut::try_set`. Two pools decoded from the same bytes stand in
+/// for the cross-crate shape, where the nested type's pool is its defining
+/// crate's.
+#[test]
+fn set_rehomes_singular_message_from_a_foreign_pool() {
+    let parent_pool = pool();
+    let foreign_pool = pool(); // same bytes, different Arc — the cross-crate shape
+
+    let containers = parent_pool
+        .message_by_name("reflect.test.Containers")
+        .unwrap();
+    let inner_idx = foreign_pool.message_index("reflect.test.Inner").unwrap();
+    let foreign_inner_md = foreign_pool.message_by_name("reflect.test.Inner").unwrap();
+
+    let mut foreign_inner = DynamicMessage::new(Arc::clone(&foreign_pool), inner_idx);
+    foreign_inner.set(foreign_inner_md.field(2).unwrap(), Value::I32(7));
+
+    let mut parent = DynamicMessage::new(
+        Arc::clone(&parent_pool),
+        parent_pool
+            .message_index("reflect.test.Containers")
+            .unwrap(),
+    );
+    parent
+        .try_set(containers.field(5).unwrap(), Value::Message(foreign_inner))
+        .expect("a same-schema message from another pool is re-homed, not rejected");
+
+    // Stored value is now homed in the parent's pool, and survives a round-trip.
+    let Some(Value::Message(stored)) = parent.field_by_number(5) else {
+        panic!("nested field not set");
+    };
+    assert!(
+        Arc::ptr_eq(stored.pool(), &parent_pool),
+        "re-homed into parent pool"
+    );
+    let bytes = parent.encode_to_vec();
+    let back = DynamicMessage::decode(
+        Arc::clone(&parent_pool),
+        parent_pool
+            .message_index("reflect.test.Containers")
+            .unwrap(),
+        &bytes,
+    )
+    .unwrap();
+    assert_eq!(back, parent);
+}
+
+/// The same re-homing applies inside repeated and map fields — a vtable walk
+/// surfaces those elements through `ValueRef::to_owned` too.
+#[test]
+fn set_rehomes_message_elements_in_lists_and_maps() {
+    let parent_pool = pool();
+    let foreign_pool = pool();
+
+    let containers = parent_pool
+        .message_by_name("reflect.test.Containers")
+        .unwrap();
+    let inner_idx = foreign_pool.message_index("reflect.test.Inner").unwrap();
+    let foreign_inner_md = foreign_pool.message_by_name("reflect.test.Inner").unwrap();
+
+    let mut foreign_inner = DynamicMessage::new(Arc::clone(&foreign_pool), inner_idx);
+    foreign_inner.set(foreign_inner_md.field(2).unwrap(), Value::I32(9));
+
+    let mut parent = DynamicMessage::new(
+        Arc::clone(&parent_pool),
+        parent_pool
+            .message_index("reflect.test.Containers")
+            .unwrap(),
+    );
+
+    parent
+        .try_set(
+            containers.field(8).unwrap(),
+            Value::List(vec![Value::Message(foreign_inner.clone())]),
+        )
+        .expect("foreign list element is re-homed");
+    parent
+        .try_set(
+            containers.field(4).unwrap(),
+            Value::Map(MapValue::from_entries(vec![(
+                MapKey::I32(1),
+                Value::Message(foreign_inner),
+            )])),
+        )
+        .expect("foreign map value is re-homed");
+
+    let bytes = parent.encode_to_vec();
+    let back = DynamicMessage::decode(
+        Arc::clone(&parent_pool),
+        parent_pool
+            .message_index("reflect.test.Containers")
+            .unwrap(),
+        &bytes,
+    )
+    .unwrap();
+    assert_eq!(back, parent);
+}
+
+/// Re-homing is keyed on the message's full name: a *different* message type
+/// from another pool is still rejected, so #272's validation keeps its teeth.
+#[test]
+fn set_still_rejects_a_different_message_type_from_a_foreign_pool() {
+    let parent_pool = pool();
+    let foreign_pool = pool();
+
+    let containers = parent_pool
+        .message_by_name("reflect.test.Containers")
+        .unwrap();
+    let scalars_idx = foreign_pool.message_index("reflect.test.Scalars").unwrap();
+    let wrong_type = DynamicMessage::new(Arc::clone(&foreign_pool), scalars_idx);
+
+    let err = parent_pool
+        .message_index("reflect.test.Containers")
+        .map(|idx| DynamicMessage::new(Arc::clone(&parent_pool), idx))
+        .unwrap()
+        .try_set(containers.field(5).unwrap(), Value::Message(wrong_type))
+        .expect_err("Scalars is not an Inner, whatever pool it came from");
+    assert!(matches!(err, ReflectError::WrongValueKind { .. }));
+}
+
+/// Two pools that disagree about a same-named type reinterpret the value's
+/// bytes against the target's schema, exactly as if they had arrived from a
+/// peer built on the other schema: what the target does not recognize lands in
+/// unknown fields and is re-emitted on the next encode. Adoption is keyed on
+/// the full name, so this is the documented consequence of taking equal names
+/// to mean equal schemas — nothing is lost, but a field whose type is not
+/// wire-compatible reads as unset rather than raising.
+#[test]
+fn set_reinterprets_a_same_named_message_whose_schema_diverges() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    // `skew.Holder{ skew.Payload sub = 1 }`, with Payload.v typed per `v_type`
+    // and an optional field 7 the other side may not know.
+    let build = |v_type: Type, with_extra: bool| {
+        let mut fields = vec![FieldDescriptorProto {
+            name: Some("v".into()),
+            number: Some(1),
+            label: Some(Label::LABEL_OPTIONAL),
+            r#type: Some(v_type),
+            ..Default::default()
+        }];
+        if with_extra {
+            fields.push(FieldDescriptorProto {
+                name: Some("extra".into()),
+                number: Some(7),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_STRING),
+                ..Default::default()
+            });
+        }
+        let file = FileDescriptorProto {
+            name: Some("skew.proto".into()),
+            package: Some("skew".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![
+                DescriptorProto {
+                    name: Some("Holder".into()),
+                    field: vec![FieldDescriptorProto {
+                        name: Some("sub".into()),
+                        number: Some(1),
+                        label: Some(Label::LABEL_OPTIONAL),
+                        r#type: Some(Type::TYPE_MESSAGE),
+                        type_name: Some(".skew.Payload".into()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                DescriptorProto {
+                    name: Some("Payload".into()),
+                    field: fields,
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        Arc::new(
+            DescriptorPool::new(FileDescriptorSet {
+                file: vec![file],
+                ..Default::default()
+            })
+            .expect("pool builds from hand-built descriptor"),
+        )
+    };
+
+    let adopt = |target: &Arc<DescriptorPool>, payload: DynamicMessage| {
+        let holder_md = target.message_by_name("skew.Holder").unwrap();
+        let mut holder = DynamicMessage::new(
+            Arc::clone(target),
+            target.message_index("skew.Holder").unwrap(),
+        );
+        holder
+            .try_set(holder_md.field(1).unwrap(), Value::Message(payload))
+            .expect("same full name is the adoption key, whatever the schema says");
+        let Some(Value::Message(stored)) = holder.field_by_number(1) else {
+            panic!("nested field not set");
+        };
+        stored.clone()
+    };
+
+    let payload_of = |p: &Arc<DescriptorPool>, v: Value| {
+        let md = p.message_by_name("skew.Payload").unwrap();
+        let mut m = DynamicMessage::new(Arc::clone(p), p.message_index("skew.Payload").unwrap());
+        m.try_set(md.field(1).unwrap(), v).unwrap();
+        m
+    };
+
+    // Wire-compatible types are reinterpreted, as protobuf itself defines them
+    // to be: an int32 read against an int64 field is that same value.
+    let stored = adopt(
+        &build(Type::TYPE_INT64, false),
+        payload_of(&build(Type::TYPE_INT32, false), Value::I32(-1)),
+    );
+    assert_eq!(stored.field_by_number(1), Some(&Value::I64(-1)));
+
+    // A wire-incompatible type is not an error: the bytes go to unknown fields,
+    // so the field reads unset and the value survives the next encode.
+    let stored = adopt(
+        &build(Type::TYPE_INT32, false),
+        payload_of(&build(Type::TYPE_STRING, false), Value::String("hi".into())),
+    );
+    assert_eq!(stored.field_by_number(1), None, "not readable as an int32");
+    assert_eq!(stored.unknown_fields().iter().count(), 1, "kept verbatim");
+
+    // A field the target's schema lacks likewise round-trips intact.
+    let src = build(Type::TYPE_INT32, true);
+    let src_md = src.message_by_name("skew.Payload").unwrap();
+    let mut rich =
+        DynamicMessage::new(Arc::clone(&src), src.message_index("skew.Payload").unwrap());
+    rich.try_set(src_md.field(1).unwrap(), Value::I32(5))
+        .unwrap();
+    rich.try_set(src_md.field(7).unwrap(), Value::String("keepme".into()))
+        .unwrap();
+    let stored = adopt(&build(Type::TYPE_INT32, false), rich);
+    assert_eq!(stored.field_by_number(1), Some(&Value::I32(5)));
+    let bytes = stored.encode_to_vec();
+    assert!(
+        bytes.windows(6).any(|w| w == b"keepme"),
+        "the field this pool cannot name is re-emitted intact"
+    );
 }

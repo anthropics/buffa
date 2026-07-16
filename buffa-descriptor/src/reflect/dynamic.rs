@@ -223,12 +223,22 @@ impl DynamicMessage {
         }
     }
 
-    fn validate_field_value(
+    /// Check `value` against `field`'s descriptor and adopt it into this
+    /// message's pool, returning the value to store.
+    ///
+    /// Scalars and enums carry no pool. A message value already homed here
+    /// (pointer identity — the common case) passes through untouched; one of
+    /// the same type from a different pool is re-homed by a wire round-trip.
+    /// Adoption is keyed on the message's full name, so a genuinely wrong type
+    /// is still rejected whatever pool it came from. See
+    /// [`ReflectMessageMut::try_set`] for why a foreign pool is the normal
+    /// shape of cross-crate reflection rather than caller error.
+    fn adopt_field_value(
         &self,
         field: &FieldDescriptor,
-        value: &Value,
-    ) -> Result<(), ReflectError> {
-        validate_value_shape(field.kind, value, &self.pool).map_err(|err| {
+        value: Value,
+    ) -> Result<Value, ReflectError> {
+        adopt_value(field.kind, value, &self.pool).map_err(|err| {
             ReflectError::wrong_value_kind(
                 self.message_descriptor(),
                 field,
@@ -342,22 +352,31 @@ impl DynamicMessage {
         }
         match kind {
             FieldKind::Singular(sk) => {
+                // Singular message merge semantics: when the same field appears
+                // multiple times on the wire, the parser merges the messages
+                // (each sub-field merged) rather than replacing wholesale.
+                if let SingularKind::Message(midx) = sk {
+                    if let Some(Value::Message(_)) = self.fields.get(&number) {
+                        // This member already holds the oneof, so no sibling is
+                        // set and the clear below has nothing to do. Merging in
+                        // place keeps a partially merged value on error, which
+                        // is what the owned decoder leaves behind.
+                        if let Some(oi) = oneof_index {
+                            self.clear_other_oneof_members(oi, number);
+                        }
+                        // Decode the new bytes into the existing message.
+                        return self.merge_into_existing_message(number, midx, tag, buf, ctx);
+                    }
+                }
+                // Decode before clearing: a replacement that fails to decode
+                // must leave the oneof member that is currently set intact.
+                let v = self.decode_element(sk, tag, buf, ctx)?;
                 // Oneof semantics: setting any member clears all other members
                 // of the same oneof. Synthetic oneofs (proto3 `optional`) have
                 // a single member so this is a no-op for them.
                 if let Some(oi) = oneof_index {
                     self.clear_other_oneof_members(oi, number);
                 }
-                // Singular message merge semantics: when the same field appears
-                // multiple times on the wire, the parser merges the messages
-                // (each sub-field merged) rather than replacing wholesale.
-                if let SingularKind::Message(midx) = sk {
-                    if let Some(Value::Message(_)) = self.fields.get(&number) {
-                        // Decode the new bytes into the existing message.
-                        return self.merge_into_existing_message(number, midx, tag, buf, ctx);
-                    }
-                }
-                let v = self.decode_element(sk, tag, buf, ctx)?;
                 self.fields.insert(number, v);
             }
             FieldKind::List(sk) => {
@@ -737,12 +756,13 @@ impl DynamicMessage {
     /// [`field_by_number_mut`](Self::field_by_number_mut) /
     /// [`field_mut`](Self::field_mut) — is silently omitted, as the whole
     /// field: one invalid element suppresses its entire repeated/map field.
-    /// A nested `Value::Message` counts as invalid unless it was built from
-    /// the *same* [`DescriptorPool`] instance (pointer identity, not
-    /// full-name equality). [`encoded_len`](Self::encoded_len) applies the
-    /// same rule, so length and bytes always agree. The JSON serializer
-    /// represents the same invalid values as `null` rather than omitting
-    /// the field.
+    /// A nested `Value::Message` counts as invalid unless it lives in this
+    /// message's own [`DescriptorPool`] instance (pointer identity, not
+    /// full-name equality); `try_set` guarantees that by adopting foreign
+    /// messages on the way in, so only the `field_mut` bypass can leave one
+    /// here. [`encoded_len`](Self::encoded_len) applies the same rule, so
+    /// length and bytes always agree. The JSON serializer represents the same
+    /// invalid values as `null` rather than omitting the field.
     ///
     /// # Panics
     ///
@@ -1261,7 +1281,7 @@ impl ReflectMessage for DynamicMessage {
 impl ReflectMessageMut for DynamicMessage {
     fn try_set(&mut self, field: &FieldDescriptor, value: Value) -> Result<(), ReflectError> {
         self.validate_field_descriptor(field)?;
-        self.validate_field_value(field, &value)?;
+        let value = self.adopt_field_value(field, value)?;
         // Setting a oneof member must clear its siblings, otherwise a
         // subsequent encode writes multiple oneof members onto the wire,
         // which violates the proto spec. The wire decoder and the JSON
@@ -1327,6 +1347,141 @@ struct ValueShapeMismatch {
     actual: String,
 }
 
+/// Adopt a value into `pool`: validate its shape and re-home any message it
+/// carries that belongs to a different pool. See
+/// [`DynamicMessage::adopt_field_value`] for why re-homing rather than
+/// rejecting is the right rule.
+///
+/// A value that is already well-shaped and wholly homed in `pool` — every
+/// value the decoder and the JSON parser produce — is returned untouched, so
+/// the common path allocates nothing, not even for repeated and map fields.
+/// Only a genuinely foreign message pays the rebuild and the round-trip.
+fn adopt_value(
+    kind: FieldKind,
+    value: Value,
+    pool: &Arc<DescriptorPool>,
+) -> Result<Value, ValueShapeMismatch> {
+    // The strict check *is* the "already homed, already well-shaped" predicate:
+    // it is what the encoder applies to stored values.
+    if validate_value_shape(kind, &value, pool).is_ok() {
+        return Ok(value);
+    }
+    match kind {
+        FieldKind::Singular(sk) => adopt_singular(sk, value, pool),
+        FieldKind::List(sk) => {
+            let Value::List(items) = value else {
+                return Err(field_shape_mismatch(kind, pool, value_shape(&value)));
+            };
+            items
+                .into_iter()
+                .map(|item| adopt_singular(sk, item, pool))
+                .collect::<Result<Vec<_>, _>>()
+                .map(Value::List)
+                .map_err(|err| {
+                    field_shape_mismatch(kind, pool, format!("list element {}", err.actual))
+                })
+        }
+        FieldKind::Map { key, value: vk } => {
+            let Value::Map(entries) = value else {
+                return Err(field_shape_mismatch(kind, pool, value_shape(&value)));
+            };
+            entries
+                .into_entries()
+                .into_iter()
+                .map(|(map_key, map_value)| {
+                    if !map_key_matches_scalar(key, &map_key) {
+                        return Err(field_shape_mismatch(
+                            kind,
+                            pool,
+                            format!("map key {}", map_key_shape(&map_key)),
+                        ));
+                    }
+                    let adopted = adopt_singular(vk, map_value, pool).map_err(|err| {
+                        field_shape_mismatch(kind, pool, format!("map value {}", err.actual))
+                    })?;
+                    Ok((map_key, adopted))
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(|entries| Value::Map(MapValue::from_entries(entries)))
+        }
+    }
+}
+
+fn adopt_singular(
+    kind: SingularKind,
+    value: Value,
+    pool: &Arc<DescriptorPool>,
+) -> Result<Value, ValueShapeMismatch> {
+    let SingularKind::Message(midx) = kind else {
+        // Scalars and enums are pool-free: shape is the whole contract.
+        return if validate_singular_shape(kind, &value, pool).is_ok() {
+            Ok(value)
+        } else {
+            Err(ValueShapeMismatch {
+                expected: singular_kind_name(kind, pool),
+                actual: value_shape(&value),
+            })
+        };
+    };
+    let Value::Message(msg) = value else {
+        return Err(ValueShapeMismatch {
+            expected: singular_kind_name(kind, pool),
+            actual: value_shape(&value),
+        });
+    };
+    if Arc::ptr_eq(&msg.pool, pool) && msg.msg_idx == midx {
+        return Ok(Value::Message(msg));
+    }
+    rehome_message(msg, midx, pool).map(Value::Message)
+}
+
+/// Re-home a message from a foreign pool into `pool` as `midx`.
+///
+/// Same full name is the adoption test — the criterion protobuf itself uses to
+/// identify a type across compilations (it is what `Any`'s type URL carries).
+/// The wire round-trip re-homes the whole subtree in one decode, so nested
+/// messages need no separate walk.
+///
+/// Equal full names are taken to mean equal schemas, as everywhere else that
+/// protobuf resolves a type by name. Two pools that disagree on the fields of
+/// a same-named type reinterpret the bytes against the target's schema:
+/// whatever it does not recognize lands in unknown fields and is re-emitted
+/// intact on the next encode.
+fn rehome_message(
+    msg: DynamicMessage,
+    midx: MessageIndex,
+    pool: &Arc<DescriptorPool>,
+) -> Result<DynamicMessage, ValueShapeMismatch> {
+    let expected = pool.message(midx);
+    let mismatch = |actual: &str| ValueShapeMismatch {
+        expected: format!("message {}", expected.full_name()),
+        actual: actual.to_owned(),
+    };
+    let full_name = msg.message_descriptor().full_name().to_owned();
+    if full_name != expected.full_name() {
+        return Err(mismatch(&format!("message {full_name}")));
+    }
+    // Fallible, not `encode_to_vec`: a message over the 2 GiB protobuf limit
+    // would panic there, and an oversized value handed to `set` gets the same
+    // rejection as any other value this pool cannot hold. Depth is not checked
+    // here — encoding recurses, so a message nested past the stack's tolerance
+    // overflows, as it would on any other encode of that value.
+    let bytes = msg.try_encode_to_vec().map_err(|_| {
+        mismatch(&format!(
+            "message {full_name} exceeding the {} byte encode limit",
+            buffa::MAX_MESSAGE_BYTES
+        ))
+    })?;
+    // The round-trip decode applies the standard recursion limit, so report
+    // what it said: a message nested deeper than the limit is rejected here,
+    // and "incompatible pool" would name the wrong cause.
+    DynamicMessage::decode(Arc::clone(pool), midx, &bytes).map_err(|err| {
+        mismatch(&format!(
+            "message {full_name} this pool cannot decode ({err})"
+        ))
+    })
+}
+
 fn validate_value_shape(
     kind: FieldKind,
     value: &Value,
@@ -1380,9 +1535,11 @@ fn validate_singular_shape(
         // *field's* enum descriptor, so a foreign or unknown number cannot
         // corrupt output.
         SingularKind::Enum(_) => matches!(value, Value::EnumNumber(_)),
-        // Pointer identity, not full-name equality: a structurally-identical
-        // message built from a different pool instance is foreign, matching
-        // `FieldNotMember`'s identity philosophy.
+        // Pointer identity, not full-name equality. This is the encode-time
+        // check, and by then every value that entered through `try_set` has
+        // been adopted into this pool, so a foreign message here means the
+        // `field_mut` bypass put it there — omit it rather than encode a
+        // value whose descriptors we cannot trust.
         SingularKind::Message(midx) => match value {
             Value::Message(msg) => Arc::ptr_eq(&msg.pool, pool) && msg.msg_idx == midx,
             _ => false,
