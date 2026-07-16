@@ -2,6 +2,12 @@
 
 A step-by-step guide for migrating an existing prost-based project to buffa.
 
+## Where is `#[derive(Message)]`?
+
+Buffa generates message types from `.proto` files instead of treating Rust attributes as the schema. Keeping `.proto` as the source of truth preserves protobuf's cross-language contract and its surrounding tooling, including schema registries and breaking-change checks. To attach buffa implementations to an existing Rust type while retaining that schema, use [`extern_path` and the custom-type options](guide.md#custom-type-implementations).
+
+A limited derive for self-contained tests and examples is under discussion in [#226](https://github.com/anthropics/buffa/issues/226).
+
 ## 1. Swap dependencies
 
 ```diff
@@ -95,10 +101,10 @@ This is the biggest API change. Prost uses `Option<Box<M>>`, which requires expl
 -    street: "123 Main".into(),
 -    ..Default::default()
 -}));
-+msg.address = buffa::MessageField::some(Address {
++msg.address = Address {
 +    street: "123 Main".into(),
 +    ..Default::default()
-+});
++}.into();
 
  // Or use get_or_insert_default for piecewise construction
 +msg.address.get_or_insert_default().street = "123 Main".into();
@@ -110,6 +116,9 @@ This is the biggest API change. Prost uses `Option<Box<M>>`, which requires expl
  // Converting to Option for interop
 -let opt: Option<&Address> = msg.address.as_deref();
 +let opt: Option<&Address> = msg.address.as_option();
+
+ // Converting an Option<&Address> back to a field (clones the Address)
++msg.address = opt.cloned().into();
 
  // Enforcing presence (e.g. in an RPC handler)
 -let addr = msg.address.ok_or_else(|| Error::missing("address"))?;
@@ -123,8 +132,6 @@ Prost represents all enum fields as `i32`. Buffa uses `EnumValue<E>` for open en
 ```diff
  // Setting an enum field
 -msg.status = Status::Active as i32;
-+msg.status = buffa::EnumValue::from(Status::ACTIVE);
-+// or simply:
 +msg.status = Status::ACTIVE.into();
 
  // Reading
@@ -286,7 +293,7 @@ Features that prost supports but buffa does not (yet):
 | `type_attribute(path, attr)` | Supported. Same API, plus `message_attribute` / `enum_attribute` / `oneof_attribute` for narrower targeting. (For serde, prefer `generate_json(true)`, which emits the proto3-canonical JSON impls.) |
 | `field_attribute(path, attr)` | Supported. Same API. |
 | `service_generator(...)` | Not supported. Services codegen is planned. |
-| `#[derive(prost::Message)]` | Not provided. Implement `Message` by hand and use `extern_path` (see [Custom types](guide.md#custom-type-implementations)). |
+| `#[derive(prost::Message)]` | No derive; generate from `.proto` or use `extern_path` for an existing Rust type. See [Where is `#[derive(Message)]`?](#where-is-derivemessage). |
 | `prost::Name` trait | `buffa::MessageName` — same shape (`PACKAGE`, `NAME`, plus `FULL_NAME` and `TYPE_URL`), but all four are `&'static str` consts computed at codegen time rather than runtime `format!` calls. Replace `M::full_name()` with `M::FULL_NAME` and `M::type_url()` with `M::TYPE_URL`. Implemented for both owned messages and view types. |
 
 Features that buffa has but prost does not:

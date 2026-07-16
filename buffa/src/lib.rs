@@ -52,6 +52,16 @@
 //! to tune these, e.g. to reject oversized inputs at the decode entry point
 //! rather than at the allocator.
 //!
+//! # Where is `#[derive(Message)]`?
+//!
+//! There isn't one: message types are generated from `.proto` files, so the
+//! portable schema stays the source of truth for every language and for
+//! tooling such as schema registries and breaking-change checks. To give a
+//! generated field an existing Rust type, see the guide's
+//! [custom-type support][custom-types].
+//!
+//! [custom-types]: https://github.com/anthropics/buffa/blob/main/docs/guide.md#custom-type-implementations
+//!
 //! # Zero-copy views
 //!
 //! Every owned message type `Foo` has a corresponding `FooView<'a>` that
