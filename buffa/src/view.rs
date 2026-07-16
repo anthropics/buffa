@@ -242,9 +242,12 @@ pub trait MessageView<'a>: Sized {
     /// [`decode_view_with_ctx`](Self::decode_view_with_ctx) to decode by hand
     /// never reaches the provided loop, so it can satisfy the trait with a
     /// one-line `Ok(cur)` stub. The canonical shape is a match on
-    /// `tag.field_number()`:
+    /// `tag.field_number()`. Mark the method `#[inline]`: the provided loop
+    /// calls it once per field across the crate boundary, so the hint lets the
+    /// optimizer fold the match into that loop.
     ///
     /// ```rust,ignore
+    /// #[inline]
     /// fn merge_view_field(
     ///     &mut self,
     ///     tag: buffa::encoding::Tag,

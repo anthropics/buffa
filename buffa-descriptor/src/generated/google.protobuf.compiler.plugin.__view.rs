@@ -32,6 +32,7 @@ impl<'a> ::buffa::MessageView<'a> for VersionView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         <Self as ::buffa::MessageView>::decode_view_ctx(buf, ctx)
     }
+    #[inline]
     fn merge_view_field(
         &mut self,
         tag: ::buffa::encoding::Tag,
@@ -392,6 +393,7 @@ impl<'a> ::buffa::MessageView<'a> for CodeGeneratorRequestView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         <Self as ::buffa::MessageView>::decode_view_ctx(buf, ctx)
     }
+    #[inline]
     fn merge_view_field(
         &mut self,
         tag: ::buffa::encoding::Tag,
@@ -899,6 +901,7 @@ impl<'a> ::buffa::MessageView<'a> for CodeGeneratorResponseView<'a> {
     ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
         <Self as ::buffa::MessageView>::decode_view_ctx(buf, ctx)
     }
+    #[inline]
     fn merge_view_field(
         &mut self,
         tag: ::buffa::encoding::Tag,
@@ -1372,6 +1375,7 @@ pub mod code_generator_response {
         ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
             <Self as ::buffa::MessageView>::decode_view_ctx(buf, ctx)
         }
+        #[inline]
         fn merge_view_field(
             &mut self,
             tag: ::buffa::encoding::Tag,
