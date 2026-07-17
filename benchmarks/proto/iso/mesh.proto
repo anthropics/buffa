@@ -1,0 +1,17 @@
+syntax = "proto3";
+package bench;
+
+message TriMesh {
+  message Vertex {
+    float px = 1;
+    float py = 2;
+    float pz = 3;
+  }
+  message Face {
+    Vertex a = 1;
+    Vertex b = 2;
+    Vertex c = 3;
+    Vertex n = 4;
+  }
+  repeated Face faces = 1;
+}
