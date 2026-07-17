@@ -720,6 +720,63 @@ pub trait ViewEncode<'a>: MessageView<'a> {
         Ok(())
     }
 
+    /// Encode this view into `buf` only if its encoded size fits within
+    /// `max_bytes`, using a single size pass that is then reused for the write.
+    ///
+    /// This avoids the double tree-walk that `try_encoded_len` + `encode`
+    /// would require: one `compute_size` pass populates the
+    /// [`SizeCache`](crate::SizeCache); the budget check happens before
+    /// `write_to` runs, so on `Err` nothing is written to `buf`.
+    ///
+    /// Returns the encoded body length on success (excludes any length prefix
+    /// you add for framing) — useful for metrics or frame sizing. Note that
+    /// this return type is `u32`, unlike `try_encode`'s `()`. `max_bytes` is
+    /// also `u32`; callers with a `usize` budget can cast with
+    /// `u32::try_from(budget).unwrap_or(u32::MAX)`.
+    ///
+    /// # Errors
+    ///
+    /// - [`EncodeError::MessageTooLarge`](crate::EncodeError::MessageTooLarge)
+    ///   if the encoded size exceeds the 2 GiB protobuf limit
+    ///   ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)).
+    ///   `MessageTooLarge` takes precedence if both limits are exceeded.
+    /// - [`EncodeError::ExceedsBudget`](crate::EncodeError::ExceedsBudget)
+    ///   if the encoded size is within the protobuf limit but exceeds
+    ///   `max_bytes`.
+    fn try_encode_bounded(
+        &self,
+        max_bytes: u32,
+        buf: &mut impl EncodeSink,
+    ) -> Result<u32, crate::EncodeError> {
+        let mut cache = crate::SizeCache::new();
+        self.try_encode_bounded_with_cache(max_bytes, &mut cache, buf)
+    }
+
+    /// Like [`try_encode_bounded`](Self::try_encode_bounded) but reuses an
+    /// existing [`SizeCache`](crate::SizeCache), clearing it first.
+    ///
+    /// Prefer
+    /// [`SizeCachePool::try_encode_view_bounded`](crate::SizeCachePool::try_encode_view_bounded)
+    /// for hot-loop use — the pool amortizes the cache's spill allocation.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`try_encode_bounded`](Self::try_encode_bounded).
+    fn try_encode_bounded_with_cache(
+        &self,
+        max_bytes: u32,
+        cache: &mut crate::SizeCache,
+        buf: &mut impl EncodeSink,
+    ) -> Result<u32, crate::EncodeError> {
+        cache.clear();
+        let len = crate::message::checked_encode_size(self.compute_size(cache))?;
+        if len > max_bytes {
+            return Err(crate::EncodeError::ExceedsBudget { len, max_bytes });
+        }
+        self.write_to(cache, buf);
+        Ok(len)
+    }
+
     /// Compute the encoded byte size of this view.
     ///
     /// Walks the view tree, discarding the intermediate
@@ -4151,5 +4208,108 @@ mod tests {
         assert_eq!(view.try_encode_to_vec().unwrap(), expected);
         assert_eq!(view.try_encode_to_bytes().unwrap(), expected);
         assert_eq!(view.try_encoded_len().unwrap(), expected.len() as u32);
+    }
+
+    #[test]
+    fn view_try_encode_bounded_within_budget_encodes_and_returns_len() {
+        let view = SimpleMessageView {
+            id: 42,
+            name: "hello",
+        };
+        let mut expected = alloc::vec::Vec::new();
+        view.encode(&mut expected);
+        let budget = expected.len() as u32;
+
+        let mut buf = alloc::vec::Vec::new();
+        let len = view.try_encode_bounded(budget, &mut buf).unwrap();
+        assert_eq!(buf, expected);
+        assert_eq!(len, budget);
+
+        // with_cache variant agrees
+        let mut cache = crate::SizeCache::new();
+        let mut buf2 = alloc::vec::Vec::new();
+        let len2 = view
+            .try_encode_bounded_with_cache(budget, &mut cache, &mut buf2)
+            .unwrap();
+        assert_eq!(buf2, expected);
+        assert_eq!(len2, budget);
+    }
+
+    #[test]
+    fn view_try_encode_bounded_over_budget_errors_and_writes_nothing() {
+        let view = SimpleMessageView {
+            id: 42,
+            name: "hello",
+        };
+        let len = view.encoded_len();
+        let budget = len - 1;
+
+        let mut buf = alloc::vec::Vec::new();
+        assert_eq!(
+            view.try_encode_bounded(budget, &mut buf),
+            Err(crate::EncodeError::ExceedsBudget {
+                len,
+                max_bytes: budget
+            })
+        );
+        assert!(buf.is_empty(), "nothing written on budget exceeded");
+    }
+
+    #[test]
+    fn view_try_encode_bounded_over_protobuf_limit_errors_as_too_large() {
+        let view = SizedView {
+            reported_size: OVER_LIMIT,
+        };
+        let mut buf = alloc::vec::Vec::new();
+        assert_eq!(
+            view.try_encode_bounded(u32::MAX, &mut buf),
+            Err(crate::EncodeError::MessageTooLarge)
+        );
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn pool_try_encode_view_bounded_within_budget_encodes_and_returns_len() {
+        let view = SimpleMessageView {
+            id: 7,
+            name: "pooled",
+        };
+        let mut expected = alloc::vec::Vec::new();
+        view.encode(&mut expected);
+        let budget = expected.len() as u32;
+
+        let mut pool = crate::SizeCachePool::sequential(64);
+        let mut buf = alloc::vec::Vec::new();
+        let len = pool
+            .try_encode_view_bounded(&view, budget, &mut buf)
+            .unwrap();
+        assert_eq!(buf, expected);
+        assert_eq!(len, budget);
+    }
+
+    #[test]
+    fn pool_try_encode_view_bounded_over_budget_errors_and_buffer_returned() {
+        let view = SimpleMessageView {
+            id: 7,
+            name: "pooled",
+        };
+        let len = view.encoded_len();
+        let budget = len - 1;
+
+        let mut pool = crate::SizeCachePool::sequential(64);
+        let mut buf = alloc::vec::Vec::new();
+        assert_eq!(
+            pool.try_encode_view_bounded(&view, budget, &mut buf),
+            Err(crate::EncodeError::ExceedsBudget {
+                len,
+                max_bytes: budget
+            })
+        );
+        assert!(buf.is_empty());
+        // Pool buffer must be returned on Err — a subsequent call must succeed.
+        assert_eq!(
+            pool.try_encode_view_bounded(&view, len, &mut buf).unwrap(),
+            len
+        );
     }
 }

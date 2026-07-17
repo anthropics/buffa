@@ -530,6 +530,78 @@ impl SizeCachePool {
         self.release(cache);
         result
     }
+
+    /// Encode a message into `buf` only if its encoded size fits within
+    /// `max_bytes`, reusing a pooled spill buffer.
+    ///
+    /// The pooled equivalent of
+    /// [`Message::try_encode_bounded`](crate::Message::try_encode_bounded).
+    /// Uses a single size pass: `compute_size` populates the cache, the
+    /// budget check fires before `write_to`, so on `Err` nothing is written
+    /// to `buf` and the pooled buffer is returned to the pool.
+    ///
+    /// Returns the encoded body length on success (excludes any length prefix
+    /// you add for framing). `max_bytes` is `u32` to match the encode-size
+    /// domain; callers with a `usize` budget can cast with
+    /// `u32::try_from(budget).unwrap_or(u32::MAX)`.
+    ///
+    /// # Errors
+    ///
+    /// - [`EncodeError::MessageTooLarge`](crate::EncodeError::MessageTooLarge)
+    ///   if the encoded size exceeds the 2 GiB protobuf limit
+    ///   ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)).
+    ///   `MessageTooLarge` takes precedence if both limits are exceeded.
+    /// - [`EncodeError::ExceedsBudget`](crate::EncodeError::ExceedsBudget)
+    ///   if the encoded size is within the protobuf limit but exceeds
+    ///   `max_bytes`.
+    #[inline]
+    pub fn try_encode_bounded<M: crate::Message>(
+        &mut self,
+        msg: &M,
+        max_bytes: u32,
+        buf: &mut impl crate::EncodeSink,
+    ) -> Result<u32, crate::EncodeError> {
+        let mut cache = self.acquire();
+        let result = msg.try_encode_bounded_with_cache(max_bytes, &mut cache, buf);
+        self.release(cache);
+        result
+    }
+
+    /// Encode a borrowed message view into `buf` only if its encoded size
+    /// fits within `max_bytes`, reusing a pooled spill buffer.
+    ///
+    /// The pooled equivalent of
+    /// [`ViewEncode::try_encode_bounded`](crate::ViewEncode::try_encode_bounded).
+    /// Uses a single size pass: `compute_size` populates the cache, the
+    /// budget check fires before `write_to`, so on `Err` nothing is written
+    /// to `buf` and the pooled buffer is returned to the pool.
+    ///
+    /// Returns the encoded body length on success (excludes any length prefix
+    /// you add for framing). `max_bytes` is `u32` to match the encode-size
+    /// domain; callers with a `usize` budget can cast with
+    /// `u32::try_from(budget).unwrap_or(u32::MAX)`.
+    ///
+    /// # Errors
+    ///
+    /// - [`EncodeError::MessageTooLarge`](crate::EncodeError::MessageTooLarge)
+    ///   if the encoded size exceeds the 2 GiB protobuf limit
+    ///   ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)).
+    ///   `MessageTooLarge` takes precedence if both limits are exceeded.
+    /// - [`EncodeError::ExceedsBudget`](crate::EncodeError::ExceedsBudget)
+    ///   if the encoded size is within the protobuf limit but exceeds
+    ///   `max_bytes`.
+    #[inline]
+    pub fn try_encode_view_bounded<'a, V: crate::ViewEncode<'a>>(
+        &mut self,
+        view: &V,
+        max_bytes: u32,
+        buf: &mut impl crate::EncodeSink,
+    ) -> Result<u32, crate::EncodeError> {
+        let mut cache = self.acquire();
+        let result = view.try_encode_bounded_with_cache(max_bytes, &mut cache, buf);
+        self.release(cache);
+        result
+    }
 }
 
 #[cfg(test)]
