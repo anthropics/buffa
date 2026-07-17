@@ -2255,6 +2255,29 @@ mod tests {
         assert!(buf.is_empty(), "nothing written on budget exceeded");
     }
 
+    /// "Nothing written on `Err`" has to hold for a sink that already has
+    /// bytes in it, which is how a caller framing several messages uses one
+    /// buffer. Every other test starts from an empty `Vec`, so the append
+    /// case — where a partial write would corrupt the *preceding* message
+    /// rather than produce an obviously empty one — would go unnoticed.
+    #[test]
+    fn try_encode_bounded_over_budget_leaves_a_populated_buffer_untouched() {
+        let msg = FlatMsg { value: 42 };
+        let len = msg.encoded_len();
+        let budget = len - 1;
+
+        let prefix = b"already framed".to_vec();
+        let mut buf = prefix.clone();
+        assert_eq!(
+            msg.try_encode_bounded(budget, &mut buf),
+            Err(EncodeError::ExceedsBudget {
+                len,
+                max_bytes: budget
+            })
+        );
+        assert_eq!(buf, prefix, "the bytes already in the sink must survive");
+    }
+
     #[test]
     fn try_encode_bounded_zero_budget_with_empty_message_succeeds() {
         // A default FlatMsg with value=0 encodes to 0 bytes (all defaults

@@ -4280,7 +4280,9 @@ mod tests {
 
         let mut pool = crate::SizeCachePool::sequential(64);
         let mut buf = alloc::vec::Vec::new();
-        let len = pool.try_encode_view_bounded(&view, budget, &mut buf).unwrap();
+        let len = pool
+            .try_encode_view_bounded(&view, budget, &mut buf)
+            .unwrap();
         assert_eq!(buf, expected);
         assert_eq!(len, budget);
     }
