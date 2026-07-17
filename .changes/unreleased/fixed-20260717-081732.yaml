@@ -1,0 +1,3 @@
+kind: Fixed
+body: 'Field-scoped open-enum overrides now flow through `FieldDescriptor` into reflective binary and JSON decoding, so `DynamicMessage` preserves unknown enum values in singular, repeated, oneof, and map fields exactly like generated decoders. (#316)'
+time: 2026-07-17T08:17:32.000000000Z

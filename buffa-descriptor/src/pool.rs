@@ -37,7 +37,7 @@ use crate::desc::{
 use crate::features::{self, ResolvedFeatures};
 use crate::generated::descriptor::field_descriptor_proto::{Label, Type as ProtoType};
 use crate::generated::descriptor::{
-    DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto,
+    feature_set, DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto,
     FileDescriptorSet, ServiceDescriptorProto,
 };
 use buffa::editions::{
@@ -363,6 +363,7 @@ impl DescriptorPool {
         // and value type), so they link after the type passes. There's no
         // register/link split because neither has forward references to its
         // own kind.
+        let first_new_extension = self.extensions.len();
         for file in &new_files {
             let pkg = file.package.as_deref().unwrap_or("");
             let file_features = features::for_file(file);
@@ -380,6 +381,7 @@ impl DescriptorPool {
                 self.link_nested_extensions(pkg, msg, &file_features)?;
             }
         }
+        self.finalize_field_enum_types(first_new_message, first_new_extension);
 
         // Record filenames (for idempotent re-add) and the symbol → file
         // index (for `FindFileContainingSymbol`).
@@ -1188,34 +1190,43 @@ impl DescriptorPool {
         // Resolve the singular kind (element type).
         let element = self.resolve_singular(proto_ty, f.type_name.as_deref(), &field_fqn)?;
 
-        // Note: enum closedness is *not* overlaid onto `FieldDescriptor`
-        // (unlike `buffa-codegen::features::resolve_field`). The runtime
-        // consumer reads `pool.enumeration(eidx).enum_type` directly when it
-        // matters; the field descriptor only carries the index.
-
         // Detect map fields: repeated + message type + the message is a
         // map_entry. `containing_msg` is `None` for extensions, which cannot
         // be map fields — the lookup is skipped entirely.
-        let kind = if is_repeated {
+        let (kind, enum_type) = if is_repeated {
             if let SingularKind::Message(midx) = element {
                 if let Some(entry) = containing_msg.and_then(|m| self.find_map_entry(m, f)) {
                     let (key_ty, value_kind) = self.resolve_map_entry(entry, &field_fqn)?;
+                    let enum_type = entry
+                        .field
+                        .iter()
+                        .find(|field| field.number == Some(2))
+                        .and_then(|field| self.resolve_field_enum_type(field, value_kind));
                     // Map entry messages are synthetic — they're not real
                     // pool members for reflection purposes, but we leave
                     // them registered (consumers can ignore them).
                     let _ = midx;
-                    FieldKind::Map {
-                        key: key_ty,
-                        value: value_kind,
-                    }
+                    (
+                        FieldKind::Map {
+                            key: key_ty,
+                            value: value_kind,
+                        },
+                        enum_type,
+                    )
                 } else {
-                    FieldKind::List(element)
+                    (FieldKind::List(element), None)
                 }
             } else {
-                FieldKind::List(element)
+                (
+                    FieldKind::List(element),
+                    self.resolve_field_enum_type(f, element),
+                )
             }
         } else {
-            FieldKind::Singular(element)
+            (
+                FieldKind::Singular(element),
+                self.resolve_field_enum_type(f, element),
+            )
         };
 
         // Resolve presence.
@@ -1296,8 +1307,49 @@ impl DescriptorPool {
             packed,
             delimited,
             oneof_index,
+            enum_type,
             options: clone_options(&f.options),
         })
+    }
+
+    fn resolve_field_enum_type(
+        &self,
+        field: &FieldDescriptorProto,
+        kind: SingularKind,
+    ) -> Option<EnumType> {
+        let SingularKind::Enum(_) = kind else {
+            return None;
+        };
+        let field_opens_enum = features::field_features(field).and_then(|fs| fs.enum_type)
+            == Some(feature_set::EnumType::OPEN);
+        field_opens_enum.then_some(EnumType::Open)
+    }
+
+    fn finalize_field_enum_types(&mut self, first_new_message: usize, first_new_extension: usize) {
+        let enums = &self.enums;
+        let resolve = |field: &mut FieldDescriptor| {
+            if field.enum_type.is_some() {
+                return;
+            }
+            let eidx = match field.kind {
+                FieldKind::Singular(SingularKind::Enum(eidx))
+                | FieldKind::List(SingularKind::Enum(eidx))
+                | FieldKind::Map {
+                    value: SingularKind::Enum(eidx),
+                    ..
+                } => eidx,
+                _ => return,
+            };
+            field.enum_type = Some(enums[eidx.0 as usize].enum_type());
+        };
+        for message in &mut self.messages[first_new_message..] {
+            for field in &mut message.fields {
+                resolve(field);
+            }
+        }
+        for extension in &mut self.extensions[first_new_extension..] {
+            resolve(&mut extension.field);
+        }
     }
 
     fn resolve_singular(

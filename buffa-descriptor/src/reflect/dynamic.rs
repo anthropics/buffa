@@ -182,9 +182,15 @@ impl DynamicMessage {
         None
     }
 
-    fn enum_value_is_known(&self, eidx: EnumIndex, value: i32) -> bool {
+    fn enum_value_is_known(
+        &self,
+        eidx: EnumIndex,
+        field_enum_type: Option<EnumType>,
+        value: i32,
+    ) -> bool {
         let ed = self.pool.enumeration(eidx);
-        ed.enum_type() == EnumType::Open || ed.value(value).is_some()
+        field_enum_type.unwrap_or_else(|| ed.enum_type()) == EnumType::Open
+            || ed.value(value).is_some()
     }
 
     fn record_unknown(
@@ -319,8 +325,8 @@ impl DynamicMessage {
         // — resolve it through the pool so it decodes typed (and can be
         // re-emitted as JSON). Unregistered extension-range numbers fall
         // through to unknown fields, preserving the binary round-trip.
-        let (kind, oneof_index, delimited) = match self.field_or_extension(number) {
-            Some(fd) => (fd.kind, fd.oneof_index, fd.delimited),
+        let (kind, oneof_index, delimited, enum_type) = match self.field_or_extension(number) {
+            Some(fd) => (fd.kind, fd.oneof_index, fd.delimited, fd.enum_type),
             None => {
                 self.unknown.push(decode_unknown_field(tag, buf, ctx)?);
                 return Ok(());
@@ -344,7 +350,7 @@ impl DynamicMessage {
         // member untouched and is retained as an unknown field instead.
         if let FieldKind::Singular(SingularKind::Enum(eidx)) = kind {
             let raw = decode_int32(buf)?;
-            if !self.enum_value_is_known(eidx, raw) {
+            if !self.enum_value_is_known(eidx, enum_type, raw) {
                 self.record_unknown_enum(number, raw, ctx)?;
                 return Ok(());
             }
@@ -384,7 +390,7 @@ impl DynamicMessage {
                 self.fields.insert(number, v);
             }
             FieldKind::List(sk) => {
-                self.merge_list_field(number, sk, tag, buf, ctx)?;
+                self.merge_list_field(number, sk, enum_type, tag, buf, ctx)?;
             }
             FieldKind::Map { key, value } => {
                 self.merge_map_field(number, key, value, tag, buf, ctx)?;
@@ -457,12 +463,15 @@ impl DynamicMessage {
         &mut self,
         number: u32,
         elem: SingularKind,
+        enum_type: Option<EnumType>,
         tag: Tag,
         buf: &mut impl Buf,
         ctx: DecodeContext<'_>,
     ) -> Result<(), DecodeError> {
         if let SingularKind::Enum(eidx) = elem {
-            if self.pool.enumeration(eidx).enum_type() == EnumType::Closed {
+            if enum_type.unwrap_or_else(|| self.pool.enumeration(eidx).enum_type())
+                == EnumType::Closed
+            {
                 return self.merge_closed_enum_list(number, eidx, tag, buf, ctx);
             }
         }
@@ -533,7 +542,7 @@ impl DynamicMessage {
             let mut packed = buf.copy_to_bytes(len);
             while packed.has_remaining() {
                 let raw = decode_int32(&mut packed)?;
-                if self.enum_value_is_known(eidx, raw) {
+                if self.enum_value_is_known(eidx, Some(EnumType::Closed), raw) {
                     known.push(Value::EnumNumber(raw));
                 } else {
                     self.record_unknown_enum(number, raw, ctx)?;
@@ -541,7 +550,7 @@ impl DynamicMessage {
             }
         } else {
             let raw = decode_int32(buf)?;
-            if self.enum_value_is_known(eidx, raw) {
+            if self.enum_value_is_known(eidx, Some(EnumType::Closed), raw) {
                 known.push(Value::EnumNumber(raw));
             } else {
                 self.record_unknown_enum(number, raw, ctx)?;
@@ -578,7 +587,12 @@ impl DynamicMessage {
             return Ok(());
         }
         if let SingularKind::Enum(eidx) = value_kind {
-            if self.pool.enumeration(eidx).enum_type() == EnumType::Closed {
+            let enum_type = self
+                .field_or_extension(number)
+                .and_then(FieldDescriptor::enum_type);
+            if enum_type.unwrap_or_else(|| self.pool.enumeration(eidx).enum_type())
+                == EnumType::Closed
+            {
                 return self.merge_closed_enum_map_field(number, key_ty, eidx, buf, ctx);
             }
         }
@@ -656,7 +670,7 @@ impl DynamicMessage {
                 1 => key = Some(decode_map_key(key_ty, entry_tag, &mut entry_buf)?),
                 2 => {
                     let raw = decode_int32(&mut entry_buf)?;
-                    if self.enum_value_is_known(eidx, raw) {
+                    if self.enum_value_is_known(eidx, Some(EnumType::Closed), raw) {
                         value = Some(Value::EnumNumber(raw));
                         value_unknown = false;
                     } else {
