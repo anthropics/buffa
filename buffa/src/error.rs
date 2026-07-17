@@ -101,9 +101,8 @@ pub enum DecodeError {
 /// panicking entry points ([`Message::encode`](crate::Message::encode) and
 /// friends) raise the same conditions as panics instead.
 ///
-/// The enum is `#[non_exhaustive]`: further variants (e.g. for a
-/// fixed-capacity buffer encode path) may be added without a breaking
-/// change to the type name.
+/// The enum is `#[non_exhaustive]`: further variants may be added without a
+/// breaking change to the type name.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum EncodeError {
@@ -116,4 +115,18 @@ pub enum EncodeError {
     /// split the message instead.
     #[error("message encoded size exceeds the 2 GiB protobuf limit")]
     MessageTooLarge,
+
+    /// The message's encoded size exceeds the caller-supplied budget passed
+    /// to a `try_encode_bounded*` entry point. The message is within the
+    /// 2 GiB protobuf limit and could be encoded with a larger budget.
+    ///
+    /// `len` is the exact encoded size (in bytes); `max_bytes` is the budget
+    /// that was exceeded.
+    #[error("message encoded size {len} exceeds the caller budget of {max_bytes} bytes")]
+    ExceedsBudget {
+        /// The exact encoded size of the message in bytes.
+        len: u32,
+        /// The caller-supplied budget that was exceeded.
+        max_bytes: u32,
+    },
 }
