@@ -36,8 +36,6 @@ jobs:
       DRY_RUN_FLAG: ${{ inputs.dry_run && '--dry-run' || '' }}
       # Bootstrap token. Empty if secret is unset → Trusted Publishing path.
       CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-    env:
       # Dependency order — see the comment above the coverage check.
       PUBLISH_ORDER: >-
         buffa
@@ -108,6 +106,9 @@ jobs:
           cargo metadata --no-deps --format-version 1 \
             | jq -r '.packages[] | select(.publish == null) | .name' \
             | sort > /tmp/publishable.txt
+          # PUBLISH_ORDER is a space-separated word list and must split into one
+          # crate per argument; quoting it would make it a single token.
+          # shellcheck disable=SC2086
           printf '%s\n' $PUBLISH_ORDER | sort > /tmp/listed.txt
           if ! diff -u /tmp/publishable.txt /tmp/listed.txt; then
             echo "::error::PUBLISH_ORDER does not match the publishable workspace members."
@@ -121,6 +122,9 @@ jobs:
       - name: Publish
         run: |
           set -euo pipefail
+          # Same intentional word split as the coverage check above; DRY_RUN_FLAG
+          # is either empty or --dry-run and must vanish entirely when empty.
+          # shellcheck disable=SC2086
           for crate in $PUBLISH_ORDER; do
             echo "::group::publish $crate"
             /tmp/publish.sh "$crate" $DRY_RUN_FLAG
