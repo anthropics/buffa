@@ -29,6 +29,8 @@ analytics_event = []
 google_message1 = []
 media_frame = []
 packed_tile = []
+column_batch = []
+mesh = []
 
 [[bench]]
 name = "api_response"
@@ -60,3 +62,12 @@ name = "packed_tile"
 harness = false
 required-features = ["packed_tile"]
 
+[[bench]]
+name = "mesh"
+harness = false
+required-features = ["mesh"]
+
+[[bench]]
+name = "column_batch"
+harness = false
+required-features = ["column_batch"]
