@@ -18,6 +18,10 @@ pub mod bench {
     include!(concat!(env!("OUT_DIR"), "/media_frame.rs"));
     #[cfg(feature = "packed_tile")]
     include!(concat!(env!("OUT_DIR"), "/packed_tile.rs"));
+    #[cfg(feature = "mesh")]
+    include!(concat!(env!("OUT_DIR"), "/mesh.rs"));
+    #[cfg(feature = "column_batch")]
+    include!(concat!(env!("OUT_DIR"), "/column_batch.rs"));
 }
 #[allow(clippy::all, non_camel_case_types, unused_imports, dead_code)]
 pub mod benchmarks {
