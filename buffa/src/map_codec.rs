@@ -856,6 +856,14 @@ where
     if buf.remaining() < entry_len {
         return Err(DecodeError::UnexpectedEof);
     }
+    // An entry amplifies exactly as a repeated element does, and by the same
+    // route: a message value omitted from the wire still materializes a whole
+    // `VC::Value` in the map, and a few bytes of key buy a distinct slot. Charge
+    // both halves before decoding either, so a doomed entry costs the check
+    // rather than the work.
+    ctx.register_element_memory(
+        core::mem::size_of::<KC::Value>() + core::mem::size_of::<VC::Value>(),
+    )?;
     let mut key: KC::Value = Default::default();
     let mut val: VC::Value = Default::default();
 

@@ -80,8 +80,9 @@ pub enum DecodeError {
     #[error("unknown field limit exceeded")]
     UnknownFieldLimitExceeded,
 
-    /// A decode would materialize more memory in repeated length-delimited
-    /// elements than its budget allows.
+    /// A decode would materialize more memory in the elements of
+    /// length-delimited containers — repeated message, string and bytes fields,
+    /// and map entries — than its budget allows.
     ///
     /// These elements cost far more decoded than encoded: an empty message
     /// element is two bytes on the wire and `size_of::<T>()` in the `Vec` it

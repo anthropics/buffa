@@ -170,3 +170,100 @@ fn a_context_without_a_budget_charges_nothing() {
     .expect("no budget attached means no charge");
     assert_eq!(msg.items.len(), 1000);
 }
+
+/// A map entry amplifies exactly as a repeated element does: a message value
+/// omitted from the wire still materializes a whole value in the map, and a few
+/// bytes of key buy a distinct slot. `map<string, Message>` is the most common
+/// length-delimited container in protobuf, so leaving it uncharged would make
+/// the budget a formality.
+#[test]
+fn map_entries_are_charged() {
+    use crate::basic::{Address, Inventory};
+    use buffa::encoding::{encode_varint, Tag, WireType};
+
+    // Inventory.locations = map<string, Address>, field 2. Each entry carries a
+    // distinct key and no value field at all, so the value is a default Address.
+    let n = 2000;
+    let mut wire = Vec::new();
+    for i in 0..n {
+        let mut entry = Vec::new();
+        Tag::new(1, WireType::LengthDelimited).encode(&mut entry);
+        buffa::types::encode_string(&format!("{i:05}"), &mut entry);
+        Tag::new(2, WireType::LengthDelimited).encode(&mut wire);
+        encode_varint(entry.len() as u64, &mut wire);
+        wire.extend_from_slice(&entry);
+    }
+
+    let per_entry = core::mem::size_of::<String>() + core::mem::size_of::<Address>();
+    assert_eq!(
+        DecodeOptions::new()
+            .with_element_memory_limit(4 * per_entry)
+            .decode_from_slice::<Inventory>(&wire)
+            .unwrap_err(),
+        DecodeError::ElementMemoryLimitExceeded,
+        "a map budget of four entries must reject {n}"
+    );
+
+    // And the same payload decodes when the budget covers it.
+    let decoded = DecodeOptions::new()
+        .with_element_memory_limit(usize::MAX)
+        .decode_from_slice::<Inventory>(&wire)
+        .unwrap();
+    assert_eq!(decoded.locations.len(), n);
+}
+
+/// The budget is one pool for the whole decode *tree*, not per message: a
+/// nested message's elements draw from the same allowance as its parent's.
+/// Without this, nesting would multiply the ceiling without limit.
+#[test]
+fn the_budget_is_shared_across_nesting() {
+    use crate::lazyviews::{Holder, Payload};
+
+    // A Holder whose items each carry their own repeated field: the inner
+    // elements must draw from the same pool as the outer ones.
+    let inner = Payload {
+        pairs: vec![Default::default(); 8],
+        ..Default::default()
+    };
+    let msg = Holder {
+        items: vec![inner; 8],
+        ..Default::default()
+    };
+    let wire = msg.encode_to_vec();
+
+    // Enough for the 8 outer elements alone, but not for the 64 inner ones too.
+    let outer_only = 8 * core::mem::size_of::<Payload>();
+    assert_eq!(
+        DecodeOptions::new()
+            .with_element_memory_limit(outer_only)
+            .decode_from_slice::<Holder>(&wire)
+            .unwrap_err(),
+        DecodeError::ElementMemoryLimitExceeded,
+        "nested elements must draw from the parent's budget"
+    );
+
+    assert!(DecodeOptions::new()
+        .with_element_memory_limit(usize::MAX)
+        .decode_from_slice::<Holder>(&wire)
+        .is_ok());
+}
+
+/// Views materialize a `Vec` of borrowed elements just as owned decoding
+/// materializes a `Vec` of owned ones, so the view path is charged too.
+#[test]
+fn view_repeated_elements_are_charged() {
+    use crate::lazyviews::__buffa::view::HolderView;
+
+    let wire = empty_elements(2, 1000);
+    assert_eq!(
+        DecodeOptions::new()
+            .with_element_memory_limit(64)
+            .decode_view::<HolderView<'_>>(&wire)
+            .unwrap_err(),
+        DecodeError::ElementMemoryLimitExceeded
+    );
+    assert!(DecodeOptions::new()
+        .with_element_memory_limit(usize::MAX)
+        .decode_view::<HolderView<'_>>(&wire)
+        .is_ok());
+}

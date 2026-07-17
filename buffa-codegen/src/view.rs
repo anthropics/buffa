@@ -1724,6 +1724,10 @@ pub(crate) fn map_decode_arm(
             let mut entry_cur: &'a [u8] = entry_bytes;
             let mut key = #key_default;
             let mut val = #val_default;
+            ctx.register_element_memory(
+                ::buffa::__private::element_footprint(&key)
+                    + ::buffa::__private::element_footprint(&val),
+            )?;
             #entry_unknown_decl
             while !entry_cur.is_empty() {
                 let entry_tag = ::buffa::encoding::Tag::decode(&mut entry_cur)?;

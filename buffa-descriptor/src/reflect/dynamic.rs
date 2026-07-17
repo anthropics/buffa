@@ -270,8 +270,12 @@ impl DynamicMessage {
     /// Returns a [`DecodeError`] if the wire data is malformed.
     pub fn merge(&mut self, bytes: &[u8]) -> Result<(), DecodeError> {
         let limit = core::cell::Cell::new(DEFAULT_UNKNOWN_FIELD_LIMIT);
+        let elem_budget = core::cell::Cell::new(buffa::DEFAULT_ELEMENT_MEMORY_LIMIT);
         let mut buf = bytes;
-        self.merge_buf(&mut buf, DecodeContext::new(RECURSION_LIMIT, &limit))
+        self.merge_buf(
+            &mut buf,
+            DecodeContext::new(RECURSION_LIMIT, &limit).with_element_memory(&elem_budget),
+        )
     }
 
     fn merge_buf(&mut self, buf: &mut impl Buf, ctx: DecodeContext<'_>) -> Result<(), DecodeError> {
@@ -502,6 +506,7 @@ impl DynamicMessage {
         // Re-fetch the list — `decode_element_no_alias` may have allocated
         // entries in `self.fields` if `elem` is a message... it didn't, but
         // the borrow checker doesn't know that. Re-fetch is cheap.
+        ctx.register_element_memory(core::mem::size_of::<Value>())?;
         if let Some(Value::List(l)) = self.fields.get_mut(&number) {
             l.push(v);
         } else {
@@ -607,6 +612,9 @@ impl DynamicMessage {
         }
         let k = key.unwrap_or_else(|| default_map_key(key_ty));
         let v = value.unwrap_or_else(|| default_value(value_kind, &self.pool));
+        ctx.register_element_memory(
+            core::mem::size_of::<MapKey>() + core::mem::size_of::<Value>(),
+        )?;
         match self
             .fields
             .entry(number)

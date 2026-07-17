@@ -47,14 +47,18 @@ pub const DEFAULT_UNKNOWN_FIELD_LIMIT: usize = 1_000_000;
 
 /// Default element-memory budget: 32 MiB per top-level decode.
 ///
-/// Bounds the memory a single decode may materialize in elements of repeated
-/// length-delimited fields — messages, strings and bytes — independent of the
-/// input size. These amplify the same way unknown fields do, and further: an
+/// Bounds the memory a single decode may materialize in the elements of
+/// length-delimited containers — repeated message, string and bytes fields, and
+/// map entries — independent of the input size. These amplify the same way unknown fields do, and further: an
 /// empty repeated message element is 2 wire bytes and materializes
 /// `size_of::<T>()` in the `Vec` it lands in, measured at 256 bytes for a
 /// message of a few `Vec`/`String` fields — a 128x ratio, so 4 MiB of such
 /// elements would otherwise force ~512 MiB. Empty `bytes` and `string`
 /// elements amplify 16x and 12x by the same route.
+///
+/// A map entry is charged for both halves, key and value: an omitted message
+/// value still materializes in the map, and a few bytes of key buy a distinct
+/// slot, so `map<string, Message>` amplifies exactly as a repeated message does.
 ///
 /// Only the element footprint is counted. The *contents* of a string or bytes
 /// element are not, being already bounded by the input size that
@@ -733,10 +737,11 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
         // message types like `google.protobuf.Struct ↔ Value`.
         let limit = buf.remaining() - len;
         let field_limit = core::cell::Cell::new(DEFAULT_UNKNOWN_FIELD_LIMIT);
+        let elem_budget = core::cell::Cell::new(DEFAULT_ELEMENT_MEMORY_LIMIT);
         let mut msg = Self::default();
         msg.merge_to_limit(
             buf,
-            DecodeContext::new(RECURSION_LIMIT, &field_limit),
+            DecodeContext::new(RECURSION_LIMIT, &field_limit).with_element_memory(&elem_budget),
             limit,
         )?;
         if buf.remaining() != limit {
@@ -1182,9 +1187,10 @@ impl DecodeOptions {
         self
     }
 
-    /// Set the memory this decode may materialize in elements of repeated
-    /// length-delimited fields (messages, strings, bytes), shared across the
-    /// whole decode rather than per field.
+    /// Set the memory this decode may materialize in the elements of
+    /// length-delimited containers — repeated message, string and bytes fields,
+    /// and map entries — shared across the whole decode tree rather than per
+    /// field or per message.
     ///
     /// This is not [`with_max_message_size`](Self::with_max_message_size) by
     /// another name: that bounds the bytes going *in*, this bounds what they
