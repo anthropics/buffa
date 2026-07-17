@@ -506,6 +506,9 @@ impl ::buffa::Message for FileDescriptorSet {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.file.push(elem);
             }
@@ -1197,7 +1200,11 @@ impl ::buffa::Message for FileDescriptorProto {
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
-                self.dependency.push(::buffa::types::decode_string(buf)?);
+                let __elem = ::buffa::types::decode_string(buf)?;
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&__elem),
+                )?;
+                self.dependency.push(__elem);
             }
             4u32 => {
                 ::buffa::encoding::check_wire_type(
@@ -1205,6 +1212,9 @@ impl ::buffa::Message for FileDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.message_type.push(elem);
             }
@@ -1214,6 +1224,9 @@ impl ::buffa::Message for FileDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.enum_type.push(elem);
             }
@@ -1223,6 +1236,9 @@ impl ::buffa::Message for FileDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.service.push(elem);
             }
@@ -1232,6 +1248,9 @@ impl ::buffa::Message for FileDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.extension.push(elem);
             }
@@ -1353,7 +1372,11 @@ impl ::buffa::Message for FileDescriptorProto {
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
-                self.option_dependency.push(::buffa::types::decode_string(buf)?);
+                let __elem = ::buffa::types::decode_string(buf)?;
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&__elem),
+                )?;
+                self.option_dependency.push(__elem);
             }
             _ => {
                 self.__buffa_unknown_fields
@@ -1961,6 +1984,9 @@ impl ::buffa::Message for DescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.field.push(elem);
             }
@@ -1970,6 +1996,9 @@ impl ::buffa::Message for DescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.nested_type.push(elem);
             }
@@ -1979,6 +2008,9 @@ impl ::buffa::Message for DescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.enum_type.push(elem);
             }
@@ -1988,6 +2020,9 @@ impl ::buffa::Message for DescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.extension_range.push(elem);
             }
@@ -1997,6 +2032,9 @@ impl ::buffa::Message for DescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.extension.push(elem);
             }
@@ -2017,6 +2055,9 @@ impl ::buffa::Message for DescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.oneof_decl.push(elem);
             }
@@ -2026,6 +2067,9 @@ impl ::buffa::Message for DescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.reserved_range.push(elem);
             }
@@ -2034,7 +2078,11 @@ impl ::buffa::Message for DescriptorProto {
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
-                self.reserved_name.push(::buffa::types::decode_string(buf)?);
+                let __elem = ::buffa::types::decode_string(buf)?;
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&__elem),
+                )?;
+                self.reserved_name.push(__elem);
             }
             11u32 => {
                 ::buffa::encoding::check_wire_type(
@@ -2975,6 +3023,9 @@ impl ::buffa::Message for ExtensionRangeOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.declaration.push(elem);
             }
@@ -3014,6 +3065,9 @@ impl ::buffa::Message for ExtensionRangeOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
             }
@@ -5490,6 +5544,9 @@ impl ::buffa::Message for EnumDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.value.push(elem);
             }
@@ -5510,6 +5567,9 @@ impl ::buffa::Message for EnumDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.reserved_range.push(elem);
             }
@@ -5518,7 +5578,11 @@ impl ::buffa::Message for EnumDescriptorProto {
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
-                self.reserved_name.push(::buffa::types::decode_string(buf)?);
+                let __elem = ::buffa::types::decode_string(buf)?;
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&__elem),
+                )?;
+                self.reserved_name.push(__elem);
             }
             6u32 => {
                 ::buffa::encoding::check_wire_type(
@@ -6349,6 +6413,9 @@ impl ::buffa::Message for ServiceDescriptorProto {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.method.push(elem);
             }
@@ -7845,6 +7912,9 @@ impl ::buffa::Message for FileOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
             }
@@ -9082,6 +9152,9 @@ impl ::buffa::Message for MessageOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
             }
@@ -10089,6 +10162,9 @@ impl ::buffa::Message for FieldOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.edition_defaults.push(elem);
             }
@@ -10120,6 +10196,9 @@ impl ::buffa::Message for FieldOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
             }
@@ -12161,6 +12240,9 @@ impl ::buffa::Message for OneofOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
             }
@@ -12676,6 +12758,9 @@ impl ::buffa::Message for EnumOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
             }
@@ -13253,6 +13338,9 @@ impl ::buffa::Message for EnumValueOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
             }
@@ -13760,6 +13848,9 @@ impl ::buffa::Message for ServiceOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
             }
@@ -14267,6 +14358,9 @@ impl ::buffa::Message for MethodOptions {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.uninterpreted_option.push(elem);
             }
@@ -15005,6 +15099,9 @@ impl ::buffa::Message for UninterpretedOption {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.name.push(elem);
             }
@@ -17939,6 +18036,9 @@ impl ::buffa::Message for FeatureSetDefaults {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.defaults.push(elem);
             }
@@ -18548,6 +18648,9 @@ impl ::buffa::Message for SourceCodeInfo {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.location.push(elem);
             }
@@ -19160,8 +19263,11 @@ pub mod source_code_info {
                         tag,
                         ::buffa::encoding::WireType::LengthDelimited,
                     )?;
-                    self.leading_detached_comments
-                        .push(::buffa::types::decode_string(buf)?);
+                    let __elem = ::buffa::types::decode_string(buf)?;
+                    ctx.register_element_memory(
+                        ::buffa::__private::element_footprint(&__elem),
+                    )?;
+                    self.leading_detached_comments.push(__elem);
                 }
                 _ => {
                     self.__buffa_unknown_fields
@@ -19397,6 +19503,9 @@ impl ::buffa::Message for GeneratedCodeInfo {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.annotation.push(elem);
             }

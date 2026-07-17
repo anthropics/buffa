@@ -1054,6 +1054,9 @@ impl<'a> ::buffa::MessageView<'a> for ListValueView<'a> {
                 )?;
                 let __sub_ctx = ctx.descend()?;
                 let sub = ::buffa::types::borrow_bytes(&mut cur)?;
+                ctx.register_element_memory(
+                    ::core::mem::size_of::<super::super::__buffa::view::ValueView>(),
+                )?;
                 view.values
                     .push(
                         <super::super::__buffa::view::ValueView as ::buffa::MessageView>::decode_view_ctx(

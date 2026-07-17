@@ -1490,6 +1490,7 @@ pub(crate) fn repeated_decode_arm(
                 #ld_check
                 let __sub_ctx = ctx.descend()?;
                 let sub = ::buffa::types::borrow_bytes(&mut cur)?;
+                ctx.register_element_memory(::core::mem::size_of::<#vt>())?;
                 view.#ident.push(<#vt as ::buffa::MessageView>::decode_view_ctx(sub, __sub_ctx)?);
             }
         });
@@ -1507,6 +1508,7 @@ pub(crate) fn repeated_decode_arm(
                 #sg_check
                 let __sub_ctx = ctx.descend()?;
                 let sub = ::buffa::types::borrow_group(&mut cur, #field_number, __sub_ctx.depth())?;
+                ctx.register_element_memory(::core::mem::size_of::<#vt>())?;
                 view.#ident.push(<#vt as ::buffa::MessageView>::decode_view_ctx(sub, __sub_ctx)?);
             }
         });
@@ -1547,7 +1549,9 @@ pub(crate) fn repeated_decode_arm(
         return Ok(quote! {
             #field_number => {
                 #ld_check
-                view.#ident.push(#borrow);
+                let __elem = #borrow;
+                ctx.register_element_memory(::buffa::__private::element_footprint(&__elem))?;
+                view.#ident.push(__elem);
             }
         });
     }

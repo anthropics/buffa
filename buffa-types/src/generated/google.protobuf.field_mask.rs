@@ -397,7 +397,11 @@ impl ::buffa::Message for FieldMask {
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
-                self.paths.push(::buffa::types::decode_string(buf)?);
+                let __elem = ::buffa::types::decode_string(buf)?;
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&__elem),
+                )?;
+                self.paths.push(__elem);
             }
             _ => {
                 self.__buffa_unknown_fields

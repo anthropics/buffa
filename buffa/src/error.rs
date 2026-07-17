@@ -80,6 +80,21 @@ pub enum DecodeError {
     #[error("unknown field limit exceeded")]
     UnknownFieldLimitExceeded,
 
+    /// A decode would materialize more memory in repeated length-delimited
+    /// elements than its budget allows.
+    ///
+    /// These elements cost far more decoded than encoded: an empty message
+    /// element is two bytes on the wire and `size_of::<T>()` in the `Vec` it
+    /// lands in, so a payload well inside
+    /// [`DecodeOptions::with_max_message_size`](crate::DecodeOptions::with_max_message_size)
+    /// can still expand by two orders of magnitude. By default the budget is
+    /// [`DEFAULT_ELEMENT_MEMORY_LIMIT`](crate::DEFAULT_ELEMENT_MEMORY_LIMIT)
+    /// (32 MiB per decode); use
+    /// [`DecodeOptions::with_element_memory_limit`](crate::DecodeOptions::with_element_memory_limit)
+    /// to raise it for trusted inputs that legitimately decode into more.
+    #[error("element memory limit exceeded")]
+    ElementMemoryLimitExceeded,
+
     /// A custom `string`/`bytes` representation rejected the decoded payload in
     /// its [`from_wire`](crate::ProtoString::from_wire) constructor — for
     /// example a length or domain check beyond UTF-8 validation. Carries a

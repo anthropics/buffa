@@ -538,7 +538,11 @@ impl ::buffa::Message for CodeGeneratorRequest {
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
-                self.file_to_generate.push(::buffa::types::decode_string(buf)?);
+                let __elem = ::buffa::types::decode_string(buf)?;
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&__elem),
+                )?;
+                self.file_to_generate.push(__elem);
             }
             2u32 => {
                 ::buffa::encoding::check_wire_type(
@@ -569,6 +573,9 @@ impl ::buffa::Message for CodeGeneratorRequest {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.proto_file.push(elem);
             }
@@ -578,6 +585,9 @@ impl ::buffa::Message for CodeGeneratorRequest {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.source_file_descriptors.push(elem);
             }
@@ -972,6 +982,9 @@ impl ::buffa::Message for CodeGeneratorResponse {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.file.push(elem);
             }

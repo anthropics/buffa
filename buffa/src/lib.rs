@@ -264,7 +264,7 @@ pub use foldhash;
 pub use map_codec::{Map, MapStorage};
 pub use message::{
     checked_encode_size, saturate_size, DecodeContext, DecodeOptions, Message, MessageName,
-    DEFAULT_UNKNOWN_FIELD_LIMIT, MAX_MESSAGE_BYTES, RECURSION_LIMIT,
+    DEFAULT_ELEMENT_MEMORY_LIMIT, DEFAULT_UNKNOWN_FIELD_LIMIT, MAX_MESSAGE_BYTES, RECURSION_LIMIT,
 };
 #[doc(hidden)]
 pub use message::{debug_assert_two_pass, encode_size_overflow};
@@ -288,6 +288,21 @@ pub use view::{
 /// release. Do not use them directly.
 #[doc(hidden)]
 pub mod __private {
+    /// The memory one element of a repeated field occupies in the collection
+    /// holding it, for charging against
+    /// [`DecodeContext::register_element_memory`](crate::DecodeContext::register_element_memory).
+    ///
+    /// Takes the element by reference and reports `size_of::<T>()` — for a view
+    /// element that is the borrowed pointer's own width, not the length of what
+    /// it points at, which is what the collection actually grows by. Generated
+    /// code calls this rather than `size_of_val` so the distinction is named
+    /// rather than left to a reader to infer from a double reference.
+    #[inline(always)]
+    #[must_use]
+    pub fn element_footprint<T>(_element: &T) -> usize {
+        core::mem::size_of::<T>()
+    }
+
     /// Re-exported for use in generated `DefaultInstance` implementations.
     ///
     /// Generated code refers to this as `::buffa::__private::OnceBox<T>` so

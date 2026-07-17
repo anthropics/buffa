@@ -439,7 +439,11 @@ impl<'a> ::buffa::MessageView<'a> for CodeGeneratorRequestView<'a> {
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
-                view.file_to_generate.push(::buffa::types::borrow_str(&mut cur)?);
+                let __elem = ::buffa::types::borrow_str(&mut cur)?;
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&__elem),
+                )?;
+                view.file_to_generate.push(__elem);
             }
             15u32 => {
                 ::buffa::encoding::check_wire_type(
@@ -448,6 +452,11 @@ impl<'a> ::buffa::MessageView<'a> for CodeGeneratorRequestView<'a> {
                 )?;
                 let __sub_ctx = ctx.descend()?;
                 let sub = ::buffa::types::borrow_bytes(&mut cur)?;
+                ctx.register_element_memory(
+                    ::core::mem::size_of::<
+                        super::super::super::__buffa::view::FileDescriptorProtoView,
+                    >(),
+                )?;
                 view.proto_file
                     .push(
                         <super::super::super::__buffa::view::FileDescriptorProtoView as ::buffa::MessageView>::decode_view_ctx(
@@ -463,6 +472,11 @@ impl<'a> ::buffa::MessageView<'a> for CodeGeneratorRequestView<'a> {
                 )?;
                 let __sub_ctx = ctx.descend()?;
                 let sub = ::buffa::types::borrow_bytes(&mut cur)?;
+                ctx.register_element_memory(
+                    ::core::mem::size_of::<
+                        super::super::super::__buffa::view::FileDescriptorProtoView,
+                    >(),
+                )?;
                 view.source_file_descriptors
                     .push(
                         <super::super::super::__buffa::view::FileDescriptorProtoView as ::buffa::MessageView>::decode_view_ctx(
@@ -949,6 +963,11 @@ impl<'a> ::buffa::MessageView<'a> for CodeGeneratorResponseView<'a> {
                 )?;
                 let __sub_ctx = ctx.descend()?;
                 let sub = ::buffa::types::borrow_bytes(&mut cur)?;
+                ctx.register_element_memory(
+                    ::core::mem::size_of::<
+                        super::super::__buffa::view::code_generator_response::FileView,
+                    >(),
+                )?;
                 view.file
                     .push(
                         <super::super::__buffa::view::code_generator_response::FileView as ::buffa::MessageView>::decode_view_ctx(

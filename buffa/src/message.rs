@@ -45,6 +45,33 @@ pub const RECURSION_LIMIT: u32 = 100;
 /// with a huge unpacked repeated field from a much newer schema).
 pub const DEFAULT_UNKNOWN_FIELD_LIMIT: usize = 1_000_000;
 
+/// Default element-memory budget: 32 MiB per top-level decode.
+///
+/// Bounds the memory a single decode may materialize in elements of repeated
+/// length-delimited fields — messages, strings and bytes — independent of the
+/// input size. These amplify the same way unknown fields do, and further: an
+/// empty repeated message element is 2 wire bytes and materializes
+/// `size_of::<T>()` in the `Vec` it lands in, measured at 256 bytes for a
+/// message of a few `Vec`/`String` fields — a 128x ratio, so 4 MiB of such
+/// elements would otherwise force ~512 MiB. Empty `bytes` and `string`
+/// elements amplify 16x and 12x by the same route.
+///
+/// Only the element footprint is counted. The *contents* of a string or bytes
+/// element are not, being already bounded by the input size that
+/// [`DecodeOptions::with_max_message_size`] governs, and packed scalars are not
+/// charged at all: their worst case is a 1-byte varint becoming a 4-byte `i32`,
+/// which is not an amplification vector, and bounding them would reject
+/// legitimate columnar payloads that carry millions of elements by design.
+///
+/// 32 MiB of elements is far more than a realistic message carries, and sits
+/// alongside what [`DEFAULT_UNKNOWN_FIELD_LIMIT`] already permits (~38 MiB of
+/// `UnknownField`). Raise it with
+/// [`DecodeOptions::with_element_memory_limit`] for trusted inputs that
+/// legitimately decode into more. Note `Vec` grows by doubling, so peak
+/// resident memory can reach roughly twice the budget; this bounds what is
+/// materialized, not what the allocator reserves.
+pub const DEFAULT_ELEMENT_MEMORY_LIMIT: usize = 32 * 1024 * 1024;
+
 /// Per-decode limits threaded through every merge call.
 ///
 /// Carries the remaining recursion depth and a shared unknown-field
@@ -79,6 +106,7 @@ pub const DEFAULT_UNKNOWN_FIELD_LIMIT: usize = 1_000_000;
 pub struct DecodeContext<'a> {
     depth: u32,
     unknown_fields_remaining: &'a core::cell::Cell<usize>,
+    element_memory_remaining: Option<&'a core::cell::Cell<usize>>,
 }
 
 impl<'a> DecodeContext<'a> {
@@ -89,7 +117,29 @@ impl<'a> DecodeContext<'a> {
         Self {
             depth,
             unknown_fields_remaining: unknown_field_limit,
+            element_memory_remaining: None,
         }
+    }
+
+    /// Attach the shared element-memory budget in `element_memory_limit`.
+    ///
+    /// Without this the budget is absent and [`register_element_memory`] is a
+    /// no-op, which is what a [`DecodeContext::new`] built elsewhere — older
+    /// generated code, say — gets. buffa's own entry points attach it, so a
+    /// decode through [`DecodeOptions`] or the [`Message`] conveniences is
+    /// bounded by [`DEFAULT_ELEMENT_MEMORY_LIMIT`].
+    ///
+    /// Attach a **fresh cell per top-level decode**, for the same reason the
+    /// unknown-field allowance needs one: a reused cell drains across calls.
+    ///
+    /// [`register_element_memory`]: DecodeContext::register_element_memory
+    #[must_use]
+    pub fn with_element_memory(
+        mut self,
+        element_memory_limit: &'a core::cell::Cell<usize>,
+    ) -> Self {
+        self.element_memory_remaining = Some(element_memory_limit);
+        self
     }
 
     /// The remaining recursion depth.
@@ -132,6 +182,43 @@ impl<'a> DecodeContext<'a> {
             return Err(DecodeError::UnknownFieldLimitExceeded);
         }
         self.unknown_fields_remaining.set(remaining - 1);
+        Ok(())
+    }
+
+    /// The element-memory budget left to this decode, or `None` when no budget
+    /// is attached.
+    #[must_use]
+    pub fn remaining_element_memory(&self) -> Option<usize> {
+        self.element_memory_remaining.map(core::cell::Cell::get)
+    }
+
+    /// Charge `bytes` against the shared element-memory budget.
+    ///
+    /// Call **before** materializing an element of a repeated
+    /// length-delimited field, passing that element's `size_of`. Those are the
+    /// fields where the wire is far cheaper than what it decodes into: an empty
+    /// message element is two bytes and costs `size_of::<T>()`, so a payload
+    /// well inside [`DecodeOptions::with_max_message_size`] can still expand by
+    /// two orders of magnitude. Packed scalars are not charged — their worst
+    /// case is a 1-byte varint becoming a 4-byte `i32`, and bounding them would
+    /// reject legitimate columnar payloads.
+    ///
+    /// No-op when no budget is attached (see
+    /// [`with_element_memory`](DecodeContext::with_element_memory)).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeError::ElementMemoryLimitExceeded`] (leaving the budget
+    /// unchanged) when `bytes` exceeds what remains.
+    pub fn register_element_memory(&self, bytes: usize) -> Result<(), DecodeError> {
+        let Some(cell) = self.element_memory_remaining else {
+            return Ok(());
+        };
+        let remaining = cell.get();
+        if bytes > remaining {
+            return Err(DecodeError::ElementMemoryLimitExceeded);
+        }
+        cell.set(remaining - bytes);
         Ok(())
     }
 }
@@ -589,8 +676,12 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
         Self: Sized,
     {
         let limit = core::cell::Cell::new(DEFAULT_UNKNOWN_FIELD_LIMIT);
+        let elem_budget = core::cell::Cell::new(DEFAULT_ELEMENT_MEMORY_LIMIT);
         let mut msg = Self::default();
-        msg.merge(buf, DecodeContext::new(RECURSION_LIMIT, &limit))?;
+        msg.merge(
+            buf,
+            DecodeContext::new(RECURSION_LIMIT, &limit).with_element_memory(&elem_budget),
+        )?;
         Ok(msg)
     }
 
@@ -776,7 +867,11 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// `&mut bytes.as_slice()` incantation.
     fn merge_from_slice(&mut self, mut data: &[u8]) -> Result<(), DecodeError> {
         let limit = core::cell::Cell::new(DEFAULT_UNKNOWN_FIELD_LIMIT);
-        self.merge(&mut data, DecodeContext::new(RECURSION_LIMIT, &limit))
+        let elem_budget = core::cell::Cell::new(DEFAULT_ELEMENT_MEMORY_LIMIT);
+        self.merge(
+            &mut data,
+            DecodeContext::new(RECURSION_LIMIT, &limit).with_element_memory(&elem_budget),
+        )
     }
 
     /// Merge fields from a length-delimited sub-message payload into this message.
@@ -961,6 +1056,7 @@ pub struct DecodeOptions {
     max_message_size: usize,
     unbounded_reader_size: bool,
     unknown_field_limit: usize,
+    element_memory_limit: usize,
 }
 
 /// Default maximum message size: 2 GiB - 1 (matches the sub-message limit
@@ -981,12 +1077,14 @@ impl DecodeOptions {
     /// - `recursion_limit`: 100 (same as [`RECURSION_LIMIT`])
     /// - `max_message_size`: 2 GiB - 1
     /// - `unknown_field_limit`: 1,000,000 (same as [`DEFAULT_UNKNOWN_FIELD_LIMIT`])
+    /// - `element_memory_limit`: 32 MiB (same as [`DEFAULT_ELEMENT_MEMORY_LIMIT`])
     pub fn new() -> Self {
         Self {
             recursion_limit: RECURSION_LIMIT,
             max_message_size: DEFAULT_MAX_MESSAGE_SIZE,
             unbounded_reader_size: false,
             unknown_field_limit: DEFAULT_UNKNOWN_FIELD_LIMIT,
+            element_memory_limit: DEFAULT_ELEMENT_MEMORY_LIMIT,
         }
     }
 
@@ -1084,6 +1182,37 @@ impl DecodeOptions {
         self
     }
 
+    /// Set the memory this decode may materialize in elements of repeated
+    /// length-delimited fields (messages, strings, bytes), shared across the
+    /// whole decode rather than per field.
+    ///
+    /// This is not [`with_max_message_size`](Self::with_max_message_size) by
+    /// another name: that bounds the bytes going *in*, this bounds what they
+    /// expand *into*. They are not redundant, because the two are not
+    /// proportional — an empty repeated message element is 2 wire bytes and
+    /// `size_of::<T>()` of `Vec` footprint (measured at 256 bytes for a message
+    /// of a few `Vec`/`String` fields), so a payload well inside any input
+    /// bound can still materialize 128x its own size. Charging is by element
+    /// footprint, so a budget means the same amount of memory whatever the
+    /// element size — which a count limit could not offer.
+    ///
+    /// Packed scalar fields are never charged; see
+    /// [`DEFAULT_ELEMENT_MEMORY_LIMIT`] for why, and for the `Vec`-doubling
+    /// caveat on peak memory.
+    ///
+    /// Default: 32 MiB ([`DEFAULT_ELEMENT_MEMORY_LIMIT`]).
+    #[must_use]
+    pub fn with_element_memory_limit(mut self, bytes: usize) -> Self {
+        self.element_memory_limit = bytes;
+        self
+    }
+
+    /// Returns the configured element-memory budget.
+    #[must_use]
+    pub fn element_memory_limit(&self) -> usize {
+        self.element_memory_limit
+    }
+
     /// Returns the configured recursion depth limit.
     pub fn recursion_limit(&self) -> u32 {
         self.recursion_limit
@@ -1117,8 +1246,12 @@ impl DecodeOptions {
             return Err(DecodeError::MessageTooLarge);
         }
         let limit = core::cell::Cell::new(self.unknown_field_limit);
+        let elem_budget = core::cell::Cell::new(self.element_memory_limit);
         let mut msg = M::default();
-        msg.merge(buf, DecodeContext::new(self.recursion_limit, &limit))?;
+        msg.merge(
+            buf,
+            DecodeContext::new(self.recursion_limit, &limit).with_element_memory(&elem_budget),
+        )?;
         Ok(msg)
     }
 
@@ -1132,10 +1265,11 @@ impl DecodeOptions {
 
     fn decode_from_slice_unchecked_size<M: Message>(&self, data: &[u8]) -> Result<M, DecodeError> {
         let limit = core::cell::Cell::new(self.unknown_field_limit);
+        let elem_budget = core::cell::Cell::new(self.element_memory_limit);
         let mut msg = M::default();
         msg.merge(
             &mut &*data,
-            DecodeContext::new(self.recursion_limit, &limit),
+            DecodeContext::new(self.recursion_limit, &limit).with_element_memory(&elem_budget),
         )?;
         Ok(msg)
     }
@@ -1162,10 +1296,12 @@ impl DecodeOptions {
         }
         let limit = buf.remaining() - len;
         let field_limit = core::cell::Cell::new(self.unknown_field_limit);
+        let elem_budget = core::cell::Cell::new(self.element_memory_limit);
         let mut msg = M::default();
         msg.merge_to_limit(
             buf,
-            DecodeContext::new(self.recursion_limit, &field_limit),
+            DecodeContext::new(self.recursion_limit, &field_limit)
+                .with_element_memory(&elem_budget),
             limit,
         )?;
         if buf.remaining() != limit {
@@ -1185,7 +1321,11 @@ impl DecodeOptions {
             return Err(DecodeError::MessageTooLarge);
         }
         let limit = core::cell::Cell::new(self.unknown_field_limit);
-        msg.merge(buf, DecodeContext::new(self.recursion_limit, &limit))
+        let elem_budget = core::cell::Cell::new(self.element_memory_limit);
+        msg.merge(
+            buf,
+            DecodeContext::new(self.recursion_limit, &limit).with_element_memory(&elem_budget),
+        )
     }
 
     /// Merge fields from a byte slice into an existing message.
@@ -1198,9 +1338,10 @@ impl DecodeOptions {
             return Err(DecodeError::MessageTooLarge);
         }
         let limit = core::cell::Cell::new(self.unknown_field_limit);
+        let elem_budget = core::cell::Cell::new(self.element_memory_limit);
         msg.merge(
             &mut &*data,
-            DecodeContext::new(self.recursion_limit, &limit),
+            DecodeContext::new(self.recursion_limit, &limit).with_element_memory(&elem_budget),
         )
     }
 
@@ -1225,7 +1366,11 @@ impl DecodeOptions {
             return Err(DecodeError::MessageTooLarge);
         }
         let limit = core::cell::Cell::new(self.unknown_field_limit);
-        V::decode_view_with_ctx(buf, DecodeContext::new(self.recursion_limit, &limit))
+        let elem_budget = core::cell::Cell::new(self.element_memory_limit);
+        V::decode_view_with_ctx(
+            buf,
+            DecodeContext::new(self.recursion_limit, &limit).with_element_memory(&elem_budget),
+        )
     }
 
     /// Decode a lazy view from a byte slice (see
@@ -1257,7 +1402,11 @@ impl DecodeOptions {
             return Err(DecodeError::MessageTooLarge);
         }
         let limit = core::cell::Cell::new(self.unknown_field_limit);
-        L::decode_lazy_with_ctx(buf, DecodeContext::new(self.recursion_limit, &limit))
+        let elem_budget = core::cell::Cell::new(self.element_memory_limit);
+        L::decode_lazy_with_ctx(
+            buf,
+            DecodeContext::new(self.recursion_limit, &limit).with_element_memory(&elem_budget),
+        )
     }
 
     /// Decode a message by reading all bytes from a [`std::io::Read`] source.
