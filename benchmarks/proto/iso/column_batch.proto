@@ -1,0 +1,21 @@
+syntax = "proto3";
+package bench;
+
+// A columnar record batch: one field per column, holding every row's value for
+// that column. Long packed arrays are the regime the other packed messages
+// leave uncovered — PackedTile's widest field is 20 elements, where per-field
+// dispatch dominates, while a batch carries 1024 per column, where per-element
+// decode work does.
+//
+// Keep in sync with `ColumnBatch` in ../bench_messages.proto, which is what
+// generates the dataset this reads.
+message ColumnBatch {
+  // Dictionary-encoded label column: the distinct values, then one index per
+  // row. Short strings, so the borrow path sees many small spans.
+  repeated string symbol_dict = 1;
+  repeated uint32 symbol_ids = 2;  // packed, 1-2 byte varints
+
+  repeated int64 timestamps = 3;  // packed, absolute epoch nanos -> 9-byte varints
+  repeated double values = 4;     // packed fixed64
+  repeated float weights = 5;     // packed fixed32
+}
