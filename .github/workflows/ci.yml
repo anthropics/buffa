@@ -122,6 +122,25 @@ jobs:
       - name: Lint workflows
         run: actionlint -color
 
+  # ── Publish list ─────────────────────────────────────────────────────────
+  # Adding a publishable crate to the workspace without adding it to
+  # .github/publish-order.txt means the release silently skips it. That is how
+  # buffa-remote-derive was announced in the 0.9.0 changelog and never reached
+  # crates.io. The publish workflow checks this too, but only on a v* tag —
+  # running it here fails the PR that introduces the crate instead.
+  check-publish-list:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # cargo metadata only reads manifests, so the pinned dev toolchain is not
+      # needed; stable avoids downloading it just for this check.
+      - name: Check publish coverage
+        env:
+          RUSTUP_TOOLCHAIN: stable
+        run: ./scripts/check-publish-coverage.sh
+
   # ── Changelog check ──────────────────────────────────────────────────────
   # CHANGELOG.md is generated from .changes/ via changie. Fail if it has been
   # edited directly or is stale relative to the per-version source files.
