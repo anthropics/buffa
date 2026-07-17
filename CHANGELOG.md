@@ -8,9 +8,10 @@ Entries for unreleased changes live as fragment files under [`.changes/unrelease
 
 ## [0.9.0] - 2026-07-17
 
-This release primarily consists of a set of additional controls and fixes for
-encoding and decoding. There are breaking changes in both the API surface and in
-code generation — when upgrading, *regenerate all code with a version-matched
+This release adds explicit limits on what encoding and decoding may produce and
+allocate, makes decoding substantially faster, and fixes a range of reflection,
+JSON, and codegen bugs. There are breaking changes in both the API surface and
+in code generation — when upgrading, *regenerate all code with a version-matched
 `buffa-codegen`*.
 
 ### Encode and decode controls
