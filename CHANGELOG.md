@@ -65,18 +65,56 @@ that in mind for your own benchmarking and production builds.
 
 ### Breaking changes at a glance
 
-Each of these has migration notes in the section below.
+Each of these has fuller migration notes in the section below.
 
-- `WirePayload` is now opaque.
-- Singular message fields are inline.
-- `OwnedView::to_owned_message` is now infallible. It became fallible in 0.8.0
-  as a deliberate part of the CVE-2026-55407 fix, which put view-to-owned
+- **`WirePayload` is now opaque** — a struct with private fields and
+  `WirePayload::borrowed(..)` / `::owned(..)` constructors, in place of the
+  0.8.0 `Borrowed(&[u8])` / `Owned(Bytes)` enum. The reason is that a variant
+  holding exactly the field's bytes cannot see the wire buffer around them,
+  which is what the slack-aware UTF-8 validator needs to take its fast path;
+  the opaque payload carries that tail, so `to_str` now reaches the validator
+  on the custom-`ProtoString` decode path — the one `string` site the 0.8.0
+  UTF-8 work missed. Code that only calls the accessors is unaffected.
+  Constructing a payload lowercases to `::borrowed(..)` / `::owned(..)`, and
+  matching on the variants moves to the accessors, with `is_owned()` covering
+  the take-the-`Bytes`-only-when-free pattern.
+- **Singular message fields are inline** — codegen emits
+  `MessageField<T, ::buffa::Inline<T>>`, laid out as `Option<T>`, so a singular
+  submessage no longer costs a heap allocation per field. Recursive fields are
+  detected and stay boxed automatically. Reading and writing fields through the
+  `MessageField` API is unchanged, so most code that touches the structs needs
+  no edit at all; what breaks is an explicit `MessageField<Foo>` type
+  annotation, which still names the boxed form and will now mismatch the field's
+  declared type. Drop the annotation and let the representation infer. Note the
+  tradeoff this makes: an unset inline field costs `size_of::<T>()` where a
+  boxed one cost a pointer, so for a large submessage that is usually absent,
+  `box_type_in(PointerRepr::Box, &[".pkg.Msg.field"])` restores the old
+  behaviour per field.
+- **`OwnedView::to_owned_message` is now infallible.** It became fallible in
+  0.8.0 as a deliberate part of the CVE-2026-55407 fix, which put view-to-owned
   conversion under the decode-time limit; 0.8.1's accounting fix then made that
   error unreachable for any wire-decoded view, so the `Result` is now dead
-  weight and has been removed.
-- Encoders take `&mut impl EncodeSink` instead of `&mut impl BufMut` (allowing
-  for zero-copy strategies to flush data).
-- The size helpers take `u64`.
+  weight. Delete the `?` / `.unwrap()` at call sites whose receiver is an
+  `OwnedView` or a generated `FooOwnedView`. Plain view types
+  (`FooView::to_owned_message`) stay fallible, because hand-written impls and
+  `push_raw`-built views can still legitimately fail.
+- **Encoders take `&mut impl EncodeSink`** instead of `&mut impl BufMut`, so
+  that a sink can flush segments without copying them. Callers passing
+  `Vec<u8>`, `BytesMut`, or any other `BufMut` are source-compatible through the
+  blanket impl and need no change; a hand-written `Message` / `ViewEncode` impl
+  updates its signature, and one that reached for `BufMut` methods beyond the
+  encoders' own subset (`put_u8`, `put_slice`, the little-endian fixed-width
+  writers) must assemble into a concrete buffer first.
+- **The size helpers take `u64`** — `types::put_len_delimited_header`, and
+  `map_codec::field_len` / `message_field_len`. This is what makes the 2 GiB
+  ceiling enforceable: sizes have to accumulate in a type that cannot wrap
+  before anything can check them against a limit. Bare integer literals still
+  infer, and a `u32` variable widens with `u64::from(..)`, so hand-written
+  call sites are usually a small edit or none. **Checked-in generated code will
+  not compile until it is regenerated** — code from earlier `buffa-codegen`
+  passes a `u32` into `put_len_delimited_header` and accumulates `field_len`
+  into a `u32`. An external `ExtensionCodec` impl also swaps its required method
+  to the fallible `try_encode` / `try_encode_one`.
 
 MSRV remains 1.75.
 
