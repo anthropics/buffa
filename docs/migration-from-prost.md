@@ -15,12 +15,12 @@ A limited derive for self-contained tests and examples is under discussion in [#
  [dependencies]
 -prost = "0.13"
 -prost-types = "0.13"
-+buffa = "0.7"
-+buffa-types = "0.7"
++buffa = "0.9"
++buffa-types = "0.9"
 
  [build-dependencies]
 -prost-build = "0.13"
-+buffa-build = "0.7"
++buffa-build = "0.9"
 ```
 
 If you use JSON serialization via `pbjson`:
@@ -29,8 +29,8 @@ If you use JSON serialization via `pbjson`:
  [dependencies]
 -pbjson = "0.7"
 -pbjson-types = "0.7"
-+buffa = { version = "0.7", features = ["json"] }
-+buffa-types = { version = "0.7", features = ["json"] }
++buffa = { version = "0.9", features = ["json"] }
++buffa-types = { version = "0.9", features = ["json"] }
  serde_json = "1"
 -
 -[build-dependencies]
