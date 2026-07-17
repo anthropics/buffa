@@ -9,6 +9,8 @@ fn main() {
         ("GOOGLE_MESSAGE1", "../proto/iso/google_message1.proto"),
         ("MEDIA_FRAME", "../proto/iso/media_frame.proto"),
         ("PACKED_TILE", "../proto/iso/packed_tile.proto"),
+        ("MESH", "../proto/iso/mesh.proto"),
+        ("COLUMN_BATCH", "../proto/iso/column_batch.proto"),
     ];
     let mut files = vec!["../proto/benchmarks.proto".to_string()];
     for (feat, path) in msgs {
