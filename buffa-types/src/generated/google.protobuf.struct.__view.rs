@@ -58,6 +58,10 @@ impl<'a> ::buffa::MessageView<'a> for StructView<'a> {
                 let mut entry_cur: &'a [u8] = entry_bytes;
                 let mut key = "";
                 let mut val = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&key)
+                        + ::buffa::__private::element_footprint(&val),
+                )?;
                 while !entry_cur.is_empty() {
                     let entry_tag = ::buffa::encoding::Tag::decode(&mut entry_cur)?;
                     match entry_tag.field_number() {
