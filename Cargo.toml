@@ -31,7 +31,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.8.0"
+version = "0.9.0"
 edition = "2021"
 rust-version = "1.75"
 license = "Apache-2.0"
@@ -48,19 +48,19 @@ lto = true
 codegen-units = 1
 
 [workspace.dependencies]
-buffa = { path = "buffa", version = "0.8.0", default-features = false }
-buffa-types = { path = "buffa-types", version = "0.8.0" }
+buffa = { path = "buffa", version = "0.9.0", default-features = false }
+buffa-types = { path = "buffa-types", version = "0.9.0" }
 # `default-features = false` keeps the codegen toolchain (`buffa-codegen` /
 # `buffa-build` / `protoc-gen-buffa`) lean — descriptor types are read at
 # codegen time via the binary codec only, never serialised to JSON / text or
 # borrowed as views, so the codegen build graph carries no `serde` /
 # `serde_json` / `base64`. Downstream consumers whose protos reference
 # `descriptor.proto` types as fields enable the features they need.
-buffa-descriptor = { path = "buffa-descriptor", version = "0.8.0", default-features = false }
-buffa-codegen = { path = "buffa-codegen", version = "0.8.0" }
-buffa-build = { path = "buffa-build", version = "0.8.0" }
-buffa-smolstr = { path = "examples/buffa-smolstr", version = "0.8.0" }
-buffa-test = { path = "buffa-test", version = "0.8.0" }
+buffa-descriptor = { path = "buffa-descriptor", version = "0.9.0", default-features = false }
+buffa-codegen = { path = "buffa-codegen", version = "0.9.0" }
+buffa-build = { path = "buffa-build", version = "0.9.0" }
+buffa-smolstr = { path = "examples/buffa-smolstr", version = "0.9.0" }
+buffa-test = { path = "buffa-test", version = "0.9.0" }
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
 bytes = { version = "1", default-features = false }
 # Minimum 0.4.34: the `chrono::TimeDelta` name (used throughout

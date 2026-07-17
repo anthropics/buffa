@@ -1,3 +1,0 @@
-kind: Fixed
-body: 'The reflective decoder (`DynamicMessage`) now routes unknown values of a closed enum to unknown fields instead of materializing them as `Value::EnumNumber`, matching the generated decoder and the proto2/editions spec. Singular, oneof, extension, unpacked repeated, packed repeated, and map-value contexts are all covered, and each preserved value is charged against the decoder''s unknown-field allowance on the same terms as the generated path — once per value, or once per entry for maps. Open enums are unaffected. (#304)'
-time: 2026-07-16T19:59:08.454580+00:00

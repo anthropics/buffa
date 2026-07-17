@@ -1,3 +1,0 @@
-kind: Added
-body: 'Vectored ("rope") encode: the new `EncodeSink` trait abstracts the encode output, and the `Rope` sink captures large `bytes::Bytes` fields (and, via `Rope::with_backing`, large borrowed view fields) as reference-counted segments instead of copying them — encoding a message dominated by one large payload costs O(header) instead of O(payload). Contiguous callers are unaffected: every `BufMut` is an `EncodeSink` through a blanket impl. `ProtoBytes` gains a provided `as_shared` method so custom `Bytes`-backed representations can opt in, and `RopeBuf` adapts a finished rope to `bytes::Buf` with vectored-I/O support.'
-time: 2026-07-06T16:25:26.000000000Z

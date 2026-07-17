@@ -6,6 +6,270 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Entries for unreleased changes live as fragment files under [`.changes/unreleased/`](.changes/unreleased/); run `task changelog-new` to add one. This file is assembled at release time — do not edit it directly.
 
+## [0.9.0] - 2026-07-17
+
+The theme of this release is that what a decode or an encode costs you is now
+bounded, and where the bound is a policy rather than a law of the wire format,
+expressible. Encoding enforces the protobuf 2 GiB limit instead of silently
+wrapping past 4 GiB. Decoding bounds the memory that repeated message, string
+and bytes elements — and map entries — materialize, which nothing bounded
+before: an empty message element is two bytes on the wire and a whole struct in
+the `Vec` it lands in, about 128x, so a few megabytes of them could force
+hundreds. Unknown values of a closed enum now charge the unknown-field
+allowance they had been bypassing. And `try_encode_bounded` answers "will this
+message fit my frame" in one size pass rather than two, because the size cache
+already holds what the write needs.
+
+**The new decode bound rejects input that 0.8.x accepted.** It defaults to
+32 MiB of materialized elements, which is far more than a realistic message
+carries and the same order as the unknown-field allowance already permitted;
+raise it with `DecodeOptions::with_element_memory_limit` if you decode trusted
+payloads that legitimately expand further.
+
+Performance moved in the same release rather than against it. Singular message
+fields are stored inline by default, packed fixed-width and plain-varint
+payloads decode in one bulk pass rather than per element (**-24.66%** on a
+1024-element columnar batch, measured on a dedicated bare-metal box), and
+cross-crate inlining of generated view field decoding is restored (**-7% to
+-32%** on seven of the eight view benchmarks; the eighth is dominated by
+per-element work this does not touch). Reflection grew up too: `DynamicMessage`
+adopts values across descriptor pools, validates before mutating, and no longer
+drops data when a later wire occurrence fails to decode.
+
+There are four breaking changes, all on the trait surface or the generated-code
+shape — `WirePayload` is opaque, singular message fields are inline, `OwnedView::to_owned_message`
+is infallible, and the size helpers take `u64`. **Regenerate code with the
+matching `buffa-codegen`**; the convenience entry points (`decode`,
+`decode_from_slice`, `merge_from_slice`, `DecodeOptions`) are otherwise
+unchanged. MSRV remains 1.75.
+
+### Breaking changes
+
+- **`WirePayload` is now an opaque struct.** The 0.8.0 public-variant
+  enum (`Borrowed(&[u8])` / `Owned(Bytes)`) is replaced by a struct with
+  private fields, the same accessors (`as_slice`, `to_str`, `into_bytes`,
+  plus new `len` / `is_empty` / `is_owned`), and
+  `WirePayload::borrowed(&[u8])` / `WirePayload::owned(Bytes)`
+  constructors. `ProtoString` / `ProtoBytes` `from_wire` implementations
+  that use the accessors are unaffected; code that *constructed*
+  `WirePayload::Borrowed(..)` / `::Owned(..)` migrates by lowercasing to
+  `::borrowed(..)` / `::owned(..)`; code that *matched* on the variants
+  moves to the accessors — `is_owned()` covers the
+  take-the-`Bytes`-only-when-free pattern. The reshape lets a borrowed
+  payload carry the surrounding wire-buffer tail, so `to_str` now reaches
+  the slack-aware UTF-8 validator on the custom-`ProtoString` decode path
+  (it was the one `string` decode site #241 didn't cover).
+
+- Singular message fields are now stored inline by default: codegen emits `MessageField<T, ::buffa::Inline<T>>` (laid out as `Option<T>`, no per-field heap allocation) for every non-recursive field. Recursive fields are detected and stay on `Box` automatically. (#248)
+  
+  To restore the old behaviour for specific fields (e.g. large or rarely-set submessages), use `box_type_in(PointerRepr::Box, &[".pkg.Msg.field"])`; for the old global default, `box_type(PointerRepr::Box)`. Explicit `MessageField<Foo>` type annotations now mean the boxed form and will mismatch the new default — drop the annotation and let `P` infer from the field's declared type (or, for a standalone value with no pinning context, write `MessageField::<Foo, buffa::Inline<Foo>>::some(x)`).
+  
+  `box_type_in` / `box_type_custom_in` now normalize a missing leading dot on each path; previously a dotless path silently matched nothing.
+
+- `OwnedView::to_owned_message` and the generated `FooOwnedView::to_owned_message` are now **infallible**, returning the owned message directly instead of `Result<_, DecodeError>`. Every `OwnedView` constructor wire-decodes its view (or, for `unsafe from_parts`, requires wire-decode provenance as part of its strengthened safety contract), and since 0.8.1 a view produced by wire decoding always converts — so the `Result` only ever encoded an unreachable error path. Migration: on call sites whose receiver is an `OwnedView` or a generated `FooOwnedView` handle, delete the `?` / `.unwrap()` / `.expect(...)` — or otherwise unwrap the previously-returned `Result` (a `match` or `.map_err(...)` needs the same treatment). Call sites on plain view types (`FooView::to_owned_message` via the `MessageView` trait) are unchanged and stay fallible, since hand-written impls and `push_raw`-built views can still legitimately fail. **`unsafe from_parts` callers**: the safety contract now requires that the view was produced by wire-decoding the buffer, not merely that its borrows point into it — a hand-assembled view that was legal under the old wording still compiles but now panics at `to_owned_message`, so audit `from_parts` call sites for provenance. A contract violation by a buggy hand-written `MessageView` impl wrapped in `OwnedView` likewise panics with a descriptive message instead of surfacing an error that correct code could never observe. (#268)
+
+- The u64 size-arithmetic discipline changes three public signatures:
+  `buffa::types::put_len_delimited_header` takes `len: u64` (was `u32`),
+  and `buffa::map_codec::field_len` / `message_field_len` take and return
+  `u64` (`MapCodec::encoded_len` and `FIXED_LEN` likewise — that trait is
+  sealed, so only the signatures are visible). Bare integer literals still
+  infer; a `u32` variable widens with `u64::from(...)`.
+  **Checked-in generated code must be regenerated**: code emitted by
+  earlier `buffa-codegen` versions passes `__cache.consume_next()` (a
+  `u32`) to `put_len_delimited_header` and adds `field_len` results into a
+  `u32` accumulator, so it fails to compile against this runtime. Regenerate
+  with your build pipeline (or `buffa-build`) after updating.
+  `ExtensionCodec` and `extension::codecs::SingularCodec` swap their
+  required encode method: `try_encode` / `try_encode_one` (fallible) are
+  now required, and the panicking `encode` / `encode_one` are provided
+  wrappers — so a codec whose encode can fail cannot accidentally leave
+  the fallible `try_set_extension` path panicking. All in-tree codecs are
+  updated; an external codec impl (if any exist) renames its method and
+  wraps the result in `Ok`.
+  Runtime behavior also changes: the existing encode entry points now
+  **panic** on messages whose encoded size exceeds the 2 GiB protobuf
+  limit — see the Fixed entry for the full list and the `try_encode*`
+  escape hatch.
+
+### Added
+
+- `DescriptorPool` now implements `Clone`. (#253)
+
+- `ReflectMessageMut::try_set` / `try_clear`: checked mutation variants that return `ReflectError::FieldNotMember` instead of mutating when handed a `FieldDescriptor` from a different message or pool. (#254)
+
+- `idiomatic_field_names` codegen option (`buffa_build::Config`, `CodeGenConfig`, protoc plugin): opt-in conversion of camelCase proto field and oneof names to snake_case Rust identifiers, prost-compatible on underscore-free names; wire, JSON, and text-format names are unchanged, and collisions resolve deterministically with an `_f<number>` suffix and a build warning. Generated structs with non-snake member names now carry a detection-scoped `#[allow(non_snake_case)]` regardless of the option. (#260)
+
+- **`jiff` feature for `buffa-types`** (#264).
+  Adds conversions between the well-known types and [jiff](https://docs.rs/jiff):
+  `Timestamp` ↔ `jiff::Timestamp` and `Duration` ↔ `jiff::SignedDuration`. Gated
+  behind the new `jiff` Cargo feature and `no_std`-compatible (`jiff` is pulled
+  with `default-features = false` + `alloc`). Note for `chrono` users switching
+  over: the `Duration` → `jiff::SignedDuration` conversion has no `Overflow`
+  error mode (`SignedDuration` stores full `i64` seconds, so a well-formed proto
+  `Duration` can never overflow it) — code that relied on
+  `DurationChronoError::Overflow` to reject huge durations must check the proto
+  JSON spec bound (±315,576,000,000 s) itself, or let JSON serialization
+  enforce it.
+
+- `exclude_package` protoc plugin option (`protoc-gen-buffa` and `protoc-gen-buffa-packaging`): drop a proto package and its subpackages from generation and from the emitted `mod.rs`. Repeatable; the leading dot is optional. Intended for option-only imports that `include_imports` pulls into `file_to_generate` but that are never referenced as message fields (e.g. `buf.validate`, `gnostic`). Both plugins route exclusion through the new `buffa_codegen::package_is_excluded` predicate, so their output sets stay in sync. (#279)
+
+- `MessageField<T, P>` now has a consuming `map` combinator, equivalent to `into_option().map(f)`, for Option-style transformation of optional message fields. (#280, #282)
+
+- Vectored ("rope") encode: the new `EncodeSink` trait abstracts the encode output, and the `Rope` sink captures large `bytes::Bytes` fields (and, via `Rope::with_backing`, large borrowed view fields) as reference-counted segments instead of copying them — encoding a message dominated by one large payload costs O(header) instead of O(payload). Contiguous callers are unaffected: every `BufMut` is an `EncodeSink` through a blanket impl. `ProtoBytes` gains a provided `as_shared` method so custom `Bytes`-backed representations can opt in, and `RopeBuf` adapts a finished rope to `bytes::Buf` with vectored-I/O support.
+
+- **Package-root `FILE_DESCRIPTOR_SET_BYTES` re-export** (#278). The embedded
+  descriptor-set bytes were only reachable through the reserved `__buffa`
+  sentinel module; generated packages now re-export the constant at the package
+  root alongside `descriptor_pool()`, making `pkg::FILE_DESCRIPTOR_SET_BYTES`
+  the supported access path.
+
+- **`buffa-remote-derive`: derive macros for newtypes over remote types** (#212, #251).
+  New proc-macro crate with `ProtoString`, `ProtoBytes`, `ProtoList`, `ProtoBox`,
+  and `MapStorage` derives that generate the buffa owned-type trait impls (plus
+  `Deref`/`AsRef`/`From` conversions) for a single-field newtype wrapping a
+  foreign type, mirroring serde's `remote` attribute pattern. Covers the binary
+  codec only; serde/`Arbitrary`/reflection forwarders remain hand-written.
+  Contributed by @rsd-darshan.
+
+- **Path-scoped editions feature overrides** via `override_feature_in(path, FeatureOverride)` — descriptor feature injection for integrators working with protos they cannot modify, applied as if the proto had been migrated to editions with that feature set at the matched paths. The supported override set is the `FeatureOverride` allowlist enum; the first entry is `enum_type:OPEN`, with `open_enums_in(&[...])` as shorthand: selected closed enums (or individual closed enum fields) generate as `EnumValue<E>`, making unknown wire values directly visible as `EnumValue::Unknown(n)` for prost-parity migrations or memory-optimized builds with `preserve_unknown_fields(false)`. Enum-type rules flow into the embedded reflection descriptor pool, so runtime reflection and dynamic JSON agree with the generated types. Rules that match nothing produce a generation-time warning. Default-off; existing output and semantics are unchanged. (#269)
+
+- **`buffa-remote-derive`: optional `as_shared` override on `derive(ProtoBytes)`** (#294).
+  `#[buffa(remote = ..., as_shared = path)]` generates the encode-side
+  `ProtoBytes::as_shared` hook, letting a remote bytes newtype that stores a
+  `bytes::Bytes` splice into segmented (`Rope`) sinks by reference count
+  instead of being copied. Without the key the trait default (`None`, copy)
+  still applies.
+
+- **`DecodeOptions::with_element_memory_limit` bounds the memory a decode materializes in the elements of length-delimited containers** — repeated message, string and bytes fields, and map entries — defaulting to 32 MiB (`DEFAULT_ELEMENT_MEMORY_LIMIT`) where it was previously unbounded (#301).
+  These elements cost far more decoded than encoded, which no existing option bounded: an empty repeated message element is 2 bytes on the wire and `size_of::<T>()` in the `Vec` it lands in — measured at 256 bytes for a message of a few `Vec`/`String` fields, a 128x ratio, so 4 MiB of them forced ~512 MiB. `with_max_message_size` cannot help, because it bounds the bytes going in rather than what they expand into. Empty `bytes` and `string` elements amplify 16x and 12x by the same route, and a `map<string, Message>` entry amplifies like a repeated message: an omitted value still materializes, and a few bytes of key buy a distinct slot.
+  The budget is charged by element footprint and shared across the whole decode tree, so a limit means the same amount of memory whatever the element size, and nesting cannot multiply the ceiling. The owned, view and reflective (`DynamicMessage`) decoders are all bounded. Packed scalar fields are never charged: their worst case is a 1-byte varint becoming a 4-byte `i32`, and bounding them would reject columnar payloads that carry millions of elements by design. Lazy views are not charged either — they borrow byte slices at decode and materialize on access.
+  **This can reject input that previously decoded.** A decode materializing more than 32 MiB of such elements now fails with `DecodeError::ElementMemoryLimitExceeded`; raise the budget with `with_element_memory_limit` for trusted input that legitimately decodes into more. Note `Vec` grows by doubling, so peak resident memory can reach roughly twice the budget — the budget bounds what is materialized, not what the allocator reserves.
+
+- **Budget-checked encode entry points** (`try_encode_bounded`, `try_encode_view_bounded`).
+  
+  `Message::try_encode_bounded(max_bytes, buf)` and `ViewEncode::try_encode_bounded`
+  perform a single size pass (populating the `SizeCache`) and reject the encode
+  before `write_to` runs if the encoded size exceeds the caller-supplied budget,
+  so nothing reaches `buf` on `Err` — including bytes a caller had already
+  framed into it. `SizeCachePool::try_encode_bounded` and
+  `try_encode_view_bounded` are the pooled equivalents, and both traits also
+  carry a `*_with_cache` form for callers that manage their own `SizeCache`.
+  All of them return the encoded body length on `Ok`, saving a second
+  `try_encoded_len` call when the length is needed for metrics or framing.
+  
+  A new `EncodeError::ExceedsBudget { len, max_bytes }` variant carries the
+  exact encoded size and the budget that was exceeded. `EncodeError::MessageTooLarge`
+  takes precedence when the message also exceeds the 2 GiB protobuf limit.
+
+### Changed
+
+- **`smoothutf8` bumped to 0.2.3.** The decode hot path picks up the
+  0.2.1–0.2.3 performance work: `verify_with_slack` ASCII improves
+  38–64% at 1–32 bytes (inline-partition fix) and 28–39% at 32–512
+  bytes on aarch64 (NEON `ascii_skip`), and the safe `verify` tail
+  rewrite improves 1–4-byte inputs up to 5.9×. `wasm32` targets now run
+  the portable shift-DFA validator instead of delegating to
+  `core::str::from_utf8`. buffa's call site moves from the deprecated
+  `to_str` alias to its new name `from_utf8`; behavior is unchanged.
+
+- Documented the struct evolution policy for generated types: exhaustive struct literals and destructuring of generated message/view structs are not covered by semver. See the `Message` trait docs. (#202, #244)
+
+- `Tag::new` is now `#[inline]`, allowing the per-field-write call in generated `write_to` code to inline in optimized builds without LTO (cargo's default release profile). Measured up to ~13% fewer encode instructions on encode-heavy workloads. No API change. (#257)
+
+- Packed varint-family repeated fields (`int32`/`int64`/`uint32`/`uint64`/`sint32`/`sint64`/`bool`, and open enums) now decode each element through new force-inlined `buffa::types::decode_*_packed` helpers, removing the per-element out-of-line call from the generated packed loops. Measured on a quieted bare-metal A/B at the layout-normalized profile: −16–30% on packed-varint-dense decode/merge and −5–19% on `decode_view` across every benchmark shape (via the resulting `decode_varint` code-placement shift), at the cost of ~+2–4% on one dense-small-message synthetic (`google_message1` owned decode/merge). Pair regenerated code with a buffa runtime that has the `decode_*_packed` helpers — code generated by this `buffa-codegen` does not compile against older runtimes, so a stale lockfile resolving an older caret version fails with `cannot find function decode_*_packed`; `cargo update -p buffa` fixes it. The plain `decode_*` helpers are unchanged.
+
+- Breaking: `Message::write_to`/`encode` (and `ViewEncode`, the `types::put_*`/`encode_*` helpers, and generated code) now take `&mut impl EncodeSink` instead of `&mut impl BufMut`. Callers passing `Vec<u8>`, `BytesMut`, or any other `BufMut` are source-compatible via the blanket impl; manual `Message`/`ViewEncode` implementations must update their method signatures, and generated code must be regenerated with the matching codegen version. Note that `EncodeSink` deliberately exposes only the `BufMut` subset the encoders use (`put_u8`, `put_slice`, and the little-endian fixed-width writers) — a manual `write_to` that used other `BufMut` methods must assemble into a concrete buffer first. Generated `write_to` bodies now emit `put_shared_bytes_field` for `bytes` fields — copy-equivalent for `Vec<u8>`, segment-aware for `bytes::Bytes`.
+
+- **`source_code_info` is stripped from the embedded `FileDescriptorSet`**
+  (#278). Codegen consumes source info for doc comments, but the runtime
+  `DescriptorPool` never reads it, so embedding it only cost binary size —
+  the well-known-types package shrank from 34,939 to 2,428 embedded bytes
+  (-93%). Classified as non-breaking because the bytes were previously only
+  reachable through the reserved `__buffa` sentinel module — but note the
+  content change is silent: code that reached in anyway and forwarded the
+  bytes to something that reads proto comments will see them disappear
+  without a compile error. Consumers that need proto comments at runtime
+  should build a descriptor set directly with
+  `protoc --include_source_info` or `buf build`.
+
+- Docs: document the idiomatic `.into()` conversions for `MessageField` and `EnumValue`, and explain why message types are generated from `.proto` rather than derived. (#249)
+
+- Packed fixed-width payloads (fixed32/sfixed32/float, fixed64/sfixed64/double) now decode in one bulk call (`buffa::types::extend_packed_*`): the payload length is validated against the element width up front, the exact element count is reserved, and elements convert via `chunks_exact` + `from_le_bytes`, which optimizes to a bulk copy on little-endian targets. Applies to view decode and to owned decode into the default `Vec` when the payload is contiguous in the current chunk; fragmented buffers and custom list representations keep the per-element loop. Behavior note: on those bulk paths a misaligned (truncated) packed payload now fails without partially extending the field — previously the leading complete elements were pushed before the error; the error itself is unchanged (`DecodeError::UnexpectedEof`), and the per-element fallback paths keep the old partial-extension behavior.
+
+- Packed plain-varint payloads (int32/int64/uint32/uint64/sint32/sint64/bool) now decode through slice-specialized bulk extenders (`buffa::types::extend_packed_*`): one pre-allocation reserve up front (each decode path keeps the policy it had with the per-element loop: views reserve the exact count from `count_varints`, owned decode reserves the payload byte length as an upper bound), then an element loop with the per-element buffer dispatch hoisted out — 1-2-byte varints (the common case for ids, tokens, and small values) decode inline with no per-element chunk or remaining checks, longer elements fall through to the unrolled slice decoder. Applies to view decode and to owned decode into the default `Vec` when the payload is contiguous; fragmented buffers, custom list representations, and enums keep the per-element loop. A payload whose final byte has its continuation bit set (malformed trailing element) falls back to the per-element decoder, so accept/reject behavior and partial-extension semantics on malformed payloads are unchanged.
+
+- `DescriptorPool` now rejects descriptor sets with ambiguous field identities instead of building a pool whose lookups are undefined: two fields in a message sharing a number or a proto name, and a `oneof_index` that names no oneof in the containing message. The last of these also fixes a real bug — an out-of-`u16` index was silently dropped, leaving the field with oneof presence but no oneof membership. Fields resolving to the same JSON name are rejected only where protobuf treats JSON as fully supported (`json_format = ALLOW`, i.e. proto3 and editions) and the message has not set `deprecated_legacy_json_field_conflicts`, so every descriptor set protoc emits still loads. protoc rejects the rest at compile time. (#300)
+
+- `DescriptorPool` now registers messages, enums, services, methods, extensions, and enum values in one symbol table, so a descriptor set that declares the same fully-qualified name twice is rejected at construction rather than building a pool where one declaration shadows the other. This catches collisions the pool previously accepted — a service and a message sharing a name, a duplicate RPC method, a duplicate enum value name — all of which protoc rejects at compile time. Numeric enum aliases under `allow_alias` are unaffected. (#302)
+
+- View decoding is laid out for payloads that match the schema: the routes that preserve an unrecognized field or enum value are marked `#[cold]`. Behaviour is unchanged. (#276)
+
+### Fixed
+
+- `DescriptorPool::add_file_descriptor_set` is now transactional: a failed add (e.g. an unresolvable type name) leaves the pool unchanged instead of retaining placeholder descriptors and name entries that made a corrected retry fail with `DuplicateName`. (#253)
+
+- `DynamicMessage::set` / `clear` now validate field-descriptor membership in release builds and panic on a foreign descriptor, instead of silently writing to whatever field shares its number. Previously the check was a `debug_assert!` only. (#254)
+
+- JSON: quoted integer strings in decimal/exponent notation (e.g. `"9007199254740993.0"`, `"9.007199254740993e15"`) now parse exactly instead of routing through `f64`, which silently rounded magnitudes above 2^53. Non-integral and overflowing strings are still rejected. (#255)
+
+- **Encode now enforces the protobuf 2 GiB message-size limit.** Previously
+  encoding was infallible: a message whose encoded size crossed 2^31-1 bytes
+  serialized silently into a blob that no conforming decoder — including
+  buffa's own (`DecodeError::MessageTooLarge`) — would read back, and sizes
+  past 4 GiB wrapped `u32` arithmetic into corrupt output. Generated
+  `compute_size` now accumulates in `u64` and saturates at each node's return
+  (`buffa::saturate_size`), and every provided encode entry point on
+  `Message`, `ViewEncode`, generated lazy views, and `DynamicMessage` checks
+  the total against the new `buffa::MAX_MESSAGE_BYTES` constant.
+  **Behavior change:** the existing entry points (`encode`, `encode_to_vec`,
+  `encode_to_bytes`, `encode_length_delimited`, `encoded_len`,
+  `encode_with_cache`) now panic on over-limit messages (previously they
+  returned decoder-rejected or corrupt bytes); new `try_encode`,
+  `try_encode_with_cache`, `try_encoded_len`, `try_encode_length_delimited`,
+  `try_encode_to_vec`, and `try_encode_to_bytes` twins return
+  `Err(EncodeError::MessageTooLarge)` instead — `EncodeError` gains its first
+  variant. Fallible variants also cover the eager re-encode paths:
+  `ExtensionSet::try_set_extension` and `Any::try_pack` (message-typed
+  extension values and `Any::pack` encode their payload on the spot, so the
+  panicking originals document the new panic and these twins return the
+  error instead). In debug builds `SizeCache::consume_next` additionally
+  rejects over-limit slots as a backstop for callers driving
+  `compute_size`/`write_to` directly.
+
+- `DynamicMessage::try_set` now rejects `Value`s whose runtime shape does not match the target field descriptor — repeated elements, map keys and values, and nested messages of the wrong type included — and `set` consequently panics on shapes it previously accepted and encoded as corrupt tag-only wire output. Invalid values planted through direct mutable field access are omitted during encode (whole field, with `encoded_len` in agreement) instead of corrupting the wire. (#272)
+
+- 64-bit integer JSON helpers now reject unquoted decimal/exponent numbers at or above 2^52 in magnitude. serde_json's default float parsing is not correctly rounded, and from 2^52 a one-ulp parse error is a whole integer — an unquoted integer token there could silently decode to the adjacent `i64`/`u64`. Below 2^52 the same error breaks integrality and is rejected loudly by the existing exactness check. Quote large integer values to parse them exactly. (#274)
+
+- `buffa-build` Protoc mode now emits `cargo:rerun-if-changed` for imported `.proto` files from the generated descriptor set when they resolve under configured include roots, so editing transitive imports reruns codegen without requiring a clean build. (#275)
+
+- Editions `LEGACY_REQUIRED` fields with an explicit `default = ...` now honor the declared default consistently in `Default::default()`, `clear()`, and reflection presence checks. Previously `clear()` reset such fields to the type default instead of the declared default.
+
+- **Reflective `set` adopts message values from another descriptor pool** (#297).
+  A generated type reflects against its defining crate's `DescriptorPool`, so a nested
+  well-known-type (or any cross-package) message reached through the `ReflectMessage`
+  vtable could never be pointer-identical to the referencing pool. `DynamicMessage::try_set`
+  rejected such values with a self-contradictory error (`expects message
+  google.protobuf.Duration, got message google.protobuf.Duration`), which made the rebuild
+  walk `for_each_set` + `set(fd, vr.to_owned())` panic for any message with a WKT field.
+  Same-typed values from a foreign pool are now re-homed into the target pool by a wire
+  round-trip; a genuinely wrong type is still rejected. Callers that relied on the previous
+  cross-pool rejection as a provenance check must compare `ReflectMessage::pool` themselves.
+  Adds `MapValue::into_entries`.
+
+- Code fences and indented code blocks in proto comments are no longer compiled as doctests in the consuming crate, so a comment carrying a non-Rust snippet no longer breaks `cargo test` downstream. An unannotated fence becomes `text` and any other keeps its language and gains `ignore`, so a `rust` fence is still syntax-highlighted. Tilde fences are handled like backtick fences, and a fence the author left open is closed at the end of the comment instead of swallowing the doc text after it. (#307)
+
+- **Restore cross-crate inlining for generated view field decoding** (#298). Generated `merge_view_field` methods now carry an inline hint, allowing the optimizer to avoid a per-field call on zero-copy view workloads.
+
+- Owned decoding now counts preserved unknown closed-enum values against the configured unknown-field limit, matching view decoding and preventing packed values from bypassing the allocation guard.
+
+- The reflective decoder (`DynamicMessage`) no longer drops an existing singular message field when a later wire occurrence of that field fails to decode. A truncated length varint or an over-long declared length left the field cleared, silently discarding data decoded from earlier occurrences; the partially-merged value is now retained, matching the owned decoder's merge semantics. (#299)
+
+- The reflective decoder (`DynamicMessage`) no longer clears a oneof's active member when the replacement on the wire fails to decode. A malformed varint, a truncated nested message, a mismatched group terminator, or invalid UTF-8 left the oneof empty, discarding the member that had decoded successfully; siblings are now cleared only once the replacement decodes. (#303)
+
+- The reflective decoder (`DynamicMessage`) now routes unknown values of a closed enum to unknown fields instead of materializing them as `Value::EnumNumber`, matching the generated decoder and the proto2/editions spec. Singular, oneof, extension, unpacked repeated, packed repeated, and map-value contexts are all covered, and each preserved value is charged against the decoder's unknown-field allowance on the same terms as the generated path — once per value, or once per entry for maps. Open enums are unaffected. (#304)
+
+[0.9.0]: https://github.com/anthropics/buffa/compare/v0.8.1...v0.9.0
+
 ## [0.8.1] - 2026-07-01
 
 A single-fix patch release: unknown-field limit accounting for zero-copy

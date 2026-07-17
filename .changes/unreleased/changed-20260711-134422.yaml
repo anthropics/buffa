@@ -1,3 +1,0 @@
-kind: Changed
-body: 'Docs: document the idiomatic `.into()` conversions for `MessageField` and `EnumValue`, and explain why message types are generated from `.proto` rather than derived. (#249)'
-time: 2026-07-11T13:44:22+08:00

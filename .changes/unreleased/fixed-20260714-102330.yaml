@@ -1,3 +1,0 @@
-kind: Fixed
-body: '**Restore cross-crate inlining for generated view field decoding** (#298). Generated `merge_view_field` methods now carry an inline hint, allowing the optimizer to avoid a per-field call on zero-copy view workloads.'
-time: 2026-07-14T10:23:30.000000000+02:00

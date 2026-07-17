@@ -1,3 +1,0 @@
-kind: Fixed
-body: The reflective decoder (`DynamicMessage`) no longer drops an existing singular message field when a later wire occurrence of that field fails to decode. A truncated length varint or an over-long declared length left the field cleared, silently discarding data decoded from earlier occurrences; the partially-merged value is now retained, matching the owned decoder's merge semantics. (#299)
-time: 2026-07-16T18:30:11.994052+00:00

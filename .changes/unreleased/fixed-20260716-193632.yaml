@@ -1,3 +1,0 @@
-kind: Fixed
-body: The reflective decoder (`DynamicMessage`) no longer clears a oneof's active member when the replacement on the wire fails to decode. A malformed varint, a truncated nested message, a mismatched group terminator, or invalid UTF-8 left the oneof empty, discarding the member that had decoded successfully; siblings are now cleared only once the replacement decodes. (#303)
-time: 2026-07-16T19:36:32.175937+00:00

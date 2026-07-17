@@ -1,3 +1,0 @@
-kind: Fixed
-body: Code fences and indented code blocks in proto comments are no longer compiled as doctests in the consuming crate, so a comment carrying a non-Rust snippet no longer breaks `cargo test` downstream. An unannotated fence becomes `text` and any other keeps its language and gains `ignore`, so a `rust` fence is still syntax-highlighted. Tilde fences are handled like backtick fences, and a fence the author left open is closed at the end of the comment instead of swallowing the doc text after it. (#307)
-time: 2026-07-12T10:46:37.182884848-07:00

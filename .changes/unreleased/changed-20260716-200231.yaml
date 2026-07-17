@@ -1,3 +1,0 @@
-kind: Changed
-body: '`DescriptorPool` now registers messages, enums, services, methods, extensions, and enum values in one symbol table, so a descriptor set that declares the same fully-qualified name twice is rejected at construction rather than building a pool where one declaration shadows the other. This catches collisions the pool previously accepted — a service and a message sharing a name, a duplicate RPC method, a duplicate enum value name — all of which protoc rejects at compile time. Numeric enum aliases under `allow_alias` are unaffected. (#302)'
-time: 2026-07-16T20:02:31.865771+00:00

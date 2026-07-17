@@ -1,3 +1,0 @@
-kind: Changed
-body: 'View decoding is laid out for payloads that match the schema: the routes that preserve an unrecognized field or enum value are marked `#[cold]`. Behaviour is unchanged. (#276)'
-time: 2026-07-16T20:58:04.165333+00:00

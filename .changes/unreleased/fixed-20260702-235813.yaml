@@ -1,3 +1,0 @@
-kind: Fixed
-body: '64-bit integer JSON helpers now reject unquoted decimal/exponent numbers at or above 2^52 in magnitude. serde_json''s default float parsing is not correctly rounded, and from 2^52 a one-ulp parse error is a whole integer — an unquoted integer token there could silently decode to the adjacent `i64`/`u64`. Below 2^52 the same error breaks integrality and is rejected loudly by the existing exactness check. Quote large integer values to parse them exactly. (#274)'
-time: 2026-07-02T23:58:13.000000000Z

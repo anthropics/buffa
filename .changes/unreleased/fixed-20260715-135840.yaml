@@ -1,3 +1,0 @@
-kind: Fixed
-body: 'Owned decoding now counts preserved unknown closed-enum values against the configured unknown-field limit, matching view decoding and preventing packed values from bypassing the allocation guard.'
-time: 2026-07-15T13:58:40.000000000Z

@@ -1,3 +1,0 @@
-kind: Fixed
-body: 'Editions `LEGACY_REQUIRED` fields with an explicit `default = ...` now honor the declared default consistently in `Default::default()`, `clear()`, and reflection presence checks. Previously `clear()` reset such fields to the type default instead of the declared default.'
-time: 2026-07-08T01:45:00.000000000Z
