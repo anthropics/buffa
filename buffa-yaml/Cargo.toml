@@ -8,6 +8,11 @@ license.workspace = true
 repository.workspace = true
 keywords = ["protobuf", "protocol-buffers", "yaml", "serialization"]
 categories = ["encoding"]
+# Not released. Phase 1 (#155) is in-tree only, with phases 2+ tracked by #101,
+# and the crate cannot publish as it stands: its buffa-test dev-dependency is
+# itself publish = false but carries a version, so cargo publish would demand it
+# from the index and fail. Publishing means resolving that dev-dependency first.
+publish = false
 
 [dependencies]
 buffa = { workspace = true, features = ["json", "std"] }

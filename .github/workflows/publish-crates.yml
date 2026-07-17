@@ -37,6 +37,18 @@ jobs:
       # Bootstrap token. Empty if secret is unset → Trusted Publishing path.
       CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
+    env:
+      # Dependency order — see the comment above the coverage check.
+      PUBLISH_ORDER: >-
+        buffa
+        buffa-descriptor
+        buffa-types
+        buffa-codegen
+        buffa-build
+        buffa-remote-derive
+        protoc-gen-buffa
+        protoc-gen-buffa-packaging
+
     steps:
       - uses: actions/checkout@v4
 
@@ -53,8 +65,20 @@ jobs:
         if: ${{ steps.auth.outputs.token != '' }}
         run: echo "CARGO_REGISTRY_TOKEN=${{ steps.auth.outputs.token }}" >> "$GITHUB_ENV"
 
-      # Dependency order. cargo publish (≥1.66) blocks until the crate is
-      # indexed, so sequential steps work without manual delays.
+      # PUBLISH_ORDER is the single source of truth for what ships and in what
+      # order. Order is dependency order and is hand-maintained: cargo publish
+      # (≥1.66) blocks until the crate is indexed, so a sequential walk works
+      # without manual delays. buffa-descriptor must precede buffa-types,
+      # because buffa-types' `reflect` feature has an optional buffa-descriptor
+      # dependency and cargo publish requires optional deps to resolve from the
+      # index too.
+      #
+      # The coverage check below fails the run if a publishable workspace member
+      # is missing from the list. buffa-remote-derive shipped in 0.9.0 announced
+      # in the changelog but absent from crates.io because this list was
+      # hand-written and nobody added it, and the release passed green — a new
+      # crate must never be able to be skipped silently again. Adding a crate to
+      # the workspace now either adds it here or breaks the release loudly.
       #
       # Each step is idempotent: if the crate is already published at this
       # version, the step logs a notice and succeeds. Re-running the workflow
@@ -77,26 +101,28 @@ jobs:
           EOF
           chmod +x /tmp/publish.sh
 
-      - name: Publish buffa
-        run: /tmp/publish.sh buffa $DRY_RUN_FLAG
+      - name: Check every publishable crate is covered
+        run: |
+          set -euo pipefail
+          # publish == null means the manifest does not set publish = false.
+          cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.publish == null) | .name' \
+            | sort > /tmp/publishable.txt
+          printf '%s\n' $PUBLISH_ORDER | sort > /tmp/listed.txt
+          if ! diff -u /tmp/publishable.txt /tmp/listed.txt; then
+            echo "::error::PUBLISH_ORDER does not match the publishable workspace members."
+            echo "::error::A crate on the left is publishable but would not be published;"
+            echo "::error::add it to PUBLISH_ORDER in dependency order, or set publish = false"
+            echo "::error::in its Cargo.toml if it is deliberately not released."
+            exit 1
+          fi
+          echo "::notice::$(wc -l < /tmp/listed.txt) publishable crates, all covered"
 
-      # buffa-descriptor must precede buffa-types: buffa-types' `reflect`
-      # feature has an optional buffa-descriptor dependency, and cargo publish
-      # requires optional deps to be resolvable from the index too.
-      - name: Publish buffa-descriptor
-        run: /tmp/publish.sh buffa-descriptor $DRY_RUN_FLAG
-
-      - name: Publish buffa-types
-        run: /tmp/publish.sh buffa-types $DRY_RUN_FLAG
-
-      - name: Publish buffa-codegen
-        run: /tmp/publish.sh buffa-codegen $DRY_RUN_FLAG
-
-      - name: Publish buffa-build
-        run: /tmp/publish.sh buffa-build $DRY_RUN_FLAG
-
-      - name: Publish protoc-gen-buffa
-        run: /tmp/publish.sh protoc-gen-buffa $DRY_RUN_FLAG
-
-      - name: Publish protoc-gen-buffa-packaging
-        run: /tmp/publish.sh protoc-gen-buffa-packaging $DRY_RUN_FLAG
+      - name: Publish
+        run: |
+          set -euo pipefail
+          for crate in $PUBLISH_ORDER; do
+            echo "::group::publish $crate"
+            /tmp/publish.sh "$crate" $DRY_RUN_FLAG
+            echo "::endgroup::"
+          done
