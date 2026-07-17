@@ -15,14 +15,13 @@ See [DESIGN.md](DESIGN.md) for the architectural overview and [README.md](README
 task changelog-new
 ```
 
-This prompts for a kind (`Breaking changes`, `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`) and a multi-line body, then writes `.changes/unreleased/<kind>-<timestamp>.yaml`. Commit that file with your change. The body is the full Keep a Changelog bullet text (the bullet marker and two-space hanging indent are added at batch time, so write the body flush-left); long-form prose with hard-wrapped continuation lines is fine — see existing fragments for the style.
+This prompts for a kind (`Breaking changes`, `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`) and a multi-line body, then writes `.changes/unreleased/<kind>-<timestamp>.yaml`. Commit that file with your change. The body is the full Keep a Changelog bullet text (the bullet marker and two-space hanging indent are added at batch time, so write the body flush-left). **Write it as flowing prose — one line per paragraph, no hard line-wraps.** Hard-wrapped text has to be re-flowed by hand on every later edit and produces noisy diffs; the renderer wraps it for you, and `MD013` is off so there is no line-length limit to satisfy.
 
 Non-interactive (the prompt requires a TTY, so use this form from scripts and agent sessions; `-b` accepts a multi-line body):
 
 ```sh
 task changelog-new -- -k Fixed -b '**Short description of the fix** (#NNN).
-Further detail wraps onto continuation lines and is hung under the
-bullet automatically at batch time.'
+Further detail goes on its own line, however long — the bullet and its hanging indent are added at batch time.'
 ```
 
 At release time, `task changelog-batch -- <version>` rolls the fragments into `.changes/<version>.md` and `task changelog-merge` regenerates `CHANGELOG.md`. CI verifies that `CHANGELOG.md` matches `changie merge` output, so a direct edit will fail the `check-changelog` job.
