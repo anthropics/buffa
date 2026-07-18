@@ -16,11 +16,42 @@
 compile_error!("isolated `analytics_event` bench requires --no-default-features: another message/reflect/lazy feature is enabled, which defeats per-message isolation");
 include!("common.rs");
 use bench_buffa::bench::{__buffa::view::AnalyticsEventView, AnalyticsEvent};
+use bench_buffa::{analytics_smallvec, analytics_smolstr, analytics_smolstr_smallvec};
 
 fn run(c: &mut Criterion) {
     let data = include_bytes!("../../datasets/analytics_event.pb");
     benchmark_decode::<AnalyticsEvent>(c, "buffa/analytics_event", data);
     benchmark_json::<AnalyticsEvent>(c, "buffa/analytics_event", data);
+    benchmark_decode::<analytics_smolstr::AnalyticsEvent>(
+        c,
+        "buffa/analytics_event/smolstr",
+        data,
+    );
+    benchmark_json::<analytics_smolstr::AnalyticsEvent>(
+        c,
+        "buffa/analytics_event/smolstr",
+        data,
+    );
+    benchmark_decode::<analytics_smallvec::AnalyticsEvent>(
+        c,
+        "buffa/analytics_event/smallvec4",
+        data,
+    );
+    benchmark_json::<analytics_smallvec::AnalyticsEvent>(
+        c,
+        "buffa/analytics_event/smallvec4",
+        data,
+    );
+    benchmark_decode::<analytics_smolstr_smallvec::AnalyticsEvent>(
+        c,
+        "buffa/analytics_event/smolstr-smallvec4",
+        data,
+    );
+    benchmark_json::<analytics_smolstr_smallvec::AnalyticsEvent>(
+        c,
+        "buffa/analytics_event/smolstr-smallvec4",
+        data,
+    );
     let ds = load_dataset(data);
     let bytes = total_payload_bytes(&ds);
     let mut g = c.benchmark_group("buffa/analytics_event");
