@@ -230,10 +230,14 @@ impl FieldDescriptor {
         self.oneof_index
     }
 
-    /// Effective openness for an enum-valued field, list, or map value.
+    /// Effective openness for an enum-valued field, list, or map value:
+    /// whether unknown numeric values are preserved ([`Open`](EnumType::Open))
+    /// or treated as unknown fields ([`Closed`](EnumType::Closed)).
     ///
-    /// Includes Buffa's field-scoped enum override. Returns `None` for fields
-    /// whose value is not an enum.
+    /// Unlike [`EnumDescriptor::enum_type`], which reports the enum's own
+    /// declared openness, this reflects buffa's field-scoped overrides
+    /// (`open_enums_in`), so it is the value the decoders act on. Returns
+    /// `None` for fields whose value is not an enum.
     #[inline]
     #[must_use]
     pub fn enum_type(&self) -> Option<EnumType> {

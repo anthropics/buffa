@@ -357,6 +357,114 @@ fn field_rule_opens_reflective_decode_without_opening_the_enum() {
 }
 
 #[test]
+fn field_rule_opens_reflective_json_for_repeated_and_map() {
+    use buffa_descriptor::reflect::{DynamicMessage, ReflectMessage, ValueRef};
+
+    // Openness is resolved per field in the repeated and map arms of the
+    // reflective JSON decoder, not only the singular arm.
+    let pool = crate::open_enums::descriptor_pool();
+    let idx = pool
+        .message_index("test.openenums.OpenEnumContexts")
+        .unwrap();
+    let md = pool.message(idx);
+
+    let rep = DynamicMessage::from_json(pool.clone(), idx, r#"{"rep": [99]}"#)
+        .expect("field-level open enum accepts unknown values in a repeated field");
+    let ValueRef::List(list) = rep.get(md.field_by_name("rep").unwrap()) else {
+        panic!("expected a list for `rep`");
+    };
+    assert_eq!(list.len(), 1);
+    assert!(matches!(list.get(0), Some(ValueRef::EnumNumber(99))));
+
+    let labels = DynamicMessage::from_json(pool.clone(), idx, r#"{"labels": {"a": 99}}"#)
+        .expect("field-level open enum accepts unknown values in a map value");
+    let ValueRef::Map(map) = labels.get(md.field_by_name("labels").unwrap()) else {
+        panic!("expected a map for `labels`");
+    };
+    assert_eq!(map.len(), 1);
+    assert!(matches!(map.get_str("a"), Some(ValueRef::EnumNumber(99))));
+
+    // A oneof member and a packed repeated field also route through the
+    // per-field resolution, which is what the changelog entry claims.
+    let oneof = DynamicMessage::from_json(pool.clone(), idx, r#"{"oneofPriority": 99}"#)
+        .expect("field-level open enum accepts unknown values in a oneof member");
+    assert!(matches!(
+        oneof.get(md.field_by_name("oneof_priority").unwrap()),
+        ValueRef::EnumNumber(99)
+    ));
+
+    let packed = DynamicMessage::from_json(pool.clone(), idx, r#"{"repPacked": [99]}"#)
+        .expect("field-level open enum accepts unknown values in a packed repeated field");
+    let ValueRef::List(packed_list) = packed.get(md.field_by_name("rep_packed").unwrap()) else {
+        panic!("expected a list for `rep_packed`");
+    };
+    assert!(matches!(packed_list.get(0), Some(ValueRef::EnumNumber(99))));
+
+    // Control: `closed_control` carries no override, so the same input is
+    // still rejected — this is what proves the singular assertions can fail.
+    // Assert on the message, because `from_json` also rejects unknown keys,
+    // so a bare `expect_err` would pass if the field were ever renamed.
+    let err = DynamicMessage::from_json(pool.clone(), idx, r#"{"closed_control": 99}"#)
+        .expect_err("a closed enum field must still reject an unknown numeric value");
+    assert!(
+        err.to_string().contains("unknown closed enum value"),
+        "expected a closed-enum rejection, got: {err}"
+    );
+}
+
+#[test]
+fn field_rule_opens_reflective_binary_decode() {
+    use buffa_descriptor::reflect::{DynamicMessage, ReflectMessage, ValueRef};
+
+    // The JSON tests above cover reflect/json.rs; this drives the binary
+    // reflective decoder (DynamicMessage::decode) instead, which resolves
+    // openness through the same per-field value in a separate set of arms.
+    let pool = crate::open_enums::descriptor_pool();
+    let idx = pool
+        .message_index("test.openenums.OpenEnumContexts")
+        .unwrap();
+    let md = pool.message(idx);
+
+    let dynamic = DynamicMessage::decode(pool.clone(), idx, &unknown_wire())
+        .expect("reflective binary decode of the override fixture");
+
+    // Singular, oneof: the unknown value is the field's value, not an unknown.
+    assert!(matches!(
+        dynamic.get(md.field_by_name("opt").unwrap()),
+        ValueRef::EnumNumber(99)
+    ));
+    assert!(matches!(
+        dynamic.get(md.field_by_name("oneof_priority").unwrap()),
+        ValueRef::EnumNumber(77)
+    ));
+
+    // Repeated, packed repeated, and map all keep their unknown members.
+    for name in ["rep", "rep_packed"] {
+        let ValueRef::List(list) = dynamic.get(md.field_by_name(name).unwrap()) else {
+            panic!("expected a list for `{name}`");
+        };
+        assert!(
+            matches!(list.get(1), Some(ValueRef::EnumNumber(99))),
+            "`{name}` lost its unknown enum member"
+        );
+    }
+    let ValueRef::Map(labels) = dynamic.get(md.field_by_name("labels").unwrap()) else {
+        panic!("expected a map for `labels`");
+    };
+    assert!(matches!(
+        labels.get_str("unknown"),
+        Some(ValueRef::EnumNumber(88))
+    ));
+
+    // Control: `closed_control` has no override, so its unknown value 123 is
+    // still routed to unknown fields rather than becoming the field's value.
+    assert!(!dynamic.has(md.field_by_name("closed_control").unwrap()));
+    let unknowns: Vec<_> = dynamic.unknown_fields().iter().collect();
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(unknowns[0].number, 5);
+}
+
+#[test]
 fn enum_rule_opens_runtime_descriptor_pool() {
     use crate::open_enums_enum_rule::{descriptor_pool, Wrapper};
     use buffa_descriptor::features::EnumType;

@@ -17,7 +17,10 @@
 //! a field-level override. Field-level `enum_type` is not a legal editions
 //! target (protoc rejects it), so it can never appear in real input; it is
 //! used purely as the carrier for field-scoped overrides, honored by the
-//! carve-out in [`features::resolve_field`](crate::features::resolve_field).
+//! carve-out in [`features::resolve_field`](crate::features::resolve_field)
+//! at generation time and by
+//! [`DescriptorPool`](buffa_descriptor::DescriptorPool)'s per-field
+//! resolution at runtime.
 //! Because the mutated set is also what
 //! [`encode_fds_once`](crate::reflect::encode_fds_once) embeds, an
 //! *enum-level* rule flows all the way to runtime: the embedded pool reports
