@@ -36,16 +36,6 @@ jobs:
       DRY_RUN_FLAG: ${{ inputs.dry_run && '--dry-run' || '' }}
       # Bootstrap token. Empty if secret is unset → Trusted Publishing path.
       CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      # Dependency order — see the comment above the coverage check.
-      PUBLISH_ORDER: >-
-        buffa
-        buffa-descriptor
-        buffa-types
-        buffa-codegen
-        buffa-build
-        buffa-remote-derive
-        protoc-gen-buffa
-        protoc-gen-buffa-packaging
 
     steps:
       - uses: actions/checkout@v4
@@ -63,20 +53,13 @@ jobs:
         if: ${{ steps.auth.outputs.token != '' }}
         run: echo "CARGO_REGISTRY_TOKEN=${{ steps.auth.outputs.token }}" >> "$GITHUB_ENV"
 
-      # PUBLISH_ORDER is the single source of truth for what ships and in what
-      # order. Order is dependency order and is hand-maintained: cargo publish
-      # (≥1.66) blocks until the crate is indexed, so a sequential walk works
-      # without manual delays. buffa-descriptor must precede buffa-types,
-      # because buffa-types' `reflect` feature has an optional buffa-descriptor
-      # dependency and cargo publish requires optional deps to resolve from the
-      # index too.
-      #
-      # The coverage check below fails the run if a publishable workspace member
-      # is missing from the list. buffa-remote-derive shipped in 0.9.0 announced
-      # in the changelog but absent from crates.io because this list was
-      # hand-written and nobody added it, and the release passed green — a new
-      # crate must never be able to be skipped silently again. Adding a crate to
-      # the workspace now either adds it here or breaks the release loudly.
+      # .github/publish-order.txt is the single source of truth for what ships
+      # and in what order; scripts/check-publish-coverage.sh diffs it against
+      # the publishable workspace members. The same check runs on every pull
+      # request (ci.yml), so a new crate is caught when it is introduced rather
+      # than at release time — buffa-remote-derive shipped announced in the
+      # 0.9.0 changelog but absent from crates.io because nothing compared the
+      # list to the workspace.
       #
       # Each step is idempotent: if the crate is already published at this
       # version, the step logs a notice and succeeds. Re-running the workflow
@@ -100,33 +83,16 @@ jobs:
           chmod +x /tmp/publish.sh
 
       - name: Check every publishable crate is covered
-        run: |
-          set -euo pipefail
-          # publish == null means the manifest does not set publish = false.
-          cargo metadata --no-deps --format-version 1 \
-            | jq -r '.packages[] | select(.publish == null) | .name' \
-            | sort > /tmp/publishable.txt
-          # PUBLISH_ORDER is a space-separated word list and must split into one
-          # crate per argument; quoting it would make it a single token.
-          # shellcheck disable=SC2086
-          printf '%s\n' $PUBLISH_ORDER | sort > /tmp/listed.txt
-          if ! diff -u /tmp/publishable.txt /tmp/listed.txt; then
-            echo "::error::PUBLISH_ORDER does not match the publishable workspace members."
-            echo "::error::A crate on the left is publishable but would not be published;"
-            echo "::error::add it to PUBLISH_ORDER in dependency order, or set publish = false"
-            echo "::error::in its Cargo.toml if it is deliberately not released."
-            exit 1
-          fi
-          echo "::notice::$(wc -l < /tmp/listed.txt) publishable crates, all covered"
+        run: ./scripts/check-publish-coverage.sh
 
       - name: Publish
         run: |
           set -euo pipefail
-          # Same intentional word split as the coverage check above; DRY_RUN_FLAG
-          # is either empty or --dry-run and must vanish entirely when empty.
+          # DRY_RUN_FLAG is empty or --dry-run and must vanish entirely when
+          # empty, so it is deliberately unquoted.
           # shellcheck disable=SC2086
-          for crate in $PUBLISH_ORDER; do
-            echo "::group::publish $crate"
-            /tmp/publish.sh "$crate" $DRY_RUN_FLAG
+          while read -r crate; do
+            echo "::group::publish ${crate}"
+            /tmp/publish.sh "${crate}" $DRY_RUN_FLAG
             echo "::endgroup::"
-          done
+          done < <(./scripts/check-publish-coverage.sh --list)

@@ -1,0 +1,29 @@
+# Crates published to crates.io, in the order they must be published.
+#
+# This file is the single source of truth: publish-crates.yml walks it, and
+# scripts/check-publish-coverage.sh fails CI when it does not match exactly the
+# publishable members of the workspace. A crate is "publishable" unless its
+# Cargo.toml sets `publish = false`, so adding a new crate to the workspace
+# either adds a line here or breaks the build — it can no longer be forgotten
+# and discovered missing from crates.io after a release.
+#
+# Order is dependency order and is maintained by hand. cargo publish blocks
+# until each crate is indexed, so a sequential walk needs no delays. Two
+# constraints are not obvious from the dependency graph at a glance:
+#
+#   - buffa-descriptor precedes buffa-types, because buffa-types' `reflect`
+#     feature has an optional buffa-descriptor dependency and cargo publish
+#     requires optional deps to resolve from the index too.
+#   - buffa is first: everything else depends on it.
+#
+# A crate deliberately not released sets `publish = false` in its Cargo.toml
+# (buffa-yaml does) rather than being omitted from this file.
+
+buffa
+buffa-descriptor
+buffa-types
+buffa-codegen
+buffa-build
+buffa-remote-derive
+protoc-gen-buffa
+protoc-gen-buffa-packaging

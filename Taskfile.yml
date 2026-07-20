@@ -299,6 +299,13 @@ tasks:
     cmds:
       - npx --yes markdownlint-cli@0.47.0 '**/*.md' --ignore target --ignore .claude
 
+  check-publish-coverage:
+    desc: >-
+      Verify .github/publish-order.txt lists exactly the publishable crates in
+      the workspace. Run after adding a crate; CI runs this on every PR.
+    cmds:
+      - ./scripts/check-publish-coverage.sh
+
   check-keywords:
     desc: >-
       Compare is_rust_keyword in buffa-codegen against the current Rust keyword

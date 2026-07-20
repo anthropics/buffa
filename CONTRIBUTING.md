@@ -26,6 +26,14 @@ Further detail goes on its own line, however long — the bullet and its hanging
 
 At release time, `task changelog-batch -- <version>` rolls the fragments into `.changes/<version>.md` and `task changelog-merge` regenerates `CHANGELOG.md`. CI verifies that `CHANGELOG.md` matches `changie merge` output, so a direct edit will fail the `check-changelog` job.
 
+## Adding a Publishable Crate
+
+A new workspace crate is published to crates.io unless its `Cargo.toml` sets `publish = false`. If it should be released, add it to `.github/publish-order.txt` **after the crates it depends on** — that file is the single source of truth for what the release publishes and in what order.
+
+`task check-publish-coverage` verifies the list matches the workspace, and CI runs the same check on every pull request, so a missing entry fails the PR that introduces the crate rather than silently skipping it at release time. (buffa 0.9.0 shipped with `buffa-remote-derive` announced in the changelog but absent from crates.io, because nothing compared the list to the workspace.)
+
+Note that the first publish of any new crate cannot use Trusted Publishing — crates.io cannot configure it for a crate that does not exist yet — so it needs a one-time API token, after which trusted publishing is configured and later releases run over OIDC.
+
 ## Change Size
 
 Keep each change to **≤ 250 lines net** (additions minus deletions, excluding test files) wherever possible. If a task naturally exceeds that, split it into focused, self-contained PRs or commits.
