@@ -17,15 +17,18 @@
 //! a field-level override. Field-level `enum_type` is not a legal editions
 //! target (protoc rejects it), so it can never appear in real input; it is
 //! used purely as the carrier for field-scoped overrides, honored by the
-//! carve-out in [`features::resolve_field`](crate::features::resolve_field).
+//! carve-out in [`features::resolve_field`](crate::features::resolve_field)
+//! at generation time and by
+//! [`DescriptorPool`](buffa_descriptor::DescriptorPool)'s per-field
+//! resolution at runtime.
 //! Because the mutated set is also what
 //! [`encode_fds_once`](crate::reflect::encode_fds_once) embeds, an
 //! *enum-level* rule flows all the way to runtime: the embedded pool reports
 //! the enum open and descriptor-driven dynamic codecs agree with the
-//! generated types (a fully spec-valid descriptor). A *field-level* rule is
-//! codegen-only: the runtime pool reads closedness from the enum descriptor,
-//! so descriptor-driven codecs keep closed semantics for that enum — the
-//! documented trade for field-scoped granularity.
+//! generated types (a fully spec-valid descriptor). A *field-level* rule
+//! leaves the enum descriptor closed but resolves onto the runtime
+//! [`FieldDescriptor`](buffa_descriptor::FieldDescriptor), so dynamic codecs
+//! still agree with generated field semantics.
 
 use crate::context::matches_proto_prefix;
 use crate::generated::descriptor::field_descriptor_proto::Type;

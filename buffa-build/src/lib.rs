@@ -655,10 +655,11 @@ impl Config {
     /// override exists to change.
     ///
     /// Under reflection, the embedded descriptor pool carries the injected
-    /// features, so spec-valid injections (e.g. an enum-*type*
-    /// [`FeatureOverride::EnumType`] rule) keep runtime reflection and
-    /// descriptor-driven dynamic JSON consistent with the generated types;
-    /// see each variant's docs for its field-scoped semantics.
+    /// features, so runtime reflection and descriptor-driven dynamic JSON
+    /// stay consistent with the generated types for both enum-scoped and
+    /// field-scoped rules. A field-scoped injection is buffa-specific,
+    /// though: other runtimes reading the exported descriptor set ignore it.
+    /// See [`FeatureOverride::EnumType`] for how the two scopes differ.
     #[must_use]
     pub fn override_feature_in(mut self, path: impl AsRef<str>, feature: FeatureOverride) -> Self {
         let raw = path.as_ref();
@@ -687,12 +688,17 @@ impl Config {
     /// This is an opt-in migration / interop mode: it deliberately changes
     /// closed-enum presence behavior for matching fields, making an unknown
     /// value read as present instead of unset with the raw value represented
-    /// through unknown fields. An enum-type rule opens the enum itself (every
-    /// field referencing it, and the embedded reflection pool agrees); a
-    /// field rule opens just that field (descriptor-driven codecs keep
-    /// closed-enum semantics for the enum) — prefer enum-type rules when
-    /// reflective codecs must agree. Path grammar, accumulation, and
-    /// inert-rule warnings are as described on
+    /// through unknown fields. An enum-type rule opens the enum itself, so
+    /// every field referencing it is affected; a field rule opens just that
+    /// field, leaving the enum's own declared openness unchanged. Both are
+    /// honored by buffa's descriptor-driven codecs, which resolve openness
+    /// per field. Prefer enum-type rules when the descriptor set leaves the
+    /// process: a field-level `enum_type` is not a spec-valid editions
+    /// feature, so other runtimes reading the exported set ignore it. That
+    /// preference does not help for an enum reached through `extern_path` —
+    /// its descriptor is not in the compiled set to mutate, so even an
+    /// enum-type rule is carried as a field-level override. Path grammar,
+    /// accumulation, and inert-rule warnings are as described on
     /// [`override_feature_in`](Self::override_feature_in).
     #[must_use]
     pub fn open_enums_in(mut self, paths: &[impl AsRef<str>]) -> Self {

@@ -409,6 +409,7 @@ impl<'de> Visitor<'de> for MessageVisitor {
             };
             // Extract the small Copy parts before mutating `msg`.
             let kind = fd.kind;
+            let enum_type = fd.enum_type;
             let number = fd.number;
             let oneof_index = fd.oneof_index;
             let synthetic = oneof_index
@@ -424,6 +425,7 @@ impl<'de> Visitor<'de> for MessageVisitor {
             let v = map.next_value_seed(FieldSeed {
                 pool: &self.pool,
                 kind,
+                enum_type,
                 ignore_unknown: self.ignore_unknown,
             })?;
             // null → leave the field unset (per spec, except NullValue which
@@ -484,6 +486,7 @@ impl<'de> Visitor<'de> for MessageVisitor {
 struct FieldSeed<'a> {
     pool: &'a Arc<DescriptorPool>,
     kind: FieldKind,
+    enum_type: Option<EnumType>,
     ignore_unknown: bool,
 }
 
@@ -498,18 +501,21 @@ impl<'de> DeserializeSeed<'de> for FieldSeed<'_> {
             FieldKind::Singular(sk) => SingularSeed {
                 pool: self.pool,
                 kind: sk,
+                enum_type: self.enum_type,
                 ignore_unknown: self.ignore_unknown,
             }
             .deserialize(d),
             FieldKind::List(sk) => d.deserialize_any(ListVisitor {
                 pool: self.pool,
                 kind: sk,
+                enum_type: self.enum_type,
                 ignore_unknown: self.ignore_unknown,
             }),
             FieldKind::Map { key, value } => d.deserialize_any(MapFieldVisitor {
                 pool: self.pool,
                 key,
                 value,
+                enum_type: self.enum_type,
                 ignore_unknown: self.ignore_unknown,
             }),
         }
@@ -519,6 +525,7 @@ impl<'de> DeserializeSeed<'de> for FieldSeed<'_> {
 struct SingularSeed<'a> {
     pool: &'a Arc<DescriptorPool>,
     kind: SingularKind,
+    enum_type: Option<EnumType>,
     ignore_unknown: bool,
 }
 
@@ -528,7 +535,7 @@ impl<'de> DeserializeSeed<'de> for SingularSeed<'_> {
     fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
         match self.kind {
             SingularKind::Scalar(sc) => deserialize_optional_scalar(sc, d),
-            SingularKind::Enum(eidx) => deserialize_enum(self.pool, eidx, d),
+            SingularKind::Enum(eidx) => deserialize_enum(self.pool, eidx, self.enum_type, d),
             SingularKind::Message(midx) => {
                 // `google.protobuf.Value` treats JSON `null` as a present
                 // `null_value` member, not "unset" — dispatch straight to the
@@ -795,11 +802,13 @@ fn parse_float_str(v: &str) -> Result<f64, String> {
 fn deserialize_enum<'de, D: Deserializer<'de>>(
     pool: &Arc<DescriptorPool>,
     eidx: EnumIndex,
+    enum_type: Option<EnumType>,
     d: D,
 ) -> Result<Option<Value>, D::Error> {
     struct EnumVisitor<'a> {
         pool: &'a Arc<DescriptorPool>,
         eidx: EnumIndex,
+        enum_type: Option<EnumType>,
     }
     impl<'de> Visitor<'de> for EnumVisitor<'_> {
         type Value = Option<Value>;
@@ -816,7 +825,7 @@ fn deserialize_enum<'de, D: Deserializer<'de>>(
             let n = i32::try_from(v).map_err(de::Error::custom)?;
             // Closed enums reject unknown values; open enums accept any i32.
             let ed = self.pool.enumeration(self.eidx);
-            if ed.enum_type == EnumType::Closed && ed.value(n).is_none() {
+            if self.enum_type.unwrap_or(ed.enum_type) == EnumType::Closed && ed.value(n).is_none() {
                 return Err(de::Error::custom("unknown closed enum value"));
             }
             Ok(Some(Value::EnumNumber(n)))
@@ -842,12 +851,17 @@ fn deserialize_enum<'de, D: Deserializer<'de>>(
         }
     }
     // deserialize_option lets us distinguish null from absent.
-    d.deserialize_option(EnumVisitor { pool, eidx })
+    d.deserialize_option(EnumVisitor {
+        pool,
+        eidx,
+        enum_type,
+    })
 }
 
 struct ListVisitor<'a> {
     pool: &'a Arc<DescriptorPool>,
     kind: SingularKind,
+    enum_type: Option<EnumType>,
     ignore_unknown: bool,
 }
 
@@ -864,6 +878,7 @@ impl<'de> Visitor<'de> for ListVisitor<'_> {
         while let Some(v) = seq.next_element_seed(SingularSeed {
             pool: self.pool,
             kind: self.kind,
+            enum_type: self.enum_type,
             ignore_unknown: self.ignore_unknown,
         })? {
             // Per the spec, repeated fields cannot contain null elements.
@@ -878,6 +893,7 @@ struct MapFieldVisitor<'a> {
     pool: &'a Arc<DescriptorPool>,
     key: ScalarType,
     value: SingularKind,
+    enum_type: Option<EnumType>,
     ignore_unknown: bool,
 }
 
@@ -898,6 +914,7 @@ impl<'de> Visitor<'de> for MapFieldVisitor<'_> {
             let v = map.next_value_seed(SingularSeed {
                 pool: self.pool,
                 kind: self.value,
+                enum_type: self.enum_type,
                 ignore_unknown: self.ignore_unknown,
             })?;
             let v = v.ok_or_else(|| de::Error::custom("null value in map field"))?;

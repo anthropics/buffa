@@ -262,6 +262,7 @@ fn open_enum_override_required_view_defaults_are_known_enum_values() {
 
 #[test]
 fn embedded_descriptor_options_match_override_scope() {
+    use buffa_descriptor::features::EnumType;
     use buffa_descriptor::generated::descriptor::feature_set;
 
     fn field_enum_type(field: &buffa_descriptor::FieldDescriptor) -> Option<feature_set::EnumType> {
@@ -291,8 +292,23 @@ fn embedded_descriptor_options_match_override_scope() {
         Some(feature_set::EnumType::OPEN)
     );
     assert_eq!(
+        contexts.field_by_name("opt").unwrap().enum_type(),
+        Some(EnumType::Open)
+    );
+    assert_eq!(
+        contexts.field_by_name("labels").unwrap().enum_type(),
+        Some(EnumType::Open)
+    );
+    assert_eq!(
         field_enum_type(contexts.field_by_name("closed_control").unwrap()),
         None
+    );
+    assert_eq!(
+        contexts
+            .field_by_name("closed_control")
+            .unwrap()
+            .enum_type(),
+        Some(EnumType::Closed)
     );
     assert_eq!(
         enum_option_enum_type(field_pool.enum_by_name("test.openenums.Priority").unwrap()),
@@ -318,14 +334,10 @@ fn embedded_descriptor_options_match_override_scope() {
 }
 
 #[test]
-fn field_rule_keeps_runtime_descriptor_pool_closed() {
+fn field_rule_opens_reflective_decode_without_opening_the_enum() {
     use buffa_descriptor::features::EnumType;
-    use buffa_descriptor::reflect::DynamicMessage;
+    use buffa_descriptor::reflect::{DynamicMessage, ReflectMessage, ValueRef};
 
-    // Field-scoped rules inject a field-level (buffa-dialect) feature; the
-    // enum's own descriptor stays closed, so descriptor-driven dynamic JSON
-    // keeps closed semantics. This pins the documented boundary: use an
-    // enum-type rule when reflective codecs must agree with generated code.
     let pool = crate::open_enums::descriptor_pool();
     assert_eq!(
         pool.enum_by_name("test.openenums.Priority")
@@ -336,10 +348,120 @@ fn field_rule_keeps_runtime_descriptor_pool_closed() {
     let idx = pool
         .message_index("test.openenums.OpenEnumContexts")
         .unwrap();
+    let field = pool.message(idx).field_by_name("opt").unwrap();
+    assert_eq!(field.enum_type(), Some(EnumType::Open));
+
+    let dynamic = DynamicMessage::from_json(pool.clone(), idx, r#"{"opt": 99}"#)
+        .expect("field-level open enum accepts unknown numeric JSON values");
+    assert!(matches!(dynamic.get(field), ValueRef::EnumNumber(99)));
+}
+
+#[test]
+fn field_rule_opens_reflective_json_for_repeated_and_map() {
+    use buffa_descriptor::reflect::{DynamicMessage, ReflectMessage, ValueRef};
+
+    // Openness is resolved per field in the repeated and map arms of the
+    // reflective JSON decoder, not only the singular arm.
+    let pool = crate::open_enums::descriptor_pool();
+    let idx = pool
+        .message_index("test.openenums.OpenEnumContexts")
+        .unwrap();
+    let md = pool.message(idx);
+
+    let rep = DynamicMessage::from_json(pool.clone(), idx, r#"{"rep": [99]}"#)
+        .expect("field-level open enum accepts unknown values in a repeated field");
+    let ValueRef::List(list) = rep.get(md.field_by_name("rep").unwrap()) else {
+        panic!("expected a list for `rep`");
+    };
+    assert_eq!(list.len(), 1);
+    assert!(matches!(list.get(0), Some(ValueRef::EnumNumber(99))));
+
+    let labels = DynamicMessage::from_json(pool.clone(), idx, r#"{"labels": {"a": 99}}"#)
+        .expect("field-level open enum accepts unknown values in a map value");
+    let ValueRef::Map(map) = labels.get(md.field_by_name("labels").unwrap()) else {
+        panic!("expected a map for `labels`");
+    };
+    assert_eq!(map.len(), 1);
+    assert!(matches!(map.get_str("a"), Some(ValueRef::EnumNumber(99))));
+
+    // A oneof member and a packed repeated field also route through the
+    // per-field resolution, which is what the changelog entry claims.
+    let oneof = DynamicMessage::from_json(pool.clone(), idx, r#"{"oneofPriority": 99}"#)
+        .expect("field-level open enum accepts unknown values in a oneof member");
+    assert!(matches!(
+        oneof.get(md.field_by_name("oneof_priority").unwrap()),
+        ValueRef::EnumNumber(99)
+    ));
+
+    let packed = DynamicMessage::from_json(pool.clone(), idx, r#"{"repPacked": [99]}"#)
+        .expect("field-level open enum accepts unknown values in a packed repeated field");
+    let ValueRef::List(packed_list) = packed.get(md.field_by_name("rep_packed").unwrap()) else {
+        panic!("expected a list for `rep_packed`");
+    };
+    assert!(matches!(packed_list.get(0), Some(ValueRef::EnumNumber(99))));
+
+    // Control: `closed_control` carries no override, so the same input is
+    // still rejected — this is what proves the singular assertions can fail.
+    // Assert on the message, because `from_json` also rejects unknown keys,
+    // so a bare `expect_err` would pass if the field were ever renamed.
+    let err = DynamicMessage::from_json(pool.clone(), idx, r#"{"closed_control": 99}"#)
+        .expect_err("a closed enum field must still reject an unknown numeric value");
     assert!(
-        DynamicMessage::from_json(pool.clone(), idx, r#"{"opt": 99}"#).is_err(),
-        "closed enum in the pool must reject unknown numeric JSON values"
+        err.to_string().contains("unknown closed enum value"),
+        "expected a closed-enum rejection, got: {err}"
     );
+}
+
+#[test]
+fn field_rule_opens_reflective_binary_decode() {
+    use buffa_descriptor::reflect::{DynamicMessage, ReflectMessage, ValueRef};
+
+    // The JSON tests above cover reflect/json.rs; this drives the binary
+    // reflective decoder (DynamicMessage::decode) instead, which resolves
+    // openness through the same per-field value in a separate set of arms.
+    let pool = crate::open_enums::descriptor_pool();
+    let idx = pool
+        .message_index("test.openenums.OpenEnumContexts")
+        .unwrap();
+    let md = pool.message(idx);
+
+    let dynamic = DynamicMessage::decode(pool.clone(), idx, &unknown_wire())
+        .expect("reflective binary decode of the override fixture");
+
+    // Singular, oneof: the unknown value is the field's value, not an unknown.
+    assert!(matches!(
+        dynamic.get(md.field_by_name("opt").unwrap()),
+        ValueRef::EnumNumber(99)
+    ));
+    assert!(matches!(
+        dynamic.get(md.field_by_name("oneof_priority").unwrap()),
+        ValueRef::EnumNumber(77)
+    ));
+
+    // Repeated, packed repeated, and map all keep their unknown members.
+    for name in ["rep", "rep_packed"] {
+        let ValueRef::List(list) = dynamic.get(md.field_by_name(name).unwrap()) else {
+            panic!("expected a list for `{name}`");
+        };
+        assert!(
+            matches!(list.get(1), Some(ValueRef::EnumNumber(99))),
+            "`{name}` lost its unknown enum member"
+        );
+    }
+    let ValueRef::Map(labels) = dynamic.get(md.field_by_name("labels").unwrap()) else {
+        panic!("expected a map for `labels`");
+    };
+    assert!(matches!(
+        labels.get_str("unknown"),
+        Some(ValueRef::EnumNumber(88))
+    ));
+
+    // Control: `closed_control` has no override, so its unknown value 123 is
+    // still routed to unknown fields rather than becoming the field's value.
+    assert!(!dynamic.has(md.field_by_name("closed_control").unwrap()));
+    let unknowns: Vec<_> = dynamic.unknown_fields().iter().collect();
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(unknowns[0].number, 5);
 }
 
 #[test]
@@ -372,14 +494,8 @@ fn enum_rule_opens_runtime_descriptor_pool() {
     assert!(matches!(dynamic.get(field), ValueRef::EnumNumber(99)));
 }
 
-/// A field-level `enum_type:OPEN` override is invisible to the runtime pool:
-/// openness resolves per enum, and `FieldDescriptor` carries no override, so
-/// reflection applies the enum's own closed semantics where the generated code
-/// applies the field's. The two decoders disagree here — tracked in
-/// <https://github.com/anthropics/buffa/issues/316>. This test pins the
-/// current reflective behaviour so the split is visible rather than silent.
 #[test]
-fn open_enum_override_vtable_reflection_preserves_runtime_closed_semantics() {
+fn open_enum_override_vtable_reflection_matches_generated_decode() {
     use crate::open_enums::{OpenEnumContexts, OpenEnumContextsView};
     use buffa_descriptor::reflect::{ReflectMessage, Reflectable, ValueRef};
 
@@ -395,15 +511,34 @@ fn open_enum_override_vtable_reflection_preserves_runtime_closed_semantics() {
     assert!(!reflected.has(closed_control));
 
     let dynamic = reflected.to_dynamic();
-    // Vtable reflection sees the generated field-level override, but the
-    // DynamicMessage pool keeps the enum itself closed. Binary reflection
-    // therefore routes the unknown value to unknown_fields.
-    assert!(!dynamic.has(opt));
-    assert!(matches!(dynamic.get(opt), ValueRef::EnumNumber(0)));
+    assert!(dynamic.has(opt));
+    assert!(matches!(dynamic.get(opt), ValueRef::EnumNumber(99)));
+
+    let ValueRef::List(rep) = dynamic.get(md.field(2).unwrap()) else {
+        panic!("expected repeated enum field");
+    };
+    assert!(matches!(rep.get(1), Some(ValueRef::EnumNumber(99))));
+
+    let ValueRef::List(rep_packed) = dynamic.get(md.field(3).unwrap()) else {
+        panic!("expected packed repeated enum field");
+    };
+    assert!(matches!(rep_packed.get(1), Some(ValueRef::EnumNumber(99))));
     assert!(matches!(
-        dynamic.unknown_fields().iter().find(|field| field.number == 1),
-        Some(field) if matches!(field.data, buffa::UnknownFieldData::Varint(99))
+        dynamic.get(md.field(4).unwrap()),
+        ValueRef::EnumNumber(77)
     ));
+
+    let ValueRef::Map(labels) = dynamic.get(md.field(6).unwrap()) else {
+        panic!("expected enum map field");
+    };
+    assert!(matches!(
+        labels.get_str("unknown"),
+        Some(ValueRef::EnumNumber(88))
+    ));
+
+    let unknowns: Vec<_> = dynamic.unknown_fields().iter().collect();
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(unknowns[0].number, 5);
 
     let view = OpenEnumContextsView::decode_view(&wire).unwrap();
     let reflected_view: &dyn ReflectMessage = &view;

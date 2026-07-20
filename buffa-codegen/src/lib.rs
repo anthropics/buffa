@@ -814,9 +814,11 @@ pub enum FeatureOverride {
     ///
     /// An enum-type path mutates the enum's own descriptor (a spec-valid
     /// editions construct that also flows into the embedded reflection
-    /// pool); a field path injects a field-level override honored by buffa's
-    /// feature resolution only (`enum_type` is not a legal field target, so
-    /// other runtimes reading the exported descriptors ignore it).
+    /// pool); a field path injects a field-level override that buffa
+    /// resolves onto the field, in both generated code and the
+    /// descriptor-driven codecs. `enum_type` is not a legal field target in
+    /// the spec, so other runtimes reading the exported descriptors ignore a
+    /// field path.
     EnumType(EnumTypeOverride),
 }
 
@@ -1001,11 +1003,10 @@ pub struct CodeGenConfig {
     /// map field path; oneof enum variants match the direct field path.
     ///
     /// The mutated descriptors are what codegen — and, under reflection, the
-    /// embedded descriptor pool — see, so spec-valid injections (e.g. an
-    /// enum-type [`FeatureOverride::EnumType`] rule) keep runtime reflection
-    /// and descriptor-driven dynamic JSON consistent with the generated
-    /// types; see each variant's docs for its field-scoped semantics. A rule
-    /// that matches nothing is reported as
+    /// embedded descriptor pool — see, so runtime reflection and
+    /// descriptor-driven dynamic JSON stay consistent with the generated
+    /// types for both enum-scoped and field-scoped rules; see each variant's
+    /// docs for its semantics. A rule that matches nothing is reported as
     /// [`CodeGenWarning::FeatureOverrideMatchedNothing`] through
     /// [`generate_with_diagnostics`] (the plain [`generate`] entry point
     /// discards warnings). Overrides never change the wire format. The
