@@ -434,7 +434,7 @@ pub enum UnknownFieldData {
 
 This ensures round-trip fidelity: decoding a message with a newer schema and re-encoding it preserves fields the current schema doesn't know about. This is especially important for middleware/proxy use cases.
 
-Default: **on**. The trade-off for most usages is **memory, not throughput**: when no unknown fields appear on the wire (the common case for schema-aligned services) the decode-loop fallthrough arm simply never fires, so the cost is the 24-byte `Vec` header per message, not a per-field penalty. Opting out via `.preserve_unknown_fields(false)` is worth considering for memory-constrained targets or large in-memory collections of small messages — not as a general throughput optimization.
+Default: **on**. The trade-off is mostly **memory**: the 24-byte `Vec` header per owned message, plus one pointer per view. When no unknown fields appear on the wire (the common case for schema-aligned services) the decode-loop fallthrough arm never fires, so there is no per-field penalty — but that is not the same as free. Every generated view embeds the unknown-field handle by value, and carrying it changes how the compiler moves the view, which is measurable on view-decode throughput for message-dense shapes. Opting out via `.preserve_unknown_fields(false)` is worth considering for memory-constrained targets, large in-memory collections of small messages, or a hot view-decode path that does not need round-trip fidelity.
 
 ### 7. Feature Resolution Pipeline
 
@@ -560,7 +560,7 @@ Owned decode (`Message::decode_from_slice`) benchmarks within roughly ±10% of p
 
 | Feature | Decode cost | Why |
 |---|---|---|
-| Unknown-field preservation (default-on) | Fallthrough arm does `decode_unknown_field` + `Vec::push` per unknown tag; 24 B/message for the `Vec` header | Round-trip fidelity for proxies and schema-skewed services. Disable with `.preserve_unknown_fields(false)` when not needed. |
+| Unknown-field preservation (default-on) | Fallthrough arm does `decode_unknown_field` + `Vec::push` per unknown tag; 24 B/message for the `Vec` header, one pointer per view, and a view-decode cost for carrying the handle even when no unknown field arrives | Round-trip fidelity for proxies and schema-skewed services. Disable with `.preserve_unknown_fields(false)` when not needed. |
 | `EnumValue<E>` wrapper | `EnumValue::from(i32)` branches on known-variant lookup per enum field | Typed open-enum semantics instead of raw `i32` (prost's approach). |
 | Arithmetic-limit decode (`merge_to_limit`) | One extra `buf.remaining() > limit` comparison per decode-loop iteration vs `buf.take(len)` | Supports recursive message types (`google.protobuf.Struct` ↔ `Value`) without `Take<Take<Take<…>>>` type explosion (E0275). prost cannot compile these without manual `Box` indirection. |
 | `Box<T>` per nested message | Heap allocation per sub-message vs upb's arena bump-allocator | Standard Rust ownership model. protobuf-v4's decode lead on deeply-nested messages (+90% on AnalyticsEvent) comes from upb batching all sub-message allocations into one arena. |

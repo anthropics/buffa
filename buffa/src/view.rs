@@ -2021,6 +2021,19 @@ impl UnknownFieldsViewRecord<'_> {
 /// [`push_record`](Self::push_record)).
 #[derive(Clone, Default)]
 pub struct UnknownFieldsView<'a> {
+    // Boxed, so this type is one pointer wide and holds no inline heap owner.
+    // Every generated view embeds one by value; with the records inline, the
+    // view becomes an owning aggregate that the compiler moves with
+    // out-of-line `memcpy` calls instead of inline vector stores, which costs
+    // view-decode throughput on message-dense shapes even when no unknown
+    // field is ever pushed. The allocation happens on the first push.
+    state: Option<alloc::boxed::Box<UnknownFieldsState<'a>>>,
+}
+
+/// The records and replay accounting, allocated once a view turns out to
+/// carry an unknown field.
+#[derive(Clone, Default)]
+struct UnknownFieldsState<'a> {
     /// Unknown wire records in decode order. Borrowed records may each hold
     /// one or more complete `(tag, value)` records; owned records are
     /// synthetic wire bytes for values that have no borrowable source span.
@@ -2051,12 +2064,35 @@ pub struct UnknownFieldsView<'a> {
 impl core::fmt::Debug for UnknownFieldsView<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("UnknownFieldsView")
-            .field("records", &self.records)
+            .field("records", &self.records_slice())
             .finish_non_exhaustive()
     }
 }
 
 impl<'a> UnknownFieldsView<'a> {
+    /// The state, created on first use.
+    ///
+    /// The `Some` test inlines and only the allocation is out of line, so a
+    /// run of unknown records pays the branch once per record rather than a
+    /// call: every push after the first finds the state already there.
+    #[inline]
+    fn state_mut(&mut self) -> &mut UnknownFieldsState<'a> {
+        self.state.get_or_insert_with(Self::alloc_state)
+    }
+
+    /// Out of line: this runs once, when a message turns out to carry an
+    /// unknown field at all.
+    #[cold]
+    fn alloc_state() -> alloc::boxed::Box<UnknownFieldsState<'a>> {
+        alloc::boxed::Box::default()
+    }
+
+    /// The records, or an empty slice when nothing was ever pushed.
+    #[inline]
+    fn records_slice(&self) -> &[UnknownFieldsViewRecord<'a>] {
+        self.state.as_ref().map_or(&[], |st| st.records.as_slice())
+    }
+
     /// Creates an empty view.
     pub fn new() -> Self {
         Self::default()
@@ -2064,13 +2100,14 @@ impl<'a> UnknownFieldsView<'a> {
 
     #[doc(hidden)]
     pub fn push_raw(&mut self, span: &'a [u8]) {
-        self.records.push(UnknownFieldsViewRecord::Borrowed(span));
+        let st = self.state_mut();
+        st.records.push(UnknownFieldsViewRecord::Borrowed(span));
         // A manually pushed span has no known position in the input buffer,
         // so coalescing must not extend it — and it was never charged
         // against a decode allowance, so to_owned falls back to the default
         // limits for it.
-        self.last_tail = None;
-        self.manual_spans = true;
+        st.last_tail = None;
+        st.manual_spans = true;
     }
 
     /// Record one unknown wire record of `span_len` bytes starting at the
@@ -2114,10 +2151,11 @@ impl<'a> UnknownFieldsView<'a> {
             return Err(crate::DecodeError::UnexpectedEof);
         }
         let charge = crate::encoding::register_unknown_record(&tail[..span_len], ctx)?;
-        self.to_owned_budget = self.to_owned_budget.saturating_add(charge.fields);
-        self.to_owned_depth = self.to_owned_depth.max(charge.depth);
+        let st = self.state_mut();
+        st.to_owned_budget = st.to_owned_budget.saturating_add(charge.fields);
+        st.to_owned_depth = st.to_owned_depth.max(charge.depth);
         if let (Some(UnknownFieldsViewRecord::Borrowed(last)), Some(prev_tail)) =
-            (self.records.last_mut(), self.last_tail)
+            (st.records.last_mut(), st.last_tail)
         {
             let prev_len = last.len();
             // Contiguous if the new record begins exactly one past the end
@@ -2131,9 +2169,9 @@ impl<'a> UnknownFieldsView<'a> {
                 return Ok(());
             }
         }
-        self.records
+        st.records
             .push(UnknownFieldsViewRecord::Borrowed(&tail[..span_len]));
-        self.last_tail = Some(tail);
+        st.last_tail = Some(tail);
         Ok(())
     }
 
@@ -2157,26 +2195,27 @@ impl<'a> UnknownFieldsView<'a> {
         use crate::encoding::{encode_varint, Tag, WireType};
 
         ctx.register_unknown_field()?;
-        self.to_owned_budget = self.to_owned_budget.saturating_add(1);
+        let st = self.state_mut();
+        st.to_owned_budget = st.to_owned_budget.saturating_add(1);
 
         let mut bytes = alloc::vec::Vec::new();
         Tag::new(field_number, WireType::Varint).encode(&mut bytes);
         encode_varint(value, &mut bytes);
-        self.records.push(UnknownFieldsViewRecord::Owned(bytes));
+        st.records.push(UnknownFieldsViewRecord::Owned(bytes));
         // Synthetic bytes have no position in the input buffer, so a later
         // borrowed record must start a fresh span.
-        self.last_tail = None;
+        st.last_tail = None;
         Ok(())
     }
 
     /// Returns `true` if no unknown fields were recorded.
     pub fn is_empty(&self) -> bool {
-        self.records.is_empty()
+        self.records_slice().is_empty()
     }
 
     /// Total byte length of all unknown field data.
     pub fn encoded_len(&self) -> usize {
-        self.records
+        self.records_slice()
             .iter()
             .map(|record| record.as_slice().len())
             .sum()
@@ -2186,7 +2225,7 @@ impl<'a> UnknownFieldsView<'a> {
     /// or more complete `(tag, value)` records, so concatenating them
     /// produces a valid encoding.
     pub fn write_to(&self, buf: &mut impl EncodeSink) {
-        for record in &self.records {
+        for record in self.records_slice() {
             buf.put_slice(record.as_slice());
         }
     }
@@ -2217,19 +2256,23 @@ impl<'a> UnknownFieldsView<'a> {
     pub fn to_owned(&self) -> Result<crate::UnknownFields, crate::DecodeError> {
         use crate::encoding::{decode_unknown_field, Tag};
 
-        let (budget, depth) = if self.manual_spans {
+        let Some(state) = self.state.as_deref() else {
+            return Ok(crate::UnknownFields::new());
+        };
+        let (budget, depth) = if state.manual_spans {
             (
-                self.to_owned_budget
+                state
+                    .to_owned_budget
                     .saturating_add(crate::DEFAULT_UNKNOWN_FIELD_LIMIT),
-                self.to_owned_depth.max(crate::RECURSION_LIMIT),
+                state.to_owned_depth.max(crate::RECURSION_LIMIT),
             )
         } else {
-            (self.to_owned_budget, self.to_owned_depth)
+            (state.to_owned_budget, state.to_owned_depth)
         };
         let limit = core::cell::Cell::new(budget);
         let ctx = crate::DecodeContext::new(depth, &limit);
         let mut out = crate::UnknownFields::new();
-        for record in &self.records {
+        for record in &state.records {
             let mut cur = record.as_slice();
             while !cur.is_empty() {
                 let tag = Tag::decode(&mut cur)?;
@@ -2855,7 +2898,7 @@ mod tests {
         ufv.push_record(&buf[2..], 2, ctx).unwrap();
         ufv.push_record(&buf[4..], 2, ctx).unwrap();
         assert_eq!(ufv.encoded_len(), 6);
-        assert_eq!(ufv.records.len(), 1, "coalesced into one span");
+        assert_eq!(ufv.records_slice().len(), 1, "coalesced into one span");
         let mut out = alloc::vec::Vec::new();
         ufv.write_to(&mut out);
         assert_eq!(out, buf);
@@ -2986,7 +3029,7 @@ mod tests {
         for i in 0..3 {
             ufv.push_record(&buf[2 * i..], 2, ctx).unwrap();
         }
-        assert_eq!(ufv.records.len(), 1, "coalesced into one span");
+        assert_eq!(ufv.records_slice().len(), 1, "coalesced into one span");
         assert_eq!(ctx.remaining_unknown_fields(), 0, "limit exactly used");
         let owned = ufv.to_owned().expect("decode succeeded, so convert must");
         assert_eq!(owned.iter().count(), 3);
@@ -4311,5 +4354,44 @@ mod tests {
             pool.try_encode_view_bounded(&view, len, &mut buf).unwrap(),
             len
         );
+    }
+}
+
+#[cfg(test)]
+mod unknown_fields_view_repr {
+    use super::UnknownFieldsView;
+
+    // Every generated view embeds this by value, so it must stay pointer-sized
+    // and hold no inline heap owner; otherwise views regress to being moved by
+    // out-of-line `memcpy` rather than inline vector stores.
+    #[test]
+    fn handle_is_pointer_sized() {
+        assert_eq!(
+            core::mem::size_of::<UnknownFieldsView<'_>>(),
+            core::mem::size_of::<usize>()
+        );
+    }
+
+    // `UnknownFieldsView` is reachable from every generated view, so it is part
+    // of the public surface downstream code puts in its own types.
+    #[test]
+    fn is_send_and_sync() {
+        fn assert_send<T: Send>() {}
+        fn assert_sync<T: Sync>() {}
+        assert_send::<UnknownFieldsView<'_>>();
+        assert_sync::<UnknownFieldsView<'_>>();
+    }
+
+    // The manual `Debug` impl exists to keep `last_tail` — which runs to the end
+    // of the input buffer — out of the output, while still showing the records.
+    #[test]
+    fn debug_shows_records_and_hides_the_coalescing_cursor() {
+        let mut ufv = UnknownFieldsView::new();
+        assert!(format!("{ufv:?}").contains("records: []"));
+
+        ufv.push_raw(&[0x08, 0x2a]);
+        let rendered = format!("{ufv:?}");
+        assert!(rendered.contains("records: [Borrowed("), "{rendered}");
+        assert!(!rendered.contains("last_tail"), "{rendered}");
     }
 }
