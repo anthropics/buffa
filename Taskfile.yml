@@ -322,6 +322,8 @@ tasks:
     desc: >-
       Run all fuzz targets in parallel with logs to /tmp/buffa-fuzz/.
       Prints periodic progress summaries (every 5 min).
+      Exits nonzero if any target fails or produces a new crash artifact;
+      interrupting stops every target and exits 128+signum (130 for Ctrl-C).
       Usage: task fuzz-all [-- max_total_time_secs]
       Default: 28800 (8 hours).
     cmds:
