@@ -1,0 +1,3 @@
+kind: Fixed
+body: Descriptor decoding in buffa's own tooling no longer applies the untrusted-input element-memory bound, which rejected schemas of a few hundred `.proto` files with `element memory limit exceeded`. `buffa-build` and the `protoc` plugins now decode under a 1 GiB bound, overridable with the `BUFFA_ELEMENT_MEMORY_LIMIT` environment variable; generated `descriptor_pool()` scales its bound to the descriptor bytes compiled into it. New `DescriptorPool::decode_with_options` lets any caller supply decode limits; `DescriptorPool::decode` stays bounded, since it may be handed an untrusted descriptor set. (#331)
+time: 2026-07-21T12:33:15.068395403-07:00

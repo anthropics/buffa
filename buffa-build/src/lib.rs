@@ -30,7 +30,6 @@ use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
-use buffa::Message;
 use buffa_codegen::generated::descriptor::FileDescriptorSet;
 
 #[doc(inline)]
@@ -1692,8 +1691,22 @@ impl Config {
                 format!("failed to read descriptor set '{}': {}", path.display(), e)
             })?,
         };
-        let fds = FileDescriptorSet::decode_from_slice(&descriptor_bytes)
-            .map_err(|e| format!("failed to decode FileDescriptorSet: {}", e))?;
+        // This descriptor set came from a protoc (or buf) invocation this build
+        // controls, or a path the caller named, so the bound is far above
+        // buffa's untrusted-input default — that default is sized for wire
+        // input and a schema of a few hundred `.proto` files exceeds it,
+        // descriptor types being wide structs. Still finite, so a truncated or
+        // stale precompiled set fails with an error rather than an OOM.
+        let decode_options = buffa_codegen::tooling_decode_options()?;
+        let fds = decode_options
+            .decode_from_slice::<FileDescriptorSet>(&descriptor_bytes)
+            .map_err(|e| {
+                buffa_codegen::decode_failure(
+                    "FileDescriptorSet",
+                    &e,
+                    decode_options.element_memory_limit(),
+                )
+            })?;
 
         // Determine which files were explicitly requested.
         //
@@ -1761,6 +1774,12 @@ impl Config {
         // stat them — use `buf ls-files` instead, which lists all workspace
         // protos with workspace-relative paths. Protoc mode uses the decoded
         // descriptor set below to watch resolved transitive imports.
+        // The decode bound is read from the environment, and this script
+        // disables cargo's default env tracking by emitting rerun-if-* keys.
+        println!(
+            "cargo:rerun-if-env-changed={}",
+            buffa_codegen::ELEMENT_MEMORY_LIMIT_ENV
+        );
         match self.descriptor_source {
             DescriptorSource::Buf => emit_buf_rerun_if_changed(),
             DescriptorSource::Protoc => {

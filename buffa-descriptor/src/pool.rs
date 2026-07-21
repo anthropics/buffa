@@ -275,9 +275,46 @@ impl DescriptorPool {
     /// validation failure (dangling type names, out-of-range field numbers,
     /// duplicate symbols or field identities, invalid oneof indices, or
     /// malformed map entries).
+    ///
+    /// A large descriptor set can exceed the default element-memory bound —
+    /// the descriptor types are wide structs, so the element footprint runs
+    /// several times the encoded size, and a schema of a few hundred `.proto`
+    /// files can pass it. Use [`decode_with_options`](Self::decode_with_options)
+    /// when the bytes are trusted and large.
     pub fn decode(bytes: &[u8]) -> Result<Self, PoolError> {
-        use buffa::Message;
-        let set = FileDescriptorSet::decode_from_slice(bytes)?;
+        Self::decode_with_options(bytes, &buffa::DecodeOptions::new())
+    }
+
+    /// Build a pool from raw `FileDescriptorSet` bytes under caller-supplied
+    /// decode limits.
+    ///
+    /// Every [`DecodeOptions`](buffa::DecodeOptions) field applies; the
+    /// element-memory bound is simply the one a large descriptor set usually
+    /// needs raised.
+    ///
+    /// [`decode`](Self::decode) applies buffa's defaults, which are sized for
+    /// untrusted input. Descriptor sets produced by your own build — a
+    /// `protoc` invocation you control, or bytes a generator embedded — are
+    /// trusted, and a large one will exceed the default element-memory bound.
+    /// Raise or remove it for those:
+    ///
+    /// ```no_run
+    /// # use buffa_descriptor::DescriptorPool;
+    /// # fn f(bytes: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    /// let opts = buffa::DecodeOptions::new().with_element_memory_limit(usize::MAX);
+    /// let pool = DescriptorPool::decode_with_options(bytes, &opts)?;
+    /// # let _ = pool; Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// As [`decode`](Self::decode).
+    pub fn decode_with_options(
+        bytes: &[u8],
+        opts: &buffa::DecodeOptions,
+    ) -> Result<Self, PoolError> {
+        let set = opts.decode_from_slice::<FileDescriptorSet>(bytes)?;
         Self::new(set)
     }
 

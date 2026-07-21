@@ -171,8 +171,9 @@ fn run() -> Result<(), String> {
         .read_to_end(&mut input)
         .map_err(|e| format!("failed to read stdin: {e}"))?;
 
-    let request = CodeGeneratorRequest::decode_from_slice(&input)
-        .map_err(|e| format!("failed to decode CodeGeneratorRequest: {e}"))?;
+    // protoc produced this, so the element bound is far above buffa's
+    // untrusted-input default; see `tooling_decode_options` for the override.
+    let request = buffa_codegen::decode_request(&input)?;
 
     let response = generate(&request)?;
     write_response(&response).map_err(|e| format!("failed to write stdout: {e}"))

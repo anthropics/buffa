@@ -197,6 +197,14 @@ pub(crate) fn reflect_pool_module(fds_bytes: &[u8]) -> TokenStream {
             /// `Reflectable` impls. Built from
             /// [`FILE_DESCRIPTOR_SET_BYTES`] on first access.
             ///
+            /// The element-memory bound is derived from the embedded length
+            /// rather than the untrusted-input default, which is sized for
+            /// wire input and which a schema of a few hundred `.proto` files
+            /// exceeds — descriptor types being wide structs. Scaling with the
+            /// input keeps the bound correct at any schema size while staying
+            /// finite, so corrupt embedded bytes still fail rather than
+            /// exhausting memory.
+            ///
             /// # Panics
             ///
             /// Panics on first access if the embedded bytes are malformed —
@@ -208,9 +216,16 @@ pub(crate) fn reflect_pool_module(fds_bytes: &[u8]) -> TokenStream {
                     ::buffa::alloc::sync::Arc<::buffa_descriptor::DescriptorPool>,
                 > = ::std::sync::OnceLock::new();
                 POOL.get_or_init(|| {
+                    let options = ::buffa::DecodeOptions::new()
+                        .with_element_memory_limit(
+                            FILE_DESCRIPTOR_SET_BYTES.len().saturating_mul(64),
+                        );
                     ::buffa::alloc::sync::Arc::new(
-                        ::buffa_descriptor::DescriptorPool::decode(FILE_DESCRIPTOR_SET_BYTES)
-                            .expect("embedded FileDescriptorSet is well-formed"),
+                        ::buffa_descriptor::DescriptorPool::decode_with_options(
+                            FILE_DESCRIPTOR_SET_BYTES,
+                            &options,
+                        )
+                        .expect("buffa-codegen emitted a decodable FileDescriptorSet"),
                     )
                 })
             }

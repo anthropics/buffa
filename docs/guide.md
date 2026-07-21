@@ -616,6 +616,16 @@ Passed via `opt:` (works for `remote:` and `local:`):
 >
 > Excluded descriptors stay available for option resolution, but a kept message with a *field* of an excluded type generates a reference to a Rust module that was never emitted — a compile error in generated code, far from its cause. If the types are genuinely needed, map them with `extern_path` instead of excluding them. On the buf path, per-plugin `exclude_types:` (a buf.gen.yaml field, not a plugin opt) is an alternative that prunes the descriptors themselves before the plugin runs — note its subpackage semantics differ: use a `pkg.**` glob to cover subpackages, where `exclude_package` covers them automatically. `exclude_package` is a protoc-plugin option only; the `buffa-build`/`build.rs` path does not need it, since there `files()` lists the generate set explicitly.
 
+#### Very large schemas
+
+The plugins bound how much memory a `CodeGeneratorRequest` may decode into, at 1 GiB. That is roughly twice what the largest public schemas need — descriptor types are wide structs, so a request's element footprint runs several times its encoded size — and it exists so a truncated or corrupt request fails with an error rather than exhausting memory. Raise it with the `BUFFA_ELEMENT_MEMORY_LIMIT` environment variable, which takes a byte count or `unlimited`:
+
+```sh
+BUFFA_ELEMENT_MEMORY_LIMIT=unlimited buf generate
+```
+
+This is an environment variable rather than a plugin option because the options string travels inside the request, and cannot be read until the request has already been decoded. The `buffa-build`/`build.rs` path applies the same bound and honours the same variable. Generated `descriptor_pool()` is the exception: it scales its bound to the length of the descriptor bytes compiled into it, so it needs no configuration at any schema size.
+
 #### BSR-generated SDKs
 
 If your protos are published as a [BSR module](https://buf.build/docs/bsr/module/), you can skip code generation entirely and depend on the BSR's pre-built [Generated SDK](https://buf.build/docs/bsr/generated-sdks/cargo) for that module. Add the BSR Cargo registry to `.cargo/config.toml` and depend on the generated crate:

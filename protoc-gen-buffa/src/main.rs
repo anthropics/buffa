@@ -18,7 +18,7 @@ use std::io::{self, Read, Write};
 
 use buffa::Message;
 use buffa_codegen::generated::compiler::code_generator_response::File as CodeGeneratorResponseFile;
-use buffa_codegen::generated::compiler::{CodeGeneratorRequest, CodeGeneratorResponse};
+use buffa_codegen::generated::compiler::CodeGeneratorResponse;
 use buffa_codegen::generated::descriptor::{Edition, FileDescriptorProto};
 
 use buffa_codegen::{CodeGenConfig, EnumTypeOverride, FeatureOverride};
@@ -100,9 +100,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = Vec::new();
     io::stdin().read_to_end(&mut input)?;
 
-    // Decode the CodeGeneratorRequest.
-    let request = CodeGeneratorRequest::decode_from_slice(&input)
-        .map_err(|e| format!("failed to decode CodeGeneratorRequest: {}", e))?;
+    // Decode the CodeGeneratorRequest. protoc produced it, so the element
+    // bound is far above buffa's untrusted-input default; see
+    // `tooling_decode_options` for the override.
+    let request = buffa_codegen::decode_request(&input)?;
 
     // Parse plugin parameters (e.g., "views=true,unknown_fields=false").
     let config = parse_config(request.parameter.as_deref().unwrap_or(""))?;
