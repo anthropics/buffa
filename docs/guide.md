@@ -616,6 +616,24 @@ Passed via `opt:` (works for `remote:` and `local:`):
 >
 > Excluded descriptors stay available for option resolution, but a kept message with a *field* of an excluded type generates a reference to a Rust module that was never emitted — a compile error in generated code, far from its cause. If the types are genuinely needed, map them with `extern_path` instead of excluding them. On the buf path, per-plugin `exclude_types:` (a buf.gen.yaml field, not a plugin opt) is an alternative that prunes the descriptors themselves before the plugin runs — note its subpackage semantics differ: use a `pkg.**` glob to cover subpackages, where `exclude_package` covers them automatically. `exclude_package` is a protoc-plugin option only; the `buffa-build`/`build.rs` path does not need it, since there `files()` lists the generate set explicitly.
 
+#### Very large schemas
+
+The plugins bound how much memory a `CodeGeneratorRequest` may decode into, at 1 GiB. That is roughly twice what the largest public schemas need — descriptor types are wide structs, so a request's element footprint runs several times its encoded size — and it exists so a truncated or corrupt request fails with an error rather than exhausting memory. Raise it with the `element_memory_limit` option, which takes a byte count or `unlimited`:
+
+```yaml
+plugins:
+  - local: protoc-gen-buffa
+    out: src/gen
+    opt:
+      - element_memory_limit=unlimited
+```
+
+The `BUFFA_ELEMENT_MEMORY_LIMIT` environment variable sets the same bound and is the way to reach the `buffa-build`/`build.rs` path, which has no parameter string. The option wins where both are set.
+
+An option that governs how the request is decoded would normally be unreachable, since the parameter string travels inside that request. The plugins read it by scanning the wire for that one field and skipping everything else — microseconds against the tens of milliseconds a full decode costs — so options needed before the descriptors are processed are available without paying for a second decode.
+
+Generated `descriptor_pool()` needs no configuration at any schema size: it scales its bound to the length of the descriptor bytes compiled into it.
+
 #### BSR-generated SDKs
 
 If your protos are published as a [BSR module](https://buf.build/docs/bsr/module/), you can skip code generation entirely and depend on the BSR's pre-built [Generated SDK](https://buf.build/docs/bsr/generated-sdks/cargo) for that module. Add the BSR Cargo registry to `.cargo/config.toml` and depend on the generated crate:

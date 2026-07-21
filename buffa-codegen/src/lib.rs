@@ -49,6 +49,202 @@ use crate::generated::descriptor::FileDescriptorProto;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
+/// Environment variable overriding the element-memory bound buffa's tooling
+/// applies when decoding a descriptor set.
+///
+/// Accepts a byte count, or `unlimited` / `max` (both lowercase) for no bound.
+/// A value that is not valid UTF-8 is treated as unset.
+pub const ELEMENT_MEMORY_LIMIT_ENV: &str = "BUFFA_ELEMENT_MEMORY_LIMIT";
+
+/// Element-memory bound buffa's build tooling applies to a descriptor set —
+/// the `protoc` plugins to a `CodeGeneratorRequest`, `buffa-build` to a
+/// `FileDescriptorSet`.
+///
+/// Much higher than [`buffa::DEFAULT_ELEMENT_MEMORY_LIMIT`], which is sized for
+/// untrusted input: a build's descriptors come from a compiler the caller
+/// invoked, or a file the caller named. It is deliberately not unbounded, so a
+/// truncated or corrupt descriptor set still fails with an error rather than
+/// exhausting memory.
+///
+/// 1 GiB is roughly twice what the largest schemas need. Descriptor types are
+/// wide structs, so the element footprint runs several times the encoded size
+/// — around 6x in practice, making this about 160 MB of descriptors.
+pub const TOOLING_ELEMENT_MEMORY_LIMIT: usize = 1024 * 1024 * 1024;
+
+/// Decode options for a descriptor set produced by the caller's own build,
+/// honouring [`ELEMENT_MEMORY_LIMIT_ENV`].
+///
+/// The override is an environment variable rather than a `protoc` plugin
+/// option because the options string travels *inside* the request: it cannot
+/// be read until the request has already been decoded.
+///
+/// # Errors
+///
+/// Returns a message naming the variable if its value is not a byte count or
+/// `unlimited` / `max`.
+pub fn tooling_decode_options() -> Result<buffa::DecodeOptions, String> {
+    let raw = std::env::var(ELEMENT_MEMORY_LIMIT_ENV).ok();
+    let limit = parse_element_memory_limit(raw.as_deref())?;
+    Ok(buffa::DecodeOptions::new().with_element_memory_limit(limit))
+}
+
+/// Describe a failure to decode a descriptor set, naming the override when the
+/// element-memory bound is what rejected it.
+///
+/// `subject` is the message being decoded, e.g. `"CodeGeneratorRequest"`.
+/// `limit` is the bound that was actually in force, which is not
+/// [`TOOLING_ELEMENT_MEMORY_LIMIT`] once the environment overrides it — read it
+/// back with `DecodeOptions::element_memory_limit`.
+///
+/// The bare error text names no remedy, and whoever hits the bound is exactly
+/// who needs [`ELEMENT_MEMORY_LIMIT_ENV`] — so the hint belongs on the message
+/// they see, not only in the guide.
+#[must_use]
+pub fn decode_failure(subject: &str, err: &buffa::DecodeError, limit: usize) -> String {
+    let base = format!("failed to decode {subject}: {err}");
+    match err {
+        buffa::DecodeError::ElementMemoryLimitExceeded => format!(
+            "{base}\n\
+             These descriptors exceed the {budget} element-memory budget in force. \
+             Raise it with the {opt}=<bytes> plugin option or the {env} environment \
+             variable; either accepts 'unlimited'. See \"Very large schemas\" in the \
+             buffa guide.",
+            budget = describe_byte_budget(limit),
+            opt = ELEMENT_MEMORY_LIMIT_OPT,
+            env = ELEMENT_MEMORY_LIMIT_ENV,
+        ),
+        _ => base,
+    }
+}
+
+/// Render a byte budget for a human: MiB once that is a whole number, bytes
+/// below that. A sub-MiB limit is legitimate (the environment variable takes a
+/// raw byte count), and truncating it to "0 MiB" would make the hint absurd.
+fn describe_byte_budget(bytes: usize) -> String {
+    const MIB: usize = 1024 * 1024;
+    if bytes >= MIB && bytes % MIB == 0 {
+        format!("{} MiB", bytes / MIB)
+    } else {
+        format!("{bytes}-byte")
+    }
+}
+
+/// Plugin option, settable in the `protoc`/`buf` parameter string, that sets
+/// the element-memory bound used to decode the request carrying it.
+pub const ELEMENT_MEMORY_LIMIT_OPT: &str = "element_memory_limit";
+
+/// Read `CodeGeneratorRequest.parameter` (field 2) straight off the wire,
+/// without decoding the request.
+///
+/// An option that governs how the request itself is decoded cannot be read
+/// from the decoded request. Scanning for the one field is what makes such
+/// options possible: it skips every other field rather than materialising it,
+/// so the cost is a wire walk, not a decode — microseconds against the tens of
+/// milliseconds a full decode of a large request takes.
+///
+/// Returns `None` when the request carries no parameter.
+///
+/// # Errors
+///
+/// Returns a [`DecodeError`](buffa::DecodeError) if the bytes are not
+/// well-formed protobuf, or if the parameter is not valid UTF-8.
+pub fn peek_request_parameter(mut buf: &[u8]) -> Result<Option<&str>, buffa::DecodeError> {
+    use buffa::encoding::{decode_varint, skip_field, Tag, WireType};
+
+    /// `CodeGeneratorRequest.parameter`.
+    const PARAMETER_FIELD: u32 = 2;
+
+    let mut found = None;
+    while !buf.is_empty() {
+        let tag = Tag::decode(&mut buf)?;
+        if tag.field_number() == PARAMETER_FIELD && tag.wire_type() == WireType::LengthDelimited {
+            let len = usize::try_from(decode_varint(&mut buf)?)
+                .map_err(|_| buffa::DecodeError::MessageTooLarge)?;
+            if len > buf.len() {
+                return Err(buffa::DecodeError::UnexpectedEof);
+            }
+            let (value, rest) = buf.split_at(len);
+            // Last wins, matching how protobuf merges a repeated scalar field.
+            found = Some(core::str::from_utf8(value).map_err(|_| buffa::DecodeError::InvalidUtf8)?);
+            buf = rest;
+            continue;
+        }
+        skip_field(tag, &mut buf)?;
+    }
+    Ok(found)
+}
+
+/// Find `element_memory_limit=<value>` in a `protoc` plugin parameter string.
+///
+/// Returns `None` when the option is absent, leaving
+/// [`ELEMENT_MEMORY_LIMIT_ENV`] and then [`TOOLING_ELEMENT_MEMORY_LIMIT`] to
+/// supply the value.
+///
+/// # Errors
+///
+/// Returns a message if the option is present with an unparseable value.
+pub fn element_memory_limit_opt(parameter: &str) -> Result<Option<usize>, String> {
+    let mut found = None;
+    for entry in parameter.split(',').map(str::trim) {
+        if let Some((key, value)) = entry.split_once('=') {
+            if key.trim() == ELEMENT_MEMORY_LIMIT_OPT {
+                found = Some(parse_element_memory_limit(Some(value))?);
+            }
+        }
+    }
+    Ok(found)
+}
+
+/// Decode a `CodeGeneratorRequest` from a `protoc` plugin's stdin.
+///
+/// The element-memory bound is taken from the `element_memory_limit` plugin
+/// option if the request carries one, else [`ELEMENT_MEMORY_LIMIT_ENV`], else
+/// [`TOOLING_ELEMENT_MEMORY_LIMIT`]. The option is read by scanning for it
+/// ([`peek_request_parameter`]) rather than from the decoded request, since it
+/// governs that decode.
+///
+/// Both plugins compose exactly this, so it lives here: a hint improved in one
+/// binary should never disagree with the other.
+///
+/// # Errors
+///
+/// Returns a message describing the failure, naming the ways to raise the
+/// bound when that is what rejected the request.
+pub fn decode_request(input: &[u8]) -> Result<generated::compiler::CodeGeneratorRequest, String> {
+    let parameter = peek_request_parameter(input)
+        .map_err(|e| format!("failed to read the plugin parameter: {e}"))?
+        .unwrap_or_default();
+    let options = match element_memory_limit_opt(parameter)? {
+        Some(limit) => buffa::DecodeOptions::new().with_element_memory_limit(limit),
+        None => tooling_decode_options()?,
+    };
+    options
+        .decode_from_slice::<generated::compiler::CodeGeneratorRequest>(input)
+        .map_err(|e| decode_failure("CodeGeneratorRequest", &e, options.element_memory_limit()))
+}
+
+/// Resolve [`ELEMENT_MEMORY_LIMIT_ENV`]'s value to a byte count.
+///
+/// `None` and an all-whitespace value both mean "unset", yielding
+/// [`TOOLING_ELEMENT_MEMORY_LIMIT`].
+///
+/// # Errors
+///
+/// Returns a message naming the variable if the value is neither a byte count
+/// nor `unlimited` / `max`.
+pub(crate) fn parse_element_memory_limit(raw: Option<&str>) -> Result<usize, String> {
+    let Some(raw) = raw else {
+        return Ok(TOOLING_ELEMENT_MEMORY_LIMIT);
+    };
+    match raw.trim() {
+        "" => Ok(TOOLING_ELEMENT_MEMORY_LIMIT),
+        "unlimited" | "max" => Ok(usize::MAX),
+        n => n.parse::<usize>().map_err(|_| {
+            format!("{ELEMENT_MEMORY_LIMIT_ENV}: expected a byte count or 'unlimited', got '{raw}'")
+        }),
+    }
+}
+
 /// Lints suppressed on generated code at module boundaries.
 ///
 /// Consumed by [`generate_module_tree`], the per-package `.mod.rs`

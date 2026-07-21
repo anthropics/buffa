@@ -171,8 +171,9 @@ fn run() -> Result<(), String> {
         .read_to_end(&mut input)
         .map_err(|e| format!("failed to read stdin: {e}"))?;
 
-    let request = CodeGeneratorRequest::decode_from_slice(&input)
-        .map_err(|e| format!("failed to decode CodeGeneratorRequest: {e}"))?;
+    // protoc produced this, so the element bound is far above buffa's
+    // untrusted-input default; see `tooling_decode_options` for the override.
+    let request = buffa_codegen::decode_request(&input)?;
 
     let response = generate(&request)?;
     write_response(&response).map_err(|e| format!("failed to write stdout: {e}"))
@@ -235,10 +236,17 @@ fn parse_options(params: &str) -> Result<Selection, String> {
             selection
                 .exclude
                 .push(buffa_codegen::normalize_exclude_package(value)?);
+        } else if opt
+            .split_once('=')
+            .is_some_and(|(k, _)| k.trim() == buffa_codegen::ELEMENT_MEMORY_LIMIT_OPT)
+        {
+            // Consumed before the request was decoded (it governs that
+            // decode); see `buffa_codegen::peek_request_parameter`.
         } else {
             return Err(format!(
                 "unknown plugin option {opt:?}. \
-                 Supported: filter=services, exclude_package=<pkg>"
+                 Supported: filter=services, exclude_package=<pkg>, \
+                 element_memory_limit=<bytes>"
             ));
         }
     }

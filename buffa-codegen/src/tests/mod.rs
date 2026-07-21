@@ -52,6 +52,7 @@ pub(super) fn joined(files: &[GeneratedFile]) -> String {
 mod comments;
 mod custom_attributes;
 mod debug_redact;
+mod element_memory_limit;
 mod feature_gating;
 mod generation;
 mod idiomatic_enums;

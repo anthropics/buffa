@@ -24,7 +24,6 @@
 //!
 //! Or just `task gen-wkt-types` from the workspace root.
 
-use buffa::Message;
 use buffa_codegen::generated::descriptor::FileDescriptorSet;
 use std::fs;
 use std::path::Path;
@@ -52,7 +51,12 @@ fn main() {
     }
 
     let descriptor_bytes = fs::read(&args[1]).expect("failed to read descriptor set");
-    let descriptor_set = FileDescriptorSet::decode_from_slice(&descriptor_bytes)
+    // Same tooling bound the plugins and buffa-build use: this descriptor set
+    // came from a protoc run this task invoked, and the untrusted-input default
+    // is too small for a large one.
+    let descriptor_set = buffa_codegen::tooling_decode_options()
+        .expect("BUFFA_ELEMENT_MEMORY_LIMIT is valid")
+        .decode_from_slice::<FileDescriptorSet>(&descriptor_bytes)
         .expect("failed to decode FileDescriptorSet");
 
     eprintln!("Loaded {} file descriptors", descriptor_set.file.len());
