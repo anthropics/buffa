@@ -2025,11 +2025,13 @@ buffa_build::Config::new()
     // ...
 ```
 
-**This is primarily a memory optimization**, not a throughput one. When no
-unknown fields appear on the wire — the common case for schema-aligned
-services — the decode and encode paths are effectively identical regardless
-of this setting (the unknown-field branch simply never fires). The measurable
-difference is **24 bytes/message** for the omitted `Vec` header.
+**This is mostly a memory optimization**: **24 bytes/message** for the omitted
+`Vec` header, plus one pointer per view. When no unknown fields appear on the
+wire — the common case for schema-aligned services — no per-field work happens
+either way, because the unknown-field branch never fires. Carrying the handle
+still shapes how the compiler moves the view, though, which costs view-decode
+throughput on message-dense shapes. Disabling is what removes the field
+outright, and it is the lever for a hot view-decode path.
 
 Leave preservation enabled unless you are memory-constrained (embedded / `no_std`
 targets) or maintain large in-memory collections of small messages where struct

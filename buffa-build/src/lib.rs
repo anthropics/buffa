@@ -612,12 +612,20 @@ impl Config {
     /// decode are stored and re-emitted on encode — essential for proxy /
     /// middleware services and round-trip fidelity across schema versions.
     ///
-    /// **Disabling is primarily a memory optimization** (24 bytes/message for
-    /// the `UnknownFields` Vec header), not a throughput one. When no unknown
-    /// fields appear on the wire — the common case for schema-aligned
-    /// services — decode and encode costs are effectively identical in
-    /// either mode. Consider disabling for embedded / `no_std` targets or
-    /// large in-memory collections of small messages.
+    /// **Disabling is mostly a memory optimization**: 24 bytes per owned
+    /// message for the `UnknownFields` `Vec` header, and one pointer per
+    /// view, whose backing state is allocated only once an unknown field
+    /// actually arrives.
+    ///
+    /// A wire payload with no unknown fields does no per-field work either
+    /// way, but that does not make the two modes equivalent: carrying the
+    /// handle still shapes how the compiler moves the view, and that is
+    /// measurable on view-decode throughput for message-dense shapes.
+    /// Disabling is the only setting that removes the field outright, so it
+    /// is the lever to reach for when view decode is hot and round-trip
+    /// fidelity across schema versions is not required — as it is for
+    /// embedded / `no_std` targets and large in-memory collections of small
+    /// messages.
     #[must_use]
     pub fn preserve_unknown_fields(mut self, enabled: bool) -> Self {
         self.codegen_config.preserve_unknown_fields = enabled;
