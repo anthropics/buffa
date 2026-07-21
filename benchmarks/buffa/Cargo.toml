@@ -13,8 +13,10 @@ bench = false
 [dependencies]
 buffa = { path = "../../buffa", features = ["json"] }
 buffa-descriptor = { path = "../../buffa-descriptor", features = ["reflect", "json", "std"] }
+buffa-smolstr = { path = "../../examples/buffa-smolstr", features = ["serde"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+smallvec = { version = "1", features = ["serde"], optional = true }
 
 [build-dependencies]
 buffa-build = { path = "../../buffa-build" }
@@ -27,6 +29,7 @@ default = ["api_response", "log_record", "analytics_event", "google_message1", "
 api_response = []
 log_record = []
 analytics_event = []
+analytics_owned_types = ["dep:buffa-smolstr", "dep:smallvec"]
 google_message1 = []
 media_frame = []
 packed_tile = []
@@ -61,6 +64,11 @@ required-features = ["iso", "log_record"]
 name = "analytics_event"
 harness = false
 required-features = ["iso", "analytics_event"]
+
+[[bench]]
+name = "analytics_owned_types"
+harness = false
+required-features = ["iso", "analytics_owned_types"]
 
 [[bench]]
 name = "google_message1"

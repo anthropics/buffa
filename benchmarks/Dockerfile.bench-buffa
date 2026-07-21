@@ -22,6 +22,10 @@ COPY buffa-test/        buffa-test/
 COPY buffa-types/       buffa-types/
 COPY protoc-gen-buffa/  protoc-gen-buffa/
 COPY protoc-gen-buffa-packaging/ protoc-gen-buffa-packaging/
+# Optional path dependency of the owned-type benches. Cargo reads a path dep's
+# manifest during resolution even when the feature is off, so omitting this
+# fails the build below rather than just skipping the benchmark.
+COPY examples/buffa-smolstr/ examples/buffa-smolstr/
 
 # Copy benchmark shared files and the buffa benchmark crate.
 COPY benchmarks/proto/      benchmarks/proto/

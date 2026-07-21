@@ -11,7 +11,11 @@
     feature = "google_message1",
     feature = "column_batch",
     feature = "reflect",
-    feature = "lazy"
+    feature = "lazy",
+    // Also guarded: the owned-type variants build three more AnalyticsEvent
+    // codecs into this crate. LTO strips them from this binary, but it is no
+    // longer byte-identical, so the history series would not be comparable.
+    feature = "analytics_owned_types"
 ))]
 compile_error!("isolated `analytics_event` bench requires --no-default-features: another message/reflect/lazy feature is enabled, which defeats per-message isolation");
 include!("common.rs");

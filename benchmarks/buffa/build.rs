@@ -6,6 +6,7 @@ use std::env;
 // all messages + reflect + lazy views for the combined `protobuf`/`reflect`
 // benches.
 fn main() {
+    let analytics_owned_types = env::var("CARGO_FEATURE_ANALYTICS_OWNED_TYPES").is_ok();
     let msgs = [
         ("API_RESPONSE", "../proto/iso/api_response.proto"),
         ("LOG_RECORD", "../proto/iso/log_record.proto"),
@@ -21,7 +22,9 @@ fn main() {
     ];
     let mut files = vec!["../proto/benchmarks.proto".to_string()];
     for (feat, path) in msgs {
-        if env::var(format!("CARGO_FEATURE_{feat}")).is_ok() {
+        if env::var(format!("CARGO_FEATURE_{feat}")).is_ok()
+            || (feat == "ANALYTICS_EVENT" && analytics_owned_types)
+        {
             files.push(path.to_string());
         }
     }
@@ -39,4 +42,39 @@ fn main() {
         .lazy_views(lazy)
         .compile()
         .expect("failed to compile benchmark protos");
+
+    if analytics_owned_types {
+        let out_dir = std::path::PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR is set"));
+        for (name, smol_strings, small_lists) in [
+            ("analytics_smolstr", true, false),
+            ("analytics_smallvec", false, true),
+            ("analytics_smolstr_smallvec", true, true),
+        ] {
+            let variant_dir = out_dir.join(name);
+            std::fs::create_dir_all(&variant_dir).expect("create analytics variant output");
+            let mut config = buffa_build::Config::new()
+                .files(&["../proto/iso/analytics_event.proto"])
+                .includes(&["../proto/iso/"])
+                .generate_json(true)
+                .out_dir(variant_dir);
+            if smol_strings {
+                config = config.string_type_custom("::buffa_smolstr::SmolStr");
+            }
+            if small_lists {
+                // Nested.children stays Vec: an inline SmallVec<[Nested; 4]> inside
+                // Nested would be an infinitely sized type.
+                config = config.repeated_type_custom_in(
+                    "crate::SmallList<*>",
+                    &[
+                        ".bench.AnalyticsEvent.properties",
+                        ".bench.AnalyticsEvent.sections",
+                        ".bench.AnalyticsEvent.Nested.attributes",
+                    ],
+                );
+            }
+            config
+                .compile()
+                .expect("compile AnalyticsEvent owned-type variant");
+        }
+    }
 }

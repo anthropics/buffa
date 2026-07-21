@@ -11,7 +11,8 @@
     feature = "mesh",
     feature = "packed_tile",
     feature = "reflect",
-    feature = "lazy"
+    feature = "lazy",
+    feature = "analytics_owned_types"
 ))]
 compile_error!("isolated `column_batch` bench requires --no-default-features: another message/reflect/lazy feature is enabled, which defeats per-message isolation");
 include!("common.rs");
