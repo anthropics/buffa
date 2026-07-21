@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 # Run all fuzz targets in parallel with output redirected to log files.
 # Prints periodic progress summaries.
+# Exits nonzero if a target fails. libFuzzer already exits nonzero on a
+# crash/OOM/timeout/leak (non-fork mode inherently; the one -fork=1 target via
+# -ignore_*=0), so the exit code is the primary signal. Scanning for new
+# artifacts is a backstop for the case where cargo-fuzz masks that status.
+# Artifacts already present when the run starts are reported but do not fail
+# it; note fuzz/artifacts/ is shared, so a concurrent manual `cargo fuzz run`
+# can trip the backstop.
+#
+# On a signal, every target's process group is sent TERM and waited for, then
+# the script exits 128+signum (130 Ctrl-C, 143 TERM, 129 HUP, 131 QUIT). It
+# yields no pass/fail verdict, even if the summary already reported a crash.
+#
+# Per-target logs keep everything a target printed before its first progress
+# line, then only crash/error/stat lines. A target that dies during startup
+# therefore has its cause logged rather than an empty file.
 #
 # Usage: scripts/fuzz-all.sh [max_total_time]
 #   max_total_time: seconds per target (default: 28800 = 8 hours)
@@ -15,6 +30,7 @@ TARGETS=(decode_proto3 decode_proto2 decode_wkt json_roundtrip encode_proto3 wkt
 LOG_DIR="/tmp/buffa-fuzz"
 FUZZ_DIR="fuzz"
 STATUS_INTERVAL=300  # seconds between progress reports
+INTERRUPTED=false    # set by cleanup, so the summary can say so
 
 # Per-target extra libFuzzer flags.
 #
@@ -36,62 +52,93 @@ target_extra_flags() {
     esac
 }
 
-mkdir -p "$LOG_DIR"
+count_crash_artifacts() {
+    local artifact_dir="$FUZZ_DIR/artifacts/$1"
+    if [[ ! -d "$artifact_dir" ]]; then
+        echo 0
+        return
+    fi
 
-# Build all targets first (sequentially, to avoid parallel compilation issues).
-echo "Building fuzz targets..."
-for target in "${TARGETS[@]}"; do
-    cargo +nightly fuzz build --fuzz-dir "$FUZZ_DIR" "$target" 2>&1 \
-        | tail -1
-done
-echo ""
+    # leak-<sha> (LSan) counts too: it is a real finding. slow-unit-<sha>
+    # deliberately does not — libFuzzer writes it for a unit over
+    # -report_slow_units and then keeps going and exits 0, so counting it
+    # would fail runs that libFuzzer considers clean.
+    find "$artifact_dir" -type f \( \
+        -name 'crash-*' -o -name 'oom-*' -o -name 'timeout-*' -o -name 'leak-*' \
+    \) 2>/dev/null | wc -l | tr -d '[:space:]'
+}
 
-# Launch all targets in parallel.
-# Output is filtered through a helper that:
-#   - Keeps only important lines (crashes, errors, final stats) in the log
-#   - Maintains a "last status" file with the most recent progress line
-PIDS=()
-for target in "${TARGETS[@]}"; do
-    log="$LOG_DIR/$target.log"
-    status_file="$LOG_DIR/$target.status"
-    echo "Starting $target (log: $log, max_time: ${MAX_TIME}s)"
-    : >"$log"
-    : >"$status_file"
-    extra_flags=$(target_extra_flags "$target")
+filter_fuzz_output() {
+    local status_file="$1"
+    local log="$2"
+    # Everything before the first progress line is startup output, and is kept
+    # verbatim: a target that dies during startup (missing nightly toolchain,
+    # link failure) emits nothing matching the filter below, which would leave
+    # a nonzero exit with an empty log and no way to tell why.
+    local started=false
+    while IFS= read -r line; do
+        # Always save the most recent progress line for status reports.
+        # Non-fork mode: "#NNN ACTION cov: ..."; fork mode: "#NNN: cov: ...".
+        if [[ "$line" =~ ^#[0-9] ]]; then
+            started=true
+            echo "$line" >"$status_file"
+        fi
+        # Then log important lines only: crashes, errors, stats, summary.
+        if [[ "$started" == false ]] ||
+            [[ "$line" =~ SUMMARY|ERROR|CRASH|ALARM|panic|assertion|stat::|BINGO|Done[[:space:]] ]]; then
+            echo "$line" >>"$log"
+        fi
+    done
+}
+
+run_target() {
+    local target="$1"
+    local log="$2"
+    local status_file="$3"
+    local extra_flags="$4"
+
+    # Keep the pipeline in the wrapper's process group so cleanup can terminate
+    # cargo-fuzz, the fuzz binary, and the output filter together.
+    set +m
     # shellcheck disable=SC2086  # extra_flags is intentionally word-split
     cargo +nightly fuzz run --fuzz-dir "$FUZZ_DIR" "$target" \
         -- -max_total_time="$MAX_TIME" -print_final_stats=1 $extra_flags \
-        2>&1 | while IFS= read -r line; do
-            # Always save the most recent progress line for status reports.
-            # Non-fork mode: "#NNN ACTION cov: ..."; fork mode: "#NNN: cov: ...".
-            if [[ "$line" =~ ^#[0-9] ]]; then
-                echo "$line" >"$status_file"
-            fi
-            # Log important lines only: crashes, errors, stats, summary.
-            if [[ "$line" =~ SUMMARY|ERROR|CRASH|ALARM|panic|assertion|stat::|BINGO|Done[[:space:]] ]]; then
-                echo "$line" >>"$log"
-            fi
-        done &
-    PIDS+=($!)
-done
-
-echo ""
-echo "All ${#TARGETS[@]} targets running. Logs in $LOG_DIR/"
-echo "Press Ctrl-C to stop all targets."
-echo ""
-
-# Trap Ctrl-C to kill all children.
-cleanup() {
-    echo ""
-    echo "Stopping all fuzz targets..."
-    for pid in "${PIDS[@]}"; do
-        kill "$pid" 2>/dev/null || true
-    done
-    wait 2>/dev/null
-    print_summary
-    exit 0
+        2>&1 | filter_fuzz_output "$status_file" "$log"
 }
-trap cleanup INT TERM
+
+# Wait for each completed target exactly once and preserve its exit code.
+# With wait_all=true, block until every still-running target has exited.
+record_finished_targets() {
+    local wait_all="${1:-false}"
+    for i in "${!PIDS[@]}"; do
+        if [[ -n "${EXIT_CODES[$i]:-}" ]]; then
+            continue
+        fi
+
+        local pid="${PIDS[$i]}"
+        if [[ "$wait_all" == false ]] && kill -0 "$pid" 2>/dev/null; then
+            continue
+        fi
+
+        local exit_code
+        if wait "$pid" 2>/dev/null; then
+            exit_code=0
+        else
+            exit_code=$?
+        fi
+        EXIT_CODES[i]="$exit_code"
+    done
+}
+
+# Signal the process group of every target that has not been reaped yet.
+signal_live_groups() {
+    local sig="$1"
+    for i in "${!PIDS[@]}"; do
+        if [[ -z "${EXIT_CODES[$i]:-}" ]]; then
+            kill "-$sig" -- "-${PIDS[$i]}" 2>/dev/null || true
+        fi
+    done
+}
 
 # Read the most recent progress line from the status file.
 parse_stats() {
@@ -115,39 +162,131 @@ print_summary() {
     echo "── Fuzz progress $(date +%H:%M:%S) ──"
     for i in "${!TARGETS[@]}"; do
         local target="${TARGETS[$i]}"
-        local pid="${PIDS[$i]}"
-        local log="$LOG_DIR/$target.log"
         local status
-        if kill -0 "$pid" 2>/dev/null; then
+        local exit_code="${EXIT_CODES[$i]:-}"
+        if [[ "$i" -ge "${#PIDS[@]}" ]]; then
+            status="not launched"
+        elif [[ -z "$exit_code" ]]; then
             status="running"
+        elif [[ "$exit_code" -eq 0 ]]; then
+            status="finished"
+        elif [[ "$INTERRUPTED" == true ]] && [[ "$exit_code" == 143 ]]; then
+            # Died from the TERM we sent, rather than failing on its own — a
+            # target that had already failed keeps its real status. Only 143:
+            # targets are in their own process groups, so a terminal Ctrl-C
+            # never reaches them, and we send nothing but TERM.
+            status="interrupted"
         else
-            wait "$pid" 2>/dev/null && status="finished" || status="CRASHED"
+            status="FAILED (exit $exit_code)"
         fi
         local stats
         stats=$(parse_stats "$target")
         printf "  %-20s [%s] %s\n" "$target" "$status" "$stats"
 
-        # Check for crash artifacts.
-        local artifact_dir="fuzz/artifacts/$target"
-        if [[ -d "$artifact_dir" ]]; then
-            local crashes
-            crashes=$(find "$artifact_dir" -name 'crash-*' -o -name 'oom-*' -o -name 'timeout-*' 2>/dev/null | wc -l)
-            if [[ "$crashes" -gt 0 ]]; then
-                printf "    *** %d crash artifact(s) in %s ***\n" "$crashes" "$artifact_dir"
-            fi
+        # Report crash artifacts, distinguishing the ones this run produced
+        # from any that were already on disk: only new ones fail the run.
+        local artifact_dir="$FUZZ_DIR/artifacts/$target"
+        local crashes new_crashes
+        crashes=$(count_crash_artifacts "$target")
+        new_crashes=$((crashes - ${INITIAL_ARTIFACT_COUNTS[$i]:-0}))
+        if [[ "$new_crashes" -gt 0 ]]; then
+            printf "    *** %d new crash artifact(s) (%d total) in %s ***\n" \
+                "$new_crashes" "$crashes" "$artifact_dir"
+        elif [[ "$crashes" -gt 0 ]]; then
+            printf "    (%d pre-existing crash artifact(s) in %s)\n" "$crashes" "$artifact_dir"
         fi
     done
     echo ""
 }
+
+cleanup() {
+    local exit_code="$1"
+    trap - INT TERM HUP QUIT
+    INTERRUPTED=true
+
+    # A signal may arrive after a wrapper starts but before its PID is stored.
+    if [[ "$STARTING_TARGET" == true ]] && [[ -n "${!:-}" ]]; then
+        local pending_pid=$!
+        local last_index=$((${#PIDS[@]} - 1))
+        if [[ "$last_index" -lt 0 ]] || [[ "${PIDS[$last_index]}" != "$pending_pid" ]]; then
+            PIDS+=("$pending_pid")
+        fi
+    fi
+
+    # Signal before announcing. On SIGHUP the terminal is already gone, so
+    # these echoes fail with EIO and `set -e` would abort the handler before
+    # it stopped anything — orphaning every target for the rest of the budget,
+    # which is the exact case the HUP trap exists for.
+    signal_live_groups TERM
+    echo "" || true
+    echo "Stopping all fuzz targets..." || true
+    record_finished_targets true
+    print_summary
+    exit "$exit_code"
+}
+
+mkdir -p "$LOG_DIR"
+
+# Build all targets first (sequentially, to avoid parallel compilation issues).
+echo "Building fuzz targets..."
+for target in "${TARGETS[@]}"; do
+    cargo +nightly fuzz build --fuzz-dir "$FUZZ_DIR" "$target" 2>&1 \
+        | tail -1
+done
+echo ""
+
+# Launch all targets in parallel.
+# Output is filtered through a helper that:
+#   - Keeps only important lines (crashes, errors, final stats) in the log
+#   - Maintains a "last status" file with the most recent progress line
+PIDS=()
+EXIT_CODES=()
+INITIAL_ARTIFACT_COUNTS=()
+STARTING_TARGET=false
+# Each target gets its own process group, so a terminal hangup no longer
+# reaches the fuzz processes on its own — trap HUP/QUIT too, or an ssh drop
+# would orphan six fuzzers for the rest of the time budget. Exit codes are
+# the usual 128+signum.
+trap 'cleanup 130' INT
+trap 'cleanup 143' TERM
+trap 'cleanup 129' HUP
+trap 'cleanup 131' QUIT
+for target in "${TARGETS[@]}"; do
+    log="$LOG_DIR/$target.log"
+    status_file="$LOG_DIR/$target.status"
+    echo "Starting $target (log: $log, max_time: ${MAX_TIME}s)"
+    : >"$log"
+    : >"$status_file"
+    extra_flags=$(target_extra_flags "$target")
+    INITIAL_ARTIFACT_COUNTS+=("$(count_crash_artifacts "$target")")
+    EXIT_CODES+=("")
+
+    # Give the target wrapper and all of its descendants a dedicated process
+    # group: the wrapper's pipefail status survives a deferred wait, and cleanup
+    # can terminate the whole group without orphaning cargo-fuzz or the filter.
+    record_finished_targets
+    STARTING_TARGET=true
+    set -m
+    run_target "$target" "$log" "$status_file" "$extra_flags" &
+    PIDS+=("$!")
+    STARTING_TARGET=false
+    set +m
+done
+
+echo ""
+echo "All ${#TARGETS[@]} targets running. Logs in $LOG_DIR/"
+echo "Press Ctrl-C to stop all targets."
+echo ""
 
 # Wait loop: periodic status reports until all targets finish.
 # Check every 5 seconds whether targets are still running, but only
 # print a summary every STATUS_INTERVAL seconds.
 elapsed=0
 while true; do
+    record_finished_targets
     all_done=true
-    for pid in "${PIDS[@]}"; do
-        if kill -0 "$pid" 2>/dev/null; then
+    for exit_code in "${EXIT_CODES[@]}"; do
+        if [[ -z "$exit_code" ]]; then
             all_done=false
             break
         fi
@@ -166,3 +305,30 @@ while true; do
         elapsed=0
     fi
 done
+
+failed_targets=()
+for i in "${!TARGETS[@]}"; do
+    target="${TARGETS[$i]}"
+    reasons=()
+
+    if [[ "${EXIT_CODES[$i]}" -ne 0 ]]; then
+        reasons+=("exit ${EXIT_CODES[$i]}")
+    fi
+
+    artifact_count=$(count_crash_artifacts "$target")
+    new_artifact_count=$((artifact_count - INITIAL_ARTIFACT_COUNTS[i]))
+    if [[ "$new_artifact_count" -gt 0 ]]; then
+        reasons+=("$new_artifact_count new crash artifact(s)")
+    fi
+
+    if [[ ${#reasons[@]} -gt 0 ]]; then
+        reason=$(printf '%s, ' "${reasons[@]}")
+        failed_targets+=("$target (${reason%, })")
+    fi
+done
+
+if [[ ${#failed_targets[@]} -gt 0 ]]; then
+    echo "Fuzzing failed for:"
+    printf "  %s\n" "${failed_targets[@]}"
+    exit 1
+fi
