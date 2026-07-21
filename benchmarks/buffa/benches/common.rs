@@ -1,5 +1,8 @@
 // Shared helpers, textually included by each per-message isolated bench target.
-use buffa::{Message, MessageView};
+use buffa::Message;
+// Only benchmark targets with a view measurement need this trait in scope.
+#[allow(unused_imports)]
+use buffa::MessageView;
 use criterion::{Criterion, Throughput};
 use serde::{de::DeserializeOwned, Serialize};
 

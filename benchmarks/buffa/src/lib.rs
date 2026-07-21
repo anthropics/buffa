@@ -9,6 +9,7 @@
     feature = "api_response",
     feature = "log_record",
     feature = "analytics_event",
+    feature = "analytics_owned_types",
     feature = "media_frame",
     feature = "packed_tile",
     feature = "mesh",
@@ -54,7 +55,7 @@ pub mod proto3 {
     buffa::include_proto!("benchmarks.proto3");
 }
 
-#[cfg(feature = "analytics_event")]
+#[cfg(feature = "analytics_owned_types")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 #[repr(transparent)]
@@ -62,7 +63,7 @@ pub mod proto3 {
 /// Four-element inline list used by the `AnalyticsEvent` owned-type benchmark.
 pub struct SmallList<T>(pub smallvec::SmallVec<[T; 4]>);
 
-#[cfg(feature = "analytics_event")]
+#[cfg(feature = "analytics_owned_types")]
 impl<T> Default for SmallList<T> {
     #[inline]
     fn default() -> Self {
@@ -70,7 +71,7 @@ impl<T> Default for SmallList<T> {
     }
 }
 
-#[cfg(feature = "analytics_event")]
+#[cfg(feature = "analytics_owned_types")]
 impl<T> core::ops::Deref for SmallList<T> {
     type Target = [T];
 
@@ -80,7 +81,7 @@ impl<T> core::ops::Deref for SmallList<T> {
     }
 }
 
-#[cfg(feature = "analytics_event")]
+#[cfg(feature = "analytics_owned_types")]
 impl<T> FromIterator<T> for SmallList<T> {
     #[inline]
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
@@ -88,7 +89,7 @@ impl<T> FromIterator<T> for SmallList<T> {
     }
 }
 
-#[cfg(feature = "analytics_event")]
+#[cfg(feature = "analytics_owned_types")]
 impl<T> From<Vec<T>> for SmallList<T> {
     #[inline]
     fn from(value: Vec<T>) -> Self {
@@ -96,7 +97,7 @@ impl<T> From<Vec<T>> for SmallList<T> {
     }
 }
 
-#[cfg(feature = "analytics_event")]
+#[cfg(feature = "analytics_owned_types")]
 impl<T> buffa::ProtoList<T> for SmallList<T>
 where
     T: Clone + PartialEq + core::fmt::Debug + Send + Sync,
@@ -112,17 +113,17 @@ where
     }
 }
 
-#[cfg(feature = "analytics_event")]
+#[cfg(feature = "analytics_owned_types")]
 pub mod analytics_smolstr {
     include!(concat!(env!("OUT_DIR"), "/analytics_smolstr/bench.mod.rs"));
 }
 
-#[cfg(feature = "analytics_event")]
+#[cfg(feature = "analytics_owned_types")]
 pub mod analytics_smallvec {
     include!(concat!(env!("OUT_DIR"), "/analytics_smallvec/bench.mod.rs"));
 }
 
-#[cfg(feature = "analytics_event")]
+#[cfg(feature = "analytics_owned_types")]
 pub mod analytics_smolstr_smallvec {
     include!(concat!(
         env!("OUT_DIR"),
@@ -130,13 +131,13 @@ pub mod analytics_smolstr_smallvec {
     ));
 }
 
-#[cfg(all(test, feature = "analytics_event"))]
+#[cfg(all(test, feature = "analytics_owned_types"))]
 mod owned_type_tests {
     use buffa::Message;
 
     use super::{
-        analytics_smallvec, analytics_smolstr, analytics_smolstr_smallvec,
-        bench::AnalyticsEvent, benchmarks::BenchmarkDataset,
+        analytics_smallvec, analytics_smolstr, analytics_smolstr_smallvec, bench::AnalyticsEvent,
+        benchmarks::BenchmarkDataset,
     };
 
     fn assert_small_list_shape(event: &analytics_smallvec::AnalyticsEvent) {
@@ -172,10 +173,8 @@ mod owned_type_tests {
                 expected
             );
 
-            let combined = analytics_smolstr_smallvec::AnalyticsEvent::decode_from_slice(
-                &payload,
-            )
-            .unwrap();
+            let combined =
+                analytics_smolstr_smallvec::AnalyticsEvent::decode_from_slice(&payload).unwrap();
             let _: &buffa_smolstr::SmolStr = &combined.event_id;
             let _: &super::SmallList<_> = &combined.properties;
             assert_eq!(

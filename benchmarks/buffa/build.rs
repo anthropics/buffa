@@ -6,6 +6,7 @@ use std::env;
 // all messages + reflect + lazy views for the combined `protobuf`/`reflect`
 // benches.
 fn main() {
+    let analytics_owned_types = env::var("CARGO_FEATURE_ANALYTICS_OWNED_TYPES").is_ok();
     let msgs = [
         ("API_RESPONSE", "../proto/iso/api_response.proto"),
         ("LOG_RECORD", "../proto/iso/log_record.proto"),
@@ -21,7 +22,9 @@ fn main() {
     ];
     let mut files = vec!["../proto/benchmarks.proto".to_string()];
     for (feat, path) in msgs {
-        if env::var(format!("CARGO_FEATURE_{feat}")).is_ok() {
+        if env::var(format!("CARGO_FEATURE_{feat}")).is_ok()
+            || (feat == "ANALYTICS_EVENT" && analytics_owned_types)
+        {
             files.push(path.to_string());
         }
     }
@@ -40,7 +43,7 @@ fn main() {
         .compile()
         .expect("failed to compile benchmark protos");
 
-    if env::var("CARGO_FEATURE_ANALYTICS_EVENT").is_ok() {
+    if analytics_owned_types {
         let out_dir = std::path::PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR is set"));
         for (name, smol_strings, small_lists) in [
             ("analytics_smolstr", true, false),
@@ -58,8 +61,8 @@ fn main() {
                 config = config.string_type_custom("::buffa_smolstr::SmolStr");
             }
             if small_lists {
-                // ponytail: keep recursive children on Vec; add a heap-backed custom
-                // list axis only if a recursive-collection benchmark is requested.
+                // Nested.children stays Vec: an inline SmallVec<[Nested; 4]> inside
+                // Nested would be an infinitely sized type.
                 config = config.repeated_type_custom_in(
                     "crate::SmallList<*>",
                     &[
@@ -69,7 +72,9 @@ fn main() {
                     ],
                 );
             }
-            config.compile().expect("compile AnalyticsEvent owned-type variant");
+            config
+                .compile()
+                .expect("compile AnalyticsEvent owned-type variant");
         }
     }
 }
