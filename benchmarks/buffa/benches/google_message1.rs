@@ -11,7 +11,8 @@
     feature = "mesh",
     feature = "column_batch",
     feature = "reflect",
-    feature = "lazy"
+    feature = "lazy",
+    feature = "analytics_owned_types"
 ))]
 compile_error!("isolated `google_message1` bench requires --no-default-features: another message/reflect/lazy feature is enabled, which defeats per-message isolation");
 include!("common.rs");
