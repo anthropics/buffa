@@ -618,13 +618,21 @@ Passed via `opt:` (works for `remote:` and `local:`):
 
 #### Very large schemas
 
-The plugins bound how much memory a `CodeGeneratorRequest` may decode into, at 1 GiB. That is roughly twice what the largest public schemas need — descriptor types are wide structs, so a request's element footprint runs several times its encoded size — and it exists so a truncated or corrupt request fails with an error rather than exhausting memory. Raise it with the `BUFFA_ELEMENT_MEMORY_LIMIT` environment variable, which takes a byte count or `unlimited`:
+The plugins bound how much memory a `CodeGeneratorRequest` may decode into, at 1 GiB. That is roughly twice what the largest public schemas need — descriptor types are wide structs, so a request's element footprint runs several times its encoded size — and it exists so a truncated or corrupt request fails with an error rather than exhausting memory. Raise it with the `element_memory_limit` option, which takes a byte count or `unlimited`:
 
-```sh
-BUFFA_ELEMENT_MEMORY_LIMIT=unlimited buf generate
+```yaml
+plugins:
+  - local: protoc-gen-buffa
+    out: src/gen
+    opt:
+      - element_memory_limit=unlimited
 ```
 
-This is an environment variable rather than a plugin option because the options string travels inside the request, and cannot be read until the request has already been decoded. The `buffa-build`/`build.rs` path applies the same bound and honours the same variable. Generated `descriptor_pool()` is the exception: it scales its bound to the length of the descriptor bytes compiled into it, so it needs no configuration at any schema size.
+The `BUFFA_ELEMENT_MEMORY_LIMIT` environment variable sets the same bound and is the way to reach the `buffa-build`/`build.rs` path, which has no parameter string. The option wins where both are set.
+
+An option that governs how the request is decoded would normally be unreachable, since the parameter string travels inside that request. The plugins read it by scanning the wire for that one field and skipping everything else — microseconds against the tens of milliseconds a full decode costs — so options needed before the descriptors are processed are available without paying for a second decode.
+
+Generated `descriptor_pool()` needs no configuration at any schema size: it scales its bound to the length of the descriptor bytes compiled into it.
 
 #### BSR-generated SDKs
 

@@ -236,10 +236,17 @@ fn parse_options(params: &str) -> Result<Selection, String> {
             selection
                 .exclude
                 .push(buffa_codegen::normalize_exclude_package(value)?);
+        } else if opt
+            .split_once('=')
+            .is_some_and(|(k, _)| k.trim() == buffa_codegen::ELEMENT_MEMORY_LIMIT_OPT)
+        {
+            // Consumed before the request was decoded (it governs that
+            // decode); see `buffa_codegen::peek_request_parameter`.
         } else {
             return Err(format!(
                 "unknown plugin option {opt:?}. \
-                 Supported: filter=services, exclude_package=<pkg>"
+                 Supported: filter=services, exclude_package=<pkg>, \
+                 element_memory_limit=<bytes>"
             ));
         }
     }

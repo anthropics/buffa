@@ -393,6 +393,9 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                          for migration."
                     .to_string());
             }
+            // Consumed before the request was decoded (it governs that
+            // decode); see `buffa_codegen::peek_request_parameter`.
+            buffa_codegen::ELEMENT_MEMORY_LIMIT_OPT => {}
             other => {
                 return Err(format!(
                     "unknown plugin option '{other}'; see \

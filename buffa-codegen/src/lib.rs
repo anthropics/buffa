@@ -106,9 +106,11 @@ pub fn decode_failure(subject: &str, err: &buffa::DecodeError, limit: usize) -> 
         buffa::DecodeError::ElementMemoryLimitExceeded => format!(
             "{base}\n\
              These descriptors exceed the {budget} element-memory budget in force. \
-             Raise it by setting {env}=<bytes>, or {env}=unlimited to remove the bound; \
-             see \"Very large schemas\" in the buffa guide.",
+             Raise it with the {opt}=<bytes> plugin option or the {env} environment \
+             variable; either accepts 'unlimited'. See \"Very large schemas\" in the \
+             buffa guide.",
             budget = describe_byte_budget(limit),
+            opt = ELEMENT_MEMORY_LIMIT_OPT,
             env = ELEMENT_MEMORY_LIMIT_ENV,
         ),
         _ => base,
@@ -127,18 +129,95 @@ fn describe_byte_budget(bytes: usize) -> String {
     }
 }
 
-/// Decode a `CodeGeneratorRequest` from a `protoc` plugin's stdin under
-/// [`tooling_decode_options`], reporting a failure via [`decode_failure`].
+/// Plugin option, settable in the `protoc`/`buf` parameter string, that sets
+/// the element-memory bound used to decode the request carrying it.
+pub const ELEMENT_MEMORY_LIMIT_OPT: &str = "element_memory_limit";
+
+/// Read `CodeGeneratorRequest.parameter` (field 2) straight off the wire,
+/// without decoding the request.
+///
+/// An option that governs how the request itself is decoded cannot be read
+/// from the decoded request. Scanning for the one field is what makes such
+/// options possible: it skips every other field rather than materialising it,
+/// so the cost is a wire walk, not a decode — microseconds against the tens of
+/// milliseconds a full decode of a large request takes.
+///
+/// Returns `None` when the request carries no parameter.
+///
+/// # Errors
+///
+/// Returns a [`DecodeError`](buffa::DecodeError) if the bytes are not
+/// well-formed protobuf, or if the parameter is not valid UTF-8.
+pub fn peek_request_parameter(mut buf: &[u8]) -> Result<Option<&str>, buffa::DecodeError> {
+    use buffa::encoding::{decode_varint, skip_field, Tag, WireType};
+
+    /// `CodeGeneratorRequest.parameter`.
+    const PARAMETER_FIELD: u32 = 2;
+
+    let mut found = None;
+    while !buf.is_empty() {
+        let tag = Tag::decode(&mut buf)?;
+        if tag.field_number() == PARAMETER_FIELD && tag.wire_type() == WireType::LengthDelimited {
+            let len = usize::try_from(decode_varint(&mut buf)?)
+                .map_err(|_| buffa::DecodeError::MessageTooLarge)?;
+            if len > buf.len() {
+                return Err(buffa::DecodeError::UnexpectedEof);
+            }
+            let (value, rest) = buf.split_at(len);
+            // Last wins, matching how protobuf merges a repeated scalar field.
+            found = Some(core::str::from_utf8(value).map_err(|_| buffa::DecodeError::InvalidUtf8)?);
+            buf = rest;
+            continue;
+        }
+        skip_field(tag, &mut buf)?;
+    }
+    Ok(found)
+}
+
+/// Find `element_memory_limit=<value>` in a `protoc` plugin parameter string.
+///
+/// Returns `None` when the option is absent, leaving
+/// [`ELEMENT_MEMORY_LIMIT_ENV`] and then [`TOOLING_ELEMENT_MEMORY_LIMIT`] to
+/// supply the value.
+///
+/// # Errors
+///
+/// Returns a message if the option is present with an unparseable value.
+pub fn element_memory_limit_opt(parameter: &str) -> Result<Option<usize>, String> {
+    let mut found = None;
+    for entry in parameter.split(',').map(str::trim) {
+        if let Some((key, value)) = entry.split_once('=') {
+            if key.trim() == ELEMENT_MEMORY_LIMIT_OPT {
+                found = Some(parse_element_memory_limit(Some(value))?);
+            }
+        }
+    }
+    Ok(found)
+}
+
+/// Decode a `CodeGeneratorRequest` from a `protoc` plugin's stdin.
+///
+/// The element-memory bound is taken from the `element_memory_limit` plugin
+/// option if the request carries one, else [`ELEMENT_MEMORY_LIMIT_ENV`], else
+/// [`TOOLING_ELEMENT_MEMORY_LIMIT`]. The option is read by scanning for it
+/// ([`peek_request_parameter`]) rather than from the decoded request, since it
+/// governs that decode.
 ///
 /// Both plugins compose exactly this, so it lives here: a hint improved in one
 /// binary should never disagree with the other.
 ///
 /// # Errors
 ///
-/// Returns a message describing the failure, naming
-/// [`ELEMENT_MEMORY_LIMIT_ENV`] when the element bound is what rejected it.
+/// Returns a message describing the failure, naming the ways to raise the
+/// bound when that is what rejected the request.
 pub fn decode_request(input: &[u8]) -> Result<generated::compiler::CodeGeneratorRequest, String> {
-    let options = tooling_decode_options()?;
+    let parameter = peek_request_parameter(input)
+        .map_err(|e| format!("failed to read the plugin parameter: {e}"))?
+        .unwrap_or_default();
+    let options = match element_memory_limit_opt(parameter)? {
+        Some(limit) => buffa::DecodeOptions::new().with_element_memory_limit(limit),
+        None => tooling_decode_options()?,
+    };
     options
         .decode_from_slice::<generated::compiler::CodeGeneratorRequest>(input)
         .map_err(|e| decode_failure("CodeGeneratorRequest", &e, options.element_memory_limit()))

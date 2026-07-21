@@ -2,8 +2,8 @@
 //! `CodeGeneratorRequest`, and its environment-variable override.
 
 use crate::{
-    decode_failure, parse_element_memory_limit, tooling_decode_options, ELEMENT_MEMORY_LIMIT_ENV,
-    TOOLING_ELEMENT_MEMORY_LIMIT,
+    decode_failure, element_memory_limit_opt, parse_element_memory_limit, peek_request_parameter,
+    tooling_decode_options, ELEMENT_MEMORY_LIMIT_ENV, TOOLING_ELEMENT_MEMORY_LIMIT,
 };
 
 #[test]
@@ -116,4 +116,78 @@ fn tooling_decode_options_carries_the_default_when_unset() {
         let opts = tooling_decode_options().expect("no override set");
         assert_eq!(opts.element_memory_limit(), TOOLING_ELEMENT_MEMORY_LIMIT);
     }
+}
+
+/// Encode a minimal `CodeGeneratorRequest` carrying `parameter` (field 2),
+/// preceded and followed by other fields so the scan has to skip both ways.
+fn request_with_parameter(param: &str) -> Vec<u8> {
+    use buffa::encoding::{encode_varint, Tag, WireType};
+    let mut wire = Vec::new();
+    // field 1, file_to_generate
+    Tag::new(1, WireType::LengthDelimited).encode(&mut wire);
+    buffa::types::encode_string("a.proto", &mut wire);
+    // field 2, parameter
+    Tag::new(2, WireType::LengthDelimited).encode(&mut wire);
+    buffa::types::encode_string(param, &mut wire);
+    // field 15, proto_file — a submessage the scan must skip, not descend
+    Tag::new(15, WireType::LengthDelimited).encode(&mut wire);
+    let inner = {
+        let mut b = Vec::new();
+        Tag::new(1, WireType::LengthDelimited).encode(&mut b);
+        buffa::types::encode_string("a.proto", &mut b);
+        b
+    };
+    encode_varint(inner.len() as u64, &mut wire);
+    wire.extend_from_slice(&inner);
+    wire
+}
+
+#[test]
+fn the_parameter_is_readable_without_decoding_the_request() {
+    let wire = request_with_parameter("views=true,element_memory_limit=4096");
+    assert_eq!(
+        peek_request_parameter(&wire).unwrap(),
+        Some("views=true,element_memory_limit=4096")
+    );
+}
+
+#[test]
+fn a_request_without_a_parameter_peeks_to_none() {
+    use buffa::encoding::{Tag, WireType};
+    let mut wire = Vec::new();
+    Tag::new(1, WireType::LengthDelimited).encode(&mut wire);
+    buffa::types::encode_string("a.proto", &mut wire);
+    assert_eq!(peek_request_parameter(&wire).unwrap(), None);
+    assert_eq!(peek_request_parameter(&[]).unwrap(), None);
+}
+
+#[test]
+fn a_truncated_request_is_an_error_not_a_panic() {
+    let wire = request_with_parameter("views=true");
+    // Cut mid-message: the scan must surface an error, never index past the end.
+    for cut in 1..wire.len() {
+        let _ = peek_request_parameter(&wire[..cut]);
+    }
+}
+
+#[test]
+fn the_plugin_option_is_found_in_a_parameter_string() {
+    assert_eq!(
+        element_memory_limit_opt("views=true,element_memory_limit=4096,json=true").unwrap(),
+        Some(4096)
+    );
+    assert_eq!(
+        element_memory_limit_opt("element_memory_limit=unlimited").unwrap(),
+        Some(usize::MAX)
+    );
+    // Absent leaves the env/default resolution to take over.
+    assert_eq!(element_memory_limit_opt("views=true").unwrap(), None);
+    assert_eq!(element_memory_limit_opt("").unwrap(), None);
+    // A key that merely contains the name is not the option.
+    assert_eq!(
+        element_memory_limit_opt("not_element_memory_limit=4096").unwrap(),
+        None
+    );
+    // A bad value is reported rather than ignored.
+    assert!(element_memory_limit_opt("element_memory_limit=banana").is_err());
 }
