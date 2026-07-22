@@ -739,26 +739,14 @@ fn scalar_from_str(sc: ScalarType, v: &str) -> Result<Value, String> {
         // 64-bit integers are quoted strings. Spec also accepts decimal and
         // exponential notation as long as the value is integral.
         ScalarType::Int64 | ScalarType::Sint64 | ScalarType::Sfixed64 => {
-            parse_int_str(v).map(Value::I64)
+            parse_int_str::<i64>(v).map(Value::I64)
         }
-        ScalarType::Uint64 | ScalarType::Fixed64 => {
-            // Try the direct parse first to preserve full u64 range; fall
-            // back to the integral-float path for exponential notation.
-            if let Ok(n) = v.parse::<u64>() {
-                Ok(Value::U64(n))
-            } else {
-                parse_int_str(v)
-                    .and_then(|n| u64::try_from(n).map_err(|_| "negative uint64".to_owned()))
-                    .map(Value::U64)
-            }
-        }
+        ScalarType::Uint64 | ScalarType::Fixed64 => parse_int_str::<u64>(v).map(Value::U64),
         // 32-bit integers may also appear as strings.
-        ScalarType::Int32 | ScalarType::Sint32 | ScalarType::Sfixed32 => parse_int_str(v)
-            .and_then(|n| i32::try_from(n).map_err(|_| "out of range int32".to_owned()))
-            .map(Value::I32),
-        ScalarType::Uint32 | ScalarType::Fixed32 => parse_int_str(v)
-            .and_then(|n| u32::try_from(n).map_err(|_| "out of range uint32".to_owned()))
-            .map(Value::U32),
+        ScalarType::Int32 | ScalarType::Sint32 | ScalarType::Sfixed32 => {
+            parse_int_str::<i32>(v).map(Value::I32)
+        }
+        ScalarType::Uint32 | ScalarType::Fixed32 => parse_int_str::<u32>(v).map(Value::U32),
         // Float/double special values.
         ScalarType::Float => parse_float_str(v).map(|f| Value::F32(f as f32)),
         ScalarType::Double => parse_float_str(v).map(Value::F64),
@@ -768,26 +756,61 @@ fn scalar_from_str(sc: ScalarType, v: &str) -> Result<Value, String> {
 
 /// Parse a quoted-string integer, accepting integral decimal/exponential
 /// forms (`"1.5e3"` → `1500`) per the proto3 JSON spec.
-fn parse_int_str(v: &str) -> Result<i64, String> {
-    if let Ok(n) = v.parse::<i64>() {
-        return Ok(n);
+fn parse_int_str<I: TryFrom<i128>>(v: &str) -> Result<I, String> {
+    let n = parse_exact_decimal_int(v).ok_or_else(|| "invalid integer string".to_owned())?;
+    I::try_from(n).map_err(|_| "integer out of range".to_owned())
+}
+
+/// Parse a decimal/exponential string as an exact integer.
+fn parse_exact_decimal_int(v: &str) -> Option<i128> {
+    if let Ok(n) = v.parse::<i128>() {
+        return Some(n);
     }
-    // Only fall back to the float path when the string visibly carries a
-    // decimal point or exponent — a pure-integer string that failed
-    // `i64::parse` is out of range, not a float.
-    if !v.contains(['.', 'e', 'E']) {
-        return Err("integer out of range".to_owned());
+    let (mantissa, exp) = match v.split_once(['e', 'E']) {
+        Some((m, e)) => (m, e.parse::<i64>().ok()?),
+        None => (v, 0),
+    };
+    let (negative, mantissa) = match mantissa.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, mantissa.strip_prefix('+').unwrap_or(mantissa)),
+    };
+    let (int_part, frac_part) = mantissa
+        .split_once('.')
+        .map_or((mantissa, ""), |(i, f)| (i, f));
+    if int_part.is_empty() && frac_part.is_empty() {
+        return None;
     }
-    let f: f64 = v.parse().map_err(|_| "invalid integer string".to_owned())?;
-    if f.fract() != 0.0 || f.is_nan() || f.is_infinite() {
-        return Err("non-integral string for integer field".to_owned());
+    let frac_part = frac_part.trim_end_matches('0');
+
+    let mut significand = 0i128;
+    for digit in int_part.bytes().chain(frac_part.bytes()) {
+        if !digit.is_ascii_digit() {
+            return None;
+        }
+        significand = significand
+            .checked_mul(10)?
+            .checked_add(i128::from(digit - b'0'))?;
     }
-    // f64 has 53 bits of mantissa; values above 2^53 cannot be exactly
-    // represented and the cast to i64 silently saturates. Reject to be safe.
-    if f.abs() >= (1u64 << 53) as f64 {
-        return Err("out of exact integer range".to_owned());
+    if significand == 0 {
+        return Some(0);
     }
-    Ok(f as i64)
+
+    let scale = exp.checked_sub(frac_part.len() as i64)?;
+    if scale >= 0 {
+        significand = significand.checked_mul(10i128.checked_pow(u32::try_from(scale).ok()?)?)?;
+    } else {
+        let divisor = 10i128.checked_pow(u32::try_from(scale.unsigned_abs()).ok()?)?;
+        if significand % divisor != 0 {
+            return None;
+        }
+        significand /= divisor;
+    }
+
+    if negative {
+        significand.checked_neg()
+    } else {
+        Some(significand)
+    }
 }
 
 fn parse_float_str(v: &str) -> Result<f64, String> {
