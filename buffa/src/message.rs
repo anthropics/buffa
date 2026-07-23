@@ -1098,6 +1098,16 @@ pub trait MessageName {
 /// Use this to set custom recursion depth limits or maximum message sizes
 /// when decoding from untrusted input.
 ///
+/// # Scope: the protobuf binary codec
+///
+/// Every limit here bounds the binary decoders — owned, view, and the
+/// reflective `DynamicMessage` codec — and only those. Decoding the same
+/// message from JSON goes through `serde_json` (or another `Deserializer`)
+/// straight into the generated `Deserialize` impls, which never see a
+/// `DecodeOptions`, so none of these limits apply to it. JSON input that must
+/// be bounded needs a bound imposed by the caller, for example by capping the
+/// input length before parsing.
+///
 /// # Examples
 ///
 /// ```no_run
@@ -1263,6 +1273,11 @@ impl DecodeOptions {
     /// Packed scalar fields are never charged; see
     /// [`DEFAULT_ELEMENT_MEMORY_LIMIT`] for why, and for the `Vec`-doubling
     /// caveat on peak memory.
+    ///
+    /// Like every option on [`DecodeOptions`], this bounds the binary decoders
+    /// only. The same message decoded from JSON is not charged against this
+    /// budget, and the amplification it guards against is very nearly as large
+    /// there — `{}` is three JSON bytes for the same element footprint.
     ///
     /// Default: 32 MiB ([`DEFAULT_ELEMENT_MEMORY_LIMIT`]).
     #[must_use]

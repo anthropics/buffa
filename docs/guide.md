@@ -1073,6 +1073,7 @@ let view = DecodeOptions::new()
 | `.with_max_message_size(n)` | 2 GiB - 1 | Max total input size in bytes, clamped to 2 GiB - 1 |
 | `.without_reader_size_limit()` | off | Remove only the EOF-bounded `decode_reader` size cap (`std`); slice, `Buf`, view, and length-delimited decode paths stay capped |
 | `.with_unknown_field_limit(n)` | 1,000,000 | Max unknown fields materialized per decode |
+| `.with_element_memory_limit(n)` | 32 MiB | Max memory materialized in the elements of repeated message/string/bytes fields and map entries, shared across the decode tree |
 
 The unknown-field limit exists because unknown fields can occupy far more
 memory decoded than encoded — each one costs a ~40-byte in-memory slot, so a
@@ -1088,7 +1089,15 @@ repeated field from a much newer schema).
 
 Zero-copy view decoding (`decode_view`) honors the same limit with per-field accounting (one slot per unknown field, including fields nested inside unknown groups), even though views store unknown fields as borrowed byte ranges (coalesced into one span per contiguous run, ~16 bytes each) instead of materializing them. The limit bounds what converting the view to an owned message would materialize, and the conversion replays under exactly the budget decoding charged — so a view that decodes successfully always converts via `to_owned_message` without error.
 
-The default `Message::decode` / `decode_from_slice` methods use the defaults (100 depth, 2 GiB max input, 1M unknown fields). `DecodeOptions` is only needed when you want different limits.
+The element-memory limit bounds what a decode *materializes* rather than what it reads, which an input-size cap cannot do: an empty repeated message element is 2 bytes on the wire and `size_of::<T>()` in the `Vec` it lands in, so a payload well inside any input bound can still expand by two orders of magnitude. Packed scalar fields are never charged, since their worst case is a 1-byte varint becoming a 4-byte `i32` and charging them would reject columnar payloads that carry millions of elements by design.
+
+The default `Message::decode` / `decode_from_slice` methods use the defaults (100 depth, 2 GiB max input, 1M unknown fields, 32 MiB of element memory). `DecodeOptions` is only needed when you want different limits.
+
+### These limits bound the binary codec only
+
+Every option above applies to the protobuf binary decoders — owned, view, and the reflective `DynamicMessage` codec. **None of them applies to JSON.** Decoding from JSON runs `serde_json` (or another `Deserializer`) directly into the generated `Deserialize` impls, which never receive a `DecodeOptions`, so a message parsed from JSON is bounded by none of the limits that bound the same message parsed from protobuf. The element amplification is very nearly as large there — `{}` is three JSON bytes for the same element footprint that costs two on the wire.
+
+If you accept untrusted JSON, impose your own bound before parsing; capping the input length is the simplest form and is the one thing that transfers. Tracked in [#330](https://github.com/anthropics/buffa/issues/330).
 
 ## Zero-copy views
 
@@ -1462,6 +1471,12 @@ relative to the owned form: extension fields are not included in view JSON outpu
 (serialize the owned form to include them), and the view impl uses
 `serialize_map(None)`, which `serde_json` accepts but length-prefixed formats like
 `bincode` reject — use the owned form for those serializers.
+
+Because JSON parsing goes straight from `serde_json` into the generated
+`Deserialize` impls, buffa is never handed a `DecodeOptions` on this path, so
+[the decode limits](#these-limits-bound-the-binary-codec-only) that bound the
+binary codec do not bound JSON. Cap the input yourself before parsing untrusted
+JSON. Tracked in [#330](https://github.com/anthropics/buffa/issues/330).
 
 ### JSON parse options
 
