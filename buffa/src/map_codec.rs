@@ -64,12 +64,25 @@ use core::hash::Hash;
 ///
 /// `foldhash::fast` is per-instance seeded — each `Map::default()` derives a
 /// fresh seed from the stack pointer mixed with a thread-local counter,
-/// layered on a process-wide seed derived from ASLR addresses and process
-/// start time. That nondeterminism means a single static collision set will
-/// not transfer across processes, but the seed is **not** drawn from a
-/// CSPRNG (unlike `std::hash::RandomState`, which seeds SipHash from
-/// `getrandom`), and `foldhash::fast` does not advertise HashDoS resistance.
-/// Treat this default as **not hardened** against adversarial hash flooding.
+/// layered on a process-wide seed. On `std` that process-wide seed mixes
+/// ASLR addresses with the wall clock and an allocator address. The seed is
+/// **not** drawn from a CSPRNG (unlike `std::hash::RandomState`, which seeds
+/// SipHash from `getrandom`), and `foldhash::fast` does not advertise
+/// HashDoS resistance. Treat this default as **not hardened** against
+/// adversarial hash flooding.
+///
+/// On `no_std` it is weaker than that, in a way worth stating plainly.
+/// buffa gates `foldhash/std` behind its own `std` feature, and without it
+/// foldhash drops the clock and allocator contributions: the process-wide
+/// seed is then derived from three pointers alone — a stack address, a
+/// function address, and the address of a static. On a hosted target ASLR
+/// still varies those per process. On a bare-metal target such as
+/// `thumbv7em-none-eabihf`, which buffa supports and CI checks, there is no
+/// ASLR: all three are fixed at link time, so the seed is effectively a
+/// compile-time constant and a colliding key set can be computed once from
+/// the firmware image and reused against every device running it. If you
+/// decode `map` fields with attacker-controlled keys in a `no_std` build,
+/// prefer one of the alternatives below rather than this default.
 ///
 /// This is the same trade-off Google's `protobuf-v4`/upb makes (Wyhash).
 /// Consumers decoding `map` fields with attacker-controlled keys who need a
