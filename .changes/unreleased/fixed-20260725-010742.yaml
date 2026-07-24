@@ -1,0 +1,3 @@
+kind: Fixed
+body: ProtoJSON parsing for `bytes` extensions now accepts standard and URL-safe base64 with or without padding, matching ordinary `bytes` fields and the protobuf JSON specification.
+time: 2026-07-25T01:07:42+02:00
