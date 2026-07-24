@@ -18,7 +18,7 @@ iteration are stored alongside, and each number is the **median across several
 cores** with its spread recorded (see below).
 
 The matrix is **dense**: every message shape is measured against every release
-(v0.1.0–v0.8.0), not just from the release that first added it to the suite. A
+(v0.1.0–v0.9.0), not just from the release that first added it to the suite. A
 shape is a property of the protobuf schema, not of any buffa version — buffa
 v0.1.0 could always decode a `MediaFrame`, we just never asked it to — so the
 canonical shapes and datasets are fed to each release's own codegen and every
@@ -74,11 +74,10 @@ the one a profile-guided build (or BOLT) would reach — not what a plain `cargo
 build` ships; that is the right frame for "did buffa's code get faster," and the
 wrong one for "what will my service see." See the caveat below.
 
-> **Re-measurement required:** the committed `runs/*.json` predate the addition of
-> `-align-loops=64` (they were measured with the block-alignment flag only). Do not
-> append a new release measured with the new flag set onto the existing rows — the
-> isolated `json_encode` cells shift up to ~6% under the loop flag. Re-measure the
-> whole series with the full flag set when adding the next release.
+> **Discharged (2026-07-18):** the committed runs once predated `-align-loops=64`
+> and could not be appended to. The whole series has since been re-measured with
+> the full flag set — and 1-up rather than self-concurrent — so a new release can
+> now be appended normally, provided it is measured the same way.
 
 ## Comparability caveats
 
@@ -90,10 +89,16 @@ wrong one for "what will my service see." See the caveat below.
   looks surprising, check whether that benchmark's source changed at that tag
   before attributing it to the library.
 - **There is a reproducibility floor of roughly ±5%** even on a quiesced machine,
-  from residual scheduler and thermal effects. With 32 self-concurrent cores per
-  release the measured core-to-core spread across all 336 benchmarks is p50 ~3.6% /
-  p90 ~9.4% (a few points higher than at lower concurrency, but the per-release
-  *median* stays robust); this floor is systematic, not sampling noise. The charts
+  from residual scheduler and thermal effects. Measured 1-up — one benchmark
+  process on a pinned core with the box otherwise idle — the run-to-run spread
+  across all 560 cells is p50 ~0.65% / p90 ~3.6%. Seven cells exceed 10%, the
+  worst at 31.5%; three of those are `json_encode`, the operation layout noise
+  hits hardest. The earlier
+  32-way self-concurrent method read p50 ~3.6% / p90 ~8.3% on the same v0.8.0
+  binaries *and*
+  depressed throughput by a median 5.9% (up to 44.7% on the most
+  memory-bandwidth-bound cell), which is why it was abandoned; this floor is
+  systematic, not sampling noise. The charts
   shade a ±5% band around each message's baseline against the per-release medians,
   whose cross-release spread is ~4% after layout normalization: treat movement that
   stays inside the band as noise unless a later release confirms the trend.
@@ -155,6 +160,8 @@ wrong one for "what will my service see." See the caveat below.
 - `annotations.md` — per-release notes on what changed and why a number moved,
   cross-referenced with the [CHANGELOG](../../CHANGELOG.md). This is the
   hand-written half: the data says *what* moved, the annotations say *why*.
+- `run-series.sh` — measures the whole matrix 1-up across several bare-metal
+  boxes and collects the captures.
 - `parse_criterion.py` — turns a release's captured criterion output into one
   `runs/<version>.json`.
 - `generate.py` — renders `REPORT.md` and `charts/` from `runs/`.
@@ -208,13 +215,13 @@ python3 benchmarks/history/generate.py     # or: task bench-history-report
 
 All releases share one toolchain and profile, so adding a release means matching them, not picking new ones. If the new release's MSRV exceeds the pinned toolchain, re-pin to a newer stable and regenerate the *whole* series instead.
 
-1. **Create the reproducible root branch.** From the release tag, branch and push `historical-benchmark/vX.Y.Z` (the convention recorded in `CONTRIBUTING.md`). Releases cut from `main` already carry the per-message-isolated harness; the back-catalogue (v0.1.0–v0.7.1) had it retrofitted onto these branches. This branch is what makes any cell rebuildable later.
+1. **Create the reproducible root branch.** From the release tag, branch and push `historical-benchmark/vX.Y.Z` (the convention recorded in `CONTRIBUTING.md`). Releases cut from `main` already carry the per-message-isolated harness; the back-catalogue (v0.1.0–v0.7.1) had it retrofitted onto these branches, and every branch has since had the `mesh` and `column_batch` shapes backported onto it too. This branch is what makes any cell rebuildable later — including cells for shapes that did not exist when the release shipped.
 
 2. **Build each shape in isolation** from that branch, at the pinned toolchain and profile — only the target shape's decoder is compiled, so no other shape can perturb it via the compiler's inlining:
 
    ```bash
    cd benchmarks/buffa
-   for m in api_response log_record analytics_event google_message1 media_frame packed_tile; do
+   for m in api_response log_record analytics_event google_message1 media_frame packed_tile mesh column_batch; do
      RUSTUP_TOOLCHAIN=1.96.0 CARGO_PROFILE_BENCH_LTO=true CARGO_PROFILE_BENCH_CODEGEN_UNITS=1 \
        RUSTFLAGS="-Cllvm-args=-align-all-nofallthru-blocks=6 -Cllvm-args=-align-loops=64" \
        cargo bench --no-default-features --features "iso,$m" --bench "$m" --no-run
@@ -227,7 +234,14 @@ All releases share one toolchain and profile, so adding a release means matching
 
    (`task bench-iso -- <message>` is the convenience wrapper for one shape.)
 
-3. **Run each isolated binary** on a quiesced machine, capturing stdout per shape — criterion needs the `--bench` flag. For a stable median, run each binary on several pinned physical cores and capture each: `<binary> --bench --measurement-time 4 > <version>.<msg>.<core>.txt`.
+3. **Run each isolated binary 1-up** — one process, pinned to one core, box otherwise idle. Do not run them concurrently: 32-way self-concurrency was measured depressing throughput by a median 5.9%, unevenly across shapes. `run-series.sh` does this for the whole matrix, dealing the binaries across several bare-metal boxes so the parallelism comes from more machines rather than more cores of one:
+
+   ```bash
+   benchmarks/history/run-series.sh --bins <dir-of-*.bench> --out <dir> \
+     --boxes 3 --runs 3 --measurement-time 4 [--region us-east-2]
+   ```
+
+   It calls `bench-on-metal.sh` per binary (so tuning, pinning and teardown stay in one place), retries provisioning across AZs because metal spot capacity comes and goes, and writes `<out>/captures/<version>.<msg>.run<N>.txt`.
 
 4. **Parse all the captures into one run file.** The parser takes the median across every capture that carries a given benchmark id and records the spread, so pass each capture with a repeated `--stdout` flag:
 
