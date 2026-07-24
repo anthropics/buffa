@@ -445,6 +445,15 @@ fn serialize_any<S: Serializer>(msg: &DynamicMessage, s: S) -> Result<S::Ok, S::
             "Any type_url {type_url:?} not registered in the descriptor pool"
         )));
     };
+    // Decoding the payload and serializing it re-enters this function for an
+    // `Any` holding an `Any`; see `MAX_ANY_EXPANSION_DEPTH` for why the
+    // decoder's recursion limit does not bound that.
+    let Some(_depth_guard) = buffa::type_registry::enter_any_expansion() else {
+        return Err(S::Error::custom(format!(
+            "Any expansion nested deeper than {} levels",
+            buffa::type_registry::MAX_ANY_EXPANSION_DEPTH
+        )));
+    };
     let inner = DynamicMessage::decode(Arc::clone(pool), inner_idx, value_bytes)
         .map_err(|e| S::Error::custom(format!("Any inner decode failed: {e}")))?;
     let inner_md = pool.message(inner_idx);

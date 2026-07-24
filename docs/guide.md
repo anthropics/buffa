@@ -1099,6 +1099,17 @@ Every option above applies to the protobuf binary decoders — owned, view, and 
 
 If you accept untrusted JSON, impose your own bound before parsing; capping the input length is the simplest form and is the one thing that transfers. Tracked in [#330](https://github.com/anthropics/buffa/issues/330).
 
+### `Any` expansion is separately capped
+
+Serializing a `google.protobuf.Any` expands it: the payload is decoded and then serialized in turn. An `Any` whose payload is another `Any` therefore recurses once per level, and the decode limits cannot see it — `Any` is a flat two-field message, so a chain of any length costs the decoder a single recursion level and hides entirely inside the opaque `value` bytes.
+
+Expansion depth is capped at `buffa::type_registry::MAX_ANY_EXPANSION_DEPTH` (100, the same value as `RECURSION_LIMIT`). The cap is a constant and `DecodeOptions::with_recursion_limit` does not move it, because it bounds serialization rather than decoding. Past the cap:
+
+- **JSON** serialization returns an error, from both the generated/`buffa-types` `Any` impls and the reflective `DynamicMessage` codec.
+- **Textproto** falls back to the unexpanded `type_url: "..." value: "..."` form, which is still valid textproto — there is no error channel in that path beyond a writer failure.
+
+Legitimate `Any` nesting is one or two levels, so the cap is not a limit you should meet in practice.
+
 ## Zero-copy views
 
 For every message, buffa also generates a **view type** under `pkg::__buffa::view::` that borrows directly from the input buffer:

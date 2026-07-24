@@ -1,0 +1,3 @@
+kind: Fixed
+body: 'Capped `google.protobuf.Any` expansion depth at `type_registry::MAX_ANY_EXPANSION_DEPTH` (100, matching `RECURSION_LIMIT`) across all three serializers that expand it: the hand-written `Any` impls in `buffa-types` (JSON and textproto) and the reflective `DynamicMessage` JSON codec. Expanding an `Any` decodes its payload and serializes the result, so an `Any` holding an `Any` recursed once per level with no bound; the decode-time recursion limit cannot see that nesting, because `Any` is a flat two-field message whose chain lives inside its opaque `value` bytes. Past the cap, JSON serialization returns an error and textproto emits the unexpanded `type_url`/`value` form.'
+time: 2026-07-23T22:33:44.400244259-07:00
