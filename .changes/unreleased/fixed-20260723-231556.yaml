@@ -1,0 +1,3 @@
+kind: Fixed
+body: 'The reflective decoder now charges element memory for packed repeated scalars, packed and unpacked closed-enum elements, and closed-enum-valued map entries. Generated code exempts packed scalars because a 1-byte varint becomes a 4-byte `i32`; `DynamicMessage` stores each element as a 64-byte `Value` instead, so the same wire bytes bought roughly 64x the memory with the 32 MiB bound attached but never consulted — 4 MB of wire produced 262 MB resident. Consequence for callers: a reflective decode of a large columnar payload (above ~524k packed elements under the default) now returns `ElementMemoryLimitExceeded` where it previously succeeded, and needs `DecodeOptions::with_element_memory_limit` raised.'
+time: 2026-07-23T23:15:56.561042273-07:00

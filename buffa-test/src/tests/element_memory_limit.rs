@@ -129,12 +129,18 @@ fn repeated_string_elements_are_charged() {
         .is_ok());
 }
 
-/// Packed scalars are deliberately not charged. Their worst case is a 1-byte
+/// Packed scalars are deliberately not charged by the generated decoders.
+///
+/// The reflective `DynamicMessage` codec does charge them — it stores each
+/// element as a `Value` rather than a native scalar — so this is a statement
+/// about generated code, not about the library. See
+/// `reflective_packed_scalars_are_charged_element_memory` in
+/// `buffa-descriptor/tests/dynamic_e2e.rs`. Their worst case is a 1-byte
 /// varint becoming a 4-byte `i32`, which is not an amplification vector, and
 /// charging them would reject the columnar payloads that carry millions of
 /// elements by design.
 #[test]
-fn packed_scalars_are_not_charged() {
+fn packed_scalars_are_not_charged_by_generated_decoders() {
     use buffa::encoding::encode_varint;
 
     // 4096 packed int32 elements, one wire byte each.
