@@ -2480,7 +2480,7 @@ pub(crate) fn view_field_serialize_stmt(
                         // `len()` (not `len_unique()`) is used for the size
                         // hint: it is exact for well-formed wire data, an
                         // upper bound for adversarial duplicates, and avoids
-                        // a second O(n²) dedup pass on every serialize.
+                        // a second dedup pass on every serialize.
                         let mut __m = __s.serialize_map(::core::option::Option::Some(self.0.len()))?;
                         for (k, v) in self.0.iter_unique() {
                             __m.serialize_entry(#key_expr, #val_expr)?;

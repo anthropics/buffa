@@ -1919,35 +1919,60 @@ impl<'a, K, V> MapView<'a, K, V> {
     /// Used by the generated view `Serialize` impl: a JSON object cannot
     /// hold duplicate keys, but `MapView` preserves all wire entries
     /// (including malformed duplicates), so the JSON encode path must
-    /// deduplicate. The implementation is allocation-free and O(n²) — for
-    /// each entry, scan the remaining entries for a later occurrence of the
-    /// same key. Duplicate map keys are invalid per the protobuf encoding
-    /// spec and only arise in adversarial or conformance-test wire data, so
-    /// `n` is effectively always small.
+    /// deduplicate.
+    ///
+    /// Runs in `O(n log n)` over the wire-entry count, regardless of how many
+    /// of those entries are duplicates, and allocates one `Vec<usize>`.
     pub fn iter_unique(&self) -> impl Iterator<Item = &(K, V)>
     where
-        K: PartialEq,
+        K: Ord,
     {
         let entries = &self.entries;
-        entries.iter().enumerate().filter_map(move |(i, entry)| {
-            if entries[i + 1..]
-                .iter()
-                .any(|(later_k, _)| *later_k == entry.0)
-            {
-                None
-            } else {
-                Some(entry)
-            }
-        })
+        last_occurrence_indices(entries)
+            .into_iter()
+            .map(move |i| &entries[i])
     }
 
     /// Count of distinct keys (`iter_unique().count()`).
     pub fn len_unique(&self) -> usize
     where
-        K: PartialEq,
+        K: Ord,
     {
-        self.iter_unique().count()
+        last_occurrence_indices(&self.entries).len()
     }
+}
+
+/// Indices of the last occurrence of each distinct key, in ascending index
+/// order.
+///
+/// Sorting by `(key, index)` groups equal keys into contiguous runs whose
+/// final element is the last wire occurrence, which is the one last-write-wins
+/// keeps. Compacting those in place and re-sorting by index restores wire
+/// order for the caller.
+///
+/// Sorting rather than hashing because `K` carries no `Hash` bound, `no_std`
+/// builds have no `HashSet`, and these keys come off the wire — hashing them
+/// with buffa's default `foldhash`, which does not advertise HashDoS
+/// resistance, would trade a quadratic scan for a collision-flooding one.
+fn last_occurrence_indices<K: Ord, V>(entries: &[(K, V)]) -> alloc::vec::Vec<usize> {
+    let n = entries.len();
+    if n <= 1 {
+        // Nothing to deduplicate, and the common tiny-map case skips the sort.
+        return (0..n).collect();
+    }
+    let mut order: alloc::vec::Vec<usize> = (0..n).collect();
+    order.sort_unstable_by(|&a, &b| entries[a].0.cmp(&entries[b].0).then_with(|| a.cmp(&b)));
+    let mut kept = 0usize;
+    for r in 0..n {
+        let last_of_run = r + 1 == n || entries[order[r + 1]].0 != entries[order[r]].0;
+        if last_of_run {
+            order[kept] = order[r];
+            kept += 1;
+        }
+    }
+    order.truncate(kept);
+    order.sort_unstable();
+    order
 }
 
 impl<'a, K, V> From<alloc::vec::Vec<(K, V)>> for MapView<'a, K, V> {
@@ -3238,6 +3263,84 @@ mod tests {
         let mv = MapView::<&str, i32>::default();
         assert_eq!(mv.len_unique(), 0);
         assert_eq!(mv.iter_unique().count(), 0);
+    }
+
+    /// A key that counts how many times it is compared, so the dedup's
+    /// complexity can be asserted without timing anything.
+    ///
+    /// Both `eq` and `cmp` are counted. Counting only `cmp` would miss an
+    /// equality-based pairwise scan entirely — which is exactly the shape
+    /// this guard exists to catch.
+    #[derive(Debug, Clone, Copy, Eq)]
+    struct CountingKey(u32);
+
+    static CMPS: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
+    fn bump() {
+        CMPS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    }
+
+    impl PartialEq for CountingKey {
+        fn eq(&self, other: &Self) -> bool {
+            bump();
+            self.0 == other.0
+        }
+    }
+    impl PartialOrd for CountingKey {
+        fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+    impl Ord for CountingKey {
+        fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+            bump();
+            self.0.cmp(&other.0)
+        }
+    }
+
+    #[test]
+    fn map_view_iter_unique_is_not_quadratic_on_distinct_keys() {
+        use core::sync::atomic::Ordering;
+
+        // All-distinct keys are what ordinary well-formed wire data looks
+        // like, and they are the shape a pairwise scan handles worst: its
+        // early exit only fires on a duplicate, so having none means every
+        // scan runs to the end. That is what this guard watches for.
+        const N: u32 = 4096;
+        let entries: alloc::vec::Vec<_> = (0..N).map(|i| (CountingKey(i), i)).collect();
+        let mv = MapView::new(entries);
+
+        CMPS.store(0, Ordering::Relaxed);
+        let seen = mv.iter_unique().count();
+        let cmps = CMPS.load(Ordering::Relaxed);
+
+        assert_eq!(seen, N as usize, "every distinct key survives");
+        // n log2 n is ~49k here; the pairwise scan would be ~8.4M. Two orders
+        // of magnitude apart, so this bound is loose enough not to be brittle
+        // and tight enough that a return to quadratic cannot slip past.
+        let budget = 100 * N as usize;
+        assert!(
+            cmps < budget,
+            "dedup of {N} distinct keys took {cmps} comparisons, over the {budget} budget — \
+             this is the quadratic regression guard"
+        );
+    }
+
+    #[test]
+    fn map_view_iter_unique_keeps_last_occurrence_across_many_duplicates() {
+        // Interleaved duplicates, so the surviving entry for each key is
+        // neither uniformly first nor uniformly last in the container.
+        let mut mv = MapView::<i32, i32>::default();
+        for round in 0..4 {
+            for key in 0..8 {
+                mv.push(key, round * 100 + key);
+            }
+        }
+        let unique: alloc::vec::Vec<_> = mv.iter_unique().copied().collect();
+        let expected: alloc::vec::Vec<(i32, i32)> = (0..8).map(|k| (k, 300 + k)).collect();
+        assert_eq!(unique, expected, "last write wins, in ascending wire order");
+        assert_eq!(mv.len_unique(), 8);
+        assert_eq!(mv.len(), 32, "iter() still sees every wire entry");
     }
 
     #[test]
