@@ -6,7 +6,11 @@
 //! matching output and accepts the same inputs.
 
 use crate::basic::*;
-use buffa::text::{decode_from_str, encode_to_string, encode_to_string_pretty};
+use buffa::text::{
+    decode_from_str, decode_from_str_with_element_memory_limit, encode_to_string,
+    encode_to_string_pretty, ParseErrorKind,
+};
+use buffa::DEFAULT_ELEMENT_MEMORY_LIMIT;
 use buffa::{EnumValue, MessageField};
 
 // ── scalars ─────────────────────────────────────────────────────────────────
@@ -371,4 +375,94 @@ fn group_in_oneof_uses_type_name() {
     let mut v = ViewCoverage::default();
     buffa::text::merge_from_str(&mut v, "payload { x: 11 }").unwrap();
     assert!(matches!(v.choice, Some(ChoiceOneof::Payload(ref p)) if p.x == Some(11)));
+}
+
+// ── Element-memory budget ──────────────────────────────────────────────────
+//
+// The binary decoder bounds what a decode materializes rather than what it
+// reads; the text parser has the same amplification and a cheaper element
+// (`{},` is three input bytes against `size_of::<Element>()` in the `Vec`),
+// but `DecodeContext` never reaches it, so it carries its own budget.
+
+/// `n` empty repeated-message elements: `addresses: [{},{},...]`.
+fn empty_address_list(n: usize) -> String {
+    let mut s = String::with_capacity(n * 3 + 16);
+    s.push_str("addresses: [");
+    for i in 0..n {
+        if i > 0 {
+            s.push(',');
+        }
+        s.push_str("{}");
+    }
+    s.push(']');
+    s
+}
+
+#[test]
+fn the_default_budget_rejects_an_amplifying_text_payload() {
+    let n = 4 * DEFAULT_ELEMENT_MEMORY_LIMIT / core::mem::size_of::<Address>();
+    let text = empty_address_list(n);
+
+    let err = decode_from_str::<Person>(&text).expect_err("must not materialize");
+    assert_eq!(err.kind, ParseErrorKind::ElementMemoryLimitExceeded);
+}
+
+#[test]
+fn the_default_budget_admits_an_ordinary_text_message() {
+    let text = empty_address_list(32);
+    let p: Person = decode_from_str(&text).expect("an ordinary list parses");
+    assert_eq!(p.addresses.len(), 32);
+}
+
+#[test]
+fn the_text_element_budget_is_configurable_in_both_directions() {
+    let text = empty_address_list(1000);
+
+    let err = decode_from_str_with_element_memory_limit::<Person>(&text, 64)
+        .expect_err("a tightened budget is enforced");
+    assert_eq!(err.kind, ParseErrorKind::ElementMemoryLimitExceeded);
+
+    let p = decode_from_str_with_element_memory_limit::<Person>(&text, usize::MAX)
+        .expect("a lifted budget accepts the same input");
+    assert_eq!(p.addresses.len(), 1000);
+}
+
+#[test]
+fn text_map_entries_are_charged_against_the_same_budget() {
+    // Map entries buffer into an intermediate `Vec<(K, V)>` before the
+    // duplicate-key collapse, so all N are live at once even when they share
+    // a key — which is exactly the shape that needs bounding.
+    let entries = |n: usize| {
+        let mut t = String::from("locations: [");
+        for i in 0..n {
+            if i > 0 {
+                t.push(',');
+            }
+            t.push_str("{}");
+        }
+        t.push(']');
+        t
+    };
+
+    let err = decode_from_str_with_element_memory_limit::<Inventory>(&entries(200_000), 4096)
+        .expect_err("map entries must be charged");
+    assert_eq!(err.kind, ParseErrorKind::ElementMemoryLimitExceeded);
+
+    // And the budget is shared with the rest of the parse, not per field:
+    // a count that fits on its own is refused once a repeated field in the
+    // same message has already spent part of the budget.
+    let entry_cost = core::mem::size_of::<(String, Address)>();
+    let n = 64;
+    let alone = entries(n);
+    let budget = n * entry_cost + 8;
+    assert!(
+        decode_from_str_with_element_memory_limit::<Inventory>(&alone, budget).is_ok(),
+        "{n} entries fit in a budget sized for exactly that many"
+    );
+
+    let mut shared = String::from("stock: [{},{},{}] ");
+    shared.push_str(&alone);
+    let err = decode_from_str_with_element_memory_limit::<Inventory>(&shared, budget)
+        .expect_err("the earlier field's entries must consume the same pool");
+    assert_eq!(err.kind, ParseErrorKind::ElementMemoryLimitExceeded);
 }

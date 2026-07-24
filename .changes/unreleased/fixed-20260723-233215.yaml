@@ -1,0 +1,3 @@
+kind: Fixed
+body: 'The textproto parser now applies an element-memory budget. `DecodeContext` never reaches this parser, so repeated and map fields were unbounded there while the identical binary payload was rejected — and the amplification is very nearly as large, an empty repeated element costing three input bytes (`{},`) against two encoded for the same footprint. **This may reject input that parsed in earlier releases**: textproto is a format people hand-write and check in, so a large fixture can now fail with `element memory limit exceeded`. Raise the bound to accept it.'
+time: 2026-07-23T23:32:15.363240013-07:00

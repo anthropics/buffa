@@ -67,6 +67,9 @@ pub const DEFAULT_UNKNOWN_FIELD_LIMIT: usize = 1_000_000;
 /// which is not an amplification vector, and bounding them would reject
 /// legitimate columnar payloads that carry millions of elements by design.
 ///
+/// The textproto parser defaults to this same constant, raised through
+/// [`TextDecoder::with_element_memory_limit`](crate::text::TextDecoder::with_element_memory_limit).
+///
 /// 32 MiB of elements is far more than a realistic message carries, and sits
 /// alongside what [`DEFAULT_UNKNOWN_FIELD_LIMIT`] already permits (~38 MiB of
 /// `UnknownField`). Raise it with
@@ -1275,7 +1278,10 @@ impl DecodeOptions {
     /// caveat on peak memory.
     ///
     /// Like every option on [`DecodeOptions`], this bounds the binary decoders
-    /// only. The same message decoded from JSON is not charged against this
+    /// only. The textproto parser applies the same default through its own
+    /// knob,
+    /// [`TextDecoder::with_element_memory_limit`](crate::text::TextDecoder::with_element_memory_limit).
+    /// The same message decoded from JSON is not charged against this
     /// budget, and the amplification it guards against is very nearly as large
     /// there — `{}` is three JSON bytes for the same element footprint.
     ///
