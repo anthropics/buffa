@@ -38,6 +38,16 @@ pub const RECURSION_LIMIT: u32 = 100;
 /// not counted against the limit because they are already bounded by the
 /// input size, which [`DecodeOptions::with_max_message_size`] governs.
 ///
+/// The `limit × 40` figure prices a *flat* unknown field, and nesting costs
+/// more than that. Each unknown group allocates its own `Vec` of children,
+/// and `Vec`'s minimum non-zero capacity is four elements — so a group
+/// holding a single child occupies ~160 bytes of that `Vec` plus its own
+/// ~40-byte slot, roughly 200 bytes charged as one. A payload of many
+/// shallow groups therefore reaches about five times the flat ceiling,
+/// ~200 MB at the default rather than ~40 MB. Still bounded and still
+/// proportional to the limit, but worth knowing when choosing one: the
+/// count bounds *slots*, and a slot is not a fixed number of bytes.
+///
 /// A million unknown fields is far more than any realistic
 /// forward-compatibility scenario needs. Raise the limit with
 /// [`DecodeOptions::with_unknown_field_limit`] if you decode trusted
