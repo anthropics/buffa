@@ -35,6 +35,125 @@
 
 use alloc::boxed::Box;
 
+/// Maximum nesting depth of `google.protobuf.Any` expansions in one
+/// serialization.
+///
+/// `Any` is a flat two-field message (`string type_url`, `bytes value`) whose
+/// nesting lives entirely inside the opaque `value` bytes. A decoder therefore
+/// spends a single [`RECURSION_LIMIT`](crate::RECURSION_LIMIT) level on a chain
+/// of any length — the recursion happens later, when a serializer expands each
+/// level in turn by decoding it and serializing the result. That expansion is
+/// what this bounds.
+///
+/// Set to the same value as [`RECURSION_LIMIT`](crate::RECURSION_LIMIT): both
+/// bound how deeply one message may nest inside another, and one number is
+/// easier to reason about than two. Legitimate `Any` nesting is one or two
+/// levels.
+///
+/// This cap is a constant.
+/// [`DecodeOptions::with_recursion_limit`](crate::DecodeOptions::with_recursion_limit)
+/// does not move it, since it bounds serialization rather than decoding.
+pub const MAX_ANY_EXPANSION_DEPTH: u32 = crate::RECURSION_LIMIT;
+
+// ── Any-expansion depth tracking ───────────────────────────────────────────
+//
+// The textproto path threads its depth through `TextEncoder`, which is passed
+// down the whole cycle. The JSON path cannot: `serde::Serializer` carries no
+// user state, and the registry hop is a bare `fn(&[u8]) -> Value` pointer. So
+// JSON needs ambient depth, scoped the same way `json::with_json_parse_options`
+// scopes its own: thread-local under `std`, a single global under `no_std`.
+
+#[cfg(all(feature = "json", feature = "std"))]
+mod any_depth {
+    use core::cell::Cell;
+    std::thread_local! {
+        static DEPTH: Cell<u32> = const { Cell::new(0) };
+    }
+    /// Increment and return `true`, or return `false` if already at `cap`.
+    pub(crate) fn enter(cap: u32) -> bool {
+        DEPTH.with(|c| {
+            let cur = c.get();
+            if cur >= cap {
+                return false;
+            }
+            c.set(cur + 1);
+            true
+        })
+    }
+    pub(crate) fn leave() {
+        DEPTH.with(|c| c.set(c.get().saturating_sub(1)));
+    }
+}
+
+#[cfg(all(feature = "json", not(feature = "std")))]
+mod any_depth {
+    use core::sync::atomic::{AtomicU32, Ordering};
+    // `no_std` has no thread-local storage, so the counter is process-wide.
+    // The compare-exchange makes it a true increment/decrement pair rather
+    // than a snapshot-and-restore: threads sharing the counter can only ever
+    // over-count, so the bound may reject a legal document early on a
+    // multi-threaded `no_std` host but can never admit an unbounded one. A
+    // snapshot-and-restore would fail the other way — a shallow thread
+    // writing its stale low value back would let a deep chain run past the
+    // cap — which is why this is not simply `set(prev)`.
+    static DEPTH: AtomicU32 = AtomicU32::new(0);
+    pub(crate) fn enter(cap: u32) -> bool {
+        let mut cur = DEPTH.load(Ordering::Relaxed);
+        loop {
+            if cur >= cap {
+                return false;
+            }
+            match DEPTH.compare_exchange_weak(cur, cur + 1, Ordering::Relaxed, Ordering::Relaxed) {
+                Ok(_) => return true,
+                Err(actual) => cur = actual,
+            }
+        }
+    }
+    pub(crate) fn leave() {
+        // Balanced by RAII, so this cannot underflow; saturate rather than
+        // wrap if it somehow does, since a wrapped counter would disable the
+        // bound entirely.
+        let _ = DEPTH.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+            Some(v.saturating_sub(1))
+        });
+    }
+}
+
+/// Scope guard that releases one level of `Any` expansion depth on drop,
+/// including when the serializer returns early with an error.
+#[cfg(feature = "json")]
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct AnyExpansionGuard(());
+
+#[cfg(feature = "json")]
+impl Drop for AnyExpansionGuard {
+    fn drop(&mut self) {
+        any_depth::leave();
+    }
+}
+
+/// Enter one level of `Any` JSON expansion, or return `None` at the cap.
+///
+/// Hold the returned guard for the duration of the nested serialization. A
+/// `None` return means the caller should refuse rather than recurse — see
+/// [`MAX_ANY_EXPANSION_DEPTH`] for why the decoder's recursion limit does not
+/// already cover this.
+///
+/// `#[doc(hidden)]` — support for the hand-written `Any` impls in
+/// `buffa-types`, not public API.
+#[cfg(feature = "json")]
+#[doc(hidden)]
+#[must_use]
+pub fn enter_any_expansion() -> Option<AnyExpansionGuard> {
+    any_depth::enter(MAX_ANY_EXPANSION_DEPTH).then_some(AnyExpansionGuard(()))
+}
+
+// A cap this high stops bounding anything: 100 levels of expansion is already
+// two orders of magnitude past any legitimate `Any` nesting, and the whole
+// point of the constant is that the stack cost stays bounded.
+const _: () = assert!(MAX_ANY_EXPANSION_DEPTH <= 128);
+
 // ── JSON re-exports ────────────────────────────────────────────────────────
 
 #[cfg(feature = "json")]

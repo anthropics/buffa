@@ -192,3 +192,44 @@ fn symbol_to_file() {
     assert!(p.file_containing_symbol(".reflect.opt.Annotated").is_some());
     assert!(p.file_containing_symbol("reflect.opt.Nope").is_none());
 }
+
+/// The reflective JSON serializer expands `Any` by decoding the payload and
+/// serializing the result, so an `Any` holding an `Any` re-enters it. The
+/// binary decoder cannot bound that — `Any` is flat, and the chain lives
+/// inside its opaque `value` bytes — so expansion carries its own cap.
+#[cfg(feature = "json")]
+#[test]
+fn reflective_any_json_expansion_is_depth_bounded() {
+    use buffa::type_registry::MAX_ANY_EXPANSION_DEPTH;
+
+    let p = pool();
+    let any_idx = p.message_index("google.protobuf.Any").unwrap();
+    let md = p.message_by_name("google.protobuf.Any").unwrap();
+
+    // Build the chain innermost-out, each level wrapping the previous one's
+    // encoded bytes.
+    let mut payload: Vec<u8> = Vec::new();
+    let depth = usize::try_from(MAX_ANY_EXPANSION_DEPTH).unwrap() + 5;
+    for _ in 0..depth {
+        let mut m = DynamicMessage::new(Arc::clone(&p), any_idx);
+        m.set(
+            md.field(1).unwrap(),
+            Value::String("type.googleapis.com/google.protobuf.Any".into()),
+        );
+        m.set(md.field(2).unwrap(), Value::Bytes(payload));
+        payload = m.encode_to_vec();
+    }
+
+    // Decoding is one level deep and always succeeds; the recursion is
+    // entirely on the serialize side.
+    let decoded = DynamicMessage::decode(Arc::clone(&p), any_idx, &payload)
+        .expect("a flat two-field message decodes regardless of chain length");
+
+    let err = decoded
+        .to_json()
+        .expect_err("expansion past the cap must be an error, not a deeper stack");
+    assert!(
+        err.to_string().contains("nested deeper"),
+        "the error should say what it refused: {err}"
+    );
+}
