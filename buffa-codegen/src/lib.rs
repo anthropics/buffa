@@ -1405,11 +1405,11 @@ pub struct CodeGenConfig {
     /// reflective access over view types without the round-trip, additionally
     /// enable [`generate_reflection_vtable`](Self::generate_reflection_vtable).
     ///
-    /// **Binary size** — each package embeds its own copy of the full
-    /// `FileDescriptorSet` (transitive closure). For a multi-package
-    /// codegen run this duplicates the FDS bytes per package. Acceptable
-    /// for the bridge prototype; deduplication via a crate-root module is
-    /// a planned follow-up.
+    /// **Binary size** — by default each package embeds its own copy of the
+    /// full `FileDescriptorSet` (transitive closure), so a multi-package run
+    /// duplicates the FDS bytes per package. Enable
+    /// [`shared_descriptor_pool`](Self::shared_descriptor_pool) to embed one
+    /// shared copy at the module-tree root instead.
     ///
     /// Defaults to `false`.
     pub generate_reflection: bool,
@@ -1432,6 +1432,32 @@ pub struct CodeGenConfig {
     ///
     /// Defaults to `false`.
     pub generate_reflection_vtable: bool,
+    /// Deduplicate the embedded reflection descriptor pool across packages.
+    ///
+    /// With [`generate_reflection`](Self::generate_reflection) on, each
+    /// package normally embeds its own copy of the full-closure
+    /// `FileDescriptorSet` (`FILE_DESCRIPTOR_SET_BYTES`). For a multi-package
+    /// run those copies are byte-identical, so the crate carries the same
+    /// bytes once per package — which dominates generated-crate size for large
+    /// proto trees.
+    ///
+    /// When this is `true`, `generate` instead emits per-package
+    /// `__buffa::reflect` modules that **delegate** to a single shared
+    /// `__buffa_fds` module at the module-tree root. Every consumer path
+    /// (`pkg::descriptor_pool()`, `pkg::FILE_DESCRIPTOR_SET_BYTES`,
+    /// `pkg::__buffa::reflect::*`) keeps resolving; it just aliases the one
+    /// shared copy, and all packages observe the same `DescriptorPool`
+    /// instance.
+    ///
+    /// The shared root module itself is emitted by the module-tree builder
+    /// (`buffa-build` or `protoc-gen-buffa-packaging`), not by `generate`, so
+    /// this mode requires one of those front-ends to assemble the tree.
+    /// Consumers that wire the per-package modules by hand should leave it
+    /// `false` (the default), which keeps today's self-contained per-package
+    /// embedding.
+    ///
+    /// Defaults to `false`. Has no effect unless `generate_reflection` is on.
+    pub shared_descriptor_pool: bool,
     /// Gate the reflection impls behind a `reflect` crate feature, *without*
     /// gating json/views/text (unlike
     /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features),
@@ -1643,6 +1669,7 @@ impl Default for CodeGenConfig {
             generate_with_setters: true,
             generate_reflection: false,
             generate_reflection_vtable: false,
+            shared_descriptor_pool: false,
             gate_reflect_on_crate_feature: false,
             idiomatic_enum_aliases: true,
             idiomatic_imports: false,
@@ -1670,6 +1697,19 @@ impl CodeGenConfig {
     /// at each use site, whichever reads better.
     pub(crate) fn feature_gates(&self) -> feature_gates::FeatureGates<'_> {
         feature_gates::FeatureGates::for_config(self)
+    }
+
+    /// The crate feature the reflection surface is gated behind, or `None`
+    /// when reflection is unconditional.
+    ///
+    /// Front-ends emitting the shared descriptor root module (see
+    /// [`shared_descriptor_root_module`] and
+    /// [`shared_descriptor_pool`](Self::shared_descriptor_pool)) must gate it
+    /// with this exact value, so the root module and the per-package
+    /// delegations that reference it appear and disappear together.
+    #[must_use]
+    pub fn reflect_feature_gate(&self) -> Option<&str> {
+        self.feature_gates().reflect
     }
 
     /// Apply [`type_name_prefix`](Self::type_name_prefix) to a locally
@@ -2265,6 +2305,17 @@ pub fn generate_with_diagnostics(
         ));
     }
 
+    // Shared-pool mode only rearranges where the reflection descriptor bytes
+    // live, so it is meaningless — and would silently no-op — without
+    // reflection. Reject it up front rather than dropping the flag.
+    if config.shared_descriptor_pool && !config.generate_reflection {
+        return Err(CodeGenError::Other(
+            "shared_descriptor_pool requires generate_reflection to be enabled \
+             (it deduplicates the embedded reflection descriptor pool)"
+                .into(),
+        ));
+    }
+
     // Idiomatic imports place `use` directives in the package-root scope,
     // which is only single-writer (collision-free by construction) when the
     // whole package is one generated file.
@@ -2337,10 +2388,25 @@ pub fn generate_with_diagnostics(
     }
 
     // Reflection: serialize the FileDescriptorSet once, regardless of how
-    // many packages are in the request. Each package embeds its own copy of
-    // the bytes (binary-size dedup is a follow-up), but the build-time
-    // re-encoding cost shouldn't scale with the package count.
-    let fds_bytes = if config.generate_reflection {
+    // many packages are in the request, so the build-time re-encoding cost
+    // doesn't scale with the package count. In the default mode each package
+    // embeds this copy; in shared-pool mode the bytes are embedded once by the
+    // module-tree builder, not per package, so `generate` needs no copy at all.
+    // In shared mode the tree root gains a `pub mod __buffa_fds`; reserve that
+    // name against user packages/types the same way `__buffa` is reserved, so a
+    // `package __buffa_fds;` (or a root-package type named `__buffa_fds`) fails
+    // with a clear error instead of a duplicate-module collision at the root.
+    if config.shared_descriptor_pool {
+        validate_shared_root_name(file_descriptors, files_to_generate)?;
+    }
+
+    // `file_descriptors` is the override-applied set (rebound above). The
+    // default path embeds it directly; shared mode embeds nothing here and
+    // leaves the single copy to the front-end, which must reproduce the same
+    // overrides via `encode_descriptor_set`. On the plugin path — where the
+    // packaging plugin can't see the override options — that combination is
+    // rejected up front (see `protoc-gen-buffa`).
+    let fds_bytes = if config.generate_reflection && !config.shared_descriptor_pool {
         reflect::encode_fds_once(file_descriptors)
     } else {
         Vec::new()
@@ -2464,6 +2530,163 @@ pub enum IncludeMode<'a> {
     Relative(&'a str),
     /// `include!(concat!(env!("OUT_DIR"), "/<file>"))` — for build.rs output.
     OutDir,
+}
+
+/// Encode the shared reflection `FileDescriptorSet` for a codegen run, with
+/// `source_code_info` stripped, ready to embed once at the module-tree root in
+/// [shared-pool mode](CodeGenConfig::shared_descriptor_pool).
+///
+/// `file_descriptors` is the full transitive closure (the same slice passed to
+/// [`generate`]). Front-ends (`buffa-build`, `protoc-gen-buffa-packaging`) call
+/// this to obtain the single copy of the bytes, then hand them to
+/// [`shared_descriptor_root_module`].
+#[must_use]
+pub fn encode_descriptor_set(
+    file_descriptors: &[generated::descriptor::FileDescriptorProto],
+    feature_overrides: &[(String, FeatureOverride)],
+) -> Vec<u8> {
+    // `generate` applies feature overrides to the descriptors up front and the
+    // default (non-shared) path embeds *that* override-applied set, so the
+    // embedded reflection descriptors match the generated code. Shared mode
+    // skips `generate`'s encode, so any front-end computing the shared copy
+    // here must apply the same transform — otherwise the shared pool reports
+    // un-overridden features (e.g. an `open_enums_in` enum still closed) and
+    // disagrees with the code. Pass the same `feature_overrides` the codegen
+    // config carries; `&[]` when none are configured (the common case, a
+    // borrow with no clone).
+    let overridden =
+        feature_overrides::apply_feature_overrides(file_descriptors, feature_overrides);
+    let files = overridden.as_ref().map_or(file_descriptors, |o| &o.files);
+    reflect::encode_fds_once(files)
+}
+
+/// How [`shared_descriptor_root_module`] embeds the descriptor set into the
+/// generated tree. Both forms decode to byte-identical runtime data; they
+/// differ only in generated-source size and whether a sidecar file is written.
+pub enum FdsEmbedding<'a> {
+    /// Embed the bytes inline as a byte-literal array. Self-contained: no extra
+    /// file, but the descriptor bytes cost several times their size in
+    /// generated Rust source. This is all the plugin path can do, since
+    /// protoc's `CodeGeneratorResponse` carries only UTF-8 text.
+    Inline,
+    /// `include_bytes!` a sidecar file the caller writes next to the generated
+    /// tree, keeping the bytes out of the Rust source entirely. `file_name` is
+    /// the sidecar's name; `mode` mirrors [`generate_module_tree`]'s —
+    /// [`IncludeMode::Relative`] for a checked-in sibling,
+    /// [`IncludeMode::OutDir`] for build-script output. The caller is
+    /// responsible for writing `fds_bytes` to that file.
+    Sidecar {
+        file_name: &'a str,
+        mode: IncludeMode<'a>,
+    },
+}
+
+/// Render the shared `__buffa_fds` root module as formatted Rust source, for a
+/// front-end to prepend to the module-tree file in
+/// [shared-pool mode](CodeGenConfig::shared_descriptor_pool). Every package's
+/// `__buffa::reflect` module delegates here, so the descriptor set is embedded
+/// once for the whole tree instead of once per package.
+///
+/// `fds_bytes` is the output of [`encode_descriptor_set`]. `embedding` chooses
+/// inline vs. an `include_bytes!` sidecar (see [`FdsEmbedding`]). `gate` wraps
+/// the module in `#[cfg(feature = "<gate>")]` when `Some`, to match
+/// [`CodeGenConfig::reflect_feature_gate`] (so the root module and the
+/// per-package delegations appear and disappear together); pass `None` when
+/// reflection is unconditional.
+///
+/// # Panics
+///
+/// Panics if the rendered module fails to parse — it is machine-generated, so
+/// a parse failure is a codegen bug.
+#[must_use]
+pub fn shared_descriptor_root_module(
+    fds_bytes: &[u8],
+    embedding: FdsEmbedding<'_>,
+    gate: Option<&str>,
+) -> String {
+    let source = match embedding {
+        FdsEmbedding::Inline => reflect::FdsSource::Inline(fds_bytes),
+        FdsEmbedding::Sidecar {
+            file_name,
+            mode: IncludeMode::Relative(prefix),
+        } => {
+            let path = format!("{prefix}{file_name}");
+            reflect::FdsSource::IncludeBytes(quote::quote! { #path })
+        }
+        FdsEmbedding::Sidecar {
+            file_name,
+            mode: IncludeMode::OutDir,
+        } => {
+            let slash_name = format!("/{file_name}");
+            reflect::FdsSource::IncludeBytes(
+                quote::quote! { concat!(env!("OUT_DIR"), #slash_name) },
+            )
+        }
+    };
+    let tokens = feature_gates::cfg_block(reflect::shared_root_module(source), gate);
+    let file = syn::parse2::<syn::File>(tokens)
+        .expect("shared descriptor root module must parse as a Rust file");
+    prettyplease::unparse(&file)
+}
+
+/// Reject user names that would collide with the shared descriptor root module
+/// (`reflect::SHARED_ROOT_MOD`) placed at the module-tree root in shared-pool
+/// mode. Mirrors how [`SENTINEL_MOD`](context::SENTINEL_MOD)/`__buffa` is
+/// reserved: any package segment equal to the reserved name, plus a
+/// root-package (unnamed) message whose *module* name (snake_cased, matching
+/// `validate_file`) or a file-level enum name equals it.
+///
+/// Only files actually being generated are checked — an import-only package
+/// named `__buffa_fds` emits no module, so it must not trip this guard.
+fn validate_shared_root_name(
+    files: &[FileDescriptorProto],
+    files_to_generate: &[String],
+) -> Result<(), CodeGenError> {
+    use std::collections::HashSet;
+
+    let reserved = reflect::SHARED_ROOT_MOD;
+    let generated: HashSet<&str> = files_to_generate.iter().map(String::as_str).collect();
+    let reserved_err = |location: String| CodeGenError::ReservedModuleName {
+        name: reserved.to_string(),
+        location,
+    };
+
+    for file in files {
+        if !generated.contains(file.name.as_deref().unwrap_or("")) {
+            continue;
+        }
+        let package = file.package.as_deref().unwrap_or("");
+        // Every package segment becomes a `pub mod <seg>`; the reserved name in
+        // any of them collides with the tree-root `__buffa_fds`.
+        if package.split('.').any(|seg| seg == reserved) {
+            return Err(reserved_err(format!(
+                "package '{package}' (reserved by shared_descriptor_pool)"
+            )));
+        }
+        // Only the unnamed root package puts items beside `__buffa_fds`; named
+        // packages nest theirs under `pub mod <segment>`. A message's
+        // nested-types module is snake_cased (like `validate_file`), so compare
+        // against that; file-level enums are emitted verbatim.
+        if package.is_empty() {
+            for m in &file.message_type {
+                let name = m.name.as_deref().unwrap_or("");
+                if crate::oneof::to_snake_case(name) == reserved {
+                    return Err(reserved_err(format!(
+                        "message '{name}' (its module `{reserved}` is reserved by \
+                         shared_descriptor_pool)"
+                    )));
+                }
+            }
+            for e in &file.enum_type {
+                if e.name.as_deref() == Some(reserved) {
+                    return Err(reserved_err(format!(
+                        "enum '{reserved}' (reserved by shared_descriptor_pool)"
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Validate one input descriptor before generating code for it.
@@ -2956,6 +3179,7 @@ fn generate_package(
         kind: GeneratedFileKind::PackageMod,
         content: generate_package_mod(
             ctx,
+            current_package,
             &sections,
             &reg,
             &reexport_block,
@@ -3061,6 +3285,7 @@ fn surviving_root_reexports(
 /// surviving package-root `pub use` re-exports.
 fn generate_package_mod(
     ctx: &context::CodeGenContext,
+    current_package: &str,
     sections: &PackageSections,
     reg: &message::RegistryPaths,
     root_reexports: &TokenStream,
@@ -3221,8 +3446,15 @@ fn generate_package_mod(
     // sentinel.
     let (reflect_mod, reflect_reexport) = if ctx.config.generate_reflection {
         let gate = ctx.config.feature_gates().reflect;
+        // Shared mode: delegate to the single root `__buffa_fds` module
+        // instead of embedding this package's own byte copy.
+        let pool_module = if ctx.config.shared_descriptor_pool {
+            reflect::reflect_pool_module_shared(current_package)
+        } else {
+            reflect::reflect_pool_module(fds_bytes)
+        };
         (
-            feature_gates::cfg_block(reflect::reflect_pool_module(fds_bytes), gate),
+            feature_gates::cfg_block(pool_module, gate),
             reflect::reflect_reexports(&quote! { __buffa }, gate),
         )
     } else {
