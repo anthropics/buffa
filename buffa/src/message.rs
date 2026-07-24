@@ -1260,6 +1260,11 @@ impl DecodeOptions {
     /// and map entries — shared across the whole decode tree rather than per
     /// field or per message.
     ///
+    /// The lazy view family is the exception: there the budget is replayed
+    /// per deferred subtree rather than shared, so a full traversal can
+    /// spend it more than once. See
+    /// [`decode_lazy_view`](Self::decode_lazy_view).
+    ///
     /// This is not [`with_max_message_size`](Self::with_max_message_size) by
     /// another name: that bounds the bytes going *in*, this bounds what they
     /// expand *into*. They are not redundant, because the two are not
@@ -1458,19 +1463,20 @@ impl DecodeOptions {
     /// The budgets remaining at each deferred field's position are recorded
     /// and charged when that field is accessed, so the configured limits
     /// flow through deferred decoding. Unlike
-    /// [`decode_view`](Self::decode_view), the unknown-field limit is not
-    /// enforced globally across the message tree at decode time: each
-    /// deferred subtree independently replays the allowance recorded at its
-    /// position, so a full traversal can materialize unknown-field records
-    /// proportional to input size. Prefer `decode_view` for untrusted input
-    /// if the global bound matters.
+    /// [`decode_view`](Self::decode_view), the unknown-field and
+    /// element-memory limits are not enforced globally across the message
+    /// tree at decode time: each deferred subtree independently replays the
+    /// budgets recorded at its position, so a full traversal can materialize
+    /// records proportional to input size. Prefer `decode_view` for
+    /// untrusted input if the global bound matters.
     ///
     /// # Errors
     ///
     /// Returns [`DecodeError::MessageTooLarge`] for oversized input, or any
     /// error from decoding the message's own fields — including
-    /// [`DecodeError::RecursionLimitExceeded`] /
-    /// [`DecodeError::UnknownFieldLimitExceeded`] when the configured limits
+    /// [`DecodeError::RecursionLimitExceeded`],
+    /// [`DecodeError::UnknownFieldLimitExceeded`], or
+    /// [`DecodeError::ElementMemoryLimitExceeded`] when the configured limits
     /// are exhausted by them. Deferred sub-message bytes surface errors on
     /// access instead.
     pub fn decode_lazy_view<'a, L: crate::view::LazyMessageView<'a>>(
