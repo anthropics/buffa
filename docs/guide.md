@@ -1093,9 +1093,11 @@ The element-memory limit bounds what a decode *materializes* rather than what it
 
 The default `Message::decode` / `decode_from_slice` methods use the defaults (100 depth, 2 GiB max input, 1M unknown fields, 32 MiB of element memory). `DecodeOptions` is only needed when you want different limits.
 
-### These limits bound the binary codec only
+### What these limits do and do not bound
 
 Every option above applies to the protobuf binary decoders — owned, view, and the reflective `DynamicMessage` codec. **None of them applies to JSON.** Decoding from JSON runs `serde_json` (or another `Deserializer`) directly into the generated `Deserialize` impls, which never receive a `DecodeOptions`, so a message parsed from JSON is bounded by none of the limits that bound the same message parsed from protobuf. The element amplification is very nearly as large there — `{}` is three JSON bytes for the same element footprint that costs two on the wire.
+
+Textproto is the exception among the non-binary formats: `decode_from_str` applies the element-memory limit on its own. The amplification there is very nearly as large as on the wire — `{},` is three input bytes for the same element footprint that costs two encoded — so the parser needs the same bound, and carries its own because `DecodeContext` never reaches it. Raise it with `buffa::text::decode_from_str_with_element_memory_limit`. The recursion limit already applied there, enforced by the tokenizer.
 
 If you accept untrusted JSON, impose your own bound before parsing; capping the input length is the simplest form and is the one thing that transfers. Tracked in [#330](https://github.com/anthropics/buffa/issues/330).
 
@@ -1474,7 +1476,7 @@ relative to the owned form: extension fields are not included in view JSON outpu
 
 Because JSON parsing goes straight from `serde_json` into the generated
 `Deserialize` impls, buffa is never handed a `DecodeOptions` on this path, so
-[the decode limits](#these-limits-bound-the-binary-codec-only) that bound the
+[the decode limits](#what-these-limits-do-and-do-not-bound) that bound the
 binary codec do not bound JSON. Cap the input yourself before parsing untrusted
 JSON. Tracked in [#330](https://github.com/anthropics/buffa/issues/330).
 

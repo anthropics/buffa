@@ -85,6 +85,21 @@ pub enum ParseErrorKind {
     #[error("recursion limit exceeded")]
     RecursionLimitExceeded,
 
+    /// The parse would materialize more repeated/map elements than the
+    /// configured element-memory budget allows.
+    ///
+    /// The textproto equivalent of
+    /// [`DecodeError::ElementMemoryLimitExceeded`](crate::DecodeError::ElementMemoryLimitExceeded):
+    /// and needed for the same reason: an empty repeated message element
+    /// costs three input bytes (`{},`) and `size_of::<Element>()` in the
+    /// `Vec` it lands in — very nearly the wire format's own ratio, which is
+    /// two bytes for the same footprint — so a payload well inside any
+    /// input-size cap can still expand by two orders of magnitude. Raise it
+    /// with
+    /// [`TextDecoder::with_element_memory_limit`](crate::text::TextDecoder::with_element_memory_limit).
+    #[error("element memory limit exceeded")]
+    ElementMemoryLimitExceeded,
+
     /// A message was opened with `{` but closed with `>`, or vice versa.
     ///
     /// Textproto allows either `{...}` or `<...>` around sub-messages, but
