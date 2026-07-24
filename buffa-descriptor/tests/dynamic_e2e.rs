@@ -1285,3 +1285,102 @@ fn set_reinterprets_a_same_named_message_whose_schema_diverges() {
         "the field this pool cannot name is re-emitted intact"
     );
 }
+
+/// A local helper: `count` elements of value 0 in field `number`, packed.
+fn packed_zeros(number: u32, count: usize) -> Vec<u8> {
+    use buffa::encoding::{encode_varint, Tag, WireType};
+    let mut wire = Vec::new();
+    Tag::new(number, WireType::LengthDelimited).encode(&mut wire);
+    encode_varint(count as u64, &mut wire);
+    wire.resize(wire.len() + count, 0x00);
+    wire
+}
+
+/// `count` elements of value 0 in field `number`, one tag each.
+fn unpacked_zeros(number: u32, count: usize) -> Vec<u8> {
+    use buffa::encoding::{Tag, WireType};
+    let mut wire = Vec::new();
+    for _ in 0..count {
+        Tag::new(number, WireType::Varint).encode(&mut wire);
+        wire.push(0x00);
+    }
+    wire
+}
+
+/// How many elements it takes to overshoot the default budget four times.
+fn overshoot(per_element: usize) -> usize {
+    4 * buffa::DEFAULT_ELEMENT_MEMORY_LIMIT / per_element
+}
+
+/// Packed scalars are exempt from the element-memory budget in the generated
+/// and view decoders, where a 1-byte varint becomes a 4-byte `i32`. The
+/// reflective decoder stores every element as a 64-byte `Value` instead — a
+/// 64x ratio rather than 4x — so the exemption does not carry over.
+#[test]
+fn reflective_packed_scalars_are_charged_element_memory() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+    let value_size = core::mem::size_of::<buffa_descriptor::reflect::Value>();
+
+    // field 1 = packed_ints
+    let wire = packed_zeros(1, overshoot(value_size));
+    assert!(
+        matches!(
+            DynamicMessage::decode(Arc::clone(&p), idx, &wire),
+            Err(buffa::DecodeError::ElementMemoryLimitExceeded)
+        ),
+        "a packed run that materializes 4x the budget must be rejected"
+    );
+
+    // The bound is a ceiling, not a wall.
+    let small = packed_zeros(1, 3);
+    let msg = DynamicMessage::decode(Arc::clone(&p), idx, &small).expect("ordinary packed decodes");
+    assert!(msg.field_by_number(1).is_some());
+}
+
+/// `merge_closed_enum_list` and `merge_closed_enum_map_field` are separate
+/// implementations of repeated and map decode, reached when the element type
+/// is a closed enum. Each has to charge what its generic sibling charges.
+/// Value 0 is declared, so these land in the list rather than being diverted
+/// to unknowns, which are separately count-limited.
+#[test]
+fn reflective_closed_enum_elements_are_charged_element_memory() {
+    let p = pool();
+    let idx = p.message_index("reflect.closed.Contexts").unwrap();
+    let value_size = core::mem::size_of::<buffa_descriptor::reflect::Value>();
+    let entry_size = core::mem::size_of::<buffa_descriptor::reflect::MapKey>() + value_size;
+
+    // field 3 = packed closed enum.
+    let packed = packed_zeros(3, overshoot(value_size));
+    assert!(
+        matches!(
+            DynamicMessage::decode(Arc::clone(&p), idx, &packed),
+            Err(buffa::DecodeError::ElementMemoryLimitExceeded)
+        ),
+        "the packed closed-enum arm must charge"
+    );
+
+    // field 2 = unpacked closed enum, two wire bytes per element.
+    let unpacked = unpacked_zeros(2, overshoot(value_size));
+    assert!(
+        matches!(
+            DynamicMessage::decode(Arc::clone(&p), idx, &unpacked),
+            Err(buffa::DecodeError::ElementMemoryLimitExceeded)
+        ),
+        "the unpacked closed-enum arm must charge too"
+    );
+
+    // field 5 = map<string, Status>. An empty entry defaults both halves.
+    let mut map_wire = Vec::new();
+    for _ in 0..overshoot(entry_size) {
+        map_wire.push((5 << 3) | 2);
+        map_wire.push(0x00);
+    }
+    assert!(
+        matches!(
+            DynamicMessage::decode(Arc::clone(&p), idx, &map_wire),
+            Err(buffa::DecodeError::ElementMemoryLimitExceeded)
+        ),
+        "the closed-enum map path must charge what the generic map path charges"
+    );
+}

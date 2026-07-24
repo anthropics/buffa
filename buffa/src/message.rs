@@ -63,9 +63,13 @@ pub const DEFAULT_UNKNOWN_FIELD_LIMIT: usize = 1_000_000;
 /// Only the element footprint is counted. The *contents* of a string or bytes
 /// element are not, being already bounded by the input size that
 /// [`DecodeOptions::with_max_message_size`] governs, and packed scalars are not
-/// charged at all: their worst case is a 1-byte varint becoming a 4-byte `i32`,
-/// which is not an amplification vector, and bounding them would reject
-/// legitimate columnar payloads that carry millions of elements by design.
+/// charged by the generated or view decoders: their worst case there is a
+/// 1-byte varint becoming a 4-byte `i32`, which is not an amplification vector,
+/// and bounding it would reject legitimate columnar payloads that carry
+/// millions of elements by design. The reflective `DynamicMessage` decoder is
+/// the exception — it stores each element as a `Value`, so the same varint
+/// costs `size_of::<Value>()` and is charged accordingly. A columnar payload
+/// decoded reflectively may therefore need this limit raised.
 ///
 /// 32 MiB of elements is far more than a realistic message carries, and sits
 /// alongside what [`DEFAULT_UNKNOWN_FIELD_LIMIT`] already permits (~38 MiB of
@@ -203,9 +207,12 @@ impl<'a> DecodeContext<'a> {
     /// fields where the wire is far cheaper than what it decodes into: an empty
     /// message element is two bytes and costs `size_of::<T>()`, so a payload
     /// well inside [`DecodeOptions::with_max_message_size`] can still expand by
-    /// two orders of magnitude. Packed scalars are not charged — their worst
-    /// case is a 1-byte varint becoming a 4-byte `i32`, and bounding them would
-    /// reject legitimate columnar payloads.
+    /// two orders of magnitude. Packed scalars are not charged by the
+    /// generated or view decoders — there the worst case is a 1-byte varint
+    /// becoming a 4-byte `i32`, and bounding that would reject legitimate
+    /// columnar payloads. The reflective `DynamicMessage` decoder does charge
+    /// them: its store is a `Vec<Value>`, so a 1-byte varint becomes a whole
+    /// `Value` slot and the ratio is an order of magnitude worse.
     ///
     /// No-op when no budget is attached (see
     /// [`with_element_memory`](DecodeContext::with_element_memory)).
@@ -1270,7 +1277,8 @@ impl DecodeOptions {
     /// footprint, so a budget means the same amount of memory whatever the
     /// element size — which a count limit could not offer.
     ///
-    /// Packed scalar fields are never charged; see
+    /// Packed scalar fields are not charged by the generated or view
+    /// decoders, but are by the reflective `DynamicMessage` codec; see
     /// [`DEFAULT_ELEMENT_MEMORY_LIMIT`] for why, and for the `Vec`-doubling
     /// caveat on peak memory.
     ///
