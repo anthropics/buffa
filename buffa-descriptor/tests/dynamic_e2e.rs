@@ -1285,3 +1285,76 @@ fn set_reinterprets_a_same_named_message_whose_schema_diverges() {
         "the field this pool cannot name is re-emitted intact"
     );
 }
+
+/// `decode_with_options` is the escape hatch for bytes this process produced
+/// itself, where the untrusted-input defaults can only reject work already
+/// paid for. It has to honour the supplied limits in both directions.
+#[test]
+fn decode_with_options_honours_the_supplied_limits() {
+    use buffa::DecodeOptions;
+
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+
+    // `children` is map<int32, Inner>; an empty entry is 2 wire bytes.
+    let mut wire = Vec::new();
+    for _ in 0..2000 {
+        wire.push((4 << 3) | 2);
+        wire.push(0x00);
+    }
+
+    let tight = DecodeOptions::new().with_element_memory_limit(64);
+    assert!(
+        matches!(
+            DynamicMessage::decode_with_options(Arc::clone(&p), idx, &wire, &tight),
+            Err(buffa::DecodeError::ElementMemoryLimitExceeded)
+        ),
+        "a tightened budget must be enforced"
+    );
+
+    let loose = DecodeOptions::new().with_element_memory_limit(usize::MAX);
+    let msg = DynamicMessage::decode_with_options(Arc::clone(&p), idx, &wire, &loose)
+        .expect("a lifted budget accepts the same bytes");
+    // Every entry carried the default key, so they collapse to one.
+    assert!(msg.field_by_number(4).is_some());
+
+    // And the default entry point still applies the defaults.
+    assert!(DynamicMessage::decode(Arc::clone(&p), idx, &wire).is_ok());
+}
+
+/// A map entry whose value is a message costs exactly one recursion level, the
+/// same as the owned and view decoders spend. Charging two made this decoder
+/// reject nesting the other two accept, which surfaced as a panic in the
+/// infallible `ReflectMessage::to_dynamic`.
+#[test]
+fn a_message_valued_map_entry_costs_one_recursion_level() {
+    use buffa::DecodeOptions;
+
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+
+    // children[0] = Inner{} — one map entry holding an empty message value.
+    // Entry body: key tag+varint (field 1), value tag+len (field 2).
+    let entry = [0x08u8, 0x00, 0x12, 0x00];
+    let mut wire = vec![(4 << 3) | 2, entry.len() as u8];
+    wire.extend_from_slice(&entry);
+
+    // One level is enough: the entry itself is not charged, and the message
+    // value descends exactly once. Two would mean this decoder rejects
+    // nesting the owned and view decoders accept.
+    let one = DecodeOptions::new().with_recursion_limit(1);
+    assert!(
+        DynamicMessage::decode_with_options(Arc::clone(&p), idx, &wire, &one).is_ok(),
+        "a message-valued map entry must cost exactly one recursion level"
+    );
+
+    // Still bounded, though — the level is spent, not skipped.
+    let none = DecodeOptions::new().with_recursion_limit(0);
+    assert!(
+        matches!(
+            DynamicMessage::decode_with_options(Arc::clone(&p), idx, &wire, &none),
+            Err(buffa::DecodeError::RecursionLimitExceeded)
+        ),
+        "the value's descent must still be charged"
+    );
+}

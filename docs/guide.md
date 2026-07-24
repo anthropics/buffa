@@ -1095,7 +1095,7 @@ The default `Message::decode` / `decode_from_slice` methods use the defaults (10
 
 ### These limits bound the binary codec only
 
-Every option above applies to the protobuf binary decoders — owned, view, and the reflective `DynamicMessage` codec. **None of them applies to JSON.** Decoding from JSON runs `serde_json` (or another `Deserializer`) directly into the generated `Deserialize` impls, which never receive a `DecodeOptions`, so a message parsed from JSON is bounded by none of the limits that bound the same message parsed from protobuf. The element amplification is very nearly as large there — `{}` is three JSON bytes for the same element footprint that costs two on the wire.
+Every option above applies to the protobuf binary decoders — owned, view, and the reflective `DynamicMessage` codec. The one carve-out is `ReflectMessage::to_dynamic`, whose internal round-trip re-decodes bytes buffa just encoded and so exempts itself from the two memory bounds; it reads a message you already hold, not wire input. **None of them applies to JSON.** Decoding from JSON runs `serde_json` (or another `Deserializer`) directly into the generated `Deserialize` impls, which never receive a `DecodeOptions`, so a message parsed from JSON is bounded by none of the limits that bound the same message parsed from protobuf. The element amplification is very nearly as large there — `{}` is three JSON bytes for the same element footprint that costs two on the wire.
 
 If you accept untrusted JSON, impose your own bound before parsing; capping the input length is the simplest form and is the one thing that transfers. Tracked in [#330](https://github.com/anthropics/buffa/issues/330).
 

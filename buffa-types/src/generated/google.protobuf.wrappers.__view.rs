@@ -273,12 +273,23 @@ const _: () = {
         }
         fn to_dynamic(&self) -> ::buffa_descriptor::reflect::DynamicMessage {
             let bytes = ::buffa::ViewEncode::encode_to_vec(self);
-            ::buffa_descriptor::reflect::DynamicMessage::decode(
+            let options = ::buffa::DecodeOptions::new()
+                .with_element_memory_limit(
+                    bytes
+                        .len()
+                        .saturating_mul(128)
+                        .max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
+                )
+                .with_unknown_field_limit(
+                    bytes.len().max(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT),
+                );
+            ::buffa_descriptor::reflect::DynamicMessage::decode_with_options(
                     ::buffa::alloc::sync::Arc::clone(
                         super::super::__buffa::reflect::descriptor_pool(),
                     ),
                     Self::__buffa_reflect_message_index(),
                     &bytes,
+                    &options,
                 )
                 .expect("view re-encodes to bytes decodable against its own descriptor")
         }
@@ -581,12 +592,23 @@ const _: () = {
         }
         fn to_dynamic(&self) -> ::buffa_descriptor::reflect::DynamicMessage {
             let bytes = ::buffa::ViewEncode::encode_to_vec(self);
-            ::buffa_descriptor::reflect::DynamicMessage::decode(
+            let options = ::buffa::DecodeOptions::new()
+                .with_element_memory_limit(
+                    bytes
+                        .len()
+                        .saturating_mul(128)
+                        .max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
+                )
+                .with_unknown_field_limit(
+                    bytes.len().max(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT),
+                );
+            ::buffa_descriptor::reflect::DynamicMessage::decode_with_options(
                     ::buffa::alloc::sync::Arc::clone(
                         super::super::__buffa::reflect::descriptor_pool(),
                     ),
                     Self::__buffa_reflect_message_index(),
                     &bytes,
+                    &options,
                 )
                 .expect("view re-encodes to bytes decodable against its own descriptor")
         }
@@ -889,12 +911,23 @@ const _: () = {
         }
         fn to_dynamic(&self) -> ::buffa_descriptor::reflect::DynamicMessage {
             let bytes = ::buffa::ViewEncode::encode_to_vec(self);
-            ::buffa_descriptor::reflect::DynamicMessage::decode(
+            let options = ::buffa::DecodeOptions::new()
+                .with_element_memory_limit(
+                    bytes
+                        .len()
+                        .saturating_mul(128)
+                        .max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
+                )
+                .with_unknown_field_limit(
+                    bytes.len().max(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT),
+                );
+            ::buffa_descriptor::reflect::DynamicMessage::decode_with_options(
                     ::buffa::alloc::sync::Arc::clone(
                         super::super::__buffa::reflect::descriptor_pool(),
                     ),
                     Self::__buffa_reflect_message_index(),
                     &bytes,
+                    &options,
                 )
                 .expect("view re-encodes to bytes decodable against its own descriptor")
         }
@@ -1197,12 +1230,23 @@ const _: () = {
         }
         fn to_dynamic(&self) -> ::buffa_descriptor::reflect::DynamicMessage {
             let bytes = ::buffa::ViewEncode::encode_to_vec(self);
-            ::buffa_descriptor::reflect::DynamicMessage::decode(
+            let options = ::buffa::DecodeOptions::new()
+                .with_element_memory_limit(
+                    bytes
+                        .len()
+                        .saturating_mul(128)
+                        .max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
+                )
+                .with_unknown_field_limit(
+                    bytes.len().max(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT),
+                );
+            ::buffa_descriptor::reflect::DynamicMessage::decode_with_options(
                     ::buffa::alloc::sync::Arc::clone(
                         super::super::__buffa::reflect::descriptor_pool(),
                     ),
                     Self::__buffa_reflect_message_index(),
                     &bytes,
+                    &options,
                 )
                 .expect("view re-encodes to bytes decodable against its own descriptor")
         }
@@ -1505,12 +1549,23 @@ const _: () = {
         }
         fn to_dynamic(&self) -> ::buffa_descriptor::reflect::DynamicMessage {
             let bytes = ::buffa::ViewEncode::encode_to_vec(self);
-            ::buffa_descriptor::reflect::DynamicMessage::decode(
+            let options = ::buffa::DecodeOptions::new()
+                .with_element_memory_limit(
+                    bytes
+                        .len()
+                        .saturating_mul(128)
+                        .max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
+                )
+                .with_unknown_field_limit(
+                    bytes.len().max(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT),
+                );
+            ::buffa_descriptor::reflect::DynamicMessage::decode_with_options(
                     ::buffa::alloc::sync::Arc::clone(
                         super::super::__buffa::reflect::descriptor_pool(),
                     ),
                     Self::__buffa_reflect_message_index(),
                     &bytes,
+                    &options,
                 )
                 .expect("view re-encodes to bytes decodable against its own descriptor")
         }
@@ -1813,12 +1868,23 @@ const _: () = {
         }
         fn to_dynamic(&self) -> ::buffa_descriptor::reflect::DynamicMessage {
             let bytes = ::buffa::ViewEncode::encode_to_vec(self);
-            ::buffa_descriptor::reflect::DynamicMessage::decode(
+            let options = ::buffa::DecodeOptions::new()
+                .with_element_memory_limit(
+                    bytes
+                        .len()
+                        .saturating_mul(128)
+                        .max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
+                )
+                .with_unknown_field_limit(
+                    bytes.len().max(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT),
+                );
+            ::buffa_descriptor::reflect::DynamicMessage::decode_with_options(
                     ::buffa::alloc::sync::Arc::clone(
                         super::super::__buffa::reflect::descriptor_pool(),
                     ),
                     Self::__buffa_reflect_message_index(),
                     &bytes,
+                    &options,
                 )
                 .expect("view re-encodes to bytes decodable against its own descriptor")
         }
@@ -2121,12 +2187,23 @@ const _: () = {
         }
         fn to_dynamic(&self) -> ::buffa_descriptor::reflect::DynamicMessage {
             let bytes = ::buffa::ViewEncode::encode_to_vec(self);
-            ::buffa_descriptor::reflect::DynamicMessage::decode(
+            let options = ::buffa::DecodeOptions::new()
+                .with_element_memory_limit(
+                    bytes
+                        .len()
+                        .saturating_mul(128)
+                        .max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
+                )
+                .with_unknown_field_limit(
+                    bytes.len().max(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT),
+                );
+            ::buffa_descriptor::reflect::DynamicMessage::decode_with_options(
                     ::buffa::alloc::sync::Arc::clone(
                         super::super::__buffa::reflect::descriptor_pool(),
                     ),
                     Self::__buffa_reflect_message_index(),
                     &bytes,
+                    &options,
                 )
                 .expect("view re-encodes to bytes decodable against its own descriptor")
         }
@@ -2429,12 +2506,23 @@ const _: () = {
         }
         fn to_dynamic(&self) -> ::buffa_descriptor::reflect::DynamicMessage {
             let bytes = ::buffa::ViewEncode::encode_to_vec(self);
-            ::buffa_descriptor::reflect::DynamicMessage::decode(
+            let options = ::buffa::DecodeOptions::new()
+                .with_element_memory_limit(
+                    bytes
+                        .len()
+                        .saturating_mul(128)
+                        .max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
+                )
+                .with_unknown_field_limit(
+                    bytes.len().max(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT),
+                );
+            ::buffa_descriptor::reflect::DynamicMessage::decode_with_options(
                     ::buffa::alloc::sync::Arc::clone(
                         super::super::__buffa::reflect::descriptor_pool(),
                     ),
                     Self::__buffa_reflect_message_index(),
                     &bytes,
+                    &options,
                 )
                 .expect("view re-encodes to bytes decodable against its own descriptor")
         }
@@ -2737,12 +2825,23 @@ const _: () = {
         }
         fn to_dynamic(&self) -> ::buffa_descriptor::reflect::DynamicMessage {
             let bytes = ::buffa::ViewEncode::encode_to_vec(self);
-            ::buffa_descriptor::reflect::DynamicMessage::decode(
+            let options = ::buffa::DecodeOptions::new()
+                .with_element_memory_limit(
+                    bytes
+                        .len()
+                        .saturating_mul(128)
+                        .max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
+                )
+                .with_unknown_field_limit(
+                    bytes.len().max(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT),
+                );
+            ::buffa_descriptor::reflect::DynamicMessage::decode_with_options(
                     ::buffa::alloc::sync::Arc::clone(
                         super::super::__buffa::reflect::descriptor_pool(),
                     ),
                     Self::__buffa_reflect_message_index(),
                     &bytes,
+                    &options,
                 )
                 .expect("view re-encodes to bytes decodable against its own descriptor")
         }

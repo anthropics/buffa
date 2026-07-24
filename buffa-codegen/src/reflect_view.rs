@@ -332,11 +332,43 @@ pub(crate) fn reflect_view_impls(
                 // snapshot — plain field reads never reach it). Encode the view
                 // directly and decode into a `DynamicMessage`, skipping the
                 // intermediate owned-message tree that `from_message` would build.
+                //
+                // The two *memory* bounds are rescaled to the input rather than
+                // left at their defaults. The two decoders measure the same
+                // message in different units — a `DynamicMessage` entry is
+                // wider than the borrowed view it came from — so the defaults
+                // reject conversions of views that decoded perfectly well, and
+                // this signature has nowhere to put a rejection.
+                //
+                // Scaled, not lifted: `usize::MAX` would leave the whole
+                // decode_view -> to_dynamic chain with no ceiling anywhere.
+                // 128 bytes of element memory per encoded byte cannot reject
+                // these bytes — the widest ratio the reflective decoder can
+                // reach is a packed scalar, one wire byte becoming one
+                // `size_of::<Value>()` slot, and `Value` is 64 bytes — while
+                // still bounding the conversion at a constant factor of what
+                // the caller already holds. Floored at the default so a small
+                // message is never held to a *tighter* bound than a plain
+                // decode would apply.
                 let bytes = ::buffa::ViewEncode::encode_to_vec(self);
-                ::buffa_descriptor::reflect::DynamicMessage::decode(
+                let options = ::buffa::DecodeOptions::new()
+                    .with_element_memory_limit(
+                        bytes
+                            .len()
+                            .saturating_mul(128)
+                            .max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
+                    )
+                    // One unknown field costs at least two wire bytes, so the
+                    // byte count is itself an upper bound on how many the
+                    // re-decode can materialize.
+                    .with_unknown_field_limit(
+                        bytes.len().max(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT),
+                    );
+                ::buffa_descriptor::reflect::DynamicMessage::decode_with_options(
                     ::buffa::alloc::sync::Arc::clone(#pool),
                     Self::__buffa_reflect_message_index(),
                     &bytes,
+                    &options,
                 )
                 .expect("view re-encodes to bytes decodable against its own descriptor")
             }

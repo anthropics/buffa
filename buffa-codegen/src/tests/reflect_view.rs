@@ -122,3 +122,37 @@ fn bridge_only_does_not_emit_vtable_impls() {
         "bridge-only must not emit the vtable ReflectMessage impl: {content}"
     );
 }
+
+#[test]
+fn to_dynamic_scales_its_memory_bounds_and_floors_them_at_the_defaults() {
+    // `to_dynamic` cannot report a failure, so its re-decode must not be able
+    // to reject bytes the encoder on the line above just produced. The two
+    // decoders measure the same message in different units, so the defaults
+    // can reject; `usize::MAX` would instead leave the conversion with no
+    // ceiling at all. Scaling to the input and flooring at the default is the
+    // narrow path between those, and both halves are load-bearing — without
+    // the floor a small message gets a *tighter* bound than a plain decode.
+    let files = generate(&[msg_file()], &["vt.proto".to_string()], &vtable_config())
+        .expect("should generate");
+    let flat: String = joined(&files)
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+
+    assert!(
+        flat.contains(".saturating_mul(128)"),
+        "the element bound must scale with the encoded length"
+    );
+    assert!(
+        flat.contains(".max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT)"),
+        "the scaled element bound must be floored at the default, not capped by it"
+    );
+    assert!(
+        flat.contains(".max(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT)"),
+        "the unknown-field bound must be floored at the default too"
+    );
+    assert!(
+        !flat.contains("with_element_memory_limit(usize::MAX)"),
+        "an unbounded re-decode would leave decode_view -> to_dynamic with no ceiling"
+    );
+}
