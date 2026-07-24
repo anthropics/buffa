@@ -132,12 +132,22 @@ pub trait MessageView<'a>: Sized {
     /// and delegate to [`decode_view_ctx`](Self::decode_view_ctx). (Kept
     /// required, without a `Self: Default` bound, so generic callers stay
     /// bound-free.)
+    ///
+    /// The default context carries the same three budgets
+    /// [`Message::decode`](crate::Message::decode) applies:
+    /// [`RECURSION_LIMIT`](crate::RECURSION_LIMIT),
+    /// [`DEFAULT_UNKNOWN_FIELD_LIMIT`](crate::DEFAULT_UNKNOWN_FIELD_LIMIT), and
+    /// [`DEFAULT_ELEMENT_MEMORY_LIMIT`](crate::DEFAULT_ELEMENT_MEMORY_LIMIT).
+    /// A view of a repeated field costs element memory just as the owned decode
+    /// does — each element occupies a `size_of::<FooView>()` slot in a `Vec`
+    /// even though its string and bytes contents stay borrowed.
     fn decode_view(buf: &'a [u8]) -> Result<Self, DecodeError>;
 
     /// Decode a view under custom decode limits.
     ///
     /// Used by [`DecodeOptions::decode_view`](crate::DecodeOptions::decode_view)
-    /// to pass a non-default recursion depth and unknown-field allowance.
+    /// to pass a non-default recursion depth, unknown-field allowance, and
+    /// element-memory budget.
     /// The default implementation delegates to
     /// [`decode_view`](Self::decode_view) and **ignores the context** —
     /// a hand-written `MessageView` that recurses or preserves unknown
@@ -160,8 +170,9 @@ pub trait MessageView<'a>: Sized {
     }
 
     /// Decode a view under an explicit [`DecodeContext`](crate::DecodeContext)
-    /// (remaining recursion depth and unknown-field allowance), driving the
-    /// provided tag loop over [`merge_view_field`](Self::merge_view_field).
+    /// (remaining recursion depth, unknown-field allowance, and element-memory
+    /// budget), driving the provided tag loop over
+    /// [`merge_view_field`](Self::merge_view_field).
     ///
     /// This is the bridge a hand-written impl uses to wire its required
     /// `decode_view` to its required `merge_view_field`:
@@ -169,12 +180,20 @@ pub trait MessageView<'a>: Sized {
     /// ```rust,ignore
     /// fn decode_view(buf: &'a [u8]) -> Result<Self, buffa::DecodeError> {
     ///     let limit = core::cell::Cell::new(buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
+    ///     let elem = core::cell::Cell::new(buffa::DEFAULT_ELEMENT_MEMORY_LIMIT);
     ///     Self::decode_view_ctx(
     ///         buf,
-    ///         buffa::DecodeContext::new(buffa::RECURSION_LIMIT, &limit),
+    ///         buffa::DecodeContext::new(buffa::RECURSION_LIMIT, &limit)
+    ///             .with_element_memory(&elem),
     ///     )
     /// }
     /// ```
+    ///
+    /// Attaching the element-memory budget is load-bearing, not decoration.
+    /// [`register_element_memory`](crate::DecodeContext::register_element_memory)
+    /// returns `Ok(())` when no budget is attached, so a context built without
+    /// [`with_element_memory`](crate::DecodeContext::with_element_memory)
+    /// turns every repeated-element charge in every field arm into a no-op.
     ///
     /// Also called by generated sub-message decode arms with a descended
     /// context. Not to be confused with
