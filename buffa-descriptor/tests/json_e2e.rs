@@ -36,6 +36,74 @@ fn json_scalar_round_trip() {
 }
 
 #[test]
+fn json_integer_strings_parse_exactly() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
+
+    let cases = [
+        (
+            "fInt64",
+            r#""-9223372036854775808.0""#,
+            Value::I64(i64::MIN),
+        ),
+        (
+            "fInt64",
+            r#""9.223372036854775807e18""#,
+            Value::I64(i64::MAX),
+        ),
+        (
+            "fUint64",
+            r#""18446744073709551615.0""#,
+            Value::U64(u64::MAX),
+        ),
+        (
+            "fUint64",
+            r#""1.8446744073709551615e19""#,
+            Value::U64(u64::MAX),
+        ),
+        ("fInt64", r#""1200e-2""#, Value::I64(12)),
+    ];
+
+    for (field, value, expected) in cases {
+        let json = format!(r#"{{"{field}":{value}}}"#);
+        let parsed = DynamicMessage::from_json(Arc::clone(&p), idx, &json)
+            .unwrap_or_else(|e| panic!("input {json} should parse: {e}"));
+        let number = if field == "fUint64" { 6 } else { 4 };
+        assert_eq!(
+            parsed.field_by_number(number),
+            Some(&expected),
+            "input: {json}"
+        );
+    }
+}
+
+#[test]
+fn json_integer_strings_reject_invalid_values() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
+    let cases = [
+        ("fInt64", r#""9223372036854775808""#),
+        ("fInt64", r#""-9223372036854775809.0""#),
+        ("fUint64", r#""18446744073709551616""#),
+        ("fUint64", r#""-1e0""#),
+        ("fInt64", r#""1e-1""#),
+        ("fUint64", r#""1.5""#),
+        ("fInt64", r#""1e2e3""#),
+        ("fUint64", r#""not-a-number""#),
+        ("fInt64", r#""9999999999999999999999999999999999999999""#),
+        ("fUint64", r#""1e9999999999""#),
+    ];
+
+    for (field, value) in cases {
+        let json = format!(r#"{{"{field}":{value}}}"#);
+        assert!(
+            DynamicMessage::from_json(Arc::clone(&p), idx, &json).is_err(),
+            "input should fail: {json}"
+        );
+    }
+}
+
+#[test]
 fn json_containers_round_trip() {
     let p = pool();
     let containers_idx = p.message_index("reflect.test.Containers").unwrap();
