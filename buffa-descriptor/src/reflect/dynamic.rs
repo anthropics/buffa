@@ -502,6 +502,10 @@ impl DynamicMessage {
             // Take a sub-buffer of `len` bytes and decode elements from it.
             let mut packed = buf.copy_to_bytes(len);
             while packed.has_remaining() {
+                // Charged, unlike the generated decoder: that exemption is
+                // sized for a `Vec<i32>`, and this store is a `Vec<Value>`.
+                // See `DecodeContext::register_element_memory`.
+                ctx.register_element_memory(core::mem::size_of::<Value>())?;
                 list.push(decode_packed_element(elem, number, &mut packed)?);
             }
             return Ok(());
@@ -543,6 +547,9 @@ impl DynamicMessage {
             while packed.has_remaining() {
                 let raw = decode_int32(&mut packed)?;
                 if self.enum_value_is_known(eidx, Some(EnumType::Closed), raw) {
+                    // Same charge `merge_list_field` applies; this is a
+                    // parallel implementation of the same work.
+                    ctx.register_element_memory(core::mem::size_of::<Value>())?;
                     known.push(Value::EnumNumber(raw));
                 } else {
                     self.record_unknown_enum(number, raw, ctx)?;
@@ -551,6 +558,7 @@ impl DynamicMessage {
         } else {
             let raw = decode_int32(buf)?;
             if self.enum_value_is_known(eidx, Some(EnumType::Closed), raw) {
+                ctx.register_element_memory(core::mem::size_of::<Value>())?;
                 known.push(Value::EnumNumber(raw));
             } else {
                 self.record_unknown_enum(number, raw, ctx)?;
@@ -691,6 +699,12 @@ impl DynamicMessage {
         }
         let k = key.unwrap_or_else(|| default_map_key(key_ty));
         let v = value.unwrap_or_else(|| default_value(SingularKind::Enum(eidx), &self.pool));
+        // Same charge the ordinary map path applies; this parallel
+        // closed-enum implementation has to make it too, or a
+        // `map<K, ClosedEnum>` decodes with no ceiling at all.
+        ctx.register_element_memory(
+            core::mem::size_of::<MapKey>() + core::mem::size_of::<Value>(),
+        )?;
         match self
             .fields
             .entry(number)
