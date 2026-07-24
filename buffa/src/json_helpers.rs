@@ -1645,7 +1645,7 @@ impl serde::Serialize for Base64Wrapper<'_> {
 
 /// Decode a base64 string, accepting standard and URL-safe alphabets with
 /// lenient trailing-bit and padding handling.
-fn decode_base64(v: &str) -> Result<alloc::vec::Vec<u8>, base64::DecodeError> {
+pub(crate) fn decode_base64(v: &str) -> Result<alloc::vec::Vec<u8>, base64::DecodeError> {
     use base64::Engine as _;
     STANDARD_LENIENT
         .decode(v)
