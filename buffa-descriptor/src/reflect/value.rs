@@ -441,6 +441,41 @@ impl MapValue {
         }
     }
 
+    /// Append an entry without restoring the sorted invariant.
+    ///
+    /// For decode loops, which insert once per wire entry: a sorted
+    /// [`insert`](Self::insert) shifts the tail each time, so entries
+    /// arriving in descending key order cost `O(n^2)` — a few megabytes of
+    /// wire turning into minutes of `memmove`. Appending is `O(1)`
+    /// amortized, and one [`normalize`](Self::normalize) at the end of the
+    /// decode does the sort-and-dedup in `O(n log n)`.
+    ///
+    /// **The caller must call `normalize` before any read.** Between the two
+    /// the sorted-and-deduplicated invariant is broken, and the binary-search
+    /// lookups will silently miss.
+    pub(crate) fn push_unsorted(&mut self, key: MapKey, value: Value) {
+        self.entries.push((key, value));
+    }
+
+    /// Restore the sorted, duplicate-free invariant after
+    /// [`push_unsorted`](Self::push_unsorted).
+    ///
+    /// Idempotent, and cheap on an already-sorted run.
+    pub(crate) fn normalize(&mut self) {
+        if self.entries.len() < 2 {
+            return;
+        }
+        if self
+            .entries
+            .windows(2)
+            .all(|w| w[0].0.cmp(&w[1].0) == core::cmp::Ordering::Less)
+        {
+            return;
+        }
+        let entries = core::mem::take(&mut self.entries);
+        *self = Self::from_entries(entries);
+    }
+
     /// Iterate the entries in key order.
     pub fn iter(&self) -> impl Iterator<Item = (&MapKey, &Value)> {
         self.entries.iter().map(|(k, v)| (k, v))

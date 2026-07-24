@@ -1285,3 +1285,186 @@ fn set_reinterprets_a_same_named_message_whose_schema_diverges() {
         "the field this pool cannot name is re-emitted intact"
     );
 }
+
+/// Reflective map decode must not be quadratic in the entry count.
+///
+/// `MapValue` is a sorted `Vec`, so a sorted insert per wire entry shifts the
+/// tail each time. Entries arriving in *descending* key order then land at
+/// index 0 every time, and the decode moves `O(n^2)` bytes — a few megabytes
+/// of wire turning into minutes of `memmove`. Ascending order is O(1)
+/// amortized and hides it completely, so the order is the whole test.
+///
+/// Timing would flake in CI, so this measures the wall-clock ratio between
+/// the two orders rather than an absolute: with a batched decode they are
+/// within a small factor, and with a per-entry sorted insert the descending
+/// case is orders of magnitude worse.
+#[test]
+fn reflective_map_decode_is_not_quadratic_in_entry_order() {
+    use buffa::encoding::{encode_varint, Tag, WireType};
+    use std::time::Instant;
+
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+
+    // field 3 is map<string, int32>; build N entries with distinct keys.
+    let build = |keys: Box<dyn Iterator<Item = usize>>| {
+        let mut wire = Vec::new();
+        for k in keys {
+            let key = format!("k{k:08}");
+            let mut entry = Vec::new();
+            Tag::new(1, WireType::LengthDelimited).encode(&mut entry);
+            buffa::types::encode_string(&key, &mut entry);
+            Tag::new(2, WireType::Varint).encode(&mut entry);
+            encode_varint(1, &mut entry);
+            Tag::new(3, WireType::LengthDelimited).encode(&mut wire);
+            encode_varint(entry.len() as u64, &mut wire);
+            wire.extend_from_slice(&entry);
+        }
+        wire
+    };
+
+    const N: usize = 20_000;
+    let ascending = build(Box::new(0..N));
+    let descending = build(Box::new((0..N).rev()));
+
+    let time = |wire: &[u8]| {
+        let t = Instant::now();
+        let m = DynamicMessage::decode(Arc::clone(&p), idx, wire).expect("decodes");
+        let d = t.elapsed();
+        assert_eq!(
+            m.field_by_number(3).map(|v| match v {
+                Value::Map(m) => m.len(),
+                _ => 0,
+            }),
+            Some(N),
+            "every distinct key must survive"
+        );
+        d
+    };
+
+    let asc = time(&ascending);
+    let desc = time(&descending);
+
+    // An absolute bound rather than a ratio against `asc`. Both orders are
+    // now linear and finish in milliseconds, so a ratio would flake the
+    // moment a shared runner stalls the second run — while the quadratic
+    // version takes minutes at this size, leaving enormous headroom under a
+    // few seconds. A slow runner cannot reach the bound; a regression cannot
+    // stay under it.
+    assert!(
+        desc < core::time::Duration::from_secs(5),
+        "descending-key decode of {N} entries took {desc:?} (ascending {asc:?}); \
+         a per-entry sorted insert is quadratic in this order"
+    );
+}
+
+/// A map inside a *group*-encoded message is normalized too.
+///
+/// Map entries are appended unsorted during a decode and sorted once at the
+/// end, so every loop over `merge_one_field` has to do that. `merge_group`
+/// runs its own loop; if it skipped the pass, a map decoded inside a group
+/// would escape unsorted and its binary-search lookups would silently miss
+/// keys that are present.
+///
+/// The descriptor is built by hand rather than compiled, because no checked-in
+/// test proto pairs a group with a map.
+#[test]
+fn a_map_inside_a_group_is_normalized() {
+    use buffa::encoding::{encode_varint, Tag, WireType};
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        MessageOptions,
+    };
+
+    fn field(name: &str, number: i32, label: Label, ty: Type) -> FieldDescriptorProto {
+        FieldDescriptorProto {
+            name: Some(name.to_string()),
+            number: Some(number),
+            label: Some(label),
+            r#type: Some(ty),
+            ..Default::default()
+        }
+    }
+
+    // map<int32, int32> is a repeated message field whose entry type carries
+    // the map_entry option.
+    let entry = DescriptorProto {
+        name: Some("MEntry".to_string()),
+        field: vec![
+            field("key", 1, Label::LABEL_OPTIONAL, Type::TYPE_INT32),
+            field("value", 2, Label::LABEL_OPTIONAL, Type::TYPE_INT32),
+        ],
+        options: MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        }
+        .into(),
+        ..Default::default()
+    };
+    let mut map_field = field("m", 1, Label::LABEL_REPEATED, Type::TYPE_MESSAGE);
+    map_field.type_name = Some(".g.Outer.TheGroup.MEntry".to_string());
+
+    let group = DescriptorProto {
+        name: Some("TheGroup".to_string()),
+        field: vec![map_field],
+        nested_type: vec![entry],
+        ..Default::default()
+    };
+    let mut group_field = field("thegroup", 7, Label::LABEL_OPTIONAL, Type::TYPE_GROUP);
+    group_field.type_name = Some(".g.Outer.TheGroup".to_string());
+
+    let outer = DescriptorProto {
+        name: Some("Outer".to_string()),
+        field: vec![group_field],
+        nested_type: vec![group],
+        ..Default::default()
+    };
+    let pool = Arc::new(
+        buffa_descriptor::DescriptorPool::new(FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("g.proto".to_string()),
+                package: Some("g".to_string()),
+                syntax: Some("proto2".to_string()),
+                message_type: vec![outer],
+                ..Default::default()
+            }],
+            ..Default::default()
+        })
+        .expect("pool builds"),
+    );
+    let idx = pool.message_index("g.Outer").unwrap();
+
+    // Group-framed body holding map entries in *descending* key order, which
+    // is the order an unsorted append leaves visibly wrong.
+    let mut wire = Vec::new();
+    Tag::new(7, WireType::StartGroup).encode(&mut wire);
+    for k in (0..64i64).rev() {
+        let mut e = Vec::new();
+        Tag::new(1, WireType::Varint).encode(&mut e);
+        encode_varint(k as u64, &mut e);
+        Tag::new(2, WireType::Varint).encode(&mut e);
+        encode_varint((k * 10) as u64, &mut e);
+        Tag::new(1, WireType::LengthDelimited).encode(&mut wire);
+        encode_varint(e.len() as u64, &mut wire);
+        wire.extend_from_slice(&e);
+    }
+    Tag::new(7, WireType::EndGroup).encode(&mut wire);
+
+    let msg = DynamicMessage::decode(Arc::clone(&pool), idx, &wire).expect("group decodes");
+    let Some(Value::Message(inner)) = msg.field_by_number(7) else {
+        panic!("group field missing");
+    };
+    let Some(Value::Map(m)) = inner.field_by_number(1) else {
+        panic!("map field missing");
+    };
+    assert_eq!(m.len(), 64, "every distinct key survives");
+    // The lookups are binary searches, so they only work on a sorted map.
+    for k in 0..64i64 {
+        assert_eq!(
+            m.get(&MapKey::I32(k as i32)),
+            Some(&Value::I32((k * 10) as i32)),
+            "key {k} must be findable after a group decode"
+        );
+    }
+}

@@ -1,0 +1,3 @@
+kind: Fixed
+body: Reflective map decode is no longer quadratic in the number of wire entries. `MapValue` is a sorted `Vec` and the binary decode path called its `O(n)` sorted `insert` once per entry — its own doc already said decode paths should batch instead, which the JSON path did and the binary path did not. Entries arriving in descending key order landed at index 0 every time, so a few megabytes of wire turned into minutes of `memmove`. Entries are now appended during the decode and sorted once at the end, including on the error path so a partially-decoded message never escapes with a broken sort invariant.
+time: 2026-07-23T23:52:56.905058653-07:00
