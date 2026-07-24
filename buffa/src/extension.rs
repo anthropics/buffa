@@ -268,8 +268,11 @@ pub trait ExtensionSet {
 
     /// Read an extension value.
     ///
-    /// For singular extensions: `Option<T>` — `None` if absent or if the
-    /// stored wire data is malformed for this codec. For repeated: `Vec<T>`.
+    /// For singular extensions: `Option<T>` — `None` if absent, if the
+    /// stored wire data is malformed for this codec, or if the extension's
+    /// records together exhaust the decode budget (the budget is shared
+    /// across every record of one extension, and is always the crate default
+    /// regardless of the `DecodeOptions` used to decode the carrier). For repeated: `Vec<T>`.
     ///
     /// # Panics
     ///
@@ -422,6 +425,21 @@ pub mod codecs {
         /// Returns `None` on wire-type mismatch (and, for string/message,
         /// on malformed payload).
         fn decode_one(data: &UnknownFieldData) -> Option<Self::Value>;
+
+        /// Decode one value under a decode context shared with the other
+        /// records of the same field.
+        ///
+        /// Defaults to [`decode_one`](Self::decode_one), which is correct for
+        /// any codec whose per-record cost is fixed — every scalar, string,
+        /// and bytes codec. **A codec whose value can materialize an
+        /// unbounded subtree must override this**, or each record silently
+        /// gets its own full allowance; see [`extension_decode_cells`].
+        fn decode_one_ctx(
+            data: &UnknownFieldData,
+            _ctx: crate::DecodeContext<'_>,
+        ) -> Option<Self::Value> {
+            Self::decode_one(data)
+        }
 
         /// Decode all values from a packed `LengthDelimited` payload.
         ///
@@ -824,10 +842,13 @@ pub mod codecs {
         type Output = Option<M>;
         fn decode(number: u32, fields: &UnknownFields) -> Option<M> {
             let mut msg: Option<M> = None;
+            let (limit, elem) = extension_decode_cells();
+            let ctx = crate::DecodeContext::new(crate::RECURSION_LIMIT, &limit)
+                .with_element_memory(&elem);
             for f in fields.iter().filter(|f| f.number == number) {
                 if let UnknownFieldData::LengthDelimited(bytes) = &f.data {
                     let m = msg.get_or_insert_with(M::default);
-                    if m.merge_from_slice(bytes).is_err() {
+                    if m.merge(&mut &bytes[..], ctx).is_err() {
                         return None;
                     }
                 }
@@ -854,6 +875,16 @@ pub mod codecs {
                 UnknownFieldData::LengthDelimited(bytes) => {
                     let mut m = M::default();
                     m.merge_from_slice(bytes).ok()?;
+                    Some(m)
+                }
+                _ => None,
+            }
+        }
+        fn decode_one_ctx(data: &UnknownFieldData, ctx: crate::DecodeContext<'_>) -> Option<M> {
+            match data {
+                UnknownFieldData::LengthDelimited(bytes) => {
+                    let mut m = M::default();
+                    m.merge(&mut &bytes[..], ctx).ok()?;
                     Some(m)
                 }
                 _ => None,
@@ -890,12 +921,15 @@ pub mod codecs {
         type Output = Option<M>;
         fn decode(number: u32, fields: &UnknownFields) -> Option<M> {
             let mut msg: Option<M> = None;
+            let (limit, elem) = extension_decode_cells();
+            let ctx = crate::DecodeContext::new(crate::RECURSION_LIMIT, &limit)
+                .with_element_memory(&elem);
             for f in fields.iter().filter(|f| f.number == number) {
                 if let UnknownFieldData::Group(inner) = &f.data {
                     let m = msg.get_or_insert_with(M::default);
                     let mut buf = Vec::with_capacity(inner.encoded_len());
                     inner.write_to(&mut buf);
-                    if m.merge_from_slice(&buf).is_err() {
+                    if m.merge(&mut &buf[..], ctx).is_err() {
                         return None;
                     }
                 }
@@ -929,6 +963,18 @@ pub mod codecs {
                     inner.write_to(&mut buf);
                     let mut m = M::default();
                     m.merge_from_slice(&buf).ok()?;
+                    Some(m)
+                }
+                _ => None,
+            }
+        }
+        fn decode_one_ctx(data: &UnknownFieldData, ctx: crate::DecodeContext<'_>) -> Option<M> {
+            match data {
+                UnknownFieldData::Group(inner) => {
+                    let mut buf = Vec::with_capacity(inner.encoded_len());
+                    inner.write_to(&mut buf);
+                    let mut m = M::default();
+                    m.merge(&mut &buf[..], ctx).ok()?;
                     Some(m)
                 }
                 _ => None,
@@ -1019,12 +1065,36 @@ pub mod codecs {
         }
     }
 
+    /// A decode context whose budgets are shared across every record of one
+    /// extension field.
+    ///
+    /// `Message::merge_from_slice` mints fresh budget cells on each call, so
+    /// merging N records one at a time gives each its own full allowance and
+    /// turns the documented per-decode absolutes into per-record ones. An
+    /// extension can carry arbitrarily many records, so that multiplies.
+    /// Building the cells once and reusing the (`Copy`) context keeps the
+    /// bound absolute.
+    ///
+    /// These are always the crate defaults: `ExtensionSet::extension` takes
+    /// no context, so a `DecodeOptions` used to decode the carrier does not
+    /// reach here.
+    fn extension_decode_cells() -> (core::cell::Cell<usize>, core::cell::Cell<usize>) {
+        (
+            core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT),
+            core::cell::Cell::new(crate::DEFAULT_ELEMENT_MEMORY_LIMIT),
+        )
+    }
+
     /// Shared repeated-decode logic: accepts both unpacked (one record per
     /// value) and packed (`LengthDelimited` of concatenated values).
     fn decode_repeated<C: SingularCodec>(number: u32, fields: &UnknownFields) -> Vec<C::Value> {
         let mut out = Vec::new();
+        // Every element stays live in `out`, so one budget covers the lot.
+        let (limit, elem) = extension_decode_cells();
+        let ctx =
+            crate::DecodeContext::new(crate::RECURSION_LIMIT, &limit).with_element_memory(&elem);
         for f in fields.iter().filter(|f| f.number == number) {
-            if let Some(v) = C::decode_one(&f.data) {
+            if let Some(v) = C::decode_one_ctx(&f.data, ctx) {
                 out.push(v);
             } else if let UnknownFieldData::LengthDelimited(bytes) = &f.data {
                 C::decode_packed(bytes, &mut out);
@@ -1585,7 +1655,9 @@ mod tests {
 
     // ── MessageCodec ────────────────────────────────────────────────────────
 
-    // Minimal test message: two i32 fields (numbers 1 and 2) + unknown preservation.
+    // Minimal test message: two i32 fields (numbers 1 and 2). Unknown fields
+    // are skipped, not preserved — see `BudgetMsg` below for a double that
+    // preserves them and charges the decode budget for doing so.
     // Hand-written to avoid a codegen dependency in the runtime crate's tests.
     #[derive(Clone, Default, PartialEq, Debug)]
     struct TestMsg {
@@ -1698,6 +1770,145 @@ mod tests {
         let got = c.extension(&E).expect("decoded");
         assert_eq!(got.a, 3);
         assert_eq!(got.b, -1);
+    }
+
+    // ── Budgets are shared across an extension's records ────────────────
+
+    /// A message that preserves unknown fields *through the decode context*,
+    /// the way generated code does — so a budget can actually be exhausted.
+    /// (`TestMsg` above skips them, so it never spends anything.)
+    #[derive(Debug, Default, Clone, PartialEq)]
+    struct BudgetMsg {
+        unknown: UnknownFields,
+    }
+
+    impl crate::DefaultInstance for BudgetMsg {
+        fn default_instance() -> &'static Self {
+            static INST: crate::__private::OnceBox<BudgetMsg> = crate::__private::OnceBox::new();
+            INST.get_or_init(|| alloc::boxed::Box::new(BudgetMsg::default()))
+        }
+    }
+
+    impl crate::Message for BudgetMsg {
+        fn compute_size(&self, _cache: &mut crate::SizeCache) -> u32 {
+            self.unknown.encoded_len() as u32
+        }
+        fn write_to(&self, _cache: &mut crate::SizeCache, buf: &mut impl crate::EncodeSink) {
+            self.unknown.write_to(buf);
+        }
+        fn merge_field(
+            &mut self,
+            tag: crate::encoding::Tag,
+            buf: &mut impl bytes::Buf,
+            ctx: crate::DecodeContext<'_>,
+        ) -> Result<(), crate::DecodeError> {
+            self.unknown
+                .push(crate::encoding::decode_unknown_field(tag, buf, ctx)?);
+            Ok(())
+        }
+        fn clear(&mut self) {
+            *self = Self::default();
+        }
+    }
+
+    /// Wire bytes for a message carrying `n` unknown varint fields at field
+    /// 9 (two bytes each: tag, value).
+    fn unknowns_payload(n: usize) -> Vec<u8> {
+        let mut v = Vec::with_capacity(n * 2);
+        for _ in 0..n {
+            v.push(9 << 3); // field 9, varint
+            v.push(0x00);
+        }
+        v
+    }
+
+    /// An extension's records share one decode budget rather than each
+    /// getting a full one.
+    ///
+    /// The carrier's own decode sees only opaque records and charges one
+    /// slot each, so an unshared budget here is invisible from outside.
+    #[test]
+    fn message_extension_records_share_one_budget() {
+        const E: Extension<MessageCodec<BudgetMsg>> = Extension::new(1, CARRIER);
+
+        // Two records, each comfortably inside the per-record allowance but
+        // together past it.
+        let per_record = 2 * crate::DEFAULT_UNKNOWN_FIELD_LIMIT / 3;
+        let mut c = Carrier::default();
+        c.unknown.push(ld(1, unknowns_payload(per_record)));
+        c.unknown.push(ld(1, unknowns_payload(per_record)));
+
+        assert!(
+            c.extension(&E).is_none(),
+            "two records totalling {} unknown fields must exhaust the shared \
+             {} allowance",
+            2 * per_record,
+            crate::DEFAULT_UNKNOWN_FIELD_LIMIT
+        );
+
+        // One record of the same size is still fine — a ceiling, not a wall.
+        let mut ok = Carrier::default();
+        ok.unknown.push(ld(1, unknowns_payload(per_record)));
+        assert!(ok.extension(&E).is_some());
+    }
+
+    /// The repeated form retains every element simultaneously, so it shares
+    /// a budget for the same reason.
+    #[test]
+    fn repeated_message_extension_elements_share_one_budget() {
+        const E: Extension<Repeated<MessageCodec<BudgetMsg>>> = Extension::new(1, CARRIER);
+
+        let per_record = 2 * crate::DEFAULT_UNKNOWN_FIELD_LIMIT / 3;
+        let mut c = Carrier::default();
+        c.unknown.push(ld(1, unknowns_payload(per_record)));
+        c.unknown.push(ld(1, unknowns_payload(per_record)));
+
+        // `decode_one_ctx` returns `None` for the over-budget record, and
+        // the repeated path drops it rather than aborting, so the observable
+        // effect is a short list rather than an error.
+        assert_eq!(
+            c.extension(&E).len(),
+            1,
+            "the second element must not get a fresh allowance"
+        );
+    }
+
+    /// Group-valued extensions share a budget for the same reason, in both
+    /// the singular and repeated forms.
+    ///
+    /// Codegen emits `Repeated<GroupCodec<M>>` for a proto2 `repeated group`
+    /// extension, so this is a real shape, not a hypothetical one — and it
+    /// takes its own `decode_one_ctx` override to reach, because the
+    /// defaulted one forwards to the budget-minting `decode_one`.
+    #[test]
+    fn group_extension_records_share_one_budget() {
+        const SINGULAR: Extension<GroupCodec<BudgetMsg>> = Extension::new(1, CARRIER);
+        const REPEATED: Extension<Repeated<GroupCodec<BudgetMsg>>> = Extension::new(1, CARRIER);
+
+        // A group record holds its payload as nested unknown fields rather
+        // than raw bytes, so build it from `UnknownFields` directly.
+        let per_record = 2 * crate::DEFAULT_UNKNOWN_FIELD_LIMIT / 3;
+        let record = || {
+            let mut inner = UnknownFields::new();
+            for _ in 0..per_record {
+                inner.push(varint(9, 0));
+            }
+            group(1, inner)
+        };
+
+        let mut c = Carrier::default();
+        c.unknown.push(record());
+        c.unknown.push(record());
+
+        assert!(
+            c.extension(&SINGULAR).is_none(),
+            "two group records must share one allowance"
+        );
+        assert_eq!(
+            c.extension(&REPEATED).len(),
+            1,
+            "the repeated group form must share it too"
+        );
     }
 
     // ── Over-limit message values (2 GiB encode guard) ──────────────────
