@@ -279,6 +279,14 @@ pub mod __buffa {
         /// finite, so corrupt embedded bytes still fail rather than
         /// exhausting memory.
         ///
+        /// The default is a floor, not a starting point. The
+        /// element-to-encoded ratio does not shrink with schema size: an
+        /// empty nested message with a one-character name is 5 wire bytes
+        /// and materializes a whole `DescriptorProto`, so a 700-byte
+        /// schema of them needs more than 64x. Without the floor the
+        /// scaled bound would be *tighter* than the default it replaces
+        /// for every descriptor set under 512 KiB.
+        ///
         /// # Panics
         ///
         /// Panics on first access if the embedded bytes are malformed —
@@ -294,7 +302,10 @@ pub mod __buffa {
             POOL.get_or_init(|| {
                 let options = ::buffa::DecodeOptions::new()
                     .with_element_memory_limit(
-                        FILE_DESCRIPTOR_SET_BYTES.len().saturating_mul(64),
+                        FILE_DESCRIPTOR_SET_BYTES
+                            .len()
+                            .saturating_mul(64)
+                            .max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
                     );
                 ::buffa::alloc::sync::Arc::new(
                     ::buffa_descriptor::DescriptorPool::decode_with_options(

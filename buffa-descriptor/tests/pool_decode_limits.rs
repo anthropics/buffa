@@ -99,3 +99,74 @@ fn decode_and_decode_with_options_agree_on_defaults() {
     assert!(a.message_index("wide.p1.M1").is_some());
     assert_eq!(a.message_index("wide.p1.M1"), b.message_index("wide.p1.M1"));
 }
+
+/// A descriptor set whose bulk is empty nested messages with one-character
+/// names — 5 wire bytes each, materializing a whole `DescriptorProto`.
+fn short_named_empties(outer: usize, nested_each: usize) -> Vec<u8> {
+    let mut set = FileDescriptorSet::default();
+    let mut file = FileDescriptorProto {
+        name: Some("p.proto".to_string()),
+        package: Some("p".to_string()),
+        syntax: Some("proto3".to_string()),
+        ..Default::default()
+    };
+    for o in 0..outer {
+        let mut msg = DescriptorProto {
+            name: Some(format!("Outer{o}")),
+            ..Default::default()
+        };
+        for n in 0..nested_each {
+            let c = char::from(b'A' + u8::try_from(n % 26).expect("nested index fits a letter"));
+            msg.nested_type.push(DescriptorProto {
+                name: Some(c.to_string()),
+                ..Default::default()
+            });
+        }
+        file.message_type.push(msg);
+    }
+    set.file.push(file);
+    set.encode_to_vec()
+}
+
+#[test]
+fn a_length_scaled_bound_needs_the_default_as_a_floor() {
+    // Why generated `descriptor_pool()` floors its scaled bound at
+    // `DEFAULT_ELEMENT_MEMORY_LIMIT` rather than using `len * 64` alone (#336).
+    //
+    // The element-to-encoded ratio is a property of the schema's shape, not
+    // its size: `size_of::<DescriptorProto>()` is charged for something that
+    // costs 5 bytes on the wire, so this set needs more than 64x however
+    // small it is. Scaling alone would reject it; the default accepts it.
+    //
+    // This records the rationale; it does not guard the emitted code, because
+    // it rebuilds the bound here rather than reading it out of codegen. The
+    // guard is `the_emitted_pool_bound_is_floored_at_the_default` in
+    // buffa-codegen, which fails if the `.max(..)` is dropped.
+    // 728 bytes — the instance the changelog and #336 cite.
+    let bytes = short_named_empties(5, 26);
+    assert!(
+        bytes.len() < 32 * 1024,
+        "stays far under the default: {}",
+        bytes.len()
+    );
+
+    let scaled_only =
+        DecodeOptions::new().with_element_memory_limit(bytes.len().saturating_mul(64));
+    match DescriptorPool::decode_with_options(&bytes, &scaled_only) {
+        Err(PoolError::Decode(DecodeError::ElementMemoryLimitExceeded)) => {}
+        other => panic!("expected len*64 alone to reject this shape, got {other:?}"),
+    }
+
+    let floored = DecodeOptions::new().with_element_memory_limit(
+        bytes
+            .len()
+            .saturating_mul(64)
+            .max(buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
+    );
+    DescriptorPool::decode_with_options(&bytes, &floored)
+        .expect("the floored bound accepts what the default always did");
+
+    // And the plain default accepts it, which is what makes the floor correct
+    // rather than merely generous: without it this is a regression.
+    DescriptorPool::decode(&bytes).expect("the default has always accepted this");
+}

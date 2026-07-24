@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **The bound generated `descriptor_pool()` applies is floored at `DEFAULT_ELEMENT_MEMORY_LIMIT`, so it can no longer be tighter than the default it replaces** (#336).
+    0.9.1 scaled that bound to the embedded descriptor length (`len * 64`), which is below 32 MiB for any descriptor set under 512 KiB — nearly all of them. The element-to-encoded ratio is a property of the schema's shape rather than its size: an empty nested message with a one-character name is 5 wire bytes and materializes a whole `DescriptorProto`, so a 728-byte schema of them needs 68x and was rejected at 64x, where the 0.9.0 default had accepted it. The fix makes the change monotonic — the emitted bound now only ever loosens. Regenerate with a version-matched `buffa-codegen` to pick it up; no runtime API changed.
+time: 2026-07-24T01:15:00.000000000Z

@@ -191,3 +191,27 @@ fn the_plugin_option_is_found_in_a_parameter_string() {
     // A bad value is reported rather than ignored.
     assert!(element_memory_limit_opt("element_memory_limit=banana").is_err());
 }
+
+#[test]
+fn the_emitted_pool_bound_is_floored_at_the_default() {
+    // The bound the generated `descriptor_pool()` applies is scaled to the
+    // embedded length, which is below the untrusted-input default for any
+    // descriptor set under 512 KiB. The element-to-encoded ratio does not
+    // shrink with schema size — an empty nested message with a one-character
+    // name is 5 wire bytes and materializes a whole `DescriptorProto` — so
+    // without the floor a small schema could be rejected by a bound that
+    // exists to let large ones through. See #336.
+    let emitted = crate::reflect::reflect_pool_module(&[1, 2, 3]).to_string();
+    // Match the whole call, whitespace-stripped: asserting only that the
+    // constant appears somewhere would be satisfied by `.min(..)`, which is
+    // the precise inversion that reintroduces #336.
+    let flat: String = emitted.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(
+        flat.contains("with_element_memory_limit"),
+        "the pool must scale its bound: {emitted}"
+    );
+    assert!(
+        flat.contains(".max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT)"),
+        "the scaled bound must be floored at the default, not capped by it: {emitted}"
+    );
+}
