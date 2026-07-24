@@ -56,6 +56,25 @@ fn clone_options<T: Clone + Default, P: buffa::ProtoBox<T>>(
     opts.as_option().cloned().map(Box::new)
 }
 
+/// Maximum length of a fully-qualified symbol name, in bytes.
+///
+/// Matches protoc's own cap. Two things depend on it, neither obvious.
+///
+/// A name is built by concatenating its parent's, and every descendant
+/// stores its own full copy — four of them, across the symbol table, the
+/// name index, the descriptor, and the file index. A deep prefix is paid
+/// once on the wire and once per descendant, so `K` leaf messages under a
+/// `P`-byte prefix cost `4KP` bytes of pool from roughly `P + 7K` bytes of
+/// input. The ratio grows with `P`, which the decode-time element budget
+/// does not bound: a message's `name` is a singular field and is never
+/// charged against it.
+///
+/// It also bounds nesting. Pool construction walks nested messages
+/// recursively in four places with no depth counter of their own, and each
+/// level adds at least one byte to the name, so a name limit is a depth
+/// limit — reached in pass 1, before the other three walks run.
+pub const MAX_SYMBOL_LEN: usize = 512;
+
 /// Errors that can occur while building a [`DescriptorPool`].
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -73,6 +92,8 @@ pub enum PoolError {
     WrongTypeKind { type_name: String, field: String },
     /// Two declarations share the same fully-qualified symbol name.
     DuplicateName(String),
+    /// A fully-qualified name exceeds [`MAX_SYMBOL_LEN`].
+    NameTooLong { len: usize, limit: usize },
     /// A message has more than 65 535 fields, exceeding the `u16` index
     /// limit of the internal field-number lookup table behind
     /// [`MessageDescriptor::field`].
@@ -120,6 +141,10 @@ impl core::fmt::Display for PoolError {
                 )
             }
             Self::DuplicateName(name) => write!(f, "duplicate symbol name {name:?}"),
+            Self::NameTooLong { len, limit } => write!(
+                f,
+                "fully-qualified name is {len} bytes, over the {limit}-byte limit"
+            ),
             Self::TooManyFields { message, count } => {
                 write!(
                     f,
@@ -729,6 +754,12 @@ impl DescriptorPool {
     // ── Pass 1: register names ──────────────────────────────────────────────
 
     fn register_symbol(&mut self, fqn: &str, kind: SymbolKind) -> Result<(), PoolError> {
+        if fqn.len() > MAX_SYMBOL_LEN {
+            return Err(PoolError::NameTooLong {
+                len: fqn.len(),
+                limit: MAX_SYMBOL_LEN,
+            });
+        }
         if self.symbols.insert(fqn.to_string(), kind).is_some() {
             return Err(PoolError::DuplicateName(fqn.to_string()));
         }

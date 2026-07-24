@@ -99,3 +99,108 @@ fn decode_and_decode_with_options_agree_on_defaults() {
     assert!(a.message_index("wide.p1.M1").is_some());
     assert_eq!(a.message_index("wide.p1.M1"), b.message_index("wide.p1.M1"));
 }
+
+/// A fully-qualified name is capped, which bounds two things at once.
+///
+/// The amplification: every descendant stores its own copy of the prefix,
+/// four times over, so `K` leaves under a `P`-byte prefix cost `4KP` bytes of
+/// pool from about `P + 7K` bytes of input. A message's `name` is a singular
+/// field, so the decode-time element budget never sees the prefix at all.
+///
+/// And the depth: pool construction walks nested messages recursively in four
+/// places with no depth counter, and each level adds at least one byte to the
+/// name, so the name cap is also a depth cap.
+#[test]
+fn a_long_prefix_is_refused_rather_than_stored_once_per_descendant() {
+    use buffa_descriptor::MAX_SYMBOL_LEN;
+
+    /// One message named `name`, holding `leaves` empty single-character
+    /// nested messages.
+    fn set_with_prefix(name: &str, leaves: usize) -> Vec<u8> {
+        let mut outer = DescriptorProto {
+            name: Some(name.to_string()),
+            ..Default::default()
+        };
+        for n in 0..leaves {
+            let c = char::from(b'a' + u8::try_from(n % 26).expect("fits a letter"));
+            outer.nested_type.push(DescriptorProto {
+                name: Some(format!("{c}{n}")),
+                ..Default::default()
+            });
+        }
+        FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("p.proto".to_string()),
+                package: Some("p".to_string()),
+                syntax: Some("proto3".to_string()),
+                message_type: vec![outer],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+        .encode_to_vec()
+    }
+
+    // Well inside the cap: a perfectly ordinary schema is untouched.
+    let ok = set_with_prefix("Outer", 64);
+    assert!(DescriptorPool::decode(&ok).is_ok());
+
+    // A prefix past the cap is refused, and the error says so — rather than
+    // being silently stored once per leaf.
+    let long = "L".repeat(MAX_SYMBOL_LEN + 1);
+    match DescriptorPool::decode(&set_with_prefix(&long, 8)) {
+        Err(PoolError::NameTooLong { len, limit }) => {
+            assert!(len > limit, "{len} should exceed {limit}");
+            assert_eq!(limit, MAX_SYMBOL_LEN);
+        }
+        other => panic!("expected NameTooLong, got {other:?}"),
+    }
+}
+
+/// The cap is reached in pass 1, before the three later recursive walks run,
+/// so deep nesting cannot drive them past it either.
+///
+/// Built through `DescriptorPool::new` rather than `decode`, deliberately.
+/// `new` takes an already-materialized `FileDescriptorSet`, so the decoder's
+/// recursion limit never applies — that is the path where the four
+/// uncounted recursive walks could previously run to a stack overflow, which
+/// is a `SIGSEGV` rather than a catchable error. It also keeps the test from
+/// depending on where the decode recursion limit happens to sit.
+#[test]
+fn nesting_deeper_than_the_name_cap_is_refused() {
+    use buffa_descriptor::MAX_SYMBOL_LEN;
+
+    // Past the decoder's own recursion limit, so this nesting could only ever
+    // arrive through `new`.
+    let depth = 200;
+    let mut inner = DescriptorProto {
+        name: Some("x".repeat(20)),
+        ..Default::default()
+    };
+    for _ in 0..depth {
+        inner = DescriptorProto {
+            name: Some("x".repeat(20)),
+            nested_type: vec![inner],
+            ..Default::default()
+        };
+    }
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("d.proto".to_string()),
+            package: Some("d".to_string()),
+            syntax: Some("proto3".to_string()),
+            message_type: vec![inner],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert!(
+        (depth + 1) * 21 > MAX_SYMBOL_LEN,
+        "the fixture must actually exceed the cap"
+    );
+    assert!(matches!(
+        DescriptorPool::new(set),
+        Err(PoolError::NameTooLong { .. })
+    ));
+}
