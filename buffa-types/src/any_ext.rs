@@ -928,6 +928,32 @@ mod tests {
             );
         }
 
+        /// Corrupt `Any.value` bytes are ordinary untrusted input, not an
+        /// invariant violation, so encoding them must not panic.
+        ///
+        /// `Any.value` is a raw `bytes` field that decode never validates.
+        /// The release path already falls back to an empty body; a
+        /// `debug_assert!` on the same condition makes a single malformed
+        /// byte a panic wherever debug assertions are on — which this test
+        /// suite has, so it fails here.
+        #[test]
+        fn corrupt_any_value_bytes_encode_to_text_without_panicking() {
+            with_registry(|| {
+                let a = Any {
+                    type_url: Duration::TYPE_URL.to_string(),
+                    // 0xFF is a varint continuation byte with nothing after
+                    // it: a truncated field, not a valid Duration.
+                    value: bytes::Bytes::from_static(&[0xFF]),
+                    ..Default::default()
+                };
+                assert_eq!(
+                    buffa::text::encode_to_string(&a),
+                    "[type.googleapis.com/google.protobuf.Duration] {}",
+                    "the expansion is still emitted, with an empty body"
+                );
+            });
+        }
+
         #[test]
         fn deserialize_rejects_non_string_type() {
             // @type as a non-string value → error.

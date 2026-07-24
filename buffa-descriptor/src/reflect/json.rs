@@ -977,6 +977,21 @@ fn base64_encode(bytes: &[u8]) -> String {
     out
 }
 
+/// Capacity for a base64 decode of `trimmed_len` padding-stripped characters.
+///
+/// Divides before multiplying. `trimmed_len * 3` overflows a 32-bit `usize`
+/// above ~1.33 GiB — a panic under `overflow-checks`, a wrapped and badly
+/// undersized capacity otherwise — and the string comes straight from
+/// attacker-supplied JSON, on a target buffa supports and CI checks. This
+/// form cannot overflow for any `usize`.
+///
+/// Four base64 characters carry three bytes, so `len / 4 * 3` covers every
+/// whole group and the `+ 3` covers the 2- or 3-character remainder, which
+/// yields at most two bytes.
+fn decode_capacity(trimmed_len: usize) -> usize {
+    trimmed_len / 4 * 3 + 3
+}
+
 /// Decode standard or URL-safe base64, with or without padding (the proto3
 /// JSON spec accepts both forms on parse).
 fn base64_decode(s: &str) -> Option<Vec<u8>> {
@@ -991,7 +1006,7 @@ fn base64_decode(s: &str) -> Option<Vec<u8>> {
         })
     }
     let s = s.trim_end_matches('=');
-    let mut out = Vec::with_capacity(s.len() * 3 / 4 + 1);
+    let mut out = Vec::with_capacity(decode_capacity(s.len()));
     let bytes = s.as_bytes();
     let mut i = 0;
     while i + 4 <= bytes.len() {
@@ -1028,3 +1043,41 @@ include!("json_wkt.rs");
 // Suppress unused warnings for the items that the WKT codec keeps.
 #[allow(unused)]
 const _: fn(&MessageDescriptor) = |_| {};
+
+#[cfg(test)]
+mod tests {
+    use super::{base64_decode, base64_encode};
+
+    /// The capacity computation must not overflow for any input length.
+    ///
+    /// Calls the real function, so a multiply-first capacity fails here — at
+    /// `usize::MAX` it panics under the overflow-checks that `cargo test`
+    /// enables. 32-bit Linux is a supported target with its own CI job, where
+    /// the same overflow is reachable at ~1.33 GiB of JSON.
+    #[test]
+    fn the_decode_capacity_cannot_overflow_at_any_length() {
+        for len in [0, 1, 4, usize::MAX / 2, usize::MAX - 1, usize::MAX] {
+            let cap = super::decode_capacity(len);
+            assert!(cap >= len / 4 * 3, "capacity {cap} too small for len {len}");
+        }
+    }
+
+    /// The capacity must also stay an upper bound on the decoded length, or
+    /// the `Vec` reallocates and dividing first is a silent pessimization.
+    #[test]
+    fn the_decode_capacity_still_covers_the_output() {
+        for n in 0..64usize {
+            let input = vec![0xABu8; n];
+            let encoded = base64_encode(&input);
+            let trimmed = encoded.trim_end_matches('=');
+            let cap = super::decode_capacity(trimmed.len());
+            let decoded = base64_decode(&encoded).expect("round-trips");
+            assert_eq!(decoded, input, "n={n}");
+            assert!(
+                cap >= decoded.len(),
+                "capacity {cap} under-covers {} decoded bytes at n={n}",
+                decoded.len()
+            );
+        }
+    }
+}
