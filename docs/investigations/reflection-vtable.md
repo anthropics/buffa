@@ -269,7 +269,7 @@ impl ReflectElement for &[u8] { /* Bytes */ }
 impl<E: Enumeration> ReflectElement for EnumValue<E> { /* EnumNumber(to_i32) */ }
 
 /// Per-key conversion (the spec-valid map-key types only).
-pub trait ReflectMapKey: core::fmt::Debug {
+pub trait ReflectMapKey: core::fmt::Debug + Ord {
     fn as_map_key_ref(&self) -> MapKeyRef<'_>;
 }
 impl ReflectMapKey for i32 { /* I32 */ }    // + i64/u32/u64/bool
