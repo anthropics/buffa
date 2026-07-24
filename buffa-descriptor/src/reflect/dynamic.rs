@@ -332,6 +332,30 @@ impl DynamicMessage {
     }
 
     fn merge_buf(&mut self, buf: &mut impl Buf, ctx: DecodeContext<'_>) -> Result<(), DecodeError> {
+        self.normalizing(|s| s.merge_buf_fields(buf, ctx))
+    }
+
+    /// Run a field loop, then restore the sorted invariant on every map field.
+    ///
+    /// Map entries are appended unsorted during a loop and sorted once at the
+    /// end, so every loop over `merge_one_field` must go through here — on the
+    /// error path too, or a partially-decoded message escapes with maps whose
+    /// binary-search lookups silently miss.
+    fn normalizing<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        let result = f(self);
+        for value in self.fields.values_mut() {
+            if let Value::Map(m) = value {
+                m.normalize();
+            }
+        }
+        result
+    }
+
+    fn merge_buf_fields(
+        &mut self,
+        buf: &mut impl Buf,
+        ctx: DecodeContext<'_>,
+    ) -> Result<(), DecodeError> {
         while buf.has_remaining() {
             let tag = Tag::decode(buf)?;
             self.merge_one_field(tag, buf, ctx)?;
@@ -346,7 +370,7 @@ impl DynamicMessage {
         group_field_number: u32,
         ctx: DecodeContext<'_>,
     ) -> Result<(), DecodeError> {
-        loop {
+        self.normalizing(|s| loop {
             let tag = Tag::decode(buf)?;
             if tag.wire_type() == WireType::EndGroup {
                 if tag.field_number() != group_field_number {
@@ -354,8 +378,8 @@ impl DynamicMessage {
                 }
                 return Ok(());
             }
-            self.merge_one_field(tag, buf, ctx)?;
-        }
+            s.merge_one_field(tag, buf, ctx)?;
+        })
     }
 
     fn merge_one_field(
@@ -689,11 +713,11 @@ impl DynamicMessage {
             .or_insert_with(|| Value::Map(MapValue::new()))
         {
             Value::Map(m) => {
-                m.insert(k, v);
+                m.push_unsorted(k, v);
             }
             other => {
                 let mut m = MapValue::new();
-                m.insert(k, v);
+                m.push_unsorted(k, v);
                 *other = Value::Map(m);
             }
         }
@@ -757,11 +781,11 @@ impl DynamicMessage {
             .or_insert_with(|| Value::Map(MapValue::new()))
         {
             Value::Map(m) => {
-                m.insert(k, v);
+                m.push_unsorted(k, v);
             }
             other => {
                 let mut m = MapValue::new();
-                m.insert(k, v);
+                m.push_unsorted(k, v);
                 *other = Value::Map(m);
             }
         }
