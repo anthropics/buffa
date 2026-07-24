@@ -1188,10 +1188,17 @@ eager `PersonView` for those. The recursion and unknown-field budgets
 recorded at decode time are charged on access (per deferred subtree), so
 deep navigation fails with `RecursionLimitExceeded` at the same boundary as
 the eager decoder; raise limits via `DecodeOptions::decode_lazy_view`. Note
-that the unknown-field limit is a per-subtree bound on the lazy path, not
-the global decode-time cap `decode_view` enforces — a full lazy traversal
-can materialize unknown-field records proportional to input size, so prefer
-the eager view for untrusted input if that global bound matters.
+that the unknown-field and element-memory limits are per-subtree bounds on
+the lazy path, not the global decode-time caps `decode_view` enforces — a
+full lazy traversal can materialize records proportional to input size, so
+prefer the eager view for untrusted input if that global bound matters.
+
+Element memory is charged twice on this path, at the two points where it is
+actually spent: once when a repeated element is recorded, since the `Vec` of
+byte ranges is real memory whatever the elements later cost, and again when
+a deferred subtree is accessed and its own elements are recorded. The budget
+remaining at the record site is what an access replays, so a subtree cannot
+spend more than was left when its bytes were set aside.
 
 ### `OwnedView<V>` — views with `'static` lifetime
 

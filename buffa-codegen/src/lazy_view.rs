@@ -340,9 +340,11 @@ pub(crate) fn generate_lazy_view_with_nesting(
                 buf: &'a [u8],
             ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
                 let __limit = ::core::cell::Cell::new(::buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
+                let __elem = ::core::cell::Cell::new(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT);
                 Self::_decode_lazy_ctx(
                     buf,
-                    ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit),
+                    ::buffa::DecodeContext::new(::buffa::RECURSION_LIMIT, &__limit)
+                        .with_element_memory(&__elem),
                 )
             }
 
@@ -744,6 +746,14 @@ fn lazy_singular_message_arm(
             #wire_check
             let __sub_ctx = ctx.descend()?;
             let sub = ::buffa::types::borrow_bytes(&mut cur)?;
+            // Charged for the same reason the repeated arm is. A singular
+            // message field repeated on the wire accumulates one retained
+            // byte range per occurrence, because the lazy path defers the
+            // merge the eager decoder performs in place — so this `Vec` is
+            // an amplification the eager path does not have.
+            ctx.register_element_memory(
+                ::core::mem::size_of::<&'a [u8]>(),
+            )?;
             view.#ident.push_fragment(sub, __sub_ctx);
         }
     })
@@ -770,6 +780,11 @@ fn lazy_repeated_message_arm(
             #wire_check
             let __sub_ctx = ctx.descend()?;
             let sub = ::buffa::types::borrow_bytes(&mut cur)?;
+            // A deferred element still occupies a slot in the `Vec` of raw
+            // byte ranges right now, whatever it costs later on access.
+            ctx.register_element_memory(
+                ::core::mem::size_of::<&'a [u8]>(),
+            )?;
             view.#ident.push_bytes(sub, __sub_ctx);
         }
     })
