@@ -1,0 +1,3 @@
+kind: Fixed
+body: Generated `decode_view` now applies `DEFAULT_ELEMENT_MEMORY_LIMIT`, matching `Message::decode`. The view field arms already charged the budget, but the default entry point never attached one, and `register_element_memory` is a no-op without it — so `FooView::decode_view` and `OwnedView::decode` accepted repeated-field payloads that the owned decoder rejects. `DecodeOptions::decode_view` was unaffected. Callers that legitimately decode views of very large repeated fields can raise the ceiling with `DecodeOptions::with_element_memory_limit(n).decode_view(..)`.
+time: 2026-07-23T22:19:55.633099925-07:00
