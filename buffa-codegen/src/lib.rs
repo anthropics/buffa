@@ -1079,9 +1079,10 @@ pub struct CodeGenConfig {
     ///   values use the eager view types.
     /// - **Merge preserved**: a singular message field split across wire
     ///   occurrences is recorded as fragments and merged on access.
-    /// - **Budgets flow**: the recursion depth and unknown-field allowance
-    ///   remaining at each deferred field are recorded and replayed per
-    ///   access (a per-subtree approximation of the shared allowance).
+    /// - **Budgets flow**: the recursion depth, unknown-field allowance, and
+    ///   element-memory budget remaining at each deferred field are recorded
+    ///   and replayed per access (a per-subtree approximation of the shared
+    ///   budgets).
     /// - **Deferred validation**: malformed deferred bytes error on access,
     ///   from the fallible `to_owned_message`, and as a serde error from the
     ///   view `Serialize` impl. `ViewEncode` replays recorded fragments
