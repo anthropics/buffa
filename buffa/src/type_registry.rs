@@ -452,15 +452,14 @@ where
 {
     // If the stored bytes don't decode (corrupt Any), emit an empty `{}` —
     // best effort in the fmt::Result error model. Round-trip won't be perfect
-    // but the output is still syntactically valid textproto. Signal in debug
-    // so a corrupt Any isn't completely silent.
-    let decoded = M::decode_from_slice(bytes);
-    debug_assert!(
-        decoded.is_ok(),
-        "any_encode_text: corrupt Any.value bytes: {:?}",
-        decoded.as_ref().err()
-    );
-    let m = decoded.unwrap_or_default();
+    // but the output is still syntactically valid textproto.
+    //
+    // Deliberately not a `debug_assert!`. `Any.value` is a raw `bytes` field
+    // that decode never validates, so undecodable content is an ordinary
+    // property of untrusted input, not an invariant this library maintains;
+    // asserting on it makes a single malformed byte a panic wherever debug
+    // assertions are on.
+    let m = M::decode_from_slice(bytes).unwrap_or_default();
     enc.write_map_entry(|enc| m.encode_text(enc))
 }
 
