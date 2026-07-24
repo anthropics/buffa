@@ -158,6 +158,21 @@ struct TextExtMap {
 
 #[cfg(feature = "text")]
 impl TextExtMap {
+    fn register(&mut self, entry: TextExtEntry) {
+        use alloc::borrow::ToOwned;
+        let key = (entry.extendee.to_owned(), entry.number);
+
+        if let Some(previous) = self.by_number.remove(&key) {
+            self.by_name.remove(previous.full_name);
+        }
+        if let Some(previous_key) = self.by_name.remove(entry.full_name) {
+            self.by_number.remove(&previous_key);
+        }
+
+        self.by_name.insert(entry.full_name.to_owned(), key.clone());
+        self.by_number.insert(key, entry);
+    }
+
     fn by_number(&self, extendee: &str, number: u32) -> Option<&TextExtEntry> {
         use alloc::borrow::ToOwned;
         self.by_number.get(&(extendee.to_owned(), number))
@@ -221,15 +236,11 @@ impl TypeRegistry {
             .insert(entry.type_url.to_owned(), entry);
     }
 
-    /// Registers a text extension entry.
+    /// Registers a text extension entry. Replaces any existing entry at the
+    /// same `(extendee, number)` or `full_name`.
     #[cfg(feature = "text")]
     pub fn register_text_ext(&mut self, entry: TextExtEntry) {
-        use alloc::borrow::ToOwned;
-        let key = (entry.extendee.to_owned(), entry.number);
-        self.text_ext
-            .by_name
-            .insert(entry.full_name.to_owned(), key.clone());
-        self.text_ext.by_number.insert(key, entry);
+        self.text_ext.register(entry);
     }
 
     /// Look up a JSON `Any` entry by type URL.
@@ -880,6 +891,30 @@ mod tests {
             // by_name axis → same entry via indirection.
             assert_eq!(reg.text_ext_by_name("pkg.inner_ext").unwrap().number, 50);
             assert!(reg.text_ext_by_name("pkg.missing").is_none());
+        }
+
+        #[test]
+        fn text_ext_replacement_evicts_both_conflicting_entries() {
+            let mut reg = TypeRegistry::new();
+            let make_entry = |number, full_name| TextExtEntry {
+                number,
+                full_name,
+                extendee: "pkg.Carrier",
+                text_encode: message_encode_text::<Inner>,
+                text_merge: message_merge_text::<Inner>,
+            };
+
+            reg.register_text_ext(make_entry(50, "pkg.old"));
+            reg.register_text_ext(make_entry(51, "pkg.new"));
+            reg.register_text_ext(make_entry(50, "pkg.new"));
+
+            assert!(reg.text_ext_by_name("pkg.old").is_none());
+            assert_eq!(reg.text_ext_by_name("pkg.new").unwrap().number, 50);
+            assert_eq!(
+                reg.text_ext_by_number("pkg.Carrier", 50).unwrap().full_name,
+                "pkg.new"
+            );
+            assert!(reg.text_ext_by_number("pkg.Carrier", 51).is_none());
         }
 
         /// Serializes with other tests touching the global TEXT_ANY/TEXT_EXT.

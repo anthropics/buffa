@@ -90,6 +90,14 @@ impl ExtensionRegistry {
     /// `(extendee, number)` or `full_name`.
     pub fn register(&mut self, entry: JsonExtEntry) {
         let key = (entry.extendee.to_owned(), entry.number);
+
+        if let Some(previous) = self.by_number.remove(&key) {
+            self.by_name.remove(previous.full_name);
+        }
+        if let Some(previous_key) = self.by_name.remove(entry.full_name) {
+            self.by_number.remove(&previous_key);
+        }
+
         self.by_name.insert(entry.full_name.to_owned(), key.clone());
         self.by_number.insert(key, entry);
     }
@@ -1055,6 +1063,19 @@ mod tests {
         assert!(reg.by_number("other.Msg", 120).is_none());
         assert_eq!(reg.by_name("pkg.ext").unwrap().number, 120);
         assert!(reg.by_name("pkg.nonexistent").is_none());
+    }
+
+    #[test]
+    fn registry_replacement_evicts_both_conflicting_entries() {
+        let mut reg = ExtensionRegistry::new();
+        reg.register(entry!(120, "pkg.old", "pkg.Msg"));
+        reg.register(entry!(121, "pkg.new", "pkg.Msg"));
+        reg.register(entry!(120, "pkg.new", "pkg.Msg"));
+
+        assert!(reg.by_name("pkg.old").is_none());
+        assert_eq!(reg.by_name("pkg.new").unwrap().number, 120);
+        assert_eq!(reg.by_number("pkg.Msg", 120).unwrap().full_name, "pkg.new");
+        assert!(reg.by_number("pkg.Msg", 121).is_none());
     }
 
     #[test]
