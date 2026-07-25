@@ -36,6 +36,7 @@ use crate::{
     ScalarType, SingularKind,
 };
 use buffa::editions::EnumType;
+use buffa::json_helpers::{f64_to_int, parse_int_from_str};
 
 // ── Serialize ───────────────────────────────────────────────────────────────
 
@@ -692,42 +693,16 @@ fn scalar_from_f64(sc: ScalarType, v: f64) -> Option<Value> {
             Value::F32(v as f32)
         }
         ScalarType::Double => Value::F64(v),
-        // Integers as JSON floats: accept exact integral values. The
-        // `2^53` magnitude bound protects the `as` cast from saturating —
-        // `f64` cannot exactly represent integers beyond that, and `as i64`
-        // saturates rather than wrapping.
-        ScalarType::Int32 | ScalarType::Sint32 | ScalarType::Sfixed32
-            if v.fract() == 0.0 && integral_in_safe_range(v) =>
-        {
-            Value::I32(i32::try_from(v as i64).ok()?)
-        }
-        ScalarType::Int64 | ScalarType::Sint64 | ScalarType::Sfixed64
-            if v.fract() == 0.0 && integral_in_safe_range(v) =>
-        {
-            Value::I64(v as i64)
-        }
-        ScalarType::Uint32 | ScalarType::Fixed32
-            if v.fract() == 0.0 && v >= 0.0 && integral_in_safe_range(v) =>
-        {
-            Value::U32(u32::try_from(v as i64).ok()?)
-        }
-        ScalarType::Uint64 | ScalarType::Fixed64
-            if v.fract() == 0.0 && v >= 0.0 && integral_in_safe_range(v) =>
-        {
-            Value::U64(v as u64)
-        }
+        // Use the same exactness guard as generated integer JSON decoders.
+        // serde_json may round high-magnitude decimal/exponent tokens before
+        // the visitor receives the f64, so merely checking `fract() == 0`
+        // can silently accept an adjacent integer.
+        ScalarType::Int32 | ScalarType::Sint32 | ScalarType::Sfixed32 => Value::I32(f64_to_int(v)?),
+        ScalarType::Int64 | ScalarType::Sint64 | ScalarType::Sfixed64 => Value::I64(f64_to_int(v)?),
+        ScalarType::Uint32 | ScalarType::Fixed32 => Value::U32(f64_to_int(v)?),
+        ScalarType::Uint64 | ScalarType::Fixed64 => Value::U64(f64_to_int(v)?),
         _ => return None,
     })
-}
-
-/// Whether an integral `f64` is within the range where `f64` exactly
-/// represents integers (`±2^53`). Beyond that the value is approximate and
-/// `as i64` saturates rather than rounding to nearest, producing silent
-/// corruption.
-fn integral_in_safe_range(v: f64) -> bool {
-    // MSRV: `f64::abs` is not const-stable until 1.85, and no caller needs
-    // const evaluation here.
-    v.abs() <= (1u64 << 53) as f64
 }
 
 fn scalar_from_str(sc: ScalarType, v: &str) -> Result<Value, String> {
@@ -741,24 +716,12 @@ fn scalar_from_str(sc: ScalarType, v: &str) -> Result<Value, String> {
         ScalarType::Int64 | ScalarType::Sint64 | ScalarType::Sfixed64 => {
             parse_int_str(v).map(Value::I64)
         }
-        ScalarType::Uint64 | ScalarType::Fixed64 => {
-            // Try the direct parse first to preserve full u64 range; fall
-            // back to the integral-float path for exponential notation.
-            if let Ok(n) = v.parse::<u64>() {
-                Ok(Value::U64(n))
-            } else {
-                parse_int_str(v)
-                    .and_then(|n| u64::try_from(n).map_err(|_| "negative uint64".to_owned()))
-                    .map(Value::U64)
-            }
-        }
+        ScalarType::Uint64 | ScalarType::Fixed64 => parse_int_str(v).map(Value::U64),
         // 32-bit integers may also appear as strings.
-        ScalarType::Int32 | ScalarType::Sint32 | ScalarType::Sfixed32 => parse_int_str(v)
-            .and_then(|n| i32::try_from(n).map_err(|_| "out of range int32".to_owned()))
-            .map(Value::I32),
-        ScalarType::Uint32 | ScalarType::Fixed32 => parse_int_str(v)
-            .and_then(|n| u32::try_from(n).map_err(|_| "out of range uint32".to_owned()))
-            .map(Value::U32),
+        ScalarType::Int32 | ScalarType::Sint32 | ScalarType::Sfixed32 => {
+            parse_int_str(v).map(Value::I32)
+        }
+        ScalarType::Uint32 | ScalarType::Fixed32 => parse_int_str(v).map(Value::U32),
         // Float/double special values.
         ScalarType::Float => parse_float_str(v).map(|f| Value::F32(f as f32)),
         ScalarType::Double => parse_float_str(v).map(Value::F64),
@@ -768,26 +731,8 @@ fn scalar_from_str(sc: ScalarType, v: &str) -> Result<Value, String> {
 
 /// Parse a quoted-string integer, accepting integral decimal/exponential
 /// forms (`"1.5e3"` → `1500`) per the proto3 JSON spec.
-fn parse_int_str(v: &str) -> Result<i64, String> {
-    if let Ok(n) = v.parse::<i64>() {
-        return Ok(n);
-    }
-    // Only fall back to the float path when the string visibly carries a
-    // decimal point or exponent — a pure-integer string that failed
-    // `i64::parse` is out of range, not a float.
-    if !v.contains(['.', 'e', 'E']) {
-        return Err("integer out of range".to_owned());
-    }
-    let f: f64 = v.parse().map_err(|_| "invalid integer string".to_owned())?;
-    if f.fract() != 0.0 || f.is_nan() || f.is_infinite() {
-        return Err("non-integral string for integer field".to_owned());
-    }
-    // f64 has 53 bits of mantissa; values above 2^53 cannot be exactly
-    // represented and the cast to i64 silently saturates. Reject to be safe.
-    if f.abs() >= (1u64 << 53) as f64 {
-        return Err("out of exact integer range".to_owned());
-    }
-    Ok(f as i64)
+fn parse_int_str<I: TryFrom<i128>>(v: &str) -> Result<I, String> {
+    parse_int_from_str(v).ok_or_else(|| "invalid or out of range integer string".to_owned())
 }
 
 fn parse_float_str(v: &str) -> Result<f64, String> {

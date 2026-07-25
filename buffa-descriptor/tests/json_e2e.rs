@@ -36,6 +36,54 @@ fn json_scalar_round_trip() {
 }
 
 #[test]
+fn json_integer_parsing_matches_generated_messages() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
+
+    let parsed = DynamicMessage::from_json(
+        Arc::clone(&p),
+        idx,
+        r#"{
+            "fInt32": "1.5e3",
+            "fInt64": "9007199254740993.0",
+            "fUint32": "1200e-2",
+            "fUint64": "18446744073709551615.0"
+        }"#,
+    )
+    .expect("exact quoted decimal and exponent forms must parse");
+    assert_eq!(parsed.field_by_number(3), Some(&Value::I32(1_500)));
+    assert_eq!(
+        parsed.field_by_number(4),
+        Some(&Value::I64(9_007_199_254_740_993))
+    );
+    assert_eq!(parsed.field_by_number(5), Some(&Value::U32(12)));
+    assert_eq!(parsed.field_by_number(6), Some(&Value::U64(u64::MAX)));
+
+    let safe_unquoted =
+        DynamicMessage::from_json(Arc::clone(&p), idx, r#"{"fInt64": 4503599627370495.0}"#)
+            .expect("unquoted integer floats below 2^52 must still parse");
+    assert_eq!(
+        safe_unquoted.field_by_number(4),
+        Some(&Value::I64(4_503_599_627_370_495))
+    );
+
+    // serde_json can round integer-valued float tokens at this magnitude
+    // before the visitor sees them. Generated decoders reject them, and the
+    // reflective path must do the same instead of accepting an adjacent value.
+    for input in [
+        r#"{"fInt64": 4503599627370496.0}"#,
+        r#"{"fInt64": 9007199254740991.0}"#,
+        r#"{"fInt64": -9007199254740991.0}"#,
+        r#"{"fUint64": 9007199254740991.0}"#,
+    ] {
+        assert!(
+            DynamicMessage::from_json(Arc::clone(&p), idx, input).is_err(),
+            "unsafe unquoted integer float must be rejected: {input}"
+        );
+    }
+}
+
+#[test]
 fn json_containers_round_trip() {
     let p = pool();
     let containers_idx = p.message_index("reflect.test.Containers").unwrap();
