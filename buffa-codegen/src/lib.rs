@@ -1888,6 +1888,45 @@ pub enum CodeGenWarning {
         /// by proto name.
         assignments: Vec<(String, String)>,
     },
+    /// A field in a kept file references a type from a package that is neither
+    /// being generated nor covered by an [`extern_path`](CodeGenConfig::extern_paths)
+    /// mapping. The generated code will emit a dangling type path that fails to
+    /// compile in the consumer's build with no indication of where the
+    /// configuration gap is.
+    ///
+    /// Fix by either:
+    /// - Including the referenced package in the generation request (remove the
+    ///   `exclude_package` plugin directive, or add the missing `.proto` files to
+    ///   the generate set), or
+    /// - Adding an `extern_path` mapping for the package pointing to the crate
+    ///   that provides its generated types.
+    ///
+    /// Detection is type-granular: a kept file that generates *some* types from a
+    /// package while another file in the same package is excluded will still
+    /// produce a warning for references to the excluded file's types.
+    ///
+    /// One warning is emitted per unique `(file_name, type_fqn)` pair; other
+    /// fields in the same file referencing the same type are not reported
+    /// separately.
+    #[non_exhaustive]
+    ExcludedPackageFieldRef {
+        /// The proto file that contains the referencing field,
+        /// e.g. `"path/to/service.proto"`.
+        file_name: String,
+        /// The message that contains the referencing field, in dotted form
+        /// (e.g. `"MyMessage"` or `"Outer.Inner"`). Empty when the reference
+        /// is a file-level extension rather than a message field.
+        message_name: String,
+        /// The name of the field that holds the dangling reference.
+        field_name: String,
+        /// The proto package that owns the referenced type,
+        /// e.g. `"buf.validate"`.
+        ref_package: String,
+        /// The fully-qualified type name in the descriptor (leading-dot form,
+        /// matching the key format of [`CodeGenConfig::extern_paths`]),
+        /// e.g. `".buf.validate.FieldConstraints"`.
+        type_fqn: String,
+    },
     /// A [`feature_overrides`](CodeGenConfig::feature_overrides) rule matched
     /// nothing the override targets in the compiled descriptor set, so it
     /// changed nothing. Usually a typo, a missing nested-message segment, or
@@ -1965,6 +2004,30 @@ impl core::fmt::Display for CodeGenWarning {
                     "message `{message_name}`: idiomatic snake_case field names collide; \
                      adjusted: {} (wire/JSON/text names are unaffected)",
                     parts.join(", ")
+                )
+            }
+            Self::ExcludedPackageFieldRef {
+                file_name,
+                message_name,
+                field_name,
+                ref_package,
+                type_fqn,
+            } => {
+                let location = if message_name.is_empty() {
+                    format!("{file_name}: {field_name}")
+                } else {
+                    format!("{file_name}: {message_name}.{field_name}")
+                };
+                write!(
+                    f,
+                    "field `{location}` references `{type_fqn}` from package \
+                     `{ref_package}`, which is not being generated and has no \
+                     extern_path mapping; the generated code will contain a dangling \
+                     type path — add an extern_path for the package \
+                     (buffa-build: `.extern_path(\".{ref_package}\", \"::your_crate\")`; \
+                     plugin: `extern_path=.{ref_package}=::your_crate`), or include \
+                     the package's .proto files in the generate set \
+                     (buffa-build: `.files(&[…])`; plugin: drop `exclude_package=`)"
                 )
             }
             Self::FeatureOverrideMatchedNothing {
@@ -2247,6 +2310,153 @@ fn render_custom_elem_impls(
     Ok(out)
 }
 
+// ── Excluded-package field-reference detection ───────────────────────────
+
+/// Invariants shared across the recursive field-reference walk.
+#[derive(Clone, Copy)]
+struct ExcludedRefScan<'a> {
+    ctx: &'a context::CodeGenContext<'a>,
+    /// Effective package-level and per-type extern paths (from
+    /// [`effective_extern_paths`], including the auto-injected WKT mapping).
+    extern_paths: &'a [(String, String)],
+    /// FQNs declared in the kept files — these are always safe to reference.
+    declared_in_kept: &'a std::collections::HashSet<String>,
+    /// FQNs covered by file-level extern paths (e.g. `descriptor.proto` →
+    /// `::buffa_descriptor`). These resolve externally even when the
+    /// package-level `extern_paths` don't cover them.
+    file_extern_covered: &'a std::collections::HashSet<String>,
+}
+
+/// Populate `out` with all message/enum FQNs declared in `file` (in
+/// leading-dot form, e.g. `.my.pkg.MyMessage`).
+fn collect_fqns_in_file(file: &FileDescriptorProto, out: &mut std::collections::HashSet<String>) {
+    let pkg = file.package.as_deref().unwrap_or("");
+    for msg in &file.message_type {
+        let Some(name) = &msg.name else { continue };
+        let fqn = if pkg.is_empty() {
+            format!(".{name}")
+        } else {
+            format!(".{pkg}.{name}")
+        };
+        collect_fqns_msg_recursive(&fqn, msg, out);
+    }
+    for en in &file.enum_type {
+        let Some(name) = &en.name else { continue };
+        let fqn = if pkg.is_empty() {
+            format!(".{name}")
+        } else {
+            format!(".{pkg}.{name}")
+        };
+        out.insert(fqn);
+    }
+}
+
+fn collect_fqns_msg_recursive(
+    msg_fqn: &str,
+    msg: &crate::generated::descriptor::DescriptorProto,
+    out: &mut std::collections::HashSet<String>,
+) {
+    out.insert(msg_fqn.to_string());
+    for nested in &msg.nested_type {
+        let Some(name) = &nested.name else { continue };
+        let nested_fqn = format!("{msg_fqn}.{name}");
+        collect_fqns_msg_recursive(&nested_fqn, nested, out);
+    }
+    for en in &msg.enum_type {
+        let Some(name) = &en.name else { continue };
+        out.insert(format!("{msg_fqn}.{name}"));
+    }
+}
+
+fn warn_excluded_refs_field(
+    scan: ExcludedRefScan<'_>,
+    file_name: &str,
+    field: &crate::generated::descriptor::FieldDescriptorProto,
+    message_name: &str,
+    warned: &mut std::collections::HashSet<(String, String)>,
+) {
+    let Some(type_fqn) = field.type_name.as_deref().filter(|s| !s.is_empty()) else {
+        return;
+    };
+
+    // Types declared in kept files are always resolvable.
+    if scan.declared_in_kept.contains(type_fqn) {
+        return;
+    }
+
+    // Look up the package for the diagnostic; if the type is absent from the
+    // descriptor set, codegen raises a hard error — skip quietly.
+    let Some(ref_package) = scan.ctx.package_of(type_fqn) else {
+        return;
+    };
+
+    // Package-less (.proto) types: the fix guidance would suggest `.` as an
+    // extern_path key, which acts as a catch-all — skip to avoid misleading advice.
+    if ref_package.is_empty() {
+        return;
+    }
+
+    // A per-type or package-level extern_path suppresses the warning.
+    if context::resolve_extern_type(type_fqn, scan.extern_paths).is_some() {
+        return;
+    }
+
+    // File-level externs (e.g. `descriptor.proto` → `::buffa_descriptor`)
+    // also suppress — they resolve externally even when no package mapping exists.
+    if scan.file_extern_covered.contains(type_fqn) {
+        return;
+    }
+
+    // Deduplicate by (file, type_fqn): one warning per unique referenced type per file.
+    if !warned.insert((file_name.to_string(), type_fqn.to_string())) {
+        return;
+    }
+
+    let field_name = field.name.as_deref().unwrap_or("?");
+    scan.ctx.warn(CodeGenWarning::ExcludedPackageFieldRef {
+        file_name: file_name.to_string(),
+        message_name: message_name.to_string(),
+        field_name: field_name.to_string(),
+        ref_package: ref_package.to_string(),
+        type_fqn: type_fqn.to_string(),
+    });
+}
+
+fn warn_excluded_refs_msg(
+    scan: ExcludedRefScan<'_>,
+    file_name: &str,
+    msg: &crate::generated::descriptor::DescriptorProto,
+    parent_path: &str,
+    warned: &mut std::collections::HashSet<(String, String)>,
+) {
+    let msg_name = msg.name.as_deref().unwrap_or("?");
+    let message_path = if parent_path.is_empty() {
+        msg_name.to_string()
+    } else {
+        format!("{parent_path}.{msg_name}")
+    };
+    for field in &msg.field {
+        warn_excluded_refs_field(scan, file_name, field, &message_path, warned);
+    }
+    for ext in &msg.extension {
+        warn_excluded_refs_field(scan, file_name, ext, &message_path, warned);
+    }
+    for nested in &msg.nested_type {
+        // Skip synthetic map-entry messages: their value type is an impl detail
+        // of the outer map field (which references the entry itself, same package).
+        // Descending into the entry produces confusing paths like "Msg.MEntry.value".
+        if nested
+            .options
+            .as_option()
+            .and_then(|o| o.map_entry)
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        warn_excluded_refs_msg(scan, file_name, nested, &message_path, warned);
+    }
+}
+
 pub fn generate_with_diagnostics(
     file_descriptors: &[FileDescriptorProto],
     files_to_generate: &[String],
@@ -2334,6 +2544,60 @@ pub fn generate_with_diagnostics(
             .ok_or_else(|| CodeGenError::FileNotFound(file_name.clone()))?;
         let pkg = file_desc.package.as_deref().unwrap_or("").to_string();
         by_package.entry(pkg).or_default().push(file_desc);
+    }
+
+    // Warn when a kept file references a type that is not being generated and
+    // has no extern_path mapping. This catches exclude_package misuse (and
+    // missing extern_path) before the consumer gets a dangling `super::…::Type`
+    // compile error with no indication of the configuration gap.
+    {
+        let extern_paths = effective_extern_paths(file_descriptors, files_to_generate, config);
+
+        // Collect the FQNs of every type declared in a kept file.
+        // These are always safe to reference (generated in place).
+        let mut declared_in_kept: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        for files in by_package.values() {
+            for &file in files {
+                collect_fqns_in_file(file, &mut declared_in_kept);
+            }
+        }
+
+        // Collect FQNs covered by file-level externs (e.g. descriptor.proto →
+        // ::buffa_descriptor). These resolve externally even when the package-level
+        // extern_paths don't cover them — suppressing false positives when the
+        // auto-injected .google.protobuf package mapping is overridden.
+        let file_extern_paths = effective_file_extern_paths(files_to_generate, config);
+        let mut file_extern_covered: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        for (fe_file, _) in &file_extern_paths {
+            if let Some(fd) = file_descriptors
+                .iter()
+                .find(|f| f.name.as_deref() == Some(fe_file.as_str()))
+            {
+                collect_fqns_in_file(fd, &mut file_extern_covered);
+            }
+        }
+
+        let scan = ExcludedRefScan {
+            ctx: &ctx,
+            extern_paths: &extern_paths,
+            declared_in_kept: &declared_in_kept,
+            file_extern_covered: &file_extern_covered,
+        };
+        let mut warned: std::collections::HashSet<(String, String)> =
+            std::collections::HashSet::new();
+        for files in by_package.values() {
+            for &file in files {
+                let file_name = file.name.as_deref().unwrap_or("?");
+                for msg in &file.message_type {
+                    warn_excluded_refs_msg(scan, file_name, msg, "", &mut warned);
+                }
+                for ext in &file.extension {
+                    warn_excluded_refs_field(scan, file_name, ext, "", &mut warned);
+                }
+            }
+        }
     }
 
     // Reflection: serialize the FileDescriptorSet once, regardless of how

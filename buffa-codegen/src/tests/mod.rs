@@ -53,6 +53,7 @@ mod comments;
 mod custom_attributes;
 mod debug_redact;
 mod element_memory_limit;
+mod excluded_refs;
 mod feature_gating;
 mod generation;
 mod idiomatic_enums;
