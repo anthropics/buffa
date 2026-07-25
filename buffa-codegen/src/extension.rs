@@ -161,6 +161,27 @@ fn generate_one(
         match json_helper_tokens(ctx, field, ty, repeated, current_package, nesting)? {
             Some((to_fn, from_fn)) => {
                 let ident = format_ident!("__{}_JSON_EXT", const_ident);
+                let from_json_expr = if !repeated && crate::oneof::null_is_valid_value(field) {
+                    from_fn
+                } else {
+                    quote! {{
+                        fn __from_json(
+                            value: ::buffa::serde_json::Value,
+                            number: u32,
+                        ) -> ::core::result::Result<
+                            ::buffa::alloc::vec::Vec<::buffa::UnknownField>,
+                            ::buffa::alloc::string::String,
+                        > {
+                            if value.is_null() {
+                                return ::core::result::Result::Ok(
+                                    ::buffa::alloc::vec::Vec::new()
+                                );
+                            }
+                            #from_fn(value, number)
+                        }
+                        __from_json
+                    }}
+                };
                 let tokens = crate::feature_gates::cfg_block(
                     quote! {
                         #[doc(hidden)]
@@ -170,7 +191,7 @@ fn generate_one(
                                 full_name: #full_name,
                                 extendee: #extendee_no_dot,
                                 to_json: #to_fn,
-                                from_json: #from_fn,
+                                from_json: #from_json_expr,
                             };
                     },
                     gates.json,
@@ -383,6 +404,17 @@ fn json_helper_tokens(
         Type::TYPE_FLOAT => ("float_to_json", "float_from_json"),
         Type::TYPE_DOUBLE => ("double_to_json", "double_from_json"),
         Type::TYPE_ENUM => {
+            if crate::oneof::is_null_value_field(field) {
+                let (to, from) = if repeated {
+                    (
+                        h("repeated_null_value_to_json"),
+                        h("repeated_null_value_from_json"),
+                    )
+                } else {
+                    (h("null_value_to_json"), h("null_value_from_json"))
+                };
+                return Ok(Some((to, from)));
+            }
             // The enum helper is generic: resolve the Rust enum type so the
             // monomorphized `enum_to_json::<E>` coerces to a concrete fn ptr.
             let enum_ty = resolve_type_path(ctx, field, current_package, nesting, "enum")?;
@@ -665,6 +697,33 @@ mod tests {
             .map(|(t, json, _text)| (t.to_string(), json.map(|i| i.to_string())))
     }
 
+    fn gen_wkt(field: &FieldDescriptorProto) -> String {
+        let files = [FileDescriptorProto {
+            name: Some("google/protobuf/struct.proto".into()),
+            package: Some("google.protobuf".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Value".into()),
+                ..Default::default()
+            }],
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("NullValue".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }];
+        let config = CodeGenConfig {
+            generate_json: true,
+            ..Default::default()
+        };
+        let ctx = CodeGenContext::new(&files, &config, &[]);
+        let features = ResolvedFeatures::proto2_defaults();
+        generate_one(&ctx, field, "google.protobuf", 0, &features, "my.pkg")
+            .unwrap()
+            .unwrap()
+            .0
+            .to_string()
+    }
+
     #[test]
     fn group_extension_no_json_helper() {
         // TYPE_GROUP extensions share TYPE_MESSAGE's codec resolution path
@@ -764,6 +823,27 @@ mod tests {
         assert!(tokens.contains("message_from_json"), "{tokens}");
         assert!(tokens.contains("Ann"), "{tokens}");
         assert!(!tokens.contains("repeated_message"), "{tokens}");
+    }
+
+    #[test]
+    fn json_null_wrapper_matches_extension_presence_rules() {
+        let ordinary = gen_with(&ext_field("weight", 50002, Type::TYPE_SINT32), true)
+            .unwrap()
+            .0;
+        assert!(ordinary.contains("is_null"), "{ordinary}");
+
+        let mut value = ext_field("value", 50007, Type::TYPE_MESSAGE);
+        value.type_name = Some(".google.protobuf.Value".into());
+        let value_tokens = gen_wkt(&value);
+        assert!(!value_tokens.contains("is_null"), "{value_tokens}");
+
+        let mut null_value = ext_field("null_value", 50008, Type::TYPE_ENUM);
+        null_value.type_name = Some(".google.protobuf.NullValue".into());
+        let null_value_tokens = gen_wkt(&null_value);
+        assert!(
+            !null_value_tokens.contains("is_null"),
+            "{null_value_tokens}"
+        );
     }
 
     #[test]
