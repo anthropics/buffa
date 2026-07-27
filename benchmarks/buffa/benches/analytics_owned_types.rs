@@ -23,11 +23,9 @@
 // and spills to the heap roughly 72% of the time, where it costs a `Vec` plus
 // a dead inline buffer.
 //
-// The useful follow-up is therefore NOT a uniformly larger capacity — inline-8
-// would push `Nested` past 600 bytes and the message past 5 KB. It is to apply
-// `SmallList` only to the small-element fields, sized to their length
-// distribution, and leave message-typed lists on `Vec`. Tracked as a follow-up
-// to #215.
+// The selective row applies inline-8 only to the 72-byte `properties` and
+// `attributes` elements while leaving message-typed `sections` and `children`
+// on `Vec`.
 #[cfg(any(
     feature = "api_response",
     feature = "log_record",
@@ -42,7 +40,9 @@
 compile_error!("`analytics_owned_types` bench requires --no-default-features: another message/reflect/lazy feature is enabled");
 include!("common.rs");
 use bench_buffa::bench::AnalyticsEvent;
-use bench_buffa::{analytics_smallvec, analytics_smolstr, analytics_smolstr_smallvec};
+use bench_buffa::{
+    analytics_selective_smallvec, analytics_smallvec, analytics_smolstr, analytics_smolstr_smallvec,
+};
 
 fn run(c: &mut Criterion) {
     let data = include_bytes!("../../datasets/analytics_event.pb");
@@ -76,6 +76,16 @@ fn run(c: &mut Criterion) {
     benchmark_json::<analytics_smolstr_smallvec::AnalyticsEvent>(
         c,
         "buffa/analytics_owned_types/smolstr_smallvec4",
+        data,
+    );
+    benchmark_decode::<analytics_selective_smallvec::AnalyticsEvent>(
+        c,
+        "buffa/analytics_owned_types/selective_smallvec8",
+        data,
+    );
+    benchmark_json::<analytics_selective_smallvec::AnalyticsEvent>(
+        c,
+        "buffa/analytics_owned_types/selective_smallvec8",
         data,
     );
 }

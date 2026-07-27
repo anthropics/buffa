@@ -45,10 +45,11 @@ fn main() {
 
     if analytics_owned_types {
         let out_dir = std::path::PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR is set"));
-        for (name, smol_strings, small_lists) in [
-            ("analytics_smolstr", true, false),
-            ("analytics_smallvec", false, true),
-            ("analytics_smolstr_smallvec", true, true),
+        for (name, smol_strings, small_lists, selective_lists) in [
+            ("analytics_smolstr", true, false, false),
+            ("analytics_smallvec", false, true, false),
+            ("analytics_smolstr_smallvec", true, true, false),
+            ("analytics_selective_smallvec", false, false, true),
         ] {
             let variant_dir = out_dir.join(name);
             std::fs::create_dir_all(&variant_dir).expect("create analytics variant output");
@@ -68,6 +69,15 @@ fn main() {
                     &[
                         ".bench.AnalyticsEvent.properties",
                         ".bench.AnalyticsEvent.sections",
+                        ".bench.AnalyticsEvent.Nested.attributes",
+                    ],
+                );
+            }
+            if selective_lists {
+                config = config.repeated_type_custom_in(
+                    "crate::SmallList8<*>",
+                    &[
+                        ".bench.AnalyticsEvent.properties",
                         ".bench.AnalyticsEvent.Nested.attributes",
                     ],
                 );
