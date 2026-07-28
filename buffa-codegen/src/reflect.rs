@@ -209,6 +209,17 @@ pub(crate) fn reflect_pool_module(fds_bytes: &[u8]) -> TokenStream {
             /// finite, so corrupt embedded bytes still fail rather than
             /// exhausting memory.
             ///
+            /// The scaled bound is floored at
+            /// [`DEFAULT_ELEMENT_MEMORY_LIMIT`](::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT)
+            /// so this can only ever be looser than the untrusted-input
+            /// default, never tighter. Without the floor, descriptor sets
+            /// built mostly from short single-character type names can need
+            /// a multiplier above 64 (worst case 352 on 64-bit targets, an
+            /// empty `FileDescriptorProto` element — the ratio scales with
+            /// pointer width, so it differs on 32-bit), so the un-floored
+            /// scaled bound could reject schemas that decoded fine under the
+            /// default it replaced.
+            ///
             /// # Panics
             ///
             /// Panics on first access if the embedded bytes are malformed —
@@ -222,7 +233,10 @@ pub(crate) fn reflect_pool_module(fds_bytes: &[u8]) -> TokenStream {
                 POOL.get_or_init(|| {
                     let options = ::buffa::DecodeOptions::new()
                         .with_element_memory_limit(
-                            FILE_DESCRIPTOR_SET_BYTES.len().saturating_mul(64),
+                            FILE_DESCRIPTOR_SET_BYTES
+                                .len()
+                                .saturating_mul(64)
+                                .max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
                         );
                     ::buffa::alloc::sync::Arc::new(
                         ::buffa_descriptor::DescriptorPool::decode_with_options(
@@ -488,6 +502,15 @@ mod tests {
         let parsed = syn::parse2::<syn::ItemMod>(tokens.clone());
         assert!(parsed.is_ok(), "generated module must parse: {tokens}");
         assert!(tokens.to_string().contains("FILE_DESCRIPTOR_SET_BYTES"));
+        // #336: the emitted bound must floor at the untrusted-input default,
+        // not just scale with length — this is what the standalone formula
+        // test in buffa-descriptor/tests/issue_336_floor.rs can't see, since
+        // it exercises a hand-copied formula rather than this codegen path.
+        assert!(
+            tokens.to_string().contains("DEFAULT_ELEMENT_MEMORY_LIMIT"),
+            "descriptor_pool() must floor its scaled bound at \
+             DEFAULT_ELEMENT_MEMORY_LIMIT (#336): {tokens}"
+        );
     }
 
     #[test]

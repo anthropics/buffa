@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Generated `descriptor_pool()` no longer rejects small schemas built from short type names.** The scaled element-memory bound (`len * 64`) could come out tighter than the untrusted-input default it replaced, for descriptor sets whose bulk is single-character type names — a schema under 1 KiB can need close to a 72x multiplier and got rejected at 64x, even though the flat 32 MiB default before 0.9.1 accepted it fine. The bound is now floored at `DEFAULT_ELEMENT_MEMORY_LIMIT`, so it can only ever be looser than that default, never tighter. (#336)'
+time: 2026-07-28T10:39:43.538612562-04:00
