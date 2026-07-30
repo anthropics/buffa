@@ -177,8 +177,13 @@ pub(crate) fn encode_fds_once(file_descriptors: &[FileDescriptorProto]) -> Vec<u
 /// codegen run (the transitive closure), encoded once via [`encode_fds_once`]
 /// and shared across packages. Each package still embeds its own copy of the
 /// bytes; per-package binary-size deduplication is a planned follow-up.
+///
+/// Emitted as a single `b"..."` byte-string literal so this constant's
+/// token count — and the codegen time and memory it costs — stays
+/// independent of `fds_bytes`'s length, which can reach the tens of
+/// megabytes for a codegen run spanning a large proto tree.
 pub(crate) fn reflect_pool_module(fds_bytes: &[u8]) -> TokenStream {
-    let byte_literals = fds_bytes.iter().map(|b| quote! { #b });
+    let fds_bytes_literal = proc_macro2::Literal::byte_string(fds_bytes);
     quote! {
         /// Reflection support: embedded descriptor pool shared by this
         /// package's [`Reflectable`](::buffa_descriptor::reflect::Reflectable)
@@ -191,7 +196,7 @@ pub(crate) fn reflect_pool_module(fds_bytes: &[u8]) -> TokenStream {
             /// also suitable for shipping the schema over the wire.
             /// Re-exported at the package root — prefer that path over
             /// going through `__buffa`.
-            pub const FILE_DESCRIPTOR_SET_BYTES: &[u8] = &[#(#byte_literals),*];
+            pub const FILE_DESCRIPTOR_SET_BYTES: &[u8] = #fds_bytes_literal;
 
             /// The lazily-built descriptor pool for this package's
             /// `Reflectable` impls. Built from
@@ -280,12 +285,18 @@ pub(crate) fn reflect_reexports(buffa_path: &TokenStream, gate: Option<&str>) ->
 }
 
 const _: usize = {
-    // Documentation breadcrumb: the byte literal embedding produces ~3 bytes
-    // of source per descriptor byte (`123, ` for each). A 50KB FDS → ~150KB
-    // of source, which prettyplease and rustc handle without issue. If a
-    // consumer's FDS is large enough that this matters, the dedup follow-up
-    // (hoist to a crate-root `include_bytes!` of a build-script output) is
-    // the right fix.
+    // Documentation breadcrumb: a byte-string literal still renders
+    // roughly 3 source characters per input byte on realistic (non-text)
+    // binary data — printable-ASCII bytes render as themselves, the rest
+    // escape as `\xNN` or a short escape sequence. A 22MB encoded
+    // FileDescriptorSet therefore emits on the order of 60MB of generated
+    // source for this one constant; prettyplease and rustc handle a
+    // single literal that size without issue. This is independent of
+    // `reflect_pool_module`'s token count (always one token for this
+    // constant, regardless of `fds_bytes.len()`) — shrinking rendered
+    // source size further would mean writing the bytes to a separate file
+    // and referencing them with `include_bytes!`, which isn't warranted
+    // at this scale.
     0
 };
 
@@ -327,6 +338,56 @@ mod tests {
         let parsed = syn::parse2::<syn::ItemMod>(tokens.clone());
         assert!(parsed.is_ok(), "generated module must parse: {tokens}");
         assert!(tokens.to_string().contains("FILE_DESCRIPTOR_SET_BYTES"));
+    }
+
+    #[test]
+    fn reflect_pool_module_emits_one_token_regardless_of_fds_size() {
+        // Token count (and thus codegen time/memory) must stay independent
+        // of `fds_bytes`'s length.
+        let small = reflect_pool_module(&[0u8; 8]);
+        let large = reflect_pool_module(&[0u8; 1_000_000]);
+        // Recurses into delimited groups so a bracket group's contents
+        // (e.g. an array literal) are counted too, rather than treated as
+        // one opaque token.
+        fn count_tokens_recursive(ts: TokenStream) -> usize {
+            ts.into_iter()
+                .map(|tt| match tt {
+                    proc_macro2::TokenTree::Group(g) => 1 + count_tokens_recursive(g.stream()),
+                    _ => 1,
+                })
+                .sum()
+        }
+        assert_eq!(
+            count_tokens_recursive(small),
+            count_tokens_recursive(large.clone()),
+            "token count must not scale with the FDS byte length"
+        );
+        // And the byte data itself must actually be present and correct —
+        // a `b"..."` literal, not silently truncated or a placeholder.
+        let rendered = large.to_string();
+        let decoded = syn::parse2::<syn::ItemMod>(large.clone())
+            .expect("generated module must parse")
+            .content
+            .expect("module must have a body")
+            .1;
+        let konst = decoded
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Const(c) if c.ident == "FILE_DESCRIPTOR_SET_BYTES" => Some(c),
+                _ => None,
+            })
+            .expect("FILE_DESCRIPTOR_SET_BYTES const must be present");
+        // A byte-string literal (`b"..."`) already has type `&'static [u8; N]`,
+        // which unsize-coerces directly to the const's declared `&[u8]` type —
+        // no explicit `&` wrapper needed in the emitted source.
+        let syn::Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::ByteStr(bs),
+            ..
+        }) = konst.expr.as_ref()
+        else {
+            panic!("expected a byte-string literal, got {rendered}");
+        };
+        assert_eq!(bs.value(), vec![0u8; 1_000_000]);
     }
 
     #[test]
