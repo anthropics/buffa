@@ -113,7 +113,7 @@ macro_rules! small_list {
 }
 
 #[cfg(feature = "analytics_owned_types")]
-// ponytail: benchmark-only wrappers share one implementation; use const
+// Benchmark-only wrappers share one implementation; use const
 // generics if generated custom-type paths gain const-argument support.
 small_list!(
     /// Four-element inline list used by the uniform owned-type benchmark.

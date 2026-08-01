@@ -25,7 +25,8 @@
 //
 // The selective row applies inline-8 only to the 72-byte `properties` and
 // `attributes` elements while leaving message-typed `sections` and `children`
-// on `Vec`.
+// on `Vec`. It also raises inline capacity from 4 to 8, so comparison with
+// `smallvec4` cannot isolate the effect of selectivity alone.
 #[cfg(any(
     feature = "api_response",
     feature = "log_record",
