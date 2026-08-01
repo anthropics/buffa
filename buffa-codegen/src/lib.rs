@@ -1456,6 +1456,11 @@ pub struct CodeGenConfig {
     /// `false` (the default), which keeps today's self-contained per-package
     /// embedding.
     ///
+    /// Use the same setting for every codegen run assembled into one module
+    /// tree. Packages generated with this set to `false` keep their own pools
+    /// even when sibling packages delegate to a shared pool; this mixed setup
+    /// is not diagnosed.
+    ///
     /// Defaults to `false`. Has no effect unless `generate_reflection` is on.
     pub shared_descriptor_pool: bool,
     /// Gate the reflection impls behind a `reflect` crate feature, *without*
@@ -2563,8 +2568,10 @@ pub fn encode_descriptor_set(
 /// How [`shared_descriptor_root_module`] embeds the descriptor set into the
 /// generated tree. Both forms decode to byte-identical runtime data; they
 /// differ only in generated-source size and whether a sidecar file is written.
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub enum FdsEmbedding<'a> {
-    /// Embed the bytes inline as a byte-literal array. Self-contained: no extra
+    /// Embed the bytes inline as a byte-string literal. Self-contained: no extra
     /// file, but the descriptor bytes cost several times their size in
     /// generated Rust source. This is all the plugin path can do, since
     /// protoc's `CodeGeneratorResponse` carries only UTF-8 text.

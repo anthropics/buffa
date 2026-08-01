@@ -190,6 +190,13 @@ fn root_module_gate_wraps_in_cfg() {
 }
 
 #[test]
+fn fds_embedding_is_debug_clone_and_copy() {
+    fn assert_traits<T: std::fmt::Debug + Clone + Copy>() {}
+
+    assert_traits::<crate::FdsEmbedding<'static>>();
+}
+
+#[test]
 fn encode_descriptor_set_applies_feature_overrides() {
     // A proto2 (closed) enum: an open-enum override changes the embedded
     // descriptor set. A front-end computing the shared copy must apply the

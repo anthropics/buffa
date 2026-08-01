@@ -248,7 +248,7 @@ pub(crate) const SHARED_ROOT_MOD: &str = "__buffa_fds";
 /// Both forms produce byte-identical runtime data; they differ only in how the
 /// bytes reach the compiled crate — and in generated-source size.
 pub(crate) enum FdsSource<'a> {
-    /// Embed the bytes as a Rust byte-literal array. Self-contained (no
+    /// Embed the bytes as a Rust byte-string literal. Self-contained (no
     /// sidecar file), but each descriptor byte costs several bytes of source.
     Inline(&'a [u8]),
     /// `include_bytes!` a binary file the caller writes alongside the
@@ -267,8 +267,8 @@ pub(crate) enum FdsSource<'a> {
 pub(crate) fn shared_root_module(source: FdsSource<'_>) -> TokenStream {
     let const_value = match source {
         FdsSource::Inline(fds_bytes) => {
-            let byte_literals = fds_bytes.iter().map(|b| quote! { #b });
-            quote! { &[#(#byte_literals),*] }
+            let literal = proc_macro2::Literal::byte_string(fds_bytes);
+            quote! { #literal }
         }
         FdsSource::IncludeBytes(arg) => quote! { include_bytes!(#arg) },
     };
@@ -287,6 +287,12 @@ pub(crate) fn shared_root_module(source: FdsSource<'_>) -> TokenStream {
             /// The one lazily-built descriptor pool for the whole tree, built
             /// from [`FILE_DESCRIPTOR_SET_BYTES`] on first access.
             ///
+            /// The element-memory bound scales with the embedded descriptor
+            /// length so large schema trees can exceed the untrusted-input
+            /// default. The default remains a floor because smaller descriptor
+            /// sets can still have an element-to-encoded ratio above the scale
+            /// factor.
+            ///
             /// # Panics
             ///
             /// Panics on first access if the embedded bytes are malformed —
@@ -298,9 +304,19 @@ pub(crate) fn shared_root_module(source: FdsSource<'_>) -> TokenStream {
                     ::buffa::alloc::sync::Arc<::buffa_descriptor::DescriptorPool>,
                 > = ::std::sync::OnceLock::new();
                 POOL.get_or_init(|| {
+                    let options = ::buffa::DecodeOptions::new()
+                        .with_element_memory_limit(
+                            FILE_DESCRIPTOR_SET_BYTES
+                                .len()
+                                .saturating_mul(64)
+                                .max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
+                        );
                     ::buffa::alloc::sync::Arc::new(
-                        ::buffa_descriptor::DescriptorPool::decode(FILE_DESCRIPTOR_SET_BYTES)
-                            .expect("embedded FileDescriptorSet is well-formed"),
+                        ::buffa_descriptor::DescriptorPool::decode_with_options(
+                            FILE_DESCRIPTOR_SET_BYTES,
+                            &options,
+                        )
+                        .expect("buffa-codegen emitted a decodable FileDescriptorSet"),
                     )
                 })
             }
@@ -549,25 +565,52 @@ mod tests {
     }
 
     #[test]
-    fn shared_root_module_inline_embeds_bytes_once() {
+    fn shared_root_module_inline_uses_a_byte_string_literal() {
         let bytes = encode_fds_once(&[FileDescriptorProto {
             name: Some("test.proto".into()),
             package: Some("test".into()),
             ..Default::default()
         }]);
         let tokens = shared_root_module(FdsSource::Inline(&bytes));
-        let parsed = syn::parse2::<syn::ItemMod>(tokens.clone());
-        assert!(parsed.is_ok(), "root module must parse: {tokens}");
+        let parsed = syn::parse2::<syn::ItemMod>(tokens.clone())
+            .unwrap_or_else(|_| panic!("root module must parse: {tokens}"));
         let rendered = tokens.to_string();
         assert!(rendered.contains("__buffa_fds"), "{rendered}");
-        assert!(rendered.contains("FILE_DESCRIPTOR_SET_BYTES"));
         assert!(rendered.contains("descriptor_pool"));
-        // Inline mode embeds the byte-literal array (one copy for the tree).
-        assert!(
-            rendered.contains("FILE_DESCRIPTOR_SET_BYTES : & [u8] = &"),
-            "inline root must define the byte array: {rendered}"
-        );
         assert!(!rendered.contains("include_bytes"));
+
+        let items = parsed.content.expect("root module must have a body").1;
+        let konst = items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Const(c) if c.ident == "FILE_DESCRIPTOR_SET_BYTES" => Some(c),
+                _ => None,
+            })
+            .expect("root module must define FILE_DESCRIPTOR_SET_BYTES");
+        let syn::Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::ByteStr(literal),
+            ..
+        }) = konst.expr.as_ref()
+        else {
+            panic!("inline root must use one byte-string literal: {rendered}");
+        };
+        assert_eq!(literal.value(), bytes);
+    }
+
+    #[test]
+    fn shared_root_module_floors_its_scaled_element_memory_limit() {
+        let rendered = shared_root_module(FdsSource::Inline(&[1, 2, 3])).to_string();
+        let flat: String = rendered.chars().filter(|c| !c.is_whitespace()).collect();
+        assert!(
+            flat.contains(
+                "FILE_DESCRIPTOR_SET_BYTES.len().saturating_mul(64).max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT)"
+            ),
+            "shared pool must floor its scaled element-memory bound: {rendered}"
+        );
+        assert!(
+            flat.contains("DescriptorPool::decode_with_options(FILE_DESCRIPTOR_SET_BYTES,&options"),
+            "shared pool must decode with the generated options: {rendered}"
+        );
     }
 
     #[test]
