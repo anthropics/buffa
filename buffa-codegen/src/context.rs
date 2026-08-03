@@ -629,7 +629,7 @@ impl<'a> CodeGenContext<'a> {
     /// `proto_fqn` is the leading-dot form (e.g. `.my.pkg.MyMessage`).
     /// Returns `None` when the type is not in the descriptor set.
     pub(crate) fn package_of(&self, proto_fqn: &str) -> Option<&str> {
-        self.package_of.get(proto_fqn).map(|s| s.as_str())
+        self.package_of.get(proto_fqn).map(String::as_str)
     }
 
     // ── Package-root import registry (idiomatic_imports) ────────────────

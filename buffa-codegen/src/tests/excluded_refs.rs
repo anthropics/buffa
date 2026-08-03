@@ -487,3 +487,239 @@ fn test_type_granular_partial_package() {
         "must warn for a type that is NOT being generated (partial package): {warnings:?}"
     );
 }
+
+// ── Map and oneof coverage ────────────────────────────────────────────────────
+
+#[test]
+fn test_excluded_package_ref_in_map_value() {
+    // map<string, .dep.Money> prices = 1;
+    // The map field's own type_name points at the synthetic PricesEntry (same
+    // package, in declared_in_kept), so the plain field check would pass silently.
+    // The fix looks through the entry to the value field.
+    let dep = dep_file_with_message("dep.proto", "dep", "Money");
+    let mut kept = proto3_file("kept.proto");
+    kept.package = Some("svc".to_string());
+
+    let map_entry = DescriptorProto {
+        name: Some("PricesEntry".to_string()),
+        field: vec![
+            make_field("key", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING),
+            field_referencing("value", 2, ".dep.Money"),
+        ],
+        options: (MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        })
+        .into(),
+        ..Default::default()
+    };
+    kept.message_type.push(DescriptorProto {
+        name: Some("Order".to_string()),
+        field: vec![FieldDescriptorProto {
+            name: Some("prices".to_string()),
+            number: Some(1),
+            label: Some(Label::LABEL_REPEATED),
+            r#type: Some(Type::TYPE_MESSAGE),
+            type_name: Some(".svc.Order.PricesEntry".to_string()),
+            ..Default::default()
+        }],
+        nested_type: vec![map_entry],
+        ..Default::default()
+    });
+
+    let (_, warnings) = generate_with_diagnostics(
+        &[dep, kept],
+        &["kept.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .unwrap();
+
+    match warnings
+        .iter()
+        .find(|w| matches!(w, CodeGenWarning::ExcludedPackageFieldRef { .. }))
+        .expect("must warn for excluded type in map value field")
+    {
+        CodeGenWarning::ExcludedPackageFieldRef {
+            file_name,
+            message_name,
+            field_name,
+            ref_package,
+            type_fqn,
+            ..
+        } => {
+            assert_eq!(file_name, "kept.proto");
+            assert_eq!(message_name, "Order");
+            // Warning is attributed to the outer map field, not "value" inside the entry.
+            assert_eq!(field_name, "prices");
+            assert_eq!(ref_package, "dep");
+            assert_eq!(type_fqn, ".dep.Money");
+        }
+        other => panic!("unexpected warning variant: {other:?}"),
+    }
+}
+
+#[test]
+fn test_no_warn_map_value_when_generated() {
+    // map<string, .dep.Money> where dep.proto IS in files_to_generate — no warning.
+    let dep = dep_file_with_message("dep.proto", "dep", "Money");
+    let mut kept = proto3_file("kept.proto");
+    kept.package = Some("svc".to_string());
+
+    let map_entry = DescriptorProto {
+        name: Some("PricesEntry".to_string()),
+        field: vec![
+            make_field("key", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING),
+            field_referencing("value", 2, ".dep.Money"),
+        ],
+        options: (MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        })
+        .into(),
+        ..Default::default()
+    };
+    kept.message_type.push(DescriptorProto {
+        name: Some("Order".to_string()),
+        field: vec![FieldDescriptorProto {
+            name: Some("prices".to_string()),
+            number: Some(1),
+            label: Some(Label::LABEL_REPEATED),
+            r#type: Some(Type::TYPE_MESSAGE),
+            type_name: Some(".svc.Order.PricesEntry".to_string()),
+            ..Default::default()
+        }],
+        nested_type: vec![map_entry],
+        ..Default::default()
+    });
+
+    let (_, warnings) = generate_with_diagnostics(
+        &[dep, kept],
+        &["dep.proto".to_string(), "kept.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .unwrap();
+
+    assert!(
+        !warnings
+            .iter()
+            .any(|w| matches!(w, CodeGenWarning::ExcludedPackageFieldRef { .. })),
+        "must not warn when the map value type is being generated: {warnings:?}"
+    );
+}
+
+#[test]
+fn test_map_entry_guard_prevents_suffix_collision() {
+    // Regression for the find_map_entry suffix-collision false negative:
+    // `dep.proto` exports a message named `PricesEntry` (same simple name as the
+    // synthetic map-entry `Order.PricesEntry`). A field `dep.PricesEntry legacy = 2`
+    // is NOT a map field (label=OPTIONAL, type=MESSAGE), so `find_map_entry` must
+    // not match it against the synthetic entry. Without the label/type guard, the
+    // imported-type field would be silently skipped instead of warned about.
+    let dep = dep_file_with_message("dep.proto", "dep", "PricesEntry");
+    let mut kept = proto3_file("kept.proto");
+    kept.package = Some("svc".to_string());
+
+    let map_entry = DescriptorProto {
+        name: Some("PricesEntry".to_string()),
+        field: vec![
+            make_field("key", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING),
+            make_field("value", 2, Label::LABEL_OPTIONAL, Type::TYPE_STRING),
+        ],
+        options: (MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        })
+        .into(),
+        ..Default::default()
+    };
+    kept.message_type.push(DescriptorProto {
+        name: Some("Order".to_string()),
+        field: vec![
+            // Map field — synthetic entry, same package, must NOT trigger warning.
+            FieldDescriptorProto {
+                name: Some("prices".to_string()),
+                number: Some(1),
+                label: Some(Label::LABEL_REPEATED),
+                r#type: Some(Type::TYPE_MESSAGE),
+                type_name: Some(".svc.Order.PricesEntry".to_string()),
+                ..Default::default()
+            },
+            // Non-map field whose type_name ends with ".PricesEntry" — same simple
+            // name as the synthetic entry. Must warn because `dep.PricesEntry` is
+            // from an excluded package.
+            field_referencing("legacy", 2, ".dep.PricesEntry"),
+        ],
+        nested_type: vec![map_entry],
+        ..Default::default()
+    });
+
+    let (_, warnings) = generate_with_diagnostics(
+        &[dep, kept],
+        &["kept.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .unwrap();
+
+    assert!(
+        warnings.iter().any(|w| matches!(
+            w,
+            CodeGenWarning::ExcludedPackageFieldRef { type_fqn, field_name, .. }
+                if type_fqn == ".dep.PricesEntry" && field_name == "legacy"
+        )),
+        "must warn for excluded imported type even when its simple name \
+         collides with a synthetic map-entry: {warnings:?}"
+    );
+}
+
+#[test]
+fn test_excluded_package_ref_in_oneof() {
+    // oneof body { .dep.Constraint constraint = 1; string note = 2; }
+    // Oneof members are regular fields in the descriptor and should be caught
+    // by the existing per-field check.
+    let dep = dep_file_with_message("dep.proto", "dep", "Constraint");
+    let mut kept = proto3_file("kept.proto");
+    kept.package = Some("svc".to_string());
+    kept.message_type.push(DescriptorProto {
+        name: Some("Request".to_string()),
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("body".to_string()),
+            ..Default::default()
+        }],
+        field: vec![
+            FieldDescriptorProto {
+                name: Some("constraint".to_string()),
+                number: Some(1),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_MESSAGE),
+                type_name: Some(".dep.Constraint".to_string()),
+                oneof_index: Some(0),
+                ..Default::default()
+            },
+            FieldDescriptorProto {
+                name: Some("note".to_string()),
+                number: Some(2),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_STRING),
+                oneof_index: Some(0),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    });
+
+    let (_, warnings) = generate_with_diagnostics(
+        &[dep, kept],
+        &["kept.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .unwrap();
+
+    assert!(
+        warnings.iter().any(|w| matches!(
+            w,
+            CodeGenWarning::ExcludedPackageFieldRef { type_fqn, field_name, .. }
+                if type_fqn == ".dep.Constraint" && field_name == "constraint"
+        )),
+        "must warn for an excluded type referenced from a oneof variant: {warnings:?}"
+    );
+}

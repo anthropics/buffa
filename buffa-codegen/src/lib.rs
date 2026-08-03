@@ -2368,17 +2368,20 @@ fn collect_fqns_msg_recursive(
     }
 }
 
-fn warn_excluded_refs_field(
+/// Check whether `type_fqn` is resolvable and, if not, emit an
+/// `ExcludedPackageFieldRef` warning.
+///
+/// `field_name` is the *attribution* name used in the warning — normally the
+/// proto field name, but for map fields it is the outer map field name (e.g.
+/// `"prices"`) rather than the synthetic entry's `"value"` slot.
+fn warn_excluded_refs_type(
     scan: ExcludedRefScan<'_>,
     file_name: &str,
-    field: &crate::generated::descriptor::FieldDescriptorProto,
     message_name: &str,
+    field_name: &str,
+    type_fqn: &str,
     warned: &mut std::collections::HashSet<(String, String)>,
 ) {
-    let Some(type_fqn) = field.type_name.as_deref().filter(|s| !s.is_empty()) else {
-        return;
-    };
-
     // Types declared in kept files are always resolvable.
     if scan.declared_in_kept.contains(type_fqn) {
         return;
@@ -2412,7 +2415,6 @@ fn warn_excluded_refs_field(
         return;
     }
 
-    let field_name = field.name.as_deref().unwrap_or("?");
     scan.ctx.warn(CodeGenWarning::ExcludedPackageFieldRef {
         file_name: file_name.to_string(),
         message_name: message_name.to_string(),
@@ -2420,6 +2422,26 @@ fn warn_excluded_refs_field(
         ref_package: ref_package.to_string(),
         type_fqn: type_fqn.to_string(),
     });
+}
+
+fn warn_excluded_refs_field(
+    scan: ExcludedRefScan<'_>,
+    file_name: &str,
+    field: &crate::generated::descriptor::FieldDescriptorProto,
+    message_name: &str,
+    warned: &mut std::collections::HashSet<(String, String)>,
+) {
+    let Some(type_fqn) = field.type_name.as_deref().filter(|s| !s.is_empty()) else {
+        return;
+    };
+    warn_excluded_refs_type(
+        scan,
+        file_name,
+        message_name,
+        field.name.as_deref().unwrap_or("?"),
+        type_fqn,
+        warned,
+    );
 }
 
 fn warn_excluded_refs_msg(
@@ -2436,15 +2458,46 @@ fn warn_excluded_refs_msg(
         format!("{parent_path}.{msg_name}")
     };
     for field in &msg.field {
-        warn_excluded_refs_field(scan, file_name, field, &message_path, warned);
+        // Map fields: type_name points at a synthetic map-entry nested in this
+        // message. The entry is in declared_in_kept (same file), so the normal
+        // field check passes silently. Look through to the entry's value field
+        // (field number 2) and attribute any warning to the outer map field name,
+        // not the synthetic "value" name inside the entry.
+        //
+        // Guard with label/type first — same as every other find_map_entry call site
+        // — to avoid a suffix-name collision between an imported type (e.g.
+        // `.dep.PricesEntry`) and this message's own synthetic `PricesEntry` nested
+        // type from a different map field. Without the guard, `find_map_entry` would
+        // misclassify the imported-type field as a map field and suppress the warning.
+        use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
+        let is_map_candidate = field.label.unwrap_or_default() == Label::LABEL_REPEATED
+            && field.r#type.unwrap_or_default() == Type::TYPE_MESSAGE;
+        if let Some(entry) = is_map_candidate
+            .then(|| crate::message::find_map_entry(msg, field))
+            .flatten()
+        {
+            if let Some(value_field) = entry.field.iter().find(|f| f.number == Some(2)) {
+                if let Some(type_fqn) = value_field.type_name.as_deref().filter(|s| !s.is_empty()) {
+                    warn_excluded_refs_type(
+                        scan,
+                        file_name,
+                        type_fqn,
+                        &message_path,
+                        field.name.as_deref().unwrap_or("?"),
+                        warned,
+                    );
+                }
+            }
+        } else {
+            warn_excluded_refs_field(scan, file_name, field, &message_path, warned);
+        }
     }
     for ext in &msg.extension {
         warn_excluded_refs_field(scan, file_name, ext, &message_path, warned);
     }
     for nested in &msg.nested_type {
-        // Skip synthetic map-entry messages: their value type is an impl detail
-        // of the outer map field (which references the entry itself, same package).
-        // Descending into the entry produces confusing paths like "Msg.MEntry.value".
+        // Skip synthetic map-entry messages: their cross-package references are
+        // checked above via the owning map field.
         if nested
             .options
             .as_option()
