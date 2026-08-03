@@ -672,6 +672,76 @@ fn test_map_entry_guard_prevents_suffix_collision() {
 }
 
 #[test]
+fn test_repeated_suffix_collision_still_warns() {
+    // Regression for the LABEL_REPEATED suffix-collision case:
+    // `dep.proto` exports `dep.PricesEntry`. A `repeated dep.PricesEntry legacy`
+    // field has the same label and type as a real map field, so `is_map_field`
+    // would match the synthetic `Order.PricesEntry` entry via suffix. The fix
+    // runs warn_excluded_refs_field unconditionally first, so `legacy` is
+    // checked before the map-value branch is entered — the field check correctly
+    // warns while the map-value branch finds no cross-package type_name in the
+    // entry's value slot.
+    let dep = dep_file_with_message("dep.proto", "dep", "PricesEntry");
+    let mut kept = proto3_file("kept.proto");
+    kept.package = Some("svc".to_string());
+
+    let map_entry = DescriptorProto {
+        name: Some("PricesEntry".to_string()),
+        field: vec![
+            make_field("key", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING),
+            make_field("value", 2, Label::LABEL_OPTIONAL, Type::TYPE_STRING),
+        ],
+        options: (MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        })
+        .into(),
+        ..Default::default()
+    };
+    kept.message_type.push(DescriptorProto {
+        name: Some("Order".to_string()),
+        field: vec![
+            FieldDescriptorProto {
+                name: Some("prices".to_string()),
+                number: Some(1),
+                label: Some(Label::LABEL_REPEATED),
+                r#type: Some(Type::TYPE_MESSAGE),
+                type_name: Some(".svc.Order.PricesEntry".to_string()),
+                ..Default::default()
+            },
+            // LABEL_REPEATED field whose simple name matches the synthetic entry.
+            FieldDescriptorProto {
+                name: Some("legacy".to_string()),
+                number: Some(2),
+                label: Some(Label::LABEL_REPEATED),
+                r#type: Some(Type::TYPE_MESSAGE),
+                type_name: Some(".dep.PricesEntry".to_string()),
+                ..Default::default()
+            },
+        ],
+        nested_type: vec![map_entry],
+        ..Default::default()
+    });
+
+    let (_, warnings) = generate_with_diagnostics(
+        &[dep, kept],
+        &["kept.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .unwrap();
+
+    assert!(
+        warnings.iter().any(|w| matches!(
+            w,
+            CodeGenWarning::ExcludedPackageFieldRef { type_fqn, field_name, .. }
+                if type_fqn == ".dep.PricesEntry" && field_name == "legacy"
+        )),
+        "must warn for a repeated excluded type even when its simple name \
+         collides with a synthetic map-entry: {warnings:?}"
+    );
+}
+
+#[test]
 fn test_excluded_package_ref_in_oneof() {
     // oneof body { .dep.Constraint constraint = 1; string note = 2; }
     // Oneof members are regular fields in the descriptor and should be caught

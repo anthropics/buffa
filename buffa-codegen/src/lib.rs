@@ -2457,39 +2457,41 @@ fn warn_excluded_refs_msg(
     } else {
         format!("{parent_path}.{msg_name}")
     };
+    use crate::generated::descriptor::field_descriptor_proto::Label;
     for field in &msg.field {
-        // Map fields: type_name points at a synthetic map-entry nested in this
-        // message. The entry is in declared_in_kept (same file), so the normal
-        // field check passes silently. Look through to the entry's value field
-        // (field number 2) and attribute any warning to the outer map field name,
-        // not the synthetic "value" name inside the entry.
+        // Always check the field itself: for plain message fields this emits a
+        // warning when the type is excluded; for genuine map fields, type_name
+        // points at the synthetic entry (same file, in declared_in_kept), so
+        // warn_excluded_refs_type returns immediately with no warning.
+        warn_excluded_refs_field(scan, file_name, field, &message_path, warned);
+
+        // Additionally, for map fields, look through the synthetic entry to the
+        // value field: the entry is safe (declared_in_kept), but the value type
+        // may be from an excluded package. Attribute the warning to the outer
+        // map field name (e.g. "prices"), not the entry's "value" slot.
         //
-        // Guard with label/type first — same as every other find_map_entry call site
-        // — to avoid a suffix-name collision between an imported type (e.g.
-        // `.dep.PricesEntry`) and this message's own synthetic `PricesEntry` nested
-        // type from a different map field. Without the guard, `find_map_entry` would
-        // misclassify the imported-type field as a map field and suppress the warning.
-        use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
-        let is_map_candidate = field.label.unwrap_or_default() == Label::LABEL_REPEATED
-            && field.r#type.unwrap_or_default() == Type::TYPE_MESSAGE;
-        if let Some(entry) = is_map_candidate
-            .then(|| crate::message::find_map_entry(msg, field))
-            .flatten()
-        {
-            if let Some(value_field) = entry.field.iter().find(|f| f.number == Some(2)) {
+        // The LABEL_REPEATED gate mirrors every other is_map_field call site:
+        // find_map_entry uses suffix matching on type_name, so without the
+        // label check a `repeated dep.PricesEntry legacy` field would
+        // incorrectly match a same-named synthetic entry and have its
+        // value-slot checked instead of the field itself (which is already
+        // handled above and correctly warns).
+        let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;
+        if is_repeated && crate::message::is_map_field(msg, field) {
+            // Malformed entries (no key/value) are silently skipped — this is a
+            // diagnostic pass; real codegen errors on the same descriptor follow.
+            if let Ok((_, value_field)) = crate::impl_message::find_map_entry_fields(msg, field) {
                 if let Some(type_fqn) = value_field.type_name.as_deref().filter(|s| !s.is_empty()) {
                     warn_excluded_refs_type(
                         scan,
                         file_name,
-                        type_fqn,
                         &message_path,
                         field.name.as_deref().unwrap_or("?"),
+                        type_fqn,
                         warned,
                     );
                 }
             }
-        } else {
-            warn_excluded_refs_field(scan, file_name, field, &message_path, warned);
         }
     }
     for ext in &msg.extension {
