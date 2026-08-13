@@ -696,8 +696,30 @@ impl DynamicMessage {
                     // would make this decoder reject map nesting the other
                     // two accept, which the infallible
                     // `ReflectMessage::to_dynamic` cannot report.
-                    value =
-                        Some(self.decode_element_no_alias(value_kind, entry_tag, &mut entry, ctx)?);
+                    match &mut value {
+                        // Proto merge semantics, as in the owned map codec: a
+                        // repeated message value within one entry merges into
+                        // the message decoded so far rather than replacing it.
+                        // (Only reachable for a message-kind value — the kind
+                        // is fixed per field.) The `descend` here mirrors the
+                        // one inside `decode_element_no_alias`, so every
+                        // occurrence decodes at the same depth.
+                        Some(Value::Message(existing)) => {
+                            Self::merge_message_wire(
+                                existing,
+                                entry_tag,
+                                &mut entry,
+                                ctx.descend()?,
+                            )?;
+                        }
+                        // First occurrence, or any scalar/enum value (last wins).
+                        _ => {
+                            value =
+                                Some(self.decode_element_no_alias(
+                                    value_kind, entry_tag, &mut entry, ctx,
+                                )?);
+                        }
+                    }
                 }
                 _ => skip_field_depth(entry_tag, &mut entry, ctx.depth())?,
             }
@@ -821,30 +843,37 @@ impl DynamicMessage {
             }
             SingularKind::Message(midx) => {
                 let mut nested = DynamicMessage::new(Arc::clone(&self.pool), midx);
-                let ctx = ctx.descend()?;
-                match tag.wire_type() {
-                    WireType::LengthDelimited => {
-                        let len = decode_varint(buf)?;
-                        let len = usize::try_from(len).map_err(|_| DecodeError::MessageTooLarge)?;
-                        if buf.remaining() < len {
-                            return Err(DecodeError::UnexpectedEof);
-                        }
-                        let mut sub = buf.copy_to_bytes(len);
-                        nested.merge_buf(&mut sub, ctx)?;
-                    }
-                    WireType::StartGroup => {
-                        nested.merge_group(buf, tag.field_number(), ctx)?;
-                    }
-                    _ => {
-                        return Err(DecodeError::WireTypeMismatch {
-                            field_number: tag.field_number(),
-                            expected: WireType::LengthDelimited as u8,
-                            actual: tag.wire_type() as u8,
-                        })
-                    }
-                }
+                Self::merge_message_wire(&mut nested, tag, buf, ctx.descend()?)?;
                 Ok(Value::Message(nested))
             }
+        }
+    }
+
+    /// Merge one length-delimited or group-encoded occurrence of a message
+    /// field from `buf` into `nested`. `ctx` is the nested message's own
+    /// (already descended) context.
+    fn merge_message_wire(
+        nested: &mut DynamicMessage,
+        tag: Tag,
+        buf: &mut impl Buf,
+        ctx: DecodeContext<'_>,
+    ) -> Result<(), DecodeError> {
+        match tag.wire_type() {
+            WireType::LengthDelimited => {
+                let len = decode_varint(buf)?;
+                let len = usize::try_from(len).map_err(|_| DecodeError::MessageTooLarge)?;
+                if buf.remaining() < len {
+                    return Err(DecodeError::UnexpectedEof);
+                }
+                let mut sub = buf.copy_to_bytes(len);
+                nested.merge_buf(&mut sub, ctx)
+            }
+            WireType::StartGroup => nested.merge_group(buf, tag.field_number(), ctx),
+            _ => Err(DecodeError::WireTypeMismatch {
+                field_number: tag.field_number(),
+                expected: WireType::LengthDelimited as u8,
+                actual: tag.wire_type() as u8,
+            }),
         }
     }
 
