@@ -54,9 +54,12 @@ impl WktKind {
         !matches!(self, Self::Empty)
     }
 
+    /// `depth` is the nesting budget remaining for `msg`'s sub-messages —
+    /// see `serialize_message` in `json.rs`.
     fn serialize_message<S: Serializer>(
         self,
         msg: &DynamicMessage,
+        depth: u32,
         s: S,
     ) -> Result<S::Ok, S::Error> {
         match self {
@@ -92,7 +95,7 @@ impl WktKind {
                         let Value::Message(inner) = v else {
                             return Err(serde::ser::Error::custom("Struct value must be message"));
                         };
-                        map.serialize_entry(ks, inner)?;
+                        map.serialize_entry(ks, &Nested::charge(inner, depth)?)?;
                     }
                 }
                 map.end()
@@ -104,13 +107,13 @@ impl WktKind {
                         let Value::Message(inner) = v else {
                             return Err(serde::ser::Error::custom("ListValue elem must be message"));
                         };
-                        seq.serialize_element(inner)?;
+                        seq.serialize_element(&Nested::charge(inner, depth)?)?;
                     }
                 }
                 seq.end()
             }
-            Self::JsonValue => serialize_json_value(msg, s),
-            Self::Any => serialize_any(msg, s),
+            Self::JsonValue => serialize_json_value(msg, depth, s),
+            Self::Any => serialize_any(msg, depth, s),
         }
     }
 
@@ -244,7 +247,11 @@ fn make_two_field(
 
 // ── google.protobuf.Value (recursive JSON) ──────────────────────────────────
 
-fn serialize_json_value<S: Serializer>(msg: &DynamicMessage, s: S) -> Result<S::Ok, S::Error> {
+fn serialize_json_value<S: Serializer>(
+    msg: &DynamicMessage,
+    depth: u32,
+    s: S,
+) -> Result<S::Ok, S::Error> {
     // Value is a oneof: null_value(1), number_value(2), string_value(3),
     // bool_value(4), struct_value(5), list_value(6).
     if msg.field_by_number(1).is_some() {
@@ -268,10 +275,10 @@ fn serialize_json_value<S: Serializer>(msg: &DynamicMessage, s: S) -> Result<S::
         return s.serialize_bool(*b);
     }
     if let Some(Value::Message(inner)) = msg.field_by_number(5) {
-        return inner.serialize(s);
+        return Nested::charge(inner, depth)?.serialize(s);
     }
     if let Some(Value::Message(inner)) = msg.field_by_number(6) {
-        return inner.serialize(s);
+        return Nested::charge(inner, depth)?.serialize(s);
     }
     // Unset Value: spec is ambiguous; serialize as null.
     s.serialize_none()
@@ -436,7 +443,16 @@ fn deserialize_list_value<'de, D: Deserializer<'de>>(
 /// Requires the inner type to be registered in the same pool — the spec
 /// permits failing on unregistered types, and CEL evaluation requires the
 /// pool to carry the full schema anyway.
-fn serialize_any<S: Serializer>(msg: &DynamicMessage, s: S) -> Result<S::Ok, S::Error> {
+///
+/// The payload is a nested message for budget purposes: it costs one level
+/// of `depth`, and its binary decode runs on the *remaining* budget rather
+/// than a fresh [`RECURSION_LIMIT`], so nesting inside `Any.value` — which
+/// the outer decode saw only as opaque bytes — cannot restart the count.
+fn serialize_any<S: Serializer>(
+    msg: &DynamicMessage,
+    depth: u32,
+    s: S,
+) -> Result<S::Ok, S::Error> {
     use serde::ser::Error as _;
     let type_url = match msg.field_by_number(1) {
         Some(Value::String(u)) => u.as_str(),
@@ -456,8 +472,21 @@ fn serialize_any<S: Serializer>(msg: &DynamicMessage, s: S) -> Result<S::Ok, S::
             "Any type_url {type_url:?} not registered in the descriptor pool"
         )));
     };
-    let inner = DynamicMessage::decode(Arc::clone(pool), inner_idx, value_bytes)
-        .map_err(|e| S::Error::custom(format!("Any inner decode failed: {e}")))?;
+    // The payload's one level is charged here, once, for both branches below.
+    let inner_depth = descend(depth)?;
+    let inner_msg =
+        DynamicMessage::decode_at_depth(Arc::clone(pool), inner_idx, value_bytes, inner_depth)
+            .map_err(|e| match e {
+                // The payload sits inside the serialize-side budget; report it
+                // as the nesting cap it is, not as a puzzling decode failure on
+                // bytes the caller already decoded successfully.
+                buffa::DecodeError::RecursionLimitExceeded => nesting_too_deep(),
+                e => S::Error::custom(format!("Any inner decode failed: {e}")),
+            })?;
+    let inner = Nested {
+        msg: &inner_msg,
+        depth: inner_depth,
+    };
     let inner_md = pool.message(inner_idx);
     let inner_wkt = WktKind::from_full_name(&inner_md.full_name);
 
@@ -469,16 +498,17 @@ fn serialize_any<S: Serializer>(msg: &DynamicMessage, s: S) -> Result<S::Ok, S::
             return map.end();
         }
     }
-    // Spread the inner fields. We can't use `inner.serialize` because that
+    // Spread the inner fields. We can't use `serialize_message` because that
     // opens a new object; instead, replay the field walk.
     for fd in &inner_md.fields {
-        if !inner.has(fd) {
+        if !inner.msg.has(fd) {
             continue;
         }
         let value = inner
+            .msg
             .field_by_number(fd.number)
             .expect("has() implies present");
-        map.serialize_entry(&fd.json_name, &FieldRef::new(pool, fd, value))?;
+        map.serialize_entry(&fd.json_name, &FieldRef::new(pool, fd, value, inner.depth))?;
     }
     map.end()
 }
