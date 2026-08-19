@@ -68,6 +68,23 @@ const INLINE_CAP: usize = 16;
 /// module, no external code (generated or hand-written) can break the
 /// invariant: the worst a misuse can do is trip the `idx >= len` overrun panic
 /// or read a wrong-but-initialized size — never undefined behavior.
+///
+/// # Panic locations
+///
+/// Generated code calls [`set`](Self::set) once per length-delimited
+/// sub-message field and [`consume_next`](Self::consume_next) once as well, so
+/// a schema of a few hundred messages produces thousands of call sites for
+/// each. Under `#[track_caller]` every one of them materializes a
+/// [`Location`](core::panic::Location) record. The attribute is therefore
+/// gated on `debug_assertions` and both panic bodies are kept out of line.
+///
+/// The bound checks themselves always run. What changes is the report: without
+/// the attribute a violation points inside `buffa`'s own source rather than at
+/// your `compute_size` / `write_to`, so rebuild with `debug-assertions = true`
+/// to locate one. The gate follows the profile **buffa itself** was compiled
+/// with, not yours: a dependency override setting `debug-assertions = false`
+/// drops the locations from a dev build, and `[profile.release]
+/// debug-assertions = true` keeps them, and their size cost, in a release one.
 pub struct SizeCache {
     // `MaybeUninit` avoids zeroing the whole array on construction. A fresh
     // cache is built per encode and handed by `&mut` to an out-of-line
@@ -179,6 +196,11 @@ impl SizeCache {
             self.spill.push(0);
         }
         self.len += 1;
+        debug_assert_eq!(
+            self.spill.len(),
+            (self.len as usize).saturating_sub(INLINE_CAP),
+            "spill must hold every slot past the inline tier"
+        );
         idx
     }
 
@@ -189,19 +211,21 @@ impl SizeCache {
     /// # Panics
     ///
     /// Panics if `idx` was not returned by a prior [`reserve`](Self::reserve)
-    /// on this cache (i.e. `idx >= len`).
+    /// on this cache (i.e. `idx >= len`). The check always runs; the caller
+    /// location is attached only when buffa is compiled with
+    /// `debug_assertions`. See [Panic locations](Self#panic-locations).
     #[inline]
-    #[track_caller]
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn set(&mut self, idx: usize, size: u32) {
-        assert!(
-            idx < self.len as usize,
-            "SizeCache::set: slot {idx} not reserved (len {})",
-            self.len
-        );
+        if idx >= self.len as usize {
+            Self::not_reserved(idx, self.len);
+        }
         if idx < INLINE_CAP {
             self.inline[idx] = MaybeUninit::new(size);
+        } else if let Some(slot) = self.spill.get_mut(idx - INLINE_CAP) {
+            *slot = size;
         } else {
-            self.spill[idx - INLINE_CAP] = size;
+            Self::spill_desync(idx, self.len, self.spill.len());
         }
     }
 
@@ -215,7 +239,9 @@ impl SizeCache {
     /// Panics if the cursor runs past the end of the cache — i.e. if
     /// `write_to` traversal diverges from `compute_size` traversal. For
     /// generated code this indicates a codegen bug; for manual `Message`
-    /// implementations it indicates a traversal-order mismatch.
+    /// implementations it indicates a traversal-order mismatch. As for
+    /// [`set`](Self::set), the check always runs and only the caller location
+    /// is gated on `debug_assertions`.
     ///
     /// In debug builds, also panics if the cached size exceeds the 2 GiB
     /// protobuf limit ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)):
@@ -227,7 +253,7 @@ impl SizeCache {
     /// (like the two-pass byte ledger) the check is debug-only rather than a
     /// release-mode branch on every nested-message write.
     #[inline]
-    #[track_caller]
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn consume_next(&mut self) -> u32 {
         let idx = self.cursor as usize;
         if idx >= self.len as usize {
@@ -240,8 +266,10 @@ impl SizeCache {
             // by `reserve` before `len` advanced past it (and possibly
             // overwritten by `set`), so this slot is initialized.
             unsafe { self.inline[idx].assume_init() }
+        } else if let Some(&size) = self.spill.get(idx - INLINE_CAP) {
+            size
         } else {
-            self.spill[idx - INLINE_CAP]
+            Self::spill_desync(idx, self.len, self.spill.len())
         };
         debug_assert!(
             size <= crate::MAX_MESSAGE_BYTES,
@@ -253,7 +281,27 @@ impl SizeCache {
 
     #[cold]
     #[inline(never)]
-    #[track_caller]
+    #[cfg_attr(debug_assertions, track_caller)]
+    fn not_reserved(idx: usize, len: u32) -> ! {
+        panic!("SizeCache::set: slot {idx} not reserved (len {len})")
+    }
+
+    /// Landing pad for the two spill accesses. Unreachable: both are guarded by
+    /// an `idx < len` check, and `reserve` keeps `spill.len()` at `len`
+    /// saturating-minus `INLINE_CAP`. Routing them here rather than leaving them
+    /// to `[]` keeps a `Vec` bounds panic out of every generated call site.
+    #[cold]
+    #[inline(never)]
+    fn spill_desync(idx: usize, len: u32, spill_len: usize) -> ! {
+        panic!(
+            "SizeCache internal invariant broken: slot {idx} is within len \
+             {len} but the spill holds {spill_len} slots"
+        )
+    }
+
+    #[cold]
+    #[inline(never)]
+    #[cfg_attr(debug_assertions, track_caller)]
     fn overrun(idx: usize, len: u32) -> ! {
         panic!(
             "SizeCache cursor overrun: write_to consumed {} slots but \
@@ -880,6 +928,71 @@ mod tests {
         let s = c.reserve();
         c.set(s, crate::MAX_MESSAGE_BYTES);
         assert_eq!(c.consume_next(), crate::MAX_MESSAGE_BYTES);
+    }
+
+    #[test]
+    #[should_panic(expected = "slot 0 not reserved (len 0)")]
+    fn set_unreserved_slot_panics() {
+        let mut c = SizeCache::new();
+        c.set(0, 7);
+    }
+
+    /// A spill-tier index past the end reports as unreserved, not as the
+    /// internal `spill_desync`: the leading `idx >= len` check dominates the
+    /// `get_mut`, which is what makes that arm unreachable. The two carry
+    /// distinct messages, so this pins which one fired.
+    #[test]
+    #[should_panic(expected = "slot 20 not reserved (len 17)")]
+    fn set_past_spill_end_reports_unreserved() {
+        let mut c = SizeCache::new();
+        for _ in 0..=INLINE_CAP {
+            let _ = c.reserve();
+        }
+        assert_eq!(INLINE_CAP + 4, 20, "message below assumes INLINE_CAP == 16");
+        c.set(INLINE_CAP + 4, 7);
+    }
+
+    /// `clear` must empty the spill, not just reset `len`. If it stopped doing
+    /// so the spill would outlive its slots and `consume_next` would hand back
+    /// stale sizes from shifted indices, corrupting the wire output silently
+    /// rather than panicking.
+    #[test]
+    fn clear_empties_spill_and_reuse_reads_back_new_values() {
+        let mut c = SizeCache::new();
+        for _ in 0..INLINE_CAP + 2 {
+            let s = c.reserve();
+            c.set(s, 111);
+        }
+        c.clear();
+        assert!(c.spill.is_empty());
+        for _ in 0..INLINE_CAP + 2 {
+            let s = c.reserve();
+            c.set(s, 222);
+        }
+        assert_eq!(c.spill.len(), 2);
+        for _ in 0..INLINE_CAP + 2 {
+            assert_eq!(c.consume_next(), 222);
+        }
+    }
+
+    /// The spill arm's `get_mut` is unreachable-`None` because `reserve` keeps
+    /// `spill.len()` at `len` saturating-minus `INLINE_CAP`. Pin that at the
+    /// boundary and one slot past it, since `set` now relies on it.
+    #[test]
+    fn spill_len_tracks_len_past_inline_cap() {
+        let mut c = SizeCache::new();
+        for i in 0..INLINE_CAP + 2 {
+            let idx = c.reserve();
+            assert_eq!(idx, i);
+            assert_eq!(c.len as usize, i + 1);
+            assert_eq!(c.spill.len(), (i + 1).saturating_sub(INLINE_CAP));
+        }
+        // The last reserved slot is in the spill tier and `set` reaches it.
+        c.set(INLINE_CAP + 1, 99);
+        for _ in 0..INLINE_CAP + 1 {
+            let _ = c.consume_next();
+        }
+        assert_eq!(c.consume_next(), 99);
     }
 
     #[cfg(debug_assertions)]
