@@ -323,7 +323,12 @@ impl<'de> serde::Deserialize<'de> for Any {
             Some(_) => {
                 return Err(serde::de::Error::custom("@type must be a string"));
             }
-            None => return Ok(Self::default()),
+            None if obj.is_empty() => return Ok(Self::default()),
+            None => {
+                return Err(serde::de::Error::custom(
+                    "Any object missing string \"@type\"",
+                ));
+            }
         };
 
         // The type URL must be non-empty and contain a '/' separating the
@@ -757,6 +762,18 @@ mod tests {
             let json = r#"{}"#;
             let any: Any = serde_json::from_str(json).unwrap();
             assert_eq!(any, Any::default());
+        }
+
+        #[test]
+        fn deserialize_rejects_nonempty_object_without_type() {
+            for json in [r#"{"value":""}"#, r#"{"unknown":1}"#] {
+                let err = serde_json::from_str::<Any>(json).unwrap_err();
+                assert!(
+                    err.to_string()
+                        .contains("Any object missing string \"@type\""),
+                    "{json}: {err}"
+                );
+            }
         }
 
         #[test]
