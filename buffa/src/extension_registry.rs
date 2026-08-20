@@ -514,12 +514,10 @@ pub mod helpers {
             .ok_or_else(|| missing(n))
     }
     pub fn bytes_from_json(v: serde_json::Value, n: u32) -> Result<Vec<UnknownField>, String> {
-        use base64::Engine;
         let serde_json::Value::String(s) = v else {
             return Err(format!("field {n}: expected base64 string"));
         };
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(s)
+        let bytes = crate::json_helpers::decode_base64(&s)
             .map_err(|e| format!("field {n}: base64: {e}"))?;
         Ok(alloc::vec![UnknownField {
             number: n,
@@ -1024,6 +1022,29 @@ mod tests {
             back[0].data,
             UnknownFieldData::LengthDelimited(vec![0xDE, 0xAD, 0xBE, 0xEF])
         );
+    }
+
+    #[test]
+    fn bytes_from_json_matches_protojson_base64_policy() {
+        let variants = ["+w==", "+w", "-w==", "-w", "-_==", "-_"];
+        for encoded in variants {
+            let back = bytes_from_json(serde_json::json!(encoded), 1).unwrap();
+            assert_eq!(
+                back[0].data,
+                UnknownFieldData::LengthDelimited(vec![0xFB]),
+                "input: {encoded}"
+            );
+        }
+
+        let repeated = repeated_bytes_from_json(serde_json::json!(variants), 1).unwrap();
+        assert_eq!(repeated.len(), variants.len());
+        for (field, encoded) in repeated.iter().zip(variants) {
+            assert_eq!(
+                field.data,
+                UnknownFieldData::LengthDelimited(vec![0xFB]),
+                "input: {encoded}"
+            );
+        }
     }
 
     #[test]
