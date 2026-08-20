@@ -293,57 +293,24 @@ pub mod helpers {
         format!("extension field {n}: no value present")
     }
 
-    /// JSON value → single-varint `UnknownField`. Handles both number and
-    /// string forms (proto3 JSON accepts either for all integer types).
-    fn json_int<T>(
+    /// JSON integer → one encoded `UnknownField`. The decoder is the same
+    /// type-specific helper generated fields use, so decimal/exponent forms
+    /// and unsafe-float rejection cannot drift between the two paths.
+    fn json_integer<T>(
         v: serde_json::Value,
         n: u32,
-        encode: fn(T) -> u64,
-    ) -> Result<Vec<UnknownField>, String>
-    where
-        T: TryFrom<i64> + core::str::FromStr,
-        T::Error: core::fmt::Display,
-        <T as core::str::FromStr>::Err: core::fmt::Display,
-    {
-        let i: T = match v {
-            serde_json::Value::Number(num) => {
-                let x = num
-                    .as_i64()
-                    .ok_or_else(|| format!("field {n}: not an integer"))?;
-                T::try_from(x).map_err(|e| format!("field {n}: {e}"))?
-            }
-            serde_json::Value::String(s) => s.parse().map_err(|e| format!("field {n}: {e}"))?,
-            _ => return Err(format!("field {n}: expected number or string")),
-        };
+        decode: fn(serde_json::Value) -> Result<T, serde_json::Error>,
+        encode: fn(T) -> UnknownFieldData,
+    ) -> Result<Vec<UnknownField>, String> {
+        // Keep the helper-level null contract unchanged. The extension-key
+        // dispatcher is responsible for interpreting a null field as absent.
+        if v.is_null() {
+            return Err(format!("field {n}: expected number or string"));
+        }
+        let i = decode(v).map_err(|e| format!("field {n}: {e}"))?;
         Ok(alloc::vec![UnknownField {
             number: n,
-            data: UnknownFieldData::Varint(encode(i)),
-        }])
-    }
-
-    fn json_uint<T>(
-        v: serde_json::Value,
-        n: u32,
-        encode: fn(T) -> u64,
-    ) -> Result<Vec<UnknownField>, String>
-    where
-        T: TryFrom<u64> + core::str::FromStr,
-        T::Error: core::fmt::Display,
-        <T as core::str::FromStr>::Err: core::fmt::Display,
-    {
-        let i: T = match v {
-            serde_json::Value::Number(num) => {
-                let x = num
-                    .as_u64()
-                    .ok_or_else(|| format!("field {n}: not an unsigned integer"))?;
-                T::try_from(x).map_err(|e| format!("field {n}: {e}"))?
-            }
-            serde_json::Value::String(s) => s.parse().map_err(|e| format!("field {n}: {e}"))?,
-            _ => return Err(format!("field {n}: expected number or string")),
-        };
-        Ok(alloc::vec![UnknownField {
-            number: n,
-            data: UnknownFieldData::Varint(encode(i)),
+            data: encode(i),
         }])
     }
 
@@ -355,7 +322,9 @@ pub mod helpers {
             .ok_or_else(|| missing(n))
     }
     pub fn int32_from_json(v: serde_json::Value, n: u32) -> Result<Vec<UnknownField>, String> {
-        json_int::<i32>(v, n, |v| v as i64 as u64)
+        json_integer(v, n, crate::json_helpers::int32::deserialize, |v| {
+            UnknownFieldData::Varint(v as i64 as u64)
+        })
     }
 
     pub fn sint32_to_json(n: u32, f: &UnknownFields) -> Result<serde_json::Value, String> {
@@ -364,7 +333,9 @@ pub mod helpers {
             .ok_or_else(|| missing(n))
     }
     pub fn sint32_from_json(v: serde_json::Value, n: u32) -> Result<Vec<UnknownField>, String> {
-        json_int::<i32>(v, n, |v| crate::types::zigzag_encode_i32(v) as u64)
+        json_integer(v, n, crate::json_helpers::int32::deserialize, |v| {
+            UnknownFieldData::Varint(crate::types::zigzag_encode_i32(v) as u64)
+        })
     }
 
     pub fn uint32_to_json(n: u32, f: &UnknownFields) -> Result<serde_json::Value, String> {
@@ -373,7 +344,9 @@ pub mod helpers {
             .ok_or_else(|| missing(n))
     }
     pub fn uint32_from_json(v: serde_json::Value, n: u32) -> Result<Vec<UnknownField>, String> {
-        json_uint::<u32>(v, n, |v| v as u64)
+        json_integer(v, n, crate::json_helpers::uint32::deserialize, |v| {
+            UnknownFieldData::Varint(v as u64)
+        })
     }
 
     pub fn sfixed32_to_json(n: u32, f: &UnknownFields) -> Result<serde_json::Value, String> {
@@ -382,18 +355,9 @@ pub mod helpers {
             .ok_or_else(|| missing(n))
     }
     pub fn sfixed32_from_json(v: serde_json::Value, n: u32) -> Result<Vec<UnknownField>, String> {
-        let i: i32 = match v {
-            serde_json::Value::Number(num) => num
-                .as_i64()
-                .and_then(|x| i32::try_from(x).ok())
-                .ok_or_else(|| format!("field {n}: not an i32"))?,
-            serde_json::Value::String(s) => s.parse().map_err(|e| format!("field {n}: {e}"))?,
-            _ => return Err(format!("field {n}: expected number or string")),
-        };
-        Ok(alloc::vec![UnknownField {
-            number: n,
-            data: UnknownFieldData::Fixed32(i as u32),
-        }])
+        json_integer(v, n, crate::json_helpers::int32::deserialize, |v| {
+            UnknownFieldData::Fixed32(v as u32)
+        })
     }
 
     pub fn fixed32_to_json(n: u32, f: &UnknownFields) -> Result<serde_json::Value, String> {
@@ -402,18 +366,12 @@ pub mod helpers {
             .ok_or_else(|| missing(n))
     }
     pub fn fixed32_from_json(v: serde_json::Value, n: u32) -> Result<Vec<UnknownField>, String> {
-        let i: u32 = match v {
-            serde_json::Value::Number(num) => num
-                .as_u64()
-                .and_then(|x| u32::try_from(x).ok())
-                .ok_or_else(|| format!("field {n}: not a u32"))?,
-            serde_json::Value::String(s) => s.parse().map_err(|e| format!("field {n}: {e}"))?,
-            _ => return Err(format!("field {n}: expected number or string")),
-        };
-        Ok(alloc::vec![UnknownField {
-            number: n,
-            data: UnknownFieldData::Fixed32(i),
-        }])
+        json_integer(
+            v,
+            n,
+            crate::json_helpers::uint32::deserialize,
+            UnknownFieldData::Fixed32,
+        )
     }
 
     // ── 64-bit integers: JSON *string* (proto3 JSON spec) ───────────────────
@@ -424,7 +382,9 @@ pub mod helpers {
             .ok_or_else(|| missing(n))
     }
     pub fn int64_from_json(v: serde_json::Value, n: u32) -> Result<Vec<UnknownField>, String> {
-        json_int::<i64>(v, n, |v| v as u64)
+        json_integer(v, n, crate::json_helpers::int64::deserialize, |v| {
+            UnknownFieldData::Varint(v as u64)
+        })
     }
 
     pub fn sint64_to_json(n: u32, f: &UnknownFields) -> Result<serde_json::Value, String> {
@@ -433,7 +393,9 @@ pub mod helpers {
             .ok_or_else(|| missing(n))
     }
     pub fn sint64_from_json(v: serde_json::Value, n: u32) -> Result<Vec<UnknownField>, String> {
-        json_int::<i64>(v, n, crate::types::zigzag_encode_i64)
+        json_integer(v, n, crate::json_helpers::int64::deserialize, |v| {
+            UnknownFieldData::Varint(crate::types::zigzag_encode_i64(v))
+        })
     }
 
     pub fn uint64_to_json(n: u32, f: &UnknownFields) -> Result<serde_json::Value, String> {
@@ -442,7 +404,9 @@ pub mod helpers {
             .ok_or_else(|| missing(n))
     }
     pub fn uint64_from_json(v: serde_json::Value, n: u32) -> Result<Vec<UnknownField>, String> {
-        json_uint::<u64>(v, n, |v| v)
+        json_integer(v, n, crate::json_helpers::uint64::deserialize, |v| {
+            UnknownFieldData::Varint(v)
+        })
     }
 
     pub fn sfixed64_to_json(n: u32, f: &UnknownFields) -> Result<serde_json::Value, String> {
@@ -451,17 +415,9 @@ pub mod helpers {
             .ok_or_else(|| missing(n))
     }
     pub fn sfixed64_from_json(v: serde_json::Value, n: u32) -> Result<Vec<UnknownField>, String> {
-        let i: i64 = match v {
-            serde_json::Value::Number(num) => num
-                .as_i64()
-                .ok_or_else(|| format!("field {n}: not an i64"))?,
-            serde_json::Value::String(s) => s.parse().map_err(|e| format!("field {n}: {e}"))?,
-            _ => return Err(format!("field {n}: expected number or string")),
-        };
-        Ok(alloc::vec![UnknownField {
-            number: n,
-            data: UnknownFieldData::Fixed64(i as u64),
-        }])
+        json_integer(v, n, crate::json_helpers::int64::deserialize, |v| {
+            UnknownFieldData::Fixed64(v as u64)
+        })
     }
 
     pub fn fixed64_to_json(n: u32, f: &UnknownFields) -> Result<serde_json::Value, String> {
@@ -470,17 +426,12 @@ pub mod helpers {
             .ok_or_else(|| missing(n))
     }
     pub fn fixed64_from_json(v: serde_json::Value, n: u32) -> Result<Vec<UnknownField>, String> {
-        let i: u64 = match v {
-            serde_json::Value::Number(num) => num
-                .as_u64()
-                .ok_or_else(|| format!("field {n}: not a u64"))?,
-            serde_json::Value::String(s) => s.parse().map_err(|e| format!("field {n}: {e}"))?,
-            _ => return Err(format!("field {n}: expected number or string")),
-        };
-        Ok(alloc::vec![UnknownField {
-            number: n,
-            data: UnknownFieldData::Fixed64(i),
-        }])
+        json_integer(
+            v,
+            n,
+            crate::json_helpers::uint64::deserialize,
+            UnknownFieldData::Fixed64,
+        )
     }
 
     // ── bool, string, bytes ─────────────────────────────────────────────────
@@ -977,6 +928,89 @@ mod tests {
         assert_eq!(json, serde_json::json!("9999999999"));
         let back = int64_from_json(json, 1).unwrap();
         assert_eq!(back[0].data, UnknownFieldData::Varint(9_999_999_999));
+    }
+
+    #[test]
+    fn integer_extensions_accept_protojson_decimal_and_exponent_forms() {
+        type FromJson =
+            fn(serde_json::Value, u32) -> Result<Vec<UnknownField>, alloc::string::String>;
+
+        let cases: [(FromJson, serde_json::Value, UnknownFieldData); 10] = [
+            (
+                int32_from_json,
+                serde_json::json!(1.0),
+                UnknownFieldData::Varint(1),
+            ),
+            (
+                sint32_from_json,
+                serde_json::json!("1.5e3"),
+                UnknownFieldData::Varint(crate::types::zigzag_encode_i32(1_500) as u64),
+            ),
+            (
+                uint32_from_json,
+                serde_json::json!("1200e-2"),
+                UnknownFieldData::Varint(12),
+            ),
+            (
+                sfixed32_from_json,
+                serde_json::json!("-1.5e3"),
+                UnknownFieldData::Fixed32((-1_500_i32) as u32),
+            ),
+            (
+                fixed32_from_json,
+                serde_json::json!("1200e-2"),
+                UnknownFieldData::Fixed32(12),
+            ),
+            (
+                int64_from_json,
+                serde_json::json!("9007199254740993.0"),
+                UnknownFieldData::Varint(9_007_199_254_740_993),
+            ),
+            (
+                sint64_from_json,
+                serde_json::json!("-9007199254740993.0"),
+                UnknownFieldData::Varint(crate::types::zigzag_encode_i64(-9_007_199_254_740_993)),
+            ),
+            (
+                uint64_from_json,
+                serde_json::json!("18446744073709551615.0"),
+                UnknownFieldData::Varint(u64::MAX),
+            ),
+            (
+                sfixed64_from_json,
+                serde_json::json!("-9007199254740993.0"),
+                UnknownFieldData::Fixed64((-9_007_199_254_740_993_i64) as u64),
+            ),
+            (
+                fixed64_from_json,
+                serde_json::json!("18446744073709551615.0"),
+                UnknownFieldData::Fixed64(u64::MAX),
+            ),
+        ];
+
+        for (decode, json, expected) in cases {
+            let fields = decode(json, 1).unwrap();
+            assert_eq!(fields[0].data, expected);
+        }
+
+        let repeated =
+            repeated_int64_from_json(serde_json::json!(["1.5e3", "9007199254740993.0"]), 1)
+                .unwrap();
+        assert_eq!(repeated[0].data, UnknownFieldData::Varint(1_500));
+        assert_eq!(
+            repeated[1].data,
+            UnknownFieldData::Varint(9_007_199_254_740_993)
+        );
+    }
+
+    #[test]
+    fn integer_extensions_reject_unsafe_unquoted_float_forms() {
+        for decode in [int64_from_json as fn(_, _) -> _, uint64_from_json] {
+            assert!(decode(serde_json::json!(4_503_599_627_370_496.0), 1).is_err());
+        }
+        // Null remains the extension-key dispatcher's responsibility rather
+        // than decoding as a present integer with value zero.
+        assert!(int32_from_json(serde_json::Value::Null, 1).is_err());
     }
 
     #[test]
