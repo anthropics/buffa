@@ -18,6 +18,29 @@ fn pool() -> Arc<DescriptorPool> {
     Arc::new(DescriptorPool::decode(FDS_BYTES).expect("pool builds from protoc FDS"))
 }
 
+#[cfg(feature = "json")]
+#[test]
+fn any_wkt_wrapper_unknown_fields_follow_parse_mode() {
+    let p = pool();
+    let any_idx = p.message_index("google.protobuf.Any").unwrap();
+    // Any itself has a custom JSON representation, so wrapping one inside
+    // another Any exercises the `{"@type": ..., "value": ...}` WKT path.
+    let input = r#"{
+        "@type": "type.googleapis.com/google.protobuf.Any",
+        "value": {
+            "@type": "type.googleapis.com/reflect.opt.Annotated",
+            "email": "a@example.com"
+        },
+        "futureField": 1
+    }"#;
+
+    let err = DynamicMessage::from_json(Arc::clone(&p), any_idx, input).unwrap_err();
+    assert!(err.to_string().contains("unknown field \"futureField\""));
+
+    DynamicMessage::from_json_ignoring_unknown(Arc::clone(&p), any_idx, input)
+        .expect("lenient parsing must ignore unknown Any wrapper fields");
+}
+
 /// Read a custom option off a re-encoded options message: decode it as a
 /// `DynamicMessage` of `options_type` and pull the extension's value. This
 /// is the documented generic flow for reading a custom option by name when

@@ -503,11 +503,19 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
     // (for WKTs) or the remaining fields.
     let inner_json = if let Some(wkt) = inner_wkt {
         if wkt.uses_any_value_wrapping() {
-            obj.remove("value").ok_or_else(|| {
+            let value = obj.remove("value").ok_or_else(|| {
                 D::Error::custom(format!(
                     "Any with WKT type {type_url:?} requires a \"value\" key"
                 ))
-            })?
+            })?;
+            if !ignore_unknown {
+                if let Some(key) = obj.keys().next() {
+                    return Err(D::Error::custom(format!(
+                        "unknown field {key:?} in Any wrapper for {type_url:?}"
+                    )));
+                }
+            }
+            value
         } else {
             serde_json::Value::Object(obj)
         }
