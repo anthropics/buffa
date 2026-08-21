@@ -1,0 +1,10 @@
+kind: Added
+body: |-
+    **`CodeGenConfig::shared_descriptor_pool`** — emit the reflection descriptor set once at the
+    module-tree root instead of once per package. When enabled, per-package `__buffa::reflect`
+    modules delegate to a single shared `__buffa_fds` module; every consumer path
+    (`pkg::descriptor_pool()`, `pkg::FILE_DESCRIPTOR_SET_BYTES`) keeps resolving as an alias, and
+    all packages observe one `DescriptorPool`. Adds the `encode_descriptor_set`,
+    `shared_descriptor_root_module`, and `CodeGenConfig::reflect_feature_gate` surface that
+    front-ends use to emit the shared module.
+time: 2026-07-13T12:04:37.134464-04:00
