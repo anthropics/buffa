@@ -73,18 +73,25 @@ const INLINE_CAP: usize = 16;
 ///
 /// Generated code calls [`set`](Self::set) once per length-delimited
 /// sub-message field and [`consume_next`](Self::consume_next) once as well, so
-/// a schema of a few hundred messages produces thousands of call sites for
-/// each. Under `#[track_caller]` every one of them materializes a
+/// a large schema produces hundreds to thousands of call sites for each. Under
+/// `#[track_caller]` every one of them materializes a
 /// [`Location`](core::panic::Location) record. The attribute is therefore
-/// gated on `debug_assertions` and both panic bodies are kept out of line.
+/// gated on `debug_assertions` and the panic bodies are kept out of line.
 ///
 /// The bound checks themselves always run. What changes is the report: without
 /// the attribute a violation points inside `buffa`'s own source rather than at
-/// your `compute_size` / `write_to`, so rebuild with `debug-assertions = true`
-/// to locate one. The gate follows the profile **buffa itself** was compiled
-/// with, not yours: a dependency override setting `debug-assertions = false`
-/// drops the locations from a dev build, and `[profile.release]
-/// debug-assertions = true` keeps them, and their size cost, in a release one.
+/// your `compute_size` / `write_to`. The gate follows the profile **buffa
+/// itself** was compiled with, not yours. To recover caller locations in a
+/// release build, enable them for buffa alone:
+///
+/// ```toml
+/// [profile.release.package.buffa]
+/// debug-assertions = true
+/// ```
+///
+/// This also turns on buffa's other `debug_assert!`s (including a per-slot
+/// size check in [`consume_next`](Self::consume_next)), so treat it as a
+/// diagnostic setting rather than a permanent one.
 pub struct SizeCache {
     // `MaybeUninit` avoids zeroing the whole array on construction. A fresh
     // cache is built per encode and handed by `&mut` to an out-of-line
@@ -241,7 +248,8 @@ impl SizeCache {
     /// generated code this indicates a codegen bug; for manual `Message`
     /// implementations it indicates a traversal-order mismatch. As for
     /// [`set`](Self::set), the check always runs and only the caller location
-    /// is gated on `debug_assertions`.
+    /// is gated on `debug_assertions`. See
+    /// [Panic locations](Self#panic-locations).
     ///
     /// In debug builds, also panics if the cached size exceeds the 2 GiB
     /// protobuf limit ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)):
@@ -288,8 +296,10 @@ impl SizeCache {
 
     /// Landing pad for the two spill accesses. Unreachable: both are guarded by
     /// an `idx < len` check, and `reserve` keeps `spill.len()` at `len`
-    /// saturating-minus `INLINE_CAP`. Routing them here rather than leaving them
-    /// to `[]` keeps a `Vec` bounds panic out of every generated call site.
+    /// saturating-minus `INLINE_CAP`. Routed here rather than left to `[]` so
+    /// a broken invariant reports itself by name instead of as a bare
+    /// index-out-of-bounds. Deliberately not `track_caller`: this is a bug in
+    /// buffa, so buffa's own location is the right one to report.
     #[cold]
     #[inline(never)]
     fn spill_desync(idx: usize, len: u32, spill_len: usize) -> ! {
@@ -656,6 +666,10 @@ impl SizeCachePool {
 mod tests {
     use super::*;
 
+    // Several tests below bake literal slot numbers into expected panic
+    // messages; they assume the inline tier is 16 slots.
+    const _: () = assert!(INLINE_CAP == 16);
+
     #[test]
     fn empty_cache_is_default() {
         let c = SizeCache::new();
@@ -948,8 +962,35 @@ mod tests {
         for _ in 0..=INLINE_CAP {
             let _ = c.reserve();
         }
-        assert_eq!(INLINE_CAP + 4, 20, "message below assumes INLINE_CAP == 16");
         c.set(INLINE_CAP + 4, 7);
+    }
+
+    /// `spill_desync` is unreachable through the public API, so break the
+    /// invariant by hand to pin its message (and its argument order — `idx`
+    /// and `spill_len` are both `usize`).
+    #[test]
+    #[should_panic(expected = "slot 16 is within len 17 but the spill holds 0 slots")]
+    fn set_reports_spill_desync_when_invariant_broken() {
+        let mut c = SizeCache::new();
+        for _ in 0..=INLINE_CAP {
+            let _ = c.reserve();
+        }
+        c.spill.clear();
+        c.set(INLINE_CAP, 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "slot 16 is within len 17 but the spill holds 0 slots")]
+    fn consume_next_reports_spill_desync_when_invariant_broken() {
+        let mut c = SizeCache::new();
+        for _ in 0..=INLINE_CAP {
+            let idx = c.reserve();
+            c.set(idx, 1);
+        }
+        c.spill.clear();
+        for _ in 0..=INLINE_CAP {
+            let _ = c.consume_next();
+        }
     }
 
     /// `clear` must empty the spill, not just reset `len`. If it stopped doing
@@ -989,7 +1030,7 @@ mod tests {
         }
         // The last reserved slot is in the spill tier and `set` reaches it.
         c.set(INLINE_CAP + 1, 99);
-        for _ in 0..INLINE_CAP + 1 {
+        for _ in 0..=INLINE_CAP {
             let _ = c.consume_next();
         }
         assert_eq!(c.consume_next(), 99);
