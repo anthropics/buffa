@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Fix ProtoJSON parsing for primitive wrapper values** (#368). Primitive wrappers now use the same scalar parsing rules as generated fields, including direct deserialization of `null` as the default value. Repeated and map wrapper values reject null elements; external `google.protobuf` wrapper types used in those containers must implement `buffa::json_helpers::ProtoElemJson`.'
+time: 2026-08-24T15:06:58.667785+02:00

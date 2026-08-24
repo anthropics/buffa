@@ -1412,6 +1412,25 @@ fn is_value_field(
         && field.type_name.as_deref() == Some(".google.protobuf.Value")
 }
 
+fn is_wkt_wrapper_type(type_name: Option<&str>) -> bool {
+    // Keep this list in sync with `WktKind::from_full_name` in
+    // `buffa-descriptor/src/reflect/json_wkt.rs`.
+    matches!(
+        type_name,
+        Some(
+            ".google.protobuf.BoolValue"
+                | ".google.protobuf.BytesValue"
+                | ".google.protobuf.DoubleValue"
+                | ".google.protobuf.FloatValue"
+                | ".google.protobuf.Int32Value"
+                | ".google.protobuf.Int64Value"
+                | ".google.protobuf.StringValue"
+                | ".google.protobuf.UInt32Value"
+                | ".google.protobuf.UInt64Value"
+        )
+    )
+}
+
 /// Resolved Rust type and map-entry metadata for a single field.
 #[derive(Debug)]
 struct FieldInfo {
@@ -1454,6 +1473,13 @@ struct FieldInfo {
     is_required: bool,
     map_key_type: Option<Type>,
     map_value_type: Option<Type>,
+    /// Whether this field's message type is one of the well-known scalar
+    /// wrappers. Wrapper values have scalar JSON representations, so their
+    /// repeated fields need the ProtoElemJson container path to reject null
+    /// elements.
+    is_wkt_wrapper: bool,
+    /// Whether a map's message value is a well-known scalar wrapper.
+    map_value_is_wkt_wrapper: bool,
     /// Closedness of the **value enum** when `map_value_type == TYPE_ENUM`.
     /// Resolved from the map entry's value-field descriptor (which is
     /// TYPE_ENUM, so `resolve_field` correctly overlays the referenced
@@ -1660,6 +1686,12 @@ fn classify_field(
 
     let map_key_type = map_entry.and_then(|e| map_entry_key_type(ctx, e, features));
     let map_value_type = map_entry.and_then(|e| map_entry_value_type(ctx, e, features));
+    let map_value_type_name = map_entry
+        .and_then(|e| e.field.iter().find(|f| f.number == Some(2)))
+        .and_then(|f| f.type_name.as_deref());
+    let is_wkt_wrapper = is_wkt_wrapper_type(field.type_name.as_deref());
+    let map_value_is_wkt_wrapper =
+        map_value_type == Some(Type::TYPE_MESSAGE) && is_wkt_wrapper_type(map_value_type_name);
 
     // For enum-valued maps, resolve closedness via the MapEntry's value
     // field descriptor (TYPE_ENUM — resolve_field overlays the referenced
@@ -1694,6 +1726,8 @@ fn classify_field(
         map_repr,
         map_key_type,
         map_value_type,
+        is_wkt_wrapper,
+        map_value_is_wkt_wrapper,
         map_value_enum_closed,
         map_key_custom_string,
         inner_opt_type,
@@ -2125,7 +2159,7 @@ fn field_deser_modules(
     let with_module = if info.is_map {
         map_serde_module(info)
     } else if info.is_repeated {
-        repeated_serde_module(field_type, features)
+        repeated_serde_module(field_type, info, features)
     } else if info.is_optional {
         optional_serde_module(field_type, features)
     } else {
@@ -2181,7 +2215,8 @@ fn value_needs_proto_json(ty: Type) -> bool {
 fn map_serde_module(info: &FieldInfo) -> Option<&'static str> {
     // Bytes key (from strict_utf8_mapping normalizing string→bytes):
     // keys are base64-encoded, not Display-stringified. proto_map's
-    // Display-based key serialization doesn't work here.
+    // Display-based key serialization doesn't work here. The bytes-key helper
+    // still uses ProtoElemJson for values so wrapper null rejection is kept.
     if matches!(info.map_key_type, Some(Type::TYPE_BYTES)) {
         return Some(if matches!(info.map_value_type, Some(Type::TYPE_BYTES)) {
             "::buffa::json_helpers::bytes_key_bytes_val_map"
@@ -2206,9 +2241,17 @@ fn map_serde_module(info: &FieldInfo) -> Option<&'static str> {
         });
     }
 
-    // Message values: derived Serialize/Deserialize is already proto-JSON.
-    // Default serde for HashMap<String, Message> works. Non-string keys
-    // still need stringification via string_key_map.
+    if info.map_value_is_wkt_wrapper {
+        return Some(if info.map_key_custom_string {
+            "::buffa::json_helpers::proto_str_key_map"
+        } else {
+            "::buffa::json_helpers::proto_map"
+        });
+    }
+
+    // Other message values: derived Serialize/Deserialize is already
+    // proto-JSON. Default serde for HashMap<String, Message> works.
+    // Non-string keys still need stringification via string_key_map.
     if matches!(info.map_value_type, Some(Type::TYPE_MESSAGE)) {
         let is_string_key = matches!(info.map_key_type, Some(Type::TYPE_STRING));
         return if is_string_key {
@@ -2249,7 +2292,11 @@ fn map_serde_module(info: &FieldInfo) -> Option<&'static str> {
 ///
 /// Enums keep the `_enum` / `_closed_enum` modules for their
 /// ignore-unknown-values filtering behavior (JsonParseOptions).
-fn repeated_serde_module(field_type: Type, features: &ResolvedFeatures) -> Option<&'static str> {
+fn repeated_serde_module(
+    field_type: Type,
+    info: &FieldInfo,
+    features: &ResolvedFeatures,
+) -> Option<&'static str> {
     match field_type {
         // Enums need ignore_unknown_enum_values filtering.
         Type::TYPE_ENUM => Some(if is_closed_enum(features) {
@@ -2257,7 +2304,12 @@ fn repeated_serde_module(field_type: Type, features: &ResolvedFeatures) -> Optio
         } else {
             "::buffa::json_helpers::repeated_enum"
         }),
-        // Messages/groups: derived Serialize is already proto-JSON.
+        // WKT wrappers use scalar JSON representations. Route them through
+        // ProtoElemJson so repeated null elements are rejected.
+        Type::TYPE_MESSAGE | Type::TYPE_GROUP if info.is_wkt_wrapper => {
+            Some("::buffa::json_helpers::proto_seq")
+        }
+        // Other messages/groups: derived Serialize is already proto-JSON.
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => None,
         // Simple scalar types (string, bool, 32-bit ints): derive is
         // proto-JSON compliant. Only route through proto_seq for types

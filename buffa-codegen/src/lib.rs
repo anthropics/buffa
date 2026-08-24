@@ -1145,6 +1145,10 @@ pub struct CodeGenConfig {
     /// `::buffa_types::google::protobuf::*` without needing an explicit
     /// entry here. To override with a custom implementation, add an
     /// `extern_path` for `.google.protobuf` pointing to your crate.
+    /// When JSON generation is enabled, an external scalar wrapper used in a
+    /// `repeated` or `map` field must implement
+    /// `buffa::json_helpers::ProtoElemJson` so generated containers can apply
+    /// ProtoJSON encoding and reject null elements/values.
     pub extern_paths: Vec<(String, String)>,
     /// Ordered (proto-path-prefix, [`BytesRepr`]) rules selecting the Rust type
     /// for `bytes` fields. Later rules win, so a broad rule (e.g. `"."` →

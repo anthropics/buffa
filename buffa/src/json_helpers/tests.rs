@@ -1621,6 +1621,14 @@ fn bytes_key_map_roundtrip() {
 }
 
 #[test]
+fn bytes_key_map_rejects_null_values() {
+    assert!(
+        serde_json::from_str::<BytesKeyWrapper>(r#"{"m":{"a2V5MQ==":null}}"#).is_err(),
+        "null map values must be rejected"
+    );
+}
+
+#[test]
 fn bytes_key_bytes_val_map_roundtrip() {
     let mut m = crate::__private::HashMap::default();
     m.insert(b"k".to_vec(), b"v".to_vec());

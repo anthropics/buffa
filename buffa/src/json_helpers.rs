@@ -1440,23 +1440,25 @@ where
 /// `utf8_validation = NONE` produced `Vec<u8>` keys under strict mapping.
 ///
 /// Keys are serialized/deserialized as base64 strings (same as bytes values).
-/// Values use their own serde impl — this is generic over `V`.
+/// Values use [`ProtoElemJson`] so container-specific ProtoJSON rules apply and
+/// `null` values are rejected.
 ///
 /// Use with `#[serde(with = "::buffa::json_helpers::bytes_key_map")]`.
 pub mod bytes_key_map {
+    use super::{ProtoElemJson, ProtoElemSeed, ProtoJson};
     use crate::map_codec::MapStorage;
     use serde::{Deserializer, Serializer};
 
     pub fn serialize<C, S>(value: &C, s: S) -> Result<S::Ok, S::Error>
     where
         C: MapStorage<Key = alloc::vec::Vec<u8>>,
-        C::Value: serde::Serialize,
+        C::Value: ProtoElemJson,
         S: Serializer,
     {
         use serde::ser::SerializeMap;
         let mut map = s.serialize_map(Some(value.storage_len()))?;
         for (k, v) in value.storage_iter() {
-            map.serialize_entry(&super::Base64Wrapper(k), v)?;
+            map.serialize_entry(&super::Base64Wrapper(k), &ProtoJson(v))?;
         }
         map.end()
     }
@@ -1464,14 +1466,14 @@ pub mod bytes_key_map {
     pub fn deserialize<'de, C, D>(d: D) -> Result<C, D::Error>
     where
         C: MapStorage<Key = alloc::vec::Vec<u8>> + Default,
-        C::Value: serde::Deserialize<'de>,
+        C::Value: ProtoElemJson,
         D: Deserializer<'de>,
     {
         struct Vis<C>(core::marker::PhantomData<C>);
         impl<'de, C> serde::de::Visitor<'de> for Vis<C>
         where
             C: MapStorage<Key = alloc::vec::Vec<u8>> + Default,
-            C::Value: serde::Deserialize<'de>,
+            C::Value: ProtoElemJson,
         {
             type Value = C;
             fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -1487,7 +1489,8 @@ pub mod bytes_key_map {
                 let mut out = C::default();
                 while let Some(key_str) = map.next_key::<alloc::string::String>()? {
                     let k = super::decode_base64(&key_str).map_err(serde::de::Error::custom)?;
-                    let v: C::Value = map.next_value()?;
+                    let v =
+                        map.next_value_seed(ProtoElemSeed::<C::Value>(core::marker::PhantomData))?;
                     out.storage_insert(k, v);
                 }
                 Ok(out)

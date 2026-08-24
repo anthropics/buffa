@@ -106,4 +106,14 @@ message WithWkt {
   google.protobuf.StringValue label = 4;
   repeated google.protobuf.Timestamp history = 5;
   google.protobuf.BoolValue flag = 6;
+  google.protobuf.Int32Value priority = 7;
+  google.protobuf.UInt32Value total = 8;
+  repeated google.protobuf.Int32Value priorities = 9;
+  map<string, google.protobuf.UInt32Value> totals = 10;
+  repeated google.protobuf.Int64Value large_values = 11;
+  repeated google.protobuf.UInt64Value unsigned_values = 12;
+  repeated google.protobuf.BytesValue payloads = 13;
+  repeated google.protobuf.FloatValue float_values = 14;
+  repeated google.protobuf.DoubleValue double_values = 15;
+  map<int32, google.protobuf.Int32Value> priorities_by_id = 16;
 }
