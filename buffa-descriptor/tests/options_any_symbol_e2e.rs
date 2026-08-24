@@ -19,6 +19,65 @@ fn pool() -> Arc<DescriptorPool> {
 }
 
 #[cfg(feature = "json")]
+fn pool_with_empty() -> Arc<DescriptorPool> {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let mut p = DescriptorPool::decode(FDS_BYTES).expect("pool builds from protoc FDS");
+    p.add_file_descriptor_set(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("google/protobuf/empty.proto".into()),
+            package: Some("google.protobuf".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Empty".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("pool accepts the hand-built Empty descriptor");
+    Arc::new(p)
+}
+
+#[cfg(feature = "json")]
+#[test]
+fn empty_wkt_unknown_fields_follow_parse_mode() {
+    let p = pool_with_empty();
+    let empty_idx = p.message_index("google.protobuf.Empty").unwrap();
+    let input = r#"{"futureField":{"nested":[1,2]},"anotherField":true}"#;
+
+    let err = DynamicMessage::from_json(Arc::clone(&p), empty_idx, input).unwrap_err();
+    assert!(err.to_string().contains("unexpected field on Empty"));
+
+    let parsed = DynamicMessage::from_json_ignoring_unknown(Arc::clone(&p), empty_idx, input)
+        .expect("lenient parsing must ignore unknown Empty fields");
+    assert_eq!(parsed.to_json().unwrap(), "{}");
+}
+
+#[cfg(feature = "json")]
+#[test]
+fn empty_wkt_inside_any_unknown_fields_follow_parse_mode() {
+    let p = pool_with_empty();
+    let any_idx = p.message_index("google.protobuf.Any").unwrap();
+    let input = r#"{
+        "@type": "type.googleapis.com/google.protobuf.Empty",
+        "futureField": {"nested": [1, 2]}
+    }"#;
+
+    assert!(DynamicMessage::from_json(Arc::clone(&p), any_idx, input).is_err());
+
+    let parsed = DynamicMessage::from_json_ignoring_unknown(Arc::clone(&p), any_idx, input)
+        .expect("lenient parsing must ignore unknown fields in Any<Empty>");
+    assert_eq!(
+        parsed.to_json().unwrap(),
+        r#"{"@type":"type.googleapis.com/google.protobuf.Empty"}"#
+    );
+}
+
+#[cfg(feature = "json")]
 #[test]
 fn any_wkt_wrapper_unknown_fields_follow_parse_mode() {
     let p = pool();

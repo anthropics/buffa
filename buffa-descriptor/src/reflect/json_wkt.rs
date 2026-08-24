@@ -149,20 +149,25 @@ impl WktKind {
                 Ok(m)
             }
             Self::Empty => {
-                struct EmptyVisitor;
+                struct EmptyVisitor {
+                    ignore_unknown: bool,
+                }
                 impl<'de> Visitor<'de> for EmptyVisitor {
                     type Value = ();
                     fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                         write!(f, "an empty object")
                     }
                     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
-                        if map.next_key::<String>()?.is_some() {
-                            return Err(de::Error::custom("unexpected field on Empty"));
+                        while map.next_key::<String>()?.is_some() {
+                            if !self.ignore_unknown {
+                                return Err(de::Error::custom("unexpected field on Empty"));
+                            }
+                            map.next_value::<de::IgnoredAny>()?;
                         }
                         Ok(())
                     }
                 }
-                d.deserialize_map(EmptyVisitor)?;
+                d.deserialize_map(EmptyVisitor { ignore_unknown })?;
                 Ok(DynamicMessage::new(pool, midx))
             }
             Self::Wrapper(sc) => {
