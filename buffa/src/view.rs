@@ -1236,9 +1236,12 @@ pub trait LazyMessageView<'a>: Sized {
     ///
     /// # Errors
     ///
-    /// Returns [`DecodeError`] if the message's *own* fields are malformed.
-    /// Deferred sub-message bytes are **not** validated here; they surface
-    /// errors on access.
+    /// Returns [`DecodeError`] if the message's *own* fields are malformed,
+    /// or [`DecodeError::ElementMemoryLimitExceeded`] if recording its
+    /// repeated elements exceeds the default element-memory budget — the
+    /// `Vec` of deferred byte ranges is real memory even though the elements
+    /// themselves are not decoded yet. Deferred sub-message bytes are
+    /// **not** validated here; they surface errors on access.
     fn decode_lazy(buf: &'a [u8]) -> Result<Self, DecodeError>;
 
     /// Decode a lazy view under custom decode limits.
@@ -1253,8 +1256,9 @@ pub trait LazyMessageView<'a>: Sized {
     /// # Errors
     ///
     /// Same contract as [`decode_lazy`](Self::decode_lazy), plus
-    /// [`DecodeError::RecursionLimitExceeded`] /
-    /// [`DecodeError::UnknownFieldLimitExceeded`] when `ctx`'s budgets are
+    /// [`DecodeError::RecursionLimitExceeded`],
+    /// [`DecodeError::UnknownFieldLimitExceeded`], or
+    /// [`DecodeError::ElementMemoryLimitExceeded`] when `ctx`'s budgets are
     /// exhausted by the message's own fields.
     fn decode_lazy_with_ctx(
         buf: &'a [u8],
@@ -1335,8 +1339,9 @@ enum LazyFragments<'a> {
 ///
 /// The fragment bytes are *not* validated when the enclosing view is
 /// decoded; a malformed sub-message surfaces as a [`DecodeError`] from
-/// [`get`](Self::get). The recursion budget and unknown-field allowance
-/// remaining when the field was recorded are stored alongside the fragments,
+/// [`get`](Self::get). The recursion budget, unknown-field allowance, and
+/// element-memory budget remaining when the field was recorded are stored
+/// alongside the fragments,
 /// and each access replays them as a fresh per-subtree budget (see
 /// [`get`](Self::get) for the approximation this implies). Deep lazy chains
 /// fail with [`DecodeError::RecursionLimitExceeded`] at the same boundary as
@@ -1353,6 +1358,7 @@ pub struct LazyMessageFieldView<'a, V> {
     raw: LazyFragments<'a>,
     depth: u32,
     allowance: usize,
+    elem_allowance: usize,
     _marker: core::marker::PhantomData<fn() -> V>,
 }
 
@@ -1367,18 +1373,21 @@ impl<'a, V> LazyMessageFieldView<'a, V> {
             // clamped.
             depth: u32::MAX,
             allowance: usize::MAX,
+            elem_allowance: usize::MAX,
             _marker: core::marker::PhantomData,
         }
     }
 
     /// A set field carrying the sub-message's undecoded wire bytes, with the
-    /// default recursion and unknown-field budgets for access.
+    /// default recursion, unknown-field, and element-memory budgets for
+    /// access.
     #[inline]
     pub const fn from_bytes(raw: &'a [u8]) -> Self {
         Self {
             raw: LazyFragments::One(raw),
             depth: crate::RECURSION_LIMIT,
             allowance: crate::DEFAULT_UNKNOWN_FIELD_LIMIT,
+            elem_allowance: crate::DEFAULT_ELEMENT_MEMORY_LIMIT,
             _marker: core::marker::PhantomData,
         }
     }
@@ -1393,6 +1402,9 @@ impl<'a, V> LazyMessageFieldView<'a, V> {
     pub fn push_fragment(&mut self, raw: &'a [u8], ctx: crate::DecodeContext<'_>) {
         self.depth = self.depth.min(ctx.depth());
         self.allowance = self.allowance.min(ctx.remaining_unknown_fields());
+        if let Some(remaining) = ctx.remaining_element_memory() {
+            self.elem_allowance = self.elem_allowance.min(remaining);
+        }
         self.raw = match core::mem::replace(&mut self.raw, LazyFragments::None) {
             LazyFragments::None => LazyFragments::One(raw),
             LazyFragments::One(first) => LazyFragments::Many(alloc::vec![first, raw]),
@@ -1441,12 +1453,12 @@ impl<'a, V: LazyMessageView<'a>> LazyMessageFieldView<'a, V> {
     ///
     /// Each access rebuilds a fresh decode context from the budgets recorded
     /// at decode time, so every deferred subtree independently gets the full
-    /// recorded unknown-field allowance rather than sharing one pool with
-    /// its siblings (the original decode call's shared allowance is gone by
-    /// access time). The unknown-field limit is therefore a *per-subtree*
-    /// bound on the lazy path, not the global decode-time cap the eager
-    /// decoder enforces: a full traversal can materialize unknown-field
-    /// records proportional to input size, where eager
+    /// recorded unknown-field allowance and element-memory budget rather than
+    /// sharing one pool with its siblings (the original decode call's shared
+    /// budgets are gone by access time). Both are therefore *per-subtree*
+    /// bounds on the lazy path, not the global decode-time caps the eager
+    /// decoder enforces: a full traversal can materialize records
+    /// proportional to input size, where eager
     /// [`decode_view`](crate::DecodeOptions::decode_view) rejects such input
     /// up front. Prefer the eager path for untrusted input if that global
     /// bound matters.
@@ -1456,13 +1468,15 @@ impl<'a, V: LazyMessageView<'a>> LazyMessageFieldView<'a, V> {
     /// Returns [`DecodeError`] if the deferred bytes are not a valid
     /// encoding of `V` — validation happens here, not when the enclosing
     /// view was decoded — [`DecodeError::RecursionLimitExceeded`] when the
-    /// recursion budget recorded at decode time is exhausted, or
+    /// recursion budget recorded at decode time is exhausted,
     /// [`DecodeError::UnknownFieldLimitExceeded`] when the unknown-field
-    /// allowance recorded at decode time is exhausted.
+    /// allowance is, or [`DecodeError::ElementMemoryLimitExceeded`] when the
+    /// element-memory budget is.
     #[inline]
     pub fn get(&self) -> Result<Option<V>, DecodeError> {
         let allowance = core::cell::Cell::new(self.allowance);
-        let ctx = crate::DecodeContext::new(self.depth, &allowance);
+        let elem = core::cell::Cell::new(self.elem_allowance);
+        let ctx = crate::DecodeContext::new(self.depth, &allowance).with_element_memory(&elem);
         match &self.raw {
             LazyFragments::None => Ok(None),
             LazyFragments::One(raw) => V::decode_lazy_with_ctx(raw, ctx).map(Some),
@@ -1509,6 +1523,7 @@ impl<V> Clone for LazyMessageFieldView<'_, V> {
             raw: self.raw.clone(),
             depth: self.depth,
             allowance: self.allowance,
+            elem_allowance: self.elem_allowance,
             _marker: core::marker::PhantomData,
         }
     }
@@ -1544,6 +1559,7 @@ pub struct LazyRepeatedView<'a, V> {
     elements: alloc::vec::Vec<&'a [u8]>,
     depth: u32,
     allowance: usize,
+    elem_allowance: usize,
     _marker: core::marker::PhantomData<fn() -> V>,
 }
 
@@ -1556,6 +1572,7 @@ impl<'a, V> LazyRepeatedView<'a, V> {
             // Sentinels — see `LazyMessageFieldView::unset`.
             depth: u32::MAX,
             allowance: usize::MAX,
+            elem_allowance: usize::MAX,
             _marker: core::marker::PhantomData,
         }
     }
@@ -1579,14 +1596,17 @@ impl<'a, V> LazyRepeatedView<'a, V> {
     }
 
     /// Append an element's undecoded bytes (used by generated `decode_lazy`).
-    /// `ctx` carries the recursion budget and unknown-field allowance
-    /// remaining at the record site; the smallest pushed budgets are charged
-    /// on access.
+    /// `ctx` carries the recursion budget, unknown-field allowance, and
+    /// element-memory budget remaining at the record site; the smallest
+    /// pushed budgets are charged on access.
     #[doc(hidden)]
     #[inline]
     pub fn push_bytes(&mut self, raw: &'a [u8], ctx: crate::DecodeContext<'_>) {
         self.depth = self.depth.min(ctx.depth());
         self.allowance = self.allowance.min(ctx.remaining_unknown_fields());
+        if let Some(remaining) = ctx.remaining_element_memory() {
+            self.elem_allowance = self.elem_allowance.min(remaining);
+        }
         self.elements.push(raw);
     }
 }
@@ -1600,9 +1620,14 @@ fn decode_deferred<'a, V: LazyMessageView<'a>>(
     raw: &'a [u8],
     depth: u32,
     allowance: usize,
+    elem_allowance: usize,
 ) -> Result<V, DecodeError> {
     let cell = core::cell::Cell::new(allowance);
-    V::decode_lazy_with_ctx(raw, crate::DecodeContext::new(depth, &cell))
+    let elem = core::cell::Cell::new(elem_allowance);
+    V::decode_lazy_with_ctx(
+        raw,
+        crate::DecodeContext::new(depth, &cell).with_element_memory(&elem),
+    )
 }
 
 impl<'a, V: LazyMessageView<'a>> LazyRepeatedView<'a, V> {
@@ -1616,7 +1641,7 @@ impl<'a, V: LazyMessageView<'a>> LazyRepeatedView<'a, V> {
     pub fn get(&self, index: usize) -> Option<Result<V, DecodeError>> {
         self.elements
             .get(index)
-            .map(|b| decode_deferred(b, self.depth, self.allowance))
+            .map(|b| decode_deferred(b, self.depth, self.allowance, self.elem_allowance))
     }
 
     /// Like [`get`](Self::get) with the layers flipped to match
@@ -1642,6 +1667,7 @@ impl<'a, V: LazyMessageView<'a>> LazyRepeatedView<'a, V> {
             inner: self.elements.iter(),
             depth: self.depth,
             allowance: self.allowance,
+            elem_allowance: self.elem_allowance,
             _marker: core::marker::PhantomData,
         }
     }
@@ -1663,6 +1689,7 @@ pub struct LazyRepeatedIter<'s, 'a, V> {
     inner: core::slice::Iter<'s, &'a [u8]>,
     depth: u32,
     allowance: usize,
+    elem_allowance: usize,
     _marker: core::marker::PhantomData<fn() -> V>,
 }
 
@@ -1673,7 +1700,7 @@ impl<'a, V: LazyMessageView<'a>> Iterator for LazyRepeatedIter<'_, 'a, V> {
     fn next(&mut self) -> Option<Self::Item> {
         self.inner
             .next()
-            .map(|b| decode_deferred(b, self.depth, self.allowance))
+            .map(|b| decode_deferred(b, self.depth, self.allowance, self.elem_allowance))
     }
 
     #[inline]
@@ -1687,7 +1714,7 @@ impl<'a, V: LazyMessageView<'a>> DoubleEndedIterator for LazyRepeatedIter<'_, 'a
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner
             .next_back()
-            .map(|b| decode_deferred(b, self.depth, self.allowance))
+            .map(|b| decode_deferred(b, self.depth, self.allowance, self.elem_allowance))
     }
 }
 
@@ -1700,6 +1727,7 @@ impl<V> Clone for LazyRepeatedView<'_, V> {
             elements: self.elements.clone(),
             depth: self.depth,
             allowance: self.allowance,
+            elem_allowance: self.elem_allowance,
             _marker: core::marker::PhantomData,
         }
     }
