@@ -1,9 +1,14 @@
 //! The element-memory bound the `protoc` plugins apply to a
-//! `CodeGeneratorRequest`, and its environment-variable override.
+//! `CodeGeneratorRequest`, its environment-variable override, and the bound
+//! the generated view decoder applies to its own input.
 
+use super::{joined, make_field, proto3_file};
+use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
+use crate::generated::descriptor::DescriptorProto;
 use crate::{
-    decode_failure, element_memory_limit_opt, parse_element_memory_limit, peek_request_parameter,
-    tooling_decode_options, ELEMENT_MEMORY_LIMIT_ENV, TOOLING_ELEMENT_MEMORY_LIMIT,
+    decode_failure, element_memory_limit_opt, generate, parse_element_memory_limit,
+    peek_request_parameter, tooling_decode_options, CodeGenConfig, ELEMENT_MEMORY_LIMIT_ENV,
+    TOOLING_ELEMENT_MEMORY_LIMIT,
 };
 
 #[test]
@@ -190,4 +195,47 @@ fn the_plugin_option_is_found_in_a_parameter_string() {
     );
     // A bad value is reported rather than ignored.
     assert!(element_memory_limit_opt("element_memory_limit=banana").is_err());
+}
+
+#[test]
+fn the_generated_view_entry_point_attaches_the_element_budget() {
+    // `DecodeContext::register_element_memory` returns `Ok(())` when no budget
+    // is attached, so a `decode_view` that builds its context without
+    // `with_element_memory` turns every charge in every field arm into a
+    // no-op — silently, with no compile error and no failing arm.
+    let mut file = proto3_file("v.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("Holder".to_string()),
+        field: vec![make_field(
+            "names",
+            1,
+            Label::LABEL_REPEATED,
+            Type::TYPE_STRING,
+        )],
+        ..Default::default()
+    });
+    let files =
+        generate(&[file], &["v.proto".to_string()], &CodeGenConfig::default()).expect("generates");
+    let flat: String = joined(&files)
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+
+    // Match the call, not just the constant: naming
+    // DEFAULT_ELEMENT_MEMORY_LIMIT somewhere in the file would also be
+    // satisfied by a context that never attaches it.
+    assert!(
+        flat.contains(".with_element_memory(&__elem)"),
+        "generated decode_view must attach the element-memory budget"
+    );
+    assert!(
+        flat.contains("Cell::new(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT)"),
+        "the attached budget must start at the documented default"
+    );
+    // The arms that spend it are worth pinning too: a budget with nothing
+    // charging against it is the same no-op from the other direction.
+    assert!(
+        flat.contains("register_element_memory"),
+        "generated view arms must charge the budget they carry"
+    );
 }

@@ -267,3 +267,61 @@ fn view_repeated_elements_are_charged() {
         .decode_view::<HolderView<'_>>(&wire)
         .is_ok());
 }
+
+/// Enough `Holder.items` elements to exceed the default budget four times
+/// over. Field 2 is `repeated Payload`, so the view arm charges
+/// `size_of::<PayloadView>()` per element — the element type, not the
+/// container.
+fn over_budget_view_elements() -> Vec<u8> {
+    use crate::lazyviews::__buffa::view::PayloadView;
+    let n = 4 * DEFAULT_ELEMENT_MEMORY_LIMIT / core::mem::size_of::<PayloadView<'_>>();
+    empty_elements(2, n)
+}
+
+/// The bare `decode_view` entry point applies the same default budget the
+/// bare owned `decode` does.
+///
+/// `DecodeOptions::decode_view` attaches the budget explicitly, so testing
+/// only through it cannot tell whether the default path attaches one at all —
+/// which is how 0.9.0 and 0.9.1 shipped generated `decode_view` without one.
+/// The assertion that matters is the symmetry: identical bytes, identical
+/// verdict, whichever decoder reads them.
+#[test]
+fn the_default_view_entry_point_charges_element_memory() {
+    use crate::lazyviews::__buffa::view::HolderView;
+    use buffa::MessageView;
+
+    let wire = over_budget_view_elements();
+
+    assert_eq!(
+        HolderView::decode_view(&wire).unwrap_err(),
+        DecodeError::ElementMemoryLimitExceeded,
+        "the default view path must not accept what the default owned path rejects"
+    );
+    assert_eq!(
+        Holder::decode(&mut wire.as_slice()).unwrap_err(),
+        DecodeError::ElementMemoryLimitExceeded
+    );
+}
+
+/// `OwnedView::decode` and `HasMessageView::decode_view` both route through
+/// the generated `decode_view`, so they inherit the budget rather than
+/// needing their own.
+#[test]
+fn the_view_wrappers_inherit_the_default_budget() {
+    use crate::lazyviews::__buffa::view::HolderView;
+    use crate::lazyviews::Holder as HolderMsg;
+    use buffa::view::OwnedView;
+    use buffa::HasMessageView;
+
+    let wire = over_budget_view_elements();
+
+    assert_eq!(
+        OwnedView::<HolderView<'_>>::decode(buffa::bytes::Bytes::from(wire.clone())).unwrap_err(),
+        DecodeError::ElementMemoryLimitExceeded
+    );
+    assert_eq!(
+        <HolderMsg as HasMessageView>::decode_view(&wire).unwrap_err(),
+        DecodeError::ElementMemoryLimitExceeded
+    );
+}
