@@ -1,0 +1,3 @@
+kind: Fixed
+body: Replacing a JSON or text extension registry entry now removes the superseded name and number mappings, keeping serialization and parsing lookups consistent.
+time: 2026-07-25T01:07:43+02:00
