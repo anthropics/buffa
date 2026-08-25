@@ -433,7 +433,7 @@ pub mod codecs {
         /// any codec whose per-record cost is fixed — every scalar, string,
         /// and bytes codec. **A codec whose value can materialize an
         /// unbounded subtree must override this**, or each record silently
-        /// gets its own full allowance; see [`extension_decode_cells`].
+        /// gets its own full allowance of the crate-default limits.
         fn decode_one_ctx(
             data: &UnknownFieldData,
             _ctx: crate::DecodeContext<'_>,
