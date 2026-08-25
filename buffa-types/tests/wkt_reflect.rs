@@ -115,3 +115,64 @@ fn wkt_view_to_dynamic_snapshot() {
         ValueRef::I32(250)
     ));
 }
+
+/// `to_dynamic` cannot fail, so anything the view decoder accepts it must be
+/// able to convert. `Struct` is a map-of-message cycle
+/// (`Struct.fields: map<string, Value>`, `Value.struct_value: Struct`), which
+/// makes it the shape where the two decoders' depth accounting has to agree:
+/// a map entry whose value is a message costs one recursion level in the view
+/// decoder, the owned decoder, and `DynamicMessage` alike.
+///
+/// If the two ever drift apart again, nesting in the band between them
+/// decodes cleanly as a view and then panics on conversion.
+#[test]
+fn deeply_nested_struct_view_converts_instead_of_panicking() {
+    fn nested(cycles: usize) -> Vec<u8> {
+        let mut inner = wkt::Struct::default();
+        for _ in 0..cycles {
+            let mut s = wkt::Struct::default();
+            s.fields.insert(
+                "k".to_string(),
+                wkt::Value {
+                    kind: Some(KindOneof::StructValue(Box::new(inner))),
+                    ..Default::default()
+                },
+            );
+            inner = s;
+        }
+        inner.encode_to_vec()
+    }
+
+    // Each cycle costs two recursion levels (the map entry's message value,
+    // then `struct_value`), so the view decoder accepts up to
+    // RECURSION_LIMIT / 2 of them. Walk past that cutoff to cover both sides:
+    // every depth the view takes, `to_dynamic` must also take.
+    let max_cycles = (buffa::RECURSION_LIMIT / 2) as usize;
+    let mut accepted = 0;
+    for cycles in 1..max_cycles + 10 {
+        let wire = nested(cycles);
+        let Ok(view) = wkt_view::StructView::decode_view(&wire) else {
+            continue;
+        };
+        accepted += 1;
+        let dynamic = view.to_dynamic();
+        assert_eq!(
+            dynamic.message_descriptor().full_name(),
+            "google.protobuf.Struct"
+        );
+        // The owned decoder must agree with both, or the limits have drifted
+        // again in the other direction.
+        assert!(
+            wkt::Struct::decode_from_slice(&wire).is_ok(),
+            "the owned decoder rejected {cycles} cycles that the view accepted"
+        );
+    }
+    // Non-vacuity: the loop must actually have exercised the deep end, not
+    // bailed out at cycle 1. The view's cutoff is the derived `max_cycles`,
+    // give or take the outer frame, so anything close to it means the range
+    // was covered.
+    assert!(
+        accepted >= max_cycles - 2,
+        "expected the view to accept nesting up to ~{max_cycles} cycles; only {accepted} got through"
+    );
+}

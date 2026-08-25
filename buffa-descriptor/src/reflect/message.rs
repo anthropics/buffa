@@ -225,6 +225,18 @@ pub trait ReflectMessage {
     /// converted, which [`ReflectCow::to_dynamic`] relies on — and so a
     /// borrowed vtable handle can be promoted to an owned snapshot that
     /// outlives `self`.
+    ///
+    /// The round-trip's re-decode is exempt from the element-memory and
+    /// unknown-field bounds. It reads bytes this library just encoded from a
+    /// message the caller already holds, so those bounds could only reject
+    /// memory already spent — and this signature cannot report a rejection.
+    /// The input was bounded when it was first decoded; nothing here is
+    /// reached from unvalidated wire data.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the round-trip fails, which indicates the encoder and the
+    /// descriptor-driven decoder disagree — a library bug, not consumer input.
     fn to_dynamic(&self) -> DynamicMessage;
 }
 
