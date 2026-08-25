@@ -1,0 +1,3 @@
+kind: Fixed
+body: Nested unknown groups now charge element memory for the per-level `Vec` slot each child occupies. The unknown-field count limit prices a flat field at its ~40-byte `UnknownField`, but a group allocates a `Vec` per nesting level on top of that, and `Vec`s minimum non-zero capacity is four elements — so a group holding one child costs ~160 bytes against one slot, and a deep chain spent several times what the count implied. The doc on `DEFAULT_UNKNOWN_FIELD_LIMIT` said the count caps overhead at roughly `limit x 40` bytes; that holds for flat input and now says so, with nesting bounded by the two limits together.
+time: 2026-07-23T23:57:36.02055176-07:00
