@@ -120,7 +120,11 @@ pub fn encode_to_string_pretty<M: TextFormat>(msg: &M) -> String {
 /// # Errors
 ///
 /// Any [`ParseError`] — syntax errors, unknown fields (if the generated
-/// `merge_text` is strict), type mismatches, or depth limit exceeded.
+/// `merge_text` is strict), type mismatches, depth limit exceeded, or
+/// [`ParseErrorKind::ElementMemoryLimitExceeded`] when the repeated and map
+/// elements would materialize more than
+/// [`DEFAULT_ELEMENT_MEMORY_LIMIT`](crate::DEFAULT_ELEMENT_MEMORY_LIMIT).
+/// Use [`decode_from_str_with_element_memory_limit`] to raise that bound.
 pub fn decode_from_str<M: TextFormat + Default>(s: &str) -> Result<M, ParseError> {
     let mut msg = M::default();
     merge_from_str(&mut msg, s)?;
@@ -138,6 +142,30 @@ pub fn decode_from_str<M: TextFormat + Default>(s: &str) -> Result<M, ParseError
 pub fn merge_from_str<M: TextFormat>(msg: &mut M, s: &str) -> Result<(), ParseError> {
     let mut dec = TextDecoder::new(s);
     msg.merge_text(&mut dec)
+}
+
+/// Decode a message from a textproto string under a caller-supplied
+/// element-memory budget.
+///
+/// [`decode_from_str`] applies
+/// [`DEFAULT_ELEMENT_MEMORY_LIMIT`](crate::DEFAULT_ELEMENT_MEMORY_LIMIT),
+/// which bounds what the parse materializes rather than what it reads. Raise
+/// it for trusted input that legitimately carries very many repeated
+/// elements; pass `usize::MAX` to disable.
+///
+/// # Errors
+///
+/// As [`decode_from_str`], plus
+/// [`ParseErrorKind::ElementMemoryLimitExceeded`]
+/// when the budget is exhausted.
+pub fn decode_from_str_with_element_memory_limit<M: TextFormat + Default>(
+    s: &str,
+    element_memory_limit: usize,
+) -> Result<M, ParseError> {
+    let mut msg = M::default();
+    let mut dec = TextDecoder::new(s).with_element_memory_limit(element_memory_limit);
+    msg.merge_text(&mut dec)?;
+    Ok(msg)
 }
 
 #[cfg(test)]
