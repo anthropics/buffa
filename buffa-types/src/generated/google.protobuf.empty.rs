@@ -202,10 +202,8 @@ impl ::buffa::text::TextFormat for Empty {
     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
-            match __name {
-                _ => dec.skip_value()?,
-            }
+        if dec.read_field_name()?.is_some() {
+            return Err(dec.unknown_field());
         }
         ::core::result::Result::Ok(())
     }

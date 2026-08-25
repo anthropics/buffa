@@ -272,12 +272,40 @@ fn map_decode_missing_key_or_value_defaults() {
 // ── unknown fields ──────────────────────────────────────────────────────────
 
 #[test]
-fn unknown_fields_skipped() {
-    // Generated merge_text skips unknowns via skip_value.
-    let p: Person =
-        decode_from_str(r#"not_a_field: 42 id: 1 also_unknown { x: "y" } name: "ok""#).unwrap();
-    assert_eq!(p.id, 1);
-    assert_eq!(p.name, "ok");
+fn unknown_fields_rejected_by_default() {
+    let err =
+        decode_from_str::<Person>(r#"not_a_field: 42 id: 1 also_unknown { x: "y" } name: "ok""#)
+            .unwrap_err();
+    assert_eq!(err.kind, ParseErrorKind::UnknownField);
+    assert_eq!(err.line, 1);
+    assert_eq!(err.col, 1);
+}
+
+#[test]
+fn unknown_nested_fields_rejected_by_default() {
+    let err = decode_from_str::<Person>(r#"address { city: "London" nmae: "typo" }"#).unwrap_err();
+    assert_eq!(err.kind, ParseErrorKind::UnknownField);
+}
+
+#[test]
+fn unknown_map_entry_fields_rejected_by_default() {
+    let err =
+        decode_from_str::<Inventory>(r#"stock: [{key: "apples" value: 10 stok: 11}]"#).unwrap_err();
+    assert_eq!(err.kind, ParseErrorKind::UnknownField);
+}
+
+#[test]
+fn reserved_field_names_are_skipped() {
+    use crate::edge::WithReserved;
+
+    let msg: WithReserved = decode_from_str(
+        r#"old_name: 42 id: 1 deprecated_name { ignored: "value" } name: "ok" active: true after_gap: 7"#,
+    )
+    .unwrap();
+    assert_eq!(msg.id, 1);
+    assert_eq!(msg.name, "ok");
+    assert!(msg.active);
+    assert_eq!(msg.after_gap, 7);
 }
 
 // ── merge semantics ─────────────────────────────────────────────────────────

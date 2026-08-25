@@ -223,7 +223,7 @@ impl ::buffa::text::TextFormat for DoubleValue {
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
                 "value" => self.value = dec.read_f64()?,
-                _ => dec.skip_value()?,
+                _ => return Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -457,7 +457,7 @@ impl ::buffa::text::TextFormat for FloatValue {
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
                 "value" => self.value = dec.read_f32()?,
-                _ => dec.skip_value()?,
+                _ => return Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -691,7 +691,7 @@ impl ::buffa::text::TextFormat for Int64Value {
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
                 "value" => self.value = dec.read_i64()?,
-                _ => dec.skip_value()?,
+                _ => return Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -925,7 +925,7 @@ impl ::buffa::text::TextFormat for UInt64Value {
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
                 "value" => self.value = dec.read_u64()?,
-                _ => dec.skip_value()?,
+                _ => return Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -1159,7 +1159,7 @@ impl ::buffa::text::TextFormat for Int32Value {
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
                 "value" => self.value = dec.read_i32()?,
-                _ => dec.skip_value()?,
+                _ => return Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -1393,7 +1393,7 @@ impl ::buffa::text::TextFormat for UInt32Value {
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
                 "value" => self.value = dec.read_u32()?,
-                _ => dec.skip_value()?,
+                _ => return Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -1627,7 +1627,7 @@ impl ::buffa::text::TextFormat for BoolValue {
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
                 "value" => self.value = dec.read_bool()?,
-                _ => dec.skip_value()?,
+                _ => return Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -1861,7 +1861,7 @@ impl ::buffa::text::TextFormat for StringValue {
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
                 "value" => self.value = dec.read_string()?.into_owned(),
-                _ => dec.skip_value()?,
+                _ => return Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -2095,7 +2095,7 @@ impl ::buffa::text::TextFormat for BytesValue {
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
                 "value" => self.value = dec.read_bytes()?,
-                _ => dec.skip_value()?,
+                _ => return Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())

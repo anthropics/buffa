@@ -211,7 +211,7 @@ impl buffa::text::TextFormat for Any {
                     self.type_url = url.into();
                     self.value = bytes.into();
                 }
-                _ => dec.skip_value()?,
+                _ => return Err(dec.unknown_field()),
             }
         }
         Ok(())
@@ -221,7 +221,7 @@ impl buffa::text::TextFormat for Any {
 #[cfg(test)]
 mod text_tests {
     use super::Any;
-    use buffa::text::{decode_from_str, encode_to_string};
+    use buffa::text::{decode_from_str, encode_to_string, ParseErrorKind};
 
     #[test]
     fn vanilla_roundtrip_no_registry() {
@@ -238,6 +238,12 @@ mod text_tests {
         let back: Any = decode_from_str(&text).unwrap();
         assert_eq!(back.type_url, orig.type_url);
         assert_eq!(back.value, orig.value);
+    }
+
+    #[test]
+    fn unknown_fields_rejected_by_default() {
+        let err = decode_from_str::<Any>(r#"type_urll: "type.example.com/Foo""#).unwrap_err();
+        assert_eq!(err.kind, ParseErrorKind::UnknownField);
     }
 
     // Registry-manipulating tests live in `serde_tests` below — they share

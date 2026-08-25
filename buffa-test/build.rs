@@ -479,6 +479,7 @@ fn main() {
         .includes(&["protos/"])
         .generate_json(true)
         .generate_views(true)
+        .generate_text(true)
         .compile()
         .expect("buffa_build failed for edge_cases.proto");
 
