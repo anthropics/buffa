@@ -204,3 +204,76 @@ fn nesting_deeper_than_the_name_cap_is_refused() {
         Err(PoolError::NameTooLong { .. })
     ));
 }
+
+/// The issue's trigger shape for #336: 50 messages each nesting 26 empty
+/// one-character messages. Every nested element costs ~5 wire bytes and
+/// materializes a full `DescriptorProto`, so the element-to-encoded ratio
+/// (~71.5x on 64-bit) exceeds the 64x multiplier generated
+/// `descriptor_pool()` scales its bound by.
+fn short_name_descriptor_set() -> Vec<u8> {
+    const NAMES: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
+    let name = |i: usize| Some((NAMES[i % NAMES.len()] as char).to_string());
+    let mut file = FileDescriptorProto {
+        name: Some("a".to_string()),
+        ..Default::default()
+    };
+    for i in 0..50 {
+        file.message_type.push(DescriptorProto {
+            name: name(i),
+            nested_type: (0..26)
+                .map(|j| DescriptorProto {
+                    name: name(j),
+                    ..Default::default()
+                })
+                .collect(),
+            ..Default::default()
+        });
+    }
+    FileDescriptorSet {
+        file: vec![file],
+        ..Default::default()
+    }
+    .encode_to_vec()
+}
+
+fn decodes_under(bytes: &[u8], limit: usize) -> bool {
+    DecodeOptions::new()
+        .with_element_memory_limit(limit)
+        .decode_from_slice::<FileDescriptorSet>(bytes)
+        .is_ok()
+}
+
+/// Why generated `descriptor_pool()` floors its scaled bound (#336): the
+/// element charge is `size_of::<DescriptorProto>()` per nested message, so a
+/// schema made of short names amplifies past 64x and the bare `len * 64`
+/// bound rejects what the flat default accepted.
+///
+/// The ratio scales with pointer width (descriptor types are mostly `Vec`
+/// and `Option<String>` fields), so on 32-bit targets the same shape lands
+/// under 64x and this no longer demonstrates the bug.
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn scaled_bound_alone_rejects_short_name_schemas() {
+    let bytes = short_name_descriptor_set();
+    assert!(
+        !decodes_under(&bytes, bytes.len().saturating_mul(64)),
+        "expected the un-floored 64x bound to reject this shape; if it now \
+         decodes, the shape is no longer a #336 trigger and needs replacing"
+    );
+}
+
+/// With the floor, the generated bound can never be tighter than the
+/// untrusted-input default, so anything the default accepts still decodes.
+#[test]
+fn floored_bound_accepts_what_the_default_accepts() {
+    let bytes = short_name_descriptor_set();
+    let floored = bytes
+        .len()
+        .saturating_mul(64)
+        .max(buffa::DEFAULT_ELEMENT_MEMORY_LIMIT);
+    assert!(decodes_under(&bytes, floored), "{} bytes", bytes.len());
+    // The floor is what binds here; the scaled term only takes over past
+    // 512 KiB of embedded descriptor bytes.
+    assert_eq!(floored, buffa::DEFAULT_ELEMENT_MEMORY_LIMIT);
+    assert_eq!(buffa::DEFAULT_ELEMENT_MEMORY_LIMIT / 64, 512 * 1024);
+}

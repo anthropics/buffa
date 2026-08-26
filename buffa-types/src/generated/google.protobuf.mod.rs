@@ -280,15 +280,8 @@ pub mod __buffa {
         /// exhausting memory.
         ///
         /// The scaled bound is floored at
-        /// [`DEFAULT_ELEMENT_MEMORY_LIMIT`](::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT)
-        /// so this can only ever be looser than the untrusted-input
-        /// default, never tighter. Without the floor, descriptor sets
-        /// built mostly from short single-character type names can need
-        /// a multiplier above 64 (worst case 352 on 64-bit targets, an
-        /// empty `FileDescriptorProto` element — the ratio scales with
-        /// pointer width, so it differs on 32-bit), so the un-floored
-        /// scaled bound could reject schemas that decoded fine under the
-        /// default it replaced.
+        /// [`DEFAULT_ELEMENT_MEMORY_LIMIT`](::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
+        /// so it is never tighter than the untrusted-input default.
         ///
         /// # Panics
         ///
