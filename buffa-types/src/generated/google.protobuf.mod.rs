@@ -279,6 +279,10 @@ pub mod __buffa {
         /// finite, so corrupt embedded bytes still fail rather than
         /// exhausting memory.
         ///
+        /// The scaled bound is floored at
+        /// [`DEFAULT_ELEMENT_MEMORY_LIMIT`](::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
+        /// so it is never tighter than the untrusted-input default.
+        ///
         /// # Panics
         ///
         /// Panics on first access if the embedded bytes are malformed —
@@ -294,7 +298,10 @@ pub mod __buffa {
             POOL.get_or_init(|| {
                 let options = ::buffa::DecodeOptions::new()
                     .with_element_memory_limit(
-                        FILE_DESCRIPTOR_SET_BYTES.len().saturating_mul(64),
+                        FILE_DESCRIPTOR_SET_BYTES
+                            .len()
+                            .saturating_mul(64)
+                            .max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
                     );
                 ::buffa::alloc::sync::Arc::new(
                     ::buffa_descriptor::DescriptorPool::decode_with_options(

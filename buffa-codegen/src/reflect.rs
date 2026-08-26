@@ -209,6 +209,10 @@ pub(crate) fn reflect_pool_module(fds_bytes: &[u8]) -> TokenStream {
             /// finite, so corrupt embedded bytes still fail rather than
             /// exhausting memory.
             ///
+            /// The scaled bound is floored at
+            /// [`DEFAULT_ELEMENT_MEMORY_LIMIT`](::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
+            /// so it is never tighter than the untrusted-input default.
+            ///
             /// # Panics
             ///
             /// Panics on first access if the embedded bytes are malformed —
@@ -222,7 +226,10 @@ pub(crate) fn reflect_pool_module(fds_bytes: &[u8]) -> TokenStream {
                 POOL.get_or_init(|| {
                     let options = ::buffa::DecodeOptions::new()
                         .with_element_memory_limit(
-                            FILE_DESCRIPTOR_SET_BYTES.len().saturating_mul(64),
+                            FILE_DESCRIPTOR_SET_BYTES
+                                .len()
+                                .saturating_mul(64)
+                                .max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
                         );
                     ::buffa::alloc::sync::Arc::new(
                         ::buffa_descriptor::DescriptorPool::decode_with_options(
@@ -488,6 +495,16 @@ mod tests {
         let parsed = syn::parse2::<syn::ItemMod>(tokens.clone());
         assert!(parsed.is_ok(), "generated module must parse: {tokens}");
         assert!(tokens.to_string().contains("FILE_DESCRIPTOR_SET_BYTES"));
+        // #336: the emitted bound must floor at the untrusted-input default,
+        // not just scale with length. Match the code form with spacing
+        // stripped — the doc comment above it names the same constant, so a
+        // bare substring check would pass on the doc text alone.
+        let code = tokens.to_string().replace(' ', "");
+        assert!(
+            code.contains(".saturating_mul(64).max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT)"),
+            "descriptor_pool() must floor its scaled bound at \
+             DEFAULT_ELEMENT_MEMORY_LIMIT (#336): {tokens}"
+        );
     }
 
     #[test]
