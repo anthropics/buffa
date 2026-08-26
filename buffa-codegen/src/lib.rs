@@ -761,6 +761,10 @@ pub enum PointerRepr {
     ///   pointer must implement `arbitrary::Arbitrary` (the oneof enum derives it
     ///   and stores the pointer directly in the variant). The singular-field path
     ///   needs no such impl — `MessageField` constructs the pointer itself.
+    /// - With JSON generation enabled, custom pointers do not need
+    ///   `serde::Serialize` or `serde::Deserialize`: singular message fields
+    ///   and message-valued oneof variants serialize the pointee, while decode
+    ///   paths construct the pointer through `ProtoBox`.
     Custom(String),
 }
 

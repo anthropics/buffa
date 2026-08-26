@@ -738,7 +738,17 @@ fn generate_oneof_serialize(
                 };
             }
 
-            if serde_helper_path(v.field_type).is_some() {
+            if v.is_boxed {
+                // ProtoBox guarantees Deref<Target = T>, so serialize the
+                // message itself instead of requiring the pointer type to
+                // implement serde::Serialize. The default Box<T> already
+                // behaves this way through serde's blanket impl.
+                quote! {
+                    Self::#ident(v) => {
+                        map.serialize_entry(#json_name, &**v)?;
+                    }
+                }
+            } else if serde_helper_path(v.field_type).is_some() {
                 // Type needs special proto JSON encoding — route through the
                 // runtime ProtoJson adapter (ProtoElemJson covers every type
                 // serde_helper_path matches).

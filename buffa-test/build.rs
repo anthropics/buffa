@@ -13,12 +13,15 @@ fn main() {
     // box_type: a crate-LOCAL `CustomBox<T>` pointer (a `ProtoBox<T>` impl) for
     // singular message fields, via the `*`-templated knob. The crate compiling
     // is most of the test — the field type, decode (`get_or_insert_default`),
-    // clear, and view→owned (`some`) paths must all emit `MessageField<T,
-    // CustomBox<T>>` and the generic `ProtoBox` surface.
+    // clear, view→owned (`some`), and JSON paths must all emit
+    // `MessageField<T, CustomBox<T>>` and use only the generic `ProtoBox`
+    // surface. In particular, JSON oneof serialization must not require the
+    // custom pointer itself to implement serde.
     buffa_build::Config::new()
         .files(&["protos/box_type.proto"])
         .includes(&["protos/"])
         .box_type_custom("crate::box_type::CustomBox<*>")
+        .generate_json(true)
         .compile()
         .expect("buffa_build failed for box_type.proto");
 

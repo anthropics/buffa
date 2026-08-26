@@ -4,7 +4,7 @@
 //! `box_type_custom("crate::box_type::CustomBox<*>")`, so every singular message
 //! field is a `MessageField<T, CustomBox<T>>` instead of `MessageField<T>`
 //! (`= MessageField<T, Box<T>>`). Compiling `crate::box_type` is most of the
-//! test — the field type, decode (`get_or_insert_default`), clear, and
+//! test — the field type, decode (`get_or_insert_default`), clear, JSON, and
 //! view→owned (`some`) paths must all emit the custom pointer. The runtime
 //! checks below pin the field type and verify binary + view→owned round-trips,
 //! including a self-referential field.
@@ -127,6 +127,22 @@ fn oneof_message_variant_uses_custom_box() {
         Some(Kind::Nested(inner)) => assert_eq!(inner.kind, Some(Kind::Scalar(42))),
         other => panic!("expected nested variant, got {other:?}"),
     }
+}
+
+#[test]
+fn oneof_message_variant_json_round_trips_without_pointer_serde() {
+    use crate::box_type::__buffa::oneof::with_oneof::Kind;
+    use crate::box_type::WithOneof;
+    use buffa::alloc::boxed::Box;
+
+    let msg = WithOneof {
+        kind: Some(Kind::Msg(CustomBox(Box::new(inner(7, "json"))))),
+        ..Default::default()
+    };
+    let json = serde_json::to_string(&msg).expect("serialize");
+    assert!(json.contains(r#""msg""#), "{json}");
+    let decoded: WithOneof = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(decoded, msg);
 }
 
 #[test]

@@ -214,6 +214,50 @@ fn test_json_oneof_field_is_flattened() {
 }
 
 #[test]
+fn test_json_oneof_message_variant_serializes_pointee() {
+    // A custom `ProtoBox<T>` only guarantees `Deref<Target = T>`, not
+    // `serde::Serialize`. The generated oneof serializer must therefore
+    // serialize the message behind the pointer rather than the pointer type.
+    let mut file = proto3_file("message_oneof_json.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("Child".to_string()),
+        ..Default::default()
+    });
+    file.message_type.push(DescriptorProto {
+        name: Some("Parent".to_string()),
+        field: vec![FieldDescriptorProto {
+            name: Some("embedded".to_string()),
+            number: Some(1),
+            label: Some(Label::LABEL_OPTIONAL),
+            r#type: Some(Type::TYPE_MESSAGE),
+            type_name: Some(".Child".to_string()),
+            oneof_index: Some(0),
+            json_name: Some("embedded".to_string()),
+            ..Default::default()
+        }],
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("payload".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+
+    let files = generate(
+        &[file],
+        &["message_oneof_json.proto".to_string()],
+        &json_config(),
+    )
+    .expect("should generate");
+    let content = joined(&files);
+
+    assert!(
+        content.contains("Self::Embedded(v) =>")
+            && content.contains("map.serialize_entry(\"embedded\", &**v)?;"),
+        "message oneof variants must serialize their pointee: {content}"
+    );
+}
+
+#[test]
 fn test_json_oneof_deserialize_null_and_duplicate_handling() {
     let mut file = proto3_file("oneof_deser.proto");
     file.message_type.push(DescriptorProto {
