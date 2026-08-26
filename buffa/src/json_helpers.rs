@@ -925,8 +925,7 @@ const MAX_SAFE_JSON_INTEGER_F64: f64 = 4_503_599_627_370_495.0;
 
 /// Try to parse a string as an integer, handling float notation like `"1.0"`,
 /// `"1e5"`, `"1.0e2"`.  Returns `None` if the value is not an exact integer.
-#[doc(hidden)]
-pub fn parse_int_from_str<I: TryFrom<i128>>(v: &str) -> Option<I> {
+fn parse_int_from_str<I: TryFrom<i128>>(v: &str) -> Option<I> {
     // First try direct integer parse.
     if let Ok(n) = v.parse::<i128>() {
         return I::try_from(n).ok();
@@ -1000,8 +999,7 @@ fn parse_exact_decimal_int(v: &str) -> Option<i128> {
 /// Try to interpret an f64 as an exact integer, rejecting magnitudes above
 /// [`MAX_SAFE_JSON_INTEGER_F64`] where the value no longer uniquely
 /// identifies the JSON token it was parsed from.
-#[doc(hidden)]
-pub fn f64_to_int<I: TryFrom<i128>>(v: f64) -> Option<I> {
+fn f64_to_int<I: TryFrom<i128>>(v: f64) -> Option<I> {
     if !(-MAX_SAFE_JSON_INTEGER_F64..=MAX_SAFE_JSON_INTEGER_F64).contains(&v) {
         return None;
     }

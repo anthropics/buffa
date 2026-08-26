@@ -76,9 +76,65 @@ fn json_integer_parsing_matches_generated_messages() {
         r#"{"fInt64": -9007199254740991.0}"#,
         r#"{"fUint64": 9007199254740991.0}"#,
     ] {
+        let err = DynamicMessage::from_json(Arc::clone(&p), idx, input)
+            .expect_err("unsafe unquoted integer float must be rejected");
         assert!(
-            DynamicMessage::from_json(Arc::clone(&p), idx, input).is_err(),
-            "unsafe unquoted integer float must be rejected: {input}"
+            err.to_string().contains("invalid value"),
+            "rejection should name the offending value, got: {err}"
+        );
+    }
+}
+
+/// The quoted-string path covers the full range exactly and rejects the
+/// same inputs the generated decoders reject: overflow, negative values for
+/// unsigned fields, and non-integral forms.
+#[test]
+fn json_quoted_integer_bounds_match_generated_messages() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
+
+    let parsed = DynamicMessage::from_json(
+        Arc::clone(&p),
+        idx,
+        &format!(
+            r#"{{"fInt32": "{}", "fInt64": "{}", "fUint32": "{}", "fUint64": "{}"}}"#,
+            i32::MIN,
+            i64::MIN,
+            u32::MAX,
+            u64::MAX
+        ),
+    )
+    .expect("quoted extremes parse exactly");
+    assert_eq!(parsed.field_by_number(3), Some(&Value::I32(i32::MIN)));
+    assert_eq!(parsed.field_by_number(4), Some(&Value::I64(i64::MIN)));
+    assert_eq!(parsed.field_by_number(5), Some(&Value::U32(u32::MAX)));
+    assert_eq!(parsed.field_by_number(6), Some(&Value::U64(u64::MAX)));
+
+    let max = DynamicMessage::from_json(
+        Arc::clone(&p),
+        idx,
+        &format!(r#"{{"fInt32": "{}", "fInt64": "{}"}}"#, i32::MAX, i64::MAX),
+    )
+    .expect("quoted signed maxima parse exactly");
+    assert_eq!(max.field_by_number(3), Some(&Value::I32(i32::MAX)));
+    assert_eq!(max.field_by_number(4), Some(&Value::I64(i64::MAX)));
+
+    for input in [
+        r#"{"fInt32": "2147483648"}"#,
+        r#"{"fInt64": "9223372036854775808"}"#,
+        r#"{"fUint32": "4294967296"}"#,
+        r#"{"fUint64": "18446744073709551616"}"#,
+        r#"{"fUint64": "-1"}"#,
+        r#"{"fUint32": "-0.5e1"}"#,
+        r#"{"fInt64": "1.5"}"#,
+        r#"{"fInt32": "1e-1"}"#,
+        r#"{"fInt64": "abc"}"#,
+    ] {
+        let err = DynamicMessage::from_json(Arc::clone(&p), idx, input)
+            .expect_err("out-of-range or non-integral quoted integer must be rejected");
+        assert!(
+            err.to_string().contains("invalid value"),
+            "rejection should name the offending value for {input}, got: {err}"
         );
     }
 }

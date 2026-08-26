@@ -25,7 +25,7 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
+use serde::de::{self, DeserializeSeed, IntoDeserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -36,7 +36,7 @@ use crate::{
     ScalarType, SingularKind,
 };
 use buffa::editions::EnumType;
-use buffa::json_helpers::{f64_to_int, parse_int_from_str};
+use buffa::json_helpers;
 
 // ── Serialize ───────────────────────────────────────────────────────────────
 
@@ -636,11 +636,11 @@ fn deserialize_scalar<'de, D: Deserializer<'de>>(sc: ScalarType, d: D) -> Result
         }
 
         fn visit_f64<E: de::Error>(self, v: f64) -> Result<Self::Value, E> {
-            scalar_from_f64(self.0, v).ok_or_else(|| de::Error::custom("invalid number"))
+            scalar_from_f64(self.0, v)
         }
 
         fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
-            scalar_from_str(self.0, v).map_err(de::Error::custom)
+            scalar_from_str(self.0, v)
         }
 
         fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
@@ -681,58 +681,76 @@ fn scalar_from_u64(sc: ScalarType, v: u64) -> Option<Value> {
     })
 }
 
-fn scalar_from_f64(sc: ScalarType, v: f64) -> Option<Value> {
-    Some(match sc {
+/// Integer scalars go through the same serde with-modules generated
+/// messages use (`json_helpers::{int32, uint32, int64, uint64}`), so the
+/// reflective decoder accepts and rejects exactly what the generated one
+/// does: quoted decimal and exponent forms parse exactly across the full
+/// range, and unquoted floats are rejected above the magnitude where
+/// serde_json's float parsing can no longer identify the token uniquely.
+fn scalar_from_f64<E: de::Error>(sc: ScalarType, v: f64) -> Result<Value, E> {
+    let d = v.into_deserializer();
+    Ok(match sc {
         ScalarType::Float => {
             // Reject values that overflow f32 — the spec requires erroring,
             // not saturating to ±Infinity. Allow exact ±Infinity through
             // (they came from "Infinity"/"-Infinity" string parse).
             if v.is_finite() && v.abs() > f64::from(f32::MAX) {
-                return None;
+                return Err(E::invalid_value(
+                    de::Unexpected::Float(v),
+                    &"a value within f32 range",
+                ));
             }
             Value::F32(v as f32)
         }
         ScalarType::Double => Value::F64(v),
-        // Use the same exactness guard as generated integer JSON decoders.
-        // serde_json may round high-magnitude decimal/exponent tokens before
-        // the visitor receives the f64, so merely checking `fract() == 0`
-        // can silently accept an adjacent integer.
-        ScalarType::Int32 | ScalarType::Sint32 | ScalarType::Sfixed32 => Value::I32(f64_to_int(v)?),
-        ScalarType::Int64 | ScalarType::Sint64 | ScalarType::Sfixed64 => Value::I64(f64_to_int(v)?),
-        ScalarType::Uint32 | ScalarType::Fixed32 => Value::U32(f64_to_int(v)?),
-        ScalarType::Uint64 | ScalarType::Fixed64 => Value::U64(f64_to_int(v)?),
-        _ => return None,
+        ScalarType::Int32 | ScalarType::Sint32 | ScalarType::Sfixed32 => {
+            Value::I32(json_helpers::int32::deserialize(d)?)
+        }
+        ScalarType::Int64 | ScalarType::Sint64 | ScalarType::Sfixed64 => {
+            Value::I64(json_helpers::int64::deserialize(d)?)
+        }
+        ScalarType::Uint32 | ScalarType::Fixed32 => {
+            Value::U32(json_helpers::uint32::deserialize(d)?)
+        }
+        ScalarType::Uint64 | ScalarType::Fixed64 => {
+            Value::U64(json_helpers::uint64::deserialize(d)?)
+        }
+        ScalarType::Bool | ScalarType::String | ScalarType::Bytes => {
+            return Err(E::invalid_type(
+                de::Unexpected::Float(v),
+                &"a JSON value for this field",
+            ));
+        }
     })
 }
 
-fn scalar_from_str(sc: ScalarType, v: &str) -> Result<Value, String> {
-    match sc {
-        ScalarType::String => Ok(Value::String(v.to_owned())),
-        ScalarType::Bytes => base64_decode(v)
-            .map(Value::Bytes)
-            .ok_or_else(|| "invalid base64".to_owned()),
-        // 64-bit integers are quoted strings. Spec also accepts decimal and
-        // exponential notation as long as the value is integral.
+fn scalar_from_str<E: de::Error>(sc: ScalarType, v: &str) -> Result<Value, E> {
+    let d = v.into_deserializer();
+    Ok(match sc {
+        ScalarType::String => Value::String(v.to_owned()),
+        ScalarType::Bytes => {
+            Value::Bytes(base64_decode(v).ok_or_else(|| E::custom("invalid base64"))?)
+        }
+        // 64-bit integers are quoted strings; 32-bit ones may be. Spec also
+        // accepts decimal and exponential notation as long as the value is
+        // integral — see `scalar_from_f64` for why the shared modules do it.
         ScalarType::Int64 | ScalarType::Sint64 | ScalarType::Sfixed64 => {
-            parse_int_str(v).map(Value::I64)
+            Value::I64(json_helpers::int64::deserialize(d)?)
         }
-        ScalarType::Uint64 | ScalarType::Fixed64 => parse_int_str(v).map(Value::U64),
-        // 32-bit integers may also appear as strings.
+        ScalarType::Uint64 | ScalarType::Fixed64 => {
+            Value::U64(json_helpers::uint64::deserialize(d)?)
+        }
         ScalarType::Int32 | ScalarType::Sint32 | ScalarType::Sfixed32 => {
-            parse_int_str(v).map(Value::I32)
+            Value::I32(json_helpers::int32::deserialize(d)?)
         }
-        ScalarType::Uint32 | ScalarType::Fixed32 => parse_int_str(v).map(Value::U32),
+        ScalarType::Uint32 | ScalarType::Fixed32 => {
+            Value::U32(json_helpers::uint32::deserialize(d)?)
+        }
         // Float/double special values.
-        ScalarType::Float => parse_float_str(v).map(|f| Value::F32(f as f32)),
-        ScalarType::Double => parse_float_str(v).map(Value::F64),
-        ScalarType::Bool => Err("string is not a bool".to_owned()),
-    }
-}
-
-/// Parse a quoted-string integer, accepting integral decimal/exponential
-/// forms (`"1.5e3"` → `1500`) per the proto3 JSON spec.
-fn parse_int_str<I: TryFrom<i128>>(v: &str) -> Result<I, String> {
-    parse_int_from_str(v).ok_or_else(|| "invalid or out of range integer string".to_owned())
+        ScalarType::Float => Value::F32(parse_float_str(v).map_err(E::custom)? as f32),
+        ScalarType::Double => Value::F64(parse_float_str(v).map_err(E::custom)?),
+        ScalarType::Bool => return Err(E::custom("string is not a bool")),
+    })
 }
 
 fn parse_float_str(v: &str) -> Result<f64, String> {
