@@ -192,6 +192,7 @@ impl<'a> ::buffa::MessageName for VersionView<'a> {
 }
 ::buffa::impl_default_view_instance!(VersionView);
 ::buffa::impl_view_reborrow!(VersionView);
+::buffa::unsafe_impl_lifetime_parametric!(VersionView);
 /** Self-contained, `'static` owned view of a `Version` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`VersionView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -679,6 +680,7 @@ impl<'a> ::buffa::MessageName for CodeGeneratorRequestView<'a> {
 }
 ::buffa::impl_default_view_instance!(CodeGeneratorRequestView);
 ::buffa::impl_view_reborrow!(CodeGeneratorRequestView);
+::buffa::unsafe_impl_lifetime_parametric!(CodeGeneratorRequestView);
 /** Self-contained, `'static` owned view of a `CodeGeneratorRequest` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`CodeGeneratorRequestView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -1141,6 +1143,7 @@ impl<'a> ::buffa::MessageName for CodeGeneratorResponseView<'a> {
 }
 ::buffa::impl_default_view_instance!(CodeGeneratorResponseView);
 ::buffa::impl_view_reborrow!(CodeGeneratorResponseView);
+::buffa::unsafe_impl_lifetime_parametric!(CodeGeneratorResponseView);
 /** Self-contained, `'static` owned view of a `CodeGeneratorResponse` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`CodeGeneratorResponseView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -1609,6 +1612,7 @@ pub mod code_generator_response {
     }
     ::buffa::impl_default_view_instance!(FileView);
     ::buffa::impl_view_reborrow!(FileView);
+    ::buffa::unsafe_impl_lifetime_parametric!(FileView);
     /** Self-contained, `'static` owned view of a `File` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`FileView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.

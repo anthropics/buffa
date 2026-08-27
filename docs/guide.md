@@ -1232,7 +1232,7 @@ let owned: Person = view.to_owned_message();
 
 When working with the generic `OwnedView<V>` directly (for example, a request type handed to you by an RPC framework), reach the inner view with `reborrow()`, which ties the borrow to the `OwnedView` itself: `let person = view.reborrow();` then `person.name`. Field access directly on the handle is deliberately not provided — the stored view's lifetime is a synthetic `'static`, and exposing it would let field borrows outlive the buffer they point into.
 
-`OwnedView` implements `Clone` (cheap — `Bytes` clone is an O(1) refcount bump), `Debug`, `PartialEq`, and `Eq` when the underlying view type does; the generated `PersonOwnedView` wrapper forwards `Clone` and `Debug`.
+`OwnedView` implements `Clone` (cheap — `Bytes` clone is an O(1) refcount bump) when the view does, and `Debug`, `PartialEq`, and `Eq` when the view does at every lifetime (`for<'b> V::Reborrowed<'b>: Trait`, which a generated view's parametric derives satisfy) — those three call the view's impl on a `reborrow()`ed value, never on the `'static`-typed one. The generated `PersonOwnedView` wrapper forwards `Clone` and `Debug`.
 
 **When to use which:**
 
@@ -1379,9 +1379,14 @@ helper:
 use buffa::HasMessageView;
 
 // Accept any generated message type and hand back its 'static view handle.
-fn decode_request<M: HasMessageView>(
-    body: bytes::Bytes,
-) -> Result<M::ViewHandle, buffa::DecodeError> {
+// `decode_view_handle` requires the view to be `LifetimeParametric` — the
+// `unsafe` marker every generated view carries (see `OwnedView`) — and the
+// trait cannot state that bound for you, so it goes at the call site.
+fn decode_request<M>(body: bytes::Bytes) -> Result<M::ViewHandle, buffa::DecodeError>
+where
+    M: HasMessageView,
+    M::View<'static>: buffa::LifetimeParametric,
+{
     M::decode_view_handle(body)
 }
 
@@ -2233,6 +2238,8 @@ pub type Int64RangeView<'a> = Int64Range;
 ```
 
 For types with string or bytes fields where zero-copy borrowing is valuable, you would implement `MessageView` by hand, following the same pattern as the generated view types. The decode tag loop is a provided method on the trait, so a hand-written view supplies only `decode_view` and the per-field `merge_view_field`; see the `MessageView` trait docs for the canonical shape.
+
+As a field of a generated view, a hand-written view is only ever driven by the generated view's own lifetime-parametric impls, so nothing more is needed. To use it through `OwnedView` *directly* (`OwnedView<Int64RangeView<'static>>`), it must also implement `ViewReborrow` and the `unsafe` marker `LifetimeParametric`, whose `# Safety` section states the contract: no impl on the view may keep a borrow of the buffer past the view itself. A scalar-only alias like `Int64RangeView` holds no borrows at all and may be marked on that basis; a borrowing view must keep every impl parametric in `'a`.
 
 Alternatively, pass `.generate_views(false)` in your build config if you don't use views at all.
 

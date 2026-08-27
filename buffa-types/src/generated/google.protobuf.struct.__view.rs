@@ -200,6 +200,7 @@ impl<'a> ::buffa::MessageName for StructView<'a> {
 }
 ::buffa::impl_default_view_instance!(StructView);
 ::buffa::impl_view_reborrow!(StructView);
+::buffa::unsafe_impl_lifetime_parametric!(StructView);
 /** Self-contained, `'static` owned view of a `Struct` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`StructView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -720,6 +721,7 @@ impl<'a> ::buffa::MessageName for ValueView<'a> {
 }
 ::buffa::impl_default_view_instance!(ValueView);
 ::buffa::impl_view_reborrow!(ValueView);
+::buffa::unsafe_impl_lifetime_parametric!(ValueView);
 /** Self-contained, `'static` owned view of a `Value` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`ValueView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -1173,6 +1175,7 @@ impl<'a> ::buffa::MessageName for ListValueView<'a> {
 }
 ::buffa::impl_default_view_instance!(ListValueView);
 ::buffa::impl_view_reborrow!(ListValueView);
+::buffa::unsafe_impl_lifetime_parametric!(ListValueView);
 /** Self-contained, `'static` owned view of a `ListValue` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`ListValueView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.

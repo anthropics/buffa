@@ -173,15 +173,23 @@ mod view_family {
     /// Generic over the owned message via `HasMessageView`: decode into the
     /// handle, then reach the reborrowed view, the buffer, and the owned
     /// message through the trait's structural bounds only — no concrete type
-    /// names beyond the call site's turbofish.
+    /// names beyond the call site's turbofish. `LifetimeParametric` is what
+    /// `decode_view_handle` needs; it implies the `ViewReborrow` that
+    /// `reborrow` and `to_owned_message` need.
     fn decode_via_family<M>(bytes: bytes::Bytes) -> (M, usize)
     where
         M: buffa::HasMessageView,
-        M::View<'static>: buffa::ViewReborrow,
+        M::View<'static>: buffa::LifetimeParametric,
     {
+        let opts = buffa::DecodeOptions::default();
+        let _ = M::decode_view_handle_with_options(bytes.clone(), &opts).expect("decode");
         let handle = M::decode_view_handle(bytes).expect("decode");
         let raw = handle.as_ref();
         let _view = raw.reborrow();
+        // `OwnedView<V>: Debug` holds under the same bound — the `Debug`
+        // requirement rides on `ViewReborrow::Reborrowed`, so generic code
+        // never spells a `for<'b>` clause.
+        let _ = format!("{raw:?}");
         let len = raw.bytes().len();
         (raw.to_owned_message(), len)
     }

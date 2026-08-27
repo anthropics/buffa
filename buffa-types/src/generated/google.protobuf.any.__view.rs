@@ -250,6 +250,7 @@ impl<'a> ::buffa::MessageName for AnyView<'a> {
 }
 ::buffa::impl_default_view_instance!(AnyView);
 ::buffa::impl_view_reborrow!(AnyView);
+::buffa::unsafe_impl_lifetime_parametric!(AnyView);
 /** Self-contained, `'static` owned view of a `Any` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`AnyView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.

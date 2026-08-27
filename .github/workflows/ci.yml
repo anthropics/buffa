@@ -252,8 +252,14 @@ jobs:
       - name: Miri setup (build/restore sysroot)
         run: cargo +${{ env.MIRI_TOOLCHAIN }} miri setup
 
-      - name: Miri (size_cache soundness)
-        run: cargo +${{ env.MIRI_TOOLCHAIN }} miri test -p buffa size_cache
+      # `owned_view_lifetime_parametric_contract` drives every `OwnedView`
+      # path that touches the wrapped view (decode, Debug, Clone, PartialEq,
+      # reborrow, to_owned_message, drop) so a buffer read after the handle
+      # drops shows up as a Miri use-after-free rather than a silent bug.
+      - name: Miri (size_cache + OwnedView soundness)
+        run: >-
+          cargo +${{ env.MIRI_TOOLCHAIN }} miri test -p buffa --
+          size_cache owned_view_lifetime_parametric_contract
 
   # ── no_std and 32-bit compilation checks ─────────────────────────────────
   check-nostd:
