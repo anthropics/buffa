@@ -255,6 +255,15 @@ jobs:
       - name: Miri (size_cache soundness)
         run: cargo +${{ env.MIRI_TOOLCHAIN }} miri test -p buffa size_cache
 
+      # OwnedView: the view borrows from the Bytes it is stored beside, with
+      # forged 'static lifetimes hidden behind a MaybeDangling wrapper. Miri
+      # turns a wrong field order (a dangling borrow while the view's
+      # destructor runs), a second drop of the view on the into_bytes unwind
+      # path, or a missing MaybeDangling (a protector on the forged borrows
+      # when an OwnedView is passed by value) into a hard error.
+      - name: Miri (OwnedView soundness)
+        run: cargo +${{ env.MIRI_TOOLCHAIN }} miri test -p buffa -- owned_view_drop owned_view_into_bytes
+
   # ── no_std and 32-bit compilation checks ─────────────────────────────────
   check-nostd:
     runs-on: ubuntu-latest
