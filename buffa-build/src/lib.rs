@@ -880,6 +880,55 @@ impl Config {
         self
     }
 
+    /// Exclude a proto package from code generation.
+    ///
+    /// `package` is the proto package to exclude (e.g. `"buf.validate"`,
+    /// `".gnostic.openapi.v3"`). A leading dot is optional and stripped
+    /// automatically. The package and all of its sub-packages are excluded:
+    /// `"buf.validate"` drops both `buf.validate` and `buf.validate.priv`.
+    ///
+    /// Use this when proto files from option-only packages (e.g.
+    /// `buf/validate/validate.proto`, gnostic annotations) end up in the
+    /// generate set through directory globbing, but you do not want Rust types
+    /// generated for those packages. Their descriptors remain available for
+    /// cross-package type resolution; only code generation is skipped.
+    ///
+    /// **Warning**: if any kept file references an excluded package as a field
+    /// type, the generated code will contain dangling `super::…::Type` paths
+    /// that fail to compile. Pair `exclude_package` with
+    /// [`extern_path`](Self::extern_path) to map the excluded types to an
+    /// external crate, or do not list those `.proto` files in
+    /// [`files`](Self::files).
+    ///
+    /// This method can be called multiple times to exclude multiple packages.
+    ///
+    /// # Validation
+    ///
+    /// [`compile`](Self::compile) returns an error if `package` is empty or
+    /// contains invalid components (empty segments, consecutive dots). A
+    /// single leading dot is allowed and stripped automatically.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// buffa_build::Config::new()
+    ///     .exclude_package("buf.validate")
+    ///     .exclude_package(".gnostic.openapi.v3")
+    ///     .files(&["proto/my_service.proto"])
+    ///     .includes(&["proto/", "vendor/"])
+    ///     .compile()
+    ///     .unwrap();
+    /// ```
+    #[must_use]
+    pub fn exclude_package(mut self, package: impl Into<String>) -> Self {
+        // Store the raw string; `generate_with_diagnostics` calls
+        // `normalize_exclude_package` on every entry, stripping an optional
+        // leading dot and rejecting malformed values with a `CodeGenError`
+        // returned from `compile()`.
+        self.codegen_config.exclude_packages.push(package.into());
+        self
+    }
+
     /// Configure `bytes` fields to use `bytes::Bytes` instead of `Vec<u8>`.
     ///
     /// Each path is a fully-qualified proto path prefix. Use `"."` to apply
@@ -2762,5 +2811,31 @@ mod tests {
             .map(|(_, a)| a.as_str())
             .collect();
         assert_eq!(paths, vec!["#[derive(A)]", "#[derive(B)]", "#[derive(C)]"]);
+    }
+
+    #[test]
+    fn exclude_package_stores_raw_value_for_deferred_normalization() {
+        // Normalization (leading-dot strip, validation) happens in
+        // generate_with_diagnostics; the builder stores the raw string so
+        // compile() can surface errors with the original user-supplied value.
+        let cfg = Config::new()
+            .exclude_package(".buf.validate")
+            .exclude_package("gnostic");
+        assert_eq!(
+            cfg.codegen_config.exclude_packages,
+            vec![".buf.validate", "gnostic"],
+        );
+    }
+
+    #[test]
+    fn exclude_package_accumulates_in_order() {
+        let cfg = Config::new()
+            .exclude_package("a.b")
+            .exclude_package("c.d")
+            .exclude_package("e.f");
+        assert_eq!(
+            cfg.codegen_config.exclude_packages,
+            vec!["a.b", "c.d", "e.f"]
+        );
     }
 }

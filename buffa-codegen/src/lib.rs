@@ -1648,6 +1648,31 @@ pub struct CodeGenConfig {
     /// [`CodeGenError::InvalidTypeNamePrefix`] otherwise. Defaults to `""`
     /// (no prefix).
     pub type_name_prefix: String,
+    /// Proto packages to exclude from code generation (default: empty).
+    ///
+    /// Each entry is a normalized proto package name without a leading dot
+    /// (e.g. `"buf.validate"`, `"gnostic.openapi.v3"`). A package matches
+    /// if it equals an entry exactly or starts with `"<entry>."` — so
+    /// `"buf.validate"` excludes both `buf.validate` and `buf.validate.priv`.
+    ///
+    /// Use this when `.proto` files from option-only packages (e.g.
+    /// `buf/validate/validate.proto`, gnostic annotations) end up in the
+    /// generate set via `include_imports` or directory globbing, but you do
+    /// not want Rust types for those packages. Their descriptors remain in
+    /// the compilation for type resolution; only code generation is skipped.
+    ///
+    /// **If you exclude a package that other kept files reference as a field
+    /// type**, you must also add an [`extern_path`](Self::extern_paths) mapping
+    /// for it, or the generated code will contain dangling `super::…::Type`
+    /// paths that fail to compile. Add an `extern_path` for the excluded
+    /// package, or do not list those files in the generate set.
+    ///
+    /// Entries must be bare proto package names with no leading dot and no
+    /// empty segments (e.g. `"buf.validate"`, `"gnostic.openapi.v3"`).
+    /// [`normalize_exclude_package`] strips an optional leading dot for
+    /// callers that produce option strings; [`generate_with_diagnostics`]
+    /// applies the same normalization and rejects remaining invalid entries.
+    pub exclude_packages: Vec<String>,
 }
 
 impl Default for CodeGenConfig {
@@ -1687,6 +1712,7 @@ impl Default for CodeGenConfig {
             idiomatic_field_names: false,
             feature_gate_names: FeatureGateNames::default(),
             type_name_prefix: String::new(),
+            exclude_packages: Vec::new(),
         }
     }
 }
@@ -2621,6 +2647,55 @@ pub fn generate_with_diagnostics(
     }
 
     config.validate_type_name_prefix()?;
+
+    // Validate exclude_packages entries, normalizing optional leading dots.
+    // Callers that go through `normalize_exclude_package` (the plugin, and
+    // buffa-build's `exclude_package()`) will already have clean entries;
+    // direct `CodeGenConfig` constructors get the same normalization here.
+    let mut normalized_excludes: Vec<String> = Vec::new();
+    for entry in &config.exclude_packages {
+        match normalize_exclude_package(entry) {
+            Ok(n) => normalized_excludes.push(n),
+            Err(_) => {
+                return Err(CodeGenError::Other(format!(
+                    "invalid exclude_package entry {entry:?}: must be a non-empty proto \
+                     package with no empty components (e.g. \"buf.validate\" or \
+                     \"gnostic.openapi.v3\"); a leading dot is allowed and stripped"
+                )));
+            }
+        }
+    }
+    // Drop files whose proto package is listed in `config.exclude_packages`
+    // BEFORE building the codegen context, so that context decisions that key
+    // on `files_to_generate` membership (e.g. WKT auto-extern-path injection,
+    // descriptor.proto suppression) see the filtered set. Their descriptors
+    // stay in `file_descriptors` for type resolution; only code generation is
+    // skipped. A file with no matching descriptor is kept — the FileNotFound
+    // error below is more actionable than silently dropping it here.
+    let effective_files_to_generate: std::borrow::Cow<'_, [String]> =
+        if normalized_excludes.is_empty() {
+            std::borrow::Cow::Borrowed(files_to_generate)
+        } else {
+            std::borrow::Cow::Owned(
+                files_to_generate
+                    .iter()
+                    .filter(|name| {
+                        match file_descriptors
+                            .iter()
+                            .find(|fd| fd.name.as_deref() == Some(name.as_str()))
+                        {
+                            Some(fd) => !package_is_excluded(
+                                fd.package.as_deref().unwrap_or(""),
+                                &normalized_excludes,
+                            ),
+                            None => true,
+                        }
+                    })
+                    .cloned()
+                    .collect(),
+            )
+        };
+    let files_to_generate: &[String] = &effective_files_to_generate;
 
     // Feature overrides are applied by mutating the descriptor set up front,
     // so every downstream consumer — feature resolution, all generation
@@ -3892,12 +3967,12 @@ pub fn package_to_mod_filename(package: &str) -> String {
 /// paths without a leading dot (`buf.validate`, not `.buf.validate`); an
 /// empty entry matches only the unnamed package.
 ///
-/// Both `protoc-gen-buffa` (which filters `file_to_generate` before codegen)
-/// and `protoc-gen-buffa-packaging` (which filters the packages it stitches
-/// into `mod.rs`) route their exclusion through this one predicate, so the
-/// two plugins are guaranteed to drop exactly the same set — the invariant
-/// the packaging plugin's "Matching a codegen plugin's output set" note
-/// depends on.
+/// `generate_with_diagnostics` (which filters `files_to_generate` before
+/// building the codegen context) and `protoc-gen-buffa-packaging` (which
+/// filters the packages it stitches into `mod.rs`) route their exclusion
+/// through this one predicate, so the two are guaranteed to drop exactly the
+/// same set — the invariant the packaging plugin's "Matching a codegen
+/// plugin's output set" note depends on.
 pub fn package_is_excluded(package: &str, excludes: &[String]) -> bool {
     excludes.iter().any(|ex| {
         package == ex
@@ -3913,9 +3988,9 @@ pub fn package_is_excluded(package: &str, excludes: &[String]) -> bool {
 /// could never match a real package, so a typo would otherwise be a silent
 /// no-op.
 ///
-/// Both protoc plugins parse their `exclude_package` options through this
-/// one function so their normalization cannot drift — the same reason they
-/// share [`package_is_excluded`].
+/// The plugin option-string parsers and `generate_with_diagnostics` all run
+/// entries through this function so normalization cannot drift — the same
+/// reason they share [`package_is_excluded`].
 ///
 /// # Errors
 ///

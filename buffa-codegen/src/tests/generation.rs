@@ -2675,3 +2675,145 @@ fn test_editions_legacy_required_explicit_default_survives() {
         "LEGACY_REQUIRED explicit default must reach clear(): {content}"
     );
 }
+
+// ---- exclude_packages filtering in generate_with_diagnostics ---------------
+
+fn make_file_with_package(name: &str, package: &str) -> FileDescriptorProto {
+    FileDescriptorProto {
+        name: Some(name.to_string()),
+        package: Some(package.to_string()),
+        syntax: Some("proto3".to_string()),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn test_exclude_packages_drops_matching_files() {
+    // Files in `buf.validate` should be dropped; the one in `example` kept.
+    let fds = vec![
+        make_file_with_package("validate/validate.proto", "buf.validate"),
+        make_file_with_package("example/service.proto", "example"),
+    ];
+    let to_generate = vec![
+        "validate/validate.proto".to_string(),
+        "example/service.proto".to_string(),
+    ];
+    let config = CodeGenConfig {
+        exclude_packages: vec!["buf.validate".to_string()],
+        ..Default::default()
+    };
+    let files = generate(&fds, &to_generate, &config).expect("generation failed");
+    let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
+    assert!(
+        !names.iter().any(|n| n.contains("validate")),
+        "excluded package must produce no output files; got {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n.contains("example")),
+        "kept package must produce output files; got {names:?}"
+    );
+}
+
+#[test]
+fn test_exclude_packages_drops_subpackages() {
+    // `gnostic` in the exclude list must also drop `gnostic.openapi.v3`.
+    let fds = vec![
+        make_file_with_package("gnostic/openapi/v3/doc.proto", "gnostic.openapi.v3"),
+        make_file_with_package("example/foo.proto", "example"),
+    ];
+    let to_generate = vec![
+        "gnostic/openapi/v3/doc.proto".to_string(),
+        "example/foo.proto".to_string(),
+    ];
+    let config = CodeGenConfig {
+        exclude_packages: vec!["gnostic".to_string()],
+        ..Default::default()
+    };
+    let files = generate(&fds, &to_generate, &config).expect("generation failed");
+    let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
+    assert!(
+        !names.iter().any(|n| n.contains("gnostic")),
+        "subpackage must also be excluded; got {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n.contains("example")),
+        "kept package must produce output; got {names:?}"
+    );
+}
+
+#[test]
+fn test_exclude_packages_empty_list_keeps_all() {
+    // With an empty exclude list the fast path kicks in (Cow::Borrowed) and
+    // all files are generated unchanged.
+    let fds = vec![
+        make_file_with_package("validate/validate.proto", "buf.validate"),
+        make_file_with_package("example/foo.proto", "example"),
+    ];
+    let to_generate = vec![
+        "validate/validate.proto".to_string(),
+        "example/foo.proto".to_string(),
+    ];
+    let config = CodeGenConfig {
+        exclude_packages: vec![],
+        ..Default::default()
+    };
+    let files = generate(&fds, &to_generate, &config).expect("generation failed");
+    let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
+    assert!(
+        names.iter().any(|n| n.contains("validate")),
+        "empty exclude list must keep all files; got {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n.contains("example")),
+        "empty exclude list must keep all files; got {names:?}"
+    );
+}
+
+#[test]
+fn test_exclude_packages_file_without_descriptor_not_dropped_by_filter() {
+    // A name in `files_to_generate` that has no matching descriptor must not
+    // be silently dropped by the exclude-packages filter (`None => true`). It
+    // propagates to the FileNotFound error that follows, which is actionable.
+    let fds = vec![make_file_with_package("example/foo.proto", "example")];
+    let to_generate = vec![
+        "example/foo.proto".to_string(),
+        "orphan/bar.proto".to_string(), // no descriptor
+    ];
+    let config = CodeGenConfig {
+        exclude_packages: vec!["buf.validate".to_string()],
+        ..Default::default()
+    };
+    let err = generate(&fds, &to_generate, &config).unwrap_err();
+    // The filter must not drop "orphan/bar.proto" — the error comes from the
+    // FileNotFound check downstream, not from the exclude-packages step.
+    assert!(
+        matches!(err, CodeGenError::FileNotFound(ref name) if name == "orphan/bar.proto"),
+        "expected FileNotFound for the orphan, got: {err:?}"
+    );
+}
+
+#[test]
+fn test_exclude_packages_invalid_entry_is_rejected() {
+    let fds = vec![make_file_with_package("foo/foo.proto", "foo")];
+    let to_generate = vec!["foo/foo.proto".to_string()];
+
+    // Empty component (double dot) is invalid.
+    let config = CodeGenConfig {
+        exclude_packages: vec!["buf..validate".to_string()],
+        ..Default::default()
+    };
+    assert!(
+        generate(&fds, &to_generate, &config).is_err(),
+        "malformed exclude entry must be rejected"
+    );
+
+    // Trailing dot is also invalid.
+    let config2 = CodeGenConfig {
+        exclude_packages: vec!["buf.validate.".to_string()],
+        ..Default::default()
+    };
+    assert!(
+        generate(&fds, &to_generate, &config2).is_err(),
+        "trailing-dot exclude entry must be rejected"
+    );
+}
