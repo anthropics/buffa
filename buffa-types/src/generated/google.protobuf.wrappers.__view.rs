@@ -111,6 +111,7 @@ impl<'a> ::buffa::MessageName for DoubleValueView<'a> {
 }
 ::buffa::impl_default_view_instance!(DoubleValueView);
 ::buffa::impl_view_reborrow!(DoubleValueView);
+::buffa::unsafe_impl_lifetime_parametric!(DoubleValueView);
 /** Self-contained, `'static` owned view of a `DoubleValue` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`DoubleValueView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -432,6 +433,7 @@ impl<'a> ::buffa::MessageName for FloatValueView<'a> {
 }
 ::buffa::impl_default_view_instance!(FloatValueView);
 ::buffa::impl_view_reborrow!(FloatValueView);
+::buffa::unsafe_impl_lifetime_parametric!(FloatValueView);
 /** Self-contained, `'static` owned view of a `FloatValue` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`FloatValueView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -753,6 +755,7 @@ impl<'a> ::buffa::MessageName for Int64ValueView<'a> {
 }
 ::buffa::impl_default_view_instance!(Int64ValueView);
 ::buffa::impl_view_reborrow!(Int64ValueView);
+::buffa::unsafe_impl_lifetime_parametric!(Int64ValueView);
 /** Self-contained, `'static` owned view of a `Int64Value` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`Int64ValueView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -1074,6 +1077,7 @@ impl<'a> ::buffa::MessageName for UInt64ValueView<'a> {
 }
 ::buffa::impl_default_view_instance!(UInt64ValueView);
 ::buffa::impl_view_reborrow!(UInt64ValueView);
+::buffa::unsafe_impl_lifetime_parametric!(UInt64ValueView);
 /** Self-contained, `'static` owned view of a `UInt64Value` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`UInt64ValueView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -1395,6 +1399,7 @@ impl<'a> ::buffa::MessageName for Int32ValueView<'a> {
 }
 ::buffa::impl_default_view_instance!(Int32ValueView);
 ::buffa::impl_view_reborrow!(Int32ValueView);
+::buffa::unsafe_impl_lifetime_parametric!(Int32ValueView);
 /** Self-contained, `'static` owned view of a `Int32Value` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`Int32ValueView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -1716,6 +1721,7 @@ impl<'a> ::buffa::MessageName for UInt32ValueView<'a> {
 }
 ::buffa::impl_default_view_instance!(UInt32ValueView);
 ::buffa::impl_view_reborrow!(UInt32ValueView);
+::buffa::unsafe_impl_lifetime_parametric!(UInt32ValueView);
 /** Self-contained, `'static` owned view of a `UInt32Value` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`UInt32ValueView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -2037,6 +2043,7 @@ impl<'a> ::buffa::MessageName for BoolValueView<'a> {
 }
 ::buffa::impl_default_view_instance!(BoolValueView);
 ::buffa::impl_view_reborrow!(BoolValueView);
+::buffa::unsafe_impl_lifetime_parametric!(BoolValueView);
 /** Self-contained, `'static` owned view of a `BoolValue` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`BoolValueView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -2358,6 +2365,7 @@ impl<'a> ::buffa::MessageName for StringValueView<'a> {
 }
 ::buffa::impl_default_view_instance!(StringValueView);
 ::buffa::impl_view_reborrow!(StringValueView);
+::buffa::unsafe_impl_lifetime_parametric!(StringValueView);
 /** Self-contained, `'static` owned view of a `StringValue` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`StringValueView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -2679,6 +2687,7 @@ impl<'a> ::buffa::MessageName for BytesValueView<'a> {
 }
 ::buffa::impl_default_view_instance!(BytesValueView);
 ::buffa::impl_view_reborrow!(BytesValueView);
+::buffa::unsafe_impl_lifetime_parametric!(BytesValueView);
 /** Self-contained, `'static` owned view of a `BytesValue` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`BytesValueView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.

@@ -75,7 +75,13 @@ fn test_owned_view_wrapper_struct_and_value_accessors() {
     );
     assert!(
         content.contains("AsRef<::buffa::OwnedView<ItemView<'static>>> for ItemOwnedView"),
-        "missing AsRef impl on the wrapper: {content}"
+        "missing AsRef impl: {content}"
+    );
+    // The `unsafe` marker every `OwnedView` constructor requires, emitted
+    // via the macro so the output stays valid under `forbid(unsafe_code)`.
+    assert!(
+        content.contains("::buffa::unsafe_impl_lifetime_parametric!(ItemView);"),
+        "missing LifetimeParametric marker: {content}"
     );
 }
 

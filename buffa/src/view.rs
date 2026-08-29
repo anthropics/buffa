@@ -63,6 +63,12 @@
 //! methods, so handler code rarely needs to call `reborrow` directly. See
 //! [`OwnedView`] for details.
 //!
+//! The same synthetic `'static` is what `V::decode_view` sees, so every
+//! `OwnedView` constructor requires `V: `[`LifetimeParametric`] — the
+//! `unsafe` marker asserting that no impl on `V` can let a borrow of that
+//! buffer outlive the view. Codegen emits it for every generated view;
+//! hand-written views opt in with an explicit `unsafe impl`.
+//!
 //! # Generated code shape
 //!
 //! For a message like:
@@ -112,6 +118,11 @@ use bytes::Bytes;
 ///
 /// The lifetime `'a` ties the view to the input buffer — the view cannot
 /// outlive the buffer it was decoded from.
+///
+/// A hand-written implementation that is to be used through [`OwnedView`]
+/// must also implement [`ViewReborrow`] and the `unsafe` marker
+/// [`LifetimeParametric`], whose `# Safety` section states what the
+/// implementation must guarantee.
 ///
 /// Generated view structs may gain fields across releases; see the
 /// [struct evolution policy on `Message`](crate::Message#struct-evolution-policy).
@@ -373,8 +384,9 @@ pub trait MessageView<'a>: Sized {
 /// tying the borrow to `&'b self` so the compiler can reason about it correctly.
 ///
 /// Codegen emits `impl ViewReborrow` automatically for every generated view
-/// type. Hand-written view types must provide it manually if
-/// [`OwnedView::reborrow`] is needed.
+/// type. A hand-written view type used through [`OwnedView`] must provide
+/// it — it is a supertrait of [`LifetimeParametric`], which every
+/// `OwnedView` constructor requires — alongside that `unsafe` marker.
 ///
 /// # Soundness
 ///
@@ -405,7 +417,12 @@ pub trait MessageView<'a>: Sized {
 )]
 pub trait ViewReborrow: MessageView<'static> {
     /// The same view type with its lifetime shortened to `'b`.
+    ///
+    /// The `Debug` bound is what lets `OwnedView<V>: Debug` hold for every
+    /// `V: ViewReborrow` — generic code needs no `for<'b>` clause of its
+    /// own. Every generated view implements `Debug`.
     type Reborrowed<'b>: MessageView<'b, Owned = <Self as MessageView<'static>>::Owned>
+        + core::fmt::Debug
     where
         Self: 'b;
 
@@ -423,7 +440,9 @@ pub trait ViewReborrow: MessageView<'static> {
 ///
 /// Emitted by generated code (one invocation per view struct); the trait's
 /// `on_unimplemented` note shows the equivalent expansion for hand-written
-/// views.
+/// views. A view used through [`OwnedView`] also needs the `unsafe` marker
+/// [`LifetimeParametric`] — see
+/// [`unsafe_impl_lifetime_parametric!`](macro@crate::unsafe_impl_lifetime_parametric).
 ///
 /// ```rust,ignore
 /// buffa::impl_view_reborrow!(MyMessageView);
@@ -437,6 +456,173 @@ macro_rules! impl_view_reborrow {
                 this
             }
         }
+    };
+}
+
+/// Marker asserting that a view type is parametric in its buffer lifetime —
+/// the soundness contract behind [`OwnedView`].
+///
+/// `OwnedView<V>` hands `V::decode_view` a slice whose lifetime has been
+/// forged to `'static` while the bytes really live only as long as the
+/// `OwnedView`'s [`Bytes`]. That is sound only if nothing `V` does can let
+/// a borrow of that slice outlive the `V` value itself. Every generated
+/// `FooView<'a>` has this property structurally: the struct is generic
+/// over `'a` and every impl is parametric in it, so no impl can tell
+/// `'static` apart from any other lifetime, and none has a way to stash a
+/// field borrow anywhere that outlives `Self` without writing `unsafe`.
+///
+/// A hand-written `impl MessageView<'static> for MyView` has no such
+/// guarantee: inside `decode_view`, or inside any impl on the view that
+/// `OwnedView` invokes, it can copy a `&'static str` borrowed from the
+/// buffer into a `static`, and the copy dangles once the `OwnedView` drops
+/// — a use-after-free reachable from safe code. Every [`OwnedView`]
+/// constructor therefore requires `V: LifetimeParametric`, so the forged
+/// `'static` slice never reaches a view that has not made this assertion
+/// with an explicit `unsafe impl`.
+///
+/// Codegen emits the impl for every generated view through
+/// [`unsafe_impl_lifetime_parametric!`](macro@crate::unsafe_impl_lifetime_parametric).
+/// [`ViewReborrow`] is a supertrait:
+/// it is the mechanical witness that the view is covariant in its lifetime,
+/// and it lets `OwnedView` route its own `Debug`, `PartialEq`, `Serialize`
+/// and [`to_owned_message`](OwnedView::to_owned_message) through a
+/// [`reborrow`](ViewReborrow::reborrow)ed `V::Reborrowed<'_>` rather than
+/// the `'static`-typed view (`Clone` is the one impl that must run on `V`
+/// itself, since it has to produce another `V`).
+///
+/// # Safety
+///
+/// Implementors assert that no borrow derived from the `&'static [u8]`
+/// passed to [`MessageView::decode_view`] or
+/// [`decode_view_with_ctx`](MessageView::decode_view_with_ctx) — including
+/// every borrow held in a field of `Self` — can outlive the `Self` value it
+/// was decoded into, nor be exposed at a lifetime longer than a borrow of
+/// that value. Two obligations follow, and they apply to every impl on
+/// `Self` (the lists are illustrative, not exhaustive):
+///
+/// - No impl may copy such a borrow into storage that outlives `Self` — a
+///   `static`, a thread-local, a leaked `Box`, a channel, a longer-lived
+///   struct. That covers the [`MessageView<'static>`](MessageView) impl
+///   (`decode_view`, `decode_view_with_ctx`, `decode_view_ctx`,
+///   `merge_into_view`, `merge_view_field`, `to_owned_message`,
+///   `to_owned_from_source`), `Self`'s `Drop`, `Clone`, `Debug`,
+///   `PartialEq`/`Eq`, `Hash` and (`json` feature) `serde::Serialize`
+///   impls, and anything reachable from those, such as the `Debug` impl of
+///   a field type.
+/// - The [`ViewReborrow`] impl must actually shorten the lifetime:
+///   `Reborrowed<'b>` must be `Self` with its buffer lifetime replaced by
+///   `'b`, exposing no buffer borrow longer than `'b`. (A `MessageView`
+///   impl that is generic over a *second* lifetime can satisfy the GAT's
+///   `MessageView<'b>` bound with `Reborrowed<'b> = Self`, which would let
+///   [`OwnedView::reborrow`] hand out `'static` borrows.)
+///
+/// The simplest way to satisfy this is the way generated code does: make
+/// the view struct generic over the buffer lifetime (`MyView<'a>`), every
+/// impl other than `ViewReborrow` parametric in it
+/// (`impl<'a> MessageView<'a> for MyView<'a>`,
+/// `impl<'a> Debug for MyView<'a>`, …), and `ViewReborrow` the canonical
+/// [`impl_view_reborrow!`] shape. Parametric code cannot observe that
+/// `'a = 'static`, so the borrow checker itself prevents it from smuggling
+/// a borrow past `Self`'s lifetime. An impl written only for `'static`
+/// (`impl MessageView<'static> for MyView`) may be marked only if the view
+/// holds no borrows from the buffer at all.
+///
+/// # Example
+///
+/// A parametric hand-written view opts in with an `unsafe impl` (the
+/// `SAFETY` comment is the argument above):
+///
+/// ```rust,ignore
+/// // SAFETY: `MyView<'a>` is generic over `'a`; every impl on it other than
+/// // the canonical `impl_view_reborrow!` is parametric in `'a`, so no impl can
+/// // retain a buffer borrow past `Self`.
+/// unsafe impl buffa::LifetimeParametric for MyView<'static> {}
+/// ```
+///
+/// A non-parametric view is rejected at the [`OwnedView::decode`] call
+/// site, so the forged `'static` slice never reaches its `decode_view`:
+///
+/// ```compile_fail,E0599
+/// use buffa::{DecodeContext, DecodeError, MessageView, OwnedView};
+/// use buffa::encoding::Tag;
+/// # use buffa::__doctest_fixtures::Person;
+///
+/// struct Capturing {
+///     name: &'static str,
+/// }
+///
+/// impl MessageView<'static> for Capturing {
+///     type Owned = Person;
+///     fn decode_view(buf: &'static [u8]) -> Result<Self, DecodeError> {
+///         // Sees the forged `'static` and could stash `name` anywhere.
+///         Ok(Self { name: core::str::from_utf8(buf).unwrap_or("") })
+///     }
+///     fn merge_view_field(
+///         &mut self,
+///         _tag: Tag,
+///         cur: &'static [u8],
+///         _before_tag: &'static [u8],
+///         _ctx: DecodeContext<'_>,
+///     ) -> Result<&'static [u8], DecodeError> {
+///         Ok(cur)
+///     }
+///     fn to_owned_message(&self) -> Result<Person, DecodeError> {
+///         Ok(Person::default())
+///     }
+/// }
+///
+/// // error[E0599]: the function or associated item `decode` exists for struct
+/// //               `OwnedView<Capturing>`, but its trait bounds were not satisfied
+/// //   note: the trait `LifetimeParametric` must be implemented
+/// let _ = OwnedView::<Capturing>::decode(buffa::bytes::Bytes::new());
+/// ```
+#[rustversion::attr(
+    since(1.78),
+    diagnostic::on_unimplemented(
+        message = "`{Self}` does not implement `LifetimeParametric` — required by every `OwnedView` constructor",
+        note = "for a generated view type, this impl is emitted by codegen since buffa 0.10: \
+                regenerate the crate that defines `{Self}` with buffa 0.10.0 or newer",
+        note = "in code generic over `M: HasMessageView`, add the bound `M::View<'static>: LifetimeParametric` \
+                at the use site — it cannot live on the trait itself",
+        note = "for a hand-written view type, audit it against the trait's `# Safety` section, then add \
+                `unsafe impl buffa::LifetimeParametric for MyView<'static> {{}}` (or \
+                `buffa::unsafe_impl_lifetime_parametric!(MyView)`) with a `// SAFETY:` comment stating why \
+                no impl on the view can retain a buffer borrow past the view"
+    )
+)]
+pub unsafe trait LifetimeParametric: ViewReborrow {}
+
+/// Implement [`LifetimeParametric`] for a view type.
+///
+/// Emitted by generated code (one invocation per view struct, next to
+/// [`impl_view_reborrow!`]). It expands to
+/// `unsafe impl LifetimeParametric for $ty<'static> {}`; because the
+/// `unsafe` token originates in this crate's macro rather than in the
+/// consumer's source, the expansion is accepted under
+/// `#![forbid(unsafe_code)]`, which generated code is routinely `include!`d
+/// into.
+///
+/// # Safety
+///
+/// Invoking this macro asserts the [`LifetimeParametric`] contract for
+/// `$ty<'static>` exactly as a hand-written `unsafe impl` would: no impl on
+/// `$ty` may retain a borrow of the decode buffer past the view. Codegen
+/// discharges it structurally — every impl it emits other than the
+/// canonical [`impl_view_reborrow!`] is parametric in the view's lifetime,
+/// and any hand-written view nested as a field is only ever driven through
+/// those parametric impls. A hand-written view type
+/// must be audited against the trait's `# Safety` section before invoking
+/// it, and should carry a `// SAFETY:` comment stating why it holds.
+///
+/// ```rust,ignore
+/// // SAFETY: `MyMessageView<'a>` is generic over `'a` and every impl on it
+/// // is parametric, so no impl can retain a buffer borrow past `Self`.
+/// buffa::unsafe_impl_lifetime_parametric!(MyMessageView);
+/// ```
+#[macro_export]
+macro_rules! unsafe_impl_lifetime_parametric {
+    ($ty:ident) => {
+        unsafe impl $crate::LifetimeParametric for $ty<'static> {}
     };
 }
 
@@ -462,12 +648,16 @@ macro_rules! impl_view_reborrow {
 ///   concrete wrapper. The wrapper's per-field accessor methods remain
 ///   inherent on the concrete type.
 ///
-/// Generic code that wants to reborrow through the handle
-/// (`handle.as_ref().reborrow()`) adds `M::View<'static>: ViewReborrow` as a
-/// bound at the use site; every generated view satisfies it. (The bound
-/// cannot live on the trait itself: a `where Self::View<'static>:
-/// ViewReborrow` clause currently trips a GAT normalization error, E0308
-/// "expected `MessageView<'a>`, found `MessageView<'static>`".)
+/// Generic code that reaches the view through the handle
+/// (`handle.as_ref().reborrow()` or `.to_owned_message()`) adds
+/// `M::View<'static>: ViewReborrow` as a bound at the use site, and generic
+/// code that decodes a handle
+/// ([`decode_view_handle`](Self::decode_view_handle)) adds
+/// `M::View<'static>: `[`LifetimeParametric`], which implies the former;
+/// every generated view satisfies both. (Neither bound can live on the
+/// trait itself: a `where Self::View<'static>: ViewReborrow` clause
+/// currently trips a GAT normalization error, E0308 "expected
+/// `MessageView<'a>`, found `MessageView<'static>`".)
 ///
 /// # Implementing
 ///
@@ -549,7 +739,10 @@ pub trait HasMessageView: crate::Message + Sized {
     /// # Errors
     ///
     /// Returns [`DecodeError`] if the buffer contains invalid protobuf data.
-    fn decode_view_handle(bytes: Bytes) -> Result<Self::ViewHandle, DecodeError> {
+    fn decode_view_handle(bytes: Bytes) -> Result<Self::ViewHandle, DecodeError>
+    where
+        Self::View<'static>: LifetimeParametric,
+    {
         Ok(Self::ViewHandle::from(
             OwnedView::<Self::View<'static>>::decode(bytes)?,
         ))
@@ -566,7 +759,10 @@ pub trait HasMessageView: crate::Message + Sized {
     fn decode_view_handle_with_options(
         bytes: Bytes,
         opts: &crate::DecodeOptions,
-    ) -> Result<Self::ViewHandle, DecodeError> {
+    ) -> Result<Self::ViewHandle, DecodeError>
+    where
+        Self::View<'static>: LifetimeParametric,
+    {
         Ok(Self::ViewHandle::from(
             OwnedView::<Self::View<'static>>::decode_with_options(bytes, opts)?,
         ))
@@ -2424,6 +2620,13 @@ impl<'a> UnknownFieldsView<'a> {
 ///    ensuring no dangling references during cleanup. The view field uses
 ///    [`ManuallyDrop`](core::mem::ManuallyDrop) to prevent the automatic
 ///    drop from running out of order.
+/// 4. Every constructor requires `V: `[`LifetimeParametric`], the `unsafe`
+///    marker asserting that no impl on `V` can let a borrow of the
+///    forged-`'static` buffer outlive the view (its `# Safety` section is
+///    the contract). `Debug`, `PartialEq`, `Serialize` and
+///    [`to_owned_message`](OwnedView::to_owned_message) additionally go
+///    through [`reborrow`](OwnedView::reborrow), so `V`'s own impls are
+///    only ever invoked on a `V::Reborrowed<'b>` with the real lifetime.
 ///
 /// [`reborrow`](OwnedView::reborrow) is a plain Rust subtype coercion (no
 /// `unsafe`, no pointer cast): the [`ViewReborrow`] trait method coerces
@@ -2436,10 +2639,14 @@ pub struct OwnedView<V> {
     // from dropping `view` automatically — our `Drop` impl handles it.
     //
     // CONSTRUCTORS: any constructor added here MUST ensure the view's
-    // borrows point into `self.bytes` (not into caller-owned memory).
-    // The auto-`Send`/`Sync` derivation is only sound under that invariant
-    // — there is no longer a `V: 'static` bound on `Send` to act as a
-    // second gate. See the comment block above `send_sync_assertions` below.
+    // borrows point into `self.bytes` (not into caller-owned memory), and
+    // MUST live in the `V: MessageView<'static> + LifetimeParametric` impl
+    // block — never the unbounded one — so that no `OwnedView<V>` can exist
+    // for a `V` that has not asserted the `LifetimeParametric` contract.
+    // The auto-`Send`/`Sync` derivation is only sound under the first
+    // invariant — there is no longer a `V: 'static` bound on `Send` to act
+    // as a second gate. See the comment block above `send_sync_assertions`
+    // below.
     view: core::mem::ManuallyDrop<V>,
     bytes: Bytes,
 }
@@ -2470,7 +2677,7 @@ fn convert_contract_violated(e: DecodeError) -> ! {
 
 impl<V> OwnedView<V>
 where
-    V: MessageView<'static>,
+    V: MessageView<'static> + LifetimeParametric,
 {
     /// Decode a view from a [`Bytes`] buffer.
     ///
@@ -2484,7 +2691,9 @@ where
     pub fn decode(bytes: Bytes) -> Result<Self, DecodeError> {
         // SAFETY: `Bytes` is StableDeref — its heap data never moves or is
         // freed while we hold the `Bytes` value. We hold it in `self.bytes`,
-        // and drop order guarantees `view` drops first.
+        // and drop order guarantees `view` drops first. The forged `'static`
+        // is only ever observed by `V`, whose `LifetimeParametric` impl
+        // asserts that no borrow of `slice` escapes the returned view.
         let view = unsafe {
             let slice: &'static [u8] = core::mem::transmute::<&[u8], &'static [u8]>(&bytes);
             V::decode_view(slice)?
@@ -2543,38 +2752,6 @@ where
         Self::decode(bytes)
     }
 
-    /// Convert the view to the corresponding owned message type.
-    ///
-    /// `bytes::Bytes`-typed fields are produced via [`Bytes::slice_ref`]
-    /// into the retained buffer (zero-copy); other borrowed fields are
-    /// allocated and copied.
-    ///
-    /// Infallible: every `OwnedView` constructor wire-decodes its view
-    /// ([`decode`](Self::decode), [`decode_with_options`](Self::decode_with_options),
-    /// [`from_owned`](Self::from_owned)) or requires wire-decode provenance
-    /// as part of its safety contract ([`from_parts`](Self::from_parts)),
-    /// and a view produced by wire decoding always converts (see
-    /// [`MessageView::to_owned_message`]).
-    ///
-    /// # Panics
-    ///
-    /// Panics if `V`'s [`MessageView`] implementation violates the
-    /// wire-decode ⇒ convert contract. Generated view types cannot trigger
-    /// this; only a buggy hand-written impl (or a
-    /// [`from_parts`](Self::from_parts) view that breaches its safety
-    /// contract) can.
-    #[must_use]
-    pub fn to_owned_message(&self) -> V::Owned {
-        self.view
-            .to_owned_from_source(Some(&self.bytes))
-            .unwrap_or_else(|e| convert_contract_violated(e))
-    }
-
-    /// Get a reference to the underlying bytes buffer.
-    pub fn bytes(&self) -> &Bytes {
-        &self.bytes
-    }
-
     /// Create an `OwnedView` from a buffer and a pre-decoded view.
     ///
     /// This avoids re-decoding when you already hold a decoded view and want
@@ -2597,6 +2774,13 @@ where
             bytes,
         }
     }
+}
+
+impl<V> OwnedView<V> {
+    /// Get a reference to the underlying bytes buffer.
+    pub fn bytes(&self) -> &Bytes {
+        &self.bytes
+    }
 
     /// Consume the `OwnedView`, returning the underlying [`Bytes`] buffer.
     ///
@@ -2611,6 +2795,41 @@ where
             core::mem::forget(self);
             bytes
         }
+    }
+}
+
+// The accessors that reach `V` need only `ViewReborrow` — a supertrait of
+// `LifetimeParametric`, so every constructible `OwnedView<V>` has it, and
+// generic code holding a handle can call them under that one bound.
+impl<V> OwnedView<V>
+where
+    V: ViewReborrow,
+{
+    /// Convert the view to the corresponding owned message type.
+    ///
+    /// `bytes::Bytes`-typed fields are produced via [`Bytes::slice_ref`]
+    /// into the retained buffer (zero-copy); other borrowed fields are
+    /// allocated and copied.
+    ///
+    /// Infallible: every `OwnedView` constructor wire-decodes its view
+    /// ([`decode`](Self::decode), [`decode_with_options`](Self::decode_with_options),
+    /// [`from_owned`](Self::from_owned)) or requires wire-decode provenance
+    /// as part of its safety contract ([`from_parts`](Self::from_parts)),
+    /// and a view produced by wire decoding always converts (see
+    /// [`MessageView::to_owned_message`]).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `V`'s [`MessageView`] implementation violates the
+    /// wire-decode ⇒ convert contract. Generated view types cannot trigger
+    /// this; only a buggy hand-written impl (or a
+    /// [`from_parts`](Self::from_parts) view that breaches its safety
+    /// contract) can.
+    #[must_use]
+    pub fn to_owned_message(&self) -> V::Owned {
+        V::reborrow(&self.view)
+            .to_owned_from_source(Some(&self.bytes))
+            .unwrap_or_else(|e| convert_contract_violated(e))
     }
 
     /// Reborrow the view with a lifetime tied to `&'b self`.
@@ -2665,10 +2884,7 @@ where
     /// `unsafe from_parts` caller) guarantees the pointed-to data lives
     /// at least as long as `'b`.
     #[must_use = "reborrow returns a tied-lifetime view; discarding it is a no-op"]
-    pub fn reborrow<'b>(&'b self) -> &'b V::Reborrowed<'b>
-    where
-        V: ViewReborrow,
-    {
+    pub fn reborrow<'b>(&'b self) -> &'b V::Reborrowed<'b> {
         V::reborrow(&self.view)
     }
 }
@@ -2678,12 +2894,23 @@ where
 // and let it escape the OwnedView's scope (dangling once the buffer drops).
 // All access goes through `reborrow()`, which ties the borrow to `&self`.
 
+// `Debug`, `PartialEq`, `Eq` and `Serialize` delegate through
+// `ViewReborrow::reborrow` rather than to `V`'s own impl: the `'static`-typed
+// `V` never reaches an impl that could observe the forged lifetime, and the
+// bounds on `V::Reborrowed<'b>` mechanically require those impls to be
+// parametric in it (`impl<'a> Debug for FooView<'a>`), which is the shape
+// codegen emits. This is defence in depth behind the `LifetimeParametric`
+// contract on `V`. `Clone` and `Drop` are the exceptions — `Clone` must
+// produce another `V`, and `Drop` runs on the stored value — so they invoke
+// `V`'s own impls on the `'static`-typed value and rely on the contract
+// alone. `Debug` needs no `for<'b>` clause because the `Reborrowed` GAT
+// carries the bound.
 impl<V> core::fmt::Debug for OwnedView<V>
 where
-    V: core::fmt::Debug,
+    V: ViewReborrow,
 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        (*self.view).fmt(f)
+        V::reborrow(&self.view).fmt(f)
     }
 }
 
@@ -2706,14 +2933,20 @@ where
 
 impl<V> PartialEq for OwnedView<V>
 where
-    V: PartialEq,
+    V: ViewReborrow,
+    for<'b> V::Reborrowed<'b>: PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
-        *self.view == *other.view
+        V::reborrow(&self.view) == V::reborrow(&other.view)
     }
 }
 
-impl<V> Eq for OwnedView<V> where V: Eq {}
+impl<V> Eq for OwnedView<V>
+where
+    V: ViewReborrow,
+    for<'b> V::Reborrowed<'b>: Eq,
+{
+}
 
 /// Serialize an `OwnedView<V>` by delegating to the inner view's `Serialize`
 /// impl.
@@ -2726,9 +2959,13 @@ impl<V> Eq for OwnedView<V> where V: Eq {}
 ///
 /// Only available when the `json` feature is enabled.
 #[cfg(feature = "json")]
-impl<V: ::serde::Serialize> ::serde::Serialize for OwnedView<V> {
+impl<V> ::serde::Serialize for OwnedView<V>
+where
+    V: ViewReborrow,
+    for<'b> V::Reborrowed<'b>: ::serde::Serialize,
+{
     fn serialize<S: ::serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        ::serde::Serialize::serialize(&*self.view, s)
+        ::serde::Serialize::serialize(V::reborrow(&self.view), s)
     }
 }
 
@@ -2743,10 +2980,10 @@ impl<V: ::serde::Serialize> ::serde::Serialize for OwnedView<V> {
 //
 // The bound was defensive — intended to prevent `OwnedView<FooView<'short>>`
 // from being `Send` when the view borrows from something outside `self.bytes`.
-// But that type is already unconstructible: `::decode()` and
-// `::decode_with_options()` are gated on `V: MessageView<'static>`, and the
-// fields are private. The short-lifetime case the bound guards against cannot
-// exist in safe code.
+// But that type is already unconstructible: every constructor is gated on
+// `V: MessageView<'static> + LifetimeParametric`, and the fields are private.
+// The short-lifetime case the bound guards against cannot exist in safe
+// code.
 //
 // Auto-trait soundness: `Bytes` is `Send + Sync`. The view's `&'static [u8]`
 // borrows point into `Bytes`'s heap allocation, which is immutable,
@@ -3525,6 +3762,23 @@ mod tests {
     // Via the exported macro, which doubles as its unit test.
     crate::impl_view_reborrow!(SimpleMessageView);
 
+    // Via the exported macro, which doubles as its unit test.
+    // SAFETY: `SimpleMessageView<'a>` is generic over `'a`; every impl on it
+    // other than the canonical `impl_view_reborrow!` is parametric in `'a`,
+    // so none can retain a buffer borrow past `Self`.
+    crate::unsafe_impl_lifetime_parametric!(SimpleMessageView);
+
+    #[cfg(feature = "json")]
+    impl ::serde::Serialize for SimpleMessageView<'_> {
+        fn serialize<S: ::serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+            use ::serde::ser::SerializeStruct as _;
+            let mut st = s.serialize_struct("SimpleMessage", 2)?;
+            st.serialize_field("id", &self.id)?;
+            st.serialize_field("name", self.name)?;
+            st.end()
+        }
+    }
+
     impl<'a> MessageView<'a> for SimpleMessageView<'a> {
         type Owned = SimpleMessage;
         fn merge_view_field(
@@ -3620,6 +3874,10 @@ mod tests {
 
     crate::impl_view_reborrow!(ContractBreakingView);
 
+    // SAFETY: holds no borrows at all (`PhantomData` only); every impl is
+    // parametric in `'a`.
+    unsafe impl LifetimeParametric for ContractBreakingView<'static> {}
+
     impl<'a> MessageView<'a> for ContractBreakingView<'a> {
         type Owned = SimpleMessage;
         fn merge_view_field(
@@ -3646,6 +3904,52 @@ mod tests {
         // an impl that violates it must fail loudly, not silently.
         let view = OwnedView::<ContractBreakingView<'static>>::decode(Bytes::new()).unwrap();
         let _ = view.to_owned_message();
+    }
+
+    /// Every `OwnedView` path that touches `V` — decode, `Debug`, `Clone`,
+    /// `PartialEq`, `reborrow`, `to_owned_message`, drop — on a hand-written
+    /// parametric view, so Miri can confirm none of them reads the buffer
+    /// after its handle drops (CI runs this under Miri; see
+    /// `.github/workflows/ci.yml`). The negative case — a non-parametric
+    /// view reaching the forged `'static` buffer — is the `compile_fail`
+    /// doctest on [`LifetimeParametric`].
+    ///
+    /// Handles go out of scope instead of being passed to `drop`: Miri
+    /// protects the forged `&'static [u8]` inside a by-value `OwnedView`
+    /// argument for the callee's whole frame, so freeing the `Bytes` in that
+    /// frame is reported as UB even though nothing reads through it.
+    #[test]
+    fn owned_view_lifetime_parametric_contract() {
+        let bytes = encode_simple(9, "parametric");
+        let (cloned, owned) = {
+            let view = OwnedView::<SimpleMessageView<'static>>::decode(bytes).unwrap();
+            let cloned = view.clone();
+            assert_eq!(view, cloned);
+            assert_eq!(alloc::format!("{view:?}"), alloc::format!("{cloned:?}"));
+            assert_eq!(view.reborrow().name, "parametric");
+            (cloned, view.to_owned_message())
+            // `view` drops here, before the clone is read.
+        };
+        // The clone holds its own `Bytes` handle, so its buffer is still alive.
+        assert_eq!(cloned.reborrow().name, "parametric");
+        {
+            let _last = cloned;
+            // The last handle drops here; `owned` copied the string out.
+        }
+        assert_eq!(owned.id, 9);
+        assert_eq!(owned.name, "parametric");
+    }
+
+    /// `OwnedView`'s `Serialize` goes through `reborrow`, so the view's own
+    /// impl is invoked on `SimpleMessageView<'b>`, never on the
+    /// `'static`-typed value.
+    #[cfg(feature = "json")]
+    #[test]
+    fn owned_view_serialize_delegates_through_reborrow() {
+        let view = OwnedView::<SimpleMessageView<'static>>::decode(encode_simple(3, "js")).unwrap();
+        let json = ::serde_json::to_string(&view).unwrap();
+        assert_eq!(json, ::serde_json::to_string(view.reborrow()).unwrap());
+        assert_eq!(json, r#"{"id":3,"name":"js"}"#);
     }
 
     #[test]
@@ -3780,6 +4084,7 @@ mod tests {
         static DROP_COUNT: AtomicUsize = AtomicUsize::new(0);
 
         /// A wrapper view that counts drops.
+        #[derive(Debug)]
         struct DropCountingView<'a> {
             inner: SimpleMessageView<'a>,
         }
@@ -3789,6 +4094,13 @@ mod tests {
                 DROP_COUNT.fetch_add(1, Ordering::SeqCst);
             }
         }
+
+        crate::impl_view_reborrow!(DropCountingView);
+
+        // SAFETY: wraps `SimpleMessageView<'a>` (itself `LifetimeParametric`);
+        // the `Drop` impl only touches a counter, and every impl other than
+        // the canonical `impl_view_reborrow!` is parametric in `'a`.
+        unsafe impl LifetimeParametric for DropCountingView<'static> {}
 
         impl<'a> MessageView<'a> for DropCountingView<'a> {
             type Owned = SimpleMessage;
@@ -4148,6 +4460,16 @@ mod tests {
     /// encode path without materializing gigabytes.
     #[derive(Clone, Debug, Default, PartialEq)]
     struct SizedOwnedView;
+
+    impl ViewReborrow for SizedOwnedView {
+        type Reborrowed<'b> = Self;
+        fn reborrow(this: &Self) -> &Self {
+            this
+        }
+    }
+
+    // SAFETY: a unit struct — it holds no borrows from the buffer at all.
+    unsafe impl LifetimeParametric for SizedOwnedView {}
 
     impl<'a> MessageView<'a> for SizedOwnedView {
         type Owned = crate::test_doubles::SizedMsg;

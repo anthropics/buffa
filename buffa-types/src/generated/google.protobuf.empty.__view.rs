@@ -99,6 +99,7 @@ impl<'a> ::buffa::MessageName for EmptyView<'a> {
 }
 ::buffa::impl_default_view_instance!(EmptyView);
 ::buffa::impl_view_reborrow!(EmptyView);
+::buffa::unsafe_impl_lifetime_parametric!(EmptyView);
 /** Self-contained, `'static` owned view of a `Empty` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`EmptyView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.

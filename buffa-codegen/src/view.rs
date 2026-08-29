@@ -500,6 +500,20 @@ pub(crate) fn generate_view_with_nesting(
 
         ::buffa::impl_view_reborrow!(#view_ident);
 
+        // SAFETY (for the `unsafe impl` this expands to): the generated view
+        // struct is generic over `'a` and every impl emitted for it —
+        // `MessageView`, `Debug`, `Clone`, `Serialize`, reflection — is
+        // parametric in `'a`, so none can observe `OwnedView`'s forged
+        // `'static` or retain a buffer borrow past the view itself;
+        // `ViewReborrow` is the canonical `impl_view_reborrow!` shape, which
+        // shortens the lifetime, and `DefaultViewInstance` stores only a
+        // `Default`-constructed view holding no borrows. A
+        // hand-written view nested as a field (extern-mapped types) is only
+        // ever driven through those parametric impls, which forces its own
+        // impls to be parametric too. The macro (rather than a literal
+        // `unsafe impl`) keeps the output valid under `#![forbid(unsafe_code)]`.
+        ::buffa::unsafe_impl_lifetime_parametric!(#view_ident);
+
         #owned_view_wrapper
 
         #reflect_view_impls

@@ -335,6 +335,7 @@ impl<'a> ::buffa::MessageName for FieldMaskView<'a> {
 }
 ::buffa::impl_default_view_instance!(FieldMaskView);
 ::buffa::impl_view_reborrow!(FieldMaskView);
+::buffa::unsafe_impl_lifetime_parametric!(FieldMaskView);
 /** Self-contained, `'static` owned view of a `FieldMask` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`FieldMaskView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
