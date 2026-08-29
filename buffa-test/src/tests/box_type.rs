@@ -4,7 +4,7 @@
 //! `box_type_custom("crate::box_type::CustomBox<*>")`, so every singular message
 //! field is a `MessageField<T, CustomBox<T>>` instead of `MessageField<T>`
 //! (`= MessageField<T, Box<T>>`). Compiling `crate::box_type` is most of the
-//! test — the field type, decode (`get_or_insert_default`), clear, and
+//! test — the field type, decode (`get_or_insert_default`), clear, JSON, and
 //! view→owned (`some`) paths must all emit the custom pointer. The runtime
 //! checks below pin the field type and verify binary + view→owned round-trips,
 //! including a self-referential field.
@@ -127,6 +127,48 @@ fn oneof_message_variant_uses_custom_box() {
         Some(Kind::Nested(inner)) => assert_eq!(inner.kind, Some(Kind::Scalar(42))),
         other => panic!("expected nested variant, got {other:?}"),
     }
+}
+
+#[test]
+fn oneof_message_variant_json_round_trips_without_pointer_serde() {
+    use crate::box_type::__buffa::oneof::with_oneof::Kind;
+    use crate::box_type::WithOneof;
+    use buffa::alloc::boxed::Box;
+
+    let msg = WithOneof {
+        kind: Some(Kind::Msg(CustomBox(Box::new(inner(7, "json"))))),
+        ..Default::default()
+    };
+    let json = serde_json::to_string(&msg).expect("serialize");
+    // The full shape pins that the pointer is transparent: a non-transparent
+    // pointer `Serialize` would wrap the message in another object.
+    assert_eq!(json, r#"{"msg":{"id":7,"name":"json"}}"#);
+    let decoded: WithOneof = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(decoded, msg);
+
+    // The recursive variant and the singular `MessageField<Inner, CustomBox<Inner>>`
+    // field take the same pointer; round-trip both.
+    let nested = WithOneof {
+        kind: Some(Kind::Nested(CustomBox(Box::new(WithOneof {
+            kind: Some(Kind::Scalar(42)),
+            ..Default::default()
+        })))),
+        ..Default::default()
+    };
+    let json = serde_json::to_string(&nested).expect("serialize nested");
+    assert_eq!(json, r#"{"nested":{"scalar":42}}"#);
+    let decoded: WithOneof = serde_json::from_str(&json).expect("deserialize nested");
+    assert_eq!(decoded, nested);
+
+    let outer = Outer {
+        inner: MessageField::some(inner(1, "a")),
+        count: 3,
+        ..Default::default()
+    };
+    let json = serde_json::to_string(&outer).expect("serialize outer");
+    assert_eq!(json, r#"{"inner":{"id":1,"name":"a"},"count":3}"#);
+    let decoded: Outer = serde_json::from_str(&json).expect("deserialize outer");
+    assert_eq!(decoded, outer);
 }
 
 #[test]
