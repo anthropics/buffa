@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Fixed excessive build time and memory use generating reflective packages (`ReflectMode::Bridge`/`ReflectMode::VTable`) over a large proto tree.** The embedded `FILE_DESCRIPTOR_SET_BYTES` constant is now written as a single byte-string literal instead of one token per byte, so its codegen cost no longer scales one token per descriptor byte (which can reach tens of megabytes for a large codegen run). Measured at roughly 20x less build time and 15x less peak memory generating one package against a ~22 MB encoded descriptor set. No change to the constant''s type, name, or contents.'
+time: 2026-07-30T12:41:25.131282-04:00
