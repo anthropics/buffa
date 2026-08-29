@@ -2,7 +2,7 @@
 //! reflect modules and embeds no per-package descriptor bytes. The single
 //! shared `__buffa_fds` root module is emitted by the module-tree builder
 //! (buffa-build / the packaging plugin), not by `generate`, so `generate`'s
-//! output should contain delegations but no byte-literal array.
+//! output should contain delegations but no byte-string literal.
 
 use super::*;
 use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
@@ -57,11 +57,11 @@ fn shared_mode_delegates_per_package_and_embeds_no_bytes() {
     // The whole point: no package embeds its own copy of the bytes.
     let all = joined(&files);
     assert!(
-        !all.contains("FILE_DESCRIPTOR_SET_BYTES: &[u8] = &["),
-        "shared mode must not embed any per-package byte array: {all}"
+        !all.contains("FILE_DESCRIPTOR_SET_BYTES: &[u8] ="),
+        "shared mode must not define a per-package descriptor constant: {all}"
     );
     // And `generate` does not emit the root module itself — that's the tree
-    // builder's job — so there is no byte-array definition anywhere here.
+    // builder's job — so there is no descriptor-constant definition anywhere here.
     assert!(
         !all.contains("pub mod __buffa_fds"),
         "generate() must not define the root module (the tree builder does): {all}"
@@ -238,7 +238,7 @@ fn default_reflection_still_embeds_per_package() {
     .expect("should generate");
     let all = joined(&files);
     assert!(
-        all.contains("FILE_DESCRIPTOR_SET_BYTES: &[u8] = &["),
-        "default mode still embeds the byte array per package: {all}"
+        all.contains("FILE_DESCRIPTOR_SET_BYTES: &[u8] = b\""),
+        "default mode still embeds the bytes per package: {all}"
     );
 }

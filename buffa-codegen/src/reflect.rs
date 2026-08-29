@@ -446,13 +446,13 @@ pub(crate) fn reflect_reexports(buffa_path: &TokenStream, gate: Option<&str>) ->
 }
 
 const _: usize = {
-    // Documentation breadcrumb: a byte-string literal still renders
-    // roughly 3 source characters per input byte on realistic (non-text)
-    // binary data — printable-ASCII bytes render as themselves, the rest
-    // escape as `\xNN` or a short escape sequence. A 22MB encoded
-    // FileDescriptorSet therefore emits on the order of 60MB of generated
-    // source for this one constant; prettyplease and rustc handle a
-    // single literal that size without issue.
+    // Documentation breadcrumb: a byte-string literal still renders between
+    // 1 and 4 source characters per input byte — printable-ASCII bytes render
+    // as themselves, the rest escape as `\xNN` or a short escape sequence.
+    // Descriptor sets are name-heavy, so about 1.5x is typical (the checked-in
+    // WKT set is 2428 bytes and renders as 3575 characters); a 22MB encoded
+    // FileDescriptorSet therefore emits a few tens of MB of generated source
+    // for this one constant, which prettyplease and rustc handle without issue.
     0
 };
 
@@ -520,8 +520,7 @@ mod tests {
         );
         // And the byte data itself must actually be present and correct —
         // a `b"..."` literal, not silently truncated or a placeholder.
-        let rendered = large.to_string();
-        let decoded = syn::parse2::<syn::ItemMod>(large.clone())
+        let decoded = syn::parse2::<syn::ItemMod>(large)
             .expect("generated module must parse")
             .content
             .expect("module must have a body")
@@ -541,7 +540,7 @@ mod tests {
             ..
         }) = konst.expr.as_ref()
         else {
-            panic!("expected a byte-string literal, got {rendered}");
+            panic!("expected a byte-string literal for FILE_DESCRIPTOR_SET_BYTES");
         };
         assert_eq!(bs.value(), vec![0u8; 1_000_000]);
     }
@@ -609,10 +608,10 @@ mod tests {
             rendered.contains("super :: super :: super :: super :: __buffa_fds"),
             "delegation path must climb package depth + 2 supers: {rendered}"
         );
-        // The whole point: no per-package byte-literal array.
+        // The whole point: no per-package descriptor constant of any shape.
         assert!(
-            !rendered.contains("FILE_DESCRIPTOR_SET_BYTES : & [u8] = &"),
-            "shared mode must not embed a per-package byte array: {rendered}"
+            !rendered.contains("FILE_DESCRIPTOR_SET_BYTES : & [u8] ="),
+            "shared mode must not embed a per-package descriptor set: {rendered}"
         );
         // Consumer paths preserved: the constant is still reachable here (as a
         // re-export) and the accessor is still named `descriptor_pool`.
@@ -678,10 +677,10 @@ mod tests {
         assert!(rendered.contains("__buffa_fds"));
         assert!(rendered.contains("include_bytes !"), "{rendered}");
         assert!(rendered.contains("descriptor_set.binpb"), "{rendered}");
-        // No decimal byte-literal array in include_bytes mode — the source-size win.
+        // No inline byte-string literal in include_bytes mode — the source-size win.
         assert!(
-            !rendered.contains("FILE_DESCRIPTOR_SET_BYTES : & [u8] = & ["),
-            "include_bytes mode must not inline a byte array: {rendered}"
+            !rendered.contains("FILE_DESCRIPTOR_SET_BYTES : & [u8] = b\""),
+            "include_bytes mode must not inline the bytes: {rendered}"
         );
     }
 
