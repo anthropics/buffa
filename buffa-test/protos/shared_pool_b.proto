@@ -1,0 +1,12 @@
+// Shared descriptor pool e2e: package B, with a cross-package reference into
+// package A that must resolve through the one shared pool.
+
+syntax = "proto3";
+
+package sharedpool.b;
+
+import "shared_pool_a.proto";
+
+message MsgB {
+  sharedpool.a.MsgA a = 1;
+}

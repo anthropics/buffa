@@ -1455,18 +1455,18 @@ pub struct CodeGenConfig {
     /// instance.
     ///
     /// The shared root module itself is emitted by the module-tree builder
-    /// (`buffa-build` or `protoc-gen-buffa-packaging`), not by `generate`, so
-    /// this mode requires one of those front-ends to assemble the tree.
-    /// Consumers that wire the per-package modules by hand should leave it
-    /// `false` (the default), which keeps today's self-contained per-package
-    /// embedding.
+    /// (`buffa-build`), not by `generate`, so this mode requires that
+    /// front-end to assemble the tree. Consumers that wire the per-package
+    /// modules by hand should leave it `false` (the default), which keeps the
+    /// self-contained per-package embedding.
     ///
     /// Use the same setting for every codegen run assembled into one module
     /// tree. Packages generated with this set to `false` keep their own pools
     /// even when sibling packages delegate to a shared pool; this mixed setup
     /// is not diagnosed.
     ///
-    /// Defaults to `false`. Has no effect unless `generate_reflection` is on.
+    /// Defaults to `false`. [`generate`] errors when this is on without
+    /// `generate_reflection`.
     pub shared_descriptor_pool: bool,
     /// Gate the reflection impls behind a `reflect` crate feature, *without*
     /// gating json/views/text (unlike
@@ -2867,8 +2867,8 @@ pub enum IncludeMode<'a> {
 /// [shared-pool mode](CodeGenConfig::shared_descriptor_pool).
 ///
 /// `file_descriptors` is the full transitive closure (the same slice passed to
-/// [`generate`]). Front-ends (`buffa-build`, `protoc-gen-buffa-packaging`) call
-/// this to obtain the single copy of the bytes, then hand them to
+/// [`generate`]). Front-ends (`buffa-build`) call this to obtain the single
+/// copy of the bytes, then hand them to
 /// [`shared_descriptor_root_module`].
 #[must_use]
 pub fn encode_descriptor_set(

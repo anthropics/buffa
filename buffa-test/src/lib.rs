@@ -662,6 +662,15 @@ pub mod mixed_reflect_parent {
     buffa::include_proto!("mixedref.parent");
 }
 
+// Shared descriptor pool (`shared_descriptor_pool(true)`, `$OUT_DIR` mode):
+// the include file hosts the one `__buffa_fds` root at this module's top
+// level, with both packages (`sharedpool::a`, `sharedpool::b`) delegating to
+// it. See `src/tests/shared_pool.rs`.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod shared_pool {
+    include!(concat!(env!("OUT_DIR"), "/sharedpool_include.rs"));
+}
+
 #[allow(
     clippy::derivable_impls,
     clippy::match_single_binding,
