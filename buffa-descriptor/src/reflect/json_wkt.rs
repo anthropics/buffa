@@ -121,8 +121,11 @@ impl WktKind {
         d: D,
         ignore_unknown: bool,
     ) -> Result<DynamicMessage, D::Error> {
-        // Only `Any` recurses into a user-defined message type; the other
-        // WKTs are closed schemas with no unknown-field concept.
+        // Two WKTs consult `ignore_unknown`: `Any` recurses into a
+        // user-defined message type, and `Empty` parses from a plain object
+        // whose every member is an unknown field. The rest parse from a
+        // scalar (a type error, never an unknown field) or are open schemas
+        // that accept any member by construction.
         match self {
             Self::Any => deserialize_any(pool, midx, d, ignore_unknown),
             Self::Timestamp => {
@@ -149,20 +152,28 @@ impl WktKind {
                 Ok(m)
             }
             Self::Empty => {
-                struct EmptyVisitor;
+                struct EmptyVisitor {
+                    ignore_unknown: bool,
+                }
                 impl<'de> Visitor<'de> for EmptyVisitor {
                     type Value = ();
                     fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                         write!(f, "an empty object")
                     }
                     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
-                        if map.next_key::<String>()?.is_some() {
-                            return Err(de::Error::custom("unexpected field on Empty"));
+                        if self.ignore_unknown {
+                            while map.next_entry::<de::IgnoredAny, de::IgnoredAny>()?.is_some() {}
+                            return Ok(());
+                        }
+                        if let Some(key) = map.next_key::<String>()? {
+                            return Err(de::Error::custom(format!(
+                                "unknown field {key:?} on message google.protobuf.Empty"
+                            )));
                         }
                         Ok(())
                     }
                 }
-                d.deserialize_map(EmptyVisitor)?;
+                d.deserialize_map(EmptyVisitor { ignore_unknown })?;
                 Ok(DynamicMessage::new(pool, midx))
             }
             Self::Wrapper(sc) => {
