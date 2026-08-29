@@ -2020,13 +2020,15 @@ impl core::fmt::Display for CodeGenWarning {
                 };
                 write!(
                     f,
-                    "field `{location}` references `{type_fqn}` from package \
-                     `{ref_package}`, which is not being generated and has no \
-                     extern_path mapping; the generated code will contain a dangling \
-                     type path — add an extern_path for the package \
-                     (buffa-build: `.extern_path(\".{ref_package}\", \"::your_crate\")`; \
-                     plugin: `extern_path=.{ref_package}=::your_crate`), or include \
-                     the package's .proto files in the generate set \
+                    "field `{location}` references `{type_fqn}`, which is not being \
+                     generated and has no extern_path mapping; the generated code will \
+                     contain a dangling type path — map the type or its package \
+                     `{ref_package}` to the crate that defines it \
+                     (buffa-build: `.extern_path(\"{type_fqn}\", \"::your_crate::Type\")` \
+                     or `.extern_path(\".{ref_package}\", \"::your_crate\")`; \
+                     plugin: `extern_path={type_fqn}=::your_crate::Type` or \
+                     `extern_path=.{ref_package}=::your_crate`), or include the \
+                     defining .proto file in the generate set \
                      (buffa-build: `.files(&[…])`; plugin: drop `exclude_package=`)"
                 )
             }
@@ -2470,12 +2472,11 @@ fn warn_excluded_refs_msg(
         // may be from an excluded package. Attribute the warning to the outer
         // map field name (e.g. "prices"), not the entry's "value" slot.
         //
-        // The LABEL_REPEATED gate mirrors every other is_map_field call site:
-        // find_map_entry uses suffix matching on type_name, so without the
-        // label check a `repeated dep.PricesEntry legacy` field would
-        // incorrectly match a same-named synthetic entry and have its
-        // value-slot checked instead of the field itself (which is already
-        // handled above and correctly warns).
+        // The LABEL_REPEATED gate mirrors every other is_map_field call site.
+        // find_map_entry matches on the type_name suffix, so a singular
+        // `dep.PricesEntry legacy` field would otherwise be taken for the
+        // same-named synthetic entry and get a redundant value-slot check;
+        // the field itself is already checked above either way.
         let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;
         if is_repeated && crate::message::is_map_field(msg, field) {
             // Malformed entries (no key/value) are silently skipped — this is a

@@ -495,7 +495,7 @@ fn test_excluded_package_ref_in_map_value() {
     // map<string, .dep.Money> prices = 1;
     // The map field's own type_name points at the synthetic PricesEntry (same
     // package, in declared_in_kept), so the plain field check would pass silently.
-    // The fix looks through the entry to the value field.
+    // Map values are checked through the synthetic entry.
     let dep = dep_file_with_message("dep.proto", "dep", "Money");
     let mut kept = proto3_file("kept.proto");
     kept.package = Some("svc".to_string());
@@ -609,7 +609,7 @@ fn test_no_warn_map_value_when_generated() {
 
 #[test]
 fn test_map_entry_guard_prevents_suffix_collision() {
-    // Regression for the find_map_entry suffix-collision false negative:
+    // Suffix collision, singular form:
     // `dep.proto` exports a message named `PricesEntry` (same simple name as the
     // synthetic map-entry `Order.PricesEntry`). A field `dep.PricesEntry legacy = 2`
     // is NOT a map field (label=OPTIONAL, type=MESSAGE), so `find_map_entry` must
@@ -673,14 +673,13 @@ fn test_map_entry_guard_prevents_suffix_collision() {
 
 #[test]
 fn test_repeated_suffix_collision_still_warns() {
-    // Regression for the LABEL_REPEATED suffix-collision case:
+    // Suffix collision, repeated form:
     // `dep.proto` exports `dep.PricesEntry`. A `repeated dep.PricesEntry legacy`
     // field has the same label and type as a real map field, so `is_map_field`
-    // would match the synthetic `Order.PricesEntry` entry via suffix. The fix
-    // runs warn_excluded_refs_field unconditionally first, so `legacy` is
-    // checked before the map-value branch is entered — the field check correctly
-    // warns while the map-value branch finds no cross-package type_name in the
-    // entry's value slot.
+    // matches the synthetic `Order.PricesEntry` entry via suffix. The field
+    // check runs before the map-value branch, so `legacy` warns as an excluded
+    // reference, and the map-value branch then finds no cross-package
+    // type_name in the entry's value slot, so it adds nothing.
     let dep = dep_file_with_message("dep.proto", "dep", "PricesEntry");
     let mut kept = proto3_file("kept.proto");
     kept.package = Some("svc".to_string());
@@ -730,13 +729,19 @@ fn test_repeated_suffix_collision_still_warns() {
     )
     .unwrap();
 
-    assert!(
-        warnings.iter().any(|w| matches!(
-            w,
-            CodeGenWarning::ExcludedPackageFieldRef { type_fqn, field_name, .. }
-                if type_fqn == ".dep.PricesEntry" && field_name == "legacy"
-        )),
-        "must warn for a repeated excluded type even when its simple name \
+    let legacy_warnings = warnings
+        .iter()
+        .filter(|w| {
+            matches!(
+                w,
+                CodeGenWarning::ExcludedPackageFieldRef { type_fqn, field_name, .. }
+                    if type_fqn == ".dep.PricesEntry" && field_name == "legacy"
+            )
+        })
+        .count();
+    assert_eq!(
+        legacy_warnings, 1,
+        "must warn exactly once for a repeated excluded type whose simple name \
          collides with a synthetic map-entry: {warnings:?}"
     );
 }
