@@ -1742,8 +1742,8 @@ impl Config {
                 Some(stem) => Some(format!("{stem}.descriptor_set.binpb")),
                 None => {
                     return Err(format!(
-                        "shared_descriptor_pool requires include_file to have a file-name \
-                         stem (the descriptor-set sidecar is named after it); \
+                        "shared_descriptor_pool requires include_file to have a file name \
+                         (the descriptor-set sidecar is named after its stem); \
                          got {include_name:?}"
                     )
                     .into());
