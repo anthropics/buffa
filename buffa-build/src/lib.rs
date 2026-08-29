@@ -543,8 +543,19 @@ impl Config {
     ///
     /// Requires [`include_file`](Self::include_file) (the shared module is
     /// emitted into that file at the tree root) and reflection to be enabled;
-    /// [`compile`](Self::compile) errors otherwise. See
+    /// [`compile`](Self::compile) errors otherwise. The include file name must
+    /// be a bare file name, not a path. See
     /// [`CodeGenConfig::shared_descriptor_pool`].
+    ///
+    /// In this mode the generated tree must be consumed *through the include
+    /// file* (`include!(concat!(env!("OUT_DIR"), "/gen_mod.rs"))`, or the
+    /// checked-in `mod gen;` flavour). Each package delegates to `__buffa_fds`
+    /// by a fixed number of `super::` hops from the tree root, so wiring
+    /// packages individually with `buffa::include_proto!` does not compile
+    /// here: the delegation resolves against whatever module the macro lands
+    /// in. Two shared-pool `compile()` calls included at the same module scope
+    /// likewise collide on `__buffa_fds`; give each include file its own
+    /// module.
     #[must_use]
     pub fn shared_descriptor_pool(mut self, enabled: bool) -> Self {
         self.codegen_config.shared_descriptor_pool = enabled;
@@ -1709,7 +1720,7 @@ impl Config {
         // prerequisite rather than a downstream one. `generate_reflection` is
         // also enforced in `buffa-codegen`, but catching it here gives a
         // buffa-build-shaped message.
-        if self.codegen_config.shared_descriptor_pool {
+        let sidecar = if self.codegen_config.shared_descriptor_pool {
             if !self.codegen_config.generate_reflection {
                 return Err("shared_descriptor_pool requires reflection to be enabled \
                             (call generate_reflection(true) or reflect_mode(...))"
@@ -1725,16 +1736,22 @@ impl Config {
             };
             // The sidecar is named after the include file's stem; reject names
             // without one ("", ".", "..") here rather than writing a stray
-            // misnamed sidecar before the include-file write fails.
-            if Path::new(include_name).file_stem().is_none() {
-                return Err(format!(
-                    "shared_descriptor_pool requires include_file to have a file name \
-                     (the descriptor-set sidecar is named after its stem); \
-                     got {include_name:?}"
-                )
-                .into());
+            // misnamed sidecar before the include-file write fails. The stem
+            // is computed once here and reused when the sidecar is written.
+            match Path::new(include_name).file_stem().and_then(|s| s.to_str()) {
+                Some(stem) => Some(format!("{stem}.descriptor_set.binpb")),
+                None => {
+                    return Err(format!(
+                        "shared_descriptor_pool requires include_file to have a file-name \
+                         stem (the descriptor-set sidecar is named after it); \
+                         got {include_name:?}"
+                    )
+                    .into());
+                }
             }
-        }
+        } else {
+            None
+        };
 
         // When out_dir is explicitly set, the include file should use
         // relative `include!("foo.rs")` paths (the index is a sibling of the
@@ -1828,29 +1845,22 @@ impl Config {
 
         // Shared-pool mode needs a tree root to host the one `__buffa_fds`
         // module; that root is the include file. The reflection and
-        // include-file prerequisites were validated up front, so the flag can
-        // be read directly here.
-        let shared_pool = self.codegen_config.shared_descriptor_pool;
+        // include-file prerequisites were validated up front, and `sidecar`
+        // is `Some` exactly when the mode is on.
 
         // Generate the include file if requested.
         if let Some(ref include_name) = self.include_file {
             let tree = generate_include_file(&output_entries, relative_includes);
-            let include_content = if shared_pool {
+            let include_content = if let Some(sidecar) = sidecar {
                 // Embed the descriptor set once, at the tree root, instead of a
                 // per-package copy. Write it as a binary sidecar and
                 // `include_bytes!` it from the shared `__buffa_fds` module, so
                 // the bytes never expand into Rust byte-literal source. Every
                 // package's `__buffa::reflect` delegates to that module.
-                // Derive the sidecar name from the include file so two
-                // compile() calls sharing an out_dir but writing different
-                // include files don't clobber each other's descriptor set.
-                let sidecar = format!(
-                    "{}.descriptor_set.binpb",
-                    Path::new(include_name)
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .expect("validated up front: include_file has a UTF-8 file-name stem")
-                );
+                // The sidecar name was derived from the include file's stem up
+                // front, so two compile() calls sharing an out_dir but writing
+                // different include files don't clobber each other's
+                // descriptor set.
                 let fds_bytes = buffa_codegen::encode_descriptor_set(
                     &fds.file,
                     &self.codegen_config.feature_overrides,
@@ -1873,10 +1883,16 @@ impl Config {
                 // first-line generated-file detection (rustfmt's five-line
                 // window, diff-collapse heuristics) misses a mid-file marker —
                 // and put the shared root module between the header and the
-                // `include!` items, mirroring the packaging plugin's splice.
+                // `include!` items. This relies on `generate_include_file`
+                // passing `emit_inner_allow = false`: an inner `#![allow]` on
+                // the tree's second line would be illegal after an outer item.
                 let (header, items) = tree
                     .split_once('\n')
                     .expect("generate_module_tree output starts with a header line");
+                debug_assert!(
+                    !items.trim_start().starts_with("#!["),
+                    "shared root module cannot precede an inner attribute"
+                );
                 format!("{header}\n{root}{items}")
             } else {
                 tree

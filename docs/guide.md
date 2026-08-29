@@ -1977,12 +1977,17 @@ once instead: a single `__buffa_fds` module at the module-tree root holds the
 one `FILE_DESCRIPTOR_SET_BYTES` copy and the one lazily-built pool, and every
 package's `descriptor_pool()` / `FILE_DESCRIPTOR_SET_BYTES` delegates to it —
 the per-package API is unchanged, but all packages observe the same pool
-instance. From `build.rs`, enable it with `.shared_descriptor_pool(true)`
-(requires `.include_file(...)` and reflection; the descriptor set is written
-as a `*.descriptor_set.binpb` sidecar and `include_bytes!`-d, so commit the
-sidecar alongside a checked-in `out_dir`). Packages generated with the option
-*off* silently keep building their own separate pools — set it uniformly
-across a tree.
+instance, which also lets `DynamicMessage` values from different packages be
+compared and composed (those operations require one pool). From `build.rs`,
+enable it with `.shared_descriptor_pool(true)` (requires `.include_file(...)`
+and reflection; the descriptor set is written as a `*.descriptor_set.binpb`
+sidecar and `include_bytes!`-d, so commit the sidecar alongside a checked-in
+`out_dir`, and mark it `binary` in `.gitattributes`). Consume the tree through
+the include file: each package delegates to the shared root by a fixed number
+of `super::` hops, so `include_proto!` per package does not compile in this
+mode, and two shared-pool `compile()` calls need separate enclosing modules.
+Packages generated with the option *off* silently keep building their own
+separate pools — set it uniformly across a tree.
 
 Two Cargo notes:
 

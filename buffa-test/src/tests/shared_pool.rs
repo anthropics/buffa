@@ -17,6 +17,14 @@ fn packages_share_one_pool_instance() {
         std::sync::Arc::ptr_eq(pool_a, pool_b),
         "both packages must delegate to the one shared pool"
     );
+    // And the bytes themselves are physically one copy, not two equal ones.
+    assert!(
+        core::ptr::eq(
+            a::FILE_DESCRIPTOR_SET_BYTES.as_ptr(),
+            b::FILE_DESCRIPTOR_SET_BYTES.as_ptr()
+        ),
+        "both packages must alias the one embedded descriptor set"
+    );
 }
 
 #[test]
