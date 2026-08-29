@@ -1823,3 +1823,47 @@ fn custom_deserialize_qualifies_core_paths() {
         "expecting() must not emit a bare core::fmt path: {content}"
     );
 }
+
+#[test]
+fn json_codegen_qualifies_serde_paths() {
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package serde;
+        message RegisterRequest {
+          oneof kind {
+            string a = 1;
+            int32 b = 2;
+          }
+        }
+        "#,
+        &json_with_views(),
+    );
+
+    for bare_path in [
+        "impl serde::Serialize",
+        "S: serde::Serializer",
+        "use serde::ser::SerializeMap",
+        "Err(serde::de::Error::custom",
+        "impl<'de> serde::Deserialize<'de>",
+        "D: serde::Deserializer<'de>",
+        "impl<'de> serde::de::Visitor<'de>",
+        "A: serde::de::MapAccess<'de>",
+        "::<serde::de::IgnoredAny>",
+        "impl<'de> serde::de::DeserializeSeed<'de>",
+    ] {
+        assert!(
+            !content.contains(bare_path),
+            "generated code must not contain bare {bare_path}: {content}"
+        );
+    }
+
+    assert!(
+        content.contains("impl ::serde::Serialize for Kind"),
+        "oneof serialization must use an absolute serde path: {content}"
+    );
+    assert!(
+        content.contains("impl<'de> ::serde::Deserialize<'de> for RegisterRequest"),
+        "custom deserialization must use an absolute serde path: {content}"
+    );
+}

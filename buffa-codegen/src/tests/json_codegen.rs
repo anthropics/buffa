@@ -208,7 +208,7 @@ fn test_json_oneof_field_is_flattened() {
     );
     // The oneof enum must have a custom Serialize impl.
     assert!(
-        content.contains("impl serde::Serialize for Kind"),
+        content.contains("impl ::serde::Serialize for Kind"),
         "oneof enum must have Serialize impl: {content}"
     );
 }

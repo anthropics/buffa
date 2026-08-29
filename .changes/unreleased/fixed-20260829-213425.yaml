@@ -1,0 +1,3 @@
+kind: Fixed
+body: Generated JSON implementations now use absolute `::serde` paths, so protobuf packages named `serde` no longer shadow the serde crate in custom message and oneof serialization and deserialization code.
+time: 2026-08-29T21:34:25+02:00
