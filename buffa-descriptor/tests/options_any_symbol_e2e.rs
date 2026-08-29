@@ -50,7 +50,11 @@ fn empty_wkt_unknown_fields_follow_parse_mode() {
     let input = r#"{"futureField":{"nested":[1,2]},"anotherField":true}"#;
 
     let err = DynamicMessage::from_json(Arc::clone(&p), empty_idx, input).unwrap_err();
-    assert!(err.to_string().contains("unexpected field on Empty"));
+    assert!(
+        err.to_string()
+            .contains("unknown field \"futureField\" on message google.protobuf.Empty"),
+        "{err}"
+    );
 
     let parsed = DynamicMessage::from_json_ignoring_unknown(Arc::clone(&p), empty_idx, input)
         .expect("lenient parsing must ignore unknown Empty fields");
@@ -67,7 +71,12 @@ fn empty_wkt_inside_any_unknown_fields_follow_parse_mode() {
         "futureField": {"nested": [1, 2]}
     }"#;
 
-    assert!(DynamicMessage::from_json(Arc::clone(&p), any_idx, input).is_err());
+    let err = DynamicMessage::from_json(Arc::clone(&p), any_idx, input).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("unknown field \"futureField\" on message google.protobuf.Empty"),
+        "{err}"
+    );
 
     let parsed = DynamicMessage::from_json_ignoring_unknown(Arc::clone(&p), any_idx, input)
         .expect("lenient parsing must ignore unknown fields in Any<Empty>");

@@ -121,8 +121,11 @@ impl WktKind {
         d: D,
         ignore_unknown: bool,
     ) -> Result<DynamicMessage, D::Error> {
-        // Only `Any` recurses into a user-defined message type; the other
-        // WKTs are closed schemas with no unknown-field concept.
+        // Two WKTs consult `ignore_unknown`: `Any` recurses into a
+        // user-defined message type, and `Empty` parses from a plain object
+        // whose every member is an unknown field. The rest parse from a
+        // scalar (a type error, never an unknown field) or are open schemas
+        // that accept any member by construction.
         match self {
             Self::Any => deserialize_any(pool, midx, d, ignore_unknown),
             Self::Timestamp => {
@@ -158,11 +161,14 @@ impl WktKind {
                         write!(f, "an empty object")
                     }
                     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
-                        while map.next_key::<String>()?.is_some() {
-                            if !self.ignore_unknown {
-                                return Err(de::Error::custom("unexpected field on Empty"));
-                            }
-                            map.next_value::<de::IgnoredAny>()?;
+                        if self.ignore_unknown {
+                            while map.next_entry::<de::IgnoredAny, de::IgnoredAny>()?.is_some() {}
+                            return Ok(());
+                        }
+                        if let Some(key) = map.next_key::<String>()? {
+                            return Err(de::Error::custom(format!(
+                                "unknown field {key:?} on message google.protobuf.Empty"
+                            )));
                         }
                         Ok(())
                     }
