@@ -34,6 +34,17 @@
 //!   from the module tree. Repeatable; the leading dot is optional. Must
 //!   match the `exclude_package` passed to `protoc-gen-buffa` so the
 //!   `mod.rs` never `include!`s a stitcher the codegen plugin skipped.
+//! - `shared_descriptor_pool=true` — emit the shared `__buffa_fds` descriptor
+//!   module at the root of `mod.rs` (dedup mode). Same option name as on
+//!   `protoc-gen-buffa`, and the two **must match**: the codegen plugin emits
+//!   the per-package delegations, this plugin emits the root module they point
+//!   at. The descriptor set is embedded inline (a byte-string literal):
+//!   protoc's plugin protocol carries only UTF-8 text, so a binary
+//!   `include_bytes!` sidecar isn't possible here — inline still collapses the
+//!   per-package duplication to one copy. (`buffa-build`, which writes files
+//!   directly, uses a sidecar instead.) Feature gating (`gate_impls=true` on
+//!   `protoc-gen-buffa`) is not supported on this path; `protoc-gen-buffa`
+//!   rejects the combination.
 //!
 //! Invoke the plugin once per output tree — use multiple entries in
 //! buf.gen.yaml with different `out:` directories and filters to package
@@ -91,6 +102,7 @@ impl Filter {
 struct Selection {
     filter: Filter,
     exclude: Vec<String>,
+    shared_pool: bool,
 }
 
 impl Selection {
@@ -123,7 +135,11 @@ Options (default: include every package in file_to_generate):
   filter=services       only include packages declaring at least one service
   exclude_package=<pkg> drop a package (and its subpackages) from the tree;
                         repeatable, leading dot optional. Must match the
-                        exclude_package passed to protoc-gen-buffa.";
+                        exclude_package passed to protoc-gen-buffa.
+  shared_descriptor_pool=true
+                        emit the shared __buffa_fds descriptor module at the
+                        tree root. Must match the shared_descriptor_pool=true
+                        passed to protoc-gen-buffa.";
 
 fn main() {
     if let Some(arg) = std::env::args().nth(1) {
@@ -197,11 +213,36 @@ fn generate(request: &CodeGeneratorRequest) -> Result<CodeGeneratorResponse, Str
         .into_iter()
         .map(|p| (buffa_codegen::package_to_mod_filename(&p), p))
         .collect();
-    let content = buffa_codegen::generate_module_tree(
+    let mut content = buffa_codegen::generate_module_tree(
         &entries,
         buffa_codegen::IncludeMode::Relative(""),
         true,
     );
+
+    // Shared-pool mode: embed the descriptor set once, at the tree root, as an
+    // inline byte-string module (`FdsEmbedding::Inline` explains why the
+    // plugin protocol rules out a sidecar). The bytes cover the full
+    // transitive closure (every `proto_file`), matching what the per-package
+    // embedding would have carried, so cross-package reflection resolves.
+    if selection.shared_pool {
+        // No feature overrides here: this plugin never receives them (they are
+        // protoc-gen-buffa options), so it can't reproduce them. protoc-gen-buffa
+        // rejects `shared_descriptor_pool` + overrides, so a build that reaches
+        // this point has none — the empty slice matches the codegen side.
+        let fds_bytes = buffa_codegen::encode_descriptor_set(&request.proto_file, &[]);
+        // Gate is `None` for the same reason: this plugin never sees
+        // protoc-gen-buffa's gate config, and that plugin rejects the
+        // combination, so the root module is emitted unconditionally.
+        let root = buffa_codegen::shared_descriptor_root_module(
+            &fds_bytes,
+            buffa_codegen::FdsEmbedding::Inline,
+            None,
+        );
+        // Item order is irrelevant to the `super::` delegations, so the root
+        // module goes after the package tree; the tree's inner `#![allow]`
+        // stays the first item in the file.
+        content.push_str(&root);
+    }
 
     Ok(CodeGeneratorResponse {
         supported_features: Some(feature_flags()),
@@ -226,6 +267,16 @@ fn parse_options(params: &str) -> Result<Selection, String> {
                     return Err(format!("unknown filter {other:?}. Supported: services"));
                 }
             };
+        } else if let Some(value) = opt.strip_prefix("shared_descriptor_pool=") {
+            selection.shared_pool = match value.trim() {
+                "true" => true,
+                "false" => false,
+                other => {
+                    return Err(format!(
+                        "invalid shared_descriptor_pool value {other:?}, expected true or false"
+                    ));
+                }
+            };
         } else if let Some(value) = opt.strip_prefix("exclude_package=") {
             // Shares protoc-gen-buffa's normalization (one helper in
             // buffa-codegen), so both plugins drop the same packages and the
@@ -246,7 +297,7 @@ fn parse_options(params: &str) -> Result<Selection, String> {
             return Err(format!(
                 "unknown plugin option {opt:?}. \
                  Supported: filter=services, exclude_package=<pkg>, \
-                 element_memory_limit=<bytes>"
+                 element_memory_limit=<bytes>, shared_descriptor_pool=<bool>"
             ));
         }
     }
@@ -337,6 +388,49 @@ mod tests {
         let content = resp.file[0].content.as_deref().unwrap();
         assert!(content.contains("foo.v1.mod.rs"));
         assert!(!content.contains("bar.v1.mod.rs"));
+    }
+
+    #[test]
+    fn shared_pool_option_emits_shared_root_module() {
+        let req = request(
+            Some("shared_descriptor_pool=true"),
+            vec![
+                file("foo/v1/svc.proto", "foo.v1", true),
+                file("bar/v1/types.proto", "bar.v1", false),
+            ],
+        );
+        let resp = generate(&req).unwrap();
+        let content = resp.file[0].content.as_deref().unwrap();
+        assert!(
+            content.contains("pub mod __buffa_fds"),
+            "shared_descriptor_pool=true must emit the shared root module: {content}"
+        );
+        assert!(content.contains("FILE_DESCRIPTOR_SET_BYTES"));
+        // Still wires the package tree.
+        assert!(content.contains("foo.v1.mod.rs"));
+        // The tree's inner `#![allow(...)]` must stay the first item (inner
+        // attributes are rejected after any item), and the whole file must
+        // still be valid Rust with the root module appended.
+        let allow = content
+            .find("#![allow")
+            .expect("mod.rs must keep its inner allow");
+        let root = content.find("pub mod __buffa_fds").unwrap();
+        assert!(
+            allow < root,
+            "shared root module must not precede the inner attrs: {content}"
+        );
+        syn::parse_file(content).expect("mod.rs with the shared root module must parse");
+    }
+
+    #[test]
+    fn no_shared_pool_omits_shared_root_module() {
+        let req = request(None, vec![file("foo/v1/svc.proto", "foo.v1", true)]);
+        let resp = generate(&req).unwrap();
+        let content = resp.file[0].content.as_deref().unwrap();
+        assert!(
+            !content.contains("__buffa_fds"),
+            "without shared_descriptor_pool the root module must be absent: {content}"
+        );
     }
 
     #[test]

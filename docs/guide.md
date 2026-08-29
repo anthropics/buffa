@@ -134,6 +134,25 @@ mod gen;  // generated mod.rs handles #[allow] and module hierarchy
 
 See [`examples/bsr-quickstart/`](../examples/bsr-quickstart/) for a complete, runnable project using the remote plugin.
 
+With `reflection=true` (or `reflect_mode=bridge|vtable`) over many packages, add `shared_descriptor_pool=true` to **both** plugins. The descriptor set is then embedded once in a shared `__buffa_fds` module in the generated `mod.rs`, and every package's `descriptor_pool()` / `FILE_DESCRIPTOR_SET_BYTES` delegates to it — instead of each package embedding its own copy, which dominates crate size for large trees.
+
+```yaml
+version: v2
+plugins:
+  - remote: buf.build/anthropics/buffa
+    out: src/gen
+    opt:
+      - reflection=true
+      - shared_descriptor_pool=true
+  - local: protoc-gen-buffa-packaging
+    out: src/gen
+    strategy: all
+    opt:
+      - shared_descriptor_pool=true
+```
+
+> **`shared_descriptor_pool` spans both plugins.** Like `exclude_package`, set the same option on `protoc-gen-buffa` and `protoc-gen-buffa-packaging`, and give both plugins the same inputs: the packaging plugin builds the shared set from the files *it* receives, so a per-plugin `exclude_types:` or a narrower input set leaves the pool missing types the generated code reflects on (a runtime lookup failure). If only the codegen plugin has the option, the generated code fails to compile with an unresolved `__buffa_fds` (the per-package delegations point at a root module the packaging plugin never emitted). If only the packaging plugin has it, `mod.rs` carries an extra copy nothing references when reflection is on, and fails to compile with an unresolved `buffa_descriptor` when it is off. Feature overrides (`open_enums_in` / `override_feature_in`), feature gating (`gate_impls=true`), and `file_per_package` (the packaging-plugin-free workflow, which never emits the root module) are not supported with `shared_descriptor_pool` on the plugin path (`protoc-gen-buffa` rejects the combinations); `buffa-build` supports all three with a shared pool because one process emits the root itself.
+
 ### Using `buffa-build` in `build.rs`
 
 This approach compiles protos at build time via `build.rs`, which is familiar if you've used `prost-build` or `tonic-build`. It requires `protoc` on PATH (or `buf` if `.use_buf()` is configured).
@@ -592,6 +611,7 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `open_enums_in=<path>` | Shorthand for `override_feature_in=<path>=enum_type:OPEN`. Repeatable |
 | `reflection=true` | Emit reflection support (vtable mode) plus an embedded per-package descriptor pool — see [Runtime reflection](#runtime-reflection) |
 | `reflect_mode=off\|bridge\|vtable` | Finer-grained reflection selector; `reflection=true` is shorthand for `vtable` |
+| `shared_descriptor_pool=true` | Deduplicate the embedded descriptor set: per-package reflect modules delegate to one shared `__buffa_fds` root module. Pass a matching `shared_descriptor_pool=true` to `protoc-gen-buffa-packaging` so the root module is emitted. See [Runtime reflection](#runtime-reflection) |
 | `extern_path=.pkg=::rust` | Map a proto package — or a single type, e.g. `extern_path=.pkg.Type=::rust::Type` — to an external Rust path |
 | `exclude_package=.pkg` | Drop a proto package and its subpackages from generation (repeatable; leading dot optional). For option-only imports that `include_imports` pulls in but that are never used as field types, e.g. `buf.validate`, `gnostic`. **Pass the same `exclude_package` to `protoc-gen-buffa-packaging`** (see the note below the table) so the generated `mod.rs` omits the same packages. |
 | `file_per_package=true` | Emit one `<dotted.package>.rs` per package instead of per-proto-file content + a `<dotted.pkg>.mod.rs` stitcher. Use this with the remote plugin when you don't want to install `protoc-gen-buffa-packaging` — see [Remote plugin only](#remote-plugin-only-no-local-install). Under `strategy: directory`, requires the input module to be `PACKAGE_DIRECTORY_MATCH`-clean. |
@@ -1997,8 +2017,13 @@ sidecar and `include_bytes!`-d, so commit the sidecar alongside a checked-in
 the include file: each package delegates to the shared root by a fixed number
 of `super::` hops, so `include_proto!` per package does not compile in this
 mode, and two shared-pool `compile()` calls need separate enclosing modules.
-Packages generated with the option *off* silently keep building their own
-separate pools — set it uniformly across a tree.
+On the plugin path, pass `shared_descriptor_pool=true` to both
+`protoc-gen-buffa` and `protoc-gen-buffa-packaging` (see
+[Remote plugin](#remote-plugin-only-no-local-install) for the `buf.gen.yaml`
+shape and the combinations that path cannot support); the packaging plugin
+embeds the set inline in `mod.rs`, since the plugin protocol carries only
+text. Packages generated with the option *off* silently keep building their
+own separate pools — set it uniformly across a tree.
 
 Two Cargo notes:
 
