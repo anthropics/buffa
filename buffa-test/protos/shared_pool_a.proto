@@ -1,0 +1,10 @@
+// Shared descriptor pool e2e (`shared_descriptor_pool(true)`, `$OUT_DIR`
+// mode): package A of the two-package tree that must observe one shared pool.
+
+syntax = "proto3";
+
+package sharedpool.a;
+
+message MsgA {
+  int32 id = 1;
+}

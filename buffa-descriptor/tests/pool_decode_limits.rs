@@ -99,3 +99,181 @@ fn decode_and_decode_with_options_agree_on_defaults() {
     assert!(a.message_index("wide.p1.M1").is_some());
     assert_eq!(a.message_index("wide.p1.M1"), b.message_index("wide.p1.M1"));
 }
+
+/// A fully-qualified name is capped, which bounds two things at once.
+///
+/// The amplification: every descendant stores its own copy of the prefix,
+/// four times over, so `K` leaves under a `P`-byte prefix cost `4KP` bytes of
+/// pool from about `P + 7K` bytes of input. A message's `name` is a singular
+/// field, so the decode-time element budget never sees the prefix at all.
+///
+/// And the depth: pool construction walks nested messages recursively in four
+/// places with no depth counter, and each level adds at least one byte to the
+/// name, so the name cap is also a depth cap.
+#[test]
+fn a_long_prefix_is_refused_rather_than_stored_once_per_descendant() {
+    use buffa_descriptor::MAX_SYMBOL_LEN;
+
+    /// One message named `name`, holding `leaves` empty single-character
+    /// nested messages.
+    fn set_with_prefix(name: &str, leaves: usize) -> Vec<u8> {
+        let mut outer = DescriptorProto {
+            name: Some(name.to_string()),
+            ..Default::default()
+        };
+        for n in 0..leaves {
+            let c = char::from(b'a' + u8::try_from(n % 26).expect("fits a letter"));
+            outer.nested_type.push(DescriptorProto {
+                name: Some(format!("{c}{n}")),
+                ..Default::default()
+            });
+        }
+        FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("p.proto".to_string()),
+                package: Some("p".to_string()),
+                syntax: Some("proto3".to_string()),
+                message_type: vec![outer],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+        .encode_to_vec()
+    }
+
+    // Well inside the cap: a perfectly ordinary schema is untouched.
+    let ok = set_with_prefix("Outer", 64);
+    assert!(DescriptorPool::decode(&ok).is_ok());
+
+    // A prefix past the cap is refused, and the error says so — rather than
+    // being silently stored once per leaf.
+    let long = "L".repeat(MAX_SYMBOL_LEN + 1);
+    match DescriptorPool::decode(&set_with_prefix(&long, 8)) {
+        Err(PoolError::NameTooLong { len, limit }) => {
+            assert!(len > limit, "{len} should exceed {limit}");
+            assert_eq!(limit, MAX_SYMBOL_LEN);
+        }
+        other => panic!("expected NameTooLong, got {other:?}"),
+    }
+}
+
+/// The cap is reached in pass 1, before the three later recursive walks run,
+/// so deep nesting cannot drive them past it either.
+///
+/// Built through `DescriptorPool::new` rather than `decode`, deliberately.
+/// `new` takes an already-materialized `FileDescriptorSet`, so the decoder's
+/// recursion limit never applies — that is the path where the four
+/// uncounted recursive walks could previously run to a stack overflow, which
+/// is a `SIGSEGV` rather than a catchable error. It also keeps the test from
+/// depending on where the decode recursion limit happens to sit.
+#[test]
+fn nesting_deeper_than_the_name_cap_is_refused() {
+    use buffa_descriptor::MAX_SYMBOL_LEN;
+
+    // Past the decoder's own recursion limit, so this nesting could only ever
+    // arrive through `new`.
+    let depth = 200;
+    let mut inner = DescriptorProto {
+        name: Some("x".repeat(20)),
+        ..Default::default()
+    };
+    for _ in 0..depth {
+        inner = DescriptorProto {
+            name: Some("x".repeat(20)),
+            nested_type: vec![inner],
+            ..Default::default()
+        };
+    }
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("d.proto".to_string()),
+            package: Some("d".to_string()),
+            syntax: Some("proto3".to_string()),
+            message_type: vec![inner],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert!(
+        (depth + 1) * 21 > MAX_SYMBOL_LEN,
+        "the fixture must actually exceed the cap"
+    );
+    assert!(matches!(
+        DescriptorPool::new(set),
+        Err(PoolError::NameTooLong { .. })
+    ));
+}
+
+/// The issue's trigger shape for #336: 50 messages each nesting 26 empty
+/// one-character messages. Every nested element costs ~5 wire bytes and
+/// materializes a full `DescriptorProto`, so the element-to-encoded ratio
+/// (~71.5x on 64-bit) exceeds the 64x multiplier generated
+/// `descriptor_pool()` scales its bound by.
+fn short_name_descriptor_set() -> Vec<u8> {
+    const NAMES: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
+    let name = |i: usize| Some((NAMES[i % NAMES.len()] as char).to_string());
+    let mut file = FileDescriptorProto {
+        name: Some("a".to_string()),
+        ..Default::default()
+    };
+    for i in 0..50 {
+        file.message_type.push(DescriptorProto {
+            name: name(i),
+            nested_type: (0..26)
+                .map(|j| DescriptorProto {
+                    name: name(j),
+                    ..Default::default()
+                })
+                .collect(),
+            ..Default::default()
+        });
+    }
+    FileDescriptorSet {
+        file: vec![file],
+        ..Default::default()
+    }
+    .encode_to_vec()
+}
+
+fn decodes_under(bytes: &[u8], limit: usize) -> bool {
+    DecodeOptions::new()
+        .with_element_memory_limit(limit)
+        .decode_from_slice::<FileDescriptorSet>(bytes)
+        .is_ok()
+}
+
+/// Why generated `descriptor_pool()` floors its scaled bound (#336): the
+/// element charge is `size_of::<DescriptorProto>()` per nested message, so a
+/// schema made of short names amplifies past 64x and the bare `len * 64`
+/// bound rejects what the flat default accepted.
+///
+/// The ratio scales with pointer width (descriptor types are mostly `Vec`
+/// and `Option<String>` fields), so on 32-bit targets the same shape lands
+/// under 64x and this no longer demonstrates the bug.
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn scaled_bound_alone_rejects_short_name_schemas() {
+    let bytes = short_name_descriptor_set();
+    assert!(
+        !decodes_under(&bytes, bytes.len().saturating_mul(64)),
+        "expected the un-floored 64x bound to reject this shape; if it now \
+         decodes, the shape is no longer a #336 trigger and needs replacing"
+    );
+}
+
+/// With the floor, the generated bound can never be tighter than the
+/// untrusted-input default, so anything the default accepts still decodes.
+#[test]
+fn floored_bound_accepts_what_the_default_accepts() {
+    let bytes = short_name_descriptor_set();
+    let floored = bytes
+        .len()
+        .saturating_mul(64)
+        .max(buffa::DEFAULT_ELEMENT_MEMORY_LIMIT);
+    assert!(decodes_under(&bytes, floored), "{} bytes", bytes.len());
+    // The floor is what binds here; the scaled term only takes over past
+    // 512 KiB of embedded descriptor bytes.
+    assert_eq!(floored, buffa::DEFAULT_ELEMENT_MEMORY_LIMIT);
+    assert_eq!(buffa::DEFAULT_ELEMENT_MEMORY_LIMIT / 64, 512 * 1024);
+}

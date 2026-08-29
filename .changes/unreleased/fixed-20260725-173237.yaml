@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Reflective `DynamicMessage` JSON integer decoding now matches generated messages** (#353). Quoted decimal and exponent forms parse exactly across the full `i64`/`u64` range (a quoted `"9007199254740993.0"` was previously rejected after a lossy `f64` round trip), and unquoted integer-valued floats above 2^52 - 1 are now rejected, as the generated decoders have done since 0.9.0, because `serde_json` can round such tokens to an adjacent integer before the decoder sees them. Reflective decodes that relied on an unquoted value in that range must quote it. The reflective path now routes through the same `json_helpers` with-modules as generated code, so the two cannot drift apart again.'
+time: 2026-07-25T17:32:37.281642+02:00

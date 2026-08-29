@@ -1181,7 +1181,7 @@ fn generate_custom_deserialize(
                 impl<'de> serde::de::Visitor<'de> for _V {
                     type Value = #name_ident;
 
-                    fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                    fn expecting(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                         f.write_str(#expecting_msg)
                     }
 

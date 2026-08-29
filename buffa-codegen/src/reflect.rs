@@ -181,8 +181,13 @@ pub(crate) fn encode_fds_once(file_descriptors: &[FileDescriptorProto]) -> Vec<u
 /// [`shared_descriptor_pool`](crate::CodeGenConfig::shared_descriptor_pool),
 /// which emits [`reflect_pool_module_shared`] delegations instead and one
 /// [`shared_root_module`] at the tree root.
+///
+/// Emitted as a single `b"..."` byte-string literal so this constant's
+/// token count — and the codegen time and memory it costs — stays
+/// independent of `fds_bytes`'s length, which can reach the tens of
+/// megabytes for a codegen run spanning a large proto tree.
 pub(crate) fn reflect_pool_module(fds_bytes: &[u8]) -> TokenStream {
-    let byte_literals = fds_bytes.iter().map(|b| quote! { #b });
+    let fds_bytes_literal = proc_macro2::Literal::byte_string(fds_bytes);
     quote! {
         /// Reflection support: embedded descriptor pool shared by this
         /// package's [`Reflectable`](::buffa_descriptor::reflect::Reflectable)
@@ -195,7 +200,7 @@ pub(crate) fn reflect_pool_module(fds_bytes: &[u8]) -> TokenStream {
             /// also suitable for shipping the schema over the wire.
             /// Re-exported at the package root — prefer that path over
             /// going through `__buffa`.
-            pub const FILE_DESCRIPTOR_SET_BYTES: &[u8] = &[#(#byte_literals),*];
+            pub const FILE_DESCRIPTOR_SET_BYTES: &[u8] = #fds_bytes_literal;
 
             /// The lazily-built descriptor pool for this package's
             /// `Reflectable` impls. Built from
@@ -208,6 +213,10 @@ pub(crate) fn reflect_pool_module(fds_bytes: &[u8]) -> TokenStream {
             /// input keeps the bound correct at any schema size while staying
             /// finite, so corrupt embedded bytes still fail rather than
             /// exhausting memory.
+            ///
+            /// The scaled bound is floored at
+            /// [`DEFAULT_ELEMENT_MEMORY_LIMIT`](::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
+            /// so it is never tighter than the untrusted-input default.
             ///
             /// # Panics
             ///
@@ -222,7 +231,10 @@ pub(crate) fn reflect_pool_module(fds_bytes: &[u8]) -> TokenStream {
                 POOL.get_or_init(|| {
                     let options = ::buffa::DecodeOptions::new()
                         .with_element_memory_limit(
-                            FILE_DESCRIPTOR_SET_BYTES.len().saturating_mul(64),
+                            FILE_DESCRIPTOR_SET_BYTES
+                                .len()
+                                .saturating_mul(64)
+                                .max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
                         );
                     ::buffa::alloc::sync::Arc::new(
                         ::buffa_descriptor::DescriptorPool::decode_with_options(
@@ -441,12 +453,13 @@ pub(crate) fn reflect_reexports(buffa_path: &TokenStream, gate: Option<&str>) ->
 }
 
 const _: usize = {
-    // Documentation breadcrumb: the byte literal embedding produces ~3 bytes
-    // of source per descriptor byte (`123, ` for each). A 50KB FDS → ~150KB
-    // of source, which prettyplease and rustc handle without issue. When a
-    // consumer's FDS is large enough that this matters — or a multi-package
-    // run would duplicate it — `shared_descriptor_pool` hoists one copy to a
-    // tree-root module.
+    // Documentation breadcrumb: a byte-string literal still renders between
+    // 1 and 4 source characters per input byte — printable-ASCII bytes render
+    // as themselves, the rest escape as `\xNN` or a short escape sequence.
+    // Descriptor sets are name-heavy, so about 1.5x is typical (the checked-in
+    // WKT set is 2428 bytes and renders as 3575 characters); a 22MB encoded
+    // FileDescriptorSet therefore emits a few tens of MB of generated source
+    // for this one constant, which prettyplease and rustc handle without issue.
     0
 };
 
@@ -488,6 +501,65 @@ mod tests {
         let parsed = syn::parse2::<syn::ItemMod>(tokens.clone());
         assert!(parsed.is_ok(), "generated module must parse: {tokens}");
         assert!(tokens.to_string().contains("FILE_DESCRIPTOR_SET_BYTES"));
+        // #336: the emitted bound must floor at the untrusted-input default,
+        // not just scale with length. Match the code form with spacing
+        // stripped — the doc comment above it names the same constant, so a
+        // bare substring check would pass on the doc text alone.
+        let code = tokens.to_string().replace(' ', "");
+        assert!(
+            code.contains(".saturating_mul(64).max(::buffa::DEFAULT_ELEMENT_MEMORY_LIMIT)"),
+            "descriptor_pool() must floor its scaled bound at \
+             DEFAULT_ELEMENT_MEMORY_LIMIT (#336): {tokens}"
+        );
+    }
+
+    #[test]
+    fn reflect_pool_module_emits_one_token_regardless_of_fds_size() {
+        // Token count (and thus codegen time/memory) must stay independent
+        // of `fds_bytes`'s length.
+        let small = reflect_pool_module(&[0u8; 8]);
+        let large = reflect_pool_module(&[0u8; 1_000_000]);
+        // Recurses into delimited groups so a bracket group's contents
+        // (e.g. an array literal) are counted too, rather than treated as
+        // one opaque token.
+        fn count_tokens_recursive(ts: TokenStream) -> usize {
+            ts.into_iter()
+                .map(|tt| match tt {
+                    proc_macro2::TokenTree::Group(g) => 1 + count_tokens_recursive(g.stream()),
+                    _ => 1,
+                })
+                .sum()
+        }
+        assert_eq!(
+            count_tokens_recursive(small),
+            count_tokens_recursive(large.clone()),
+            "token count must not scale with the FDS byte length"
+        );
+        // And the byte data itself must actually be present and correct —
+        // a `b"..."` literal, not silently truncated or a placeholder.
+        let decoded = syn::parse2::<syn::ItemMod>(large)
+            .expect("generated module must parse")
+            .content
+            .expect("module must have a body")
+            .1;
+        let konst = decoded
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Const(c) if c.ident == "FILE_DESCRIPTOR_SET_BYTES" => Some(c),
+                _ => None,
+            })
+            .expect("FILE_DESCRIPTOR_SET_BYTES const must be present");
+        // A byte-string literal (`b"..."`) already has type `&'static [u8; N]`,
+        // which unsize-coerces directly to the const's declared `&[u8]` type —
+        // no explicit `&` wrapper needed in the emitted source.
+        let syn::Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::ByteStr(bs),
+            ..
+        }) = konst.expr.as_ref()
+        else {
+            panic!("expected a byte-string literal for FILE_DESCRIPTOR_SET_BYTES");
+        };
+        assert_eq!(bs.value(), vec![0u8; 1_000_000]);
     }
 
     #[test]
@@ -553,10 +625,10 @@ mod tests {
             rendered.contains("super :: super :: super :: super :: __buffa_fds"),
             "delegation path must climb package depth + 2 supers: {rendered}"
         );
-        // The whole point: no per-package byte-literal array.
+        // The whole point: no per-package descriptor constant of any shape.
         assert!(
-            !rendered.contains("FILE_DESCRIPTOR_SET_BYTES : & [u8] = &"),
-            "shared mode must not embed a per-package byte array: {rendered}"
+            !rendered.contains("FILE_DESCRIPTOR_SET_BYTES : & [u8] ="),
+            "shared mode must not embed a per-package descriptor set: {rendered}"
         );
         // Consumer paths preserved: the constant is still reachable here (as a
         // re-export) and the accessor is still named `descriptor_pool`.
@@ -622,10 +694,10 @@ mod tests {
         assert!(rendered.contains("__buffa_fds"));
         assert!(rendered.contains("include_bytes !"), "{rendered}");
         assert!(rendered.contains("descriptor_set.binpb"), "{rendered}");
-        // No decimal byte-literal array in include_bytes mode — the source-size win.
+        // No inline byte-string literal in include_bytes mode — the source-size win.
         assert!(
-            !rendered.contains("FILE_DESCRIPTOR_SET_BYTES : & [u8] = & ["),
-            "include_bytes mode must not inline a byte array: {rendered}"
+            !rendered.contains("FILE_DESCRIPTOR_SET_BYTES : & [u8] = b\""),
+            "include_bytes mode must not inline the bytes: {rendered}"
         );
     }
 

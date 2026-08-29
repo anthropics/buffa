@@ -36,10 +36,7 @@ use buffa::types::{
     sint64_encoded_len, uint32_encoded_len, uint64_encoded_len,
 };
 use buffa::unknown_fields::UnknownFields;
-use buffa::{
-    DecodeContext, DecodeError, Message, UnknownField, UnknownFieldData,
-    DEFAULT_UNKNOWN_FIELD_LIMIT, RECURSION_LIMIT,
-};
+use buffa::{DecodeContext, DecodeError, Message, UnknownField, UnknownFieldData};
 
 use super::message::{ReflectCow, ReflectError, ReflectMessage, ReflectMessageMut};
 use super::value::{MapKey, MapValue, Value, ValueRef};
@@ -254,7 +251,13 @@ impl DynamicMessage {
         })
     }
 
-    /// Decode wire bytes against the descriptor.
+    /// Decode wire bytes against the descriptor under the untrusted-input
+    /// defaults (see [`DecodeOptions::new`](buffa::DecodeOptions::new)).
+    ///
+    /// Use [`decode_with_options`](Self::decode_with_options) when the bytes
+    /// are your own rather than a peer's — re-decoding something this process
+    /// just encoded, for instance — and the defaults would only reject work
+    /// already paid for.
     ///
     /// # Errors
     ///
@@ -269,22 +272,90 @@ impl DynamicMessage {
         Ok(msg)
     }
 
-    /// Merge additional wire bytes into this message.
+    /// Decode wire bytes against the descriptor under caller-supplied limits.
+    ///
+    /// [`decode`](Self::decode) applies the untrusted-input defaults, which is
+    /// what you want for bytes off a socket. Use this when the bytes are your
+    /// own — re-decoding something this process just encoded, for instance —
+    /// and the defaults would only reject work already paid for.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`DecodeError`] if the wire data is malformed or exceeds one
+    /// of the supplied limits.
+    pub fn decode_with_options(
+        pool: Arc<DescriptorPool>,
+        msg_idx: MessageIndex,
+        bytes: &[u8],
+        options: &buffa::DecodeOptions,
+    ) -> Result<Self, DecodeError> {
+        let mut msg = Self::new(pool, msg_idx);
+        msg.merge_with_options(bytes, options)?;
+        Ok(msg)
+    }
+
+    /// Merge additional wire bytes into this message under the
+    /// untrusted-input defaults.
+    ///
+    /// Equivalent to
+    /// [`merge_with_options`](Self::merge_with_options) with
+    /// [`DecodeOptions::new`](buffa::DecodeOptions::new).
     ///
     /// # Errors
     ///
     /// Returns a [`DecodeError`] if the wire data is malformed.
     pub fn merge(&mut self, bytes: &[u8]) -> Result<(), DecodeError> {
-        let limit = core::cell::Cell::new(DEFAULT_UNKNOWN_FIELD_LIMIT);
-        let elem_budget = core::cell::Cell::new(buffa::DEFAULT_ELEMENT_MEMORY_LIMIT);
+        self.merge_with_options(bytes, &buffa::DecodeOptions::new())
+    }
+
+    /// Merge additional wire bytes under caller-supplied limits.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`DecodeError`] if the wire data is malformed or exceeds one
+    /// of the supplied limits.
+    pub fn merge_with_options(
+        &mut self,
+        bytes: &[u8],
+        options: &buffa::DecodeOptions,
+    ) -> Result<(), DecodeError> {
+        if bytes.len() > options.max_message_size() {
+            return Err(DecodeError::MessageTooLarge);
+        }
+        let limit = core::cell::Cell::new(options.unknown_field_limit());
+        let elem_budget = core::cell::Cell::new(options.element_memory_limit());
         let mut buf = bytes;
         self.merge_buf(
             &mut buf,
-            DecodeContext::new(RECURSION_LIMIT, &limit).with_element_memory(&elem_budget),
+            DecodeContext::new(options.recursion_limit(), &limit).with_element_memory(&elem_budget),
         )
     }
 
     fn merge_buf(&mut self, buf: &mut impl Buf, ctx: DecodeContext<'_>) -> Result<(), DecodeError> {
+        self.normalizing(|s| s.merge_buf_fields(buf, ctx))
+    }
+
+    /// Run a field loop, then restore the sorted invariant on every map field.
+    ///
+    /// Map entries are appended unsorted during a loop and sorted once at the
+    /// end, so every loop over `merge_one_field` must go through here — on the
+    /// error path too, or a partially-decoded message escapes with maps whose
+    /// binary-search lookups silently miss.
+    fn normalizing<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        let result = f(self);
+        for value in self.fields.values_mut() {
+            if let Value::Map(m) = value {
+                m.normalize();
+            }
+        }
+        result
+    }
+
+    fn merge_buf_fields(
+        &mut self,
+        buf: &mut impl Buf,
+        ctx: DecodeContext<'_>,
+    ) -> Result<(), DecodeError> {
         while buf.has_remaining() {
             let tag = Tag::decode(buf)?;
             self.merge_one_field(tag, buf, ctx)?;
@@ -299,7 +370,7 @@ impl DynamicMessage {
         group_field_number: u32,
         ctx: DecodeContext<'_>,
     ) -> Result<(), DecodeError> {
-        loop {
+        self.normalizing(|s| loop {
             let tag = Tag::decode(buf)?;
             if tag.wire_type() == WireType::EndGroup {
                 if tag.field_number() != group_field_number {
@@ -307,8 +378,8 @@ impl DynamicMessage {
                 }
                 return Ok(());
             }
-            self.merge_one_field(tag, buf, ctx)?;
-        }
+            s.merge_one_field(tag, buf, ctx)?;
+        })
     }
 
     fn merge_one_field(
@@ -502,6 +573,10 @@ impl DynamicMessage {
             // Take a sub-buffer of `len` bytes and decode elements from it.
             let mut packed = buf.copy_to_bytes(len);
             while packed.has_remaining() {
+                // Charged, unlike the generated decoder: that exemption is
+                // sized for a `Vec<i32>`, and this store is a `Vec<Value>`.
+                // See `DecodeContext::register_element_memory`.
+                ctx.register_element_memory(core::mem::size_of::<Value>())?;
                 list.push(decode_packed_element(elem, number, &mut packed)?);
             }
             return Ok(());
@@ -543,6 +618,9 @@ impl DynamicMessage {
             while packed.has_remaining() {
                 let raw = decode_int32(&mut packed)?;
                 if self.enum_value_is_known(eidx, Some(EnumType::Closed), raw) {
+                    // Same charge `merge_list_field` applies; this is a
+                    // parallel implementation of the same work.
+                    ctx.register_element_memory(core::mem::size_of::<Value>())?;
                     known.push(Value::EnumNumber(raw));
                 } else {
                     self.record_unknown_enum(number, raw, ctx)?;
@@ -551,6 +629,7 @@ impl DynamicMessage {
         } else {
             let raw = decode_int32(buf)?;
             if self.enum_value_is_known(eidx, Some(EnumType::Closed), raw) {
+                ctx.register_element_memory(core::mem::size_of::<Value>())?;
                 known.push(Value::EnumNumber(raw));
             } else {
                 self.record_unknown_enum(number, raw, ctx)?;
@@ -609,17 +688,16 @@ impl DynamicMessage {
             match entry_tag.field_number() {
                 1 => key = Some(decode_map_key(key_ty, entry_tag, &mut entry)?),
                 2 => {
-                    // The map entry is a sub-message on the wire, so it
-                    // consumes one depth level. (The previous code used
-                    // `depth.saturating_sub(1)` here, which let scalar map
-                    // values through at exactly depth 0; erroring one level
-                    // earlier is intentional.)
-                    value = Some(self.decode_element_no_alias(
-                        value_kind,
-                        entry_tag,
-                        &mut entry,
-                        ctx.descend()?,
-                    )?);
+                    // No `descend()` for the entry itself. A message-typed
+                    // value descends once inside `decode_element_no_alias`,
+                    // and that single level is what the owned decoder
+                    // (`map_codec`) and the view decoder each spend on a
+                    // message-valued map entry. Charging a second one here
+                    // would make this decoder reject map nesting the other
+                    // two accept, which the infallible
+                    // `ReflectMessage::to_dynamic` cannot report.
+                    value =
+                        Some(self.decode_element_no_alias(value_kind, entry_tag, &mut entry, ctx)?);
                 }
                 _ => skip_field_depth(entry_tag, &mut entry, ctx.depth())?,
             }
@@ -635,11 +713,11 @@ impl DynamicMessage {
             .or_insert_with(|| Value::Map(MapValue::new()))
         {
             Value::Map(m) => {
-                m.insert(k, v);
+                m.push_unsorted(k, v);
             }
             other => {
                 let mut m = MapValue::new();
-                m.insert(k, v);
+                m.push_unsorted(k, v);
                 *other = Value::Map(m);
             }
         }
@@ -691,17 +769,23 @@ impl DynamicMessage {
         }
         let k = key.unwrap_or_else(|| default_map_key(key_ty));
         let v = value.unwrap_or_else(|| default_value(SingularKind::Enum(eidx), &self.pool));
+        // Same charge the ordinary map path applies; this parallel
+        // closed-enum implementation has to make it too, or a
+        // `map<K, ClosedEnum>` decodes with no ceiling at all.
+        ctx.register_element_memory(
+            core::mem::size_of::<MapKey>() + core::mem::size_of::<Value>(),
+        )?;
         match self
             .fields
             .entry(number)
             .or_insert_with(|| Value::Map(MapValue::new()))
         {
             Value::Map(m) => {
-                m.insert(k, v);
+                m.push_unsorted(k, v);
             }
             other => {
                 let mut m = MapValue::new();
-                m.insert(k, v);
+                m.push_unsorted(k, v);
                 *other = Value::Map(m);
             }
         }

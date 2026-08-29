@@ -1285,3 +1285,358 @@ fn set_reinterprets_a_same_named_message_whose_schema_diverges() {
         "the field this pool cannot name is re-emitted intact"
     );
 }
+
+/// `decode_with_options` is the escape hatch for bytes this process produced
+/// itself, where the untrusted-input defaults can only reject work already
+/// paid for. It has to honour the supplied limits in both directions.
+#[test]
+fn decode_with_options_honours_the_supplied_limits() {
+    use buffa::DecodeOptions;
+
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+
+    // `children` is map<int32, Inner>; an empty entry is 2 wire bytes.
+    let mut wire = Vec::new();
+    for _ in 0..2000 {
+        wire.push((4 << 3) | 2);
+        wire.push(0x00);
+    }
+
+    let tight = DecodeOptions::new().with_element_memory_limit(64);
+    assert!(
+        matches!(
+            DynamicMessage::decode_with_options(Arc::clone(&p), idx, &wire, &tight),
+            Err(buffa::DecodeError::ElementMemoryLimitExceeded)
+        ),
+        "a tightened budget must be enforced"
+    );
+
+    let loose = DecodeOptions::new().with_element_memory_limit(usize::MAX);
+    let msg = DynamicMessage::decode_with_options(Arc::clone(&p), idx, &wire, &loose)
+        .expect("a lifted budget accepts the same bytes");
+    // Every entry carried the default key, so they collapse to one.
+    assert!(msg.field_by_number(4).is_some());
+
+    // And the default entry point still applies the defaults.
+    assert!(DynamicMessage::decode(Arc::clone(&p), idx, &wire).is_ok());
+}
+
+/// A map entry whose value is a message costs exactly one recursion level, the
+/// same as the owned and view decoders spend. Charging two made this decoder
+/// reject nesting the other two accept, which surfaced as a panic in the
+/// infallible `ReflectMessage::to_dynamic`.
+#[test]
+fn a_message_valued_map_entry_costs_one_recursion_level() {
+    use buffa::DecodeOptions;
+
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+
+    // children[0] = Inner{} — one map entry holding an empty message value.
+    // Entry body: key tag+varint (field 1), value tag+len (field 2).
+    let entry = [0x08u8, 0x00, 0x12, 0x00];
+    let mut wire = vec![(4 << 3) | 2, entry.len() as u8];
+    wire.extend_from_slice(&entry);
+
+    // One level is enough: the entry itself is not charged, and the message
+    // value descends exactly once. Two would mean this decoder rejects
+    // nesting the owned and view decoders accept.
+    let one = DecodeOptions::new().with_recursion_limit(1);
+    assert!(
+        DynamicMessage::decode_with_options(Arc::clone(&p), idx, &wire, &one).is_ok(),
+        "a message-valued map entry must cost exactly one recursion level"
+    );
+
+    // Still bounded, though — the level is spent, not skipped.
+    let none = DecodeOptions::new().with_recursion_limit(0);
+    assert!(
+        matches!(
+            DynamicMessage::decode_with_options(Arc::clone(&p), idx, &wire, &none),
+            Err(buffa::DecodeError::RecursionLimitExceeded)
+        ),
+        "the value's descent must still be charged"
+    );
+}
+
+/// A local helper: `count` elements of value 0 in field `number`, packed.
+fn packed_zeros(number: u32, count: usize) -> Vec<u8> {
+    use buffa::encoding::{encode_varint, Tag, WireType};
+    let mut wire = Vec::new();
+    Tag::new(number, WireType::LengthDelimited).encode(&mut wire);
+    encode_varint(count as u64, &mut wire);
+    wire.resize(wire.len() + count, 0x00);
+    wire
+}
+
+/// `count` elements of value 0 in field `number`, one tag each.
+fn unpacked_zeros(number: u32, count: usize) -> Vec<u8> {
+    use buffa::encoding::{Tag, WireType};
+    let mut wire = Vec::new();
+    for _ in 0..count {
+        Tag::new(number, WireType::Varint).encode(&mut wire);
+        wire.push(0x00);
+    }
+    wire
+}
+
+/// How many elements it takes to overshoot the default budget four times.
+fn overshoot(per_element: usize) -> usize {
+    4 * buffa::DEFAULT_ELEMENT_MEMORY_LIMIT / per_element
+}
+
+/// Packed scalars are exempt from the element-memory budget in the generated
+/// and view decoders, where a 1-byte varint becomes a 4-byte `i32`. The
+/// reflective decoder stores every element as a 64-byte `Value` instead — a
+/// 64x ratio rather than 4x — so the exemption does not carry over.
+#[test]
+fn reflective_packed_scalars_are_charged_element_memory() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+    let value_size = core::mem::size_of::<buffa_descriptor::reflect::Value>();
+
+    // field 1 = packed_ints
+    let wire = packed_zeros(1, overshoot(value_size));
+    assert!(
+        matches!(
+            DynamicMessage::decode(Arc::clone(&p), idx, &wire),
+            Err(buffa::DecodeError::ElementMemoryLimitExceeded)
+        ),
+        "a packed run that materializes 4x the budget must be rejected"
+    );
+
+    // The bound is a ceiling, not a wall.
+    let small = packed_zeros(1, 3);
+    let msg = DynamicMessage::decode(Arc::clone(&p), idx, &small).expect("ordinary packed decodes");
+    assert!(msg.field_by_number(1).is_some());
+}
+
+/// `merge_closed_enum_list` and `merge_closed_enum_map_field` are separate
+/// implementations of repeated and map decode, reached when the element type
+/// is a closed enum. Each has to charge what its generic sibling charges.
+/// Value 0 is declared, so these land in the list rather than being diverted
+/// to unknowns, which are separately count-limited.
+#[test]
+fn reflective_closed_enum_elements_are_charged_element_memory() {
+    let p = pool();
+    let idx = p.message_index("reflect.closed.Contexts").unwrap();
+    let value_size = core::mem::size_of::<buffa_descriptor::reflect::Value>();
+    let entry_size = core::mem::size_of::<buffa_descriptor::reflect::MapKey>() + value_size;
+
+    // field 3 = packed closed enum.
+    let packed = packed_zeros(3, overshoot(value_size));
+    assert!(
+        matches!(
+            DynamicMessage::decode(Arc::clone(&p), idx, &packed),
+            Err(buffa::DecodeError::ElementMemoryLimitExceeded)
+        ),
+        "the packed closed-enum arm must charge"
+    );
+
+    // field 2 = unpacked closed enum, two wire bytes per element.
+    let unpacked = unpacked_zeros(2, overshoot(value_size));
+    assert!(
+        matches!(
+            DynamicMessage::decode(Arc::clone(&p), idx, &unpacked),
+            Err(buffa::DecodeError::ElementMemoryLimitExceeded)
+        ),
+        "the unpacked closed-enum arm must charge too"
+    );
+
+    // field 5 = map<string, Status>. An empty entry defaults both halves.
+    let mut map_wire = Vec::new();
+    for _ in 0..overshoot(entry_size) {
+        map_wire.push((5 << 3) | 2);
+        map_wire.push(0x00);
+    }
+    assert!(
+        matches!(
+            DynamicMessage::decode(Arc::clone(&p), idx, &map_wire),
+            Err(buffa::DecodeError::ElementMemoryLimitExceeded)
+        ),
+        "the closed-enum map path must charge what the generic map path charges"
+    );
+}
+
+/// Reflective map decode must not be quadratic in the entry count.
+///
+/// `MapValue` is a sorted `Vec`, so a sorted insert per wire entry shifts the
+/// tail each time. Entries arriving in *descending* key order then land at
+/// index 0 every time, and the decode moves `O(n^2)` bytes — a few megabytes
+/// of wire turning into minutes of `memmove`. Ascending order is O(1)
+/// amortized and hides it completely, so the order is the whole test.
+///
+/// Timing would flake in CI, so this measures the wall-clock ratio between
+/// the two orders rather than an absolute: with a batched decode they are
+/// within a small factor, and with a per-entry sorted insert the descending
+/// case is orders of magnitude worse.
+#[test]
+fn reflective_map_decode_is_not_quadratic_in_entry_order() {
+    use buffa::encoding::{encode_varint, Tag, WireType};
+    use std::time::Instant;
+
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+
+    // field 3 is map<string, int32>; build N entries with distinct keys.
+    let build = |keys: Box<dyn Iterator<Item = usize>>| {
+        let mut wire = Vec::new();
+        for k in keys {
+            let key = format!("k{k:08}");
+            let mut entry = Vec::new();
+            Tag::new(1, WireType::LengthDelimited).encode(&mut entry);
+            buffa::types::encode_string(&key, &mut entry);
+            Tag::new(2, WireType::Varint).encode(&mut entry);
+            encode_varint(1, &mut entry);
+            Tag::new(3, WireType::LengthDelimited).encode(&mut wire);
+            encode_varint(entry.len() as u64, &mut wire);
+            wire.extend_from_slice(&entry);
+        }
+        wire
+    };
+
+    const N: usize = 20_000;
+    let ascending = build(Box::new(0..N));
+    let descending = build(Box::new((0..N).rev()));
+
+    let time = |wire: &[u8]| {
+        let t = Instant::now();
+        let m = DynamicMessage::decode(Arc::clone(&p), idx, wire).expect("decodes");
+        let d = t.elapsed();
+        assert_eq!(
+            m.field_by_number(3).map(|v| match v {
+                Value::Map(m) => m.len(),
+                _ => 0,
+            }),
+            Some(N),
+            "every distinct key must survive"
+        );
+        d
+    };
+
+    let asc = time(&ascending);
+    let desc = time(&descending);
+
+    // An absolute bound rather than a ratio against `asc`. Both orders are
+    // now linear and finish in milliseconds, so a ratio would flake the
+    // moment a shared runner stalls the second run — while the quadratic
+    // version takes minutes at this size, leaving enormous headroom under a
+    // few seconds. A slow runner cannot reach the bound; a regression cannot
+    // stay under it.
+    assert!(
+        desc < core::time::Duration::from_secs(5),
+        "descending-key decode of {N} entries took {desc:?} (ascending {asc:?}); \
+         a per-entry sorted insert is quadratic in this order"
+    );
+}
+
+/// A map inside a *group*-encoded message is normalized too.
+///
+/// Map entries are appended unsorted during a decode and sorted once at the
+/// end, so every loop over `merge_one_field` has to do that. `merge_group`
+/// runs its own loop; if it skipped the pass, a map decoded inside a group
+/// would escape unsorted and its binary-search lookups would silently miss
+/// keys that are present.
+///
+/// The descriptor is built by hand rather than compiled, because no checked-in
+/// test proto pairs a group with a map.
+#[test]
+fn a_map_inside_a_group_is_normalized() {
+    use buffa::encoding::{encode_varint, Tag, WireType};
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        MessageOptions,
+    };
+
+    fn field(name: &str, number: i32, label: Label, ty: Type) -> FieldDescriptorProto {
+        FieldDescriptorProto {
+            name: Some(name.to_string()),
+            number: Some(number),
+            label: Some(label),
+            r#type: Some(ty),
+            ..Default::default()
+        }
+    }
+
+    // map<int32, int32> is a repeated message field whose entry type carries
+    // the map_entry option.
+    let entry = DescriptorProto {
+        name: Some("MEntry".to_string()),
+        field: vec![
+            field("key", 1, Label::LABEL_OPTIONAL, Type::TYPE_INT32),
+            field("value", 2, Label::LABEL_OPTIONAL, Type::TYPE_INT32),
+        ],
+        options: MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        }
+        .into(),
+        ..Default::default()
+    };
+    let mut map_field = field("m", 1, Label::LABEL_REPEATED, Type::TYPE_MESSAGE);
+    map_field.type_name = Some(".g.Outer.TheGroup.MEntry".to_string());
+
+    let group = DescriptorProto {
+        name: Some("TheGroup".to_string()),
+        field: vec![map_field],
+        nested_type: vec![entry],
+        ..Default::default()
+    };
+    let mut group_field = field("thegroup", 7, Label::LABEL_OPTIONAL, Type::TYPE_GROUP);
+    group_field.type_name = Some(".g.Outer.TheGroup".to_string());
+
+    let outer = DescriptorProto {
+        name: Some("Outer".to_string()),
+        field: vec![group_field],
+        nested_type: vec![group],
+        ..Default::default()
+    };
+    let pool = Arc::new(
+        buffa_descriptor::DescriptorPool::new(FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("g.proto".to_string()),
+                package: Some("g".to_string()),
+                syntax: Some("proto2".to_string()),
+                message_type: vec![outer],
+                ..Default::default()
+            }],
+            ..Default::default()
+        })
+        .expect("pool builds"),
+    );
+    let idx = pool.message_index("g.Outer").unwrap();
+
+    // Group-framed body holding map entries in *descending* key order, which
+    // is the order an unsorted append leaves visibly wrong.
+    let mut wire = Vec::new();
+    Tag::new(7, WireType::StartGroup).encode(&mut wire);
+    for k in (0..64i64).rev() {
+        let mut e = Vec::new();
+        Tag::new(1, WireType::Varint).encode(&mut e);
+        encode_varint(k as u64, &mut e);
+        Tag::new(2, WireType::Varint).encode(&mut e);
+        encode_varint((k * 10) as u64, &mut e);
+        Tag::new(1, WireType::LengthDelimited).encode(&mut wire);
+        encode_varint(e.len() as u64, &mut wire);
+        wire.extend_from_slice(&e);
+    }
+    Tag::new(7, WireType::EndGroup).encode(&mut wire);
+
+    let msg = DynamicMessage::decode(Arc::clone(&pool), idx, &wire).expect("group decodes");
+    let Some(Value::Message(inner)) = msg.field_by_number(7) else {
+        panic!("group field missing");
+    };
+    let Some(Value::Map(m)) = inner.field_by_number(1) else {
+        panic!("map field missing");
+    };
+    assert_eq!(m.len(), 64, "every distinct key survives");
+    // The lookups are binary searches, so they only work on a sorted map.
+    for k in 0..64i64 {
+        assert_eq!(
+            m.get(&MapKey::I32(k as i32)),
+            Some(&Value::I32((k * 10) as i32)),
+            "key {k} must be findable after a group decode"
+        );
+    }
+}

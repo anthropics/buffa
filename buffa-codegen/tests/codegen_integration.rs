@@ -1791,3 +1791,35 @@ fn boxed_oneof_variant_under_inline_default_uses_box() {
         "boxed oneof variant must not use the Inline pointer: {content}"
     );
 }
+
+#[test]
+fn custom_deserialize_qualifies_core_paths() {
+    // A proto package named after a crate in the extern prelude shadows that
+    // crate inside the generated module, so every path the codegen emits has
+    // to be absolute. The generated Deserialize impl (oneofs and
+    // extension-preserving messages take this path) reached core::fmt
+    // unqualified, which resolves to the generated `core` module and fails to
+    // compile with E0433.
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package core;
+        message RegisterRequest {
+          string name = 1;
+          oneof kind {
+            string a = 2;
+            int32 b = 3;
+          }
+        }
+        "#,
+        &json_with_views(),
+    );
+    assert!(
+        content.contains("&mut ::core::fmt::Formatter"),
+        "expecting() must take an absolute ::core::fmt path: {content}"
+    );
+    assert!(
+        !content.contains("&mut core::fmt::Formatter"),
+        "expecting() must not emit a bare core::fmt path: {content}"
+    );
+}

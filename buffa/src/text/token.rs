@@ -236,7 +236,7 @@ impl<'a> Tokenizer<'a> {
         ParseError::new(line, col, kind)
     }
 
-    fn err_here(&self, kind: ParseErrorKind) -> ParseError {
+    pub(super) fn err_here(&self, kind: ParseErrorKind) -> ParseError {
         self.err(self.cursor, kind)
     }
 

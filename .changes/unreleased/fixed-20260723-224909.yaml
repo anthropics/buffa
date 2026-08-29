@@ -1,0 +1,3 @@
+kind: Fixed
+body: 'Stopped `ReflectMessage::to_dynamic` panicking on views that decoded successfully. Two causes: `DynamicMessage` charged two recursion levels for a message-valued map entry where the owned and view decoders each charge one, so a band of nesting depths decoded cleanly as a view and then panicked on conversion (437 bytes of `google.protobuf.Struct` was enough); and the re-decode applied the untrusted-input limits to bytes the library had just encoded, which can only reject work already paid for. The map accounting now matches the other two decoders, and the re-decode lifts the element-memory and unknown-field bounds.'
+time: 2026-07-23T22:49:09.677504268-07:00

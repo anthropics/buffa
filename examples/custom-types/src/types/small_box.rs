@@ -8,12 +8,8 @@ use buffa::ProtoBox;
 /// `Metadata` here is `FlexStr` (~24 bytes) + `i64`, so `S4` is the smallest
 /// space that keeps it inline on 64-bit.
 ///
-/// `Serialize` is required **only for oneof message variants**: the generated
-/// oneof `Serialize` passes the stored pointer straight to serde, so the
-/// pointer must serialize transparently as `T` (the default `Box<T>` gets that
-/// from serde's blanket impl). Everywhere else — optional-field serialize, and
-/// *all* deserialize paths — codegen routes through `ProtoBox::new` /
-/// `MessageField`'s blanket serde, so no `Deserialize` impl is needed.
+/// JSON serialization dereferences the pointer for oneof message variants, so
+/// this type only needs the `ProtoBox` surface; it does not need serde impls.
 #[repr(transparent)]
 pub struct SmallBox<T>(pub smallbox::SmallBox<T, smallbox::space::S4>);
 super::assert_transparent!(SmallBox<u64>, smallbox::SmallBox<u64, smallbox::space::S4>);
@@ -46,12 +42,6 @@ impl<T: PartialEq> PartialEq for SmallBox<T> {
 impl<T: core::fmt::Debug> core::fmt::Debug for SmallBox<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         core::fmt::Debug::fmt(&**self, f)
-    }
-}
-impl<T: serde::Serialize> serde::Serialize for SmallBox<T> {
-    #[inline]
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        T::serialize(self, s)
     }
 }
 impl<T> ProtoBox<T> for SmallBox<T> {

@@ -1,0 +1,3 @@
+kind: Fixed
+body: Two panics reachable from untrusted input, both on paths where the non-panicking behaviour was already correct. The reflective base64 decoder sized its buffer with `len * 3 / 4`, which overflows a 32-bit `usize` above ~1.33 GiB of attacker-supplied JSON — a supported target with its own CI job; it now divides first, which cannot overflow at any length. And `any_encode_text` carried a `debug_assert!` that the stored `Any.value` bytes decode, so a single malformed byte panicked wherever debug assertions are on; that field is a raw `bytes` field decode never validates, making undecodable content ordinary untrusted input rather than a broken invariant.
+time: 2026-07-23T23:45:03.993764887-07:00

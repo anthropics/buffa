@@ -591,7 +591,10 @@ impl<'de> serde::Deserialize<'de> for FileDescriptorSet {
         struct _V;
         impl<'de> serde::de::Visitor<'de> for _V {
             type Value = FileDescriptorSet;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct FileDescriptorSet")
             }
             #[allow(clippy::field_reassign_with_default)]
@@ -3202,7 +3205,10 @@ impl<'de> serde::Deserialize<'de> for ExtensionRangeOptions {
         struct _V;
         impl<'de> serde::de::Visitor<'de> for _V {
             type Value = ExtensionRangeOptions;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct ExtensionRangeOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
@@ -8209,7 +8215,10 @@ impl<'de> serde::Deserialize<'de> for FileOptions {
         struct _V;
         impl<'de> serde::de::Visitor<'de> for _V {
             type Value = FileOptions;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct FileOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
@@ -9311,7 +9320,10 @@ impl<'de> serde::Deserialize<'de> for MessageOptions {
         struct _V;
         impl<'de> serde::de::Visitor<'de> for _V {
             type Value = MessageOptions;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct MessageOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
@@ -10416,7 +10428,10 @@ impl<'de> serde::Deserialize<'de> for FieldOptions {
         struct _V;
         impl<'de> serde::de::Visitor<'de> for _V {
             type Value = FieldOptions;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct FieldOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
@@ -12349,7 +12364,10 @@ impl<'de> serde::Deserialize<'de> for OneofOptions {
         struct _V;
         impl<'de> serde::de::Visitor<'de> for _V {
             type Value = OneofOptions;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct OneofOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
@@ -12894,7 +12912,10 @@ impl<'de> serde::Deserialize<'de> for EnumOptions {
         struct _V;
         impl<'de> serde::de::Visitor<'de> for _V {
             type Value = EnumOptions;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct EnumOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
@@ -13471,7 +13492,10 @@ impl<'de> serde::Deserialize<'de> for EnumValueOptions {
         struct _V;
         impl<'de> serde::de::Visitor<'de> for _V {
             type Value = EnumValueOptions;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct EnumValueOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
@@ -13965,7 +13989,10 @@ impl<'de> serde::Deserialize<'de> for ServiceOptions {
         struct _V;
         impl<'de> serde::de::Visitor<'de> for _V {
             type Value = ServiceOptions;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct ServiceOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
@@ -14488,7 +14515,10 @@ impl<'de> serde::Deserialize<'de> for MethodOptions {
         struct _V;
         impl<'de> serde::de::Visitor<'de> for _V {
             type Value = MethodOptions;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct MethodOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
@@ -16136,7 +16166,10 @@ impl<'de> serde::Deserialize<'de> for FeatureSet {
         struct _V;
         impl<'de> serde::de::Visitor<'de> for _V {
             type Value = FeatureSet;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct FeatureSet")
             }
             #[allow(clippy::field_reassign_with_default)]
@@ -18751,7 +18784,10 @@ impl<'de> serde::Deserialize<'de> for SourceCodeInfo {
         struct _V;
         impl<'de> serde::de::Visitor<'de> for _V {
             type Value = SourceCodeInfo;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct SourceCodeInfo")
             }
             #[allow(clippy::field_reassign_with_default)]

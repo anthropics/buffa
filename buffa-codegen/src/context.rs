@@ -624,6 +624,14 @@ impl<'a> CodeGenContext<'a> {
         self.warnings.borrow().len()
     }
 
+    /// Look up the proto package that owns a fully-qualified type name.
+    ///
+    /// `proto_fqn` is the leading-dot form (e.g. `.my.pkg.MyMessage`).
+    /// Returns `None` when the type is not in the descriptor set.
+    pub(crate) fn package_of(&self, proto_fqn: &str) -> Option<&str> {
+        self.package_of.get(proto_fqn).map(String::as_str)
+    }
+
     // ── Package-root import registry (idiomatic_imports) ────────────────
 
     /// Enter the collection phase: subsequent package-root path
@@ -1364,7 +1372,7 @@ pub(crate) fn resolve_extern_prefix(
 /// `fqn` is the leading-dot form (e.g. `.google.protobuf.Timestamp`). Returns
 /// the full Rust type path, or `None` when nothing matches (the caller falls
 /// back to the local package path).
-fn resolve_extern_type(fqn: &str, extern_paths: &[(String, String)]) -> Option<String> {
+pub(crate) fn resolve_extern_type(fqn: &str, extern_paths: &[(String, String)]) -> Option<String> {
     // 1. Exact per-type entry — the mapping *is* the full Rust path.
     if let Some((_, rust)) = extern_paths.iter().find(|(proto, _)| proto == fqn) {
         return Some(rust.clone());

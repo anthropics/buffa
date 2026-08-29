@@ -739,6 +739,7 @@ version = "0.9.1"
 dependencies = [
  "buffa",
  "buffa-codegen",
+ "syn",
 ]
 
 [[package]]

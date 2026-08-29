@@ -1,0 +1,3 @@
+kind: Added
+body: Added `DynamicMessage::decode_with_options` and `merge_with_options`, mirroring `DescriptorPool::decode_with_options`, for decoding under caller-supplied limits.
+time: 2026-07-23T22:49:09.68632687-07:00

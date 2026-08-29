@@ -134,6 +134,25 @@ mod gen;  // generated mod.rs handles #[allow] and module hierarchy
 
 See [`examples/bsr-quickstart/`](../examples/bsr-quickstart/) for a complete, runnable project using the remote plugin.
 
+With `reflection=true` (or `reflect_mode=bridge|vtable`) over many packages, add `shared_descriptor_pool=true` to **both** plugins. The descriptor set is then embedded once in a shared `__buffa_fds` module in the generated `mod.rs`, and every package's `descriptor_pool()` / `FILE_DESCRIPTOR_SET_BYTES` delegates to it — instead of each package embedding its own copy, which dominates crate size for large trees.
+
+```yaml
+version: v2
+plugins:
+  - remote: buf.build/anthropics/buffa
+    out: src/gen
+    opt:
+      - reflection=true
+      - shared_descriptor_pool=true
+  - local: protoc-gen-buffa-packaging
+    out: src/gen
+    strategy: all
+    opt:
+      - shared_descriptor_pool=true
+```
+
+> **`shared_descriptor_pool` spans both plugins.** Like `exclude_package`, set the same option on `protoc-gen-buffa` and `protoc-gen-buffa-packaging`, and give both plugins the same inputs: the packaging plugin builds the shared set from the files *it* receives, so a per-plugin `exclude_types:` or a narrower input set leaves the pool missing types the generated code reflects on (a runtime lookup failure). If only the codegen plugin has the option, the generated code fails to compile with an unresolved `__buffa_fds` (the per-package delegations point at a root module the packaging plugin never emitted). If only the packaging plugin has it, `mod.rs` carries an extra copy nothing references when reflection is on, and fails to compile with an unresolved `buffa_descriptor` when it is off. Feature overrides (`open_enums_in` / `override_feature_in`), feature gating (`gate_impls=true`), and `file_per_package` (the packaging-plugin-free workflow, which never emits the root module) are not supported with `shared_descriptor_pool` on the plugin path (`protoc-gen-buffa` rejects the combinations); `buffa-build` supports all three with a shared pool because one process emits the root itself.
+
 ### Using `buffa-build` in `build.rs`
 
 This approach compiles protos at build time via `build.rs`, which is familiar if you've used `prost-build` or `tonic-build`. It requires `protoc` on PATH (or `buf` if `.use_buf()` is configured).
@@ -200,6 +219,7 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.bytes_type_custom(path)` / `.bytes_type_custom_in(path, &[...])` | — | Use a custom `bytes` representation by Rust path |
 | `.generate_reflection(bool)` | `false` | Emit reflection support (vtable mode) plus an embedded per-package descriptor pool (see [Runtime reflection](#runtime-reflection)) |
 | `.reflect_mode(mode)` | `Off` | Finer-grained reflection selector: `ReflectMode::{Off, Bridge, VTable}` |
+| `.shared_descriptor_pool(bool)` | `false` | Embed the reflection descriptor set once (as an `include_bytes!` sidecar) instead of per package; every package delegates to it. Requires `.include_file(...)` and reflection. With a checked-in `out_dir`, commit the emitted `*.descriptor_set.binpb` sidecar alongside the generated `.rs`. See [Runtime reflection](#runtime-reflection) |
 | `.idiomatic_enum_aliases(bool)` | `true` | Emit `UpperCamelCase` associated-const aliases for enum values (see the aliases note under `EnumValue<T>`) |
 | `.file_per_package(bool)` | `false` | Emit one `<dotted.package>.rs` per package instead of per-proto-file content + a stitcher |
 | `.idiomatic_imports(bool)` | `false` | **Experimental.** Emit `use`-backed short type names at the package root (struct fields read `MessageField<Timestamp>` instead of fully-qualified paths). Requires `.file_per_package(true)`. Only type declarations are shortened — impl bodies and nested modules stay fully qualified — and the generated file must keep its `#[allow]` wrapper (the short names coexist with qualified impl-body paths, which `unused_qualifications` would otherwise flag) |
@@ -591,6 +611,7 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `open_enums_in=<path>` | Shorthand for `override_feature_in=<path>=enum_type:OPEN`. Repeatable |
 | `reflection=true` | Emit reflection support (vtable mode) plus an embedded per-package descriptor pool — see [Runtime reflection](#runtime-reflection) |
 | `reflect_mode=off\|bridge\|vtable` | Finer-grained reflection selector; `reflection=true` is shorthand for `vtable` |
+| `shared_descriptor_pool=true` | Deduplicate the embedded descriptor set: per-package reflect modules delegate to one shared `__buffa_fds` root module. Pass a matching `shared_descriptor_pool=true` to `protoc-gen-buffa-packaging` so the root module is emitted. See [Runtime reflection](#runtime-reflection) |
 | `extern_path=.pkg=::rust` | Map a proto package — or a single type, e.g. `extern_path=.pkg.Type=::rust::Type` — to an external Rust path |
 | `exclude_package=.pkg` | Drop a proto package and its subpackages from generation (repeatable; leading dot optional). For option-only imports that `include_imports` pulls in but that are never used as field types, e.g. `buf.validate`, `gnostic`. **Pass the same `exclude_package` to `protoc-gen-buffa-packaging`** (see the note below the table) so the generated `mod.rs` omits the same packages. |
 | `file_per_package=true` | Emit one `<dotted.package>.rs` per package instead of per-proto-file content + a `<dotted.pkg>.mod.rs` stitcher. Use this with the remote plugin when you don't want to install `protoc-gen-buffa-packaging` — see [Remote plugin only](#remote-plugin-only-no-local-install). Under `strategy: directory`, requires the input module to be `PACKAGE_DIRECTORY_MATCH`-clean. |
@@ -614,7 +635,7 @@ Passed via `opt:` (works for `remote:` and `local:`):
 >       - exclude_package=.gnostic
 > ```
 >
-> Excluded descriptors stay available for option resolution, but a kept message with a *field* of an excluded type generates a reference to a Rust module that was never emitted — a compile error in generated code, far from its cause. If the types are genuinely needed, map them with `extern_path` instead of excluding them. On the buf path, per-plugin `exclude_types:` (a buf.gen.yaml field, not a plugin opt) is an alternative that prunes the descriptors themselves before the plugin runs — note its subpackage semantics differ: use a `pkg.**` glob to cover subpackages, where `exclude_package` covers them automatically. `exclude_package` is a protoc-plugin option only; the `buffa-build`/`build.rs` path does not need it, since there `files()` lists the generate set explicitly.
+> Excluded descriptors stay available for option resolution, but a kept message with a *field* of an excluded type generates a reference to a Rust module that was never emitted. The generator warns about each such field (on plugin stderr, or as a `cargo:warning` from `buffa-build`), naming the file, message, field, and referenced type, so the resulting compile error in generated code is traceable to its cause. If the types are genuinely needed, map them with `extern_path` instead of excluding them. On the buf path, per-plugin `exclude_types:` (a buf.gen.yaml field, not a plugin opt) is an alternative that prunes the descriptors themselves before the plugin runs — note its subpackage semantics differ: use a `pkg.**` glob to cover subpackages, where `exclude_package` covers them automatically. `exclude_package` is a protoc-plugin option only; the `buffa-build`/`build.rs` path does not need it, since there `files()` lists the generate set explicitly.
 
 #### Very large schemas
 
@@ -1089,13 +1110,17 @@ repeated field from a much newer schema).
 
 Zero-copy view decoding (`decode_view`) honors the same limit with per-field accounting (one slot per unknown field, including fields nested inside unknown groups), even though views store unknown fields as borrowed byte ranges (coalesced into one span per contiguous run, ~16 bytes each) instead of materializing them. The limit bounds what converting the view to an owned message would materialize, and the conversion replays under exactly the budget decoding charged — so a view that decodes successfully always converts via `to_owned_message` without error.
 
-The element-memory limit bounds what a decode *materializes* rather than what it reads, which an input-size cap cannot do: an empty repeated message element is 2 bytes on the wire and `size_of::<T>()` in the `Vec` it lands in, so a payload well inside any input bound can still expand by two orders of magnitude. Packed scalar fields are never charged, since their worst case is a 1-byte varint becoming a 4-byte `i32` and charging them would reject columnar payloads that carry millions of elements by design.
+The element-memory limit bounds what a decode *materializes* rather than what it reads, which an input-size cap cannot do: an empty repeated message element is 2 bytes on the wire and `size_of::<T>()` in the `Vec` it lands in, so a payload well inside any input bound can still expand by two orders of magnitude. Packed scalar fields are not charged by the owned or view decoders, since their worst case there is a 1-byte varint becoming a 4-byte `i32` and charging them would reject columnar payloads that carry millions of elements by design. The reflective `DynamicMessage` codec does charge them, because it stores every element as a `Value` rather than a native scalar — roughly a 64x ratio instead of 4x — so a large columnar payload decoded reflectively may need `.with_element_memory_limit(n)` raised.
 
-The default `Message::decode` / `decode_from_slice` methods use the defaults (100 depth, 2 GiB max input, 1M unknown fields, 32 MiB of element memory). `DecodeOptions` is only needed when you want different limits.
+Eager view decoding is charged the same way. A view borrows string and bytes contents rather than copying them, but a repeated field still costs one `size_of::<FooView>()` slot per element in the `Vec` that holds them, so `decode_view` applies the element-memory limit exactly as the owned decoder does. Whichever decoder you hand a given payload to, you get the same verdict.
 
-### These limits bound the binary codec only
+The default `Message::decode` / `decode_from_slice` methods use the defaults (100 depth, 2 GiB max input, 1M unknown fields, 32 MiB of element memory), and so do the default view entry points `FooView::decode_view` and `OwnedView::decode`. `DecodeOptions` is only needed when you want different limits.
 
-Every option above applies to the protobuf binary decoders — owned, view, and the reflective `DynamicMessage` codec. **None of them applies to JSON.** Decoding from JSON runs `serde_json` (or another `Deserializer`) directly into the generated `Deserialize` impls, which never receive a `DecodeOptions`, so a message parsed from JSON is bounded by none of the limits that bound the same message parsed from protobuf. The element amplification is very nearly as large there — `{}` is three JSON bytes for the same element footprint that costs two on the wire.
+### What these limits do and do not bound
+
+Every option above applies to the protobuf binary decoders — owned, view, and the reflective `DynamicMessage` codec. The one carve-out is `ReflectMessage::to_dynamic`, whose internal round-trip re-decodes bytes buffa just encoded and so exempts itself from the two memory bounds; it reads a message you already hold, not wire input. **None of them applies to JSON.** Decoding from JSON runs `serde_json` (or another `Deserializer`) directly into the generated `Deserialize` impls, which never receive a `DecodeOptions`, so a message parsed from JSON is bounded by none of the limits that bound the same message parsed from protobuf. The element amplification is very nearly as large there — `{}` is three JSON bytes for the same element footprint that costs two on the wire.
+
+Textproto is the exception among the non-binary formats: `decode_from_str` applies the element-memory limit on its own. The amplification there is very nearly as large as on the wire — `{},` is three input bytes for the same element footprint that costs two encoded — so the parser needs the same bound, and carries its own because `DecodeContext` never reaches it. Raise it with `buffa::text::decode_from_str_with_element_memory_limit`. The recursion limit already applied there, enforced by the tokenizer.
 
 If you accept untrusted JSON, impose your own bound before parsing; capping the input length is the simplest form and is the one thing that transfers. Tracked in [#330](https://github.com/anthropics/buffa/issues/330).
 
@@ -1188,10 +1213,17 @@ eager `PersonView` for those. The recursion and unknown-field budgets
 recorded at decode time are charged on access (per deferred subtree), so
 deep navigation fails with `RecursionLimitExceeded` at the same boundary as
 the eager decoder; raise limits via `DecodeOptions::decode_lazy_view`. Note
-that the unknown-field limit is a per-subtree bound on the lazy path, not
-the global decode-time cap `decode_view` enforces — a full lazy traversal
-can materialize unknown-field records proportional to input size, so prefer
-the eager view for untrusted input if that global bound matters.
+that the unknown-field and element-memory limits are per-subtree bounds on
+the lazy path, not the global decode-time caps `decode_view` enforces — a
+full lazy traversal can materialize records proportional to input size, so
+prefer the eager view for untrusted input if that global bound matters.
+
+Element memory is charged twice on this path, at the two points where it is
+actually spent: once when a repeated element is recorded, since the `Vec` of
+byte ranges is real memory whatever the elements later cost, and again when
+a deferred subtree is accessed and its own elements are recorded. The budget
+remaining at the record site is what an access replays, so a subtree cannot
+spend more than was left when its bytes were set aside.
 
 ### `OwnedView<V>` — views with `'static` lifetime
 
@@ -1474,7 +1506,7 @@ relative to the owned form: extension fields are not included in view JSON outpu
 
 Because JSON parsing goes straight from `serde_json` into the generated
 `Deserialize` impls, buffa is never handed a `DecodeOptions` on this path, so
-[the decode limits](#these-limits-bound-the-binary-codec-only) that bound the
+[the decode limits](#what-these-limits-do-and-do-not-bound) that bound the
 binary codec do not bound JSON. Cap the input yourself before parsing untrusted
 JSON. Tracked in [#330](https://github.com/anthropics/buffa/issues/330).
 
@@ -1968,6 +2000,30 @@ reads source info, and keeping it can multiply the embedded bytes an order of
 magnitude (14x for the comment-heavy well-known-types package). If you need
 proto comments at runtime, or a set scoped to specific files, build a
 descriptor set directly with `protoc --include_source_info` or `buf build`.
+
+Because the embedded set covers the whole codegen run, a multi-package run
+duplicates the same bytes once per package — for large proto trees that
+duplication dominates crate size. **`shared_descriptor_pool`** embeds the set
+once instead: a single `__buffa_fds` module at the module-tree root holds the
+one `FILE_DESCRIPTOR_SET_BYTES` copy and the one lazily-built pool, and every
+package's `descriptor_pool()` / `FILE_DESCRIPTOR_SET_BYTES` delegates to it —
+the per-package API is unchanged, but all packages observe the same pool
+instance, which also lets `DynamicMessage` values from different packages be
+compared and composed (those operations require one pool). From `build.rs`,
+enable it with `.shared_descriptor_pool(true)` (requires `.include_file(...)`
+and reflection; the descriptor set is written as a `*.descriptor_set.binpb`
+sidecar and `include_bytes!`-d, so commit the sidecar alongside a checked-in
+`out_dir`, and mark it `binary` in `.gitattributes`). Consume the tree through
+the include file: each package delegates to the shared root by a fixed number
+of `super::` hops, so `include_proto!` per package does not compile in this
+mode, and two shared-pool `compile()` calls need separate enclosing modules.
+On the plugin path, pass `shared_descriptor_pool=true` to both
+`protoc-gen-buffa` and `protoc-gen-buffa-packaging` (see
+[Remote plugin](#remote-plugin-only-no-local-install) for the `buf.gen.yaml`
+shape and the combinations that path cannot support); the packaging plugin
+embeds the set inline in `mod.rs`, since the plugin protocol carries only
+text. Packages generated with the option *off* silently keep building their
+own separate pools — set it uniformly across a tree.
 
 Two Cargo notes:
 
