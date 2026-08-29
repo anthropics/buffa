@@ -688,6 +688,12 @@ impl DynamicMessage {
             match entry_tag.field_number() {
                 1 => key = Some(decode_map_key(key_ty, entry_tag, &mut entry)?),
                 2 => {
+                    // Map message values always use length-delimited
+                    // encoding. Unlike ordinary message fields, they cannot
+                    // use the legacy group wire type.
+                    if matches!(value_kind, SingularKind::Message(_)) {
+                        buffa::encoding::check_wire_type(entry_tag, WireType::LengthDelimited)?;
+                    }
                     // No `descend()` for the entry itself. A message-typed
                     // value descends once inside `decode_element_no_alias`,
                     // and that single level is what the owned decoder
