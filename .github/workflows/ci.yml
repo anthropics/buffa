@@ -16,6 +16,9 @@ env:
   # Ubuntu's apt protobuf-compiler is v21.12 — too old. Keep this in sync
   # with the conformance tools image (see conformance/Dockerfile.tools).
   PROTOC_VERSION: "33.5"
+  # SHA256 of protoc-${PROTOC_VERSION}-linux-x86_64.zip from the upstream
+  # protobuf release. Bump together with PROTOC_VERSION.
+  PROTOC_SHA256: "24e58fb231d50306ee28491f33a170301e99540f7e29ca461e0e80fd1239f8d1"
 
 jobs:
 
@@ -42,6 +45,7 @@ jobs:
       - name: Install protoc
         run: |
           curl -fsSL "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" -o /tmp/protoc.zip
+          echo "${PROTOC_SHA256}  /tmp/protoc.zip" | sha256sum -c -
           sudo unzip -o /tmp/protoc.zip -d /usr/local
           protoc --version
 
@@ -201,6 +205,7 @@ jobs:
       - name: Install protoc
         run: |
           curl -fsSL "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" -o /tmp/protoc.zip
+          echo "${PROTOC_SHA256}  /tmp/protoc.zip" | sha256sum -c -
           sudo unzip -o /tmp/protoc.zip -d /usr/local
           protoc --version
 
@@ -273,6 +278,7 @@ jobs:
       - name: Install protoc
         run: |
           curl -fsSL "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" -o /tmp/protoc.zip
+          echo "${PROTOC_SHA256}  /tmp/protoc.zip" | sha256sum -c -
           sudo unzip -o /tmp/protoc.zip -d /usr/local
           protoc --version
 
@@ -308,6 +314,7 @@ jobs:
       - name: Install protoc
         run: |
           curl -fsSL "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" -o /tmp/protoc.zip
+          echo "${PROTOC_SHA256}  /tmp/protoc.zip" | sha256sum -c -
           sudo unzip -o /tmp/protoc.zip -d /usr/local
           protoc --version
 
