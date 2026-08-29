@@ -739,6 +739,14 @@ fn generate_oneof_serialize(
             }
 
             if v.is_boxed {
+                // Boxed variants are message/group types (see is_boxed_variant),
+                // which never need a proto-JSON helper. Lock the invariant in
+                // case is_boxed_variant ever broadens: a boxed scalar taking
+                // this arm would skip the ProtoJson adapter silently.
+                debug_assert!(
+                    serde_helper_path(v.field_type).is_none(),
+                    "boxed oneof variant cannot need a proto-JSON helper"
+                );
                 // ProtoBox guarantees Deref<Target = T>, so serialize the
                 // message itself instead of requiring the pointer type to
                 // implement serde::Serialize. The default Box<T> already
