@@ -134,11 +134,12 @@ mod gen;  // generated mod.rs handles #[allow] and module hierarchy
 
 See [`examples/bsr-quickstart/`](../examples/bsr-quickstart/) for a complete, runnable project using the remote plugin.
 
-With `reflection=true` (or `reflect_mode=vtable`) over many packages, add `shared_descriptor_pool=true` to **both** plugins. The descriptor set is then embedded once in a shared `__buffa_fds` module in the generated `mod.rs`, and every package's `descriptor_pool()` / `FILE_DESCRIPTOR_SET_BYTES` delegates to it — instead of each package embedding its own copy, which dominates crate size for large trees.
+With `reflection=true` (or `reflect_mode=bridge|vtable`) over many packages, add `shared_descriptor_pool=true` to **both** plugins. The descriptor set is then embedded once in a shared `__buffa_fds` module in the generated `mod.rs`, and every package's `descriptor_pool()` / `FILE_DESCRIPTOR_SET_BYTES` delegates to it — instead of each package embedding its own copy, which dominates crate size for large trees.
 
 ```yaml
+version: v2
 plugins:
-  - local: protoc-gen-buffa
+  - remote: buf.build/anthropics/buffa
     out: src/gen
     opt:
       - reflection=true
@@ -150,7 +151,7 @@ plugins:
       - shared_descriptor_pool=true
 ```
 
-> **`shared_descriptor_pool` spans both plugins.** Like `exclude_package`, set the same option on `protoc-gen-buffa` and `protoc-gen-buffa-packaging`. If only the codegen plugin has it, the generated code fails to compile with an unresolved `__buffa_fds` (the per-package delegations point at a root module the packaging plugin never emitted). If only the packaging plugin has it, `mod.rs` carries one extra unreferenced copy and no dedup happens — larger output, no error. Feature gating (`gate_impls=true`) and `file_per_package` (the packaging-plugin-free workflow, which never emits the root module) are not supported with `shared_descriptor_pool` on the plugin path (`protoc-gen-buffa` rejects the combinations); use `buffa-build` for a gated shared pool.
+> **`shared_descriptor_pool` spans both plugins.** Like `exclude_package`, set the same option on `protoc-gen-buffa` and `protoc-gen-buffa-packaging`, and give both plugins the same inputs: the packaging plugin builds the shared set from the files *it* receives, so a per-plugin `exclude_types:` or a narrower input set leaves the pool missing types the generated code reflects on (a runtime lookup failure). If only the codegen plugin has the option, the generated code fails to compile with an unresolved `__buffa_fds` (the per-package delegations point at a root module the packaging plugin never emitted). If only the packaging plugin has it, `mod.rs` carries an extra copy nothing references when reflection is on, and fails to compile with an unresolved `buffa_descriptor` when it is off. Feature overrides (`open_enums_in` / `override_feature_in`), feature gating (`gate_impls=true`), and `file_per_package` (the packaging-plugin-free workflow, which never emits the root module) are not supported with `shared_descriptor_pool` on the plugin path (`protoc-gen-buffa` rejects the combinations); `buffa-build` supports all three with a shared pool because one process emits the root itself.
 
 ### Using `buffa-build` in `build.rs`
 
@@ -2016,8 +2017,13 @@ sidecar and `include_bytes!`-d, so commit the sidecar alongside a checked-in
 the include file: each package delegates to the shared root by a fixed number
 of `super::` hops, so `include_proto!` per package does not compile in this
 mode, and two shared-pool `compile()` calls need separate enclosing modules.
-Packages generated with the option *off* silently keep building their own
-separate pools — set it uniformly across a tree.
+On the plugin path, pass `shared_descriptor_pool=true` to both
+`protoc-gen-buffa` and `protoc-gen-buffa-packaging` (see
+[Remote plugin](#remote-plugin-only-no-local-install) for the `buf.gen.yaml`
+shape and the combinations that path cannot support); the packaging plugin
+embeds the set inline in `mod.rs`, since the plugin protocol carries only
+text. Packages generated with the option *off* silently keep building their
+own separate pools — set it uniformly across a tree.
 
 Two Cargo notes:
 

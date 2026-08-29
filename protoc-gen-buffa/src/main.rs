@@ -447,10 +447,9 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
     // (and the pool decoding) even with the reflect feature off, defeating the
     // gate. Reject the combination rather than emit a silently-broken tree.
     // (`buffa-build` supports gate + shared because it emits the root itself.)
-    // Only `gate_impls` needs checking: `gate_reflect_on_crate_feature` has no
-    // plugin-option spelling, so it can't be set on this path — a future
-    // option mapping to it must extend this rejection.
-    if codegen.shared_descriptor_pool && codegen.gate_impls_on_crate_features {
+    // `reflect_feature_gate()` is the value a front-end would have to gate the
+    // root with, so testing it covers every option that turns the gate on.
+    if codegen.shared_descriptor_pool && codegen.reflect_feature_gate().is_some() {
         return Err("shared_descriptor_pool is not supported together with \
                     gate_impls=true on the protoc plugin path (the packaging plugin \
                     cannot gate the shared module); use buffa-build for gated shared \
@@ -1002,9 +1001,6 @@ mod tests {
 
     #[test]
     fn shared_descriptor_pool_rejects_feature_overrides() {
-        // The packaging plugin can't see feature overrides, so it can't
-        // reproduce them in the shared root — reject rather than emit a pool
-        // that disagrees with the generated code.
         let err =
             parse_config("reflection=true,shared_descriptor_pool=true,open_enums_in=.pkg.Color")
                 .err()
@@ -1020,9 +1016,7 @@ mod tests {
 
     #[test]
     fn shared_descriptor_pool_rejects_feature_gating() {
-        // The packaging plugin never sees this plugin's gate config, so it
-        // can't wrap the shared root in the matching `#[cfg]` — reject with
-        // the option spelling the user actually wrote.
+        // The error must name the option spelling the user actually wrote.
         let err = parse_config("reflection=true,shared_descriptor_pool=true,gate_impls=true")
             .err()
             .expect("shared_descriptor_pool + gate_impls must be rejected");
@@ -1031,10 +1025,6 @@ mod tests {
 
     #[test]
     fn shared_descriptor_pool_rejects_file_per_package() {
-        // file_per_package is the packaging-plugin-free workflow, so no
-        // process ever emits the shared `__buffa_fds` root the per-package
-        // delegations point at — the consumer crate would fail with an
-        // unresolved module. Reject up front instead.
         let err = parse_config("reflection=true,shared_descriptor_pool=true,file_per_package=true")
             .err()
             .expect("shared_descriptor_pool + file_per_package must be rejected");
@@ -1043,10 +1033,7 @@ mod tests {
 
     #[test]
     fn shared_descriptor_pool_requires_reflection() {
-        // Without reflection there is no embedded pool to share. Catch it
-        // here with plugin-option vocabulary (reflection= / reflect_mode=)
-        // instead of letting codegen core reject with the CodeGenConfig
-        // field name, which a buf.gen.yaml user never sees.
+        // The error must use plugin-option vocabulary, not the CodeGenConfig field name.
         let err = parse_config("shared_descriptor_pool=true")
             .err()
             .expect("shared_descriptor_pool without reflection must be rejected");

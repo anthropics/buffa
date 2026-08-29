@@ -42,9 +42,9 @@
 //!   protoc's plugin protocol carries only UTF-8 text, so a binary
 //!   `include_bytes!` sidecar isn't possible here — inline still collapses the
 //!   per-package duplication to one copy. (`buffa-build`, which writes files
-//!   directly, uses a sidecar instead.) Feature gating
-//!   (`gate_reflect_on_crate_feature` / `gate_impls_on_crate_features`) is not
-//!   supported on this path (protoc-gen-buffa rejects the combination).
+//!   directly, uses a sidecar instead.) Feature gating (`gate_impls=true` on
+//!   `protoc-gen-buffa`) is not supported on this path; `protoc-gen-buffa`
+//!   rejects the combination.
 //!
 //! Invoke the plugin once per output tree — use multiple entries in
 //! buf.gen.yaml with different `out:` directories and filters to package
@@ -220,31 +220,28 @@ fn generate(request: &CodeGeneratorRequest) -> Result<CodeGeneratorResponse, Str
     );
 
     // Shared-pool mode: embed the descriptor set once, at the tree root, as an
-    // inline byte-string module. protoc's plugin protocol carries only UTF-8
-    // string content, so a binary `include_bytes!` sidecar isn't possible
-    // here — that path is reserved for `buffa-build`, which writes files
-    // directly. Inline still collapses the O(packages) duplication to one
-    // copy, which is the dominant cost. The bytes cover the full transitive
-    // closure (every `proto_file`), matching what the per-package embedding
-    // would have carried, so cross-package reflection resolves.
+    // inline byte-string module (`FdsEmbedding::Inline` explains why the
+    // plugin protocol rules out a sidecar). The bytes cover the full
+    // transitive closure (every `proto_file`), matching what the per-package
+    // embedding would have carried, so cross-package reflection resolves.
     if selection.shared_pool {
         // No feature overrides here: this plugin never receives them (they are
         // protoc-gen-buffa options), so it can't reproduce them. protoc-gen-buffa
         // rejects `shared_descriptor_pool` + overrides, so a build that reaches
         // this point has none — the empty slice matches the codegen side.
         let fds_bytes = buffa_codegen::encode_descriptor_set(&request.proto_file, &[]);
-        // Gate is `None`: the plugin protocol gives no access to
-        // protoc-gen-buffa's feature-gate config, so the packaging path does
-        // not support `gate_reflect_on_crate_feature` (protoc-gen-buffa rejects
-        // that combination). The root module is emitted unconditionally.
+        // Gate is `None` for the same reason: this plugin never sees
+        // protoc-gen-buffa's gate config, and that plugin rejects the
+        // combination, so the root module is emitted unconditionally.
         let root = buffa_codegen::shared_descriptor_root_module(
             &fds_bytes,
             buffa_codegen::FdsEmbedding::Inline,
             None,
         );
-        // The module tree opens with `#![allow(...)]`, which must stay the
-        // first item in the file. Splice the root module in just after it.
-        content = splice_after_inner_attrs(&content, &root);
+        // Item order is irrelevant to the `super::` delegations, so the root
+        // module goes after the package tree; the tree's inner `#![allow]`
+        // stays the first item in the file.
+        content.push_str(&root);
     }
 
     Ok(CodeGeneratorResponse {
@@ -258,33 +255,6 @@ fn generate(request: &CodeGeneratorRequest) -> Result<CodeGeneratorResponse, Str
         }],
         ..Default::default()
     })
-}
-
-/// Insert `item` into `file` just after the leading header comments and
-/// inner attributes (`#![...]`), which must remain the first tokens in a Rust
-/// file. Everything from the first real item onward follows `item`.
-fn splice_after_inner_attrs(file: &str, item: &str) -> String {
-    // Assumes `\n` line endings (the only input is `generate_module_tree`
-    // output, which uses `writeln!`). Each split offset lands on a line
-    // boundary, so it is always a valid UTF-8 char boundary. The `+ 1` below
-    // would drift under `\r\n`, so enforce the assumption rather than only
-    // documenting it.
-    debug_assert!(
-        !file.contains('\r'),
-        "splice_after_inner_attrs assumes LF line endings"
-    );
-    let mut prefix_end = 0;
-    for line in file.lines() {
-        let t = line.trim_start();
-        if t.is_empty() || t.starts_with("//") || t.starts_with("#!") {
-            // +1 for the '\n' that `lines()` stripped.
-            prefix_end += line.len() + 1;
-        } else {
-            break;
-        }
-    }
-    let (head, rest) = file.split_at(prefix_end.min(file.len()));
-    format!("{head}{item}\n{rest}")
 }
 
 fn parse_options(params: &str) -> Result<Selection, String> {
@@ -438,46 +408,18 @@ mod tests {
         assert!(content.contains("FILE_DESCRIPTOR_SET_BYTES"));
         // Still wires the package tree.
         assert!(content.contains("foo.v1.mod.rs"));
-        // Placement is load-bearing: `#![allow(...)]` must stay the first item
-        // in the file (inner attributes are rejected after any item), and the
-        // root module must precede the package tree that delegates to it.
+        // The tree's inner `#![allow(...)]` must stay the first item (inner
+        // attributes are rejected after any item), and the whole file must
+        // still be valid Rust with the root module appended.
         let allow = content
             .find("#![allow")
             .expect("mod.rs must keep its inner allow");
         let root = content.find("pub mod __buffa_fds").unwrap();
-        let tree = content.find("foo.v1.mod.rs").unwrap();
         assert!(
-            allow < root && root < tree,
-            "shared root module must be spliced after the inner attrs and \
-             before the package tree: {content}"
+            allow < root,
+            "shared root module must not precede the inner attrs: {content}"
         );
-    }
-
-    #[test]
-    fn splice_after_inner_attrs_handles_edge_inputs() {
-        // Typical module-tree prefix: comment, inner attr, blank line.
-        assert_eq!(
-            splice_after_inner_attrs("// header\n#![allow(x)]\n\npub mod a;\n", "ITEM"),
-            "// header\n#![allow(x)]\n\nITEM\npub mod a;\n"
-        );
-        // Empty input: the item is the whole file.
-        assert_eq!(splice_after_inner_attrs("", "ITEM"), "ITEM\n");
-        // No inner attrs or comments: the item leads.
-        assert_eq!(
-            splice_after_inner_attrs("pub mod a;\n", "ITEM"),
-            "ITEM\npub mod a;\n"
-        );
-        // Comment-only file: everything is prefix, item lands at the end.
-        assert_eq!(
-            splice_after_inner_attrs("// only\n", "ITEM"),
-            "// only\nITEM\n"
-        );
-        // Missing trailing newline on the last prefix line: the `+ 1` for the
-        // stripped '\n' overshoots and must be clamped to the file length.
-        assert_eq!(
-            splice_after_inner_attrs("#![allow(x)]", "ITEM"),
-            "#![allow(x)]ITEM\n"
-        );
+        syn::parse_file(content).expect("mod.rs with the shared root module must parse");
     }
 
     #[test]
