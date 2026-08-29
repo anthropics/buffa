@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+    **Warn at generation time when a kept file references a type from an excluded or unmapped package** (#292).
+
+    `generate_with_diagnostics` now emits a `CodeGenWarning::ExcludedPackageFieldRef` when a field in a kept file references a type that is neither being generated nor covered by an `extern_path`. The warning precedes the consumer's build, so the dangling `super::…::Type` compile error is accompanied by an actionable diagnostic that names the file, message, and field where the reference appears, the missing package, and the exact `extern_path` or `.files()` fix. Detection is type-granular: references to a specific type from a partially-generated package are correctly flagged even when other types in the same package are being generated.
+time: 2026-07-25T09:39:45.331478+05:45
