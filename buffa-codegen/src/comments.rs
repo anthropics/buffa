@@ -12,7 +12,7 @@
 //! already have) instead of threading index-based paths through every level
 //! of the call stack.
 
-use std::collections::HashMap;
+use crate::hash::FxHashMap as HashMap;
 
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -42,11 +42,11 @@ const ENUM_VALUE: i32 = 2;
 pub fn fqn_comments(file: &FileDescriptorProto) -> HashMap<String, String> {
     let path_map = build_path_map(file);
     if path_map.is_empty() {
-        return HashMap::new();
+        return HashMap::default();
     }
 
     let package = file.package.as_deref().unwrap_or("");
-    let mut result = HashMap::new();
+    let mut result = HashMap::default();
 
     // Top-level enums
     for (i, enum_type) in file.enum_type.iter().enumerate() {
@@ -69,7 +69,7 @@ pub fn fqn_comments(file: &FileDescriptorProto) -> HashMap<String, String> {
 
 /// Build the raw path-based comment map from `SourceCodeInfo`.
 fn build_path_map(file: &FileDescriptorProto) -> HashMap<Vec<i32>, String> {
-    let mut map = HashMap::new();
+    let mut map = HashMap::default();
     let source_code_info = match file.source_code_info.as_option() {
         Some(sci) => sci,
         None => return map,
@@ -217,7 +217,7 @@ pub(crate) fn doc_attrs_with_tag_resolved(
 #[cfg(test)]
 fn doc_lines_to_tokens(text: &str) -> TokenStream {
     doc_lines_impl(text, |line| {
-        sanitize_line_with_refs(line, "", &HashMap::new())
+        sanitize_line_with_refs(line, "", &HashMap::default())
     })
 }
 
@@ -1326,7 +1326,7 @@ mod tests {
     // back to escaping — identical to the old sanitize_line behaviour.
 
     fn sl(line: &str) -> String {
-        sanitize_line_with_refs(line, "", &HashMap::new())
+        sanitize_line_with_refs(line, "", &HashMap::default())
     }
 
     #[test]
@@ -1440,7 +1440,7 @@ mod tests {
 
     #[test]
     fn test_resolve_proto_ref_fully_qualified() {
-        let mut map = HashMap::new();
+        let mut map = HashMap::default();
         map.insert(
             ".google.example.v1.Book".into(),
             "google::example::v1::Book".into(),
@@ -1454,7 +1454,7 @@ mod tests {
 
     #[test]
     fn test_resolve_proto_ref_scope_relative() {
-        let mut map = HashMap::new();
+        let mut map = HashMap::default();
         map.insert(
             ".google.example.v1.Genre".into(),
             "google::example::v1::Genre".into(),
@@ -1468,7 +1468,7 @@ mod tests {
 
     #[test]
     fn test_resolve_proto_ref_implied_form() {
-        let mut map = HashMap::new();
+        let mut map = HashMap::default();
         map.insert(
             ".google.example.v1.Book".into(),
             "google::example::v1::Book".into(),
@@ -1482,7 +1482,7 @@ mod tests {
 
     #[test]
     fn test_resolve_proto_ref_member_ref_returns_none() {
-        let mut map = HashMap::new();
+        let mut map = HashMap::default();
         map.insert(".pkg.Genre".into(), "pkg::Genre".into());
         assert_eq!(
             resolve_proto_ref("Genre.GENRE_SCI_FI", "", "pkg.Book", &map),
@@ -1496,7 +1496,7 @@ mod tests {
 
     #[test]
     fn test_resolve_proto_ref_extern_returns_none() {
-        let mut map = HashMap::new();
+        let mut map = HashMap::default();
         map.insert(
             ".google.protobuf.Timestamp".into(),
             "::buffa_types::google::protobuf::Timestamp".into(),
@@ -1511,7 +1511,7 @@ mod tests {
         // extern_path mappings that start with `crate::` must also be rejected —
         // they live in another crate re-exported under this crate's root and
         // cannot be linked with `crate::crate::...`.
-        let mut map = HashMap::new();
+        let mut map = HashMap::default();
         map.insert(
             ".google.api.Foo".into(),
             "crate::vendored::google::api::Foo".into(),
@@ -1524,7 +1524,7 @@ mod tests {
     fn test_resolve_proto_ref_keyword_segment_escaped() {
         // Package `google.type` → path `google::type::LatLng`; `type` must be
         // escaped to `r#type` so rustdoc can resolve the intra-doc link.
-        let mut map = HashMap::new();
+        let mut map = HashMap::default();
         map.insert(".google.type.LatLng".into(), "google::type::LatLng".into());
         let result = resolve_proto_ref("LatLng", "google.type.LatLng", "my.pkg.Msg", &map);
         assert_eq!(
@@ -1535,14 +1535,14 @@ mod tests {
 
     #[test]
     fn test_resolve_proto_ref_unknown_returns_none() {
-        let map = HashMap::new();
+        let map = HashMap::default();
         let result = resolve_proto_ref("Foo", "NoSuchType", "my.pkg.Msg", &map);
         assert_eq!(result, None);
     }
 
     #[test]
     fn test_resolve_proto_ref_empty_effective_ref_returns_none() {
-        let map = HashMap::new();
+        let map = HashMap::default();
         let result = resolve_proto_ref("", "", "my.pkg.Msg", &map);
         assert_eq!(result, None);
     }
@@ -1551,7 +1551,7 @@ mod tests {
 
     #[test]
     fn test_sanitize_with_refs_resolves_fq() {
-        let mut map = HashMap::new();
+        let mut map = HashMap::default();
         map.insert(
             ".google.example.v1.Book".into(),
             "google::example::v1::Book".into(),
@@ -1569,20 +1569,20 @@ mod tests {
 
     #[test]
     fn test_sanitize_with_refs_falls_back_for_unknown() {
-        let out = sanitize_line_with_refs("[Foo][unknown.Type]", "my.pkg.Msg", &HashMap::new());
+        let out = sanitize_line_with_refs("[Foo][unknown.Type]", "my.pkg.Msg", &HashMap::default());
         assert_eq!(out, r"\[Foo\]\[unknown.Type\]");
     }
 
     #[test]
     fn test_sanitize_with_refs_preserves_inline_links() {
         let line = "[RFC 3339](https://ietf.org/rfc/rfc3339.txt)";
-        let out = sanitize_line_with_refs(line, "my.pkg.Msg", &HashMap::new());
+        let out = sanitize_line_with_refs(line, "my.pkg.Msg", &HashMap::default());
         assert_eq!(out, line);
     }
 
     #[test]
     fn test_sanitize_with_refs_implied_form() {
-        let mut map = HashMap::new();
+        let mut map = HashMap::default();
         map.insert(".my.pkg.Foo".into(), "my::pkg::Foo".into());
         let out = sanitize_line_with_refs("See [Foo][].", "my.pkg.Bar", &map);
         assert!(out.contains("[Foo](crate::my::pkg::Foo)"), "got: {out}");
@@ -1591,13 +1591,14 @@ mod tests {
     #[test]
     fn test_sanitize_with_refs_display_angle_brackets_escaped() {
         // Display text containing < or > must be escaped (invalid_html_tags lint).
-        let mut map = HashMap::new();
+        let mut map = HashMap::default();
         map.insert(".my.pkg.Foo".into(), "my::pkg::Foo".into());
         // Resolved: display gets < > escaped.
         let out = sanitize_line_with_refs("[Foo<T>][my.pkg.Foo]", "my.pkg.Bar", &map);
         assert_eq!(out, r"[Foo\<T\>](crate::my::pkg::Foo)");
         // Fallback: display also gets < > escaped.
-        let out2 = sanitize_line_with_refs("[Foo<T>][unknown.Type]", "my.pkg.Bar", &HashMap::new());
+        let out2 =
+            sanitize_line_with_refs("[Foo<T>][unknown.Type]", "my.pkg.Bar", &HashMap::default());
         assert_eq!(out2, r"\[Foo\<T\>\]\[unknown.Type\]");
     }
 
@@ -1605,13 +1606,16 @@ mod tests {
     fn test_sanitize_with_refs_display_backtick_span_preserved() {
         // < > inside a backtick code span in the display must NOT be escaped —
         // \< inside a code span renders the backslash literally.
-        let mut map = HashMap::new();
+        let mut map = HashMap::default();
         map.insert(".my.pkg.Foo".into(), "my::pkg::Foo".into());
         let out = sanitize_line_with_refs("[`Option<T>`][my.pkg.Foo]", "my.pkg.Bar", &map);
         assert_eq!(out, "[`Option<T>`](crate::my::pkg::Foo)");
         // Fallback: backtick span inside display still preserved.
-        let out2 =
-            sanitize_line_with_refs("[`Option<T>`][unknown.Type]", "my.pkg.Bar", &HashMap::new());
+        let out2 = sanitize_line_with_refs(
+            "[`Option<T>`][unknown.Type]",
+            "my.pkg.Bar",
+            &HashMap::default(),
+        );
         assert_eq!(out2, r"\[`Option<T>`\]\[unknown.Type\]");
     }
 
@@ -1619,13 +1623,13 @@ mod tests {
     fn test_sanitize_with_refs_ref_target_angle_brackets_escaped() {
         // < > in a ref_target (malformed proto FQN) must also be escaped on
         // the fallback path so they don't trigger invalid_html_tags.
-        let out = sanitize_line_with_refs("[Foo][a<b>c]", "my.pkg.Msg", &HashMap::new());
+        let out = sanitize_line_with_refs("[Foo][a<b>c]", "my.pkg.Msg", &HashMap::default());
         assert_eq!(out, r"\[Foo\]\[a\<b\>c\]");
     }
 
     #[test]
     fn test_sanitize_with_refs_code_span_untouched() {
-        let mut map = HashMap::new();
+        let mut map = HashMap::default();
         map.insert(".my.pkg.Foo".into(), "my::pkg::Foo".into());
         let out = sanitize_line_with_refs("`[Foo][my.pkg.Foo]`", "my.pkg.Bar", &map);
         assert!(
@@ -1717,7 +1721,7 @@ mod tests {
             Some("Example:\n```\nfoo"),
             "Field 1: `name`",
             "",
-            &HashMap::new(),
+            &HashMap::default(),
         )
         .to_string();
         let fence_close = out.find("# [doc = \" ```\"]").expect("synthetic closer");

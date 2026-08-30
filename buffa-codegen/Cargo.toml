@@ -16,6 +16,10 @@ buffa = { path = "../buffa", version = "0.9.1" }
 # text. The workspace dep already declares `default-features = false`; add
 # back `std` (it's a build-time tool, never `no_std`).
 buffa-descriptor = { workspace = true, features = ["std"] }
+# Fast hasher for codegen's own internal maps (see src/hash.rs). Already
+# resolved transitively via hashbrown, so this adds no new third-party code
+# to the dependency tree.
+foldhash = { workspace = true }
 prettyplease = { workspace = true }
 proc-macro2 = { workspace = true }
 quote = { workspace = true }

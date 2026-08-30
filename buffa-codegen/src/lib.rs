@@ -32,6 +32,7 @@ pub(crate) mod field_names;
 #[doc(hidden)]
 pub use buffa_descriptor::generated;
 pub(crate) mod feature_overrides;
+pub(crate) mod hash;
 pub mod idents;
 pub(crate) mod impl_message;
 pub(crate) mod impl_text;

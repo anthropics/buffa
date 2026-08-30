@@ -1,7 +1,9 @@
 //! Code generation context and descriptor-to-Rust mapping state.
 
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
+
+use crate::hash::FxHashMap as HashMap;
 
 use crate::features::{self, ResolvedFeatures};
 use crate::generated::descriptor::{DescriptorProto, EnumDescriptorProto, FileDescriptorProto};
@@ -125,7 +127,7 @@ pub struct CodeGenContext<'a> {
     /// for fields whose context-free snake_case conversion was adjusted by a
     /// collision (see [`crate::field_names`]). Empty when the option is off
     /// or no collisions exist — the common case.
-    field_renames: HashMap<(String, i32), String>,
+    field_renames: std::collections::HashMap<(String, i32), String>,
     /// Oneof proto names that keep their verbatim spelling under
     /// `idiomatic_field_names` (their snake_case conversion collided).
     oneof_keep_verbatim: HashSet<String>,
@@ -265,11 +267,11 @@ impl<'a> CodeGenContext<'a> {
         effective_extern_paths: &[(String, String)],
         file_extern_paths: &[(String, String)],
     ) -> Self {
-        let mut type_map = HashMap::new();
-        let mut package_of = HashMap::new();
-        let mut enum_closedness = HashMap::new();
-        let mut comment_map = HashMap::new();
-        let mut nested_module_names = HashMap::new();
+        let mut type_map = HashMap::default();
+        let mut package_of = HashMap::default();
+        let mut enum_closedness = HashMap::default();
+        let mut comment_map = HashMap::default();
+        let mut nested_module_names = HashMap::default();
         let msg_index = crate::oneof::message_index(files);
         let unboxed_oneof_variants = crate::oneof::resolve_unboxed_variants(
             &msg_index,
@@ -289,7 +291,7 @@ impl<'a> CodeGenContext<'a> {
         // use plain `snake_case` (e.g. `money::Currency`) while the owning
         // crate emits deconflicted modules (e.g. `money_::Currency`).
         let mut all_packages: HashSet<String> = HashSet::new();
-        let mut pkg_message_names: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pkg_message_names: HashMap<String, Vec<String>> = HashMap::default();
         for file in files {
             let package = file.package.as_deref().unwrap_or("");
             all_packages.insert(package.to_string());
@@ -446,7 +448,11 @@ impl<'a> CodeGenContext<'a> {
             let plan = crate::field_names::plan_field_names(files);
             (plan.field_renames, plan.oneof_keep_verbatim, plan.warnings)
         } else {
-            (HashMap::new(), HashSet::new(), Vec::new())
+            (
+                std::collections::HashMap::default(),
+                HashSet::new(),
+                Vec::new(),
+            )
         };
 
         Self {
@@ -461,7 +467,7 @@ impl<'a> CodeGenContext<'a> {
             enum_first_value: if config.has_enum_type_overrides() {
                 collect_enum_first_values(files)
             } else {
-                HashMap::new()
+                HashMap::default()
             },
             comment_map,
             nested_module_names,
@@ -1563,7 +1569,7 @@ fn collect_enum_first_values(files: &[FileDescriptorProto]) -> HashMap<String, i
         }
     }
 
-    let mut map = HashMap::new();
+    let mut map = HashMap::default();
     for file in files {
         let prefix = match file.package.as_deref() {
             Some(p) if !p.is_empty() => format!(".{p}."),
