@@ -2688,6 +2688,29 @@ fn make_file_with_package(name: &str, package: &str) -> FileDescriptorProto {
 }
 
 #[test]
+fn test_exclude_package_matched_nothing_warning() {
+    // A typo'd or stale exclude entry must produce a warning rather than a
+    // silent no-op, so the user discovers the misconfiguration at build time.
+    let fds = vec![make_file_with_package("example/foo.proto", "example")];
+    let to_generate = vec!["example/foo.proto".to_string()];
+    let config = CodeGenConfig {
+        // "buf.validat" is a typo — it matches nothing in the descriptor set.
+        exclude_packages: vec!["buf.validat".to_string()],
+        ..Default::default()
+    };
+    let (_, warnings) =
+        generate_with_diagnostics(&fds, &to_generate, &config).expect("generation failed");
+    assert!(
+        warnings.iter().any(|w| matches!(
+            w,
+            CodeGenWarning::ExcludePackageMatchedNothing { package }
+                if package == "buf.validat"
+        )),
+        "expected ExcludePackageMatchedNothing warning; got: {warnings:?}"
+    );
+}
+
+#[test]
 fn test_exclude_packages_drops_matching_files() {
     // Files in `buf.validate` should be dropped; the one in `example` kept.
     let fds = vec![
@@ -2815,5 +2838,74 @@ fn test_exclude_packages_invalid_entry_is_rejected() {
     assert!(
         generate(&fds, &to_generate, &config2).is_err(),
         "trailing-dot exclude entry must be rejected"
+    );
+}
+
+#[test]
+fn test_exclude_packages_filter_runs_before_context_build() {
+    // Regression: when the filter ran *after* CodeGenContext::for_generate,
+    // the context saw `google/protobuf/timestamp.proto` in files_to_generate
+    // and concluded "we are generating the WKTs ourselves", suppressing the
+    // auto extern-path injection. The field type then resolved to a local
+    // super::…::Timestamp that was never emitted → compile error.
+    //
+    // With the filter hoisted before context build, the context only sees
+    // "my/service.proto" and injects the auto `.google.protobuf →
+    // ::buffa_types::google::protobuf` mapping, so the field resolves to
+    // ::buffa_types::google::protobuf::Timestamp as expected.
+    let ts = FileDescriptorProto {
+        name: Some("google/protobuf/timestamp.proto".to_string()),
+        package: Some("google.protobuf".to_string()),
+        syntax: Some("proto3".to_string()),
+        message_type: vec![DescriptorProto {
+            name: Some("Timestamp".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let mut svc = proto3_file("my/service.proto");
+    svc.package = Some("my.service".to_string());
+    svc.dependency = vec!["google/protobuf/timestamp.proto".to_string()];
+    svc.message_type.push(DescriptorProto {
+        name: Some("Event".to_string()),
+        field: vec![FieldDescriptorProto {
+            name: Some("created_at".to_string()),
+            number: Some(1),
+            label: Some(Label::LABEL_OPTIONAL),
+            r#type: Some(Type::TYPE_MESSAGE),
+            type_name: Some(".google.protobuf.Timestamp".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let config = CodeGenConfig {
+        exclude_packages: vec!["google.protobuf".to_string()],
+        ..Default::default()
+    };
+    let files = generate(
+        &[ts, svc],
+        &[
+            "google/protobuf/timestamp.proto".to_string(),
+            "my/service.proto".to_string(),
+        ],
+        &config,
+    )
+    .expect("generation failed");
+
+    // google.protobuf is excluded — no output for it.
+    assert!(
+        files.iter().all(|f| !f.name.contains("google.protobuf")),
+        "excluded package must produce no output; got {:?}",
+        files.iter().map(|f| &f.name).collect::<Vec<_>>()
+    );
+
+    // my/service.proto is kept — find its content.
+    let content = joined(&files);
+    assert!(
+        content.contains("buffa_types::google::protobuf::Timestamp")
+            || content.contains("::buffa_types::google::protobuf"),
+        "WKT extern-path auto-injection must fire when google.protobuf is excluded, \
+         so Timestamp resolves to ::buffa_types::…::Timestamp, not a local path: \
+         {content}"
     );
 }

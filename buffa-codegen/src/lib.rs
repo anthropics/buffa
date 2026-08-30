@@ -2004,6 +2004,21 @@ pub enum CodeGenWarning {
         /// e.g. `".buf.validate.FieldConstraints"`.
         type_fqn: String,
     },
+    /// An [`exclude_packages`](CodeGenConfig::exclude_packages) entry matched
+    /// no proto package in the descriptor set. Usually a typo in the package
+    /// name or a stale entry left after a proto reorganization — the entry is
+    /// accepted but changes nothing.
+    ///
+    /// Check the spelling against the `package` declarations in your `.proto`
+    /// files. The match is exact or prefix-on-component-boundary, so
+    /// `"buf.validate"` covers `buf.validate` and `buf.validate.priv` but not
+    /// `buf.validatex`.
+    #[non_exhaustive]
+    ExcludePackageMatchedNothing {
+        /// The normalized package entry that matched nothing
+        /// (leading dot already stripped).
+        package: String,
+    },
     /// A [`feature_overrides`](CodeGenConfig::feature_overrides) rule matched
     /// nothing the override targets in the compiled descriptor set, so it
     /// changed nothing. Usually a typo, a missing nested-message segment, or
@@ -2107,6 +2122,15 @@ impl core::fmt::Display for CodeGenWarning {
                      `extern_path=.{ref_package}=::your_crate`), or include the \
                      defining .proto file in the generate set \
                      (buffa-build: `.files(&[…])`; plugin: drop `exclude_package=`)"
+                )
+            }
+            Self::ExcludePackageMatchedNothing { package } => {
+                write!(
+                    f,
+                    "exclude_package entry \"{package}\" matched no proto package in the \
+                     descriptor set — check for a typo or a stale entry \
+                     (exact match or dotted-prefix: \"buf.validate\" covers \
+                     buf.validate and buf.validate.priv, not buf.validatex)"
                 )
             }
             Self::FeatureOverrideMatchedNothing {
@@ -2725,6 +2749,25 @@ pub fn generate_with_diagnostics(
     // Lazy views need the eager view machinery; warn once per run.
     if config.lazy_views && !config.generate_views {
         ctx.warn(CodeGenWarning::LazyViewsRequireViews);
+    }
+
+    // Warn about exclude_packages entries that matched no package in the full
+    // descriptor set — likely a typo or stale entry. Checked against
+    // file_descriptors (not just files_to_generate) so plugin users without
+    // include_imports don't get spurious warnings for packages they never
+    // compiled in the first place.
+    for package in &normalized_excludes {
+        let matched = file_descriptors.iter().any(|fd| {
+            package_is_excluded(
+                fd.package.as_deref().unwrap_or(""),
+                std::slice::from_ref(package),
+            )
+        });
+        if !matched {
+            ctx.warn(CodeGenWarning::ExcludePackageMatchedNothing {
+                package: package.clone(),
+            });
+        }
     }
 
     // Group requested files by package. BTreeMap → deterministic output order.
