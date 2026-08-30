@@ -256,6 +256,42 @@ mod malformed {
     }
 
     #[test]
+    fn implementation_reserved_extension_numbers_rejected() {
+        for number in [19_000, 19_999] {
+            let mut set = base_set();
+            let ext_file = set
+                .file
+                .iter_mut()
+                .find(|f| f.package.as_deref() == Some("reflect.ext"))
+                .unwrap();
+            ext_file.extension[0].number = Some(number);
+
+            let message_file = set
+                .file
+                .iter_mut()
+                .find(|f| f.package.as_deref() == Some("reflect.ext"))
+                .unwrap();
+            let extendable = message_file
+                .message_type
+                .iter_mut()
+                .find(|m| m.name.as_deref() == Some("Extendable"))
+                .unwrap();
+            extendable.extension_range[0].start = Some(1);
+            extendable.extension_range[0].end = Some(buffa::encoding::MAX_FIELD_NUMBER as i32 + 1);
+
+            let err = DescriptorPool::new(set).unwrap_err();
+            assert!(
+                matches!(
+                    &err,
+                    buffa_descriptor::PoolError::InvalidFieldNumber { field, number: actual }
+                        if field == "reflect.ext.ext_int32" && *actual == number
+                ),
+                "unexpected error: {err}"
+            );
+        }
+    }
+
+    #[test]
     fn extension_oneof_index_is_scrubbed() {
         let mut set = base_set();
         let ext_file = set

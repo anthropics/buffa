@@ -110,8 +110,9 @@ pub enum PoolError {
         index: i32,
     },
     /// A field number is outside the valid range
-    /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`), or an extension range has
-    /// a negative bound.
+    /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`), is reserved for the
+    /// implementation (`19_000..=19_999`), or an extension range has a
+    /// negative bound.
     InvalidFieldNumber { field: String, number: i32 },
     /// A map entry message did not have exactly fields 1 (key) and 2 (value),
     /// or the key type is not a valid map key per the protobuf spec.
@@ -1353,14 +1354,18 @@ impl DescriptorPool {
             .clone()
             .unwrap_or_else(|| derive_json_name(&name));
 
-        // Validate the field number. The wire format reserves 0; the upper
-        // bound is `(1 << 29) - 1`. Spec-compliant `protoc` never emits an
-        // out-of-range number, but the input is no longer trusted to come
-        // from `protoc` once consumers feed network-loaded descriptors.
+        // Validate the field number. The wire format reserves 0, numbers
+        // 19_000 through 19_999 are reserved for the implementation, and the
+        // upper bound is `(1 << 29) - 1`. Spec-compliant `protoc` never emits
+        // an invalid number, but the input is no longer trusted to come from
+        // `protoc` once consumers feed network-loaded descriptors.
         let raw_number = f.number.unwrap_or(0);
         let number = u32::try_from(raw_number)
             .ok()
-            .filter(|&n| (1..=buffa::encoding::MAX_FIELD_NUMBER).contains(&n))
+            .filter(|&n| {
+                (1..=buffa::encoding::MAX_FIELD_NUMBER).contains(&n)
+                    && !(19_000..=19_999).contains(&n)
+            })
             .ok_or(PoolError::InvalidFieldNumber {
                 field: field_fqn,
                 number: raw_number,
