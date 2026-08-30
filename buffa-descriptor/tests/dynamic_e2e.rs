@@ -585,6 +585,17 @@ fn dynamic_message_unknown_fields_preserved() {
 }
 
 #[test]
+fn dynamic_message_equality_compares_unknown_fields_by_value() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
+
+    let first = DynamicMessage::decode(Arc::clone(&p), idx, &varint_field(17, 1)).unwrap();
+    let second = DynamicMessage::decode(Arc::clone(&p), idx, &varint_field(17, 2)).unwrap();
+
+    assert_ne!(first, second);
+}
+
+#[test]
 fn reflect_message_get_has_for_each() {
     let p = pool();
     let idx = p.message_index("reflect.test.Scalars").unwrap();
