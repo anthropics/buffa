@@ -1009,7 +1009,19 @@ const _: fn(&MessageDescriptor) = |_| {};
 
 #[cfg(test)]
 mod tests {
-    use super::{base64_decode, base64_encode};
+    use super::{base64_decode, base64_encode, field_mask_to_camel, field_mask_to_snake};
+
+    #[test]
+    fn field_mask_leading_underscore_roundtrip() {
+        for (snake, camel) in [
+            ("_foo", "Foo"),
+            ("foo._bar", "foo.Bar"),
+            ("foo._b_bar", "foo.BBar"),
+        ] {
+            assert_eq!(field_mask_to_camel(snake).unwrap(), camel);
+            assert_eq!(field_mask_to_snake(camel).unwrap(), snake);
+        }
+    }
 
     /// The capacity computation must not overflow for any input length.
     ///

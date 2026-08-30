@@ -230,13 +230,10 @@ mod tests {
         }
 
         #[test]
-        fn camel_to_snake_pascal_case_no_leading_underscore() {
-            // Regression: leading uppercase must not produce a leading
-            // underscore. Proto field names can't start with `_`, so
-            // `_foo_bar` would never match a real field.
-            assert_eq!(camel_to_snake("FooBar"), "foo_bar");
-            assert_eq!(camel_to_snake("Foo"), "foo");
-            assert_eq!(camel_to_snake("A.B"), "a.b");
+        fn camel_to_snake_preserves_leading_underscore() {
+            assert_eq!(camel_to_snake("FooBar"), "_foo_bar");
+            assert_eq!(camel_to_snake("Foo"), "_foo");
+            assert_eq!(camel_to_snake("A.B"), "_a._b");
         }
 
         #[test]
@@ -286,6 +283,15 @@ mod tests {
             assert_eq!(json, r#""user.emailAddress""#);
             let back: FieldMask = serde_json::from_str(&json).unwrap();
             assert_eq!(back.paths, ["user.email_address"]);
+        }
+
+        #[test]
+        fn field_mask_leading_underscore_roundtrip() {
+            let m = FieldMask::from_paths(["_foo", "foo._bar", "foo._b_bar"]);
+            let json = serde_json::to_string(&m).unwrap();
+            assert_eq!(json, r#""Foo,foo.Bar,foo.BBar""#);
+            let back: FieldMask = serde_json::from_str(&json).unwrap();
+            assert_eq!(back.paths, ["_foo", "foo._bar", "foo._b_bar"]);
         }
 
         // ---- serialize validation -------------------------------------------

@@ -1,0 +1,3 @@
+kind: Fixed
+body: ProtoJSON FieldMask conversion now preserves leading underscores in field-path components, so paths such as `_foo` and `foo._bar` round-trip through JSON.
+time: 2026-08-30T13:05:47+02:00
