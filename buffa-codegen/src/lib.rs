@@ -1500,6 +1500,21 @@ pub struct CodeGenConfig {
     ///
     /// `None` (the default) keeps the `super::`-relative behavior.
     pub shared_descriptor_pool_root: Option<String>,
+    /// Reuse a [`SharedCorpusContext`] precomputed once via
+    /// [`precompute_shared_corpus_context`] instead of recomputing
+    /// `msg_index`/`resolve_unboxed_variants`/`resolve_inlined_fields`/
+    /// comment collection on every `generate()` call. Safe only when
+    /// `files` and the oneof/pointer-repr config are the same across every
+    /// call sharing one context — true for a one-crate-per-package
+    /// workspace generating from one whole-corpus `FileDescriptorSet` with
+    /// a fixed config, false if either varies per call. This precondition
+    /// is not checked at runtime: passing a context built from different
+    /// `files` or a different `unboxed_oneof_fields`/`pointer_fields` than
+    /// the current call silently produces stale or incorrect output for
+    /// whatever changed.
+    ///
+    /// `None` (the default) recomputes fresh every call, as today.
+    pub shared_corpus_context: Option<std::sync::Arc<SharedCorpusContext>>,
     /// Gate the reflection impls behind a `reflect` crate feature, *without*
     /// gating json/views/text (unlike
     /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features),
@@ -1739,6 +1754,7 @@ impl Default for CodeGenConfig {
             generate_reflection_vtable: false,
             shared_descriptor_pool: false,
             shared_descriptor_pool_root: None,
+            shared_corpus_context: None,
             gate_reflect_on_crate_feature: false,
             idiomatic_enum_aliases: true,
             idiomatic_imports: false,
@@ -3030,6 +3046,52 @@ pub enum IncludeMode<'a> {
     Relative(&'a str),
     /// `include!(concat!(env!("OUT_DIR"), "/<file>"))` — for build.rs output.
     OutDir,
+}
+
+/// The corpus-wide computations `CodeGenContext` builds on every
+/// `generate()` call — `msg_index`, `resolve_unboxed_variants`,
+/// `resolve_inlined_fields`, and per-file comment collection — none of which
+/// depend on `effective_extern_paths` (the one thing that legitimately varies
+/// per call in a one-crate-per-package workspace). Precompute once via
+/// [`precompute_shared_corpus_context`] and set
+/// [`CodeGenConfig::shared_corpus_context`] to reuse it across many calls
+/// instead of recomputing on each one.
+#[derive(Debug)]
+pub struct SharedCorpusContext {
+    unboxed_oneof_variants: std::sync::Arc<std::collections::HashSet<String>>,
+    inlined_message_fields: std::sync::Arc<std::collections::HashSet<String>>,
+    comment_map: std::sync::Arc<std::collections::HashMap<String, String>>,
+}
+
+/// Precompute a [`SharedCorpusContext`] from the whole corpus once, for
+/// reuse across every `generate()` call sharing that corpus and config (see
+/// [`CodeGenConfig::shared_corpus_context`]).
+#[must_use]
+pub fn precompute_shared_corpus_context(
+    files: &[generated::descriptor::FileDescriptorProto],
+    config: &CodeGenConfig,
+) -> SharedCorpusContext {
+    let msg_index = oneof::message_index(files);
+    let unboxed_oneof_variants = oneof::resolve_unboxed_variants(
+        &msg_index,
+        &config.unboxed_oneof_fields,
+        &config.pointer_fields,
+    );
+    let inlined_message_fields = oneof::resolve_inlined_fields(
+        &msg_index,
+        &config.unboxed_oneof_fields,
+        &config.pointer_fields,
+    );
+    let mut comment_map: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    for file in files {
+        comment_map.extend(comments::fqn_comments(file));
+    }
+    SharedCorpusContext {
+        unboxed_oneof_variants: std::sync::Arc::new(unboxed_oneof_variants),
+        inlined_message_fields: std::sync::Arc::new(inlined_message_fields),
+        comment_map: std::sync::Arc::new(comment_map),
+    }
 }
 
 /// Encode the shared reflection `FileDescriptorSet` for a codegen run, with

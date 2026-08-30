@@ -1,0 +1,3 @@
+kind: Added
+body: '**`CodeGenConfig::shared_corpus_context`**: reuse a precomputed `SharedCorpusContext` across `generate()` calls that share the same corpus and oneof/pointer-repr config, instead of recomputing `msg_index`, `resolve_unboxed_variants`, `resolve_inlined_fields`, and the comment map on every call. Precompute one with `precompute_shared_corpus_context`. Off by default (`None`); output is byte-identical whether or not it is set.'
+time: 2026-08-30T17:12:38.739703-04:00
