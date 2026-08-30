@@ -24,7 +24,6 @@
 //! - A `pub const __EXT_JSON: ExtensionRegistryEntry` per `extend` declaration,
 //!   plus a `register_extensions(&mut ExtensionRegistry)` convenience function.
 
-use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
@@ -73,8 +72,8 @@ pub type ExtensionRegistryEntry = JsonExtEntry;
 /// unknown fields → is this number a known extension of this message?),
 /// deserialize looks up by `full_name` (saw `"[pkg.ext]"` → what is this?).
 pub struct ExtensionRegistry {
-    by_number: HashMap<(String, u32), JsonExtEntry>,
-    by_name: HashMap<String, (String, u32)>,
+    by_number: HashMap<&'static str, HashMap<u32, JsonExtEntry>>,
+    by_name: HashMap<&'static str, (&'static str, u32)>,
 }
 
 impl ExtensionRegistry {
@@ -89,28 +88,38 @@ impl ExtensionRegistry {
     /// Registers an entry. Replaces any existing entry at the same
     /// `(extendee, number)` or `full_name`.
     pub fn register(&mut self, entry: JsonExtEntry) {
-        let key = (entry.extendee.to_owned(), entry.number);
+        let extendee = entry.extendee;
+        let number = entry.number;
 
-        if let Some(previous) = self.by_number.remove(&key) {
+        if let Some(previous) = self
+            .by_number
+            .get_mut(extendee)
+            .and_then(|entries| entries.remove(&number))
+        {
             self.by_name.remove(previous.full_name);
         }
-        if let Some(previous_key) = self.by_name.remove(entry.full_name) {
-            self.by_number.remove(&previous_key);
+        if let Some((previous_extendee, previous_number)) = self.by_name.remove(entry.full_name) {
+            if let Some(entries) = self.by_number.get_mut(previous_extendee) {
+                entries.remove(&previous_number);
+            }
         }
 
-        self.by_name.insert(entry.full_name.to_owned(), key.clone());
-        self.by_number.insert(key, entry);
+        self.by_name.insert(entry.full_name, (extendee, number));
+        self.by_number
+            .entry(extendee)
+            .or_default()
+            .insert(number, entry);
     }
 
     /// Serialize-side lookup: is `number` a registered extension of `extendee`?
     pub fn by_number(&self, extendee: &str, number: u32) -> Option<&JsonExtEntry> {
-        self.by_number.get(&(extendee.to_owned(), number))
+        self.by_number.get(extendee)?.get(&number)
     }
 
     /// Deserialize-side lookup: what extension is `"[full_name]"`?
     pub fn by_name(&self, full_name: &str) -> Option<&JsonExtEntry> {
         let key = self.by_name.get(full_name)?;
-        self.by_number.get(key)
+        self.by_number.get(key.0)?.get(&key.1)
     }
 }
 
