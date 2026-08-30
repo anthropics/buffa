@@ -284,7 +284,7 @@ pub(crate) fn reflect_owned_impls(
     // returns an empty set, so a recursive reflective walk over nested messages
     // would silently drop fields the local schema doesn't know — the exact
     // regression `ReflectMessage::unknown_fields`'s own doc warns against.
-    let unknown_fields_method = if ctx.config.preserve_unknown_fields {
+    let unknown_fields_method = if ctx.preserve_unknown_fields(proto_fqn) {
         quote! {
             fn unknown_fields(&self) -> &::buffa::UnknownFields {
                 &self.__buffa_unknown_fields

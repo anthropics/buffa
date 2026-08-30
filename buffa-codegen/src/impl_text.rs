@@ -243,7 +243,7 @@ pub(crate) fn generate_text_impl(
     // Gated on `has_extension_ranges`: protoc rejects `extend Foo { ... }`
     // when Foo has no `extensions N to M;` declaration, so a message
     // without one never has a matching registry entry.
-    let use_ext_text = ctx.config.preserve_unknown_fields && has_extension_ranges;
+    let use_ext_text = ctx.preserve_unknown_fields(proto_fqn) && has_extension_ranges;
     let proto_fqn_lit = proto_fqn;
     let (ext_encode, ext_merge_arm) = if use_ext_text {
         (
@@ -266,7 +266,7 @@ pub(crate) fn generate_text_impl(
     // `emit_unknown` flag), so it's fine to call unconditionally. Deref
     // coercion handles the JSON `__<Name>ExtJson` wrapper when generate_json
     // is also on.
-    let unknown_encode = if ctx.config.preserve_unknown_fields {
+    let unknown_encode = if ctx.preserve_unknown_fields(proto_fqn) {
         quote! { enc.write_unknown_fields(&self.__buffa_unknown_fields)?; }
     } else {
         quote! {}
@@ -278,7 +278,7 @@ pub(crate) fn generate_text_impl(
         || !repeated_encode.is_empty()
         || !oneof_encode.is_empty()
         || !map_encode.is_empty()
-        || ctx.config.preserve_unknown_fields;
+        || ctx.preserve_unknown_fields(proto_fqn);
     let enc_param = if has_encode {
         quote! { enc }
     } else {

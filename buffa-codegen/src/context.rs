@@ -1063,6 +1063,27 @@ impl<'a> CodeGenContext<'a> {
             .map_or(crate::BytesRepr::default(), |(_, repr)| repr.clone())
     }
 
+    /// Whether this message stores unknown fields.
+    ///
+    /// Starts from [`CodeGenConfig::preserve_unknown_fields`] and applies
+    /// [`CodeGenConfig::preserve_unknown_fields_in`] in order; last match
+    /// wins. `msg_fqn` is the message's proto path, with or without a
+    /// leading dot (`"pkg.Msg"` or `".pkg.Msg"`).
+    pub fn preserve_unknown_fields(&self, msg_fqn: &str) -> bool {
+        let dotted = if msg_fqn.starts_with('.') {
+            Cow::Borrowed(msg_fqn)
+        } else {
+            Cow::Owned(format!(".{msg_fqn}"))
+        };
+        let mut value = self.config.preserve_unknown_fields;
+        for (prefix, enabled) in &self.config.preserve_unknown_fields_in {
+            if matches_proto_prefix(prefix, dotted.as_ref()) {
+                value = *enabled;
+            }
+        }
+        value
+    }
+
     /// Check whether a message-typed oneof variant at the given proto path is
     /// stored inline (opted out of `Box` wrapping).
     ///
@@ -1189,6 +1210,12 @@ impl<'a> MessageScope<'a> {
             features,
             nesting: self.nesting + 1,
         }
+    }
+
+    /// Whether this message stores unknown fields. See
+    /// [`CodeGenContext::preserve_unknown_fields`].
+    pub fn preserve_unknown_fields(&self) -> bool {
+        self.ctx.preserve_unknown_fields(self.proto_fqn)
     }
 }
 
@@ -2871,5 +2898,46 @@ mod tests {
         assert!(!matches_proto_prefix(".my.pk", ".my.pkg.Msg"));
         // But full-segment prefix match does.
         assert!(matches_proto_prefix(".my.pkg", ".my.pkg.Msg"));
+    }
+
+    #[test]
+    fn preserve_unknown_fields_path_override_last_match_wins() {
+        let files = [make_file(
+            "t.proto",
+            "test",
+            vec![msg("Keep"), msg("Drop"), msg("Nested")],
+            vec![],
+        )];
+        let config = CodeGenConfig {
+            preserve_unknown_fields: false,
+            preserve_unknown_fields_in: vec![
+                (".test".to_string(), true),
+                (".test.Drop".to_string(), false),
+            ],
+            ..CodeGenConfig::default()
+        };
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+        assert!(ctx.preserve_unknown_fields("test.Keep"));
+        assert!(ctx.preserve_unknown_fields(".test.Keep"));
+        assert!(!ctx.preserve_unknown_fields("test.Drop"));
+        // Package prefix `.test` matches nested FQNs; a more specific
+        // `.test.Drop` rule still wins for Drop's children.
+        assert!(ctx.preserve_unknown_fields("test.Keep.Nested"));
+        assert!(!ctx.preserve_unknown_fields("test.Drop.Child"));
+        assert!(!ctx.preserve_unknown_fields("other.Msg"));
+    }
+
+    #[test]
+    fn preserve_unknown_fields_nested_message_is_independent() {
+        let files = [make_file("t.proto", "test", vec![msg("Outer")], vec![])];
+        let config = CodeGenConfig {
+            preserve_unknown_fields: false,
+            preserve_unknown_fields_in: vec![(".test.Outer.Inner".to_string(), true)],
+            ..CodeGenConfig::default()
+        };
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+        // Enabling the nested type does not enable the enclosing message.
+        assert!(!ctx.preserve_unknown_fields("test.Outer"));
+        assert!(ctx.preserve_unknown_fields("test.Outer.Inner"));
     }
 }

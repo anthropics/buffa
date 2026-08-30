@@ -124,6 +124,53 @@ fn json_with_views() -> CodeGenConfig {
     c
 }
 
+/// Body of the first `pub struct {name}` in generated source.
+/// Skips a longer identifier (`Keep` vs `KeepView`) and any generics
+/// (`KeepView<'a>`).
+fn struct_body<'a>(content: &'a str, name: &str) -> &'a str {
+    let needle = format!("pub struct {name}");
+    let mut search = 0;
+    loop {
+        let rel = content[search..]
+            .find(&needle)
+            .unwrap_or_else(|| panic!("missing `{needle}` in:\n{content}"));
+        let abs = search + rel;
+        let after_name = abs + needle.len();
+        let rest = &content[after_name..];
+        if rest
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            search = after_name;
+            continue;
+        }
+        let brace = rest
+            .find('{')
+            .unwrap_or_else(|| panic!("no `{{` after `{needle}` in:\n{content}"));
+        let body_start = after_name + brace + 1;
+        let bytes = content.as_bytes();
+        let mut depth = 1usize;
+        for (i, &b) in bytes.iter().enumerate().skip(body_start) {
+            match b {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &content[body_start..i];
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("unclosed `{needle}` in:\n{content}");
+    }
+}
+
+fn struct_has_unknown_fields(content: &str, name: &str) -> bool {
+    struct_body(content, name).contains("__buffa_unknown_fields")
+}
+
 // ── Tests using shared proto files from buffa-test/protos/ ──────────────
 
 #[test]
@@ -1205,6 +1252,110 @@ fn inline_empty_message_no_unknown_fields() {
     );
     assert!(content.contains("pub struct Empty"));
     assert!(!content.contains("__buffa_unknown_fields"));
+}
+
+#[test]
+fn inline_preserve_unknown_fields_in_keeps_selected_messages() {
+    let mut config = no_views();
+    config.preserve_unknown_fields = false;
+    config.preserve_unknown_fields_in = vec![(".test.Keep".to_string(), true)];
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Keep {}
+        message Drop {}
+        "#,
+        &config,
+    );
+    assert!(
+        struct_has_unknown_fields(&content, "Keep"),
+        "Keep must retain unknown fields: {content}"
+    );
+    assert!(
+        !struct_has_unknown_fields(&content, "Drop"),
+        "Drop must omit unknown fields: {content}"
+    );
+}
+
+#[test]
+fn inline_preserve_unknown_fields_in_last_match_and_nested() {
+    let mut config = no_views();
+    config.preserve_unknown_fields = false;
+    config.preserve_unknown_fields_in = vec![
+        (".test".to_string(), true),
+        (".test.Drop".to_string(), false),
+        (".test.Outer.Inner".to_string(), true),
+    ];
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Keep {}
+        message Drop {}
+        message Outer {
+          message Inner {}
+        }
+        "#,
+        &config,
+    );
+    assert!(struct_has_unknown_fields(&content, "Keep"));
+    assert!(!struct_has_unknown_fields(&content, "Drop"));
+    // Package prefix `.test` would enable Outer; the nested Inner rule does
+    // not change Outer. Inner is on via its own more specific enable.
+    assert!(struct_has_unknown_fields(&content, "Outer"));
+    assert!(struct_has_unknown_fields(&content, "Inner"));
+}
+
+#[test]
+fn inline_preserve_unknown_fields_in_nested_independent_of_outer() {
+    let mut config = no_views();
+    config.preserve_unknown_fields = false;
+    config.preserve_unknown_fields_in = vec![(".test.Outer.Inner".to_string(), true)];
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Outer {
+          message Inner {}
+        }
+        "#,
+        &config,
+    );
+    assert!(
+        !struct_has_unknown_fields(&content, "Outer"),
+        "enabling Inner must not enable Outer: {content}"
+    );
+    assert!(
+        struct_has_unknown_fields(&content, "Inner"),
+        "Inner must retain unknown fields: {content}"
+    );
+}
+
+#[test]
+fn inline_preserve_unknown_fields_in_views() {
+    let mut config = CodeGenConfig::default();
+    config.preserve_unknown_fields = false;
+    config.preserve_unknown_fields_in = vec![(".test.Keep".to_string(), true)];
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Keep {}
+        message Drop {}
+        "#,
+        &config,
+    );
+    assert!(struct_has_unknown_fields(&content, "Keep"));
+    assert!(!struct_has_unknown_fields(&content, "Drop"));
+    assert!(
+        struct_has_unknown_fields(&content, "KeepView"),
+        "KeepView must retain unknown fields: {content}"
+    );
+    assert!(
+        !struct_has_unknown_fields(&content, "DropView"),
+        "DropView must omit unknown fields: {content}"
+    );
 }
 
 // ── View Serialize codegen tests ────────────────────────────────────────

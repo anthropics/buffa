@@ -665,9 +665,51 @@ impl Config {
     /// fidelity across schema versions is not required — as it is for
     /// embedded / `no_std` targets and large in-memory collections of small
     /// messages.
+    ///
+    /// To keep the global off-switch and still preserve selected types, use
+    /// [`preserve_unknown_fields_in`](Self::preserve_unknown_fields_in).
     #[must_use]
     pub fn preserve_unknown_fields(mut self, enabled: bool) -> Self {
         self.codegen_config.preserve_unknown_fields = enabled;
+        self
+    }
+
+    /// Enable unknown-field preservation for matching messages, on top of
+    /// the global [`preserve_unknown_fields`](Self::preserve_unknown_fields)
+    /// default.
+    ///
+    /// Each path is a fully-qualified proto **message** prefix, e.g.
+    /// `".wa.CallLogRecord"` for one type or `".wa"` for a package (same
+    /// matching as [`unbox_oneof_in`](Self::unbox_oneof_in)). A leading dot
+    /// is added if missing. Nested messages resolve independently of their
+    /// enclosing type: preserving an outer message does not preserve its
+    /// children.
+    ///
+    /// Rules accumulate; the **last** matching rule wins. Typical use is
+    /// the global off switch first, then this for the types that must
+    /// still round-trip:
+    ///
+    /// ```rust,ignore
+    /// buffa_build::Config::new()
+    ///     .preserve_unknown_fields(false)
+    ///     .preserve_unknown_fields_in(&[".wa.CallLogRecord", ".wa.SyncdMutation"])
+    /// ```
+    ///
+    /// Per-field granularity is not representable — the flag gates whether
+    /// the message struct carries `__buffa_unknown_fields` at all.
+    #[must_use]
+    pub fn preserve_unknown_fields_in(mut self, paths: &[impl AsRef<str>]) -> Self {
+        self.codegen_config
+            .preserve_unknown_fields_in
+            .extend(paths.iter().map(|p| {
+                let p = p.as_ref();
+                let path = if p.starts_with('.') {
+                    p.to_string()
+                } else {
+                    format!(".{p}")
+                };
+                (path, true)
+            }));
         self
     }
 
@@ -2382,6 +2424,22 @@ mod tests {
             vec![
                 ".my.pkg.Msg.body.small".to_string(),
                 ".my.pkg.Other".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn preserve_unknown_fields_in_normalizes_leading_dot() {
+        let config = Config::new()
+            .preserve_unknown_fields(false)
+            .preserve_unknown_fields_in(&["wa.CallLogRecord", ".wa.SyncdMutation"])
+            .codegen_config;
+        assert!(!config.preserve_unknown_fields);
+        assert_eq!(
+            config.preserve_unknown_fields_in,
+            vec![
+                (".wa.CallLogRecord".to_string(), true),
+                (".wa.SyncdMutation".to_string(), true),
             ]
         );
     }
