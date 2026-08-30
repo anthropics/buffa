@@ -115,6 +115,75 @@ fn shared_mode_rejects_reserved_name_in_any_package_segment() {
 }
 
 #[test]
+fn shared_mode_with_root_override_allows_reserved_root_package() {
+    // With the root elsewhere, there's no local `pub mod __buffa_fds` to
+    // collide with, so the reservation must not apply here.
+    let config = CodeGenConfig {
+        shared_descriptor_pool_root: Some(quote::quote! { ::my_shared_fds_crate::__buffa_fds }),
+        ..shared_config()
+    };
+    let files = generate(
+        &[msg_in_package("x.proto", "__buffa_fds.v1", "X")],
+        &["x.proto".to_string()],
+        &config,
+    )
+    .expect("reserved root package must be allowed when the root lives outside this tree");
+    assert!(files.iter().any(|f| f.package == "__buffa_fds.v1"));
+
+    // The override must actually reach the generated output through the real
+    // generate() -> generate_package_mod -> reflect_pool_module_shared wiring,
+    // not just avoid being rejected — a low-level unit test already covers
+    // reflect_pool_module_shared in isolation, but that bypasses this path.
+    let all = joined(&files);
+    assert!(
+        all.contains("my_shared_fds_crate::__buffa_fds"),
+        "generated output must use the override path verbatim: {all}"
+    );
+}
+
+#[test]
+fn shared_mode_with_root_override_requires_shared_descriptor_pool() {
+    let config = CodeGenConfig {
+        shared_descriptor_pool: false,
+        shared_descriptor_pool_root: Some(quote::quote! { ::my_shared_fds_crate::__buffa_fds }),
+        generate_reflection: true,
+        generate_reflection_vtable: true,
+        ..Default::default()
+    };
+    let err = generate(
+        &[msg_in_package("x.proto", "x.v1", "X")],
+        &["x.proto".to_string()],
+        &config,
+    )
+    .expect_err(
+        "root override without shared_descriptor_pool must be rejected, not silently ignored",
+    );
+    assert!(
+        matches!(err, CodeGenError::Other(ref msg) if msg.contains("shared_descriptor_pool_root")),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn shared_mode_with_malformed_root_override_is_rejected() {
+    let config = CodeGenConfig {
+        // Not a valid path: a bare integer literal.
+        shared_descriptor_pool_root: Some(quote::quote! { 42 }),
+        ..shared_config()
+    };
+    let err = generate(
+        &[msg_in_package("x.proto", "x.v1", "X")],
+        &["x.proto".to_string()],
+        &config,
+    )
+    .expect_err("a malformed root override must be rejected at generate() time");
+    assert!(
+        matches!(err, CodeGenError::Other(ref msg) if msg.contains("valid Rust path")),
+        "{err:?}"
+    );
+}
+
+#[test]
 fn shared_mode_allows_reserved_name_in_ungenerated_import() {
     // An import-only package named `__buffa_fds` emits no module, so the
     // reservation must not reject it — only generated files are checked.

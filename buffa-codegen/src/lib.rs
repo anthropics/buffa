@@ -1469,6 +1469,21 @@ pub struct CodeGenConfig {
     /// Defaults to `false`. [`generate`] errors when this is on without
     /// `generate_reflection`.
     pub shared_descriptor_pool: bool,
+    /// When [`shared_descriptor_pool`](Self::shared_descriptor_pool) is on,
+    /// use this path to the shared `__buffa_fds` module verbatim instead of
+    /// computing a `super::`-relative one.
+    ///
+    /// The default `super::` path assumes one crate hosts the whole package
+    /// tree as nested modules. A workspace with one crate per package has no
+    /// such tree to climb; this field lets the caller point at wherever they
+    /// assembled [`shared_descriptor_root_module`]'s output instead — a
+    /// separate crate, a re-exported alias, anything. Buffa has no opinion
+    /// on what's there. Build it with `quote! { ::krate::__buffa_fds }` (via
+    /// `format_ident!`, so a bad identifier fails here, not at a downstream
+    /// `cargo build`).
+    ///
+    /// `None` (the default) keeps the `super::`-relative behavior.
+    pub shared_descriptor_pool_root: Option<proc_macro2::TokenStream>,
     /// Gate the reflection impls behind a `reflect` crate feature, *without*
     /// gating json/views/text (unlike
     /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features),
@@ -1681,6 +1696,7 @@ impl Default for CodeGenConfig {
             generate_reflection: false,
             generate_reflection_vtable: false,
             shared_descriptor_pool: false,
+            shared_descriptor_pool_root: None,
             gate_reflect_on_crate_feature: false,
             idiomatic_enum_aliases: true,
             idiomatic_imports: false,
@@ -2593,6 +2609,31 @@ pub fn generate_with_diagnostics(
         ));
     }
 
+    // shared_descriptor_pool_root only overrides how the shared root is
+    // reached, so — like shared_descriptor_pool without generate_reflection
+    // above — it is meaningless, and would silently no-op, without
+    // shared_descriptor_pool itself. Reject it up front rather than
+    // dropping the override.
+    if let Some(root) = &config.shared_descriptor_pool_root {
+        if !config.shared_descriptor_pool {
+            return Err(CodeGenError::Other(
+                "shared_descriptor_pool_root requires shared_descriptor_pool to be \
+                 enabled (it overrides the path to the shared root, which only exists \
+                 in shared-pool mode)"
+                    .into(),
+            ));
+        }
+        // The override is spliced into generated source verbatim; a malformed
+        // value would otherwise only surface as a confusing compile error in
+        // the downstream generated crate. Parsing a handful of tokens costs
+        // nothing next to the corpus-wide work `generate` already does per call.
+        syn::parse2::<syn::Path>(root.clone()).map_err(|e| {
+            CodeGenError::Other(format!(
+                "shared_descriptor_pool_root must be a valid Rust path: {e}"
+            ))
+        })?;
+    }
+
     // Idiomatic imports place `use` directives in the package-root scope,
     // which is only single-writer (collision-free by construction) when the
     // whole package is one generated file.
@@ -2723,11 +2764,14 @@ pub fn generate_with_diagnostics(
     // doesn't scale with the package count. In the default mode each package
     // embeds this copy; in shared-pool mode the bytes are embedded once by the
     // module-tree builder, not per package, so `generate` needs no copy at all.
-    // In shared mode the tree root gains a `pub mod __buffa_fds`; reserve that
-    // name against user packages/types the same way `__buffa` is reserved, so a
+    // In shared mode (without a `shared_descriptor_pool_root` override) the
+    // tree root gains a `pub mod __buffa_fds`; reserve that name against user
+    // packages/types the same way `__buffa` is reserved, so a
     // `package __buffa_fds;` (or a root-package type named `__buffa_fds`) fails
     // with a clear error instead of a duplicate-module collision at the root.
-    if config.shared_descriptor_pool {
+    // With an override the root lives elsewhere, so there's no local module
+    // to collide with — skip the reservation.
+    if config.shared_descriptor_pool && config.shared_descriptor_pool_root.is_none() {
         validate_shared_root_name(file_descriptors, files_to_generate)?;
     }
 
@@ -3782,7 +3826,10 @@ fn generate_package_mod(
         // Shared mode: delegate to the single root `__buffa_fds` module
         // instead of embedding this package's own byte copy.
         let pool_module = if ctx.config.shared_descriptor_pool {
-            reflect::reflect_pool_module_shared(current_package)
+            reflect::reflect_pool_module_shared(
+                current_package,
+                ctx.config.shared_descriptor_pool_root.as_ref(),
+            )
         } else {
             reflect::reflect_pool_module(fds_bytes)
         };
