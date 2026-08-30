@@ -1,0 +1,3 @@
+kind: Added
+body: The protoc-gen-buffa plugin now accepts repeatable unbox_oneof=<path> options for opting matching non-recursive message/group oneof variants into inline storage.
+time: 2026-08-30T13:18:32+02:00

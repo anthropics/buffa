@@ -287,6 +287,14 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
             "idiomatic_field_names" => {
                 codegen.idiomatic_field_names = parse_bool("idiomatic_field_names", value)?
             }
+            "unbox_oneof" => {
+                let path = if value.starts_with('.') {
+                    value.to_string()
+                } else {
+                    format!(".{value}")
+                };
+                codegen.unboxed_oneof_fields.push(path);
+            }
             // `type_name_prefix=Rpc` prepends a prefix to every generated
             // message/enum type name (and their view types). The value is
             // passed through verbatim; buffa-codegen rejects anything that
@@ -593,6 +601,28 @@ mod tests {
     fn idiomatic_field_names_defaults_off() {
         let config = parse_config("").unwrap();
         assert!(!config.codegen.idiomatic_field_names);
+    }
+
+    #[test]
+    fn unbox_oneof_is_repeatable_and_normalized() {
+        let config = parse_config(
+            "unbox_oneof=my.pkg.Msg.body.small,unbox_oneof=.,unbox_oneof=.my.pkg.Other",
+        )
+        .unwrap();
+        assert_eq!(
+            config.codegen.unboxed_oneof_fields,
+            vec![
+                ".my.pkg.Msg.body.small".to_string(),
+                ".".to_string(),
+                ".my.pkg.Other".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn unbox_oneof_defaults_empty() {
+        let config = parse_config("").unwrap();
+        assert!(config.codegen.unboxed_oneof_fields.is_empty());
     }
 
     #[test]
