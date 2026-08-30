@@ -1,0 +1,3 @@
+kind: Fixed
+body: Reflective ProtoJSON FieldMask parsing now preserves whitespace in comma-separated paths instead of silently trimming it.
+time: 2026-08-30T13:12:21+02:00

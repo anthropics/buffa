@@ -147,7 +147,7 @@ impl WktKind {
                     Ok(Vec::new())
                 } else {
                     s.split(',')
-                        .map(|p| field_mask_to_snake(p.trim()).map(Value::String))
+                        .map(|p| field_mask_to_snake(p).map(Value::String))
                         .collect()
                 };
                 let mut m = DynamicMessage::new(pool, midx);

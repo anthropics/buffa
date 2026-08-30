@@ -13,6 +13,60 @@ fn pool() -> Arc<DescriptorPool> {
     Arc::new(DescriptorPool::decode(FDS_BYTES).expect("pool builds from protoc FDS"))
 }
 
+fn field_mask_pool() -> Arc<DescriptorPool> {
+    use buffa_descriptor::generated::descriptor::{
+        field_descriptor_proto::{Label, Type},
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    Arc::new(
+        DescriptorPool::new(FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("google/protobuf/field_mask.proto".into()),
+                package: Some("google.protobuf".into()),
+                syntax: Some("proto3".into()),
+                message_type: vec![DescriptorProto {
+                    name: Some("FieldMask".into()),
+                    field: vec![FieldDescriptorProto {
+                        name: Some("paths".into()),
+                        number: Some(1),
+                        label: Some(Label::LABEL_REPEATED),
+                        r#type: Some(Type::TYPE_STRING),
+                        json_name: Some("paths".into()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        })
+        .expect("hand-built FieldMask descriptor is valid"),
+    )
+}
+
+#[test]
+fn json_field_mask_preserves_path_whitespace() {
+    let p = field_mask_pool();
+    let idx = p.message_index("google.protobuf.FieldMask").unwrap();
+
+    for (json, expected) in [
+        (r#""foo, barBaz""#, ["foo", " bar_baz"]),
+        (r#""foo ,barBaz""#, ["foo ", "bar_baz"]),
+    ] {
+        let parsed = DynamicMessage::from_json(Arc::clone(&p), idx, json).unwrap();
+        let Some(Value::List(paths)) = parsed.field_by_number(1) else {
+            panic!("FieldMask paths were not parsed");
+        };
+        let expected: Vec<_> = expected
+            .into_iter()
+            .map(|p| Value::String(p.into()))
+            .collect();
+        assert_eq!(paths, &expected);
+        assert_eq!(parsed.to_json().unwrap(), json);
+    }
+}
+
 #[test]
 fn json_scalar_round_trip() {
     let p = pool();
