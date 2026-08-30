@@ -13,11 +13,14 @@
 //!   protoc --descriptor_set_out=/tmp/wkt.pb --include_imports \
 //!       -I buffa-types/protos \
 //!       google/protobuf/any.proto \
+//!       google/protobuf/api.proto \
 //!       google/protobuf/duration.proto \
 //!       google/protobuf/empty.proto \
 //!       google/protobuf/field_mask.proto \
+//!       google/protobuf/source_context.proto \
 //!       google/protobuf/struct.proto \
 //!       google/protobuf/timestamp.proto \
+//!       google/protobuf/type.proto \
 //!       google/protobuf/wrappers.proto
 //!   cargo run --bin gen_wkt_types -- /tmp/wkt.pb buffa-types/src/generated
 //! ```
@@ -31,11 +34,14 @@ use std::path::Path;
 /// WKT proto paths. Fixed — Google owns these and they don't move.
 const WKT_PROTOS: &[&str] = &[
     "google/protobuf/any.proto",
+    "google/protobuf/api.proto",
     "google/protobuf/duration.proto",
     "google/protobuf/empty.proto",
     "google/protobuf/field_mask.proto",
+    "google/protobuf/source_context.proto",
     "google/protobuf/struct.proto",
     "google/protobuf/timestamp.proto",
+    "google/protobuf/type.proto",
     "google/protobuf/wrappers.proto",
 ];
 
@@ -74,10 +80,13 @@ fn main() {
     //        produced two different outputs — unnecessary given the
     //        attribute is already cfg-gated.
     //
-    //   generate_json = false       Unchanged. All WKT serde impls are
-    //        hand-written in the *_ext.rs modules (Timestamp → RFC3339,
-    //        Duration → "3.000001s", Any → type-URL dispatch, etc.).
-    //        None of the WKTs use derive-serde.
+    //   generate_json = false       Unchanged. JSON-mappable WKTs have
+    //        hand-written serde in the *_ext.rs modules (Timestamp →
+    //        RFC3339, Duration → "3.000001s", Any → type-URL dispatch,
+    //        etc.). Api/Type/SourceContext use the standard proto3 object
+    //        mapping and currently have no serde impls — turning
+    //        generate_json on globally would also derive serde for
+    //        Timestamp/Any and duplicate those impls.
     //
     //   generate_text = true        Textproto has no special WKT treatment
     //        (unlike JSON), so the generated field-by-field impls are
@@ -85,7 +94,7 @@ fn main() {
     //        in buffa-types so no feature-gate wrapping is needed.
     //
     //   emit_register_fn = false    Per-package output means one fn would
-    //        be emitted (all seven WKTs share `google.protobuf`), so the
+    //        be emitted (all WKTs share `google.protobuf`), so the
     //        old multi-file collision is gone — but WKTs register via the
     //        hand-written `register_wkt_types` in `any_ext.rs` (which knows
     //        the JSON-Any `is_wkt` special-casing the generic fn doesn't),

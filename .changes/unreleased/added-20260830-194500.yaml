@@ -1,0 +1,5 @@
+kind: Added
+body: |-
+    **`buffa-types` now ships `google.protobuf.Api`, `Type`, `Enum`, and `SourceContext`** (#382).
+    Codegen auto-maps the entire `.google.protobuf` package to `buffa-types`, so compiling googleapis (or any schema that imports `api.proto` / `type.proto` / `source_context.proto`) failed with `cannot find type Api` / `TypeView` / `EnumView`. Those three files are the rest of the official well-known set; they are now vendored and generated next to Timestamp/Any/…, with binary + view round-trip coverage. They use the standard proto3 JSON object mapping (no special encoding), so they are registered for textproto Any-expansion only. Same-module AIP-192 rustdoc links (`[Mixin][]`) now emit `[Mixin]` rather than `[Mixin](crate::…::Mixin)`, which `rustdoc::redundant_explicit_links` rejects under `-D warnings`.
+time: 2026-08-30T19:45:00Z
