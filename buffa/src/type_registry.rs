@@ -152,34 +152,42 @@ impl TextAnyMap {
 #[cfg(feature = "text")]
 #[derive(Default)]
 struct TextExtMap {
-    by_number: hashbrown::HashMap<(alloc::string::String, u32), TextExtEntry>,
-    by_name: hashbrown::HashMap<alloc::string::String, (alloc::string::String, u32)>,
+    by_number: hashbrown::HashMap<&'static str, hashbrown::HashMap<u32, TextExtEntry>>,
+    by_name: hashbrown::HashMap<&'static str, (&'static str, u32)>,
 }
 
 #[cfg(feature = "text")]
 impl TextExtMap {
     fn register(&mut self, entry: TextExtEntry) {
-        use alloc::borrow::ToOwned;
-        let key = (entry.extendee.to_owned(), entry.number);
+        let extendee = entry.extendee;
+        let number = entry.number;
 
-        if let Some(previous) = self.by_number.remove(&key) {
+        if let Some(previous) = self
+            .by_number
+            .get_mut(extendee)
+            .and_then(|entries| entries.remove(&number))
+        {
             self.by_name.remove(previous.full_name);
         }
-        if let Some(previous_key) = self.by_name.remove(entry.full_name) {
-            self.by_number.remove(&previous_key);
+        if let Some((previous_extendee, previous_number)) = self.by_name.remove(entry.full_name) {
+            if let Some(entries) = self.by_number.get_mut(previous_extendee) {
+                entries.remove(&previous_number);
+            }
         }
 
-        self.by_name.insert(entry.full_name.to_owned(), key.clone());
-        self.by_number.insert(key, entry);
+        self.by_name.insert(entry.full_name, (extendee, number));
+        self.by_number
+            .entry(extendee)
+            .or_default()
+            .insert(number, entry);
     }
 
     fn by_number(&self, extendee: &str, number: u32) -> Option<&TextExtEntry> {
-        use alloc::borrow::ToOwned;
-        self.by_number.get(&(extendee.to_owned(), number))
+        self.by_number.get(extendee)?.get(&number)
     }
     fn by_name(&self, full_name: &str) -> Option<&TextExtEntry> {
         let key = self.by_name.get(full_name)?;
-        self.by_number.get(key)
+        self.by_number.get(key.0)?.get(&key.1)
     }
 }
 
@@ -914,6 +922,44 @@ mod tests {
                 "pkg.new"
             );
             assert!(reg.text_ext_by_number("pkg.Carrier", 51).is_none());
+        }
+
+        #[test]
+        fn text_ext_keys_the_same_number_per_extendee() {
+            let mut reg = TypeRegistry::new();
+            let make_entry = |number, full_name, extendee| TextExtEntry {
+                number,
+                full_name,
+                extendee,
+                text_encode: message_encode_text::<Inner>,
+                text_merge: message_merge_text::<Inner>,
+            };
+
+            reg.register_text_ext(make_entry(50, "pkg.ext", "pkg.Carrier"));
+            reg.register_text_ext(make_entry(50, "other.ext", "other.Carrier"));
+            assert_eq!(
+                reg.text_ext_by_number("pkg.Carrier", 50).unwrap().full_name,
+                "pkg.ext"
+            );
+            assert_eq!(
+                reg.text_ext_by_number("other.Carrier", 50)
+                    .unwrap()
+                    .full_name,
+                "other.ext"
+            );
+
+            reg.register_text_ext(make_entry(7, "pkg.ext", "other.Carrier"));
+            assert!(reg.text_ext_by_number("pkg.Carrier", 50).is_none());
+            assert_eq!(
+                reg.text_ext_by_number("other.Carrier", 7)
+                    .unwrap()
+                    .full_name,
+                "pkg.ext"
+            );
+            assert_eq!(
+                reg.text_ext_by_name("pkg.ext").unwrap().extendee,
+                "other.Carrier"
+            );
         }
 
         /// Serializes with other tests touching the global TEXT_ANY/TEXT_EXT.
