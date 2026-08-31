@@ -93,7 +93,8 @@ impl Any {
 ///
 /// This registers Duration, Timestamp, FieldMask, Value, Struct, ListValue,
 /// Empty, all wrapper types, Any itself, and the remaining official WKTs
-/// (`Api`, `Type`, `Enum`, `SourceContext`, …), enabling both proto3-compliant
+/// (`Api`, `Method`, `Mixin`, `Type`, `Field`, `Enum`, `EnumValue`, `Option`,
+/// `SourceContext`), enabling both proto3-compliant
 /// JSON serialization (under the `json` feature) and textproto
 /// `[type_url] { fields }` Any-expansion when these types appear inside
 /// `google.protobuf.Any` fields.
@@ -176,10 +177,9 @@ pub fn register_wkt_types(reg: &mut buffa::type_registry::TypeRegistry) {
     register_type!(Any, true);
 
     // Regular messages (fields inlined in Any JSON). Empty has a
-    // hand-written JSON impl; Api/Type/SourceContext and friends use the
-    // standard proto3 object mapping and currently have generated text
-    // impls only (no special JSON form), so they register for textproto
-    // Any-expansion without a JSON entry.
+    // hand-written JSON impl; Api/Type/SourceContext and their parts have
+    // generated text impls and no serde impls, so they register for
+    // textproto Any-expansion without a JSON entry.
     register_type!(Empty, false);
 
     register_text_only!(Api);
@@ -189,7 +189,7 @@ pub fn register_wkt_types(reg: &mut buffa::type_registry::TypeRegistry) {
     register_text_only!(Field);
     register_text_only!(Enum);
     register_text_only!(EnumValue);
-    register_text_only!(Option);
+    register_text_only!(crate::google::protobuf::Option);
     register_text_only!(SourceContext);
 }
 
@@ -662,6 +662,55 @@ mod tests {
                 assert_eq!(back.type_url, SourceContext::TYPE_URL);
                 let unpacked: SourceContext = back.unpack_unchecked().unwrap();
                 assert_eq!(unpacked.file_name, sc.file_name);
+            });
+        }
+
+        #[test]
+        fn text_registry_roundtrip_type_and_option() {
+            // `Type` carries a repeated message and an enum; `Option` holds
+            // an `Any`, so its expansion nests a second registered type.
+            use crate::google::protobuf::{Field, SourceContext, Syntax, Type};
+            use buffa::text::{decode_from_str, encode_to_string};
+            with_registry(|| {
+                let ty = Type {
+                    name: "google.example.v1.Msg".into(),
+                    fields: alloc::vec![Field {
+                        name: "id".into(),
+                        number: 1,
+                        json_name: "id".into(),
+                        ..Default::default()
+                    }],
+                    syntax: Syntax::SYNTAX_PROTO3.into(),
+                    ..Default::default()
+                };
+                let any = Any::pack(&ty, Type::TYPE_URL);
+                let text = encode_to_string(&any);
+                assert!(
+                    text.starts_with("[type.googleapis.com/google.protobuf.Type] {"),
+                    "{text}"
+                );
+                let back: Any = decode_from_str(&text).unwrap();
+                let unpacked: Type = back.unpack_unchecked().unwrap();
+                assert_eq!(unpacked, ty);
+
+                let sc = SourceContext {
+                    file_name: "a/b.proto".into(),
+                    ..Default::default()
+                };
+                let opt = crate::google::protobuf::Option {
+                    name: "source".into(),
+                    value: buffa::MessageField::some(Any::pack(&sc, SourceContext::TYPE_URL)),
+                    ..Default::default()
+                };
+                let any = Any::pack(&opt, crate::google::protobuf::Option::TYPE_URL);
+                let text = encode_to_string(&any);
+                assert!(
+                    text.contains("[type.googleapis.com/google.protobuf.SourceContext]"),
+                    "nested Any must expand through the registry: {text}"
+                );
+                let back: Any = decode_from_str(&text).unwrap();
+                let unpacked: crate::google::protobuf::Option = back.unpack_unchecked().unwrap();
+                assert_eq!(unpacked, opt);
             });
         }
 

@@ -747,7 +747,9 @@ fn rustdoc_label_resolves_to_path(
     type_map: &HashMap<String, String>,
 ) -> bool {
     let last = rust_path.rsplit("::").next().unwrap_or(rust_path);
-    if display.trim() != last {
+    // A keyword-named type is emitted as `r#name`; the bare `[name]` label
+    // would not resolve, so it keeps the escaped explicit target.
+    if display.trim() != last || crate::idents::is_rust_keyword(last) {
         return false;
     }
     let Some(scope_path) = type_map.get(&format!(".{scope_fqn}")) else {
@@ -1570,6 +1572,17 @@ mod tests {
             result.as_deref(),
             Some("[Kind](crate::google::protobuf::field::Kind)")
         );
+    }
+
+    #[test]
+    fn test_resolve_proto_ref_keyword_name_keeps_escaped_explicit_target() {
+        // `type` is emitted as `r#type`; a bare `[type]` label would not
+        // resolve, so the same-module shortcut must not apply.
+        let mut map = HashMap::new();
+        map.insert(".pkg.type".into(), "pkg::type".into());
+        map.insert(".pkg.Book".into(), "pkg::Book".into());
+        let result = resolve_proto_ref("type", "", "pkg.Book", &map);
+        assert_eq!(result.as_deref(), Some("[type](crate::pkg::r#type)"));
     }
 
     #[test]

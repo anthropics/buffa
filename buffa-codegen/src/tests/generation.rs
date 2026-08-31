@@ -143,8 +143,8 @@ fn test_descriptor_enum_field_resolves_to_buffa_descriptor() {
     // (which `buf/validate/validate.proto` does) must resolve to
     // `::buffa_descriptor::generated::descriptor::field_descriptor_proto::Type`,
     // not `::buffa_types::google::protobuf::field_descriptor_proto::Type` —
-    // the latter doesn't exist (`buffa-types` only ships the JSON-mappable
-    // WKTs, not descriptor.proto types).
+    // the latter doesn't exist (`buffa-types` ships the well-known types, not
+    // descriptor.proto types).
     //
     // The descriptor file is an *import* (in `files`, not `files_to_generate`)
     // — exactly how protoc surfaces it for any proto that

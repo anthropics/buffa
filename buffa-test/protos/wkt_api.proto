@@ -2,9 +2,8 @@
 // Compiling this file is the test that codegen maps them to buffa-types
 // (`::buffa_types::google::protobuf::{Api,Type,Enum,SourceContext}` and the
 // matching view types) rather than generating locals that then fail to
-// resolve. Kept separate from wkt_usage.proto so the json=true compile
-// fixture is unchanged — these types use the standard proto3 object mapping
-// and do not yet have hand-written JSON serde.
+// resolve. Built without JSON: these types have no serde impls, so a
+// json=true fixture embedding them would not compile.
 
 syntax = "proto3";
 

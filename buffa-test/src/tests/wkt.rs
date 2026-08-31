@@ -124,11 +124,22 @@ fn test_wkt_api_types_round_trip() {
             file_name: "google/example/v1/example.proto".into(),
             ..Default::default()
         }),
+        enum_type: buffa::MessageField::some(buffa_types::google::protobuf::Enum {
+            name: "google.example.v1.Color".into(),
+            enumvalue: vec![buffa_types::google::protobuf::EnumValue {
+                name: "COLOR_RED".into(),
+                number: 1,
+                ..Default::default()
+            }],
+            ..Default::default()
+        }),
         ..Default::default()
     };
     let decoded = round_trip(&msg);
     assert_eq!(decoded.api.name, "google.example.v1.Example");
     assert_eq!(decoded.type_info.name, "google.example.v1.Msg");
+    assert_eq!(decoded.enum_type.name, "google.example.v1.Color");
+    assert_eq!(decoded.enum_type.enumvalue[0].number, 1);
     assert_eq!(
         decoded.source_context.file_name,
         "google/example/v1/example.proto"

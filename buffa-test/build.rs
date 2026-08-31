@@ -202,7 +202,7 @@ fn main() {
         .expect("buffa_build failed for wkt_usage.proto");
 
     // googleapis WKTs (#382) — Api/Type/Enum/SourceContext auto-map.
-    // Views on so EnumView/TypeView/ApiView resolve through buffa-types.
+    // Views stay on (the default) so EnumView/TypeView/ApiView resolve through buffa-types.
     buffa_build::Config::new()
         .files(&["protos/wkt_api.proto"])
         .includes(&["protos/"])

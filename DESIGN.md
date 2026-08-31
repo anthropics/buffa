@@ -303,7 +303,7 @@ pub mod my_pkg {
 
 `buffa::include_proto_relative!("dir", "my.pkg")` does the same for checked-in generated code (no `OUT_DIR`). `buffa-build`'s `_include.rs` and `protoc-gen-buffa-packaging` both emit module trees that reference only the stitchers.
 
-The per-proto content files mean editing one `.proto` regenerates only its siblings (incremental friendly); the per-package stitcher means `register_types` is naturally one fn per package, so multi-file packages (e.g. seven WKT files in `google.protobuf`) no longer collide.
+The per-proto content files mean editing one `.proto` regenerates only its siblings (incremental friendly); the per-package stitcher means `register_types` is naturally one fn per package, so multi-file packages (e.g. the WKT files in `google.protobuf`) no longer collide.
 
 **Natural-path re-exports.** The canonical `__buffa::` path is unconditional — generated method signatures, field types, and downstream codegen always use it. As an ergonomic convenience codegen *also* emits a `pub use` for each ancillary item at the path a Rust user would reach for first, mirroring the pre-`__buffa` (and prost) layout:
 

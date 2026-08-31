@@ -1603,6 +1603,8 @@ The `buffa-types` crate provides pre-generated types for Google's well-known pro
 | Enum | `google.protobuf.Enum` | `buffa_types::google::protobuf::Enum` |
 | SourceContext | `google.protobuf.SourceContext` | `buffa_types::google::protobuf::SourceContext` |
 
+`Api`, `Type`, `Enum`, `SourceContext` and the messages they contain (`Method`, `Mixin`, `Field`, `EnumValue`, `Option`) implement the binary, view, and text codecs but not `Serialize`/`Deserialize`. A message that embeds one of them under `json = true` fails to compile with `the trait bound Api: Serialize is not satisfied`; map the type to your own generated copy with `extern_path` if you need JSON for it.
+
 ### Timestamp and Duration
 
 With the `std` feature, `Timestamp` and `Duration` convert to/from `std::time` types:

@@ -11,7 +11,11 @@
 //! - [`google::protobuf::Empty`] — A generic empty message
 //! - [`google::protobuf::Api`] / [`google::protobuf::Type`] / [`google::protobuf::Enum`] /
 //!   [`google::protobuf::SourceContext`] — API and type descriptors used by googleapis
-//!   (`api.proto`, `type.proto`, `source_context.proto`)
+//!   (`api.proto`, `type.proto`, `source_context.proto`), with their parts
+//!   [`google::protobuf::Method`], [`google::protobuf::Mixin`], [`google::protobuf::Field`],
+//!   [`google::protobuf::EnumValue`], and [`google::protobuf::Option`]. That last one
+//!   shadows the prelude `Option` in any module that glob-imports `google::protobuf::*`;
+//!   it is not re-exported at the crate root.
 //! - Wrapper types: [`google::protobuf::BoolValue`], [`google::protobuf::Int32Value`],
 //!   [`google::protobuf::Int64Value`], [`google::protobuf::UInt32Value`],
 //!   [`google::protobuf::UInt64Value`], [`google::protobuf::FloatValue`],
@@ -51,9 +55,9 @@
 //!   conversions, `std::error::Error`). Without it the crate is `no_std` + `alloc`.
 //! - **`json`** — proto3 canonical JSON serde for the JSON-mappable WKTs
 //!   (`Timestamp`, `Duration`, `Any`, `Struct`/`Value`/`ListValue`, `FieldMask`,
-//!   `Empty`, wrappers). `Api`/`Type`/`SourceContext` and related descriptor
-//!   messages currently have no serde impls (standard object mapping; no
-//!   special encoding).
+//!   `Empty`, wrappers). `Api`/`Type`/`Enum`/`SourceContext` and the messages
+//!   they contain have no serde impls; a `json = true` message embedding one
+//!   of them does not compile.
 //! - **`arbitrary`** — `arbitrary::Arbitrary` derives for fuzzing.
 //! - **`chrono`** — `Timestamp` ↔ `chrono::DateTime` and `Duration` ↔
 //!   `chrono::TimeDelta` conversions. `no_std`-compatible (`chrono` is pulled

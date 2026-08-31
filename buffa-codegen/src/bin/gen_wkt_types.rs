@@ -84,7 +84,7 @@ fn main() {
     //        hand-written serde in the *_ext.rs modules (Timestamp →
     //        RFC3339, Duration → "3.000001s", Any → type-URL dispatch,
     //        etc.). Api/Type/SourceContext use the standard proto3 object
-    //        mapping and currently have no serde impls — turning
+    //        mapping and have no serde impls — turning
     //        generate_json on globally would also derive serde for
     //        Timestamp/Any and duplicate those impls.
     //
