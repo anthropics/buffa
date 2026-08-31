@@ -895,7 +895,8 @@ impl Config {
     ///
     /// **Warning**: if any kept file references an excluded package as a field
     /// type, the generated code will contain dangling `super::…::Type` paths
-    /// that fail to compile. Pair `exclude_package` with
+    /// that fail to compile; the build emits a `cargo:warning` naming the
+    /// file, message, and field before that happens. Pair `exclude_package` with
     /// [`extern_path`](Self::extern_path) to map the excluded types to an
     /// external crate, or do not list those `.proto` files in
     /// [`files`](Self::files).
@@ -904,9 +905,9 @@ impl Config {
     ///
     /// # Validation
     ///
-    /// [`compile`](Self::compile) returns an error if `package` is empty or
-    /// contains invalid components (empty segments, consecutive dots). A
-    /// single leading dot is allowed and stripped automatically.
+    /// [`compile`](Self::compile) returns an error, before running `protoc`, if
+    /// `package` is empty or contains invalid components (empty segments,
+    /// consecutive dots). A single leading dot is allowed and stripped.
     ///
     /// # Example
     ///
@@ -921,10 +922,8 @@ impl Config {
     /// ```
     #[must_use]
     pub fn exclude_package(mut self, package: impl Into<String>) -> Self {
-        // Store the raw string; `generate_with_diagnostics` calls
-        // `normalize_exclude_package` on every entry, stripping an optional
-        // leading dot and rejecting malformed values with a `CodeGenError`
-        // returned from `compile()`.
+        // Stored raw. `compile()` rejects malformed entries up front, and
+        // `generate_with_diagnostics` strips the optional leading dot.
         self.codegen_config.exclude_packages.push(package.into());
         self
     }
@@ -1764,6 +1763,15 @@ impl Config {
     /// - code generation fails (e.g. unsupported proto feature)
     /// - the output directory cannot be created or written to
     pub fn compile(self) -> Result<(), Box<dyn std::error::Error>> {
+        // Reject malformed `exclude_package` entries before protoc runs; the
+        // codegen normalizes them again, but a typo should not cost a protoc
+        // invocation to surface.
+        for entry in &self.codegen_config.exclude_packages {
+            if let Err(e) = buffa_codegen::normalize_exclude_package(entry) {
+                return Err(format!("exclude_package {entry:?}: {e}").into());
+            }
+        }
+
         // Validate the shared-pool prerequisites before doing any work, and
         // check reflection first so the error names the actually-missing
         // prerequisite rather than a downstream one. `generate_reflection` is
@@ -2837,5 +2845,85 @@ mod tests {
             cfg.codegen_config.exclude_packages,
             vec!["a.b", "c.d", "e.f"]
         );
+    }
+
+    #[test]
+    fn exclude_package_rejects_malformed_entries_before_reading_input() {
+        // The descriptor set path does not exist, so an error can only come
+        // from the validation that runs ahead of any input processing.
+        let err = Config::new()
+            .descriptor_set("/nonexistent/set.binpb")
+            .files(&["foo/v1/thing.proto"])
+            .out_dir("/nonexistent/out")
+            .exclude_package("buf..validate")
+            .compile()
+            .expect_err("malformed exclude_package must fail compile()");
+        let msg = err.to_string();
+        assert!(msg.contains("exclude_package \"buf..validate\""), "{msg}");
+        assert!(msg.contains("empty components"), "{msg}");
+    }
+
+    #[test]
+    fn exclude_package_drops_the_package_from_the_output() {
+        use buffa_codegen::generated::descriptor::field_descriptor_proto::{Label, Type};
+        use buffa_codegen::generated::descriptor::{
+            DescriptorProto, FieldDescriptorProto, FileDescriptorProto,
+        };
+
+        // Two single-message packages, both listed for generation; the
+        // excluded one must produce no module, no include entry, and no
+        // stitcher.
+        let file = |name: &str, package: &str, message: &str| FileDescriptorProto {
+            name: Some(name.into()),
+            package: Some(package.into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some(message.into()),
+                field: vec![FieldDescriptorProto {
+                    name: Some("id".into()),
+                    number: Some(1),
+                    label: Some(Label::LABEL_OPTIONAL),
+                    r#type: Some(Type::TYPE_INT32),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let files = [
+            file("foo/v1/thing.proto", "foo.v1", "Thing"),
+            file("buf/validate/validate.proto", "buf.validate", "Rule"),
+        ];
+        let fds_bytes = buffa_codegen::encode_descriptor_set(&files, &[]);
+
+        let dir = tempfile::tempdir().unwrap();
+        let fds_path = dir.path().join("set.binpb");
+        std::fs::write(&fds_path, &fds_bytes).unwrap();
+        let out = dir.path().join("gen");
+
+        Config::new()
+            .descriptor_set(&fds_path)
+            .files(&["foo/v1/thing.proto", "buf/validate/validate.proto"])
+            .out_dir(&out)
+            .include_file("gen_mod.rs")
+            .exclude_package(".buf.validate")
+            .compile()
+            .expect("compile with an excluded package should succeed");
+
+        let names: Vec<String> = std::fs::read_dir(&out)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            names.iter().any(|n| n.starts_with("foo.v1.")),
+            "kept package must be generated: {names:?}"
+        );
+        assert!(
+            !names.iter().any(|n| n.contains("buf.validate")),
+            "excluded package must produce no files: {names:?}"
+        );
+        let include = std::fs::read_to_string(out.join("gen_mod.rs")).unwrap();
+        assert!(include.contains("foo"), "{include}");
+        assert!(!include.contains("validate"), "{include}");
     }
 }

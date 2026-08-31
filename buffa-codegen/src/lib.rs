@@ -1664,14 +1664,15 @@ pub struct CodeGenConfig {
     /// **If you exclude a package that other kept files reference as a field
     /// type**, you must also add an [`extern_path`](Self::extern_paths) mapping
     /// for it, or the generated code will contain dangling `super::…::Type`
-    /// paths that fail to compile. Add an `extern_path` for the excluded
-    /// package, or do not list those files in the generate set.
+    /// paths that fail to compile ([`CodeGenWarning::ExcludedPackageFieldRef`]
+    /// names the offending field first).
     ///
-    /// Entries must be bare proto package names with no leading dot and no
-    /// empty segments (e.g. `"buf.validate"`, `"gnostic.openapi.v3"`).
-    /// [`normalize_exclude_package`] strips an optional leading dot for
-    /// callers that produce option strings; [`generate_with_diagnostics`]
-    /// applies the same normalization and rejects remaining invalid entries.
+    /// Entries are proto package names with no empty segments (e.g.
+    /// `"buf.validate"`, `"gnostic.openapi.v3"`); a leading dot is accepted
+    /// and stripped at generation time. [`generate_with_diagnostics`] rejects
+    /// anything else, and warns with
+    /// [`CodeGenWarning::ExcludePackageMatchedNothing`] for an entry that
+    /// matches no package in the input.
     pub exclude_packages: Vec<String>,
 }
 
@@ -1972,9 +1973,9 @@ pub enum CodeGenWarning {
     /// configuration gap is.
     ///
     /// Fix by either:
-    /// - Including the referenced package in the generation request (remove the
-    ///   `exclude_package` plugin directive, or add the missing `.proto` files to
-    ///   the generate set), or
+    /// - Including the referenced package in the generation request (drop the
+    ///   `exclude_package` plugin directive or the `.exclude_package(…)` call,
+    ///   or add the missing `.proto` files to the generate set), or
     /// - Adding an `extern_path` mapping for the package pointing to the crate
     ///   that provides its generated types.
     ///
@@ -2121,7 +2122,8 @@ impl core::fmt::Display for CodeGenWarning {
                      plugin: `extern_path={type_fqn}=::your_crate::Type` or \
                      `extern_path=.{ref_package}=::your_crate`), or include the \
                      defining .proto file in the generate set \
-                     (buffa-build: `.files(&[…])`; plugin: drop `exclude_package=`)"
+                     (buffa-build: `.files(&[…])` or drop `.exclude_package(…)`; \
+                     plugin: drop `exclude_package=`)"
                 )
             }
             Self::ExcludePackageMatchedNothing { package } => {
@@ -2672,23 +2674,18 @@ pub fn generate_with_diagnostics(
 
     config.validate_type_name_prefix()?;
 
-    // Validate exclude_packages entries, normalizing optional leading dots.
-    // Callers that go through `normalize_exclude_package` (the plugin, and
-    // buffa-build's `exclude_package()`) will already have clean entries;
-    // direct `CodeGenConfig` constructors get the same normalization here.
-    let mut normalized_excludes: Vec<String> = Vec::new();
-    for entry in &config.exclude_packages {
-        match normalize_exclude_package(entry) {
-            Ok(n) => normalized_excludes.push(n),
-            Err(_) => {
-                return Err(CodeGenError::Other(format!(
-                    "invalid exclude_package entry {entry:?}: must be a non-empty proto \
-                     package with no empty components (e.g. \"buf.validate\" or \
-                     \"gnostic.openapi.v3\"); a leading dot is allowed and stripped"
-                )));
-            }
-        }
-    }
+    // Normalize exclude_packages entries (optional leading dot stripped). The
+    // plugin normalizes before it gets here and buffa-build validates in
+    // `compile()`, so this is the one place a direct `CodeGenConfig` caller's
+    // entries are checked; the message is the normalizer's own.
+    let normalized_excludes: Vec<String> = config
+        .exclude_packages
+        .iter()
+        .map(|entry| {
+            normalize_exclude_package(entry)
+                .map_err(|e| CodeGenError::Other(format!("exclude_package {entry:?}: {e}")))
+        })
+        .collect::<Result<_, _>>()?;
     // Drop files whose proto package is listed in `config.exclude_packages`
     // BEFORE building the codegen context, so that context decisions that key
     // on `files_to_generate` membership (e.g. WKT auto-extern-path injection,

@@ -2902,10 +2902,13 @@ fn test_exclude_packages_filter_runs_before_context_build() {
     // my/service.proto is kept — find its content.
     let content = joined(&files);
     assert!(
-        content.contains("buffa_types::google::protobuf::Timestamp")
-            || content.contains("::buffa_types::google::protobuf"),
+        content.contains("::buffa_types::google::protobuf::Timestamp"),
         "WKT extern-path auto-injection must fire when google.protobuf is excluded, \
          so Timestamp resolves to ::buffa_types::…::Timestamp, not a local path: \
          {content}"
+    );
+    assert!(
+        !content.contains("super::google::protobuf::Timestamp"),
+        "no local path to the excluded package may be emitted: {content}"
     );
 }
