@@ -363,12 +363,13 @@ fn shared_pool_supers(package: &str) -> usize {
 ///
 /// `root_override` (see
 /// [`crate::CodeGenConfig::shared_descriptor_pool_root`]), when set, is used
-/// verbatim — the root may not be reachable via `super::` at all. Otherwise
-/// builds the default `super::`-relative path, one hop per package segment
-/// plus two fixed hops.
-fn shared_root_path(package: &str, root_override: Option<&TokenStream>) -> TokenStream {
+/// verbatim — the root may not be reachable via `super::` at all. Already
+/// validated as a plain identifier path before `generate()` reaches here, so
+/// this always succeeds. Otherwise builds the default `super::`-relative
+/// path, one hop per package segment plus two fixed hops.
+fn shared_root_path(package: &str, root_override: Option<&str>) -> TokenStream {
     if let Some(root) = root_override {
-        return root.clone();
+        return crate::idents::rust_path_to_tokens(root);
     }
     let root = quote::format_ident!("{SHARED_ROOT_MOD}");
     let mut path = quote! { #root };
@@ -390,7 +391,7 @@ fn shared_root_path(package: &str, root_override: Option<&TokenStream>) -> Token
 /// `root_override` is set — see [`shared_root_path`]).
 pub(crate) fn reflect_pool_module_shared(
     package: &str,
-    root_override: Option<&TokenStream>,
+    root_override: Option<&str>,
 ) -> TokenStream {
     let root = shared_root_path(package, root_override);
     quote! {
@@ -623,7 +624,7 @@ mod tests {
 
     #[test]
     fn reflect_pool_module_shared_delegates_without_embedding_bytes() {
-        let tokens = reflect_pool_module_shared("foo.v1", None::<&TokenStream>);
+        let tokens = reflect_pool_module_shared("foo.v1", None);
         let parsed = syn::parse2::<syn::ItemMod>(tokens.clone());
         assert!(parsed.is_ok(), "generated module must parse: {tokens}");
         let rendered = tokens.to_string();
@@ -651,8 +652,8 @@ mod tests {
     /// Override path is used verbatim, not as a `super::` chain.
     #[test]
     fn reflect_pool_module_shared_with_root_override_uses_it_verbatim() {
-        let root_override: TokenStream = quote! { ::my_shared_fds_crate::__buffa_fds };
-        let tokens = reflect_pool_module_shared("foo.v1", Some(&root_override));
+        let tokens =
+            reflect_pool_module_shared("foo.v1", Some("::my_shared_fds_crate::__buffa_fds"));
         let parsed = syn::parse2::<syn::ItemMod>(tokens.clone());
         assert!(parsed.is_ok(), "generated module must parse: {tokens}");
         let rendered = tokens.to_string();

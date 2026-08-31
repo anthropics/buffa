@@ -1457,9 +1457,12 @@ pub struct CodeGenConfig {
     /// The shared root module itself is emitted by the module-tree builder
     /// (`buffa-build`, or `protoc-gen-buffa-packaging` with its matching
     /// `shared_descriptor_pool=true`), not by `generate`, so this mode
-    /// requires one of those front-ends to assemble the tree. Consumers that
-    /// wire the per-package modules by hand should leave it `false` (the
-    /// default), which keeps the self-contained per-package embedding.
+    /// requires one of those front-ends to assemble the tree — unless
+    /// [`shared_descriptor_pool_root`](Self::shared_descriptor_pool_root) is
+    /// set, in which case the root can live anywhere the caller assembled it.
+    /// Consumers that wire the per-package modules by hand should leave both
+    /// `false`/`None` (the default), which keeps the self-contained
+    /// per-package embedding.
     ///
     /// Use the same setting for every codegen run assembled into one module
     /// tree. Packages generated with this set to `false` keep their own pools
@@ -1477,13 +1480,26 @@ pub struct CodeGenConfig {
     /// tree as nested modules. A workspace with one crate per package has no
     /// such tree to climb; this field lets the caller point at wherever they
     /// assembled [`shared_descriptor_root_module`]'s output instead — a
-    /// separate crate, a re-exported alias, anything. Buffa has no opinion
-    /// on what's there. Build it with `quote! { ::krate::__buffa_fds }` (via
-    /// `format_ident!`, so a bad identifier fails here, not at a downstream
-    /// `cargo build`).
+    /// separate crate, a re-exported alias, anything.
+    ///
+    /// The target is a contract, not a free-form value: it must be
+    /// [`shared_descriptor_root_module`]'s output, `pub` and nameable from
+    /// every package this and every other codegen run in the tree emits,
+    /// gated the same way as [`reflect_feature_gate`](Self::reflect_feature_gate)
+    /// if that's set, built against a semver-compatible `buffa-descriptor`,
+    /// and — like the plugin path's `shared_descriptor_pool` (see the guide's
+    /// "spans both plugins" note) — contain every message this `generate()`
+    /// run reflects on. A root missing a type fails at runtime with a
+    /// `reflect()` lookup panic, not at `generate()` or `cargo build` time.
+    ///
+    /// Must be an absolute (`::`-prefixed) or `crate`-relative path of plain
+    /// `::`-separated identifiers — no generic or parenthesized arguments —
+    /// since the same string is spliced verbatim at every package depth.
+    /// [`generate`] rejects a malformed value immediately, before splicing it
+    /// into generated source. Example: `"::my_shared_fds_crate::__buffa_fds"`.
     ///
     /// `None` (the default) keeps the `super::`-relative behavior.
-    pub shared_descriptor_pool_root: Option<proc_macro2::TokenStream>,
+    pub shared_descriptor_pool_root: Option<String>,
     /// Gate the reflection impls behind a `reflect` crate feature, *without*
     /// gating json/views/text (unlike
     /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features),
@@ -2623,15 +2639,7 @@ pub fn generate_with_diagnostics(
                     .into(),
             ));
         }
-        // The override is spliced into generated source verbatim; a malformed
-        // value would otherwise only surface as a confusing compile error in
-        // the downstream generated crate. Parsing a handful of tokens costs
-        // nothing next to the corpus-wide work `generate` already does per call.
-        syn::parse2::<syn::Path>(root.clone()).map_err(|e| {
-            CodeGenError::Other(format!(
-                "shared_descriptor_pool_root must be a valid Rust path: {e}"
-            ))
-        })?;
+        validate_shared_root_path(root)?;
     }
 
     // Idiomatic imports place `use` directives in the package-root scope,
@@ -2769,8 +2777,10 @@ pub fn generate_with_diagnostics(
     // packages/types the same way `__buffa` is reserved, so a
     // `package __buffa_fds;` (or a root-package type named `__buffa_fds`) fails
     // with a clear error instead of a duplicate-module collision at the root.
-    // With an override the root lives elsewhere, so there's no local module
-    // to collide with — skip the reservation.
+    // With an override, skipping the reservation rests entirely on the
+    // caller's assertion that the root is external — buffa has no way to
+    // verify that, so a package/type actually named `__buffa_fds` in this
+    // tree would go undetected rather than erroring here.
     if config.shared_descriptor_pool && config.shared_descriptor_pool_root.is_none() {
         validate_shared_root_name(file_descriptors, files_to_generate)?;
     }
@@ -3004,6 +3014,52 @@ pub fn shared_descriptor_root_module(
     let file = syn::parse2::<syn::File>(tokens)
         .expect("shared descriptor root module must parse as a Rust file");
     prettyplease::unparse(&file)
+}
+
+/// Validate [`CodeGenConfig::shared_descriptor_pool_root`]'s string form: an
+/// absolute (`::`-prefixed) or `crate`-relative path of plain `::`-separated
+/// identifiers, no generic or parenthesized arguments.
+///
+/// `syn::Path` alone isn't strict enough here — it happily parses
+/// `::k::__buffa_fds<T>`, which would then splice into uncompilable
+/// generated code (`pub use ::k::__buffa_fds<T>::FILE_DESCRIPTOR_SET_BYTES;`),
+/// exactly the downstream failure this check exists to prevent. A leading
+/// `::` or `crate` is required because the same string is spliced verbatim
+/// at every package depth in the tree — a plain relative path could only
+/// ever be correct from one depth.
+fn validate_shared_root_path(path: &str) -> Result<(), CodeGenError> {
+    let is_absolute = path.starts_with("::");
+    let is_crate_relative = path == "crate" || path.starts_with("crate::");
+    if !is_absolute && !is_crate_relative {
+        return Err(CodeGenError::Other(format!(
+            "shared_descriptor_pool_root must be an absolute (`::`-prefixed) or \
+             crate-relative (`crate`-prefixed) path — the same value is spliced \
+             verbatim at every package depth, so a plain relative path would only \
+             be correct from one depth: {path:?}"
+        )));
+    }
+    let rest = path.strip_prefix("::").unwrap_or(path);
+    if rest.is_empty() {
+        return Err(CodeGenError::Other(
+            "shared_descriptor_pool_root must not be empty".into(),
+        ));
+    }
+    for segment in rest.split("::") {
+        let mut chars = segment.chars();
+        let valid = chars
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_');
+        if !valid {
+            return Err(CodeGenError::Other(format!(
+                "shared_descriptor_pool_root segment {segment:?} is not a plain \
+                 identifier — generic and parenthesized arguments are not \
+                 supported, since the value is spliced verbatim into generated \
+                 code: {path:?}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Reject user names that would collide with the shared descriptor root module
@@ -3828,7 +3884,7 @@ fn generate_package_mod(
         let pool_module = if ctx.config.shared_descriptor_pool {
             reflect::reflect_pool_module_shared(
                 current_package,
-                ctx.config.shared_descriptor_pool_root.as_ref(),
+                ctx.config.shared_descriptor_pool_root.as_deref(),
             )
         } else {
             reflect::reflect_pool_module(fds_bytes)

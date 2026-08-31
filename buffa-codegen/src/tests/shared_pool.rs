@@ -16,6 +16,21 @@ fn shared_config() -> CodeGenConfig {
     }
 }
 
+// `CodeGenConfig` (and, by containment, `buffa_build::Config`) must stay
+// `Send + Sync` — it's plain data callers hold across threads (a build
+// script, a rayon pool, a config cache). Every field's type must itself be
+// `Send + Sync`; one that isn't (e.g. a `proc_macro2::TokenStream`, which
+// carries `PhantomData<Rc<()>>` by design) silently takes the whole struct
+// down with it for every consumer, whether or not they set that field. This
+// test pins the invariant so a future field addition can't reintroduce it.
+#[test]
+fn code_gen_config_is_send_and_sync() {
+    fn assert_send<T: Send>() {}
+    fn assert_sync<T: Sync>() {}
+    assert_send::<CodeGenConfig>();
+    assert_sync::<CodeGenConfig>();
+}
+
 fn msg_in_package(file_name: &str, package: &str, msg: &str) -> FileDescriptorProto {
     let mut file = proto3_file(file_name);
     file.package = Some(package.to_string());
@@ -114,12 +129,14 @@ fn shared_mode_rejects_reserved_name_in_any_package_segment() {
     );
 }
 
+const ROOT_OVERRIDE: &str = "::my_shared_fds_crate::__buffa_fds";
+
 #[test]
 fn shared_mode_with_root_override_allows_reserved_root_package() {
     // With the root elsewhere, there's no local `pub mod __buffa_fds` to
     // collide with, so the reservation must not apply here.
     let config = CodeGenConfig {
-        shared_descriptor_pool_root: Some(quote::quote! { ::my_shared_fds_crate::__buffa_fds }),
+        shared_descriptor_pool_root: Some(ROOT_OVERRIDE.to_string()),
         ..shared_config()
     };
     let files = generate(
@@ -134,18 +151,67 @@ fn shared_mode_with_root_override_allows_reserved_root_package() {
     // generate() -> generate_package_mod -> reflect_pool_module_shared wiring,
     // not just avoid being rejected — a low-level unit test already covers
     // reflect_pool_module_shared in isolation, but that bypasses this path.
+    // Exact match (not a substring): a bug that prepended a wrong prefix
+    // before the override would still contain the suffix.
     let all = joined(&files);
     assert!(
-        all.contains("my_shared_fds_crate::__buffa_fds"),
+        all.contains(&format!("pub use {ROOT_OVERRIDE}")),
         "generated output must use the override path verbatim: {all}"
     );
+}
+
+/// The property that matters: the override is used *verbatim* regardless of
+/// package nesting depth, unlike the default `super::` path (which climbs a
+/// depth-dependent number of hops). Covers depth 0 (unnamed package), 1
+/// (`beta`), and 2 (`alpha.v1`) — the same depths `shared_pool_compile.rs`
+/// exercises for the default path.
+#[test]
+fn shared_mode_with_root_override_is_depth_independent() {
+    let config = CodeGenConfig {
+        shared_descriptor_pool_root: Some(ROOT_OVERRIDE.to_string()),
+        ..shared_config()
+    };
+    let files = generate(
+        &[
+            msg_in_package("root.proto", "", "Root"),
+            msg_in_package("beta.proto", "beta", "Beta"),
+            msg_in_package("alpha.proto", "alpha.v1", "Alpha"),
+        ],
+        &[
+            "root.proto".to_string(),
+            "beta.proto".to_string(),
+            "alpha.proto".to_string(),
+        ],
+        &config,
+    )
+    .expect("should generate");
+
+    let package_mods: Vec<&GeneratedFile> = files
+        .iter()
+        .filter(|f| f.kind == GeneratedFileKind::PackageMod)
+        .collect();
+    assert_eq!(package_mods.len(), 3, "one .mod.rs per package");
+    for pm in &package_mods {
+        assert!(
+            pm.content.contains(&format!("pub use {ROOT_OVERRIDE}")),
+            "package {} must use the override verbatim regardless of depth: {}",
+            pm.package,
+            pm.content
+        );
+        assert!(
+            !pm.content.contains("super ::"),
+            "package {} must not climb a super:: chain when the override is set: {}",
+            pm.package,
+            pm.content
+        );
+    }
 }
 
 #[test]
 fn shared_mode_with_root_override_requires_shared_descriptor_pool() {
     let config = CodeGenConfig {
         shared_descriptor_pool: false,
-        shared_descriptor_pool_root: Some(quote::quote! { ::my_shared_fds_crate::__buffa_fds }),
+        shared_descriptor_pool_root: Some(ROOT_OVERRIDE.to_string()),
         generate_reflection: true,
         generate_reflection_vtable: true,
         ..Default::default()
@@ -164,22 +230,62 @@ fn shared_mode_with_root_override_requires_shared_descriptor_pool() {
     );
 }
 
+/// Malformed `shared_descriptor_pool_root` values are rejected at
+/// `generate()` time, before being spliced into generated source.
 #[test]
 fn shared_mode_with_malformed_root_override_is_rejected() {
+    let cases: &[(&str, &str)] = &[
+        // Generic arguments parse as a valid `syn::Path` but would splice into
+        // uncompilable code (`pub use ::k::__buffa_fds<T>::...;`) — the exact
+        // downstream failure the check exists to prevent.
+        (
+            "::my_shared_fds_crate::__buffa_fds<T>",
+            "not a plain identifier",
+        ),
+        ("", "must be an absolute"),
+        // Relative (no leading `::` or `crate`) is only ever correct at one
+        // package depth, since the same string is spliced everywhere.
+        ("my_shared_fds_crate::__buffa_fds", "must be an absolute"),
+    ];
+    for (root, expected_msg_fragment) in cases {
+        let config = CodeGenConfig {
+            shared_descriptor_pool_root: Some((*root).to_string()),
+            ..shared_config()
+        };
+        let err = generate(
+            &[msg_in_package("x.proto", "x.v1", "X")],
+            &["x.proto".to_string()],
+            &config,
+        )
+        .expect_err(&format!(
+            "malformed root override {root:?} must be rejected at generate() time"
+        ));
+        assert!(
+            matches!(err, CodeGenError::Other(ref msg) if msg.contains(expected_msg_fragment)),
+            "root {root:?}: {err:?}"
+        );
+    }
+}
+
+/// `crate`-relative (as opposed to absolute `::`-prefixed) overrides are
+/// accepted — the crate-emitting-its-own-root case, where the override just
+/// needs to be spliced consistently, not necessarily point outside the crate.
+#[test]
+fn shared_mode_with_crate_relative_root_override_is_accepted() {
     let config = CodeGenConfig {
-        // Not a valid path: a bare integer literal.
-        shared_descriptor_pool_root: Some(quote::quote! { 42 }),
+        shared_descriptor_pool_root: Some("crate::my_gen::__buffa_fds".to_string()),
         ..shared_config()
     };
-    let err = generate(
+    let files = generate(
         &[msg_in_package("x.proto", "x.v1", "X")],
         &["x.proto".to_string()],
         &config,
     )
-    .expect_err("a malformed root override must be rejected at generate() time");
+    .expect("crate-relative root override must be accepted");
+    let all = joined(&files);
     assert!(
-        matches!(err, CodeGenError::Other(ref msg) if msg.contains("valid Rust path")),
-        "{err:?}"
+        all.contains("pub use crate::my_gen::__buffa_fds"),
+        "generated output must use the crate-relative override verbatim: {all}"
     );
 }
 

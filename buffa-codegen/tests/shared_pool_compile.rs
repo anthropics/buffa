@@ -43,25 +43,49 @@ fn proto3(name: &str, package: &str) -> FileDescriptorProto {
     }
 }
 
+/// Which root-module wiring `run_shared_pool_compile` should exercise.
+#[derive(Clone, Copy, PartialEq)]
+enum Mode {
+    /// Default `super::`-relative path, bytes embedded inline (the
+    /// packaging-plugin path).
+    Inline,
+    /// Default `super::`-relative path, bytes in an `include_bytes!` sidecar
+    /// (the buffa-build path).
+    Sidecar,
+    /// `shared_descriptor_pool_root` set to a crate-relative path pointing
+    /// back at this same tree's own root module, instead of computing
+    /// `super::`. Proves the override resolves at every package depth
+    /// without needing a second crate: the override is spliced verbatim, so
+    /// if it were wrong for any package's depth, only that package would fail
+    /// to compile — unlike the default path, which is depth-*derived* and so
+    /// can't independently get one depth wrong without the arithmetic itself
+    /// being wrong for every depth.
+    RootOverride,
+}
+
 #[test]
 #[ignore = "spawns cargo; run explicitly with --ignored"]
 fn shared_pool_tree_compiles_inline() {
-    run_shared_pool_compile(false);
+    run_shared_pool_compile(Mode::Inline);
 }
 
 #[test]
 #[ignore = "spawns cargo; run explicitly with --ignored"]
 fn shared_pool_tree_compiles_include_bytes_sidecar() {
-    run_shared_pool_compile(true);
+    run_shared_pool_compile(Mode::Sidecar);
+}
+
+#[test]
+#[ignore = "spawns cargo; run explicitly with --ignored"]
+fn shared_pool_tree_compiles_with_root_override() {
+    run_shared_pool_compile(Mode::RootOverride);
 }
 
 /// Assemble a two-package shared-pool tree and `cargo test` it, proving the
-/// `super::` delegation depth resolves across packages of differing nesting
-/// and that the packages observe one shared pool. `sidecar` selects the
-/// root-module embedding: `false` inlines the bytes (the packaging-plugin
-/// path), `true` writes a binary sidecar and `include_bytes!`s it (the
-/// buffa-build path).
-fn run_shared_pool_compile(sidecar: bool) {
+/// root-module wiring resolves across packages of differing nesting and that
+/// the packages observe one shared pool. See [`Mode`] for what each variant
+/// exercises.
+fn run_shared_pool_compile(mode: Mode) {
     // Package `alpha.v1` (depth 2) with a plain message.
     let mut alpha = proto3("alpha.proto", "alpha.v1");
     alpha.message_type.push(DescriptorProto {
@@ -95,6 +119,12 @@ fn run_shared_pool_compile(sidecar: bool) {
     cfg.generate_reflection = true;
     cfg.generate_reflection_vtable = true;
     cfg.shared_descriptor_pool = true;
+    if mode == Mode::RootOverride {
+        // Points back at this same tree's own root module (assembled below
+        // at `gen/mod.rs`, so `crate::gen::__buffa_fds`) — no second crate
+        // needed to prove the override resolves at every package depth.
+        cfg.shared_descriptor_pool_root = Some("crate::gen::__buffa_fds".to_string());
+    }
     let to_gen = vec![
         "alpha.proto".to_string(),
         "beta.proto".to_string(),
@@ -125,7 +155,7 @@ fn run_shared_pool_compile(sidecar: bool) {
     let mut mod_rs = String::from(
         "#![allow(non_camel_case_types, dead_code, unused_imports, unused_qualifications, clippy::all)]\n\n",
     );
-    let embedding = if sidecar {
+    let embedding = if mode == Mode::Sidecar {
         const SIDECAR: &str = "buffa_descriptor_set.binpb";
         std::fs::write(gen.join(SIDECAR), &fds_bytes).expect("write sidecar");
         buffa_codegen::FdsEmbedding::Sidecar {
@@ -153,10 +183,10 @@ fn run_shared_pool_compile(sidecar: bool) {
     std::fs::create_dir_all(&tests).expect("mkdir tests");
     // Distinct crate name per mode so the two `#[ignore]` tests don't collide
     // in the shared target dir when run together.
-    let pkg_name = if sidecar {
-        "shared-pool-fixture-sidecar"
-    } else {
-        "shared-pool-fixture-inline"
+    let pkg_name = match mode {
+        Mode::Sidecar => "shared-pool-fixture-sidecar",
+        Mode::Inline => "shared-pool-fixture-inline",
+        Mode::RootOverride => "shared-pool-fixture-root-override",
     };
     let crate_ident = pkg_name.replace('-', "_");
     std::fs::write(
