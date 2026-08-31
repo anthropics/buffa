@@ -1143,6 +1143,27 @@ mod tests {
     }
 
     #[test]
+    fn registry_keys_the_same_number_per_extendee() {
+        let mut reg = ExtensionRegistry::new();
+        reg.register(entry!(120, "pkg.ext", "pkg.Msg"));
+        reg.register(entry!(120, "other.ext", "other.Msg"));
+
+        // Two extendees may hold the same field number at once.
+        assert_eq!(reg.by_number("pkg.Msg", 120).unwrap().full_name, "pkg.ext");
+        assert_eq!(
+            reg.by_number("other.Msg", 120).unwrap().full_name,
+            "other.ext"
+        );
+
+        // Re-registering a name under a different extendee evicts the old
+        // (extendee, number) slot, not just the one under the new extendee.
+        reg.register(entry!(7, "pkg.ext", "other.Msg"));
+        assert!(reg.by_number("pkg.Msg", 120).is_none());
+        assert_eq!(reg.by_number("other.Msg", 7).unwrap().full_name, "pkg.ext");
+        assert_eq!(reg.by_name("pkg.ext").unwrap().extendee, "other.Msg");
+    }
+
+    #[test]
     fn deserialize_extension_key_shapes() {
         let mut reg = ExtensionRegistry::new();
         reg.register(entry!(120, "pkg.ext", "pkg.Msg"));

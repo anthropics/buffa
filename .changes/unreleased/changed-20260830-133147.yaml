@@ -1,3 +1,4 @@
 kind: Changed
-body: Extension registry lookups by extendee and field number no longer allocate a temporary String in the JSON or text registry.
+body: |-
+    **Extension registry lookups by `(extendee, number)` no longer allocate** (#393) in either the JSON or the text registry. Internal representation only; no API, wire, or behaviour change.
 time: 2026-08-30T13:31:47+02:00

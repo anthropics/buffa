@@ -924,6 +924,44 @@ mod tests {
             assert!(reg.text_ext_by_number("pkg.Carrier", 51).is_none());
         }
 
+        #[test]
+        fn text_ext_keys_the_same_number_per_extendee() {
+            let mut reg = TypeRegistry::new();
+            let make_entry = |number, full_name, extendee| TextExtEntry {
+                number,
+                full_name,
+                extendee,
+                text_encode: message_encode_text::<Inner>,
+                text_merge: message_merge_text::<Inner>,
+            };
+
+            reg.register_text_ext(make_entry(50, "pkg.ext", "pkg.Carrier"));
+            reg.register_text_ext(make_entry(50, "other.ext", "other.Carrier"));
+            assert_eq!(
+                reg.text_ext_by_number("pkg.Carrier", 50).unwrap().full_name,
+                "pkg.ext"
+            );
+            assert_eq!(
+                reg.text_ext_by_number("other.Carrier", 50)
+                    .unwrap()
+                    .full_name,
+                "other.ext"
+            );
+
+            reg.register_text_ext(make_entry(7, "pkg.ext", "other.Carrier"));
+            assert!(reg.text_ext_by_number("pkg.Carrier", 50).is_none());
+            assert_eq!(
+                reg.text_ext_by_number("other.Carrier", 7)
+                    .unwrap()
+                    .full_name,
+                "pkg.ext"
+            );
+            assert_eq!(
+                reg.text_ext_by_name("pkg.ext").unwrap().extendee,
+                "other.Carrier"
+            );
+        }
+
         /// Serializes with other tests touching the global TEXT_ANY/TEXT_EXT.
         static GLOBAL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
