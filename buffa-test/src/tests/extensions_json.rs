@@ -181,6 +181,20 @@ fn repeated_null_value_extension_preserves_null_elements() {
 }
 
 #[test]
+fn null_unsets_repeated_value_and_null_value_extensions() {
+    // The present-value exception is singular-only: `null` on the whole
+    // repeated field is absence, as for every other repeated extension.
+    setup();
+    let c: Carrier = serde_json::from_value(serde_json::json!({
+        "[buffa.test.extjson.values]": null,
+        "[buffa.test.extjson.null_values]": null
+    }))
+    .expect("deserialize");
+    assert!(c.extension(&VALUES).is_empty());
+    assert!(c.extension(&NULL_VALUES).is_empty());
+}
+
+#[test]
 fn repeated_scalar_extension_json_roundtrip() {
     let mut c = Carrier::default();
     c.set_extension(&NUMS, vec![1, -2, 3]);
