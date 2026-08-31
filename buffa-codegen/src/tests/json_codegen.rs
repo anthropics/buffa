@@ -208,7 +208,7 @@ fn test_json_oneof_field_is_flattened() {
     );
     // The oneof enum must have a custom Serialize impl.
     assert!(
-        content.contains("impl serde::Serialize for Kind"),
+        content.contains("impl ::serde::Serialize for Kind"),
         "oneof enum must have Serialize impl: {content}"
     );
 }
@@ -658,7 +658,7 @@ fn message_named_result_does_not_shadow_std_result_in_serde() {
     // The custom Deserialize impl for Result must use ::core::result::Result,
     // not bare `Result` which would resolve to the proto message type.
     assert!(
-        !content.contains("fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self"),
+        !content.contains("-> Result<Self"),
         "serde Deserialize must not use bare `Result<Self, ...>` — it shadows \
          the proto message named Result.\nGenerated code:\n{content}"
     );

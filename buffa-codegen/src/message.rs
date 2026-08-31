@@ -1175,10 +1175,10 @@ fn generate_custom_deserialize(
 
     Ok(quote! {
         #non_snake_attr
-        impl<'de> serde::Deserialize<'de> for #name_ident {
-            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> ::core::result::Result<Self, D::Error> {
+        impl<'de> ::serde::Deserialize<'de> for #name_ident {
+            fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> ::core::result::Result<Self, D::Error> {
                 struct _V;
-                impl<'de> serde::de::Visitor<'de> for _V {
+                impl<'de> ::serde::de::Visitor<'de> for _V {
                     type Value = #name_ident;
 
                     fn expecting(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -1186,7 +1186,7 @@ fn generate_custom_deserialize(
                     }
 
                     #[allow(clippy::field_reassign_with_default)]
-                    fn visit_map<A: serde::de::MapAccess<'de>>(
+                    fn visit_map<A: ::serde::de::MapAccess<'de>>(
                         self,
                         mut map: A,
                     ) -> ::core::result::Result<#name_ident, A::Error> {
@@ -1197,7 +1197,7 @@ fn generate_custom_deserialize(
                             match key.as_str() {
                                 #(#match_arms)*
                                 #ext_arm
-                                _ => { map.next_value::<serde::de::IgnoredAny>()?; }
+                                _ => { map.next_value::<::serde::de::IgnoredAny>()?; }
                             }
                         }
 
@@ -1227,9 +1227,9 @@ fn generate_custom_deserialize(
 fn deser_seed_expr(rust_type: &TokenStream, inner: TokenStream) -> TokenStream {
     quote! {{
         struct _S;
-        impl<'de> serde::de::DeserializeSeed<'de> for _S {
+        impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
             type Value = #rust_type;
-            fn deserialize<D: serde::Deserializer<'de>>(self, d: D)
+            fn deserialize<D: ::serde::Deserializer<'de>>(self, d: D)
                 -> ::core::result::Result<#rust_type, D::Error>
             {
                 #inner
