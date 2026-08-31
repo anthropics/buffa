@@ -2,7 +2,9 @@
 //! round-trip through `serde_json` via the generated `register_types` +
 //! the runtime's `#[serde(flatten)]` wrapper.
 
-use crate::extjson::__buffa::ext::{ANN, ANNS, BIGS, COLOR, COLORS, NUMS, WEIGHT};
+use crate::extjson::__buffa::ext::{
+    ANN, ANNS, BIGS, COLOR, COLORS, NULL_VALUE, NULL_VALUES, NUMS, VALUE, VALUES, WEIGHT,
+};
 use crate::extjson::__buffa::register_types;
 use crate::extjson::{Ann, Carrier, Color};
 use buffa::type_registry::{set_type_registry, TypeRegistry};
@@ -77,6 +79,119 @@ fn enum_extension_json_accepts_numeric() {
     let c: Carrier =
         serde_json::from_str(r#"{"[buffa.test.extjson.color]": 2}"#).expect("deserialize");
     assert_eq!(c.extension(&COLOR), Some(2));
+}
+
+#[test]
+fn null_unsets_ordinary_extension() {
+    setup();
+    let c: Carrier = serde_json::from_value(serde_json::json!({
+        "[buffa.test.extjson.weight]": null
+    }))
+    .expect("deserialize");
+    assert_eq!(c.extension(&WEIGHT), None);
+}
+
+#[test]
+fn null_unsets_message_extension() {
+    setup();
+    let c: Carrier = serde_json::from_value(serde_json::json!({
+        "[buffa.test.extjson.ann]": null
+    }))
+    .expect("deserialize");
+    assert_eq!(c.extension(&ANN), None);
+}
+
+#[test]
+fn null_unsets_enum_extension() {
+    setup();
+    let c: Carrier = serde_json::from_value(serde_json::json!({
+        "[buffa.test.extjson.color]": null
+    }))
+    .expect("deserialize");
+    assert_eq!(c.extension(&COLOR), None);
+}
+
+#[test]
+fn null_unsets_repeated_extension() {
+    setup();
+    let c: Carrier = serde_json::from_value(serde_json::json!({
+        "[buffa.test.extjson.nums]": null
+    }))
+    .expect("deserialize");
+    assert!(c.extension(&NUMS).is_empty());
+}
+
+#[test]
+fn null_is_present_for_value_extension() {
+    setup();
+    let c: Carrier = serde_json::from_value(serde_json::json!({
+        "[buffa.test.extjson.value]": null
+    }))
+    .expect("deserialize");
+    let value = c.extension(&VALUE).expect("VALUE present");
+    assert!(value.is_null());
+    assert_eq!(
+        serde_json::to_value(&c).expect("serialize"),
+        serde_json::json!({"[buffa.test.extjson.value]": null})
+    );
+}
+
+#[test]
+fn null_is_present_for_null_value_extension() {
+    setup();
+    let c: Carrier = serde_json::from_value(serde_json::json!({
+        "[buffa.test.extjson.null_value]": null
+    }))
+    .expect("deserialize");
+    assert_eq!(c.extension(&NULL_VALUE), Some(0));
+    assert_eq!(
+        serde_json::to_value(&c).expect("serialize"),
+        serde_json::json!({"[buffa.test.extjson.null_value]": null})
+    );
+}
+
+#[test]
+fn repeated_value_extension_preserves_null_elements() {
+    setup();
+    let c: Carrier = serde_json::from_value(serde_json::json!({
+        "[buffa.test.extjson.values]": [null]
+    }))
+    .expect("deserialize");
+    let values = c.extension(&VALUES);
+    assert_eq!(values.len(), 1);
+    assert!(values[0].is_null());
+    assert_eq!(
+        serde_json::to_value(&c).expect("serialize"),
+        serde_json::json!({"[buffa.test.extjson.values]": [null]})
+    );
+}
+
+#[test]
+fn repeated_null_value_extension_preserves_null_elements() {
+    setup();
+    let c: Carrier = serde_json::from_value(serde_json::json!({
+        "[buffa.test.extjson.null_values]": [null]
+    }))
+    .expect("deserialize");
+    assert_eq!(c.extension(&NULL_VALUES), vec![0]);
+    assert_eq!(
+        serde_json::to_value(&c).expect("serialize"),
+        serde_json::json!({"[buffa.test.extjson.null_values]": [null]})
+    );
+}
+
+#[test]
+fn null_unsets_repeated_value_and_null_value_extensions() {
+    // The present-value exception is singular-only: `null` on the whole
+    // repeated field is absence, as for every other repeated extension.
+    setup();
+    let c: Carrier = serde_json::from_value(serde_json::json!({
+        "[buffa.test.extjson.values]": null,
+        "[buffa.test.extjson.null_values]": null
+    }))
+    .expect("deserialize");
+    assert!(c.extension(&VALUES).is_empty());
+    assert!(c.extension(&NULL_VALUES).is_empty());
 }
 
 #[test]

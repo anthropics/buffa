@@ -57,7 +57,10 @@ pub struct JsonExtEntry {
     /// Extract this extension's value from the extendee's unknown fields and
     /// serialize it to a JSON value.
     pub to_json: fn(u32, &UnknownFields) -> Result<serde_json::Value, String>,
-    /// Parse a JSON value into unknown-field records at the given number.
+    /// Parse a JSON value into unknown-field records at the given number. The
+    /// function owns the ProtoJSON `null` policy: returning an empty vector
+    /// means the recognized key is absent and no record is added. Hand-written
+    /// entries may choose a different policy.
     pub from_json: fn(serde_json::Value, u32) -> Result<Vec<UnknownField>, String>,
 }
 
@@ -602,6 +605,28 @@ pub mod helpers {
         }])
     }
 
+    /// JSON encode for a `google.protobuf.NullValue` extension.
+    pub fn null_value_to_json(n: u32, f: &UnknownFields) -> Result<serde_json::Value, String> {
+        EnumI32::decode(n, f).ok_or_else(|| missing(n))?;
+        Ok(serde_json::Value::Null)
+    }
+
+    /// JSON decode for a `google.protobuf.NullValue` extension.
+    pub fn null_value_from_json(v: serde_json::Value, n: u32) -> Result<Vec<UnknownField>, String> {
+        match v {
+            serde_json::Value::Null => {}
+            serde_json::Value::String(s) if s == "NULL_VALUE" => {}
+            serde_json::Value::Number(num) if num.as_i64() == Some(0) => {}
+            _ => {
+                return Err(format!("field {n}: expected null, `NULL_VALUE`, or 0"));
+            }
+        }
+        Ok(alloc::vec![UnknownField {
+            number: n,
+            data: UnknownFieldData::Varint(0),
+        }])
+    }
+
     // ── Message-typed: uses the target type's own Serialize / Deserialize ───
 
     /// JSON encode for a message-typed extension.
@@ -834,6 +859,28 @@ pub mod helpers {
         n: u32,
     ) -> Result<Vec<UnknownField>, String> {
         repeated_from_array(v, n, enum_from_json::<E>)
+    }
+
+    /// JSON encode for a repeated `google.protobuf.NullValue` extension.
+    pub fn repeated_null_value_to_json(
+        n: u32,
+        f: &UnknownFields,
+    ) -> Result<serde_json::Value, String> {
+        let values = Repeated::<EnumI32>::decode(n, f);
+        Ok(serde_json::Value::Array(
+            values
+                .into_iter()
+                .map(|_| serde_json::Value::Null)
+                .collect(),
+        ))
+    }
+
+    /// JSON decode for a repeated `google.protobuf.NullValue` extension.
+    pub fn repeated_null_value_from_json(
+        v: serde_json::Value,
+        n: u32,
+    ) -> Result<Vec<UnknownField>, String> {
+        repeated_from_array(v, n, null_value_from_json)
     }
 
     /// JSON encode for a repeated message-typed extension: each element runs
@@ -1369,6 +1416,29 @@ mod tests {
         assert!(err.contains("unknown enum variant"), "{err}");
     }
 
+    #[test]
+    fn null_value_helpers_roundtrip_and_accept_enum_forms() {
+        let fields = fields_with(UnknownField {
+            number: 5,
+            data: UnknownFieldData::Varint(0),
+        });
+        assert_eq!(
+            null_value_to_json(5, &fields).unwrap(),
+            serde_json::Value::Null
+        );
+
+        for value in [
+            serde_json::Value::Null,
+            serde_json::json!("NULL_VALUE"),
+            serde_json::json!(0),
+        ] {
+            let records = null_value_from_json(value, 5).unwrap();
+            assert_eq!(records.len(), 1);
+            assert_eq!(records[0].data, UnknownFieldData::Varint(0));
+        }
+        assert!(null_value_from_json(serde_json::json!(1), 5).is_err());
+    }
+
     // ── Repeated helpers ────────────────────────────────────────────────────
 
     fn fields_from(records: Vec<UnknownField>) -> UnknownFields {
@@ -1420,6 +1490,19 @@ mod tests {
         assert_eq!(records.len(), 2);
         let f = fields_from(records);
         assert_eq!(repeated_enum_to_json::<Color>(5, &f).unwrap(), json);
+    }
+
+    #[test]
+    fn repeated_null_value_helpers_roundtrip() {
+        let json = serde_json::json!([null, null]);
+        let records = repeated_null_value_from_json(json.clone(), 5).unwrap();
+        assert_eq!(records.len(), 2);
+        assert!(records
+            .iter()
+            .all(|record| record.data == UnknownFieldData::Varint(0)));
+
+        let fields = fields_from(records);
+        assert_eq!(repeated_null_value_to_json(5, &fields).unwrap(), json);
     }
 
     #[test]

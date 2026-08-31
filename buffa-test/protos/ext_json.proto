@@ -8,6 +8,8 @@
 syntax = "proto2";
 package buffa.test.extjson;
 
+import "google/protobuf/struct.proto";
+
 message Ann {
   optional string doc = 1;
   optional int32 priority = 2;
@@ -32,4 +34,8 @@ extend Carrier {
   repeated Ann anns = 104;       // repeated message
   repeated Color colors = 105;   // repeated enum
   repeated int64 bigs = 106;     // repeated int64 — elements stringify in JSON
+  optional google.protobuf.Value value = 107;
+  optional google.protobuf.NullValue null_value = 108;
+  repeated google.protobuf.Value values = 109;
+  repeated google.protobuf.NullValue null_values = 110;
 }
