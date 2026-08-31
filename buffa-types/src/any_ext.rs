@@ -331,12 +331,13 @@ impl<'de> serde::Deserialize<'de> for Any {
             }
         };
 
-        // The type URL must be non-empty and contain a '/' separating the
-        // host/authority from the fully-qualified type name (e.g.
+        // The type URL must be non-empty, contain a '/', and have a non-empty
+        // fully-qualified type name after the final slash (e.g.
         // "type.googleapis.com/google.protobuf.Duration").
-        if type_url.is_empty() || !type_url.contains('/') {
+        let type_name = type_url.rsplit('/').next().unwrap_or("");
+        if type_url.is_empty() || !type_url.contains('/') || type_name.is_empty() {
             return Err(serde::de::Error::custom(
-                "@type must be a valid type URL containing a '/' (e.g. type.googleapis.com/pkg.Type)",
+                "@type must be a valid type URL containing a '/' and a non-empty type name (e.g. type.googleapis.com/pkg.Type)",
             ));
         }
 
@@ -803,6 +804,25 @@ mod tests {
             let json = r#"{"@type": "not_a_url", "value": ""}"#;
             let err = serde_json::from_str::<Any>(json).unwrap_err();
             assert!(err.to_string().contains("valid type URL"), "{err}");
+        }
+
+        #[test]
+        fn deserialize_accepts_arbitrary_type_url_prefix() {
+            without_registry(|| {
+                let json = r#"{"@type": "example.com/custom.Type", "value": "CAI="}"#;
+                let any: Any = serde_json::from_str(json).unwrap();
+                assert_eq!(any.type_url, "example.com/custom.Type");
+                assert_eq!(any.value, vec![0x08, 0x02]);
+            });
+        }
+
+        #[test]
+        fn deserialize_rejects_type_url_with_empty_type_name() {
+            without_registry(|| {
+                let json = r#"{"@type": "type.googleapis.com/", "value": ""}"#;
+                let err = serde_json::from_str::<Any>(json).unwrap_err();
+                assert!(err.to_string().contains("valid type URL"), "{err}");
+            });
         }
 
         // ── Non-WKT registered type (fields inlined at top level) ─────

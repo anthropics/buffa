@@ -1,0 +1,3 @@
+kind: Fixed
+body: ProtoJSON `Any` deserialization now rejects type URLs with an empty type name after the final slash.
+time: 2026-09-01T00:00:00+02:00
