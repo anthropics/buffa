@@ -198,6 +198,14 @@ pub enum PoolError {
         name: String,
         number: i32,
     },
+    /// An enum value reuses a name reserved by its enum declaration.
+    ReservedEnumValueName { enum_name: String, name: String },
+    /// An enum value uses a number reserved by its enum declaration.
+    ReservedEnumValueNumber {
+        enum_name: String,
+        name: String,
+        number: i32,
+    },
 }
 
 impl core::fmt::Display for PoolError {
@@ -299,6 +307,17 @@ impl core::fmt::Display for PoolError {
                 f,
                 "open enum {enum_name} first value {name:?} has non-zero number {number}"
             ),
+            Self::ReservedEnumValueName { enum_name, name } => {
+                write!(f, "enum {enum_name} reuses reserved value name {name:?}")
+            }
+            Self::ReservedEnumValueNumber {
+                enum_name,
+                name,
+                number,
+            } => write!(
+                f,
+                "enum {enum_name} value {name:?} uses reserved number {number}"
+            ),
         }
     }
 }
@@ -388,8 +407,9 @@ impl DescriptorPool {
     /// field identity is declared twice, a field number is out of range or in
     /// the implementation-reserved band (19000-19999), a field uses a name or
     /// number its message reserved, an extension range overlaps a reserved
-    /// range, an open enum's first value is non-zero, a oneof index is
-    /// invalid, a message exceeds 65 535 fields, or a map entry is malformed.
+    /// range, an open enum's first value is non-zero, an enum value reuses a
+    /// reserved name or number, a oneof index is invalid, a message exceeds
+    /// 65 535 fields, or a map entry is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -410,8 +430,8 @@ impl DescriptorPool {
     /// validation failure (dangling type names, out-of-range or
     /// implementation-reserved field numbers, reserved message fields, an
     /// overlapping extension range, duplicate symbols or field identities,
-    /// an open enum whose first value is non-zero, invalid oneof indices, or
-    /// malformed map entries).
+    /// an open enum whose first value is non-zero, reserved enum values,
+    /// invalid oneof indices, or malformed map entries).
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -1197,6 +1217,22 @@ impl DescriptorPool {
                     name: value_name,
                 });
             }
+            if e.reserved_name.iter().any(|name| name == &value_name) {
+                return Err(PoolError::ReservedEnumValueName {
+                    enum_name: fqn.clone(),
+                    name: value_name,
+                });
+            }
+            let number = v.number.unwrap_or(0);
+            if e.reserved_range.iter().any(|range| {
+                matches!((range.start, range.end), (Some(start), Some(end)) if start <= number && number <= end)
+            }) {
+                return Err(PoolError::ReservedEnumValueNumber {
+                    enum_name: fqn.clone(),
+                    name: value_name,
+                    number,
+                });
+            }
             let value_fqn = if parent_fqn.is_empty() {
                 value_name.clone()
             } else {
@@ -1211,7 +1247,7 @@ impl DescriptorPool {
             self.register_symbol(&value_fqn, SymbolKind::EnumValue)?;
             values.push(EnumValueDescriptor {
                 name: value_name,
-                number: v.number.unwrap_or(0),
+                number,
                 options: clone_options(&v.options),
             });
         }
