@@ -13,57 +13,46 @@ fn pool() -> Arc<DescriptorPool> {
     Arc::new(DescriptorPool::decode(FDS_BYTES).expect("pool builds from protoc FDS"))
 }
 
-fn field_mask_pool() -> Arc<DescriptorPool> {
-    use buffa_descriptor::generated::descriptor::{
-        field_descriptor_proto::{Label, Type},
-        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
-    };
-
-    Arc::new(
-        DescriptorPool::new(FileDescriptorSet {
-            file: vec![FileDescriptorProto {
-                name: Some("google/protobuf/field_mask.proto".into()),
-                package: Some("google.protobuf".into()),
-                syntax: Some("proto3".into()),
-                message_type: vec![DescriptorProto {
-                    name: Some("FieldMask".into()),
-                    field: vec![FieldDescriptorProto {
-                        name: Some("paths".into()),
-                        number: Some(1),
-                        label: Some(Label::LABEL_REPEATED),
-                        r#type: Some(Type::TYPE_STRING),
-                        json_name: Some("paths".into()),
-                        ..Default::default()
-                    }],
-                    ..Default::default()
-                }],
-                ..Default::default()
-            }],
-            ..Default::default()
-        })
-        .expect("hand-built FieldMask descriptor is valid"),
-    )
-}
-
 #[test]
-fn json_field_mask_preserves_path_whitespace() {
-    let p = field_mask_pool();
-    let idx = p.message_index("google.protobuf.FieldMask").unwrap();
+fn json_field_mask_round_trip_and_rejects_invalid_paths() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
 
-    for (json, expected) in [
-        (r#""foo, barBaz""#, ["foo", " bar_baz"]),
-        (r#""foo ,barBaz""#, ["foo ", "bar_baz"]),
+    let wildcard_input = r#"{"fFieldMask":"*"}"#;
+    let wildcard = DynamicMessage::from_json(Arc::clone(&p), idx, wildcard_input).unwrap();
+    assert_eq!(wildcard.to_json().unwrap(), wildcard_input);
+
+    let valid_input = r#"{"fFieldMask":"fooBar,foo.barBaz,Foo,foo.Bar"}"#;
+    let valid = DynamicMessage::from_json(Arc::clone(&p), idx, valid_input).unwrap();
+    assert_eq!(valid.to_json().unwrap(), valid_input);
+
+    for input in [
+        r#"{"fFieldMask":" "}"#,
+        r#"{"fFieldMask":"foo, barBaz"}"#,
+        r#"{"fFieldMask":"foo,bar-baz"}"#,
+        r#"{"fFieldMask":"foo,"}"#,
+        r#"{"fFieldMask":".foo"}"#,
+        r#"{"fFieldMask":"foo."}"#,
+        r#"{"fFieldMask":"foo..bar"}"#,
     ] {
-        let parsed = DynamicMessage::from_json(Arc::clone(&p), idx, json).unwrap();
-        let Some(Value::List(paths)) = parsed.field_by_number(1) else {
-            panic!("FieldMask paths were not parsed");
-        };
-        let expected: Vec<_> = expected
-            .into_iter()
-            .map(|p| Value::String(p.into()))
-            .collect();
-        assert_eq!(paths, &expected);
-        assert_eq!(parsed.to_json().unwrap(), json);
+        assert!(
+            DynamicMessage::from_json(Arc::clone(&p), idx, input).is_err(),
+            "JSON {input} must be rejected"
+        );
+    }
+
+    let field_mask_idx = p.message_index("google.protobuf.FieldMask").unwrap();
+    let field_mask_md = p.message_by_name("google.protobuf.FieldMask").unwrap();
+    let scalars_md = p.message_by_name("reflect.test.Scalars").unwrap();
+    for path in [" ", "foo bar", "foo-bar", "", ".foo", "foo.", "foo..bar"] {
+        let mut mask = DynamicMessage::new(Arc::clone(&p), field_mask_idx);
+        mask.set(
+            field_mask_md.field(1).unwrap(),
+            Value::List(vec![Value::String(path.into())]),
+        );
+        let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+        msg.set(scalars_md.field(17).unwrap(), Value::Message(mask));
+        assert!(msg.to_json().is_err(), "path {path:?} must be rejected");
     }
 }
 

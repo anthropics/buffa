@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package reflect.test;
 
+import "google/protobuf/field_mask.proto";
+
 message Scalars {
   double f_double = 1;
   float f_float = 2;
@@ -19,6 +21,7 @@ message Scalars {
   string f_string = 14;
   bytes f_bytes = 15;
   optional int32 f_opt = 16;
+  google.protobuf.FieldMask f_field_mask = 17;
 }
 
 message Containers {

@@ -315,11 +315,21 @@ pub fn camel_to_snake(path: &str) -> String {
 ///
 /// The proto3 JSON spec requires rejecting paths that can't round-trip:
 /// double underscores (`foo__bar`), digits after underscores (`foo_3_bar`),
-/// and uppercase in the snake form (`fooBar`) all violate the invariant
-/// `camel_to_snake(snake_to_camel(p)) == p`.
+/// uppercase in the snake form (`fooBar`), and non-identifier characters all
+/// violate the invariant `camel_to_snake(snake_to_camel(p)) == p`. The
+/// exact `*` path is also valid for APIs that use it as a full-mask wildcard.
 #[must_use]
 pub fn field_mask_path_round_trips(path: &str) -> bool {
-    camel_to_snake(&snake_to_camel(path)) == path
+    if path == "*" {
+        return true;
+    }
+    path.split('.').all(|component| {
+        let bytes = component.as_bytes();
+        (!bytes.is_empty() && (bytes[0].is_ascii_lowercase() || bytes[0] == b'_'))
+            && bytes[1..]
+                .iter()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'_')
+    }) && camel_to_snake(&snake_to_camel(path)) == path
 }
 
 // ── Civil calendar ──────────────────────────────────────────────────────────
@@ -455,8 +465,15 @@ mod tests {
         assert!(field_mask_path_round_trips("foo._bar"));
         assert!(field_mask_path_round_trips("foo_bar"));
         assert!(field_mask_path_round_trips("user.first_name"));
+        assert!(field_mask_path_round_trips("*"));
+        assert!(!field_mask_path_round_trips(""));
+        assert!(!field_mask_path_round_trips("foo."));
+        assert!(!field_mask_path_round_trips(".foo"));
+        assert!(!field_mask_path_round_trips("foo..bar"));
         assert!(!field_mask_path_round_trips("foo__bar"));
         assert!(!field_mask_path_round_trips("foo_3_bar"));
         assert!(!field_mask_path_round_trips("fooBar"));
+        assert!(!field_mask_path_round_trips("foo bar"));
+        assert!(!field_mask_path_round_trips("foo-bar"));
     }
 }

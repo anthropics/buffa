@@ -147,8 +147,8 @@ fn pool_registers_all_types() {
 fn scalar_fields_link_with_proto3_presence() {
     let p = pool();
     let scalars = p.message_by_name("reflect.test.Scalars").unwrap();
-    // 16 fields: 15 scalars + f_opt.
-    assert_eq!(scalars.fields().len(), 16);
+    // 17 fields: 15 scalars, f_opt, and f_field_mask.
+    assert_eq!(scalars.fields().len(), 17);
 
     // Lookup by number.
     let f_int32 = scalars.field(3).unwrap();

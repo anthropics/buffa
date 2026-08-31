@@ -610,8 +610,8 @@ use buffa::json_helpers::wkt::{
 };
 
 /// Convert a snake_case field-mask path to lowerCamelCase, rejecting paths
-/// that don't round-trip per the proto3 JSON spec (double underscores,
-/// underscore-digit, uppercase).
+/// that don't round-trip per the proto3 JSON spec (empty components, invalid
+/// characters, double underscores, underscore-digit, uppercase).
 fn field_mask_to_camel(p: &str) -> Result<String, &'static str> {
     if !field_mask_path_round_trips(p) {
         return Err("FieldMask path does not round-trip through camelCase");
@@ -623,7 +623,7 @@ fn field_mask_to_camel(p: &str) -> Result<String, &'static str> {
 /// that don't round-trip.
 fn field_mask_to_snake(p: &str) -> Result<String, &'static str> {
     let snake = camel_to_snake(p);
-    if snake_to_camel(&snake) != p {
+    if !field_mask_path_round_trips(&snake) || snake_to_camel(&snake) != p {
         return Err("FieldMask JSON path is not canonical lowerCamelCase");
     }
     Ok(snake)
