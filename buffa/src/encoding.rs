@@ -17,6 +17,12 @@ use crate::error::DecodeError;
 /// [spec]: https://protobuf.dev/programming-guides/encoding/#structure
 pub const MAX_FIELD_NUMBER: u32 = (1 << 29) - 1;
 
+/// The first field number reserved for the protobuf implementation.
+pub const FIRST_RESERVED_FIELD_NUMBER: u32 = 19_000;
+
+/// The last field number reserved for the protobuf implementation.
+pub const LAST_RESERVED_FIELD_NUMBER: u32 = 19_999;
+
 /// Protobuf wire types.
 ///
 /// Only wire types 0–5 are currently defined by the protobuf specification;

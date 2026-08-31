@@ -422,7 +422,10 @@ fn implementation_reserved_field_numbers_are_rejected_without_mutating_pool() {
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
     use buffa_descriptor::generated::descriptor::DescriptorProto;
 
-    for number in [18_999, 20_000] {
+    for number in [
+        (buffa::encoding::FIRST_RESERVED_FIELD_NUMBER - 1) as i32,
+        (buffa::encoding::LAST_RESERVED_FIELD_NUMBER + 1) as i32,
+    ] {
         let name = format!("Allowed{number}");
         assert!(
             add_message_with_syntax(
@@ -438,7 +441,10 @@ fn implementation_reserved_field_numbers_are_rejected_without_mutating_pool() {
         );
     }
 
-    for number in [19_000, 19_999] {
+    for number in [
+        buffa::encoding::FIRST_RESERVED_FIELD_NUMBER as i32,
+        buffa::encoding::LAST_RESERVED_FIELD_NUMBER as i32,
+    ] {
         let message_name = format!("Reserved{number}");
         let full_name = format!("invalid.test.{message_name}");
         let field_name = format!("{full_name}.value");
@@ -456,7 +462,7 @@ fn implementation_reserved_field_numbers_are_rejected_without_mutating_pool() {
                 assert!(
                     matches!(
                         err,
-                        PoolError::InvalidFieldNumber {
+                        PoolError::ReservedFieldNumber {
                             field,
                             number: actual
                         } if field == &field_name && *actual == number

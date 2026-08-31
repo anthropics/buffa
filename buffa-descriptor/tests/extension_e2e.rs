@@ -113,6 +113,22 @@ fn unregistered_extension_range_number_round_trips_as_unknown() {
     assert_eq!(decoded.encode_to_vec(), bytes);
 }
 
+#[test]
+fn open_ended_extension_ranges_skip_reserved_band() {
+    let p = pool();
+    let md = p.message_by_name("reflect.closed.Contexts").unwrap();
+    assert_eq!(
+        md.extension_ranges(),
+        &[
+            (100, buffa::encoding::FIRST_RESERVED_FIELD_NUMBER),
+            (
+                buffa::encoding::LAST_RESERVED_FIELD_NUMBER + 1,
+                buffa::encoding::MAX_FIELD_NUMBER + 1,
+            ),
+        ]
+    );
+}
+
 #[cfg(feature = "json")]
 mod json {
     use super::*;
@@ -257,7 +273,10 @@ mod malformed {
 
     #[test]
     fn implementation_reserved_extension_numbers_rejected() {
-        for number in [19_000, 19_999] {
+        for number in [
+            buffa::encoding::FIRST_RESERVED_FIELD_NUMBER as i32,
+            buffa::encoding::LAST_RESERVED_FIELD_NUMBER as i32,
+        ] {
             let mut set = base_set();
             let ext_file = set
                 .file
@@ -265,13 +284,7 @@ mod malformed {
                 .find(|f| f.package.as_deref() == Some("reflect.ext"))
                 .unwrap();
             ext_file.extension[0].number = Some(number);
-
-            let message_file = set
-                .file
-                .iter_mut()
-                .find(|f| f.package.as_deref() == Some("reflect.ext"))
-                .unwrap();
-            let extendable = message_file
+            let extendable = ext_file
                 .message_type
                 .iter_mut()
                 .find(|m| m.name.as_deref() == Some("Extendable"))
@@ -283,10 +296,90 @@ mod malformed {
             assert!(
                 matches!(
                     &err,
-                    buffa_descriptor::PoolError::InvalidFieldNumber { field, number: actual }
+                    buffa_descriptor::PoolError::ReservedFieldNumber { field, number: actual }
                         if field == "reflect.ext.ext_int32" && *actual == number
                 ),
                 "unexpected error: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn implementation_reserved_extension_ranges_rejected() {
+        for (start, end) in [
+            (
+                buffa::encoding::FIRST_RESERVED_FIELD_NUMBER as i32,
+                (buffa::encoding::LAST_RESERVED_FIELD_NUMBER + 1) as i32,
+            ),
+            (
+                (buffa::encoding::FIRST_RESERVED_FIELD_NUMBER - 1) as i32,
+                (buffa::encoding::FIRST_RESERVED_FIELD_NUMBER + 1) as i32,
+            ),
+            (
+                buffa::encoding::LAST_RESERVED_FIELD_NUMBER as i32,
+                (buffa::encoding::LAST_RESERVED_FIELD_NUMBER + 1) as i32,
+            ),
+        ] {
+            let mut set = base_set();
+            let ext_file = set
+                .file
+                .iter_mut()
+                .find(|f| f.package.as_deref() == Some("reflect.ext"))
+                .unwrap();
+            let extendable = ext_file
+                .message_type
+                .iter_mut()
+                .find(|m| m.name.as_deref() == Some("Extendable"))
+                .unwrap();
+            extendable.extension_range[0].start = Some(start);
+            extendable.extension_range[0].end = Some(end);
+
+            let err = DescriptorPool::new(set).unwrap_err();
+            assert!(
+                matches!(
+                    &err,
+                    buffa_descriptor::PoolError::ReservedFieldNumber { field, number }
+                        if field == "reflect.ext.Extendable (extension range)"
+                            && *number == start.max(buffa::encoding::FIRST_RESERVED_FIELD_NUMBER as i32)
+                ),
+                "unexpected error: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn extension_ranges_adjacent_to_reserved_band_are_accepted() {
+        for (start, end) in [
+            (
+                (buffa::encoding::FIRST_RESERVED_FIELD_NUMBER - 1) as i32,
+                buffa::encoding::FIRST_RESERVED_FIELD_NUMBER as i32,
+            ),
+            (
+                (buffa::encoding::LAST_RESERVED_FIELD_NUMBER + 1) as i32,
+                (buffa::encoding::LAST_RESERVED_FIELD_NUMBER + 2) as i32,
+            ),
+        ] {
+            let mut set = base_set();
+            let ext_file = set
+                .file
+                .iter_mut()
+                .find(|f| f.package.as_deref() == Some("reflect.ext"))
+                .unwrap();
+            ext_file.extension.clear();
+            for message in &mut ext_file.message_type {
+                message.extension.clear();
+            }
+            let extendable = ext_file
+                .message_type
+                .iter_mut()
+                .find(|m| m.name.as_deref() == Some("Extendable"))
+                .unwrap();
+            extendable.extension_range[0].start = Some(start);
+            extendable.extension_range[0].end = Some(end);
+
+            assert!(
+                DescriptorPool::new(set).is_ok(),
+                "extension range {start}..{end} should be accepted"
             );
         }
     }

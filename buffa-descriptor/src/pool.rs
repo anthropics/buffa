@@ -75,6 +75,12 @@ fn clone_options<T: Clone + Default, P: buffa::ProtoBox<T>>(
 /// limit — reached in pass 1, before the other three walks run.
 pub const MAX_SYMBOL_LEN: usize = 512;
 
+fn reserved_number_in_extension_range(start: u32, end: u32) -> Option<u32> {
+    (start <= buffa::encoding::LAST_RESERVED_FIELD_NUMBER
+        && end > buffa::encoding::FIRST_RESERVED_FIELD_NUMBER)
+        .then(|| start.max(buffa::encoding::FIRST_RESERVED_FIELD_NUMBER))
+}
+
 /// Errors that can occur while building a [`DescriptorPool`].
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -110,10 +116,14 @@ pub enum PoolError {
         index: i32,
     },
     /// A field number is outside the valid range
-    /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`), is reserved for the
-    /// implementation (`19_000..=19_999`), or an extension range has a
-    /// negative bound.
+    /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`), or an extension range has
+    /// an invalid bound.
     InvalidFieldNumber { field: String, number: i32 },
+    /// A field number, or a finite extension range, overlaps the field-number
+    /// interval reserved for the protobuf implementation. The bounds are
+    /// [`buffa::encoding::FIRST_RESERVED_FIELD_NUMBER`] through
+    /// [`buffa::encoding::LAST_RESERVED_FIELD_NUMBER`].
+    ReservedFieldNumber { field: String, number: i32 },
     /// A map entry message did not have exactly fields 1 (key) and 2 (value),
     /// or the key type is not a valid map key per the protobuf spec.
     MalformedMapEntry { message: String },
@@ -174,6 +184,12 @@ impl core::fmt::Display for PoolError {
             ),
             Self::InvalidFieldNumber { field, number } => {
                 write!(f, "field {field} has invalid field number {number}")
+            }
+            Self::ReservedFieldNumber { field, number } => {
+                write!(
+                    f,
+                    "field {field} uses field number {number}, which is reserved for the protobuf implementation"
+                )
             }
             Self::MalformedMapEntry { message } => {
                 write!(f, "malformed map entry message {message}")
@@ -985,7 +1001,25 @@ impl DescriptorPool {
                     number: start.min(end),
                 });
             };
-            extension_ranges.push((start, end));
+            if let Some(number) = reserved_number_in_extension_range(start, end) {
+                // `to max` is encoded as MAX_FIELD_NUMBER + 1. The standard
+                // descriptor messages use open-ended ranges that span this
+                // interval, so normalize those ranges around the reserved
+                // band instead of making canonical descriptor sets unloadable.
+                if end == buffa::encoding::MAX_FIELD_NUMBER + 1
+                    && start < buffa::encoding::FIRST_RESERVED_FIELD_NUMBER
+                {
+                    extension_ranges.push((start, number));
+                    extension_ranges.push((buffa::encoding::LAST_RESERVED_FIELD_NUMBER + 1, end));
+                } else {
+                    return Err(PoolError::ReservedFieldNumber {
+                        field: format!("{fqn} (extension range)"),
+                        number: number as i32,
+                    });
+                }
+            } else {
+                extension_ranges.push((start, end));
+            }
         }
 
         // Replace the placeholder. Pass 1 registered messages depth-first
@@ -1153,7 +1187,8 @@ impl DescriptorPool {
         field.oneof_index = None;
         // Validate the number falls inside one of the extendee's declared
         // extension ranges.
-        if !self.messages[extendee.0 as usize].in_extension_range(field.number) {
+        let extendee_message = &self.messages[extendee.0 as usize];
+        if !extendee_message.in_extension_range(field.number) {
             return Err(PoolError::InvalidFieldNumber {
                 field: fqn,
                 // `link_field` bounds the number to `MAX_FIELD_NUMBER`
@@ -1354,22 +1389,27 @@ impl DescriptorPool {
             .clone()
             .unwrap_or_else(|| derive_json_name(&name));
 
-        // Validate the field number. The wire format reserves 0, numbers
-        // 19_000 through 19_999 are reserved for the implementation, and the
+        // Validate the field number. The wire format reserves 0, and the
         // upper bound is `(1 << 29) - 1`. Spec-compliant `protoc` never emits
         // an invalid number, but the input is no longer trusted to come from
         // `protoc` once consumers feed network-loaded descriptors.
         let raw_number = f.number.unwrap_or(0);
         let number = u32::try_from(raw_number)
             .ok()
-            .filter(|&n| {
-                (1..=buffa::encoding::MAX_FIELD_NUMBER).contains(&n)
-                    && !(19_000..=19_999).contains(&n)
-            })
-            .ok_or(PoolError::InvalidFieldNumber {
-                field: field_fqn,
+            .filter(|&n| (1..=buffa::encoding::MAX_FIELD_NUMBER).contains(&n))
+            .ok_or_else(|| PoolError::InvalidFieldNumber {
+                field: field_fqn.clone(),
                 number: raw_number,
             })?;
+        if (buffa::encoding::FIRST_RESERVED_FIELD_NUMBER
+            ..=buffa::encoding::LAST_RESERVED_FIELD_NUMBER)
+            .contains(&number)
+        {
+            return Err(PoolError::ReservedFieldNumber {
+                field: field_fqn,
+                number: raw_number,
+            });
+        }
 
         Ok(FieldDescriptor {
             name,
