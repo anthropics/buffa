@@ -109,6 +109,59 @@ pub mod google {
     }
 }
 
+// Message WKTs use custom ProtoJSON serde implementations rather than the
+// generated field representation. Implement the container bridge for them so
+// externally mapped WKTs also work as bytes-keyed map values.
+#[cfg(feature = "json")]
+macro_rules! impl_wkt_proto_elem_json {
+    ($($ty:ty),+ $(,)?) => {
+        $(
+            impl buffa::json_helpers::ProtoElemJson for $ty {
+                fn serialize_proto_json<S: serde::Serializer>(
+                    value: &Self,
+                    s: S,
+                ) -> Result<S::Ok, S::Error> {
+                    serde::Serialize::serialize(value, s)
+                }
+
+                fn deserialize_proto_json<'de, D: serde::Deserializer<'de>>(
+                    d: D,
+                ) -> Result<Self, D::Error> {
+                    <Self as serde::Deserialize>::deserialize(d)
+                }
+            }
+        )+
+    };
+}
+
+#[cfg(feature = "json")]
+impl_wkt_proto_elem_json!(
+    google::protobuf::Any,
+    google::protobuf::Duration,
+    google::protobuf::Empty,
+    google::protobuf::FieldMask,
+    google::protobuf::ListValue,
+    google::protobuf::Struct,
+    google::protobuf::Timestamp,
+);
+
+// `Value` is the one message WKT for which JSON `null` is a valid element
+// value, rather than an absent container member.
+#[cfg(feature = "json")]
+impl buffa::json_helpers::ProtoElemJson for google::protobuf::Value {
+    fn serialize_proto_json<S: serde::Serializer>(value: &Self, s: S) -> Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(value, s)
+    }
+
+    fn deserialize_proto_json<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        <Self as serde::Deserialize>::deserialize(d)
+    }
+
+    fn deserialize_proto_json_null<E: serde::de::Error>() -> Result<Self, E> {
+        Ok(Self::null())
+    }
+}
+
 // Convenience re-exports of the most commonly-used well-known types.
 // Full paths (`google::protobuf::*`) remain available for disambiguation.
 // Wrapper types (Int32Value, etc.) are NOT re-exported to avoid name

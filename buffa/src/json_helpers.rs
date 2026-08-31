@@ -92,6 +92,14 @@ pub trait ProtoElemJson: Sized {
     fn serialize_proto_json<S: serde::Serializer>(v: &Self, s: S) -> Result<S::Ok, S::Error>;
     /// Deserialize a value with proto3 JSON semantics.
     fn deserialize_proto_json<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error>;
+    /// Deserialize a JSON `null` when it is a valid representation of this
+    /// protobuf type inside a container. Most protobuf element types reject
+    /// `null`; `google.protobuf.Value` overrides this for its null variant.
+    fn deserialize_proto_json_null<E: serde::de::Error>() -> Result<Self, E> {
+        Err(E::custom(
+            "null is not a valid repeated-field element or map value",
+        ))
+    }
 }
 
 /// Wraps `&T: ProtoElemJson` as `serde::Serialize`.
@@ -201,14 +209,10 @@ impl<'de, T: ProtoElemJson> serde::de::DeserializeSeed<'de> for ProtoElemSeed<T>
                 f.write_str("a non-null value")
             }
             fn visit_none<E: serde::de::Error>(self) -> Result<T, E> {
-                Err(E::custom(
-                    "null is not a valid repeated-field element or map value",
-                ))
+                T::deserialize_proto_json_null()
             }
             fn visit_unit<E: serde::de::Error>(self) -> Result<T, E> {
-                Err(E::custom(
-                    "null is not a valid repeated-field element or map value",
-                ))
+                T::deserialize_proto_json_null()
             }
             fn visit_some<D2: serde::Deserializer<'de>>(self, d: D2) -> Result<T, D2::Error> {
                 T::deserialize_proto_json(d)

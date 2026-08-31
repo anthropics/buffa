@@ -10,6 +10,8 @@ edition = "2023";
 package utf8test;
 
 import "google/protobuf/wrappers.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
 
 message StringNoValidation {
   // File-scope default is VERIFY; override per-field to NONE.
@@ -41,13 +43,15 @@ message OneofNoValidation {
 }
 
 // A NONE-validated string key becomes a bytes key under strict mapping. Keep
-// wrapper values here to exercise the bytes-key map ProtoJSON path, including
-// its rejection of null map values.
+// wrapper and WKT message values here to exercise the bytes-key map ProtoJSON
+// path, including its rejection of null map values.
 message WrapperMapNoValidation {
   map<string, google.protobuf.BoolValue> flags = 1 [features.utf8_validation = NONE];
   map<string, google.protobuf.Int32Value> counts = 2 [features.utf8_validation = NONE];
   map<string, google.protobuf.StringValue> labels = 3 [features.utf8_validation = NONE];
   map<string, google.protobuf.UInt32Value> totals = 4 [features.utf8_validation = NONE];
+  map<string, google.protobuf.Timestamp> stamps = 5 [features.utf8_validation = NONE];
+  map<string, google.protobuf.Value> values = 6 [features.utf8_validation = NONE];
 }
 
 // Second file section would test file-level NONE, but protoc restricts
