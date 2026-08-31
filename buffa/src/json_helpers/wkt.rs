@@ -287,6 +287,10 @@ pub fn snake_to_camel(path: &str) -> String {
 
 /// Convert a lowerCamelCase field-mask path to snake_case, handling dotted
 /// sub-paths.
+///
+/// A leading uppercase letter produces a leading underscore (`Foo` → `_foo`),
+/// the inverse of [`snake_to_camel`] on a field named `_foo`; `_` is a legal
+/// first character in a proto field name.
 #[must_use]
 pub fn camel_to_snake(path: &str) -> String {
     path.split('.')
