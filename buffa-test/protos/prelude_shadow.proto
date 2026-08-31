@@ -64,3 +64,25 @@ message View {
   }
   optional Inner inner = 1;
 }
+
+// A message named `Serde` produces a nested-type module `pub mod serde`,
+// which shadows the `serde` crate for every sibling item in this package and
+// for everything inside the module. The JSON emitters (derive lists, the
+// custom oneof Serialize/Deserialize impls, the DeserializeSeed helper for
+// the non-oneof field) must therefore spell `::serde::` absolutely.
+// Compilation is the assertion.
+message Serde {
+  message Inner {
+    optional string s = 1;
+    oneof pick {
+      uint64 int_value = 2;
+      string str_value = 3;
+    }
+  }
+  optional string name = 1;
+  optional Inner inner = 2;
+  oneof kind {
+    uint64 int_value = 3;
+    string str_value = 4;
+  }
+}
