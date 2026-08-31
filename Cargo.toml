@@ -48,6 +48,10 @@ lto = true
 codegen-units = 1
 
 [workspace.dependencies]
+# `default-features = false` so `no_std` members can opt out; Cargo cannot
+# re-enable a workspace dependency's defaults per member, so the tooling
+# crates spell buffa's default set (`std`, `fast-utf8`) out themselves.
+# Keep the two in sync when buffa's `default` list changes.
 buffa = { path = "buffa", version = "0.9.1", default-features = false }
 buffa-types = { path = "buffa-types", version = "0.9.1" }
 # `default-features = false` keeps the codegen toolchain (`buffa-codegen` /
