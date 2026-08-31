@@ -12,8 +12,8 @@ categories = ["development-tools::build-utils"]
 [dependencies]
 buffa = { workspace = true, features = ["std", "fast-utf8"] }
 # Codegen reads descriptors via the binary codec only — no views / json /
-# text. The workspace dep disables default features; these are enabled
-# explicitly because codegen is a build-time tool, never `no_std`.
+# text. The workspace dep is `default-features = false`; `std` is added back
+# because codegen is a build-time tool, never `no_std`.
 buffa-descriptor = { workspace = true, features = ["std"] }
 prettyplease = { workspace = true }
 proc-macro2 = { workspace = true }
