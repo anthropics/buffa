@@ -1,3 +1,3 @@
 kind: Added
-body: The protoc-gen-buffa plugin now accepts repeatable unbox_oneof=<path> options for opting matching non-recursive message/group oneof variants into inline storage.
+body: The protoc-gen-buffa plugin now accepts unbox_oneof=true for opting all non-recursive message/group oneof variants into inline storage and repeatable unbox_oneof_in=<path> options for scoped rules. The initial non-empty unbox_oneof=<path> spelling remains accepted as a compatibility alias, while empty values are rejected instead of enabling the blanket rule.
 time: 2026-08-30T13:18:32+02:00
