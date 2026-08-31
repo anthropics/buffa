@@ -588,11 +588,26 @@ fn dynamic_message_unknown_fields_preserved() {
 fn dynamic_message_equality_compares_unknown_fields_by_value() {
     let p = pool();
     let idx = p.message_index("reflect.test.Scalars").unwrap();
+    let decode = |wire: &[u8]| DynamicMessage::decode(Arc::clone(&p), idx, wire).unwrap();
 
-    let first = DynamicMessage::decode(Arc::clone(&p), idx, &varint_field(17, 1)).unwrap();
-    let second = DynamicMessage::decode(Arc::clone(&p), idx, &varint_field(17, 2)).unwrap();
+    // Same contents: equal, so the comparison is not unconditionally false.
+    assert_eq!(decode(&varint_field(17, 1)), decode(&varint_field(17, 1)));
 
-    assert_ne!(first, second);
+    // Same number, different payload.
+    assert_ne!(decode(&varint_field(17, 1)), decode(&varint_field(17, 2)));
+
+    // Same number and payload, different wire type.
+    let mut fixed = Vec::new();
+    Tag::new(17, WireType::Fixed32).encode(&mut fixed);
+    fixed.extend_from_slice(&1u32.to_le_bytes());
+    assert_ne!(decode(&varint_field(17, 1)), decode(&fixed));
+
+    // Unknown fields keep arrival order, and equality is order-sensitive.
+    let mut a = varint_field(17, 1);
+    a.extend(varint_field(18, 2));
+    let mut b = varint_field(18, 2);
+    b.extend(varint_field(17, 1));
+    assert_ne!(decode(&a), decode(&b));
 }
 
 #[test]

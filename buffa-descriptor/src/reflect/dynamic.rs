@@ -108,7 +108,12 @@ impl PartialEq for DynamicMessage {
     /// independent decode pipelines. For those, compare `field_by_number`
     /// values directly or compare the re-encoded wire bytes.
     ///
-    /// Unknown fields are compared by value, including their contents.
+    /// Unknown fields are compared by value in arrival order: two messages
+    /// carrying the same unknown fields received in a different tag order
+    /// compare unequal. protobuf's `MessageDifferencer` sorts unknown
+    /// fields by number before comparing; callers that want that
+    /// insensitivity can compare [`unknown_fields`](Self::unknown_fields)
+    /// after sorting.
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.pool, &other.pool)
             && self.msg_idx == other.msg_idx

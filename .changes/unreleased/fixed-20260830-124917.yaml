@@ -1,3 +1,4 @@
 kind: Fixed
-body: DynamicMessage equality now compares unknown fields by value instead of only comparing their count.
+body: |-
+    **`DynamicMessage` equality compares unknown fields by value** (#388), in arrival order, rather than by count alone.
 time: 2026-08-30T12:49:17+02:00
