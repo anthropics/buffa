@@ -287,6 +287,10 @@ pub fn snake_to_camel(path: &str) -> String {
 
 /// Convert a lowerCamelCase field-mask path to snake_case, handling dotted
 /// sub-paths.
+///
+/// A leading uppercase letter produces a leading underscore (`Foo` → `_foo`),
+/// the inverse of [`snake_to_camel`] on a field named `_foo`; `_` is a legal
+/// first character in a proto field name.
 #[must_use]
 pub fn camel_to_snake(path: &str) -> String {
     path.split('.')
@@ -294,11 +298,7 @@ pub fn camel_to_snake(path: &str) -> String {
             let mut out = String::with_capacity(component.len() + 4);
             for ch in component.chars() {
                 if ch.is_uppercase() {
-                    // No underscore before the first char of a component,
-                    // even if it's uppercase (PascalCase → snake, not _snake).
-                    if !out.is_empty() {
-                        out.push('_');
-                    }
+                    out.push('_');
                     out.extend(ch.to_lowercase());
                 } else {
                     out.push(ch);
@@ -447,6 +447,12 @@ mod tests {
         assert_eq!(snake_to_camel("foo_bar"), "fooBar");
         assert_eq!(camel_to_snake("fooBar"), "foo_bar");
         assert_eq!(snake_to_camel("user.first_name"), "user.firstName");
+        assert_eq!(snake_to_camel("_foo"), "Foo");
+        assert_eq!(camel_to_snake("Foo"), "_foo");
+        assert_eq!(snake_to_camel("foo._bar"), "foo.Bar");
+        assert_eq!(camel_to_snake("foo.Bar"), "foo._bar");
+        assert!(field_mask_path_round_trips("_foo"));
+        assert!(field_mask_path_round_trips("foo._bar"));
         assert!(field_mask_path_round_trips("foo_bar"));
         assert!(field_mask_path_round_trips("user.first_name"));
         assert!(!field_mask_path_round_trips("foo__bar"));
