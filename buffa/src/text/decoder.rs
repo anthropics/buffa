@@ -12,7 +12,7 @@ use alloc::vec::Vec;
 use super::error::{ParseError, ParseErrorKind};
 use super::string::{unescape, unescape_str, UnescapeError};
 use super::token::{
-    lex_number, number_for_parse, NumKind, ScalarKind, Token, TokenKind, Tokenizer,
+    consume_ws, lex_number, number_for_parse, NumKind, ScalarKind, Token, TokenKind, Tokenizer,
 };
 
 /// Stateful textproto reader.
@@ -310,11 +310,13 @@ impl<'a> TextDecoder<'a> {
         match tok.scalar_kind {
             ScalarKind::Literal => {
                 // nan, inf, infinity, -inf, -infinity (case-insensitive).
-                // trim_start: the tokenizer accepts `- inf` with whitespace
-                // between the sign and the literal, so the raw span may
-                // contain it.
+                // The tokenizer accepts whitespace/comments between `-` and
+                // the literal, so reuse its trivia handling for the raw span.
                 let (neg, lit) = match tok.raw.strip_prefix('-') {
-                    Some(r) => (true, r.trim_start()),
+                    Some(r) => {
+                        let trimmed = consume_ws(r.as_bytes());
+                        (true, &r[r.len() - trimmed.len()..])
+                    }
                     None => (false, tok.raw),
                 };
                 let v = if lit.eq_ignore_ascii_case("nan") {
