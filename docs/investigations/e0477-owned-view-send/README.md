@@ -98,7 +98,7 @@ narrowed the trigger from "any type with a `'static` lifetime parameter" to
 
 ### The fix — drop the manual impl
 
-`OwnedView<V>` is `ManuallyDrop<V>` + `Bytes`. Both forward auto-traits.
+`OwnedView<V>` was, at the time of this investigation, `ManuallyDrop<V>` + `Bytes`. Both forward auto-traits.
 `OwnedView<V>: Send iff V: Send` follows — no `'static` bound needed.
 
 The manual impl's `V: 'static` was defensive: it blocked

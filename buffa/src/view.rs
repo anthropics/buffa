@@ -2420,10 +2420,15 @@ impl<'a> UnknownFieldsView<'a> {
 ///    moves. The view's borrows always point into valid memory.
 /// 2. [`Bytes`] is immutable — the underlying data cannot be modified while
 ///    borrowed.
-/// 3. A manual [`Drop`] impl explicitly drops the view before the bytes,
-///    ensuring no dangling references during cleanup. The view field uses
-///    [`ManuallyDrop`](core::mem::ManuallyDrop) to prevent the automatic
-///    drop from running out of order.
+/// 3. The view is declared before the buffer, and the compiler's drop glue
+///    drops fields in declaration order, so the view is always gone before
+///    the buffer it borrows from is released — on a normal drop and during
+///    an unwind; [`into_bytes`](OwnedView::into_bytes) drops it explicitly
+///    before handing the buffer back.
+/// 4. The view is stored in a private `MaybeDangling` wrapper (an in-tree
+///    stand-in for RFC 3336), which tells the aliasing model that its forged
+///    `'static` borrows carry no validity guarantees of their own while an
+///    `OwnedView` is moved around by value.
 ///
 /// [`reborrow`](OwnedView::reborrow) is a plain Rust subtype coercion (no
 /// `unsafe`, no pointer cast): the [`ViewReborrow`] trait method coerces
@@ -2431,28 +2436,80 @@ impl<'a> UnknownFieldsView<'a> {
 /// variance for covariant view types. See [`ViewReborrow`]'s docs for the
 /// soundness argument.
 pub struct OwnedView<V> {
-    // INVARIANT: `view` borrows from `bytes`. The `Drop` impl ensures
-    // `view` is dropped before `bytes`. `ManuallyDrop` prevents the compiler
-    // from dropping `view` automatically — our `Drop` impl handles it.
+    // INVARIANT: `view` borrows from `bytes`. FIELD ORDER IS LOAD-BEARING:
+    // drop glue runs in declaration order, so `view` must stay declared
+    // before `bytes` for the view to be dropped while its buffer is still
+    // alive. There is deliberately no `Drop` impl on `OwnedView` — with one,
+    // `into_bytes` could not move `bytes` out, and a panic in `V::drop`
+    // could unwind into it and drop the view a second time (#377).
     //
     // CONSTRUCTORS: any constructor added here MUST ensure the view's
     // borrows point into `self.bytes` (not into caller-owned memory).
     // The auto-`Send`/`Sync` derivation is only sound under that invariant
     // — there is no longer a `V: 'static` bound on `Send` to act as a
     // second gate. See the comment block above `send_sync_assertions` below.
-    view: core::mem::ManuallyDrop<V>,
+    view: MaybeDangling<V>,
     bytes: Bytes,
 }
 
-impl<V> Drop for OwnedView<V> {
-    fn drop(&mut self) {
-        // SAFETY: `view` borrows from `bytes`. We must drop the view before
-        // bytes is dropped. `ManuallyDrop::drop` runs V's destructor in place
-        // without moving it. After this, `bytes` drops automatically via the
-        // compiler-generated drop glue.
-        unsafe {
-            core::mem::ManuallyDrop::drop(&mut self.view);
+/// An in-tree stand-in for the `MaybeDangling<T>` proposed in [RFC 3336],
+/// modelled on `yoke`'s `KindaSortaDangling` (minus the `into_inner` and
+/// `DerefMut` this crate has no caller for).
+///
+/// The view inside an [`OwnedView`] carries `&'static` borrows that really
+/// point into the sibling `Bytes` buffer. Storing it behind a
+/// [`MaybeUninit`](core::mem::MaybeUninit) tells the aliasing model that the
+/// value has no memory-dependent validity properties (`dereferenceable`,
+/// `noalias`) of its own. Without the wrapper, Miri's field retagging puts a
+/// protector on each forged `&'static` whenever an `OwnedView` is passed by
+/// value, and freeing the buffer inside that call — a plain `drop(owned)` in
+/// the callee, or the unwind path of [`OwnedView::into_bytes`] — is reported
+/// as undefined behaviour. [icu4x #3696] is the `yoke` test case for exactly
+/// this.
+///
+/// Once RFC 3336 lands this can become the standard library type.
+///
+/// [RFC 3336]: https://github.com/rust-lang/rfcs/pull/3336
+/// [icu4x #3696]: https://github.com/unicode-org/icu4x/issues/3696
+#[repr(transparent)]
+struct MaybeDangling<T> {
+    /// INVARIANT: always holds an initialized `T`. Its drop glue runs from
+    /// [`Drop::drop`] below rather than from `MaybeUninit` (which has none),
+    /// so nothing may treat `inner` as initialized after that point — and
+    /// nothing does, because the only code that runs afterwards is the
+    /// empty drop glue of `MaybeUninit`.
+    inner: core::mem::MaybeUninit<T>,
+}
+
+impl<T> MaybeDangling<T> {
+    #[inline]
+    const fn new(value: T) -> Self {
+        Self {
+            inner: core::mem::MaybeUninit::new(value),
         }
+    }
+}
+
+impl<T> core::ops::Deref for MaybeDangling<T> {
+    type Target = T;
+    #[inline]
+    fn deref(&self) -> &T {
+        // SAFETY: `inner` is initialized (the type invariant); `deref` is
+        // never reachable once `Drop::drop` has run.
+        unsafe { self.inner.assume_init_ref() }
+    }
+}
+
+impl<T> Drop for MaybeDangling<T> {
+    #[inline]
+    fn drop(&mut self) {
+        // SAFETY: `inner` is initialized (the type invariant) and is dropped
+        // exactly once here — `MaybeUninit` has no drop glue, so nothing runs
+        // it again afterwards. `drop_in_place` rather than
+        // `assume_init_read` so the `T` is never moved into an unwrapped
+        // local, which would reassert the validity properties this wrapper
+        // exists to suppress.
+        unsafe { self.inner.as_mut_ptr().drop_in_place() }
     }
 }
 
@@ -2484,13 +2541,14 @@ where
     pub fn decode(bytes: Bytes) -> Result<Self, DecodeError> {
         // SAFETY: `Bytes` is StableDeref — its heap data never moves or is
         // freed while we hold the `Bytes` value. We hold it in `self.bytes`,
-        // and drop order guarantees `view` drops first.
+        // and declaration-order drop glue (`OwnedView` has no `Drop` impl)
+        // guarantees `view` drops first.
         let view = unsafe {
             let slice: &'static [u8] = core::mem::transmute::<&[u8], &'static [u8]>(&bytes);
             V::decode_view(slice)?
         };
         Ok(Self {
-            view: core::mem::ManuallyDrop::new(view),
+            view: MaybeDangling::new(view),
             bytes,
         })
     }
@@ -2512,7 +2570,7 @@ where
             opts.decode_view::<V>(slice)?
         };
         Ok(Self {
-            view: core::mem::ManuallyDrop::new(view),
+            view: MaybeDangling::new(view),
             bytes,
         })
     }
@@ -2593,7 +2651,7 @@ where
     /// panic).
     pub unsafe fn from_parts(bytes: Bytes, view: V) -> Self {
         Self {
-            view: core::mem::ManuallyDrop::new(view),
+            view: MaybeDangling::new(view),
             bytes,
         }
     }
@@ -2601,16 +2659,23 @@ where
     /// Consume the `OwnedView`, returning the underlying [`Bytes`] buffer.
     ///
     /// The view is dropped before the buffer is returned.
-    pub fn into_bytes(mut self) -> Bytes {
-        // SAFETY: Drop the view first (while bytes data is still alive),
-        // then read bytes out via ptr::read, then forget self to prevent
-        // the Drop impl from double-dropping the view.
-        unsafe {
-            core::mem::ManuallyDrop::drop(&mut self.view);
-            let bytes = core::ptr::read(&self.bytes);
-            core::mem::forget(self);
-            bytes
-        }
+    ///
+    /// # Panics
+    ///
+    /// Propagates a panic from `V`'s destructor; the buffer is then released
+    /// by the unwind instead of being returned.
+    pub fn into_bytes(self) -> Bytes {
+        // Destructuring is only legal because `OwnedView` has no `Drop` impl
+        // of its own. Moving the `Bytes` handle out first is fine: the heap
+        // data the view borrows stays put (`Bytes` is `StableDeref`), and
+        // the local keeps it alive. Dropping the view explicitly before
+        // `bytes` moves into the return slot keeps the buffer a plain local
+        // while `V::drop` runs: if that panics, the unwind frees `bytes` (a
+        // value already in the return slot would be leaked instead), and
+        // `view` has been moved into `drop`, so nothing can drop it twice.
+        let Self { view, bytes } = self;
+        drop(view);
+        bytes
     }
 
     /// Reborrow the view with a lifetime tied to `&'b self`.
@@ -2698,7 +2763,7 @@ where
         // is now kept alive by the cloned `Bytes` handle. This would be
         // unsound if `Bytes::clone()` performed a deep copy to a new address.
         Self {
-            view: self.view.clone(),
+            view: MaybeDangling::new((*self.view).clone()),
             bytes: self.bytes.clone(),
         }
     }
@@ -2732,14 +2797,14 @@ impl<V: ::serde::Serialize> ::serde::Serialize for OwnedView<V> {
     }
 }
 
-// `OwnedView<V>` is auto-`Send`/`Sync` when `V` is — `ManuallyDrop<V>` and
-// `Bytes` both forward auto-traits. No manual `unsafe impl` is needed, and
-// adding one with a `V: 'static` bound is actively harmful: it is precisely
-// what triggers E0477 when `async fn` is used in a trait impl against an
-// RPITIT `+ Send` return type (rust-lang/rust#128095). The RPITIT desugaring
-// introduces a fresh lifetime for the `'static` in `FooView<'static>`, and
-// then cannot prove that fresh lifetime satisfies `'static` to discharge the
-// manual impl's bound.
+// `OwnedView<V>` is auto-`Send`/`Sync` when `V` is — `MaybeDangling<V>` (a
+// `MaybeUninit<V>`) and `Bytes` both forward auto-traits. No manual
+// `unsafe impl` is needed, and adding one with a `V: 'static` bound is
+// actively harmful: it is precisely what triggers E0477 when `async fn` is
+// used in a trait impl against an RPITIT `+ Send` return type
+// (rust-lang/rust#128095). The RPITIT desugaring introduces a fresh lifetime
+// for the `'static` in `FooView<'static>`, and then cannot prove that fresh
+// lifetime satisfies `'static` to discharge the manual impl's bound.
 //
 // The bound was defensive — intended to prevent `OwnedView<FooView<'short>>`
 // from being `Send` when the view borrows from something outside `self.bytes`.
@@ -2765,6 +2830,17 @@ mod send_sync_assertions {
     fn owned_view_is_send_sync<V: Send + Sync>() {
         assert_send::<OwnedView<V>>();
         assert_sync::<OwnedView<V>>();
+    }
+
+    // `OwnedView<FooView<'static>>` must keep coercing to
+    // `OwnedView<FooView<'a>>`: `MaybeUninit<V>` is covariant in `V` like the
+    // `ManuallyDrop<V>` it replaced, but that is a derived property of the
+    // union, not a documented guarantee, so pin it here.
+    #[allow(dead_code)]
+    fn owned_view_is_covariant<'a>(
+        v: OwnedView<super::tests::TinyView<'static>>,
+    ) -> OwnedView<super::tests::TinyView<'a>> {
+        v
     }
 
     // Concrete-type regression: `TinyView` is declared in the `tests` module
@@ -3773,6 +3849,9 @@ mod tests {
         assert_eq!(recovered, expected);
     }
 
+    // The `owned_view_drop*` and `owned_view_into_bytes*` names below are
+    // the filter for the `Miri (OwnedView soundness)` CI step; a renamed or
+    // differently named test silently leaves that gate.
     #[test]
     fn owned_view_drop_count() {
         use core::sync::atomic::{AtomicUsize, Ordering};
@@ -3829,6 +3908,85 @@ mod tests {
             let _bytes = view.into_bytes();
         }
         assert_eq!(DROP_COUNT.load(Ordering::SeqCst), 1, "into_bytes drop");
+    }
+
+    /// Dropping an `OwnedView` that arrived as a by-value argument frees the
+    /// buffer inside a call that still holds the view's forged `'static`
+    /// borrows. Under Miri's field retagging that is UB unless the view is
+    /// behind `MaybeDangling`, so this is a Miri regression test (it cannot
+    /// fail under plain `cargo test`).
+    #[test]
+    fn owned_view_drop_by_value_argument() {
+        fn consume<V>(v: OwnedView<V>) {
+            drop(v);
+        }
+        let view =
+            OwnedView::<SimpleMessageView<'static>>::decode(encode_simple(4, "arg")).unwrap();
+        consume(view);
+    }
+
+    /// A `V::drop` that panics during `into_bytes` must not drop the view a
+    /// second time on the way out.
+    #[cfg(feature = "std")]
+    #[test]
+    fn owned_view_into_bytes_unwinding_view_drop_runs_once() {
+        use core::sync::atomic::{AtomicUsize, Ordering};
+
+        static DROP_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+        /// Panics on its first drop only: a re-entrant second drop must not
+        /// panic again, or the unwind would abort the process instead of
+        /// reaching the assertion below.
+        struct PanicOnFirstDropView<'a> {
+            inner: SimpleMessageView<'a>,
+            /// A heap allocation, so that a regression to dropping the view
+            /// twice is a real double free (which Miri flags), not just a
+            /// count of two.
+            _owned: alloc::string::String,
+        }
+
+        impl Drop for PanicOnFirstDropView<'_> {
+            fn drop(&mut self) {
+                if DROP_COUNT.fetch_add(1, Ordering::SeqCst) == 0 {
+                    panic!("first drop");
+                }
+            }
+        }
+
+        impl<'a> MessageView<'a> for PanicOnFirstDropView<'a> {
+            type Owned = SimpleMessage;
+            fn merge_view_field(
+                &mut self,
+                _tag: crate::encoding::Tag,
+                cur: &'a [u8],
+                _before_tag: &'a [u8],
+                _ctx: crate::DecodeContext<'_>,
+            ) -> Result<&'a [u8], DecodeError> {
+                Ok(cur)
+            }
+
+            fn decode_view(buf: &'a [u8]) -> Result<Self, DecodeError> {
+                Ok(PanicOnFirstDropView {
+                    inner: SimpleMessageView::decode_view(buf)?,
+                    _owned: alloc::string::String::from("owned"),
+                })
+            }
+
+            fn to_owned_message(&self) -> Result<SimpleMessage, DecodeError> {
+                self.inner.to_owned_message()
+            }
+        }
+
+        DROP_COUNT.store(0, Ordering::SeqCst);
+        let bytes = encode_simple(3, "unwind");
+        let view = OwnedView::<PanicOnFirstDropView<'static>>::decode(bytes).unwrap();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| view.into_bytes()));
+        assert!(result.is_err(), "the view's panic must propagate");
+        assert_eq!(
+            DROP_COUNT.load(Ordering::SeqCst),
+            1,
+            "view dropped exactly once"
+        );
     }
 
     #[test]
