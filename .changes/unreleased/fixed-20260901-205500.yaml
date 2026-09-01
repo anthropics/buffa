@@ -1,0 +1,2 @@
+kind: Fixed
+body: DescriptorPool now rejects duplicate enum value numbers unless allow_alias is enabled.

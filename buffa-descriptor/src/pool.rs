@@ -218,6 +218,13 @@ pub enum PoolError {
         name: String,
         number: i32,
     },
+    /// Two enum values in the same enum have the same number without
+    /// `allow_alias` enabled.
+    DuplicateEnumValueNumber {
+        enum_name: String,
+        name: String,
+        number: i32,
+    },
 }
 
 impl core::fmt::Display for PoolError {
@@ -330,6 +337,14 @@ impl core::fmt::Display for PoolError {
                 f,
                 "enum {enum_name} value {name:?} uses reserved number {number}"
             ),
+            Self::DuplicateEnumValueNumber {
+                enum_name,
+                name,
+                number,
+            } => write!(
+                f,
+                "enum {enum_name} value {name:?} reuses number {number} without allow_alias"
+            ),
         }
     }
 }
@@ -420,8 +435,9 @@ impl DescriptorPool {
     /// the implementation-reserved band (19000-19999), a field uses a name or
     /// number its message reserved, an extension range overlaps a reserved
     /// range, an open enum's first value is non-zero, an enum value reuses a
-    /// reserved name or number, a oneof index is invalid, a message exceeds
-    /// 65 535 fields, or a map entry is malformed.
+    /// reserved name or number or a duplicate number without `allow_alias`, a
+    /// oneof index is invalid, a message exceeds 65 535 fields, or a map entry
+    /// is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -443,7 +459,8 @@ impl DescriptorPool {
     /// implementation-reserved field numbers, reserved message fields, an
     /// overlapping extension range, duplicate symbols or field identities,
     /// an open enum whose first value is non-zero, reserved enum values,
-    /// invalid oneof indices, or malformed map entries).
+    /// duplicate enum numbers without `allow_alias`, invalid oneof indices,
+    /// or malformed map entries).
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -1221,7 +1238,13 @@ impl DescriptorPool {
         let idx = self.enum_index(&fqn).expect("enum registered in pass 1");
         let reserved_names: BTreeSet<&str> = e.reserved_name.iter().map(String::as_str).collect();
         let reserved_ranges = ReservedRanges::for_enum(&e.reserved_range);
+        let allow_alias = e
+            .options
+            .as_option()
+            .and_then(|options| options.allow_alias)
+            .unwrap_or(false);
         let mut value_names = BTreeSet::new();
+        let mut value_numbers = BTreeSet::new();
         let mut values = Vec::with_capacity(e.value.len());
         for v in &e.value {
             let value_name = v.name.clone().unwrap_or_default();
@@ -1240,6 +1263,13 @@ impl DescriptorPool {
             let number = v.number.unwrap_or(0);
             if reserved_ranges.contains(number) {
                 return Err(PoolError::ReservedEnumValueNumber {
+                    enum_name: fqn.clone(),
+                    name: value_name,
+                    number,
+                });
+            }
+            if !allow_alias && !value_numbers.insert(number) {
+                return Err(PoolError::DuplicateEnumValueNumber {
                     enum_name: fqn.clone(),
                     name: value_name,
                     number,
