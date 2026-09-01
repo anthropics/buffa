@@ -237,6 +237,17 @@ fn main() {
         .compile()
         .expect("buffa_build failed for prelude_shadow.proto");
 
+    // Special float defaults in a package named `f32` must not resolve
+    // against generated `f32`/`f64` modules. The nested extension constants
+    // deliberately occupy all six shadowable paths; compilation is the
+    // regression assertion.
+    buffa_build::Config::new()
+        .files(&["protos/float_default_shadow.proto"])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .compile()
+        .expect("buffa_build failed for float_default_shadow.proto");
+
     // Nested-package pair (gh#80) — `test.nestpkg` + `test.nestpkg.inner`.
     // `lib.rs` wraps these with the same `pub mod a { use super::*; pub mod
     // a_b { use super::*; … } }` chain that `buffa-build`'s `_include.rs`

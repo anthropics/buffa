@@ -1,0 +1,30 @@
+syntax = "proto2";
+
+package f32;
+
+message F32 {
+  extensions 100 to 200;
+  extend F32 {
+    optional float INFINITY = 100;
+    optional float NEG_INFINITY = 101;
+    optional float NAN = 102;
+  }
+}
+
+message F64 {
+  extensions 200 to 300;
+  extend F64 {
+    optional double INFINITY = 200;
+    optional double NEG_INFINITY = 201;
+    optional double NAN = 202;
+  }
+}
+
+message Defaults {
+  required float pos_inf = 1 [default = inf];
+  required float neg_inf = 2 [default = -inf];
+  required float nan_value = 3 [default = nan];
+  required double double_pos_inf = 4 [default = inf];
+  required double double_neg_inf = 5 [default = -inf];
+  required double double_nan = 6 [default = nan];
+}
