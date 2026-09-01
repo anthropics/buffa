@@ -288,6 +288,7 @@ pub fn generate_enum(
 
     Ok(quote! {
         #enum_doc
+        #[allow(non_upper_case_globals)]
         #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
         #arbitrary_derive
         #custom_type_attrs
