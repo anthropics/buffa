@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`buffa-build`: `Config::exclude_package` knob** (#383, closes #293). `Config::exclude_package("buf.validate")` (or `.exclude_package(".buf.validate")`) drops all `.proto` files in that package — and any sub-packages — from code generation. Multiple calls accumulate. The same knob is exposed as `exclude_package=<pkg>` in the `protoc-gen-buffa` plugin option string and as `CodeGenConfig::exclude_packages` for direct codegen users. An entry that matches no package in the input now raises `CodeGenWarning::ExcludePackageMatchedNothing` (a `cargo:warning` from `buffa-build`).
+time: 2026-08-29T20:16:50.447198+05:45

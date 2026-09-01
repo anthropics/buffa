@@ -19,7 +19,7 @@ use std::io::{self, Read, Write};
 use buffa::Message;
 use buffa_codegen::generated::compiler::code_generator_response::File as CodeGeneratorResponseFile;
 use buffa_codegen::generated::compiler::CodeGeneratorResponse;
-use buffa_codegen::generated::descriptor::{Edition, FileDescriptorProto};
+use buffa_codegen::generated::descriptor::Edition;
 
 use buffa_codegen::{CodeGenConfig, EnumTypeOverride, FeatureOverride};
 
@@ -108,22 +108,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Parse plugin parameters (e.g., "views=true,unknown_fields=false").
     let config = parse_config(request.parameter.as_deref().unwrap_or(""))?;
 
-    // Drop excluded packages from the generate set. `include_imports` adds
-    // imported files (WKTs, buf.validate, gnostic, …) to file_to_generate;
-    // excluding a package skips emitting its files while leaving its
-    // descriptors in `proto_file` for type resolution. buffa-codegen only
-    // emits files listed in file_to_generate, so filtering here is enough.
-    let file_to_generate = filter_excluded_files(
-        &request.file_to_generate,
-        &request.proto_file,
-        &config.exclude_packages,
-    );
-
     // Run code generation, forwarding non-fatal warnings to stderr (protoc
-    // surfaces plugin stderr to the user).
+    // surfaces plugin stderr to the user). Excluded packages are in
+    // `config.codegen.exclude_packages`; `generate_with_diagnostics` filters
+    // them internally so the filtering logic is shared with the buffa-build path.
     let (generated, warnings) = buffa_codegen::generate_with_diagnostics(
         &request.proto_file,
-        &file_to_generate,
+        &request.file_to_generate,
         &config.codegen,
     )?;
     for warning in &warnings {
@@ -154,38 +145,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Remove files whose proto package is excluded (see
-/// [`buffa_codegen::package_is_excluded`]) from the generate set.
-///
-/// A file listed in `file_to_generate` with no matching descriptor is kept —
-/// `generate_with_diagnostics` reports the missing descriptor with a clear
-/// error, which is more useful than silently dropping it here.
-fn filter_excluded_files(
-    file_to_generate: &[String],
-    proto_file: &[FileDescriptorProto],
-    excludes: &[String],
-) -> Vec<String> {
-    if excludes.is_empty() {
-        return file_to_generate.to_vec();
-    }
-    file_to_generate
-        .iter()
-        .filter(|name| {
-            match proto_file
-                .iter()
-                .find(|fd| fd.name.as_deref() == Some(name.as_str()))
-            {
-                Some(fd) => !buffa_codegen::package_is_excluded(
-                    fd.package.as_deref().unwrap_or(""),
-                    excludes,
-                ),
-                None => true,
-            }
-        })
-        .cloned()
-        .collect()
-}
-
 /// Write the serialized CodeGeneratorResponse to stdout.
 fn write_response(response: &CodeGeneratorResponse) -> io::Result<()> {
     let mut output = Vec::new();
@@ -205,10 +164,11 @@ fn feature_flags() -> u64 {
 /// Plugin configuration parsed from the parameter string.
 struct PluginConfig {
     /// Code generation options passed to buffa-codegen.
+    ///
+    /// `exclude_packages` are stored in `codegen.exclude_packages` so the
+    /// filtering happens inside `generate_with_diagnostics` and is shared
+    /// uniformly with the `buffa-build` path.
     codegen: CodeGenConfig,
-    /// Proto packages to drop from the generate set (see the
-    /// `exclude_package` option). Normalized to no leading dot.
-    exclude_packages: Vec<String>,
 }
 
 /// Parse the plugin parameter string into a PluginConfig.
@@ -222,13 +182,9 @@ struct PluginConfig {
 ///   --buffa_opt=extern_path=.my.common.Shared=::shared_types::Shared
 fn parse_config(params: &str) -> Result<PluginConfig, String> {
     let mut codegen = CodeGenConfig::default();
-    let mut exclude_packages: Vec<String> = Vec::new();
 
     if params.is_empty() {
-        return Ok(PluginConfig {
-            codegen,
-            exclude_packages,
-        });
+        return Ok(PluginConfig { codegen });
     }
 
     for param in params.split(',').map(str::trim).filter(|s| !s.is_empty()) {
@@ -368,7 +324,9 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
             // optional (normalized like extern_path). protoc-gen-buffa-packaging
             // accepts the same option so the generated mod.rs stays in sync.
             "exclude_package" => {
-                exclude_packages.push(buffa_codegen::normalize_exclude_package(value)?);
+                codegen
+                    .exclude_packages
+                    .push(buffa_codegen::normalize_exclude_package(value)?);
             }
             "extern_path" => {
                 // value is "<proto_path>=<rust_path>"
@@ -475,10 +433,7 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
         );
     }
 
-    Ok(PluginConfig {
-        codegen,
-        exclude_packages,
-    })
+    Ok(PluginConfig { codegen })
 }
 
 fn parse_bool(key: &str, value: &str) -> Result<bool, String> {
@@ -899,13 +854,16 @@ mod tests {
     #[test]
     fn exclude_package_with_leading_dot_is_normalized() {
         let config = parse_config("exclude_package=.buf.validate").unwrap();
-        assert_eq!(config.exclude_packages, vec!["buf.validate".to_string()]);
+        assert_eq!(
+            config.codegen.exclude_packages,
+            vec!["buf.validate".to_string()]
+        );
     }
 
     #[test]
     fn exclude_package_without_leading_dot() {
         let config = parse_config("exclude_package=gnostic").unwrap();
-        assert_eq!(config.exclude_packages, vec!["gnostic".to_string()]);
+        assert_eq!(config.codegen.exclude_packages, vec!["gnostic".to_string()]);
     }
 
     #[test]
@@ -913,7 +871,7 @@ mod tests {
         let config =
             parse_config("exclude_package=.buf.validate,exclude_package=.gnostic").unwrap();
         assert_eq!(
-            config.exclude_packages,
+            config.codegen.exclude_packages,
             vec!["buf.validate".to_string(), "gnostic".to_string()]
         );
     }
@@ -921,7 +879,7 @@ mod tests {
     #[test]
     fn exclude_package_defaults_empty() {
         let config = parse_config("").unwrap();
-        assert!(config.exclude_packages.is_empty());
+        assert!(config.codegen.exclude_packages.is_empty());
     }
 
     #[test]
@@ -930,49 +888,6 @@ mod tests {
         assert!(err.contains("exclude_package"));
         let err = parse_err("exclude_package=.");
         assert!(err.contains("exclude_package"));
-    }
-
-    fn fd(name: &str, package: &str) -> FileDescriptorProto {
-        FileDescriptorProto {
-            name: Some(name.into()),
-            package: Some(package.into()),
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn filter_excluded_files_drops_excluded_packages() {
-        let protos = vec![
-            fd("example/user/v1/user.proto", "example.user.v1"),
-            fd("buf/validate/validate.proto", "buf.validate"),
-            fd("gnostic/openapi/v3/openapiv3.proto", "gnostic.openapi.v3"),
-        ];
-        let all: Vec<String> = protos.iter().map(|f| f.name.clone().unwrap()).collect();
-        let kept = filter_excluded_files(
-            &all,
-            &protos,
-            &["buf.validate".to_string(), "gnostic".to_string()],
-        );
-        assert_eq!(kept, vec!["example/user/v1/user.proto".to_string()]);
-    }
-
-    #[test]
-    fn filter_excluded_files_no_excludes_is_identity() {
-        let protos = vec![fd("example/user/v1/user.proto", "example.user.v1")];
-        let all: Vec<String> = protos.iter().map(|f| f.name.clone().unwrap()).collect();
-        assert_eq!(filter_excluded_files(&all, &protos, &[]), all);
-    }
-
-    #[test]
-    fn filter_excluded_files_keeps_file_without_descriptor() {
-        // No descriptor for the entry → kept, so generate() reports the
-        // missing-descriptor error rather than silently dropping it.
-        let kept = filter_excluded_files(
-            &["orphan.proto".to_string()],
-            &[],
-            &["buf.validate".to_string()],
-        );
-        assert_eq!(kept, vec!["orphan.proto".to_string()]);
     }
 
     #[test]

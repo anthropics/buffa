@@ -880,6 +880,54 @@ impl Config {
         self
     }
 
+    /// Exclude a proto package from code generation.
+    ///
+    /// `package` is the proto package to exclude (e.g. `"buf.validate"`,
+    /// `".gnostic.openapi.v3"`). A leading dot is optional and stripped
+    /// automatically. The package and all of its sub-packages are excluded:
+    /// `"buf.validate"` drops both `buf.validate` and `buf.validate.priv`.
+    ///
+    /// Use this when proto files from option-only packages (e.g.
+    /// `buf/validate/validate.proto`, gnostic annotations) end up in the
+    /// generate set through directory globbing, but you do not want Rust types
+    /// generated for those packages. Their descriptors remain available for
+    /// cross-package type resolution; only code generation is skipped.
+    ///
+    /// **Warning**: if any kept file references an excluded package as a field
+    /// type, the generated code will contain dangling `super::…::Type` paths
+    /// that fail to compile; the build emits a `cargo:warning` naming the
+    /// file, message, and field before that happens. Pair `exclude_package` with
+    /// [`extern_path`](Self::extern_path) to map the excluded types to an
+    /// external crate, or do not list those `.proto` files in
+    /// [`files`](Self::files).
+    ///
+    /// This method can be called multiple times to exclude multiple packages.
+    ///
+    /// # Validation
+    ///
+    /// [`compile`](Self::compile) returns an error, before running `protoc`, if
+    /// `package` is empty or contains invalid components (empty segments,
+    /// consecutive dots). A single leading dot is allowed and stripped.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// buffa_build::Config::new()
+    ///     .exclude_package("buf.validate")
+    ///     .exclude_package(".gnostic.openapi.v3")
+    ///     .files(&["proto/my_service.proto"])
+    ///     .includes(&["proto/", "vendor/"])
+    ///     .compile()
+    ///     .unwrap();
+    /// ```
+    #[must_use]
+    pub fn exclude_package(mut self, package: impl Into<String>) -> Self {
+        // Stored raw. `compile()` rejects malformed entries up front, and
+        // `generate_with_diagnostics` strips the optional leading dot.
+        self.codegen_config.exclude_packages.push(package.into());
+        self
+    }
+
     /// Configure `bytes` fields to use `bytes::Bytes` instead of `Vec<u8>`.
     ///
     /// Each path is a fully-qualified proto path prefix. Use `"."` to apply
@@ -1715,6 +1763,15 @@ impl Config {
     /// - code generation fails (e.g. unsupported proto feature)
     /// - the output directory cannot be created or written to
     pub fn compile(self) -> Result<(), Box<dyn std::error::Error>> {
+        // Reject malformed `exclude_package` entries before protoc runs; the
+        // codegen normalizes them again, but a typo should not cost a protoc
+        // invocation to surface.
+        for entry in &self.codegen_config.exclude_packages {
+            if let Err(e) = buffa_codegen::normalize_exclude_package(entry) {
+                return Err(format!("exclude_package {entry:?}: {e}").into());
+            }
+        }
+
         // Validate the shared-pool prerequisites before doing any work, and
         // check reflection first so the error names the actually-missing
         // prerequisite rather than a downstream one. `generate_reflection` is
@@ -2762,5 +2819,111 @@ mod tests {
             .map(|(_, a)| a.as_str())
             .collect();
         assert_eq!(paths, vec!["#[derive(A)]", "#[derive(B)]", "#[derive(C)]"]);
+    }
+
+    #[test]
+    fn exclude_package_stores_raw_value_for_deferred_normalization() {
+        // Normalization (leading-dot strip, validation) happens in
+        // generate_with_diagnostics; the builder stores the raw string so
+        // compile() can surface errors with the original user-supplied value.
+        let cfg = Config::new()
+            .exclude_package(".buf.validate")
+            .exclude_package("gnostic");
+        assert_eq!(
+            cfg.codegen_config.exclude_packages,
+            vec![".buf.validate", "gnostic"],
+        );
+    }
+
+    #[test]
+    fn exclude_package_accumulates_in_order() {
+        let cfg = Config::new()
+            .exclude_package("a.b")
+            .exclude_package("c.d")
+            .exclude_package("e.f");
+        assert_eq!(
+            cfg.codegen_config.exclude_packages,
+            vec!["a.b", "c.d", "e.f"]
+        );
+    }
+
+    #[test]
+    fn exclude_package_rejects_malformed_entries_before_reading_input() {
+        // The descriptor set path does not exist, so an error can only come
+        // from the validation that runs ahead of any input processing.
+        let err = Config::new()
+            .descriptor_set("/nonexistent/set.binpb")
+            .files(&["foo/v1/thing.proto"])
+            .out_dir("/nonexistent/out")
+            .exclude_package("buf..validate")
+            .compile()
+            .expect_err("malformed exclude_package must fail compile()");
+        let msg = err.to_string();
+        assert!(msg.contains("exclude_package \"buf..validate\""), "{msg}");
+        assert!(msg.contains("empty components"), "{msg}");
+    }
+
+    #[test]
+    fn exclude_package_drops_the_package_from_the_output() {
+        use buffa_codegen::generated::descriptor::field_descriptor_proto::{Label, Type};
+        use buffa_codegen::generated::descriptor::{
+            DescriptorProto, FieldDescriptorProto, FileDescriptorProto,
+        };
+
+        // Two single-message packages, both listed for generation; the
+        // excluded one must produce no module, no include entry, and no
+        // stitcher.
+        let file = |name: &str, package: &str, message: &str| FileDescriptorProto {
+            name: Some(name.into()),
+            package: Some(package.into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some(message.into()),
+                field: vec![FieldDescriptorProto {
+                    name: Some("id".into()),
+                    number: Some(1),
+                    label: Some(Label::LABEL_OPTIONAL),
+                    r#type: Some(Type::TYPE_INT32),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let files = [
+            file("foo/v1/thing.proto", "foo.v1", "Thing"),
+            file("buf/validate/validate.proto", "buf.validate", "Rule"),
+        ];
+        let fds_bytes = buffa_codegen::encode_descriptor_set(&files, &[]);
+
+        let dir = tempfile::tempdir().unwrap();
+        let fds_path = dir.path().join("set.binpb");
+        std::fs::write(&fds_path, &fds_bytes).unwrap();
+        let out = dir.path().join("gen");
+
+        Config::new()
+            .descriptor_set(&fds_path)
+            .files(&["foo/v1/thing.proto", "buf/validate/validate.proto"])
+            .out_dir(&out)
+            .include_file("gen_mod.rs")
+            .exclude_package(".buf.validate")
+            .compile()
+            .expect("compile with an excluded package should succeed");
+
+        let names: Vec<String> = std::fs::read_dir(&out)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            names.iter().any(|n| n.starts_with("foo.v1.")),
+            "kept package must be generated: {names:?}"
+        );
+        assert!(
+            !names.iter().any(|n| n.contains("buf.validate")),
+            "excluded package must produce no files: {names:?}"
+        );
+        let include = std::fs::read_to_string(out.join("gen_mod.rs")).unwrap();
+        assert!(include.contains("foo"), "{include}");
+        assert!(!include.contains("validate"), "{include}");
     }
 }
