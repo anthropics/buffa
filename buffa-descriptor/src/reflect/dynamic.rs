@@ -334,6 +334,32 @@ impl DynamicMessage {
         )
     }
 
+    /// [`decode`](Self::decode) with `depth` levels of nesting budget instead
+    /// of a fresh [`RECURSION_LIMIT`]. For payloads that are logically nested
+    /// inside an already-decoded message (`google.protobuf.Any.value`), so
+    /// the inner decode continues the outer count rather than restarting it.
+    ///
+    /// Only depth is continued; the unknown-field and element-memory budgets
+    /// start fresh per call, as with `decode`. Each live `Any` layer also owns
+    /// a copy of its payload bytes (which contain the layers inside it), so a
+    /// nested-`Any` chain can hold up to `RECURSION_LIMIT` × its input size in
+    /// transient heap while it serializes — bounded, where it was unbounded
+    /// before the depth cap, but not the 1× a single decode costs.
+    #[cfg(feature = "json")]
+    pub(crate) fn decode_at_depth(
+        pool: Arc<DescriptorPool>,
+        msg_idx: MessageIndex,
+        bytes: &[u8],
+        depth: u32,
+    ) -> Result<Self, DecodeError> {
+        let mut msg = Self::new(pool, msg_idx);
+        msg.merge_with_options(
+            bytes,
+            &buffa::DecodeOptions::new().with_recursion_limit(depth),
+        )?;
+        Ok(msg)
+    }
+
     fn merge_buf(&mut self, buf: &mut impl Buf, ctx: DecodeContext<'_>) -> Result<(), DecodeError> {
         self.normalizing(|s| s.merge_buf_fields(buf, ctx))
     }
@@ -2325,5 +2351,36 @@ mod tests {
             DynamicMessage::checked_encode_size(u32::MAX as usize + 1),
             Err(buffa::EncodeError::MessageTooLarge)
         );
+    }
+
+    /// `decode_at_depth` must run on the *given* depth. The JSON serializer
+    /// reports the decoder's recursion error with the same text as its own,
+    /// so no integration test can tell a continued budget from a fresh one —
+    /// this pins it directly.
+    #[cfg(feature = "json")]
+    #[test]
+    fn decode_at_depth_uses_the_supplied_depth() {
+        use crate::DescriptorPool;
+        use alloc::sync::Arc;
+        use buffa::DecodeError;
+
+        let fds = include_bytes!("../../tests/protos/reflect_test_options.fds");
+        let pool = Arc::new(DescriptorPool::decode(fds).unwrap());
+        let idx = pool
+            .message_index("google.protobuf.DescriptorProto")
+            .unwrap();
+        let decode = |bytes: &[u8], depth| {
+            DynamicMessage::decode_at_depth(Arc::clone(&pool), idx, bytes, depth)
+        };
+
+        // `DescriptorProto { nested_type: [ {} ] }` — one nested level.
+        let one_level = [0x1A, 0x00];
+        assert!(matches!(
+            decode(&one_level, 0),
+            Err(DecodeError::RecursionLimitExceeded)
+        ));
+        assert!(decode(&one_level, 1).is_ok());
+        // Depth 0 still admits a flat message: `{ name: "n" }`.
+        assert!(decode(&[0x0A, 0x01, b'n'], 0).is_ok());
     }
 }

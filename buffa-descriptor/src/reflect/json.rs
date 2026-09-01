@@ -37,38 +37,120 @@ use crate::{
 };
 use buffa::editions::EnumType;
 use buffa::json_helpers;
+use buffa::RECURSION_LIMIT;
 
 // ── Serialize ───────────────────────────────────────────────────────────────
+//
+// Nesting is bounded by a depth budget threaded through every recursion site
+// below. A `DynamicMessage` built by `decode` is already at most
+// `RECURSION_LIMIT` deep, but `google.protobuf.Any` carries its payload as
+// opaque bytes that are only decoded here, at serialize time — so without a
+// budget that spans `Any` boundaries, N nested `Any` layers cost N stack
+// frames for a few bytes each and overflow the stack (an uncatchable abort)
+// on untrusted input. The budget makes over-deep input a serde error instead.
+//
+// The budget is deliberately the binary decoder's `RECURSION_LIMIT`, not a
+// JSON-specific constant: the contract is that anything `DynamicMessage::
+// decode` accepts must serialize, and the inner `Any` decode continues the
+// same count, so the two limits have to be one number.
 
+/// The serde error for serialization nesting exhausting the
+/// [`RECURSION_LIMIT`] budget — whether at a message boundary or inside an
+/// `Any` payload's own decode, so callers see one message for one condition.
+fn nesting_too_deep<E: serde::ser::Error>() -> E {
+    E::custom(format_args!(
+        "message nesting depth exceeds buffa::RECURSION_LIMIT ({RECURSION_LIMIT}) during JSON \
+         serialization (google.protobuf.Any payloads count toward the limit)"
+    ))
+}
+
+/// Consume one level of nesting budget, or fail with a serde error.
+fn descend<E: serde::ser::Error>(depth: u32) -> Result<u32, E> {
+    depth.checked_sub(1).ok_or_else(nesting_too_deep)
+}
+
+/// Proto3 canonical JSON via serde.
+///
+/// Fails with a serde error if message nesting exceeds
+/// [`buffa::RECURSION_LIMIT`] levels below this message. `google.protobuf.Any`
+/// payloads — decoded here, at serialize time — count toward the same budget
+/// as ordinary sub-messages, so nesting hidden inside `Any.value` cannot
+/// exhaust the stack. The count follows the binary decoder's, so a message
+/// [`DynamicMessage::decode`] accepted serializes provided its nesting
+/// *counted through* `Any` payloads stays within the limit and each `Any`
+/// names a type in the pool that its bytes decode as; decode success alone
+/// does not establish that. A message assembled deeper by other means (via
+/// [`ReflectMessageMut`], a raised [`buffa::DecodeOptions`] recursion limit,
+/// or `from_json`, whose only bound is the JSON parser's own) does not
+/// serialize. The cap is not configurable in this release.
 impl Serialize for DynamicMessage {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let md = self.message_descriptor();
-        if let Some(wkt) = WktKind::from_full_name(&md.full_name) {
-            return wkt.serialize_message(self, s);
+        // The one place the budget starts; every nested message goes through
+        // `Nested` / `serialize_message` so nothing below resets it.
+        serialize_message(self, RECURSION_LIMIT, s)
+    }
+}
+
+/// Serialize `msg` with `depth` levels of nesting budget remaining for its
+/// sub-messages. `msg` itself is already paid for by the caller.
+fn serialize_message<S: Serializer>(
+    msg: &DynamicMessage,
+    depth: u32,
+    s: S,
+) -> Result<S::Ok, S::Error> {
+    let md = msg.message_descriptor();
+    if let Some(wkt) = WktKind::from_full_name(&md.full_name) {
+        return wkt.serialize_message(msg, depth, s);
+    }
+    let pool = msg.pool();
+    let mut map = s.serialize_map(None)?;
+    for fd in &md.fields {
+        if !msg.has(fd) {
+            continue;
         }
-        let mut map = s.serialize_map(None)?;
-        for fd in &md.fields {
-            if !self.has(fd) {
-                continue;
-            }
-            let value = self
-                .field_by_number(fd.number)
-                .expect("has() ⇒ field is present");
-            map.serialize_entry(&fd.json_name, &FieldRef::new(self.pool(), fd, value))?;
+        let value = msg
+            .field_by_number(fd.number)
+            .expect("has() ⇒ field is present");
+        map.serialize_entry(&fd.json_name, &FieldRef::new(pool, fd, value, depth))?;
+    }
+    // Extensions present on this message serialize after the declared
+    // fields as `"[full.name]": value`, per the proto2 JSON convention.
+    for ext in pool.extensions_of(msg.message_index()) {
+        let fd = ext.field();
+        if !msg.has(fd) {
+            continue;
         }
-        // Extensions present on this message serialize after the declared
-        // fields as `"[full.name]": value`, per the proto2 JSON convention.
-        for ext in self.pool().extensions_of(self.message_index()) {
-            let fd = ext.field();
-            if !self.has(fd) {
-                continue;
-            }
-            let value = self
-                .field_by_number(fd.number)
-                .expect("has() ⇒ field is present");
-            map.serialize_entry(ext.json_key(), &FieldRef::new(self.pool(), fd, value))?;
-        }
-        map.end()
+        let value = msg
+            .field_by_number(fd.number)
+            .expect("has() ⇒ field is present");
+        map.serialize_entry(ext.json_key(), &FieldRef::new(pool, fd, value, depth))?;
+    }
+    map.end()
+}
+
+/// A sub-message whose own level is already charged; `depth` is the budget
+/// remaining for *its* sub-messages. Built via [`Nested::charge`], which is
+/// where the one level is paid — the only other constructor site is
+/// `serialize_any`, which charges explicitly because the inner decode needs
+/// the figure before the message exists.
+struct Nested<'a> {
+    msg: &'a DynamicMessage,
+    depth: u32,
+}
+
+impl<'a> Nested<'a> {
+    /// Charge one level of the parent's remaining budget for `msg`.
+    fn charge<E: serde::ser::Error>(msg: &'a DynamicMessage, parent_depth: u32) -> Result<Self, E> {
+        Ok(Self {
+            msg,
+            depth: descend(parent_depth)?,
+        })
+    }
+}
+
+impl Serialize for Nested<'_> {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        serialize_message(self.msg, self.depth, s)
     }
 }
 
@@ -77,32 +159,41 @@ struct FieldRef<'a> {
     pool: &'a DescriptorPool,
     fd: &'a FieldDescriptor,
     value: &'a Value,
+    depth: u32,
 }
 
 impl<'a> FieldRef<'a> {
-    fn new(pool: &'a DescriptorPool, fd: &'a FieldDescriptor, value: &'a Value) -> Self {
-        Self { pool, fd, value }
+    fn new(
+        pool: &'a DescriptorPool,
+        fd: &'a FieldDescriptor,
+        value: &'a Value,
+        depth: u32,
+    ) -> Self {
+        Self {
+            pool,
+            fd,
+            value,
+            depth,
+        }
     }
 }
 
 impl Serialize for FieldRef<'_> {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let singular = |kind, v| SingularRef::new(self.pool, kind, v, self.depth);
         match (&self.fd.kind, self.value) {
-            (FieldKind::Singular(sk), v) => SingularRef::new(self.pool, *sk, v).serialize(s),
+            (FieldKind::Singular(sk), v) => singular(*sk, v).serialize(s),
             (FieldKind::List(sk), Value::List(items)) => {
                 let mut seq = s.serialize_seq(Some(items.len()))?;
                 for item in items {
-                    seq.serialize_element(&SingularRef::new(self.pool, *sk, item))?;
+                    seq.serialize_element(&singular(*sk, item))?;
                 }
                 seq.end()
             }
             (FieldKind::Map { key, value: vk }, Value::Map(m)) => {
                 let mut map = s.serialize_map(Some(m.len()))?;
                 for (k, v) in m {
-                    map.serialize_entry(
-                        &MapKeyRef { key: *key, k },
-                        &SingularRef::new(self.pool, *vk, v),
-                    )?;
+                    map.serialize_entry(&MapKeyRef { key: *key, k }, &singular(*vk, v))?;
                 }
                 map.end()
             }
@@ -117,11 +208,17 @@ struct SingularRef<'a> {
     pool: &'a DescriptorPool,
     kind: SingularKind,
     value: &'a Value,
+    depth: u32,
 }
 
 impl<'a> SingularRef<'a> {
-    fn new(pool: &'a DescriptorPool, kind: SingularKind, value: &'a Value) -> Self {
-        Self { pool, kind, value }
+    fn new(pool: &'a DescriptorPool, kind: SingularKind, value: &'a Value, depth: u32) -> Self {
+        Self {
+            pool,
+            kind,
+            value,
+            depth,
+        }
     }
 }
 
@@ -132,7 +229,9 @@ impl Serialize for SingularRef<'_> {
             (SingularKind::Enum(eidx), Value::EnumNumber(n)) => {
                 serialize_enum(self.pool, eidx, *n, s)
             }
-            (SingularKind::Message(_), Value::Message(m)) => m.serialize(s),
+            (SingularKind::Message(_), Value::Message(m)) => {
+                Nested::charge(m, self.depth)?.serialize(s)
+            }
             _ => s.serialize_none(),
         }
     }
@@ -272,7 +371,10 @@ impl DynamicMessage {
     ///
     /// # Errors
     ///
-    /// Returns a `serde_json::Error` if serialization fails.
+    /// Returns a `serde_json::Error` if serialization fails — notably when
+    /// message nesting, counting `google.protobuf.Any` payloads, exceeds
+    /// [`buffa::RECURSION_LIMIT`] (see the [`Serialize`] impl), or when an
+    /// `Any` names a type that is not in the pool.
     #[cfg(feature = "std")]
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(self)
