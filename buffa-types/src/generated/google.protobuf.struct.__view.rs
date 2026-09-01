@@ -81,7 +81,8 @@ impl<'a> ::buffa::MessageView<'a> for StructView<'a> {
                             )?;
                             let __sub_ctx = ctx.descend()?;
                             let sub = ::buffa::types::borrow_bytes(&mut entry_cur)?;
-                            val = <super::super::__buffa::view::ValueView as ::buffa::MessageView>::decode_view_ctx(
+                            <super::super::__buffa::view::ValueView as ::buffa::MessageView>::merge_into_view(
+                                &mut val,
                                 sub,
                                 __sub_ctx,
                             )?;
