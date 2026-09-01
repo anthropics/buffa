@@ -1826,7 +1826,7 @@ pub(crate) fn effective_extern_paths(
 /// taking priority over the package-level mappings from
 /// [`effective_extern_paths`]. They exist to resolve a structural problem:
 /// `descriptor.proto` is in the same `google.protobuf` package as the
-/// JSON-mappable WKTs (`Timestamp`, `Any`, …), but its types live in
+/// well-known types (`Timestamp`, `Any`, …), but its types live in
 /// `buffa-descriptor`, not `buffa-types`. A single package-keyed
 /// `.google.protobuf` extern_path can route the package to one crate or the
 /// other; it can't split it. The file-level mapping splits it.

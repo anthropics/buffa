@@ -502,6 +502,13 @@ pub mod wkt {
     buffa::include_proto!("test.wkt");
 }
 
+/// googleapis WKTs (#382): Api/Type/Enum/SourceContext auto-mapped to
+/// buffa-types. Compiling this module is the assertion.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod wkt_api {
+    buffa::include_proto!("test.wktapi");
+}
+
 /// `lazy_views(true)` — the additive `FooLazyView` decode-on-access family.
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod lazyviews {

@@ -308,3 +308,134 @@ fn int64_value_view_roundtrip() {
     let bytes = w.encode_to_vec();
     assert_eq!(view_roundtrip::<wkt_view::Int64ValueView>(&bytes), w);
 }
+
+// ── Api / Type / SourceContext (googleapis WKTs) ───────────────────────────
+
+#[test]
+fn source_context_roundtrip() {
+    let sc = wkt::SourceContext {
+        file_name: "google/protobuf/api.proto".into(),
+        ..Default::default()
+    };
+    assert_eq!(encode_decode(&sc), sc);
+}
+
+#[test]
+fn api_roundtrip() {
+    let api = wkt::Api {
+        name: "google.example.v1.Example".into(),
+        version: "1.0".into(),
+        syntax: wkt::Syntax::SYNTAX_PROTO3.into(),
+        methods: vec![wkt::Method {
+            name: "Get".into(),
+            request_type_url: "type.googleapis.com/google.example.v1.GetRequest".into(),
+            response_type_url: "type.googleapis.com/google.example.v1.GetResponse".into(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    assert_eq!(encode_decode(&api), api);
+}
+
+#[test]
+fn type_roundtrip() {
+    let ty = wkt::Type {
+        name: "google.example.v1.Msg".into(),
+        fields: vec![wkt::Field {
+            name: "id".into(),
+            number: 1,
+            kind: wkt::field::Kind::TYPE_STRING.into(),
+            cardinality: wkt::field::Cardinality::CARDINALITY_OPTIONAL.into(),
+            json_name: "id".into(),
+            ..Default::default()
+        }],
+        syntax: wkt::Syntax::SYNTAX_PROTO3.into(),
+        ..Default::default()
+    };
+    assert_eq!(encode_decode(&ty), ty);
+}
+
+#[test]
+fn source_context_view_roundtrip() {
+    let sc = wkt::SourceContext {
+        file_name: "a/b.proto".into(),
+        ..Default::default()
+    };
+    let bytes = sc.encode_to_vec();
+    assert_eq!(view_roundtrip::<wkt_view::SourceContextView>(&bytes), sc);
+}
+
+#[test]
+fn api_view_roundtrip() {
+    let api = wkt::Api {
+        name: "google.example.v1.Example".into(),
+        version: "1.2".into(),
+        ..Default::default()
+    };
+    let bytes = api.encode_to_vec();
+    assert_eq!(view_roundtrip::<wkt_view::ApiView>(&bytes), api);
+}
+
+#[test]
+fn type_view_roundtrip() {
+    // The largest new view: repeated message, repeated enum-carrying
+    // submessage, and a nested submessage.
+    let ty = wkt::Type {
+        name: "google.example.v1.Msg".into(),
+        fields: vec![
+            wkt::Field {
+                name: "id".into(),
+                number: 1,
+                kind: wkt::field::Kind::TYPE_STRING.into(),
+                cardinality: wkt::field::Cardinality::CARDINALITY_OPTIONAL.into(),
+                json_name: "id".into(),
+                ..Default::default()
+            },
+            wkt::Field {
+                name: "tags".into(),
+                number: 2,
+                kind: wkt::field::Kind::TYPE_STRING.into(),
+                cardinality: wkt::field::Cardinality::CARDINALITY_REPEATED.into(),
+                json_name: "tags".into(),
+                ..Default::default()
+            },
+        ],
+        oneofs: vec!["choice".into()],
+        source_context: buffa::MessageField::some(wkt::SourceContext {
+            file_name: "google/example/v1/msg.proto".into(),
+            ..Default::default()
+        }),
+        syntax: wkt::Syntax::SYNTAX_PROTO3.into(),
+        ..Default::default()
+    };
+    let bytes = ty.encode_to_vec();
+    assert_eq!(view_roundtrip::<wkt_view::TypeView>(&bytes), ty);
+}
+
+#[test]
+fn enum_roundtrip() {
+    let en = wkt::Enum {
+        name: "google.example.v1.Color".into(),
+        enumvalue: vec![
+            wkt::EnumValue {
+                name: "COLOR_UNSPECIFIED".into(),
+                number: 0,
+                ..Default::default()
+            },
+            wkt::EnumValue {
+                name: "COLOR_RED".into(),
+                number: 1,
+                ..Default::default()
+            },
+        ],
+        options: vec![wkt::Option {
+            name: "deprecated".into(),
+            ..Default::default()
+        }],
+        syntax: wkt::Syntax::SYNTAX_PROTO3.into(),
+        ..Default::default()
+    };
+    assert_eq!(encode_decode(&en), en);
+    let bytes = en.encode_to_vec();
+    assert_eq!(view_roundtrip::<wkt_view::EnumView>(&bytes), en);
+}

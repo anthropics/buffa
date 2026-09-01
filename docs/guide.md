@@ -256,7 +256,7 @@ This disables the automatic mapping and routes all `google.protobuf.*` reference
 
 ### Descriptor types
 
-`google/protobuf/descriptor.proto` and `google/protobuf/compiler/plugin.proto` types (`FieldDescriptorProto`, `FileOptions`, `Edition`, `CodeGeneratorRequest`, etc.) live in `buffa-descriptor`, not `buffa-types` — the latter only ships the JSON-mappable WKTs. Protos that reference a `descriptor.proto` type as a field type — most commonly via [protovalidate](https://buf.build/bufbuild/protovalidate)'s `buf/validate/validate.proto`, which uses `google.protobuf.FieldDescriptorProto.Type` — are automatically routed to `buffa-descriptor`, the same way WKTs are routed to `buffa-types`. Add it as a dependency:
+`google/protobuf/descriptor.proto` and `google/protobuf/compiler/plugin.proto` types (`FieldDescriptorProto`, `FileOptions`, `Edition`, `CodeGeneratorRequest`, etc.) live in `buffa-descriptor`, not `buffa-types` — the latter ships the official well-known types (JSON-mappable WKTs plus `Api`/`Type`/`SourceContext`). Protos that reference a `descriptor.proto` type as a field type — most commonly via [protovalidate](https://buf.build/bufbuild/protovalidate)'s `buf/validate/validate.proto`, which uses `google.protobuf.FieldDescriptorProto.Type` — are automatically routed to `buffa-descriptor`, the same way WKTs are routed to `buffa-types`. Add it as a dependency:
 
 ```sh
 cargo add buffa-descriptor
@@ -1599,6 +1599,12 @@ The `buffa-types` crate provides pre-generated types for Google's well-known pro
 | FieldMask | `google.protobuf.FieldMask` | `buffa_types::google::protobuf::FieldMask` |
 | Empty | `google.protobuf.Empty` | `buffa_types::google::protobuf::Empty` |
 | Wrappers | `google.protobuf.*Value` | `buffa_types::google::protobuf::Int32Value`, etc. |
+| Api | `google.protobuf.Api` | `buffa_types::google::protobuf::Api` |
+| Type | `google.protobuf.Type` | `buffa_types::google::protobuf::Type` |
+| Enum | `google.protobuf.Enum` | `buffa_types::google::protobuf::Enum` |
+| SourceContext | `google.protobuf.SourceContext` | `buffa_types::google::protobuf::SourceContext` |
+
+`Api`, `Type`, `Enum`, `SourceContext` and the messages they contain (`Method`, `Mixin`, `Field`, `EnumValue`, `Option`) implement the binary, view, and text codecs but not `Serialize`/`Deserialize`. A message that embeds one of them under `json = true` fails to compile with `the trait bound Api: Serialize is not satisfied`; map the type to your own generated copy with `extern_path` if you need JSON for it.
 
 ### Timestamp and Duration
 

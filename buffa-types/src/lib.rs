@@ -9,6 +9,13 @@
 //!   — JSON-like dynamic values
 //! - [`google::protobuf::FieldMask`] — Specifies a subset of fields referenced in a message
 //! - [`google::protobuf::Empty`] — A generic empty message
+//! - [`google::protobuf::Api`] / [`google::protobuf::Type`] / [`google::protobuf::Enum`] /
+//!   [`google::protobuf::SourceContext`] — API and type descriptors used by googleapis
+//!   (`api.proto`, `type.proto`, `source_context.proto`), with their parts
+//!   [`google::protobuf::Method`], [`google::protobuf::Mixin`], [`google::protobuf::Field`],
+//!   [`google::protobuf::EnumValue`], and [`google::protobuf::Option`]. That last one
+//!   shadows the prelude `Option` in any module that glob-imports `google::protobuf::*`;
+//!   it is not re-exported at the crate root.
 //! - Wrapper types: [`google::protobuf::BoolValue`], [`google::protobuf::Int32Value`],
 //!   [`google::protobuf::Int64Value`], [`google::protobuf::UInt32Value`],
 //!   [`google::protobuf::UInt64Value`], [`google::protobuf::FloatValue`],
@@ -46,7 +53,11 @@
 //!
 //! - **`std`** (default) — standard-library integration (`SystemTime`/`Duration`
 //!   conversions, `std::error::Error`). Without it the crate is `no_std` + `alloc`.
-//! - **`json`** — proto3 canonical JSON serde for the WKTs.
+//! - **`json`** — proto3 canonical JSON serde for the JSON-mappable WKTs
+//!   (`Timestamp`, `Duration`, `Any`, `Struct`/`Value`/`ListValue`, `FieldMask`,
+//!   `Empty`, wrappers). `Api`/`Type`/`Enum`/`SourceContext` and the messages
+//!   they contain have no serde impls; a `json = true` message embedding one
+//!   of them does not compile.
 //! - **`arbitrary`** — `arbitrary::Arbitrary` derives for fuzzing.
 //! - **`chrono`** — `Timestamp` ↔ `chrono::DateTime` and `Duration` ↔
 //!   `chrono::TimeDelta` conversions. `no_std`-compatible (`chrono` is pulled
@@ -151,5 +162,14 @@ mod full_name_tests {
         assert_eq!(Struct::FULL_NAME, "google.protobuf.Struct");
         assert_eq!(Value::FULL_NAME, "google.protobuf.Value");
         assert_eq!(ListValue::FULL_NAME, "google.protobuf.ListValue");
+        assert_eq!(Api::FULL_NAME, "google.protobuf.Api");
+        assert_eq!(Type::FULL_NAME, "google.protobuf.Type");
+        assert_eq!(Enum::FULL_NAME, "google.protobuf.Enum");
+        assert_eq!(EnumValue::FULL_NAME, "google.protobuf.EnumValue");
+        assert_eq!(Field::FULL_NAME, "google.protobuf.Field");
+        assert_eq!(Method::FULL_NAME, "google.protobuf.Method");
+        assert_eq!(Mixin::FULL_NAME, "google.protobuf.Mixin");
+        assert_eq!(SourceContext::FULL_NAME, "google.protobuf.SourceContext");
+        assert_eq!(Option::FULL_NAME, "google.protobuf.Option");
     }
 }
