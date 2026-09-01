@@ -475,6 +475,203 @@ fn implementation_reserved_field_numbers_are_rejected_without_mutating_pool() {
 }
 
 #[test]
+fn reserved_message_field_names_are_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    assert_rejected_without_mutating_pool(
+        "reserved-field-name.proto",
+        "invalid.test.ReservedName",
+        DescriptorProto {
+            name: Some("ReservedName".into()),
+            field: vec![scalar_field("old_name", 1, Type::TYPE_STRING)],
+            reserved_name: vec!["old_name".into()],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::ReservedMessageFieldName { message, name }
+                    if message == "invalid.test.ReservedName" && name == "old_name"
+            ));
+        },
+    );
+}
+
+#[test]
+fn reserved_message_field_numbers_are_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ReservedRange;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    let max = buffa::encoding::MAX_FIELD_NUMBER as i32;
+    for (suffix, start, end, number) in [("start", 7, 8, 7), ("max", max, max + 1, max)] {
+        let message_name = format!("ReservedNumber{suffix}");
+        let full_name = format!("invalid.test.{message_name}");
+        let file_name = format!("reserved-field-number-{suffix}.proto");
+        let expected_message = full_name.clone();
+
+        assert_rejected_without_mutating_pool(
+            &file_name,
+            &full_name,
+            DescriptorProto {
+                name: Some(message_name),
+                field: vec![scalar_field("value", number, Type::TYPE_INT32)],
+                reserved_range: vec![ReservedRange {
+                    start: Some(start),
+                    end: Some(end),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            move |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::ReservedMessageFieldNumber {
+                        message,
+                        name,
+                        number: actual,
+                    } if message == &expected_message
+                        && name == "value"
+                        && *actual == number as u32
+                ));
+            },
+        );
+    }
+}
+
+#[test]
+fn reserved_message_field_range_end_is_exclusive() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ReservedRange;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let pool = DescriptorPool::new(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("reserved-field-end.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Message".into()),
+                field: vec![scalar_field("value", 8, Type::TYPE_INT32)],
+                reserved_range: vec![ReservedRange {
+                    start: Some(7),
+                    end: Some(8),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("the exclusive range end is available");
+
+    assert_eq!(
+        pool.message_by_name("valid.test.Message")
+            .unwrap()
+            .field(8)
+            .unwrap()
+            .number(),
+        8
+    );
+}
+
+#[test]
+fn reserved_and_extension_ranges_must_not_overlap() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::{
+        ExtensionRange, ReservedRange,
+    };
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("reserved-extension-overlap.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto2".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("RangeMessage".into()),
+                reserved_range: vec![ReservedRange {
+                    start: Some(7),
+                    end: Some(8),
+                    ..Default::default()
+                }],
+                extension_range: vec![ExtensionRange {
+                    start: Some(6),
+                    end: Some(9),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_set_rejected_without_mutating_pool(
+        "reserved-extension-overlap.proto",
+        "invalid.test.RangeMessage",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::ReservedExtensionRange {
+                    message,
+                    start: 6,
+                    end: 9,
+                } if message == "invalid.test.RangeMessage"
+            ));
+        },
+    );
+}
+
+#[test]
+fn adjacent_reserved_and_extension_ranges_are_accepted() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::{
+        ExtensionRange, ReservedRange,
+    };
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let pool = DescriptorPool::new(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("reserved-extension-adjacent.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto2".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("RangeMessage".into()),
+                reserved_range: vec![ReservedRange {
+                    start: Some(7),
+                    end: Some(8),
+                    ..Default::default()
+                }],
+                extension_range: vec![ExtensionRange {
+                    start: Some(8),
+                    end: Some(9),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("adjacent ranges do not overlap");
+
+    assert_eq!(
+        pool.message_by_name("valid.test.RangeMessage")
+            .unwrap()
+            .extension_ranges(),
+        &[(8, 9)]
+    );
+}
+
+#[test]
 fn duplicate_proto_field_names_are_rejected_without_mutating_pool() {
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
     use buffa_descriptor::generated::descriptor::DescriptorProto;

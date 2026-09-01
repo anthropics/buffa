@@ -75,6 +75,20 @@ fn clone_options<T: Clone + Default, P: buffa::ProtoBox<T>>(
 /// limit — reached in pass 1, before the other three walks run.
 pub const MAX_SYMBOL_LEN: usize = 512;
 
+fn half_open_ranges_overlap(
+    first_start: i64,
+    first_end: i64,
+    second_start: i64,
+    second_end: i64,
+) -> bool {
+    first_start < second_end && second_start < first_end
+}
+
+fn reserved_range_contains(start: Option<i32>, end: Option<i32>, number: u32) -> bool {
+    matches!((start, end), (Some(start), Some(end))
+        if i64::from(start) <= i64::from(number) && i64::from(number) < i64::from(end))
+}
+
 /// Errors that can occur while building a [`DescriptorPool`].
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -129,6 +143,20 @@ pub enum PoolError {
     DuplicateMethodName { service: String, name: String },
     /// Two enum values in the same symbol scope have the same proto name.
     DuplicateEnumValueName { enum_name: String, name: String },
+    /// A message field reuses a name reserved by its containing message.
+    ReservedMessageFieldName { message: String, name: String },
+    /// A message field uses a number reserved by its containing message.
+    ReservedMessageFieldNumber {
+        message: String,
+        name: String,
+        number: u32,
+    },
+    /// A message extension range overlaps a range reserved by that message.
+    ReservedExtensionRange {
+        message: String,
+        start: u32,
+        end: u32,
+    },
 }
 
 impl core::fmt::Display for PoolError {
@@ -203,6 +231,25 @@ impl core::fmt::Display for PoolError {
             Self::DuplicateEnumValueName { enum_name, name } => {
                 write!(f, "enum {enum_name} declares value {name:?} more than once")
             }
+            Self::ReservedMessageFieldName { message, name } => {
+                write!(f, "message {message} field {name:?} reuses a reserved name")
+            }
+            Self::ReservedMessageFieldNumber {
+                message,
+                name,
+                number,
+            } => write!(
+                f,
+                "message {message} field {name:?} uses reserved number {number}"
+            ),
+            Self::ReservedExtensionRange {
+                message,
+                start,
+                end,
+            } => write!(
+                f,
+                "message {message} extension range {start}..{end} overlaps a reserved range"
+            ),
         }
     }
 }
@@ -290,8 +337,10 @@ impl DescriptorPool {
     ///
     /// Returns a [`PoolError`] if any type name fails to resolve, a symbol or
     /// field identity is declared twice, a field number is out of range or in
-    /// the implementation-reserved band (19000-19999), a oneof index is
-    /// invalid, a message exceeds 65 535 fields, or a map entry is malformed.
+    /// the implementation-reserved band (19000-19999), a field uses a name or
+    /// number its message reserved, an extension range overlaps a reserved
+    /// range, a oneof index is invalid, a message exceeds 65 535 fields, or a
+    /// map entry is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -310,8 +359,9 @@ impl DescriptorPool {
     /// Returns [`PoolError::Decode`] if the bytes are not a well-formed
     /// `FileDescriptorSet`, or any other [`PoolError`] on a structural
     /// validation failure (dangling type names, out-of-range or
-    /// implementation-reserved field numbers, duplicate symbols or field
-    /// identities, invalid oneof indices, or malformed map entries).
+    /// implementation-reserved field numbers, reserved message fields, an
+    /// overlapping extension range, duplicate symbols or field identities,
+    /// invalid oneof indices, or malformed map entries).
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -366,7 +416,7 @@ impl DescriptorPool {
     ///
     /// # Errors
     ///
-    /// Returns a [`PoolError`] on resolution failure.
+    /// Returns a [`PoolError`] on resolution or structural validation failure.
     pub fn add_file_descriptor_set(&mut self, set: FileDescriptorSet) -> Result<(), PoolError> {
         // Fast path for no-op re-adds without cloning the existing pool.
         let has_new_files = set.file.iter().any(|f| {
@@ -928,6 +978,27 @@ impl DescriptorPool {
                 }
             }
             let fd = self.link_field(&fqn, f, &msg_features, Some(msg))?;
+            if msg
+                .reserved_name
+                .iter()
+                .any(|reserved| reserved == &fd.name)
+            {
+                return Err(PoolError::ReservedMessageFieldName {
+                    message: fqn.clone(),
+                    name: fd.name.clone(),
+                });
+            }
+            if msg
+                .reserved_range
+                .iter()
+                .any(|range| reserved_range_contains(range.start, range.end, fd.number))
+            {
+                return Err(PoolError::ReservedMessageFieldNumber {
+                    message: fqn.clone(),
+                    name: fd.name.clone(),
+                    number: fd.number,
+                });
+            }
             if field_numbers.insert(fd.number, i).is_some() {
                 return Err(PoolError::DuplicateFieldNumber {
                     message: fqn.clone(),
@@ -996,6 +1067,21 @@ impl DescriptorPool {
                     number: start.min(end),
                 });
             };
+            if msg.reserved_range.iter().any(|reserved| {
+                matches!((reserved.start, reserved.end), (Some(reserved_start), Some(reserved_end))
+                if half_open_ranges_overlap(
+                    i64::from(start),
+                    i64::from(end),
+                    i64::from(reserved_start),
+                    i64::from(reserved_end),
+                ))
+            }) {
+                return Err(PoolError::ReservedExtensionRange {
+                    message: fqn.clone(),
+                    start,
+                    end,
+                });
+            }
             // Ranges that span the implementation-reserved band are kept as
             // declared, as protoc and protobuf-go do (`descriptor.proto`'s own
             // `extensions 1000 to max;` spans it). An extension *numbered* in
