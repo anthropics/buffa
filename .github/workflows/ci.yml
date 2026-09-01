@@ -213,14 +213,15 @@ jobs:
           RUSTUP_TOOLCHAIN: '1.75'
         run: cargo check --workspace --all-targets --locked
 
-  # ── Miri: proves the SizeCache `unsafe` reads no uninitialized memory ─────
+  # ── Miri: proves the `set_len`-publishing `unsafe` reads no uninit memory ──
   # SizeCache stores its inline slots as `MaybeUninit<u32>` to avoid zeroing the
   # whole array on every encode; `consume_next` reads them via `assume_init`.
-  # Miri tracks per-byte init state, so this job mechanically verifies the
-  # soundness invariant (slots < len are initialized) on every reserve / set /
-  # consume / clear / spill path the size_cache tests exercise. Scoped to that
-  # module to keep the (interpreted, slow) run fast — ~15-30s steady state, so
-  # it runs on every PR as a blocking gate rather than on a nightly schedule.
+  # `copy_into_spare` (types.rs) fills a Vec's spare capacity chunk by chunk and
+  # publishes the length afterwards, including on the unwind paths its tests
+  # drive. Miri tracks per-byte init state, so this job mechanically verifies
+  # both invariants on every path those two test modules exercise. Scoped to
+  # them to keep the (interpreted, slow) run fast — under a minute steady state,
+  # so it runs on every PR as a blocking gate rather than on a nightly schedule.
   #
   # The nightly is PINNED (not floating): a required check must not be broken by
   # an unrelated bad nightly. Bump MIRI_TOOLCHAIN occasionally; the sysroot
@@ -252,8 +253,8 @@ jobs:
       - name: Miri setup (build/restore sysroot)
         run: cargo +${{ env.MIRI_TOOLCHAIN }} miri setup
 
-      - name: Miri (size_cache soundness)
-        run: cargo +${{ env.MIRI_TOOLCHAIN }} miri test -p buffa size_cache
+      - name: Miri (size_cache and copy_into_spare soundness)
+        run: cargo +${{ env.MIRI_TOOLCHAIN }} miri test -p buffa -- size_cache copy_into_spare
 
       # OwnedView: the view borrows from the Bytes it is stored beside, with
       # forged 'static lifetimes hidden behind a MaybeDangling wrapper. Miri
