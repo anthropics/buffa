@@ -152,6 +152,8 @@ pub enum PoolError {
         number: u32,
     },
     /// A message extension range overlaps a range reserved by that message.
+    /// `end` is exclusive, as in `DescriptorProto.ReservedRange` and
+    /// `ExtensionRange` (`extensions 5 to 7;` is `start: 5, end: 8`).
     ReservedExtensionRange {
         message: String,
         start: u32,
