@@ -226,12 +226,11 @@ pub trait ReflectMessage {
     /// borrowed vtable handle can be promoted to an owned snapshot that
     /// outlives `self`.
     ///
-    /// The round-trip's re-decode is exempt from the element-memory and
-    /// unknown-field bounds. It reads bytes this library just encoded from a
-    /// message the caller already holds, so those bounds could only reject
-    /// memory already spent — and this signature cannot report a rejection.
-    /// The input was bounded when it was first decoded; nothing here is
-    /// reached from unvalidated wire data.
+    /// The round-trip scales the element-memory and unknown-field bounds to
+    /// the encoded length, floored at their defaults. It reads bytes this
+    /// library just encoded from a message the caller already holds, so the
+    /// fixed defaults could reject a valid conversion, while unbounded limits
+    /// would leave the second representation without a ceiling.
     ///
     /// # Panics
     ///

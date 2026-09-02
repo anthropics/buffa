@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+  `DynamicMessage::from_message`, generated owned-mode `to_dynamic`, and bridge-mode `reflect()` now use encoded-length-scaled element-memory and unknown-field budgets for their internal re-decode, matching the generated view conversion policy. Valid large messages no longer panic with `ElementMemoryLimitExceeded`, while the default floors, recursion limit, and protobuf size limit remain enforced. (#414, refs #413)
+time: 2026-09-03T03:15:00+08:00

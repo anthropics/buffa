@@ -1067,9 +1067,10 @@ impl DynamicMessage {
     ///   the 2 GiB protobuf limit ([`buffa::MAX_MESSAGE_BYTES`]). The decode
     ///   keeps the default recursion limit of
     ///   [`DecodeOptions::new`](buffa::DecodeOptions::new), so a message
-    ///   nested deeper than that also fails; its element-memory and
-    ///   unknown-field budgets are lifted, since the bytes are the process's
-    ///   own.
+    ///   nested deeper than that also fails. Its element-memory and
+    ///   unknown-field budgets scale with the encoded length, matching the
+    ///   generated [`ReflectMessage::to_dynamic`] path for process-owned
+    ///   bytes.
     pub fn try_from_message<M: Message + MessageName>(
         msg: &M,
         pool: Arc<DescriptorPool>,
@@ -1100,6 +1101,10 @@ impl DynamicMessage {
     /// a foreign index whose ordinal exists in `pool` silently selects that
     /// pool's descriptor at the same ordinal.
     ///
+    /// Only decode failures are detected; wire-compatible schema drift
+    /// decodes cleanly, as described by
+    /// [`try_from_message`](Self::try_from_message).
+    ///
     /// # Errors
     ///
     /// Returns a [`DecodeError`] if the encoded bytes fail to decode against
@@ -1111,9 +1116,10 @@ impl DynamicMessage {
     /// The decode keeps the default recursion limit of
     /// [`DecodeOptions::new`](buffa::DecodeOptions::new), so a message nested
     /// deeper than that fails with [`DecodeError::RecursionLimitExceeded`];
-    /// the element-memory and unknown-field budgets are lifted, because the
-    /// bytes are the process's own (see [`decode`](Self::decode) for what
-    /// those budgets guard against).
+    /// the element-memory and unknown-field budgets scale with the encoded
+    /// length, because the bytes are the process's own (see
+    /// [`DecodeOptions`](buffa::DecodeOptions) for what those budgets guard
+    /// against).
     ///
     /// # Panics
     ///
@@ -1171,22 +1177,33 @@ impl DynamicMessage {
 
     /// Decode bytes the bridge just produced from a generated message.
     ///
-    /// The bytes are the process's own, so the untrusted-input element-memory
-    /// and unknown-field budgets of
-    /// [`DecodeOptions::new`](buffa::DecodeOptions::new) would only reject
-    /// work already paid for: every element is resident in the source
-    /// message, and any unknown fields on it were bounded when it was
-    /// decoded. The recursion limit stays, since it bounds the decoder's own
-    /// stack rather than the input.
+    /// The bytes are the process's own, so the fixed untrusted-input memory
+    /// budgets of [`DecodeOptions::new`](buffa::DecodeOptions::new) can reject
+    /// a valid round-trip: the source and dynamic representations measure the
+    /// same message in different units. Scale both bounds with the encoded
+    /// length using the policy already established by generated
+    /// [`ReflectMessage::to_dynamic`]. This avoids false rejections while
+    /// keeping the second representation bounded. The recursion limit stays,
+    /// since it bounds the decoder's own stack rather than the input.
     fn bridge_decode(
         pool: Arc<DescriptorPool>,
         msg_idx: MessageIndex,
         bytes: &[u8],
     ) -> Result<Self, DecodeError> {
+        let (element_memory_limit, unknown_field_limit) = Self::bridge_memory_limits(bytes.len());
         let options = buffa::DecodeOptions::new()
-            .with_element_memory_limit(usize::MAX)
-            .with_unknown_field_limit(usize::MAX);
+            .with_element_memory_limit(element_memory_limit)
+            .with_unknown_field_limit(unknown_field_limit);
         Self::decode_with_options(pool, msg_idx, bytes, &options)
+    }
+
+    fn bridge_memory_limits(encoded_len: usize) -> (usize, usize) {
+        (
+            encoded_len
+                .saturating_mul(128)
+                .max(buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
+            encoded_len.max(buffa::DEFAULT_UNKNOWN_FIELD_LIMIT),
+        )
     }
 
     /// Reconstitute a generated message from this dynamic snapshot.
@@ -2559,7 +2576,7 @@ mod tests {
     }
 
     mod bridge {
-        use alloc::sync::Arc;
+        use alloc::{borrow::ToOwned, format, string::ToString as _, sync::Arc, vec};
         use buffa::{DecodeError, Message, MessageName};
 
         use crate::generated::descriptor::compiler::Version;
@@ -2725,6 +2742,7 @@ mod tests {
             let _ = DynamicMessage::try_from_message_with_index(&msg, target_pool, foreign_idx);
         }
 
+        #[cfg(feature = "std")]
         #[test]
         fn try_from_message_with_index_defers_foreign_index_panic_for_empty_encoding() {
             let foreign_pool = pool();
@@ -2788,12 +2806,12 @@ mod tests {
         }
 
         #[test]
-        fn bridge_lifts_the_untrusted_input_element_budget() {
+        fn bridge_scales_the_untrusted_input_element_budget() {
             let pool = pool();
             // Enough repeated elements that the dynamic representation blows
             // through the untrusted-input element-memory budget: the plain
-            // decoder rejects the bytes, the bridge does not, because they are
-            // the process's own.
+            // decoder rejects the bytes, while the bridge's finite,
+            // input-scaled budget admits the process's own encoding.
             let elements = 2 * buffa::DEFAULT_ELEMENT_MEMORY_LIMIT / core::mem::size_of::<Value>();
             let msg = FileDescriptorProto {
                 name: Some("big.proto".into()),
@@ -2811,6 +2829,25 @@ mod tests {
             assert_eq!(dm.to_message::<FileDescriptorProto>().unwrap(), msg);
             let via_index = DynamicMessage::from_message(&msg, pool, idx);
             assert_eq!(via_index.encode_to_vec(), bytes);
+        }
+
+        #[test]
+        fn bridge_memory_budgets_are_scaled_floored_and_finite() {
+            assert_eq!(
+                DynamicMessage::bridge_memory_limits(0),
+                (
+                    buffa::DEFAULT_ELEMENT_MEMORY_LIMIT,
+                    buffa::DEFAULT_UNKNOWN_FIELD_LIMIT,
+                )
+            );
+
+            let encoded_len = buffa::DEFAULT_UNKNOWN_FIELD_LIMIT + 1;
+            let (element_memory_limit, unknown_field_limit) =
+                DynamicMessage::bridge_memory_limits(encoded_len);
+            assert_eq!(element_memory_limit, encoded_len.saturating_mul(128));
+            assert_eq!(unknown_field_limit, encoded_len);
+            assert_ne!(element_memory_limit, usize::MAX);
+            assert_ne!(unknown_field_limit, usize::MAX);
         }
 
         #[cfg(feature = "std")]
