@@ -620,11 +620,6 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `file_per_package=true` | Emit one `<dotted.package>.rs` per package instead of per-proto-file content + a `<dotted.pkg>.mod.rs` stitcher. Use this with the remote plugin when you don't want to install `protoc-gen-buffa-packaging` — see [Remote plugin only](#remote-plugin-only-no-local-install). Under `strategy: directory`, requires the input module to be `PACKAGE_DIRECTORY_MATCH`-clean. |
 | `idiomatic_imports=true` | **Experimental.** Emit `use`-backed short type names at the package root. Requires `file_per_package=true`. Only type declarations are shortened; the generated file must keep its `#[allow]` wrapper. |
 
-For compatibility with the initial spelling of this option, non-empty
-`unbox_oneof=<path>` values are also accepted as an alias for
-`unbox_oneof_in=<path>`. Empty values are rejected instead of enabling the
-blanket rule. Use the `_in` form in new configurations.
-
 > **`exclude_package` spans both plugins.** It is accepted by both `protoc-gen-buffa` (which skips generating the package's files) and `protoc-gen-buffa-packaging` (which omits the package from the emitted `mod.rs`). Pass the identical `exclude_package` opt to both — the two share one exclusion predicate, so a mismatch leaves the `mod.rs` `include!`-ing a stitcher that was never generated (or dropping one that was). Example, excluding the option-only `buf.validate` and `gnostic` imports that `include_imports` pulls in:
 >
 > ```yaml
@@ -940,18 +935,9 @@ Deref coercion means pattern-matched bindings (`Some(Info::Address(a)) => a.stre
 
 #### Unboxing message variants
 
-The build API opts selected variants into inline storage with
-`Config::new().unbox_oneof_in(&[".my.pkg.Contact.info.address"])`. Call
-`Config::new().unbox_oneof()` to match every non-recursive message/group
-variant.
-The plugin has equivalent options: use `unbox_oneof=true` for the blanket
-form, or repeat `unbox_oneof_in=<path>` in `opt:` for scoped rules. Paths may
-omit their leading dot and may use `.` as the blanket path; surrounding
-whitespace and trailing dots are normalized.
+The build API opts selected variants into inline storage with `Config::new().unbox_oneof_in(&[".my.pkg.Contact.info.address"])`; `Config::new().unbox_oneof()` matches every non-recursive message/group variant. The plugin has equivalent options: `unbox_oneof=true` for the blanket form, or repeat `unbox_oneof_in=<path>` in `opt:` for scoped rules. Paths may omit their leading dot and may use `.` as the blanket path; surrounding whitespace and trailing dots are normalized. Either way this affects the owned message enum only — view oneof variants remain boxed.
 
-Recursive variants remain boxed when matched by a broad rule. Naming a
-recursive variant exactly is rejected because inline storage would make the
-oneof enum unsized. For example:
+Recursive variants remain boxed when matched by a broad rule. Naming a recursive variant exactly is rejected because inline storage would make the oneof enum unsized. For example:
 
 ```yaml
 plugins:

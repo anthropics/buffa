@@ -1,3 +1,4 @@
 kind: Added
-body: The protoc-gen-buffa plugin now accepts unbox_oneof=true for opting all non-recursive message/group oneof variants into inline storage and repeatable unbox_oneof_in=<path> options for scoped rules. The initial non-empty unbox_oneof=<path> spelling remains accepted as a compatibility alias, while empty values are rejected instead of enabling the blanket rule.
+body: |-
+    **`protoc-gen-buffa` gains `unbox_oneof=true` and repeatable `unbox_oneof_in=<path>` options** (#392), the plugin equivalents of `buffa_build::Config::unbox_oneof()` / `unbox_oneof_in(&[..])`, opting non-recursive message/group oneof variants into inline storage. Paths are normalized like the other path-scoped options (leading dot optional, whitespace and trailing dots stripped); an empty path is rejected rather than treated as the blanket rule.
 time: 2026-08-30T13:18:32+02:00

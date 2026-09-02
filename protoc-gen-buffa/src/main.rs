@@ -292,17 +292,7 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
             // variant into inline storage. Path-scoped rules use the
             // repeatable `unbox_oneof_in=<path>` spelling, matching the
             // builder API's `unbox_oneof()` / `unbox_oneof_in()` split.
-            "unbox_oneof" => {
-                let value = value.trim();
-                match value {
-                    "true" | "false" => unbox_oneof = parse_bool("unbox_oneof", value)?,
-                    // Keep the initial path-valued spelling as a compatibility
-                    // alias while new configurations use `unbox_oneof_in`.
-                    _ => codegen
-                        .unboxed_oneof_fields
-                        .push(normalize_unbox_oneof_path(value)?),
-                }
-            }
+            "unbox_oneof" => unbox_oneof = parse_bool("unbox_oneof", value)?,
             "unbox_oneof_in" => {
                 codegen
                     .unboxed_oneof_fields
@@ -499,7 +489,7 @@ fn normalize_override_path(path: &str) -> Result<String, String> {
 }
 
 fn normalize_unbox_oneof_path(path: &str) -> Result<String, String> {
-    normalize_proto_path(path, "unbox_oneof")
+    normalize_proto_path(path, "unbox_oneof_in")
 }
 
 fn normalize_proto_path(path: &str, label: &str) -> Result<String, String> {
@@ -660,24 +650,27 @@ mod tests {
     #[test]
     fn unbox_oneof_in_rejects_empty_or_whitespace() {
         for params in [
-            "unbox_oneof=",
-            "unbox_oneof=   ",
             "unbox_oneof_in=",
             "unbox_oneof_in=   ",
+            "unbox_oneof_in=...",
         ] {
             let err = parse_err(params);
-            assert!(err.contains("unbox_oneof rules"), "{params:?}: {err}");
+            assert!(err.contains("unbox_oneof_in rules"), "{params:?}: {err}");
             assert!(err.contains("non-empty proto path"), "{params:?}: {err}");
         }
     }
 
     #[test]
-    fn unbox_oneof_accepts_legacy_path_alias() {
-        let config = parse_config("unbox_oneof=.my.pkg.Other").unwrap();
-        assert_eq!(
-            config.codegen.unboxed_oneof_fields,
-            vec![".my.pkg.Other".to_string()]
-        );
+    fn unbox_oneof_rejects_non_boolean_values() {
+        // A path or a near-miss boolean is an error, never a silent no-op.
+        for params in [
+            "unbox_oneof=.my.pkg.Other",
+            "unbox_oneof=TRUE",
+            "unbox_oneof=1",
+        ] {
+            let err = parse_err(params);
+            assert!(err.contains("unbox_oneof"), "{params:?}: {err}");
+        }
     }
 
     #[test]
