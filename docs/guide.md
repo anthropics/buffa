@@ -1966,6 +1966,10 @@ let bytes = msg.encode_to_vec();
 // proto3 canonical JSON (requires the `json` feature)
 let from_json = DynamicMessage::from_json(pool.clone(), idx, r#"{"name":"alice"}"#)?;
 let json = msg.to_json()?;
+
+// From a generated message, resolving the descriptor by the type's full name
+// (`person` is a generated `my.pkg.Person`; no `message_index` lookup needed)
+let bridged = DynamicMessage::try_from_message(&person, pool.clone())?;
 ```
 
 Beyond plain encode/decode, `DynamicMessage` covers the rest of the
@@ -1986,8 +1990,12 @@ reflection surface:
   options message; `DynamicMessage::from_options(pool, opts)` re-reads it
   reflectively so extension-defined custom options are reachable by
   descriptor.
-- **Bridging** — `from_message` / `to_message` convert between a
-  `DynamicMessage` and any generated type with the same descriptor.
+- **Bridging** — `try_from_message` / `to_message` convert between a
+  `DynamicMessage` and any generated type with the same descriptor;
+  `try_from_message` resolves the descriptor from the type's `MessageName`
+  and returns a `BridgeError` when the pool lacks the type or the encoded
+  bytes fail to decode against its descriptor (`from_message` is the
+  panicking, index-taking form).
 
 ### Reflecting generated types
 
