@@ -286,7 +286,8 @@ impl<'a> TextDecoder<'a> {
     /// Read an `f32` value.
     ///
     /// Accepts any numeric form plus the case-insensitive literals `nan`,
-    /// `inf`, `infinity`, each optionally with a leading `-`. Overflow
+    /// `inf`, `infinity`, each optionally with a leading `-` (whitespace or
+    /// comments may separate the sign from the literal). Overflow
     /// saturates to ±∞ (matching C++ text-format behaviour).
     ///
     /// # Errors
@@ -314,8 +315,13 @@ impl<'a> TextDecoder<'a> {
                 // the literal, so reuse its trivia handling for the raw span.
                 let (neg, lit) = match tok.raw.strip_prefix('-') {
                     Some(r) => {
-                        let trimmed = consume_ws(r.as_bytes());
-                        (true, &r[r.len() - trimmed.len()..])
+                        // `consume_ws` only stops after an ASCII whitespace
+                        // byte or a comment's `\n`, neither of which can sit
+                        // inside a multi-byte sequence, so the offset is a
+                        // char boundary even when a comment holds non-ASCII.
+                        let trivia_len = r.len() - consume_ws(r.as_bytes()).len();
+                        debug_assert!(r.is_char_boundary(trivia_len));
+                        (true, &r[trivia_len..])
                     }
                     None => (false, tok.raw),
                 };
@@ -931,6 +937,8 @@ mod tests {
             ("f: -inf",       "-inf"),
             ("f: - inf",      "-inf"),    // whitespace after sign
             ("f: -\tinf",     "-inf"),
+            ("f: - # c\ninf", "-inf"),  // comment after sign
+            ("f: -#c\n nan", "nan"),
             ("f: infinity",   "inf"),
             ("f: Infinity",   "inf"),
             ("f: -INFINITY",  "-inf"),
