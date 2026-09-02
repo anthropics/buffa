@@ -488,6 +488,6 @@ mod tests {
         assert!(!field_mask_path_round_trips("foo/bar"));
         assert!(!field_mask_path_round_trips("3d"));
         assert!(field_mask_path_round_trips("foo3_bar"));
-        assert!(field_mask_path_round_trips("_foo.bar_1"));
+        assert!(field_mask_path_round_trips("_foo.bar1"));
     }
 }
