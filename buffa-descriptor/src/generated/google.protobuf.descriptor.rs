@@ -2,6 +2,7 @@
 // source: google/protobuf/descriptor.proto
 
 /// The full set of known editions.
+#[allow(non_camel_case_types)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 #[repr(i32)]
@@ -261,6 +262,7 @@ impl ::buffa::Enumeration for Edition {
 /// it (ex: local symbols cannot be imported).  Visibility modifiers can only set
 /// on `message` and `enum` as they are the only types available to be referenced
 /// from other files.
+#[allow(non_camel_case_types)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 #[repr(i32)]
@@ -3434,6 +3436,7 @@ pub mod extension_range_options {
     #[allow(unused_imports)]
     use super::*;
     /// The verification state of the extension range.
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -4663,6 +4666,7 @@ pub const __FIELD_DESCRIPTOR_PROTO_TEXT_ANY: ::buffa::type_registry::TextAnyEntr
 pub mod field_descriptor_proto {
     #[allow(unused_imports)]
     use super::*;
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -4948,6 +4952,7 @@ pub mod field_descriptor_proto {
             ]
         }
     }
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -8643,6 +8648,7 @@ pub mod file_options {
     #[allow(unused_imports)]
     use super::*;
     /// Generated classes can be optimized for speed or code size.
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -10808,6 +10814,7 @@ pub const __FIELD_OPTIONS_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buf
 pub mod field_options {
     #[allow(unused_imports)]
     use super::*;
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -10961,6 +10968,7 @@ pub mod field_options {
             &[Self::STRING, Self::CORD, Self::STRING_PIECE]
         }
     }
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -11113,6 +11121,7 @@ pub mod field_options {
         }
     }
     /// If set to RETENTION_SOURCE, the option will be omitted from the binary.
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -11271,6 +11280,7 @@ pub mod field_options {
     /// This indicates the types of entities that the field may apply to when used
     /// as an option. If it is unset, then the field may be freely used as an
     /// option on any kind of entity.
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -14727,6 +14737,7 @@ pub mod method_options {
     /// Is this method side-effect-free (or safe in HTTP parlance), or idempotent,
     /// or neither? HTTP based RPC implementation may choose GET verb for safe
     /// methods, and PUT verb for idempotent methods instead of the default POST.
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -16507,6 +16518,7 @@ pub const __FEATURE_SET_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa
 pub mod feature_set {
     #[allow(unused_imports)]
     use super::*;
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -16669,6 +16681,7 @@ pub mod feature_set {
             ]
         }
     }
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -16819,6 +16832,7 @@ pub mod feature_set {
             &[Self::ENUM_TYPE_UNKNOWN, Self::OPEN, Self::CLOSED]
         }
     }
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -16976,6 +16990,7 @@ pub mod feature_set {
             &[Self::REPEATED_FIELD_ENCODING_UNKNOWN, Self::PACKED, Self::EXPANDED]
         }
     }
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -17127,6 +17142,7 @@ pub mod feature_set {
             &[Self::UTF8_VALIDATION_UNKNOWN, Self::VERIFY, Self::NONE]
         }
     }
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -17278,6 +17294,7 @@ pub mod feature_set {
             &[Self::MESSAGE_ENCODING_UNKNOWN, Self::LENGTH_PREFIXED, Self::DELIMITED]
         }
     }
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -17430,6 +17447,7 @@ pub mod feature_set {
             &[Self::JSON_FORMAT_UNKNOWN, Self::ALLOW, Self::LEGACY_BEST_EFFORT]
         }
     }
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -17722,6 +17740,7 @@ pub mod feature_set {
     pub mod visibility_feature {
         #[allow(unused_imports)]
         use super::*;
+        #[allow(non_camel_case_types)]
         #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
         #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
         #[repr(i32)]
@@ -20097,6 +20116,7 @@ pub mod generated_code_info {
         use super::*;
         /// Represents the identified object's effect on the element in the original
         /// .proto file.
+        #[allow(non_camel_case_types)]
         #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
         #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
         #[repr(i32)]
