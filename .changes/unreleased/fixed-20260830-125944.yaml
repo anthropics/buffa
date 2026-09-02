@@ -1,3 +1,4 @@
 kind: Fixed
-body: DescriptorPool now rejects hand-built or synthesized descriptor sets that use field or extension numbers reserved for the Protocol Buffers implementation (19,000 through 19,999).
+body: |-
+    **`DescriptorPool` rejects field and extension numbers in the implementation-reserved band 19000–19999** (#389), as `protoc` does; only hand-built or synthesized descriptor sets can reach this. The band is named by the new `buffa::encoding::FIRST_RESERVED_FIELD_NUMBER` / `LAST_RESERVED_FIELD_NUMBER` constants and the rejection surfaces as the new `PoolError::ReservedFieldNumber` variant. Extension ranges that span the band load unchanged, matching `protoc` and protobuf-go.
 time: 2026-08-30T12:59:44+02:00

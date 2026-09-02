@@ -75,12 +75,6 @@ fn clone_options<T: Clone + Default, P: buffa::ProtoBox<T>>(
 /// limit — reached in pass 1, before the other three walks run.
 pub const MAX_SYMBOL_LEN: usize = 512;
 
-fn reserved_number_in_extension_range(start: u32, end: u32) -> Option<u32> {
-    (start <= buffa::encoding::LAST_RESERVED_FIELD_NUMBER
-        && end > buffa::encoding::FIRST_RESERVED_FIELD_NUMBER)
-        .then(|| start.max(buffa::encoding::FIRST_RESERVED_FIELD_NUMBER))
-}
-
 /// Errors that can occur while building a [`DescriptorPool`].
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -295,8 +289,9 @@ impl DescriptorPool {
     /// # Errors
     ///
     /// Returns a [`PoolError`] if any type name fails to resolve, a symbol or
-    /// field identity is declared twice, a oneof index is invalid, a message
-    /// exceeds 65 535 fields, or a map entry is malformed.
+    /// field identity is declared twice, a field number is out of range or in
+    /// the implementation-reserved band (19000-19999), a oneof index is
+    /// invalid, a message exceeds 65 535 fields, or a map entry is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -314,9 +309,9 @@ impl DescriptorPool {
     ///
     /// Returns [`PoolError::Decode`] if the bytes are not a well-formed
     /// `FileDescriptorSet`, or any other [`PoolError`] on a structural
-    /// validation failure (dangling type names, out-of-range field numbers,
-    /// duplicate symbols or field identities, invalid oneof indices, or
-    /// malformed map entries).
+    /// validation failure (dangling type names, out-of-range or
+    /// implementation-reserved field numbers, duplicate symbols or field
+    /// identities, invalid oneof indices, or malformed map entries).
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -1001,25 +996,11 @@ impl DescriptorPool {
                     number: start.min(end),
                 });
             };
-            if let Some(number) = reserved_number_in_extension_range(start, end) {
-                // `to max` is encoded as MAX_FIELD_NUMBER + 1. The standard
-                // descriptor messages use open-ended ranges that span this
-                // interval, so normalize those ranges around the reserved
-                // band instead of making canonical descriptor sets unloadable.
-                if end == buffa::encoding::MAX_FIELD_NUMBER + 1
-                    && start < buffa::encoding::FIRST_RESERVED_FIELD_NUMBER
-                {
-                    extension_ranges.push((start, number));
-                    extension_ranges.push((buffa::encoding::LAST_RESERVED_FIELD_NUMBER + 1, end));
-                } else {
-                    return Err(PoolError::ReservedFieldNumber {
-                        field: format!("{fqn} (extension range)"),
-                        number: number as i32,
-                    });
-                }
-            } else {
-                extension_ranges.push((start, end));
-            }
+            // Ranges that span the implementation-reserved band are kept as
+            // declared, as protoc and protobuf-go do (`descriptor.proto`'s own
+            // `extensions 1000 to max;` spans it). An extension *numbered* in
+            // the band is rejected in `link_field` before any range check.
+            extension_ranges.push((start, end));
         }
 
         // Replace the placeholder. Pass 1 registered messages depth-first
