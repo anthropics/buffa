@@ -111,8 +111,13 @@ pub enum PoolError {
     },
     /// A field number is outside the valid range
     /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`), or an extension range has
-    /// a negative bound.
+    /// an invalid bound.
     InvalidFieldNumber { field: String, number: i32 },
+    /// A field number, or a finite extension range, overlaps the field-number
+    /// interval reserved for the protobuf implementation. The bounds are
+    /// [`buffa::encoding::FIRST_RESERVED_FIELD_NUMBER`] through
+    /// [`buffa::encoding::LAST_RESERVED_FIELD_NUMBER`].
+    ReservedFieldNumber { field: String, number: i32 },
     /// A map entry message did not have exactly fields 1 (key) and 2 (value),
     /// or the key type is not a valid map key per the protobuf spec.
     MalformedMapEntry { message: String },
@@ -173,6 +178,12 @@ impl core::fmt::Display for PoolError {
             ),
             Self::InvalidFieldNumber { field, number } => {
                 write!(f, "field {field} has invalid field number {number}")
+            }
+            Self::ReservedFieldNumber { field, number } => {
+                write!(
+                    f,
+                    "field {field} uses field number {number}, which is reserved for the protobuf implementation"
+                )
             }
             Self::MalformedMapEntry { message } => {
                 write!(f, "malformed map entry message {message}")
@@ -278,8 +289,9 @@ impl DescriptorPool {
     /// # Errors
     ///
     /// Returns a [`PoolError`] if any type name fails to resolve, a symbol or
-    /// field identity is declared twice, a oneof index is invalid, a message
-    /// exceeds 65 535 fields, or a map entry is malformed.
+    /// field identity is declared twice, a field number is out of range or in
+    /// the implementation-reserved band (19000-19999), a oneof index is
+    /// invalid, a message exceeds 65 535 fields, or a map entry is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -297,9 +309,9 @@ impl DescriptorPool {
     ///
     /// Returns [`PoolError::Decode`] if the bytes are not a well-formed
     /// `FileDescriptorSet`, or any other [`PoolError`] on a structural
-    /// validation failure (dangling type names, out-of-range field numbers,
-    /// duplicate symbols or field identities, invalid oneof indices, or
-    /// malformed map entries).
+    /// validation failure (dangling type names, out-of-range or
+    /// implementation-reserved field numbers, duplicate symbols or field
+    /// identities, invalid oneof indices, or malformed map entries).
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -984,6 +996,10 @@ impl DescriptorPool {
                     number: start.min(end),
                 });
             };
+            // Ranges that span the implementation-reserved band are kept as
+            // declared, as protoc and protobuf-go do (`descriptor.proto`'s own
+            // `extensions 1000 to max;` spans it). An extension *numbered* in
+            // the band is rejected in `link_field` before any range check.
             extension_ranges.push((start, end));
         }
 
@@ -1152,7 +1168,8 @@ impl DescriptorPool {
         field.oneof_index = None;
         // Validate the number falls inside one of the extendee's declared
         // extension ranges.
-        if !self.messages[extendee.0 as usize].in_extension_range(field.number) {
+        let extendee_message = &self.messages[extendee.0 as usize];
+        if !extendee_message.in_extension_range(field.number) {
             return Err(PoolError::InvalidFieldNumber {
                 field: fqn,
                 // `link_field` bounds the number to `MAX_FIELD_NUMBER`
@@ -1353,18 +1370,27 @@ impl DescriptorPool {
             .clone()
             .unwrap_or_else(|| derive_json_name(&name));
 
-        // Validate the field number. The wire format reserves 0; the upper
-        // bound is `(1 << 29) - 1`. Spec-compliant `protoc` never emits an
-        // out-of-range number, but the input is no longer trusted to come
-        // from `protoc` once consumers feed network-loaded descriptors.
+        // Validate the field number. The wire format reserves 0, and the
+        // upper bound is `(1 << 29) - 1`. Spec-compliant `protoc` never emits
+        // an invalid number, but the input is no longer trusted to come from
+        // `protoc` once consumers feed network-loaded descriptors.
         let raw_number = f.number.unwrap_or(0);
         let number = u32::try_from(raw_number)
             .ok()
             .filter(|&n| (1..=buffa::encoding::MAX_FIELD_NUMBER).contains(&n))
-            .ok_or(PoolError::InvalidFieldNumber {
-                field: field_fqn,
+            .ok_or_else(|| PoolError::InvalidFieldNumber {
+                field: field_fqn.clone(),
                 number: raw_number,
             })?;
+        if (buffa::encoding::FIRST_RESERVED_FIELD_NUMBER
+            ..=buffa::encoding::LAST_RESERVED_FIELD_NUMBER)
+            .contains(&number)
+        {
+            return Err(PoolError::ReservedFieldNumber {
+                field: field_fqn,
+                number: raw_number,
+            });
+        }
 
         Ok(FieldDescriptor {
             name,

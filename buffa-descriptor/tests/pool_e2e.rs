@@ -418,6 +418,63 @@ fn duplicate_field_numbers_are_rejected_without_mutating_pool() {
 }
 
 #[test]
+fn implementation_reserved_field_numbers_are_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    for number in [
+        (buffa::encoding::FIRST_RESERVED_FIELD_NUMBER - 1) as i32,
+        (buffa::encoding::LAST_RESERVED_FIELD_NUMBER + 1) as i32,
+    ] {
+        let name = format!("Allowed{number}");
+        assert!(
+            add_message_with_syntax(
+                "proto3",
+                DescriptorProto {
+                    name: Some(name),
+                    field: vec![scalar_field("value", number, Type::TYPE_INT32)],
+                    ..Default::default()
+                },
+            )
+            .is_ok(),
+            "field number {number} should be accepted"
+        );
+    }
+
+    for number in [
+        buffa::encoding::FIRST_RESERVED_FIELD_NUMBER as i32,
+        buffa::encoding::LAST_RESERVED_FIELD_NUMBER as i32,
+    ] {
+        let message_name = format!("Reserved{number}");
+        let full_name = format!("invalid.test.{message_name}");
+        let field_name = format!("{full_name}.value");
+        let file_name = format!("implementation-reserved-{number}.proto");
+
+        assert_rejected_without_mutating_pool(
+            &file_name,
+            &full_name,
+            DescriptorProto {
+                name: Some(message_name),
+                field: vec![scalar_field("value", number, Type::TYPE_INT32)],
+                ..Default::default()
+            },
+            move |err| {
+                assert!(
+                    matches!(
+                        err,
+                        PoolError::ReservedFieldNumber {
+                            field,
+                            number: actual
+                        } if field == &field_name && *actual == number
+                    ),
+                    "unexpected error: {err}"
+                );
+            },
+        );
+    }
+}
+
+#[test]
 fn duplicate_proto_field_names_are_rejected_without_mutating_pool() {
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
     use buffa_descriptor::generated::descriptor::DescriptorProto;

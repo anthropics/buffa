@@ -17,6 +17,22 @@ use crate::error::DecodeError;
 /// [spec]: https://protobuf.dev/programming-guides/encoding/#structure
 pub const MAX_FIELD_NUMBER: u32 = (1 << 29) - 1;
 
+/// The first field number of the band reserved for the protobuf
+/// implementation, 19000.
+///
+/// Field numbers in `FIRST_RESERVED_FIELD_NUMBER..=LAST_RESERVED_FIELD_NUMBER`
+/// may not be declared by user messages or extensions; `protoc` refuses them
+/// and so does `DescriptorPool` when loading a descriptor set. Extension
+/// *ranges* may still span the band, as in `descriptor.proto`'s own
+/// `extensions 1000 to max;`. See the [language guide][spec].
+///
+/// [spec]: https://protobuf.dev/programming-guides/proto3/#assigning
+pub const FIRST_RESERVED_FIELD_NUMBER: u32 = 19_000;
+
+/// The last field number of the implementation-reserved band, 19999
+/// (inclusive). See [`FIRST_RESERVED_FIELD_NUMBER`].
+pub const LAST_RESERVED_FIELD_NUMBER: u32 = 19_999;
+
 /// Protobuf wire types.
 ///
 /// Only wire types 0–5 are currently defined by the protobuf specification;
