@@ -87,21 +87,21 @@ impl serde::Serialize for FieldMask {
     ///
     /// # Errors
     ///
-    /// Returns an error if any path cannot round-trip through camelCase
-    /// conversion (e.g. paths that are already camelCase, contain consecutive
-    /// underscores, or have digits immediately after underscores).
+    /// Returns an error if any path is not a valid proto3 JSON field mask
+    /// path: an empty component, a character outside `[a-z0-9_.]`, or a path
+    /// that cannot round-trip through camelCase (already camelCase,
+    /// consecutive underscores, a digit immediately after an underscore).
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let camel_paths: Vec<String> = self
             .paths
             .iter()
             .map(|p| {
-                let camel = snake_to_camel(p);
                 if !field_mask_path_round_trips(p) {
                     return Err(serde::ser::Error::custom(alloc::format!(
-                        "FieldMask path '{p}' cannot round-trip through camelCase conversion"
+                        "FieldMask path '{p}' is not a valid field mask path"
                     )));
                 }
-                Ok(camel)
+                Ok(snake_to_camel(p))
             })
             .collect::<Result<_, _>>()?;
         s.serialize_str(&camel_paths.join(","))
@@ -351,7 +351,9 @@ mod tests {
 
         #[test]
         fn serialize_rejects_invalid_path_characters() {
-            for path in [" ", "foo bar", "foo-bar", "", ".foo", "foo.", "foo..bar"] {
+            for path in [
+                " ", "foo bar", "foo-bar", "foo/bar", "3d", "", ".foo", "foo.", "foo..bar",
+            ] {
                 let m = FieldMask::from_paths([path]);
                 assert!(
                     serde_json::to_string(&m).is_err(),
@@ -375,6 +377,8 @@ mod tests {
                 r#"" ""#,
                 r#""foo, barBaz""#,
                 r#""foo,bar-baz""#,
+                r#""foo/bar""#,
+                r#""3d""#,
                 r#""foo,""#,
                 "\".foo\"",
                 "\"foo.\"",

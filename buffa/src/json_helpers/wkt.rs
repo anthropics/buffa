@@ -310,23 +310,33 @@ pub fn camel_to_snake(path: &str) -> String {
         .join(".")
 }
 
-/// Whether a snake_case `FieldMask` path round-trips through camelCase
-/// without information loss.
+/// Whether a snake_case `FieldMask` path is valid in proto3 JSON.
 ///
-/// The proto3 JSON spec requires rejecting paths that can't round-trip:
-/// double underscores (`foo__bar`), digits after underscores (`foo_3_bar`),
-/// uppercase in the snake form (`fooBar`), and non-identifier characters all
-/// violate the invariant `camel_to_snake(snake_to_camel(p)) == p`. The
-/// exact `*` path is also valid for APIs that use it as a full-mask wildcard.
+/// Two checks: every dotted component must be an ASCII identifier of the
+/// form `[a-z_][a-z0-9_]*` (C++ accepts only `[0-9a-zA-Z.]` in the JSON
+/// form; protobuf-go requires each snake-cased component to be a valid
+/// proto name), and the path must round-trip, `camel_to_snake(snake_to_camel(p)) == p`,
+/// which rejects double underscores (`foo__bar`), digits after underscores
+/// (`foo_3_bar`), and uppercase in the snake form (`fooBar`). Whitespace,
+/// `-`, `/` and other non-identifier characters fail the first check even
+/// though they would survive the round-trip.
+///
+/// The exact path `*` is accepted as a deliberate divergence from both
+/// references, which reject it: AIP-161 uses it as the full-mask wildcard
+/// and it was accepted before the character check existed.
+///
+/// The name predates the character check and is kept for compatibility.
 #[must_use]
 pub fn field_mask_path_round_trips(path: &str) -> bool {
     if path == "*" {
         return true;
     }
     path.split('.').all(|component| {
-        let bytes = component.as_bytes();
-        (!bytes.is_empty() && (bytes[0].is_ascii_lowercase() || bytes[0] == b'_'))
-            && bytes[1..]
+        let Some((first, rest)) = component.as_bytes().split_first() else {
+            return false;
+        };
+        (first.is_ascii_lowercase() || *first == b'_')
+            && rest
                 .iter()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'_')
     }) && camel_to_snake(&snake_to_camel(path)) == path
@@ -475,5 +485,9 @@ mod tests {
         assert!(!field_mask_path_round_trips("fooBar"));
         assert!(!field_mask_path_round_trips("foo bar"));
         assert!(!field_mask_path_round_trips("foo-bar"));
+        assert!(!field_mask_path_round_trips("foo/bar"));
+        assert!(!field_mask_path_round_trips("3d"));
+        assert!(field_mask_path_round_trips("foo3_bar"));
+        assert!(field_mask_path_round_trips("_foo.bar_1"));
     }
 }

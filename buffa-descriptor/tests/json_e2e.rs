@@ -30,6 +30,8 @@ fn json_field_mask_round_trip_and_rejects_invalid_paths() {
         r#"{"fFieldMask":" "}"#,
         r#"{"fFieldMask":"foo, barBaz"}"#,
         r#"{"fFieldMask":"foo,bar-baz"}"#,
+        r#"{"fFieldMask":"foo/bar"}"#,
+        r#"{"fFieldMask":"3d"}"#,
         r#"{"fFieldMask":"foo,"}"#,
         r#"{"fFieldMask":".foo"}"#,
         r#"{"fFieldMask":"foo."}"#,
@@ -44,7 +46,9 @@ fn json_field_mask_round_trip_and_rejects_invalid_paths() {
     let field_mask_idx = p.message_index("google.protobuf.FieldMask").unwrap();
     let field_mask_md = p.message_by_name("google.protobuf.FieldMask").unwrap();
     let scalars_md = p.message_by_name("reflect.test.Scalars").unwrap();
-    for path in [" ", "foo bar", "foo-bar", "", ".foo", "foo.", "foo..bar"] {
+    for path in [
+        " ", "foo bar", "foo-bar", "foo/bar", "3d", "", ".foo", "foo.", "foo..bar",
+    ] {
         let mut mask = DynamicMessage::new(Arc::clone(&p), field_mask_idx);
         mask.set(
             field_mask_md.field(1).unwrap(),
