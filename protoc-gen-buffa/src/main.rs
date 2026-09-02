@@ -182,6 +182,7 @@ struct PluginConfig {
 ///   --buffa_opt=extern_path=.my.common.Shared=::shared_types::Shared
 fn parse_config(params: &str) -> Result<PluginConfig, String> {
     let mut codegen = CodeGenConfig::default();
+    let mut unbox_oneof = false;
 
     if params.is_empty() {
         return Ok(PluginConfig { codegen });
@@ -287,6 +288,16 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
             "idiomatic_field_names" => {
                 codegen.idiomatic_field_names = parse_bool("idiomatic_field_names", value)?
             }
+            // `unbox_oneof=true` opts every non-recursive message/group
+            // variant into inline storage. Path-scoped rules use the
+            // repeatable `unbox_oneof_in=<path>` spelling, matching the
+            // builder API's `unbox_oneof()` / `unbox_oneof_in()` split.
+            "unbox_oneof" => unbox_oneof = parse_bool("unbox_oneof", value)?,
+            "unbox_oneof_in" => {
+                codegen
+                    .unboxed_oneof_fields
+                    .push(normalize_unbox_oneof_path(value.trim())?);
+            }
             // `type_name_prefix=Rpc` prepends a prefix to every generated
             // message/enum type name (and their view types). The value is
             // passed through verbatim; buffa-codegen rejects anything that
@@ -372,6 +383,10 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                 ))
             }
         }
+    }
+
+    if unbox_oneof {
+        codegen.unboxed_oneof_fields.push(".".to_string());
     }
 
     // Without reflection there is no embedded descriptor pool to share.
@@ -470,11 +485,18 @@ fn parse_feature_override(spec: &str) -> Result<FeatureOverride, String> {
 }
 
 fn normalize_override_path(path: &str) -> Result<String, String> {
+    normalize_proto_path(path, "feature override")
+}
+
+fn normalize_unbox_oneof_path(path: &str) -> Result<String, String> {
+    normalize_proto_path(path, "unbox_oneof_in")
+}
+
+fn normalize_proto_path(path: &str, label: &str) -> Result<String, String> {
     if path.is_empty() {
-        return Err(
-            "feature override rules require a non-empty proto path; use '.' explicitly to match everything"
-                .to_string(),
-        );
+        return Err(format!(
+            "{label} rules require a non-empty proto path; use '.' explicitly to match everything"
+        ));
     }
 
     if path == "." {
@@ -490,10 +512,9 @@ fn normalize_override_path(path: &str) -> Result<String, String> {
     }
 
     if path.is_empty() {
-        return Err(
-            "feature override rules require a non-empty proto path; use '.' explicitly to match everything"
-                .to_string(),
-        );
+        return Err(format!(
+            "{label} rules require a non-empty proto path; use '.' explicitly to match everything"
+        ));
     }
     Ok(path)
 }
@@ -593,6 +614,69 @@ mod tests {
     fn idiomatic_field_names_defaults_off() {
         let config = parse_config("").unwrap();
         assert!(!config.codegen.idiomatic_field_names);
+    }
+
+    #[test]
+    fn unbox_oneof_is_a_boolean_blanket_toggle() {
+        let config = parse_config("unbox_oneof=true").unwrap();
+        assert_eq!(config.codegen.unboxed_oneof_fields, vec![".".to_string()]);
+
+        let config = parse_config("unbox_oneof=false").unwrap();
+        assert!(config.codegen.unboxed_oneof_fields.is_empty());
+
+        let config = parse_config("unbox_oneof=true,unbox_oneof=false").unwrap();
+        assert!(config.codegen.unboxed_oneof_fields.is_empty());
+
+        let config = parse_config("unbox_oneof=false,unbox_oneof=true").unwrap();
+        assert_eq!(config.codegen.unboxed_oneof_fields, vec![".".to_string()]);
+    }
+
+    #[test]
+    fn unbox_oneof_in_is_repeatable_and_normalized() {
+        let config = parse_config(
+            "unbox_oneof_in=my.pkg.Msg.body.small,unbox_oneof_in= . ,unbox_oneof_in=.my.pkg.Other. ",
+        )
+        .unwrap();
+        assert_eq!(
+            config.codegen.unboxed_oneof_fields,
+            vec![
+                ".my.pkg.Msg.body.small".to_string(),
+                ".".to_string(),
+                ".my.pkg.Other".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn unbox_oneof_in_rejects_empty_or_whitespace() {
+        for params in [
+            "unbox_oneof_in=",
+            "unbox_oneof_in=   ",
+            "unbox_oneof_in=...",
+        ] {
+            let err = parse_err(params);
+            assert!(err.contains("unbox_oneof_in rules"), "{params:?}: {err}");
+            assert!(err.contains("non-empty proto path"), "{params:?}: {err}");
+        }
+    }
+
+    #[test]
+    fn unbox_oneof_rejects_non_boolean_values() {
+        // A path or a near-miss boolean is an error, never a silent no-op.
+        for params in [
+            "unbox_oneof=.my.pkg.Other",
+            "unbox_oneof=TRUE",
+            "unbox_oneof=1",
+        ] {
+            let err = parse_err(params);
+            assert!(err.contains("unbox_oneof"), "{params:?}: {err}");
+        }
+    }
+
+    #[test]
+    fn unbox_oneof_defaults_empty() {
+        let config = parse_config("").unwrap();
+        assert!(config.codegen.unboxed_oneof_fields.is_empty());
     }
 
     #[test]

@@ -428,8 +428,8 @@ fn collect_variant_info(
                     "oneof variant `{variant_fqn}` is recursive and cannot be \
                      stored inline: it would make the generated enum unsized. \
                      Remove `\"{dotted_fqn}\"` from unbox_oneof_in, or use a \
-                     broader prefix (or unbox_oneof()) to keep this variant \
-                     boxed while inlining the rest."
+                     broader prefix (or the blanket `.` rule) to keep this \
+                     variant boxed while inlining the rest."
                 )));
             }
             Ok(VariantInfo {

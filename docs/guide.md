@@ -438,7 +438,7 @@ This is the standard Rust mechanism for using keywords as identifiers. It applie
 
 **Generated files are named by proto file path, not package.** The file `proto/api/v1/service.proto` produces `api.v1.service.rs` regardless of the `package` declaration. The module tree generator uses the package from the file descriptor (not the file name) to build the `pub mod` nesting. This means the file name and module path may not correspond — the file `api.v1.service.rs` might be included inside `pub mod myapp { pub mod api { pub mod v1 { ... } } }` if the package is `myapp.api.v1`.
 
-**Recursive message types** work automatically: singular message fields use `MessageField<T>` (which is `Option<Box<T>>` internally), and message-typed oneof variants are boxed. Both direct recursion (`message T { oneof k { T self = 1; } }`) and mutual recursion (`A ↔ B`) compile without workarounds.
+**Recursive message types** work automatically: singular message fields use `MessageField<T>` (which is `Option<Box<T>>` internally), and message-typed oneof variants are boxed by default. Both direct recursion (`message T { oneof k { T self = 1; } }`) and mutual recursion (`A ↔ B`) compile without workarounds.
 
 ### Installing the protoc plugins
 
@@ -610,6 +610,8 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `type_name_prefix=<prefix>` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to every generated message/enum type name (`message User` → `struct RpcUser`) |
 | `override_feature_in=<path>=<feature>:<value>` | Apply a path-scoped editions feature override (currently `enum_type:OPEN`) to the compiled descriptors. Repeatable |
 | `open_enums_in=<path>` | Shorthand for `override_feature_in=<path>=enum_type:OPEN`. Repeatable |
+| `unbox_oneof=true` | Store every non-recursive message/group oneof variant inline instead of `Box<T>`. Recursive variants stay boxed. |
+| `unbox_oneof_in=<path>` | Store matching non-recursive message/group oneof variants inline instead of `Box<T>`. Repeatable; leading dot optional. Use `.` to match all variants. Recursive variants stay boxed for broad matches; exact recursive matches are rejected. |
 | `reflection=true` | Emit reflection support (vtable mode) plus an embedded per-package descriptor pool — see [Runtime reflection](#runtime-reflection) |
 | `reflect_mode=off\|bridge\|vtable` | Finer-grained reflection selector; `reflection=true` is shorthand for `vtable` |
 | `shared_descriptor_pool=true` | Deduplicate the embedded descriptor set: per-package reflect modules delegate to one shared `__buffa_fds` root module. Pass a matching `shared_descriptor_pool=true` to `protoc-gen-buffa-packaging` so the root module is emitted. See [Runtime reflection](#runtime-reflection) |
@@ -914,7 +916,7 @@ match &msg.info {
 }
 ```
 
-**Message and group variants are always boxed** (`Box<T>`) so that recursive types compile. `From<T>` impls are generated for each boxed variant — one targeting the oneof enum, one targeting `Option<_>` — so that both `Box::new` and `Some` disappear at the call site:
+**Message and group variants are boxed by default** (`Box<T>`) so that recursive types compile. The build API's [`unbox_oneof_in`](#unboxing-message-variants) and plugin's `unbox_oneof_in=<path>` can opt matching non-recursive variants into inline storage. `From<T>` impls are generated for each message/group variant — one targeting the oneof enum, one targeting `Option<_>` — so that both `Box::new` and `Some` disappear at the call site:
 
 ```rust,ignore
 msg.info = addr.into();                                       // From<Address> for Option<Info>
@@ -922,9 +924,31 @@ msg.info = Some(oneof::contact::Info::from(addr));            // From<Address> f
 msg.info = Some(oneof::contact::Info::Address(Box::new(addr)));  // fully explicit
 ```
 
-All three are equivalent. The `From` impls are only generated when the message type appears in **exactly one** variant of the oneof — if two variants share a type (e.g., two `Empty`-typed variants), `From` would be ambiguous and is skipped.
+With the default boxed layout, all three are equivalent. For an inline
+variant selected by `unbox_oneof_in`, use the first two forms; the explicit
+`Box::new` form is only valid when that variant remains boxed. The `From`
+impls are only generated when the message type appears in **exactly one**
+variant of the oneof — if two variants share a type (e.g., two `Empty`-typed
+variants), `From` would be ambiguous and is skipped.
 
 Deref coercion means pattern-matched bindings (`Some(Info::Address(a)) => a.street`) work the same as for unboxed types.
+
+#### Unboxing message variants
+
+The build API opts selected variants into inline storage with `Config::new().unbox_oneof_in(&[".my.pkg.Contact.info.address"])`; `Config::new().unbox_oneof()` matches every non-recursive message/group variant. The plugin has equivalent options: `unbox_oneof=true` for the blanket form, or repeat `unbox_oneof_in=<path>` in `opt:` for scoped rules. Paths may omit their leading dot and may use `.` as the blanket path; surrounding whitespace and trailing dots are normalized. Either way this affects the owned message enum only — view oneof variants remain boxed.
+
+Recursive variants remain boxed when matched by a broad rule. Naming a recursive variant exactly is rejected because inline storage would make the oneof enum unsized. For example:
+
+```yaml
+plugins:
+  - local: protoc-gen-buffa
+    out: src/gen
+    opt:
+      - unbox_oneof_in=.my.pkg.Contact.info.address
+```
+
+See [`unbox_oneof_in=<path>` in the plugin options](#plugin-options) for the
+full path-matching details.
 
 #### Naming
 
