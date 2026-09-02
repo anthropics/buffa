@@ -1213,20 +1213,34 @@ fn reserved_enum_value_numbers_are_rejected_transactionally() {
                 enum_type: vec![
                     EnumDescriptorProto {
                         name: Some("Valid".into()),
-                        value: vec![EnumValueDescriptorProto {
-                            name: Some("ACTIVE".into()),
-                            number: Some(1),
-                            ..Default::default()
-                        }],
+                        value: vec![
+                            EnumValueDescriptorProto {
+                                name: Some("UNSPECIFIED".into()),
+                                number: Some(0),
+                                ..Default::default()
+                            },
+                            EnumValueDescriptorProto {
+                                name: Some("ACTIVE".into()),
+                                number: Some(1),
+                                ..Default::default()
+                            },
+                        ],
                         ..Default::default()
                     },
                     EnumDescriptorProto {
                         name: Some("Status".into()),
-                        value: vec![EnumValueDescriptorProto {
-                            name: Some("VALUE".into()),
-                            number: Some(number),
-                            ..Default::default()
-                        }],
+                        value: vec![
+                            EnumValueDescriptorProto {
+                                name: Some("UNSPECIFIED".into()),
+                                number: Some(0),
+                                ..Default::default()
+                            },
+                            EnumValueDescriptorProto {
+                                name: Some("VALUE".into()),
+                                number: Some(number),
+                                ..Default::default()
+                            },
+                        ],
                         reserved_range: vec![EnumReservedRange {
                             start: Some(7),
                             end: Some(9),
@@ -1274,20 +1288,34 @@ fn reserved_enum_value_names_are_rejected_transactionally() {
             enum_type: vec![
                 EnumDescriptorProto {
                     name: Some("Valid".into()),
-                    value: vec![EnumValueDescriptorProto {
-                        name: Some("ACTIVE".into()),
-                        number: Some(1),
-                        ..Default::default()
-                    }],
+                    value: vec![
+                        EnumValueDescriptorProto {
+                            name: Some("UNSPECIFIED".into()),
+                            number: Some(0),
+                            ..Default::default()
+                        },
+                        EnumValueDescriptorProto {
+                            name: Some("ACTIVE".into()),
+                            number: Some(1),
+                            ..Default::default()
+                        },
+                    ],
                     ..Default::default()
                 },
                 EnumDescriptorProto {
                     name: Some("Status".into()),
-                    value: vec![EnumValueDescriptorProto {
-                        name: Some("DEPRECATED".into()),
-                        number: Some(2),
-                        ..Default::default()
-                    }],
+                    value: vec![
+                        EnumValueDescriptorProto {
+                            name: Some("UNSPECIFIED".into()),
+                            number: Some(0),
+                            ..Default::default()
+                        },
+                        EnumValueDescriptorProto {
+                            name: Some("DEPRECATED".into()),
+                            number: Some(2),
+                            ..Default::default()
+                        },
+                    ],
                     reserved_name: vec!["DEPRECATED".into()],
                     ..Default::default()
                 },
@@ -1325,11 +1353,23 @@ fn non_reserved_enum_values_are_accepted() {
             syntax: Some("proto3".into()),
             enum_type: vec![EnumDescriptorProto {
                 name: Some("Status".into()),
-                value: vec![EnumValueDescriptorProto {
-                    name: Some("ACTIVE".into()),
-                    number: Some(6),
-                    ..Default::default()
-                }],
+                value: vec![
+                    EnumValueDescriptorProto {
+                        name: Some("UNSPECIFIED".into()),
+                        number: Some(0),
+                        ..Default::default()
+                    },
+                    EnumValueDescriptorProto {
+                        name: Some("ACTIVE".into()),
+                        number: Some(6),
+                        ..Default::default()
+                    },
+                    EnumValueDescriptorProto {
+                        name: Some("AFTER".into()),
+                        number: Some(10), // one past the reserved end
+                        ..Default::default()
+                    },
+                ],
                 reserved_range: vec![EnumReservedRange {
                     start: Some(7),
                     end: Some(9),
