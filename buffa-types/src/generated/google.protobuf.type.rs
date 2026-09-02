@@ -2,6 +2,7 @@
 // source: google/protobuf/type.proto
 
 /// The syntax in which a protocol buffer element is defined.
+#[allow(non_camel_case_types)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 #[repr(i32)]
@@ -1096,6 +1097,7 @@ pub mod field {
     #[allow(unused_imports)]
     use super::*;
     /// Basic field types.
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -1303,6 +1305,7 @@ pub mod field {
         }
     }
     /// Whether a field is optional, required, or repeated.
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]

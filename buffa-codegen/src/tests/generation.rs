@@ -962,6 +962,14 @@ fn test_simple_enum() {
         content.contains("pub enum Status"),
         "missing enum: {content}"
     );
+    // Per-enum, so a content file consumed without the module-tree wrapper
+    // (which carries `ALLOW_LINTS`) is warning-free on its own (#408).
+    assert!(
+        content.contains(
+            "#[allow(non_camel_case_types)]\n#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]"
+        ),
+        "missing per-enum allow: {content}"
+    );
     assert!(
         content.contains("UNKNOWN = 0"),
         "missing UNKNOWN: {content}"

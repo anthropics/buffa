@@ -5,6 +5,7 @@
 /// `Value` type union.
 ///
 /// The JSON representation for `NullValue` is JSON `null`.
+#[allow(non_camel_case_types)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 #[repr(i32)]

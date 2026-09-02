@@ -2,6 +2,7 @@
 // source: log/v1/log.proto
 
 /// Severity level for a log entry.
+#[allow(non_camel_case_types)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 #[repr(i32)]
 pub enum Severity {
