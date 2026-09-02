@@ -207,8 +207,12 @@ fn test_aip192_fq_ref_resolved_in_generated_doc() {
 
     let content = &joined(&result);
     assert!(
-        content.contains("[Book](crate::example::v1::Book)"),
+        content.contains("[Book]"),
         "FQ ref must be resolved to intra-doc link:\n{content}"
+    );
+    assert!(
+        !content.contains("[Book](crate::example::v1::Book)"),
+        "same-module label must omit redundant explicit target:\n{content}"
     );
     assert!(
         !content.contains("\\[Book\\]"),
@@ -242,8 +246,12 @@ fn test_aip192_implied_ref_resolved() {
 
     let content = &joined(&result);
     assert!(
-        content.contains("[Book](crate::example::v1::Book)"),
+        content.contains("[Book]"),
         "implied ref must resolve:\n{content}"
+    );
+    assert!(
+        !content.contains("[Book](crate::example::v1::Book)"),
+        "same-module implied ref must omit redundant explicit target:\n{content}"
     );
 }
 

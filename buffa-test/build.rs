@@ -201,6 +201,14 @@ fn main() {
         .compile()
         .expect("buffa_build failed for wkt_usage.proto");
 
+    // googleapis WKTs (#382) — Api/Type/Enum/SourceContext auto-map.
+    // Views stay on (the default) so EnumView/TypeView/ApiView resolve through buffa-types.
+    buffa_build::Config::new()
+        .files(&["protos/wkt_api.proto"])
+        .includes(&["protos/"])
+        .compile()
+        .expect("buffa_build failed for wkt_api.proto");
+
     // Name collisions — messages named after Rust types, fields named
     // after generated methods, oneof name matching parent message.
     buffa_build::Config::new()

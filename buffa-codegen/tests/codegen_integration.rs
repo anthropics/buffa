@@ -195,6 +195,24 @@ fn codegen_wkt_auto_mapping() {
 }
 
 #[test]
+fn codegen_wkt_api_auto_mapping() {
+    // #382: googleapis WKTs must resolve through buffa-types, including views.
+    let files = generate_for("wkt_api.proto", &CodeGenConfig::default());
+    let combined = files
+        .iter()
+        .map(|f| f.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(combined.contains("::buffa_types::google::protobuf::Api"));
+    assert!(combined.contains("::buffa_types::google::protobuf::Type"));
+    assert!(combined.contains("::buffa_types::google::protobuf::SourceContext"));
+    assert!(combined.contains("::buffa_types::google::protobuf::Enum"));
+    assert!(combined.contains("::buffa_types::google::protobuf::__buffa::view::ApiView"));
+    assert!(combined.contains("::buffa_types::google::protobuf::__buffa::view::TypeView"));
+    assert!(combined.contains("::buffa_types::google::protobuf::__buffa::view::EnumView"));
+}
+
+#[test]
 fn codegen_wkt_explicit_extern_overrides_auto() {
     let mut config = no_views();
     config

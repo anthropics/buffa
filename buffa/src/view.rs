@@ -1862,7 +1862,10 @@ impl<'a, T> FromIterator<T> for RepeatedView<'a, T> {
 /// Lookup is O(n) linear scan, which is appropriate for the typically small
 /// maps found in protobuf messages (metadata labels, headers, etc.).
 /// If duplicate keys appear on the wire, [`get`](MapView::get) returns the
-/// last occurrence (last-write-wins, per the protobuf spec).
+/// last occurrence (last-write-wins, per the protobuf spec). That rule is
+/// about whole entries; *within* one entry, a repeated scalar key or value
+/// also last-wins, while a repeated message value merges — the same as the
+/// owned decoder.
 ///
 /// For larger maps where O(1) lookup matters, collect into a `HashMap`:
 ///

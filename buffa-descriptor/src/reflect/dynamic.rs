@@ -334,6 +334,32 @@ impl DynamicMessage {
         )
     }
 
+    /// [`decode`](Self::decode) with `depth` levels of nesting budget instead
+    /// of a fresh [`RECURSION_LIMIT`]. For payloads that are logically nested
+    /// inside an already-decoded message (`google.protobuf.Any.value`), so
+    /// the inner decode continues the outer count rather than restarting it.
+    ///
+    /// Only depth is continued; the unknown-field and element-memory budgets
+    /// start fresh per call, as with `decode`. Each live `Any` layer also owns
+    /// a copy of its payload bytes (which contain the layers inside it), so a
+    /// nested-`Any` chain can hold up to `RECURSION_LIMIT` × its input size in
+    /// transient heap while it serializes — bounded, where it was unbounded
+    /// before the depth cap, but not the 1× a single decode costs.
+    #[cfg(feature = "json")]
+    pub(crate) fn decode_at_depth(
+        pool: Arc<DescriptorPool>,
+        msg_idx: MessageIndex,
+        bytes: &[u8],
+        depth: u32,
+    ) -> Result<Self, DecodeError> {
+        let mut msg = Self::new(pool, msg_idx);
+        msg.merge_with_options(
+            bytes,
+            &buffa::DecodeOptions::new().with_recursion_limit(depth),
+        )?;
+        Ok(msg)
+    }
+
     fn merge_buf(&mut self, buf: &mut impl Buf, ctx: DecodeContext<'_>) -> Result<(), DecodeError> {
         self.normalizing(|s| s.merge_buf_fields(buf, ctx))
     }
@@ -699,8 +725,30 @@ impl DynamicMessage {
                     // would make this decoder reject map nesting the other
                     // two accept, which the infallible
                     // `ReflectMessage::to_dynamic` cannot report.
-                    value =
-                        Some(self.decode_element_no_alias(value_kind, entry_tag, &mut entry, ctx)?);
+                    match &mut value {
+                        // Proto merge semantics, as in the owned map codec: a
+                        // repeated message value within one entry merges into
+                        // the message decoded so far rather than replacing it.
+                        // (Only reachable for a message-kind value — the kind
+                        // is fixed per field.) The `descend` here mirrors the
+                        // one inside `decode_element_no_alias`, so every
+                        // occurrence decodes at the same depth.
+                        Some(Value::Message(existing)) => {
+                            Self::merge_message_wire(
+                                existing,
+                                entry_tag,
+                                &mut entry,
+                                ctx.descend()?,
+                            )?;
+                        }
+                        // First occurrence, or any scalar/enum value (last wins).
+                        _ => {
+                            value =
+                                Some(self.decode_element_no_alias(
+                                    value_kind, entry_tag, &mut entry, ctx,
+                                )?);
+                        }
+                    }
                 }
                 _ => skip_field_depth(entry_tag, &mut entry, ctx.depth())?,
             }
@@ -824,30 +872,37 @@ impl DynamicMessage {
             }
             SingularKind::Message(midx) => {
                 let mut nested = DynamicMessage::new(Arc::clone(&self.pool), midx);
-                let ctx = ctx.descend()?;
-                match tag.wire_type() {
-                    WireType::LengthDelimited => {
-                        let len = decode_varint(buf)?;
-                        let len = usize::try_from(len).map_err(|_| DecodeError::MessageTooLarge)?;
-                        if buf.remaining() < len {
-                            return Err(DecodeError::UnexpectedEof);
-                        }
-                        let mut sub = buf.copy_to_bytes(len);
-                        nested.merge_buf(&mut sub, ctx)?;
-                    }
-                    WireType::StartGroup => {
-                        nested.merge_group(buf, tag.field_number(), ctx)?;
-                    }
-                    _ => {
-                        return Err(DecodeError::WireTypeMismatch {
-                            field_number: tag.field_number(),
-                            expected: WireType::LengthDelimited as u8,
-                            actual: tag.wire_type() as u8,
-                        })
-                    }
-                }
+                Self::merge_message_wire(&mut nested, tag, buf, ctx.descend()?)?;
                 Ok(Value::Message(nested))
             }
+        }
+    }
+
+    /// Merge one length-delimited or group-encoded occurrence of a message
+    /// field from `buf` into `nested`. `ctx` is the nested message's own
+    /// (already descended) context.
+    fn merge_message_wire(
+        nested: &mut DynamicMessage,
+        tag: Tag,
+        buf: &mut impl Buf,
+        ctx: DecodeContext<'_>,
+    ) -> Result<(), DecodeError> {
+        match tag.wire_type() {
+            WireType::LengthDelimited => {
+                let len = decode_varint(buf)?;
+                let len = usize::try_from(len).map_err(|_| DecodeError::MessageTooLarge)?;
+                if buf.remaining() < len {
+                    return Err(DecodeError::UnexpectedEof);
+                }
+                let mut sub = buf.copy_to_bytes(len);
+                nested.merge_buf(&mut sub, ctx)
+            }
+            WireType::StartGroup => nested.merge_group(buf, tag.field_number(), ctx),
+            _ => Err(DecodeError::WireTypeMismatch {
+                field_number: tag.field_number(),
+                expected: WireType::LengthDelimited as u8,
+                actual: tag.wire_type() as u8,
+            }),
         }
     }
 
@@ -2296,5 +2351,36 @@ mod tests {
             DynamicMessage::checked_encode_size(u32::MAX as usize + 1),
             Err(buffa::EncodeError::MessageTooLarge)
         );
+    }
+
+    /// `decode_at_depth` must run on the *given* depth. The JSON serializer
+    /// reports the decoder's recursion error with the same text as its own,
+    /// so no integration test can tell a continued budget from a fresh one —
+    /// this pins it directly.
+    #[cfg(feature = "json")]
+    #[test]
+    fn decode_at_depth_uses_the_supplied_depth() {
+        use crate::DescriptorPool;
+        use alloc::sync::Arc;
+        use buffa::DecodeError;
+
+        let fds = include_bytes!("../../tests/protos/reflect_test_options.fds");
+        let pool = Arc::new(DescriptorPool::decode(fds).unwrap());
+        let idx = pool
+            .message_index("google.protobuf.DescriptorProto")
+            .unwrap();
+        let decode = |bytes: &[u8], depth| {
+            DynamicMessage::decode_at_depth(Arc::clone(&pool), idx, bytes, depth)
+        };
+
+        // `DescriptorProto { nested_type: [ {} ] }` — one nested level.
+        let one_level = [0x1A, 0x00];
+        assert!(matches!(
+            decode(&one_level, 0),
+            Err(DecodeError::RecursionLimitExceeded)
+        ));
+        assert!(decode(&one_level, 1).is_ok());
+        // Depth 0 still admits a flat message: `{ name: "n" }`.
+        assert!(decode(&[0x0A, 0x01, b'n'], 0).is_ok());
     }
 }

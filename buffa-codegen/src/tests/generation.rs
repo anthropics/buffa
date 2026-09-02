@@ -143,8 +143,8 @@ fn test_descriptor_enum_field_resolves_to_buffa_descriptor() {
     // (which `buf/validate/validate.proto` does) must resolve to
     // `::buffa_descriptor::generated::descriptor::field_descriptor_proto::Type`,
     // not `::buffa_types::google::protobuf::field_descriptor_proto::Type` —
-    // the latter doesn't exist (`buffa-types` only ships the JSON-mappable
-    // WKTs, not descriptor.proto types).
+    // the latter doesn't exist (`buffa-types` ships the well-known types, not
+    // descriptor.proto types).
     //
     // The descriptor file is an *import* (in `files`, not `files_to_generate`)
     // — exactly how protoc surfaces it for any proto that
@@ -2673,5 +2673,242 @@ fn test_editions_legacy_required_explicit_default_survives() {
     assert!(
         compact.contains("self.req=42"),
         "LEGACY_REQUIRED explicit default must reach clear(): {content}"
+    );
+}
+
+// ---- exclude_packages filtering in generate_with_diagnostics ---------------
+
+fn make_file_with_package(name: &str, package: &str) -> FileDescriptorProto {
+    FileDescriptorProto {
+        name: Some(name.to_string()),
+        package: Some(package.to_string()),
+        syntax: Some("proto3".to_string()),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn test_exclude_package_matched_nothing_warning() {
+    // A typo'd or stale exclude entry must produce a warning rather than a
+    // silent no-op, so the user discovers the misconfiguration at build time.
+    let fds = vec![make_file_with_package("example/foo.proto", "example")];
+    let to_generate = vec!["example/foo.proto".to_string()];
+    let config = CodeGenConfig {
+        // "buf.validat" is a typo — it matches nothing in the descriptor set.
+        exclude_packages: vec!["buf.validat".to_string()],
+        ..Default::default()
+    };
+    let (_, warnings) =
+        generate_with_diagnostics(&fds, &to_generate, &config).expect("generation failed");
+    assert!(
+        warnings.iter().any(|w| matches!(
+            w,
+            CodeGenWarning::ExcludePackageMatchedNothing { package }
+                if package == "buf.validat"
+        )),
+        "expected ExcludePackageMatchedNothing warning; got: {warnings:?}"
+    );
+}
+
+#[test]
+fn test_exclude_packages_drops_matching_files() {
+    // Files in `buf.validate` should be dropped; the one in `example` kept.
+    let fds = vec![
+        make_file_with_package("validate/validate.proto", "buf.validate"),
+        make_file_with_package("example/service.proto", "example"),
+    ];
+    let to_generate = vec![
+        "validate/validate.proto".to_string(),
+        "example/service.proto".to_string(),
+    ];
+    let config = CodeGenConfig {
+        exclude_packages: vec!["buf.validate".to_string()],
+        ..Default::default()
+    };
+    let files = generate(&fds, &to_generate, &config).expect("generation failed");
+    let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
+    assert!(
+        !names.iter().any(|n| n.contains("validate")),
+        "excluded package must produce no output files; got {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n.contains("example")),
+        "kept package must produce output files; got {names:?}"
+    );
+}
+
+#[test]
+fn test_exclude_packages_drops_subpackages() {
+    // `gnostic` in the exclude list must also drop `gnostic.openapi.v3`.
+    let fds = vec![
+        make_file_with_package("gnostic/openapi/v3/doc.proto", "gnostic.openapi.v3"),
+        make_file_with_package("example/foo.proto", "example"),
+    ];
+    let to_generate = vec![
+        "gnostic/openapi/v3/doc.proto".to_string(),
+        "example/foo.proto".to_string(),
+    ];
+    let config = CodeGenConfig {
+        exclude_packages: vec!["gnostic".to_string()],
+        ..Default::default()
+    };
+    let files = generate(&fds, &to_generate, &config).expect("generation failed");
+    let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
+    assert!(
+        !names.iter().any(|n| n.contains("gnostic")),
+        "subpackage must also be excluded; got {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n.contains("example")),
+        "kept package must produce output; got {names:?}"
+    );
+}
+
+#[test]
+fn test_exclude_packages_empty_list_keeps_all() {
+    // With an empty exclude list the fast path kicks in (Cow::Borrowed) and
+    // all files are generated unchanged.
+    let fds = vec![
+        make_file_with_package("validate/validate.proto", "buf.validate"),
+        make_file_with_package("example/foo.proto", "example"),
+    ];
+    let to_generate = vec![
+        "validate/validate.proto".to_string(),
+        "example/foo.proto".to_string(),
+    ];
+    let config = CodeGenConfig {
+        exclude_packages: vec![],
+        ..Default::default()
+    };
+    let files = generate(&fds, &to_generate, &config).expect("generation failed");
+    let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
+    assert!(
+        names.iter().any(|n| n.contains("validate")),
+        "empty exclude list must keep all files; got {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n.contains("example")),
+        "empty exclude list must keep all files; got {names:?}"
+    );
+}
+
+#[test]
+fn test_exclude_packages_file_without_descriptor_not_dropped_by_filter() {
+    // A name in `files_to_generate` that has no matching descriptor must not
+    // be silently dropped by the exclude-packages filter (`None => true`). It
+    // propagates to the FileNotFound error that follows, which is actionable.
+    let fds = vec![make_file_with_package("example/foo.proto", "example")];
+    let to_generate = vec![
+        "example/foo.proto".to_string(),
+        "orphan/bar.proto".to_string(), // no descriptor
+    ];
+    let config = CodeGenConfig {
+        exclude_packages: vec!["buf.validate".to_string()],
+        ..Default::default()
+    };
+    let err = generate(&fds, &to_generate, &config).unwrap_err();
+    // The filter must not drop "orphan/bar.proto" — the error comes from the
+    // FileNotFound check downstream, not from the exclude-packages step.
+    assert!(
+        matches!(err, CodeGenError::FileNotFound(ref name) if name == "orphan/bar.proto"),
+        "expected FileNotFound for the orphan, got: {err:?}"
+    );
+}
+
+#[test]
+fn test_exclude_packages_invalid_entry_is_rejected() {
+    let fds = vec![make_file_with_package("foo/foo.proto", "foo")];
+    let to_generate = vec!["foo/foo.proto".to_string()];
+
+    // Empty component (double dot) is invalid.
+    let config = CodeGenConfig {
+        exclude_packages: vec!["buf..validate".to_string()],
+        ..Default::default()
+    };
+    assert!(
+        generate(&fds, &to_generate, &config).is_err(),
+        "malformed exclude entry must be rejected"
+    );
+
+    // Trailing dot is also invalid.
+    let config2 = CodeGenConfig {
+        exclude_packages: vec!["buf.validate.".to_string()],
+        ..Default::default()
+    };
+    assert!(
+        generate(&fds, &to_generate, &config2).is_err(),
+        "trailing-dot exclude entry must be rejected"
+    );
+}
+
+#[test]
+fn test_exclude_packages_filter_runs_before_context_build() {
+    // Regression: when the filter ran *after* CodeGenContext::for_generate,
+    // the context saw `google/protobuf/timestamp.proto` in files_to_generate
+    // and concluded "we are generating the WKTs ourselves", suppressing the
+    // auto extern-path injection. The field type then resolved to a local
+    // super::…::Timestamp that was never emitted → compile error.
+    //
+    // With the filter hoisted before context build, the context only sees
+    // "my/service.proto" and injects the auto `.google.protobuf →
+    // ::buffa_types::google::protobuf` mapping, so the field resolves to
+    // ::buffa_types::google::protobuf::Timestamp as expected.
+    let ts = FileDescriptorProto {
+        name: Some("google/protobuf/timestamp.proto".to_string()),
+        package: Some("google.protobuf".to_string()),
+        syntax: Some("proto3".to_string()),
+        message_type: vec![DescriptorProto {
+            name: Some("Timestamp".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let mut svc = proto3_file("my/service.proto");
+    svc.package = Some("my.service".to_string());
+    svc.dependency = vec!["google/protobuf/timestamp.proto".to_string()];
+    svc.message_type.push(DescriptorProto {
+        name: Some("Event".to_string()),
+        field: vec![FieldDescriptorProto {
+            name: Some("created_at".to_string()),
+            number: Some(1),
+            label: Some(Label::LABEL_OPTIONAL),
+            r#type: Some(Type::TYPE_MESSAGE),
+            type_name: Some(".google.protobuf.Timestamp".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let config = CodeGenConfig {
+        exclude_packages: vec!["google.protobuf".to_string()],
+        ..Default::default()
+    };
+    let files = generate(
+        &[ts, svc],
+        &[
+            "google/protobuf/timestamp.proto".to_string(),
+            "my/service.proto".to_string(),
+        ],
+        &config,
+    )
+    .expect("generation failed");
+
+    // google.protobuf is excluded — no output for it.
+    assert!(
+        files.iter().all(|f| !f.name.contains("google.protobuf")),
+        "excluded package must produce no output; got {:?}",
+        files.iter().map(|f| &f.name).collect::<Vec<_>>()
+    );
+
+    // my/service.proto is kept — find its content.
+    let content = joined(&files);
+    assert!(
+        content.contains("::buffa_types::google::protobuf::Timestamp"),
+        "WKT extern-path auto-injection must fire when google.protobuf is excluded, \
+         so Timestamp resolves to ::buffa_types::…::Timestamp, not a local path: \
+         {content}"
+    );
+    assert!(
+        !content.contains("super::google::protobuf::Timestamp"),
+        "no local path to the excluded package may be emitted: {content}"
     );
 }

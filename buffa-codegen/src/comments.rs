@@ -738,6 +738,32 @@ fn escape_path_for_link(path: &str) -> String {
         .join("::")
 }
 
+/// Whether rustdoc would already resolve `display` to `rust_path` from the
+/// documented type's module, making an explicit `(crate::…)` target redundant.
+fn rustdoc_label_resolves_to_path(
+    display: &str,
+    rust_path: &str,
+    scope_fqn: &str,
+    type_map: &HashMap<String, String>,
+) -> bool {
+    let last = rust_path.rsplit("::").next().unwrap_or(rust_path);
+    // A keyword-named type is emitted as `r#name`; the bare `[name]` label
+    // would not resolve, so it keeps the escaped explicit target.
+    if display.trim() != last || crate::idents::is_rust_keyword(last) {
+        return false;
+    }
+    let Some(scope_path) = type_map.get(&format!(".{scope_fqn}")) else {
+        return false;
+    };
+    rust_parent_module(scope_path) == rust_parent_module(rust_path)
+}
+
+fn rust_parent_module(path: &str) -> &str {
+    path.rsplit_once("::")
+        .map(|(parent, _)| parent)
+        .unwrap_or("")
+}
+
 /// Returns `true` for Rust paths that cannot be linked by prepending `crate::`.
 ///
 /// `::` paths are global (extern crate) paths. `crate::`-prefixed values are
@@ -780,8 +806,10 @@ fn resolve_type_fqn<'m>(
 
 /// Try to resolve an AIP-192 cross-reference into a rustdoc inline link string.
 ///
-/// Returns `Some("[display](crate::rust::path)")` on success, or `None` if the
-/// ref cannot be resolved (caller falls back to escaping).
+/// Returns `Some("[display]")` or `Some("[display](crate::rust::path)")` on
+/// success, or `None` if the ref cannot be resolved (caller falls back to
+/// escaping). Same-module labels that already resolve omit the explicit
+/// destination so rustdoc does not fire `redundant_explicit_links`.
 ///
 /// `scope_fqn` is the dotless FQN of the **enclosing proto type** (message or
 /// enum) — never a field/value/oneof FQN. `ref_target` may be empty for the
@@ -808,6 +836,16 @@ fn resolve_proto_ref(
             return None;
         }
         let d = escape_angle_brackets(display);
+        // rustdoc::redundant_explicit_links: `[Mixin](crate::pkg::Mixin)` on a
+        // type in the same module is a deny-warnings failure, because the
+        // label already resolves there. Generated modules glob-import
+        // ancestors (`use super::*`), so `[Mixin]` still works on views
+        // nested under `__buffa::view`. Cross-module targets and labels
+        // that are not the last path segment (e.g. `google.protobuf.Type`)
+        // keep the explicit destination.
+        if rustdoc_label_resolves_to_path(display, rust_path, scope_fqn, type_map) {
+            return Some(format!("[{d}]"));
+        }
         let p = escape_path_for_link(rust_path);
         return Some(format!("[{d}](crate::{p})"));
     }
@@ -1478,6 +1516,73 @@ mod tests {
             result.as_deref(),
             Some("[Book](crate::google::example::v1::Book)")
         );
+    }
+
+    #[test]
+    fn test_resolve_proto_ref_same_module_omits_explicit_target() {
+        let mut map = HashMap::new();
+        map.insert(
+            ".google.protobuf.Api".into(),
+            "google::protobuf::Api".into(),
+        );
+        map.insert(
+            ".google.protobuf.Mixin".into(),
+            "google::protobuf::Mixin".into(),
+        );
+        let result = resolve_proto_ref("Mixin", "", "google.protobuf.Api", &map);
+        assert_eq!(result.as_deref(), Some("[Mixin]"));
+    }
+
+    #[test]
+    fn test_resolve_proto_ref_fq_display_keeps_explicit_target() {
+        let mut map = HashMap::new();
+        map.insert(
+            ".google.protobuf.Any".into(),
+            "google::protobuf::Any".into(),
+        );
+        map.insert(
+            ".google.protobuf.Type".into(),
+            "google::protobuf::Type".into(),
+        );
+        let result = resolve_proto_ref(
+            "google.protobuf.Type",
+            "google.protobuf.Type",
+            "google.protobuf.Any",
+            &map,
+        );
+        assert_eq!(
+            result.as_deref(),
+            Some("[google.protobuf.Type](crate::google::protobuf::Type)")
+        );
+    }
+
+    #[test]
+    fn test_resolve_proto_ref_nested_module_keeps_explicit_target() {
+        let mut map = HashMap::new();
+        map.insert(
+            ".google.protobuf.Field".into(),
+            "google::protobuf::Field".into(),
+        );
+        map.insert(
+            ".google.protobuf.Field.Kind".into(),
+            "google::protobuf::field::Kind".into(),
+        );
+        let result = resolve_proto_ref("Kind", "", "google.protobuf.Field", &map);
+        assert_eq!(
+            result.as_deref(),
+            Some("[Kind](crate::google::protobuf::field::Kind)")
+        );
+    }
+
+    #[test]
+    fn test_resolve_proto_ref_keyword_name_keeps_escaped_explicit_target() {
+        // `type` is emitted as `r#type`; a bare `[type]` label would not
+        // resolve, so the same-module shortcut must not apply.
+        let mut map = HashMap::new();
+        map.insert(".pkg.type".into(), "pkg::type".into());
+        map.insert(".pkg.Book".into(), "pkg::Book".into());
+        let result = resolve_proto_ref("type", "", "pkg.Book", &map);
+        assert_eq!(result.as_deref(), Some("[type](crate::pkg::r#type)"));
     }
 
     #[test]

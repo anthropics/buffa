@@ -210,6 +210,7 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.json_feature_name(name)` etc. | `"json"`, `"views"`, `"text"`, `"reflect"` | Rename the crate feature a gated impl kind is conditioned on (one setter per kind: `json_feature_name`, `views_feature_name`, `text_feature_name`, `reflect_feature_name`); inert without `gate_impls_on_crate_features`. The renamed feature must be declared in the consuming crate's `[features]` table — an undeclared name leaves the `#[cfg]` permanently false and the impls silently absent |
 | `.strict_utf8_mapping(bool)` | `false` | Map `utf8_validation = NONE` string fields to `Vec<u8>` / `&[u8]` instead of `String` (see [Skipping UTF-8 validation](#skipping-utf-8-validation)) |
 | `.extern_path(proto, rust)` | — | Map a proto package or a single type to an external Rust path (see below) |
+| `.exclude_package(pkg)` | — | Drop a proto package (and its sub-packages) from code generation. Useful when directory globbing pulls in option-only packages (e.g. `buf.validate`) that you don't want Rust types for. A leading dot is accepted and stripped. Pair with `.extern_path` if kept files reference types from the excluded package; the generator emits a `cargo:warning` for each such cross-package reference. |
 | `.type_name_prefix(prefix)` | `""` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to every generated message/enum type name (`message User` → `struct RpcUser`); modules, oneof enums, extern-mapped types, and the wire format are unaffected. A crate referencing these types via `extern_path` must spell out the prefixed name (`::crate_a::RpcUser`) |
 | `.use_bytes_type()` | — | Use `bytes::Bytes` for all bytes fields, including `map<K, bytes>` values |
 | `.use_bytes_type_in(&[...])` | — | Use `bytes::Bytes` for matching bytes fields (same `map<K, bytes>` rule) |
@@ -255,7 +256,7 @@ This disables the automatic mapping and routes all `google.protobuf.*` reference
 
 ### Descriptor types
 
-`google/protobuf/descriptor.proto` and `google/protobuf/compiler/plugin.proto` types (`FieldDescriptorProto`, `FileOptions`, `Edition`, `CodeGeneratorRequest`, etc.) live in `buffa-descriptor`, not `buffa-types` — the latter only ships the JSON-mappable WKTs. Protos that reference a `descriptor.proto` type as a field type — most commonly via [protovalidate](https://buf.build/bufbuild/protovalidate)'s `buf/validate/validate.proto`, which uses `google.protobuf.FieldDescriptorProto.Type` — are automatically routed to `buffa-descriptor`, the same way WKTs are routed to `buffa-types`. Add it as a dependency:
+`google/protobuf/descriptor.proto` and `google/protobuf/compiler/plugin.proto` types (`FieldDescriptorProto`, `FileOptions`, `Edition`, `CodeGeneratorRequest`, etc.) live in `buffa-descriptor`, not `buffa-types` — the latter ships the official well-known types (JSON-mappable WKTs plus `Api`/`Type`/`SourceContext`). Protos that reference a `descriptor.proto` type as a field type — most commonly via [protovalidate](https://buf.build/bufbuild/protovalidate)'s `buf/validate/validate.proto`, which uses `google.protobuf.FieldDescriptorProto.Type` — are automatically routed to `buffa-descriptor`, the same way WKTs are routed to `buffa-types`. Add it as a dependency:
 
 ```sh
 cargo add buffa-descriptor
@@ -635,7 +636,7 @@ Passed via `opt:` (works for `remote:` and `local:`):
 >       - exclude_package=.gnostic
 > ```
 >
-> Excluded descriptors stay available for option resolution, but a kept message with a *field* of an excluded type generates a reference to a Rust module that was never emitted. The generator warns about each such field (on plugin stderr, or as a `cargo:warning` from `buffa-build`), naming the file, message, field, and referenced type, so the resulting compile error in generated code is traceable to its cause. If the types are genuinely needed, map them with `extern_path` instead of excluding them. On the buf path, per-plugin `exclude_types:` (a buf.gen.yaml field, not a plugin opt) is an alternative that prunes the descriptors themselves before the plugin runs — note its subpackage semantics differ: use a `pkg.**` glob to cover subpackages, where `exclude_package` covers them automatically. `exclude_package` is a protoc-plugin option only; the `buffa-build`/`build.rs` path does not need it, since there `files()` lists the generate set explicitly.
+> Excluded descriptors stay available for option resolution, but a kept message with a *field* of an excluded type generates a reference to a Rust module that was never emitted. The generator warns about each such field (on plugin stderr, or as a `cargo:warning` from `buffa-build`), naming the file, message, field, and referenced type, so the resulting compile error in generated code is traceable to its cause. If the types are genuinely needed, map them with `extern_path` instead of excluding them. On the buf path, per-plugin `exclude_types:` (a buf.gen.yaml field, not a plugin opt) is an alternative that prunes the descriptors themselves before the plugin runs — note its subpackage semantics differ: use a `pkg.**` glob to cover subpackages, where `exclude_package` covers them automatically. `exclude_package` is also available on the `buffa-build`/`build.rs` path as `Config::exclude_package("buf.validate")` — the generate set there is exactly `files()`, so this matters when a glob expands `files()` to include option-only packages.
 
 #### Very large schemas
 
@@ -1122,7 +1123,20 @@ Every option above applies to the protobuf binary decoders — owned, view, and 
 
 Textproto is the exception among the non-binary formats: `decode_from_str` applies the element-memory limit on its own. The amplification there is very nearly as large as on the wire — `{},` is three input bytes for the same element footprint that costs two encoded — so the parser needs the same bound, and carries its own because `DecodeContext` never reaches it. Raise it with `buffa::text::decode_from_str_with_element_memory_limit`. The recursion limit already applied there, enforced by the tokenizer.
 
+The one JSON-side bound is on reflective *serialization*: `DynamicMessage`'s `Serialize` impl caps message nesting at `RECURSION_LIMIT` (100), counting `google.protobuf.Any` payloads — which it decodes at serialize time — toward the same budget, and fails with a serde error beyond it. That cap is fixed rather than read from `DecodeOptions`, and decode success alone does not imply the message will serialize — an over-deep `Any` chain decodes fine as opaque bytes — so serialize at ingest if you need that guarantee.
+
 If you accept untrusted JSON, impose your own bound before parsing; capping the input length is the simplest form and is the one thing that transfers. Tracked in [#330](https://github.com/anthropics/buffa/issues/330).
+
+### `Any` expansion is separately capped
+
+Serializing a `google.protobuf.Any` through the generated `buffa-types` impls expands it: the payload is decoded and then serialized in turn. An `Any` whose payload is another `Any` therefore recurses once per level, and the decode limits cannot see it — `Any` is a flat two-field message, so a chain of any length costs the decoder a single recursion level and hides entirely inside the opaque `value` bytes. (The reflective `DynamicMessage` codec has the same shape and bounds it with the serialization budget described above.)
+
+Expansion depth is capped at `buffa::type_registry::MAX_ANY_EXPANSION_DEPTH` (100, the same value as `RECURSION_LIMIT`). The cap is a constant and `DecodeOptions::with_recursion_limit` does not move it, because it bounds serialization rather than decoding. Past the cap:
+
+- **JSON** serialization returns an error.
+- **Textproto** falls back to the unexpanded `type_url: "..." value: "..."` form, which is still valid textproto — there is no error channel in that path beyond a writer failure.
+
+Legitimate `Any` nesting is one or two levels, so the cap is not a limit you should meet in practice.
 
 ## Zero-copy views
 
@@ -1598,6 +1612,12 @@ The `buffa-types` crate provides pre-generated types for Google's well-known pro
 | FieldMask | `google.protobuf.FieldMask` | `buffa_types::google::protobuf::FieldMask` |
 | Empty | `google.protobuf.Empty` | `buffa_types::google::protobuf::Empty` |
 | Wrappers | `google.protobuf.*Value` | `buffa_types::google::protobuf::Int32Value`, etc. |
+| Api | `google.protobuf.Api` | `buffa_types::google::protobuf::Api` |
+| Type | `google.protobuf.Type` | `buffa_types::google::protobuf::Type` |
+| Enum | `google.protobuf.Enum` | `buffa_types::google::protobuf::Enum` |
+| SourceContext | `google.protobuf.SourceContext` | `buffa_types::google::protobuf::SourceContext` |
+
+`Api`, `Type`, `Enum`, `SourceContext` and the messages they contain (`Method`, `Mixin`, `Field`, `EnumValue`, `Option`) implement the binary, view, and text codecs but not `Serialize`/`Deserialize`. A message that embeds one of them under `json = true` fails to compile with `the trait bound Api: Serialize is not satisfied`; map the type to your own generated copy with `extern_path` if you need JSON for it.
 
 ### Timestamp and Duration
 

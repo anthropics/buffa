@@ -92,7 +92,9 @@ impl Any {
 /// Registers all well-known types with the given [`TypeRegistry`].
 ///
 /// This registers Duration, Timestamp, FieldMask, Value, Struct, ListValue,
-/// Empty, all wrapper types, and Any itself, enabling both proto3-compliant
+/// Empty, all wrapper types, Any itself, and the remaining official WKTs
+/// (`Api`, `Method`, `Mixin`, `Type`, `Field`, `Enum`, `EnumValue`, `Option`,
+/// `SourceContext`), enabling both proto3-compliant
 /// JSON serialization (under the `json` feature) and textproto
 /// `[type_url] { fields }` Any-expansion when these types appear inside
 /// `google.protobuf.Any` fields.
@@ -146,6 +148,15 @@ pub fn register_wkt_types(reg: &mut buffa::type_registry::TypeRegistry) {
             });
         };
     }
+    macro_rules! register_text_only {
+        ($type:ty) => {
+            reg.register_text_any(TextAnyEntry {
+                type_url: <$type>::TYPE_URL,
+                text_encode: any_encode_text::<$type>,
+                text_merge: any_merge_text::<$type>,
+            });
+        };
+    }
 
     // WKTs with special JSON mappings (use "value" wrapping in Any JSON).
     register_type!(Duration, true);
@@ -165,8 +176,21 @@ pub fn register_wkt_types(reg: &mut buffa::type_registry::TypeRegistry) {
     register_type!(BytesValue, true);
     register_type!(Any, true);
 
-    // Regular messages (fields inlined in Any JSON).
+    // Regular messages (fields inlined in Any JSON). Empty has a
+    // hand-written JSON impl; Api/Type/SourceContext and their parts have
+    // generated text impls and no serde impls, so they register for
+    // textproto Any-expansion without a JSON entry.
     register_type!(Empty, false);
+
+    register_text_only!(Api);
+    register_text_only!(Method);
+    register_text_only!(Mixin);
+    register_text_only!(Type);
+    register_text_only!(Field);
+    register_text_only!(Enum);
+    register_text_only!(EnumValue);
+    register_text_only!(crate::google::protobuf::Option);
+    register_text_only!(SourceContext);
 }
 
 // ── TextFormat impl ─────────────────────────────────────────────────────────
@@ -278,6 +302,16 @@ impl serde::Serialize for Any {
 
         match lookup {
             Some((to_json, is_wkt)) => {
+                // `to_json` decodes the payload and serializes it, so an `Any`
+                // holding an `Any` re-enters this impl. See
+                // `MAX_ANY_EXPANSION_DEPTH` for why the decoder's recursion
+                // limit does not bound that.
+                let Some(_depth_guard) = buffa::type_registry::enter_any_expansion() else {
+                    return Err(serde::ser::Error::custom(alloc::format!(
+                        "Any expansion nested deeper than {} levels",
+                        buffa::type_registry::MAX_ANY_EXPANSION_DEPTH
+                    )));
+                };
                 let json_val = to_json(&self.value).map_err(serde::ser::Error::custom)?;
                 if is_wkt {
                     let mut map = s.serialize_map(Some(2))?;
@@ -570,7 +604,9 @@ mod tests {
         use super::*;
         use crate::google::protobuf::Duration;
         use buffa::any_registry::clear_any_registry;
-        use buffa::type_registry::{clear_text_registry, set_type_registry, TypeRegistry};
+        use buffa::type_registry::{
+            clear_text_registry, set_type_registry, TypeRegistry, MAX_ANY_EXPANSION_DEPTH,
+        };
 
         /// Mutex to serialize tests that manipulate the global registries.
         /// Each test binary needs its own lock since #[cfg(test)] modules
@@ -615,6 +651,78 @@ mod tests {
                 let back: Any = decode_from_str(&text).unwrap();
                 assert_eq!(back.type_url, Empty::TYPE_URL);
                 assert_eq!(back.value, alloc::vec::Vec::<u8>::new());
+            });
+        }
+
+        #[test]
+        fn text_registry_roundtrip_source_context() {
+            use crate::google::protobuf::SourceContext;
+            use buffa::text::{decode_from_str, encode_to_string};
+            with_registry(|| {
+                let sc = SourceContext {
+                    file_name: "google/protobuf/api.proto".into(),
+                    ..Default::default()
+                };
+                let any = Any::pack(&sc, SourceContext::TYPE_URL);
+                let text = encode_to_string(&any);
+                assert_eq!(
+                    text,
+                    r#"[type.googleapis.com/google.protobuf.SourceContext] {file_name: "google/protobuf/api.proto"}"#
+                );
+
+                let back: Any = decode_from_str(&text).unwrap();
+                assert_eq!(back.type_url, SourceContext::TYPE_URL);
+                let unpacked: SourceContext = back.unpack_unchecked().unwrap();
+                assert_eq!(unpacked.file_name, sc.file_name);
+            });
+        }
+
+        #[test]
+        fn text_registry_roundtrip_type_and_option() {
+            // `Type` carries a repeated message and an enum; `Option` holds
+            // an `Any`, so its expansion nests a second registered type.
+            use crate::google::protobuf::{Field, SourceContext, Syntax, Type};
+            use buffa::text::{decode_from_str, encode_to_string};
+            with_registry(|| {
+                let ty = Type {
+                    name: "google.example.v1.Msg".into(),
+                    fields: alloc::vec![Field {
+                        name: "id".into(),
+                        number: 1,
+                        json_name: "id".into(),
+                        ..Default::default()
+                    }],
+                    syntax: Syntax::SYNTAX_PROTO3.into(),
+                    ..Default::default()
+                };
+                let any = Any::pack(&ty, Type::TYPE_URL);
+                let text = encode_to_string(&any);
+                assert!(
+                    text.starts_with("[type.googleapis.com/google.protobuf.Type] {"),
+                    "{text}"
+                );
+                let back: Any = decode_from_str(&text).unwrap();
+                let unpacked: Type = back.unpack_unchecked().unwrap();
+                assert_eq!(unpacked, ty);
+
+                let sc = SourceContext {
+                    file_name: "a/b.proto".into(),
+                    ..Default::default()
+                };
+                let opt = crate::google::protobuf::Option {
+                    name: "source".into(),
+                    value: buffa::MessageField::some(Any::pack(&sc, SourceContext::TYPE_URL)),
+                    ..Default::default()
+                };
+                let any = Any::pack(&opt, crate::google::protobuf::Option::TYPE_URL);
+                let text = encode_to_string(&any);
+                assert!(
+                    text.contains("[type.googleapis.com/google.protobuf.SourceContext]"),
+                    "nested Any must expand through the registry: {text}"
+                );
+                let back: Any = decode_from_str(&text).unwrap();
+                let unpacked: crate::google::protobuf::Option = back.unpack_unchecked().unwrap();
+                assert_eq!(unpacked, opt);
             });
         }
 
@@ -977,6 +1085,89 @@ mod tests {
             let json = r#"{"@type": 123}"#;
             let err = serde_json::from_str::<Any>(json).unwrap_err();
             assert!(err.to_string().contains("@type must be a string"), "{err}");
+        }
+
+        /// An `Any` chain `depth` levels deep.
+        fn any_chain(depth: usize) -> Any {
+            let mut cur = Any::default();
+            for _ in 0..depth {
+                cur = Any {
+                    type_url: Any::TYPE_URL.to_string(),
+                    value: buffa::Message::encode_to_vec(&cur).into(),
+                    ..Default::default()
+                };
+            }
+            cur
+        }
+
+        #[test]
+        fn a_shallow_any_chain_still_expands() {
+            with_registry(|| {
+                let json = serde_json::to_string(&any_chain(8)).expect("well within the cap");
+                // Eight expansions, so eight nested "@type" keys.
+                assert_eq!(json.matches("\"@type\"").count(), 8, "{json}");
+            });
+        }
+
+        #[test]
+        fn a_deep_any_chain_is_refused_rather_than_recursed() {
+            with_registry(|| {
+                // Deep enough to overflow a worker-sized stack if unbounded:
+                // the decode below is cheap and shallow either way.
+                let deep = any_chain(usize::try_from(MAX_ANY_EXPANSION_DEPTH).unwrap() + 5);
+                let wire = buffa::Message::encode_to_vec(&deep);
+                let decoded = <Any as buffa::Message>::decode_from_slice(&wire)
+                    .expect("decoding the chain is one level deep and always succeeds");
+
+                let err = serde_json::to_string(&decoded)
+                    .expect_err("expansion past the cap must be an error, not a deeper stack");
+                assert!(
+                    err.to_string()
+                        .contains(&alloc::format!("{MAX_ANY_EXPANSION_DEPTH} levels")),
+                    "the error should state the limit it hit, as a number the \
+                     reader can act on rather than a constant to go look up: {err}"
+                );
+            });
+        }
+
+        #[test]
+        fn the_expansion_depth_is_restored_after_a_refusal() {
+            with_registry(|| {
+                let deep = any_chain(usize::try_from(MAX_ANY_EXPANSION_DEPTH).unwrap() + 5);
+                assert!(serde_json::to_string(&deep).is_err());
+
+                // The counter is ambient, so a refusal that failed to unwind
+                // it would leave this thread unable to serialize any `Any`
+                // again — a far worse outcome than the rejection itself.
+                let json = serde_json::to_string(&any_chain(4))
+                    .expect("a rejected serialization must not poison the thread");
+                assert_eq!(json.matches("\"@type\"").count(), 4, "{json}");
+            });
+        }
+
+        #[test]
+        fn a_deep_any_chain_falls_back_to_the_vanilla_text_form() {
+            with_registry(|| {
+                let deep = any_chain(usize::try_from(MAX_ANY_EXPANSION_DEPTH).unwrap() + 5);
+                // Textproto has no error channel here beyond a writer failure,
+                // so past the cap the encoder emits the unexpanded
+                // `type_url`/`value` form: still valid textproto, and finite.
+                let text = buffa::text::encode_to_string(&deep);
+                assert!(
+                    text.contains("type_url:"),
+                    "the innermost levels must fall back to the vanilla form: {text}"
+                );
+                // Count the expansion bracket itself, not bare `[` — a length
+                // prefix of 0x5B inside the escaped `value` bytes renders as a
+                // literal `[` and would inflate a looser count. Exact, so a
+                // regression that expands one level too many also fails.
+                assert_eq!(
+                    text.matches("[type.googleapis.com/google.protobuf.Any]")
+                        .count(),
+                    usize::try_from(MAX_ANY_EXPANSION_DEPTH).unwrap(),
+                    "expansion should stop at exactly the cap"
+                );
+            });
         }
     }
 }
