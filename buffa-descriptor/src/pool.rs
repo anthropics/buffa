@@ -75,18 +75,51 @@ fn clone_options<T: Clone + Default, P: buffa::ProtoBox<T>>(
 /// limit — reached in pass 1, before the other three walks run.
 pub const MAX_SYMBOL_LEN: usize = 512;
 
-fn half_open_ranges_overlap(
-    first_start: i64,
-    first_end: i64,
-    second_start: i64,
-    second_end: i64,
-) -> bool {
-    first_start < second_end && second_start < first_end
-}
+/// A message's `reserved_range` entries, sorted and coalesced, so a field
+/// number or an extension range is checked with one binary search rather
+/// than a scan. Both are half-open like `DescriptorProto.ReservedRange`.
+/// Descriptor sets are untrusted input, and a message may declare tens of
+/// thousands of fields and as many reserved ranges within the element
+/// budget, so the per-field check must not be linear in the range count.
+struct ReservedRanges(Vec<(i64, i64)>);
 
-fn reserved_range_contains(start: Option<i32>, end: Option<i32>, number: u32) -> bool {
-    matches!((start, end), (Some(start), Some(end))
-        if i64::from(start) <= i64::from(number) && i64::from(number) < i64::from(end))
+impl ReservedRanges {
+    fn new(ranges: &[crate::generated::descriptor::descriptor_proto::ReservedRange]) -> Self {
+        let mut sorted: Vec<(i64, i64)> = ranges
+            .iter()
+            .filter_map(|r| match (r.start, r.end) {
+                // An unset bound cannot be honoured; protoc requires both.
+                (Some(start), Some(end)) if start < end => Some((i64::from(start), i64::from(end))),
+                _ => None,
+            })
+            .collect();
+        sorted.sort_unstable();
+        let mut merged: Vec<(i64, i64)> = Vec::with_capacity(sorted.len());
+        for (start, end) in sorted {
+            match merged.last_mut() {
+                Some(last) if start <= last.1 => last.1 = last.1.max(end),
+                _ => merged.push((start, end)),
+            }
+        }
+        Self(merged)
+    }
+
+    fn contains(&self, number: u32) -> bool {
+        let number = i64::from(number);
+        let idx = self.0.partition_point(|&(start, _)| start <= number);
+        idx > 0 && number < self.0[idx - 1].1
+    }
+
+    /// Whether the half-open `start..end` overlaps any reserved range.
+    fn overlaps(&self, start: u32, end: u32) -> bool {
+        let (start, end) = (i64::from(start), i64::from(end));
+        let idx = self
+            .0
+            .partition_point(|&(_, reserved_end)| reserved_end <= start);
+        self.0
+            .get(idx)
+            .is_some_and(|&(reserved_start, _)| reserved_start < end)
+    }
 }
 
 /// Errors that can occur while building a [`DescriptorPool`].
@@ -949,6 +982,8 @@ impl DescriptorPool {
         let mut field_by_number: Vec<(u32, u16)> = Vec::with_capacity(field_count);
         let mut field_by_name: Vec<(String, u16)> = Vec::with_capacity(field_count * 2);
         let mut field_numbers: BTreeMap<u32, usize> = BTreeMap::new();
+        let reserved_names: BTreeSet<&str> = msg.reserved_name.iter().map(String::as_str).collect();
+        let reserved_ranges = ReservedRanges::new(&msg.reserved_range);
         let mut field_names: BTreeMap<String, usize> = BTreeMap::new();
         // Two fields resolving to one JSON name make JSON lookup ambiguous, but
         // protobuf permits it where JSON is best-effort: protoc emits such a
@@ -980,21 +1015,13 @@ impl DescriptorPool {
                 }
             }
             let fd = self.link_field(&fqn, f, &msg_features, Some(msg))?;
-            if msg
-                .reserved_name
-                .iter()
-                .any(|reserved| reserved == &fd.name)
-            {
+            if reserved_names.contains(fd.name.as_str()) {
                 return Err(PoolError::ReservedMessageFieldName {
                     message: fqn.clone(),
                     name: fd.name.clone(),
                 });
             }
-            if msg
-                .reserved_range
-                .iter()
-                .any(|range| reserved_range_contains(range.start, range.end, fd.number))
-            {
+            if reserved_ranges.contains(fd.number) {
                 return Err(PoolError::ReservedMessageFieldNumber {
                     message: fqn.clone(),
                     name: fd.name.clone(),
@@ -1069,15 +1096,7 @@ impl DescriptorPool {
                     number: start.min(end),
                 });
             };
-            if msg.reserved_range.iter().any(|reserved| {
-                matches!((reserved.start, reserved.end), (Some(reserved_start), Some(reserved_end))
-                if half_open_ranges_overlap(
-                    i64::from(start),
-                    i64::from(end),
-                    i64::from(reserved_start),
-                    i64::from(reserved_end),
-                ))
-            }) {
+            if reserved_ranges.overlaps(start, end) {
                 return Err(PoolError::ReservedExtensionRange {
                     message: fqn.clone(),
                     start,
@@ -1642,4 +1661,76 @@ fn derive_json_name(proto_name: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod reserved_ranges_tests {
+    use super::ReservedRanges;
+    use crate::generated::descriptor::descriptor_proto::ReservedRange;
+
+    fn ranges(spec: &[(Option<i32>, Option<i32>)]) -> ReservedRanges {
+        let raw: Vec<ReservedRange> = spec
+            .iter()
+            .map(|&(start, end)| ReservedRange {
+                start,
+                end,
+                ..Default::default()
+            })
+            .collect();
+        ReservedRanges::new(&raw)
+    }
+
+    #[test]
+    fn coalesces_overlapping_and_adjacent_ranges_in_any_order() {
+        // 9..12 and 12..15 are adjacent, 20..30 and 25..27 nest, 5..6 stands alone.
+        let r = ranges(&[
+            (Some(20), Some(30)),
+            (Some(12), Some(15)),
+            (Some(5), Some(6)),
+            (Some(25), Some(27)),
+            (Some(9), Some(12)),
+        ]);
+        assert_eq!(r.0, vec![(5, 6), (9, 15), (20, 30)]);
+    }
+
+    #[test]
+    fn unset_or_empty_ranges_are_ignored() {
+        let r = ranges(&[
+            (Some(1), None),
+            (None, Some(4)),
+            (Some(7), Some(7)),
+            (Some(8), Some(3)),
+        ]);
+        assert!(r.0.is_empty());
+        assert!(!r.contains(1));
+        assert!(!r.overlaps(0, 10));
+    }
+
+    #[test]
+    fn contains_is_half_open() {
+        let r = ranges(&[(Some(9), Some(12)), (Some(20), Some(30))]);
+        assert!(!r.contains(8));
+        assert!(r.contains(9));
+        assert!(r.contains(11));
+        assert!(!r.contains(12));
+        assert!(!r.contains(19));
+        assert!(r.contains(29));
+        assert!(!r.contains(30));
+    }
+
+    #[test]
+    fn overlaps_is_half_open_on_both_sides() {
+        let r = ranges(&[(Some(9), Some(12)), (Some(20), Some(30))]);
+        // Adjacent on either side: no overlap.
+        assert!(!r.overlaps(5, 9));
+        assert!(!r.overlaps(12, 20));
+        assert!(!r.overlaps(30, 40));
+        // One number in: overlap.
+        assert!(r.overlaps(5, 10));
+        assert!(r.overlaps(11, 20));
+        assert!(r.overlaps(29, 40));
+        // Enclosing and enclosed.
+        assert!(r.overlaps(0, 100));
+        assert!(r.overlaps(22, 23));
+    }
 }
