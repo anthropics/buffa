@@ -14,6 +14,7 @@
 use core::fmt::Write;
 
 use super::string::{escape_bytes, escape_str};
+use crate::type_registry::MAX_ANY_EXPANSION_DEPTH;
 use crate::unknown_fields::{UnknownFieldData, UnknownFields};
 
 /// Depth cap for heuristically parsing length-delimited unknown fields as
@@ -47,6 +48,10 @@ enum Last {
 pub struct TextEncoder<'a> {
     w: &'a mut dyn Write,
     depth: u32,
+    /// Nesting depth of `Any` expansions on the current path, bounded by
+    /// [`MAX_ANY_EXPANSION_DEPTH`]. Separate from `depth`, which counts
+    /// textproto braces for indentation and is not a bound.
+    any_depth: u32,
     pretty: bool,
     emit_unknown: bool,
     last: Last,
@@ -58,6 +63,7 @@ impl<'a> TextEncoder<'a> {
         Self {
             w,
             depth: 0,
+            any_depth: 0,
             pretty: false,
             emit_unknown: false,
             last: Last::Open,
@@ -70,6 +76,7 @@ impl<'a> TextEncoder<'a> {
         Self {
             w,
             depth: 0,
+            any_depth: 0,
             pretty: true,
             emit_unknown: false,
             last: Last::Open,
@@ -232,8 +239,17 @@ impl<'a> TextEncoder<'a> {
         let Some(entry) = crate::type_registry::global_text_any(type_url) else {
             return Ok(false);
         };
+        // An `Any` whose payload is another `Any` re-enters here through the
+        // registered encoder. Past the cap, fall back to the vanilla
+        // `type_url`/`value` form: still valid textproto, and finite.
+        if self.any_depth >= MAX_ANY_EXPANSION_DEPTH {
+            return Ok(false);
+        }
         self.write_extension_name(type_url)?;
-        (entry.text_encode)(value, self)?;
+        self.any_depth += 1;
+        let r = (entry.text_encode)(value, self);
+        self.any_depth -= 1;
+        r?;
         Ok(true)
     }
 
