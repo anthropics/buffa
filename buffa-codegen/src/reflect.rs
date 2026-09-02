@@ -358,10 +358,19 @@ fn shared_pool_supers(package: &str) -> usize {
     segments + 2
 }
 
-/// Build the relative path from a package's `__buffa::reflect` module to the
-/// root `__buffa_fds` module, e.g. `super::super::super::super::__buffa_fds`
-/// for a two-segment package.
-fn shared_root_path(package: &str) -> TokenStream {
+/// Build the path from a package's `__buffa::reflect` module to the root
+/// `__buffa_fds` module.
+///
+/// `root_override` (see
+/// [`crate::CodeGenConfig::shared_descriptor_pool_root`]), when set, is used
+/// verbatim — the root may not be reachable via `super::` at all. Already
+/// validated as a plain identifier path before `generate()` reaches here, so
+/// this always succeeds. Otherwise builds the default `super::`-relative
+/// path, one hop per package segment plus two fixed hops.
+fn shared_root_path(package: &str, root_override: Option<&str>) -> TokenStream {
+    if let Some(root) = root_override {
+        return crate::idents::rust_path_to_tokens(root);
+    }
     let root = quote::format_ident!("{SHARED_ROOT_MOD}");
     let mut path = quote! { #root };
     for _ in 0..shared_pool_supers(package) {
@@ -378,9 +387,13 @@ fn shared_root_path(package: &str) -> TokenStream {
 /// keep their names and package-relative paths, so every consumer path that
 /// worked against the per-package embedding still resolves — it just aliases
 /// the one shared copy. `package` is the proto package this module belongs to,
-/// used only to compute the `super::` depth to the root.
-pub(crate) fn reflect_pool_module_shared(package: &str) -> TokenStream {
-    let root = shared_root_path(package);
+/// used only to compute the `super::` depth to the root (ignored when
+/// `root_override` is set — see [`shared_root_path`]).
+pub(crate) fn reflect_pool_module_shared(
+    package: &str,
+    root_override: Option<&str>,
+) -> TokenStream {
+    let root = shared_root_path(package, root_override);
     quote! {
         /// Reflection support: this package's view onto the crate-wide
         /// descriptor pool. In shared-pool mode the bytes and pool live once
@@ -611,7 +624,7 @@ mod tests {
 
     #[test]
     fn reflect_pool_module_shared_delegates_without_embedding_bytes() {
-        let tokens = reflect_pool_module_shared("foo.v1");
+        let tokens = reflect_pool_module_shared("foo.v1", None);
         let parsed = syn::parse2::<syn::ItemMod>(tokens.clone());
         assert!(parsed.is_ok(), "generated module must parse: {tokens}");
         let rendered = tokens.to_string();
@@ -634,6 +647,24 @@ mod tests {
         // re-export) and the accessor is still named `descriptor_pool`.
         assert!(rendered.contains("FILE_DESCRIPTOR_SET_BYTES"));
         assert!(rendered.contains("descriptor_pool"));
+    }
+
+    /// Override path is used verbatim, not as a `super::` chain.
+    #[test]
+    fn reflect_pool_module_shared_with_root_override_uses_it_verbatim() {
+        let tokens =
+            reflect_pool_module_shared("foo.v1", Some("::my_shared_fds_crate::__buffa_fds"));
+        let parsed = syn::parse2::<syn::ItemMod>(tokens.clone());
+        assert!(parsed.is_ok(), "generated module must parse: {tokens}");
+        let rendered = tokens.to_string();
+        assert!(
+            rendered.contains(":: my_shared_fds_crate :: __buffa_fds"),
+            "root override must be used verbatim, not super::: {rendered}"
+        );
+        assert!(
+            !rendered.contains("super ::"),
+            "external-crate mode must not climb the (nonexistent) module tree: {rendered}"
+        );
     }
 
     #[test]
