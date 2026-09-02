@@ -1,2 +1,4 @@
 kind: Fixed
-body: DescriptorPool now rejects duplicate enum value numbers unless allow_alias is enabled.
+body: |-
+    **`DescriptorPool` rejects two enum values with the same number unless `allow_alias` is set** (#410), as `protoc` does; with `allow_alias`, lookup by number keeps returning the first declaration. Only hand-built or synthesized descriptor sets can reach this; the rejection is the new `PoolError::DuplicateEnumValueNumber` variant.
+time: 2026-09-01T20:55:00+02:00

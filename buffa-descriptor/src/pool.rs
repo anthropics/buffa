@@ -1268,6 +1268,8 @@ impl DescriptorPool {
                     number,
                 });
             }
+            // With allow_alias the set is never populated: protoc allows any
+            // number to repeat then, and lookup keeps the first declaration.
             if !allow_alias && !value_numbers.insert(number) {
                 return Err(PoolError::DuplicateEnumValueNumber {
                     enum_name: fqn.clone(),

@@ -1410,6 +1410,11 @@ fn duplicate_enum_value_numbers_are_rejected_without_allow_alias() {
                         .into(),
                     value: vec![
                         EnumValueDescriptorProto {
+                            name: Some("UNSPECIFIED".into()),
+                            number: Some(0),
+                            ..Default::default()
+                        },
+                        EnumValueDescriptorProto {
                             name: Some("ACTIVE".into()),
                             number: Some(1),
                             ..Default::default()
@@ -1463,6 +1468,11 @@ fn duplicate_enum_value_numbers_are_accepted_when_allow_alias_is_true() {
                 .into(),
                 value: vec![
                     EnumValueDescriptorProto {
+                        name: Some("UNSPECIFIED".into()),
+                        number: Some(0),
+                        ..Default::default()
+                    },
+                    EnumValueDescriptorProto {
                         name: Some("ACTIVE".into()),
                         number: Some(1),
                         ..Default::default()
@@ -1488,7 +1498,7 @@ fn duplicate_enum_value_numbers_are_accepted_when_allow_alias_is_true() {
             .iter()
             .map(|value| (value.name(), value.number()))
             .collect::<Vec<_>>(),
-        [("ACTIVE", 1), ("STARTED", 1)]
+        [("UNSPECIFIED", 0), ("ACTIVE", 1), ("STARTED", 1)]
     );
     assert_eq!(status.value(1).unwrap().name(), "ACTIVE");
 }
