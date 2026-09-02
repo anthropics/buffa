@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **ProtoJSON `Any` rejects a `@type` whose type name is empty** (#402). `"type.googleapis.com/"` passed the "contains a `/`" check and went on to a registry lookup of the empty name; it is now rejected with the other malformed type URLs.
+time: 2026-09-01T00:00:00+02:00
