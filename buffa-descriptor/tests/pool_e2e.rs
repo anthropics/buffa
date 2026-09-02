@@ -402,6 +402,67 @@ fn editions_closed_enum_first_value_can_be_nonzero() {
 }
 
 #[test]
+fn proto2_enum_first_value_can_be_nonzero() {
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, EnumValueDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    // proto2 enums are closed, so the open-enum rule does not apply; a
+    // proto2 enum starting at 1 is the common real-world shape.
+    let pool = DescriptorPool::new(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("proto2-enum-nonzero.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto2".into()),
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Status".into()),
+                value: vec![EnumValueDescriptorProto {
+                    name: Some("ACTIVE".into()),
+                    number: Some(1),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("proto2 enums are closed and may start at any number");
+    let status = pool.enum_by_name("valid.test.Status").unwrap();
+    assert_eq!(status.values()[0].number(), 1);
+}
+
+#[test]
+fn open_enum_with_no_values_is_not_rejected_by_the_first_value_rule() {
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    // protoc rejects an empty enum for a different reason; this rule must
+    // not panic or misfire on `value.first()` being `None`.
+    let result = DescriptorPool::new(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("proto3-empty-enum.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto3".into()),
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Empty".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    assert!(
+        !matches!(
+            result,
+            Err(buffa_descriptor::PoolError::OpenEnumFirstValueNotZero { .. })
+        ),
+        "{result:?}"
+    );
+}
+
+#[test]
 fn oneof_links() {
     let p = pool();
     let oneof = p.message_by_name("reflect.test.OneOf").unwrap();
