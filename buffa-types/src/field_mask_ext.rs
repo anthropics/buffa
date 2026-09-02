@@ -77,7 +77,7 @@ impl IntoIterator for FieldMask {
 #[cfg(feature = "json")]
 use alloc::vec::Vec;
 #[cfg(feature = "json")]
-use buffa::json_helpers::wkt::{camel_to_snake, snake_to_camel};
+use buffa::json_helpers::wkt::{camel_to_snake, field_mask_path_round_trips, snake_to_camel};
 
 // ── serde impls ──────────────────────────────────────────────────────────────
 
@@ -87,21 +87,21 @@ impl serde::Serialize for FieldMask {
     ///
     /// # Errors
     ///
-    /// Returns an error if any path cannot round-trip through camelCase
-    /// conversion (e.g. paths that are already camelCase, contain consecutive
-    /// underscores, or have digits immediately after underscores).
+    /// Returns an error if any path is not a valid proto3 JSON field mask
+    /// path: an empty component, a character outside `[a-z0-9_.]`, or a path
+    /// that cannot round-trip through camelCase (already camelCase,
+    /// consecutive underscores, a digit immediately after an underscore).
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let camel_paths: Vec<String> = self
             .paths
             .iter()
             .map(|p| {
-                let camel = snake_to_camel(p);
-                if camel_to_snake(&camel) != *p {
+                if !field_mask_path_round_trips(p) {
                     return Err(serde::ser::Error::custom(alloc::format!(
-                        "FieldMask path '{p}' cannot round-trip through camelCase conversion"
+                        "FieldMask path '{p}' is not a valid field mask path"
                     )));
                 }
-                Ok(camel)
+                Ok(snake_to_camel(p))
             })
             .collect::<Result<_, _>>()?;
         s.serialize_str(&camel_paths.join(","))
@@ -114,8 +114,8 @@ impl<'de> serde::Deserialize<'de> for FieldMask {
     ///
     /// # Errors
     ///
-    /// Returns an error if any path component contains an underscore, which is
-    /// invalid in the lowerCamelCase JSON representation.
+    /// Returns an error if any path is not a valid lowerCamelCase path in the
+    /// JSON representation.
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let s: String = serde::Deserialize::deserialize(d)?;
         let paths = if s.is_empty() {
@@ -129,7 +129,13 @@ impl<'de> serde::Deserialize<'de> for FieldMask {
                              which is invalid in JSON (lowerCamelCase) representation"
                         )));
                     }
-                    Ok(camel_to_snake(component))
+                    let snake = camel_to_snake(component);
+                    if !field_mask_path_round_trips(&snake) || snake_to_camel(&snake) != component {
+                        return Err(serde::de::Error::custom(alloc::format!(
+                            "FieldMask path '{component}' is not a valid lowerCamelCase path"
+                        )));
+                    }
+                    Ok(snake)
                 })
                 .collect::<Result<_, _>>()?
         };
@@ -341,6 +347,46 @@ mod tests {
         fn serialize_rejects_trailing_underscore() {
             let m = FieldMask::from_paths(["foo_"]);
             assert!(serde_json::to_string(&m).is_err());
+        }
+
+        #[test]
+        fn serialize_rejects_invalid_path_characters() {
+            for path in [
+                " ", "foo bar", "foo-bar", "foo/bar", "3d", "", ".foo", "foo.", "foo..bar",
+            ] {
+                let m = FieldMask::from_paths([path]);
+                assert!(
+                    serde_json::to_string(&m).is_err(),
+                    "path {path:?} must be rejected"
+                );
+            }
+        }
+
+        #[test]
+        fn wildcard_roundtrip() {
+            let mask = FieldMask::from_paths(["*"]);
+            let json = serde_json::to_string(&mask).unwrap();
+            assert_eq!(json, r#""*""#);
+            let back: FieldMask = serde_json::from_str(&json).unwrap();
+            assert_eq!(back.paths, ["*"]);
+        }
+
+        #[test]
+        fn deserialize_rejects_invalid_path_characters() {
+            for json in [
+                r#"" ""#,
+                r#""foo, barBaz""#,
+                r#""foo,bar-baz""#,
+                r#""foo/bar""#,
+                r#""3d""#,
+                r#""foo,""#,
+                "\".foo\"",
+                "\"foo.\"",
+                "\"foo..bar\"",
+            ] {
+                let result: Result<FieldMask, _> = serde_json::from_str(json);
+                assert!(result.is_err(), "JSON {json} must be rejected");
+            }
         }
     }
 }

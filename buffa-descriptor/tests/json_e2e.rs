@@ -14,6 +14,53 @@ fn pool() -> Arc<DescriptorPool> {
 }
 
 #[test]
+fn json_field_mask_round_trip_and_rejects_invalid_paths() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
+
+    let wildcard_input = r#"{"fFieldMask":"*"}"#;
+    let wildcard = DynamicMessage::from_json(Arc::clone(&p), idx, wildcard_input).unwrap();
+    assert_eq!(wildcard.to_json().unwrap(), wildcard_input);
+
+    let valid_input = r#"{"fFieldMask":"fooBar,foo.barBaz,Foo,foo.Bar"}"#;
+    let valid = DynamicMessage::from_json(Arc::clone(&p), idx, valid_input).unwrap();
+    assert_eq!(valid.to_json().unwrap(), valid_input);
+
+    for input in [
+        r#"{"fFieldMask":" "}"#,
+        r#"{"fFieldMask":"foo, barBaz"}"#,
+        r#"{"fFieldMask":"foo,bar-baz"}"#,
+        r#"{"fFieldMask":"foo/bar"}"#,
+        r#"{"fFieldMask":"3d"}"#,
+        r#"{"fFieldMask":"foo,"}"#,
+        r#"{"fFieldMask":".foo"}"#,
+        r#"{"fFieldMask":"foo."}"#,
+        r#"{"fFieldMask":"foo..bar"}"#,
+    ] {
+        assert!(
+            DynamicMessage::from_json(Arc::clone(&p), idx, input).is_err(),
+            "JSON {input} must be rejected"
+        );
+    }
+
+    let field_mask_idx = p.message_index("google.protobuf.FieldMask").unwrap();
+    let field_mask_md = p.message_by_name("google.protobuf.FieldMask").unwrap();
+    let scalars_md = p.message_by_name("reflect.test.Scalars").unwrap();
+    for path in [
+        " ", "foo bar", "foo-bar", "foo/bar", "3d", "", ".foo", "foo.", "foo..bar",
+    ] {
+        let mut mask = DynamicMessage::new(Arc::clone(&p), field_mask_idx);
+        mask.set(
+            field_mask_md.field(1).unwrap(),
+            Value::List(vec![Value::String(path.into())]),
+        );
+        let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+        msg.set(scalars_md.field(17).unwrap(), Value::Message(mask));
+        assert!(msg.to_json().is_err(), "path {path:?} must be rejected");
+    }
+}
+
+#[test]
 fn json_scalar_round_trip() {
     let p = pool();
     let idx = p.message_index("reflect.test.Scalars").unwrap();
