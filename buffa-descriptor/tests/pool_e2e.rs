@@ -1215,7 +1215,7 @@ fn reserved_enum_value_numbers_are_rejected_transactionally() {
                         name: Some("Valid".into()),
                         value: vec![
                             EnumValueDescriptorProto {
-                                name: Some("UNSPECIFIED".into()),
+                                name: Some("VALID_UNSPECIFIED".into()),
                                 number: Some(0),
                                 ..Default::default()
                             },
@@ -1231,7 +1231,7 @@ fn reserved_enum_value_numbers_are_rejected_transactionally() {
                         name: Some("Status".into()),
                         value: vec![
                             EnumValueDescriptorProto {
-                                name: Some("UNSPECIFIED".into()),
+                                name: Some("STATUS_UNSPECIFIED".into()),
                                 number: Some(0),
                                 ..Default::default()
                             },
@@ -1290,7 +1290,7 @@ fn reserved_enum_value_names_are_rejected_transactionally() {
                     name: Some("Valid".into()),
                     value: vec![
                         EnumValueDescriptorProto {
-                            name: Some("UNSPECIFIED".into()),
+                            name: Some("VALID_UNSPECIFIED".into()),
                             number: Some(0),
                             ..Default::default()
                         },
@@ -1306,7 +1306,7 @@ fn reserved_enum_value_names_are_rejected_transactionally() {
                     name: Some("Status".into()),
                     value: vec![
                         EnumValueDescriptorProto {
-                            name: Some("UNSPECIFIED".into()),
+                            name: Some("STATUS_UNSPECIFIED".into()),
                             number: Some(0),
                             ..Default::default()
                         },
@@ -1355,7 +1355,7 @@ fn non_reserved_enum_values_are_accepted() {
                 name: Some("Status".into()),
                 value: vec![
                     EnumValueDescriptorProto {
-                        name: Some("UNSPECIFIED".into()),
+                        name: Some("STATUS_UNSPECIFIED".into()),
                         number: Some(0),
                         ..Default::default()
                     },
