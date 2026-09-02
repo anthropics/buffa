@@ -1095,6 +1095,11 @@ impl DynamicMessage {
     /// hold the [`MessageIndex`], or that bridge a type into a descriptor
     /// registered under a different name.
     ///
+    /// `msg_idx` must have been obtained from `pool`. A [`MessageIndex`] does
+    /// not carry pool identity, so this method cannot verify that association:
+    /// a foreign index whose ordinal exists in `pool` silently selects that
+    /// pool's descriptor at the same ordinal.
+    ///
     /// # Errors
     ///
     /// Returns a [`DecodeError`] if the encoded bytes fail to decode against
@@ -1109,6 +1114,16 @@ impl DynamicMessage {
     /// the element-memory and unknown-field budgets are lifted, because the
     /// bytes are the process's own (see [`decode`](Self::decode) for what
     /// those budgets guard against).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `msg_idx`'s ordinal is out of range for `pool`, either while
+    /// decoding fields in this call or, when `msg` encodes no fields, on the
+    /// first later use that resolves the returned message's descriptor, such
+    /// as [`ReflectMessage::message_descriptor`]. This is the cross-pool
+    /// hazard documented by [`DescriptorPool::message`]; use
+    /// [`try_from_message`](Self::try_from_message) when the generated type
+    /// implements [`MessageName`].
     pub fn try_from_message_with_index<M: Message>(
         msg: &M,
         pool: Arc<DescriptorPool>,
@@ -1139,7 +1154,10 @@ impl DynamicMessage {
     /// the pool and the generated `Message` impl, or nesting deeper than the
     /// default recursion limit. Also panics (inside `encode_to_vec`) if
     /// `msg`'s encoded size exceeds the 2 GiB protobuf limit
-    /// ([`buffa::MAX_MESSAGE_BYTES`]).
+    /// ([`buffa::MAX_MESSAGE_BYTES`]). It is also subject to the cross-pool
+    /// hazard described by
+    /// [`try_from_message_with_index`](Self::try_from_message_with_index):
+    /// `msg_idx` must come from `pool`.
     #[must_use]
     pub fn from_message<M: Message>(
         msg: &M,
@@ -2549,7 +2567,7 @@ mod tests {
         use crate::generated::descriptor::{
             DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
         };
-        use crate::reflect::{BridgeError, DynamicMessage, Value};
+        use crate::reflect::{BridgeError, DynamicMessage, ReflectMessage, Value};
         use crate::DescriptorPool;
 
         /// A pool that carries `google.protobuf.DescriptorProto` (through the
@@ -2571,6 +2589,36 @@ mod tests {
                 }],
                 ..Default::default()
             }
+        }
+
+        fn single_message_pool(
+            package: &str,
+            message_name: &str,
+            field_type: ProtoType,
+        ) -> Arc<DescriptorPool> {
+            Arc::new(
+                DescriptorPool::new(FileDescriptorSet {
+                    file: vec![FileDescriptorProto {
+                        name: Some(format!("{package}.proto")),
+                        package: Some(package.into()),
+                        syntax: Some("proto3".into()),
+                        message_type: vec![DescriptorProto {
+                            name: Some(message_name.into()),
+                            field: vec![FieldDescriptorProto {
+                                name: Some("value".into()),
+                                number: Some(1),
+                                label: Some(Label::LABEL_OPTIONAL),
+                                r#type: Some(field_type),
+                                ..Default::default()
+                            }],
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                })
+                .unwrap(),
+            )
         }
 
         #[test]
@@ -2657,6 +2705,69 @@ mod tests {
             assert!(matches!(
                 DynamicMessage::try_from_message_with_index(&msg, pool, idx),
                 Err(DecodeError::UnexpectedEof)
+            ));
+        }
+
+        #[test]
+        #[should_panic(expected = "index out of bounds")]
+        fn try_from_message_with_index_panics_on_out_of_range_foreign_index() {
+            let foreign_pool = pool();
+            let foreign_idx = foreign_pool
+                .message_index(FileDescriptorProto::FULL_NAME)
+                .unwrap();
+            let target_pool = single_message_pool("target", "Only", ProtoType::TYPE_INT32);
+            assert!(foreign_idx.0 as usize >= target_pool.messages().len());
+            let msg = Version {
+                major: Some(7),
+                ..Default::default()
+            };
+
+            let _ = DynamicMessage::try_from_message_with_index(&msg, target_pool, foreign_idx);
+        }
+
+        #[test]
+        fn try_from_message_with_index_defers_foreign_index_panic_for_empty_encoding() {
+            let foreign_pool = pool();
+            let foreign_idx = foreign_pool
+                .message_index(FileDescriptorProto::FULL_NAME)
+                .unwrap();
+            let target_pool = single_message_pool("target", "Only", ProtoType::TYPE_INT32);
+            assert!(foreign_idx.0 as usize >= target_pool.messages().len());
+
+            let bridged = DynamicMessage::try_from_message_with_index(
+                &Version::default(),
+                target_pool,
+                foreign_idx,
+            )
+            .expect("an empty encoding does not resolve the descriptor during construction");
+
+            assert!(std::panic::catch_unwind(|| bridged.message_descriptor()).is_err());
+        }
+
+        #[test]
+        fn try_from_message_with_index_can_silently_use_a_foreign_ordinal() {
+            let source_pool = single_message_pool("source", "Source", ProtoType::TYPE_INT32);
+            let target_pool = single_message_pool("target", "Target", ProtoType::TYPE_INT64);
+            let source_idx = source_pool.message_index("source.Source").unwrap();
+            let target_idx = target_pool.message_index("target.Target").unwrap();
+            assert_eq!(source_idx, target_idx);
+            let msg = Version {
+                major: Some(7),
+                ..Default::default()
+            };
+
+            let bridged = DynamicMessage::try_from_message_with_index(
+                &msg,
+                Arc::clone(&target_pool),
+                source_idx,
+            )
+            .unwrap();
+
+            assert_eq!(bridged.message_descriptor().full_name(), "target.Target");
+            assert_eq!(bridged.field_by_number(1), Some(&Value::I64(7)));
+            assert!(matches!(
+                DynamicMessage::try_from_message(&msg, target_pool),
+                Err(BridgeError::MessageNotFound { .. })
             ));
         }
 

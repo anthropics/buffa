@@ -742,11 +742,11 @@ impl DescriptorPool {
     ///
     /// # Panics
     ///
-    /// Panics if `idx` was issued by a *different* pool whose message count
-    /// is smaller than this one's. `MessageIndex` carries no pool identity;
-    /// passing an index across pools is a logic error and may also silently
-    /// return the wrong descriptor without panicking. Hold one pool per
-    /// schema and don't mix indices.
+    /// Panics if `idx`'s ordinal is at or beyond this pool's message count,
+    /// which can only happen with an index issued by a *different* pool.
+    /// `MessageIndex` carries no pool identity; passing an index across pools
+    /// is a logic error and may also silently return the wrong descriptor
+    /// without panicking. Hold one pool per schema and don't mix indices.
     #[must_use]
     pub fn message(&self, idx: MessageIndex) -> &MessageDescriptor {
         &self.messages[idx.0 as usize]
