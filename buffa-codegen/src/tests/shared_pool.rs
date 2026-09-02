@@ -199,7 +199,7 @@ fn shared_mode_with_root_override_is_depth_independent() {
             pm.content
         );
         assert!(
-            !pm.content.contains("super ::"),
+            !pm.content.contains("super::__buffa_fds"),
             "package {} must not climb a super:: chain when the override is set: {}",
             pm.package,
             pm.content
@@ -243,6 +243,15 @@ fn shared_mode_with_malformed_root_override_is_rejected() {
             "not a plain identifier",
         ),
         ("", "must be an absolute"),
+        ("::", "no path after"),
+        // The two spellings someone reaches for given that the default is a
+        // `super::` chain; both are relative and only correct at one depth.
+        ("super::__buffa_fds", "must be an absolute"),
+        ("self::__buffa_fds", "must be an absolute"),
+        // Identifier-shaped but not path segments.
+        ("::_::__buffa_fds", "path keyword"),
+        ("crate::super::__buffa_fds", "path keyword"),
+        ("crate::crate::__buffa_fds", "path keyword"),
         // Relative (no leading `::` or `crate`) is only ever correct at one
         // package depth, since the same string is spliced everywhere.
         ("my_shared_fds_crate::__buffa_fds", "must be an absolute"),

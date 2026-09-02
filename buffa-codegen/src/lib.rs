@@ -2777,10 +2777,10 @@ pub fn generate_with_diagnostics(
     // packages/types the same way `__buffa` is reserved, so a
     // `package __buffa_fds;` (or a root-package type named `__buffa_fds`) fails
     // with a clear error instead of a duplicate-module collision at the root.
-    // With an override, skipping the reservation rests entirely on the
-    // caller's assertion that the root is external — buffa has no way to
-    // verify that, so a package/type actually named `__buffa_fds` in this
-    // tree would go undetected rather than erroring here.
+    // With an override the reservation is skipped for both absolute and
+    // crate-relative roots: buffa cannot verify where the override points,
+    // so a package/type actually named `__buffa_fds` in this tree would go
+    // undetected rather than erroring here.
     if config.shared_descriptor_pool && config.shared_descriptor_pool_root.is_none() {
         validate_shared_root_name(file_descriptors, files_to_generate)?;
     }
@@ -3040,22 +3040,31 @@ fn validate_shared_root_path(path: &str) -> Result<(), CodeGenError> {
     }
     let rest = path.strip_prefix("::").unwrap_or(path);
     if rest.is_empty() {
-        return Err(CodeGenError::Other(
-            "shared_descriptor_pool_root must not be empty".into(),
-        ));
+        return Err(CodeGenError::Other(format!(
+            "shared_descriptor_pool_root has no path after the `::` prefix: {path:?}"
+        )));
     }
-    for segment in rest.split("::") {
+    for (i, segment) in rest.split("::").enumerate() {
         let mut chars = segment.chars();
-        let valid = chars
+        let is_ident = chars
             .next()
             .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
             && chars.all(|c| c.is_ascii_alphanumeric() || c == '_');
-        if !valid {
+        if !is_ident {
             return Err(CodeGenError::Other(format!(
                 "shared_descriptor_pool_root segment {segment:?} is not a plain \
-                 identifier — generic and parenthesized arguments are not \
-                 supported, since the value is spliced verbatim into generated \
-                 code: {path:?}"
+                 identifier (no generic or parenthesized arguments, ASCII only) — \
+                 the value is spliced verbatim into generated code: {path:?}"
+            )));
+        }
+        // `_`, `self`, `Self` and `super` are identifiers to the scan above but
+        // not usable path segments; `crate` is only legal first.
+        let is_path_keyword =
+            matches!(segment, "_" | "self" | "Self" | "super") || (i > 0 && segment == "crate");
+        if is_path_keyword {
+            return Err(CodeGenError::Other(format!(
+                "shared_descriptor_pool_root segment {segment:?} is a path keyword \
+                 and cannot be spliced into generated code: {path:?}"
             )));
         }
     }

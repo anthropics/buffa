@@ -7,7 +7,8 @@
 //! the result against the in-tree `buffa` / `buffa-descriptor`.
 //!
 //! This is the verification the string-level tests cannot give: it proves the
-//! `super::`-depth each package uses to reach the shared root actually
+//! `super::`-depth each package uses to reach the shared root — or the
+//! `shared_descriptor_pool_root` override spliced in its place — actually
 //! resolves, across packages of different nesting depth, with a real cross
 //! reference. Needs no `protoc` (descriptors are built in memory), but does
 //! spawn `cargo`, so it is `#[ignore]`d like `feature_gating_compile`.
@@ -181,7 +182,7 @@ fn run_shared_pool_compile(mode: Mode) {
     // shared instance, and `reflect()` must resolve against it.
     let tests = src.parent().unwrap().join("tests");
     std::fs::create_dir_all(&tests).expect("mkdir tests");
-    // Distinct crate name per mode so the two `#[ignore]` tests don't collide
+    // Distinct crate name per mode so the `#[ignore]` tests don't collide
     // in the shared target dir when run together.
     let pkg_name = match mode {
         Mode::Sidecar => "shared-pool-fixture-sidecar",
