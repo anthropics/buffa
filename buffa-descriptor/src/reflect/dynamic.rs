@@ -1061,11 +1061,12 @@ impl DynamicMessage {
     ///
     /// - [`BridgeError::MessageNotFound`] if `pool` carries no message named
     ///   `M::FULL_NAME`.
+    /// - [`BridgeError::MessageTooLarge`] if `msg` encodes past the 2 GiB
+    ///   protobuf limit ([`buffa::MAX_MESSAGE_BYTES`]).
     /// - [`BridgeError::Decode`] if the encoded bytes fail to decode against
     ///   the pool's descriptor of that name (the pool and the generated
-    ///   `Message` impl disagree about the schema), or if `msg` encodes past
-    ///   the 2 GiB protobuf limit ([`buffa::MAX_MESSAGE_BYTES`]). The decode
-    ///   keeps the default recursion limit of
+    ///   `Message` impl disagree about the schema). The decode keeps the
+    ///   default recursion limit of
     ///   [`DecodeOptions::new`](buffa::DecodeOptions::new), so a message
     ///   nested deeper than that also fails. Its element-memory and
     ///   unknown-field budgets scale with the encoded length, matching the
@@ -1080,11 +1081,14 @@ impl DynamicMessage {
                 full_name: M::FULL_NAME.to_owned(),
             });
         };
-        Self::try_from_message_with_index(msg, pool, msg_idx).map_err(|source| {
-            BridgeError::Decode {
+        let bytes = msg
+            .try_encode_to_vec()
+            .map_err(|_| BridgeError::MessageTooLarge {
                 full_name: M::FULL_NAME.to_owned(),
-                source,
-            }
+            })?;
+        Self::bridge_decode(pool, msg_idx, &bytes).map_err(|source| BridgeError::Decode {
+            full_name: M::FULL_NAME.to_owned(),
+            source,
         })
     }
 
@@ -1197,10 +1201,31 @@ impl DynamicMessage {
         Self::decode_with_options(pool, msg_idx, bytes, &options)
     }
 
+    /// Element-memory budget per encoded byte for the bridge re-decode.
+    ///
+    /// The dynamic decoder charges `size_of::<Value>()` per scalar and
+    /// `size_of::<MapKey>() + size_of::<Value>()` per map entry, and the
+    /// smallest wire encoding of either is one byte, so this factor bounds
+    /// the dynamic footprint of any message the process encoded itself. The
+    /// generated view conversion (`buffa-codegen/src/reflect_view.rs`) uses
+    /// the same factor; the assertion below keeps both honest if `Value`
+    /// widens.
+    const BRIDGE_ELEMENT_BYTES_PER_ENCODED_BYTE: usize = 128;
+
     fn bridge_memory_limits(encoded_len: usize) -> (usize, usize) {
+        const _: () = {
+            assert!(
+                core::mem::size_of::<Value>()
+                    <= DynamicMessage::BRIDGE_ELEMENT_BYTES_PER_ENCODED_BYTE
+            );
+            assert!(
+                core::mem::size_of::<MapKey>() + core::mem::size_of::<Value>()
+                    <= 2 * DynamicMessage::BRIDGE_ELEMENT_BYTES_PER_ENCODED_BYTE
+            );
+        };
         (
             encoded_len
-                .saturating_mul(128)
+                .saturating_mul(Self::BRIDGE_ELEMENT_BYTES_PER_ENCODED_BYTE)
                 .max(buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
             encoded_len.max(buffa::DEFAULT_UNKNOWN_FIELD_LIMIT),
         )
@@ -1219,9 +1244,14 @@ impl DynamicMessage {
         let bytes = self
             .try_encode_to_vec()
             .map_err(|_| DecodeError::MessageTooLarge)?;
-        let mut m = M::default();
-        m.merge_from_slice(&bytes)?;
-        Ok(m)
+        // The bytes are the process's own, so scale the budgets exactly as the
+        // inbound bridge does: the fixed untrusted-input limits could reject a
+        // snapshot the bridge itself admitted.
+        let (element_memory_limit, unknown_field_limit) = Self::bridge_memory_limits(bytes.len());
+        buffa::DecodeOptions::new()
+            .with_element_memory_limit(element_memory_limit)
+            .with_unknown_field_limit(unknown_field_limit)
+            .decode_from_slice(&bytes)
     }
 
     // ── Direct field access ─────────────────────────────────────────────────
@@ -1524,11 +1554,16 @@ pub enum BridgeError {
         /// The fully-qualified name that was looked up.
         full_name: String,
     },
+    /// The generated message encodes past the 2 GiB protobuf limit, so
+    /// there are no wire bytes to bridge through.
+    MessageTooLarge {
+        /// The fully-qualified name of the message that would not encode.
+        full_name: String,
+    },
     /// The generated message's wire bytes failed to decode against the
     /// pool's descriptor of the same name: the pool and the generated code
-    /// disagree about the schema in a way the decoder rejects, the message
-    /// nests deeper than the default recursion limit, or it encodes past the
-    /// 2 GiB protobuf limit.
+    /// disagree about the schema in a way the decoder rejects, or the message
+    /// nests deeper than the default recursion limit.
     Decode {
         /// The fully-qualified name that resolved before the decode failed.
         full_name: String,
@@ -1543,6 +1578,9 @@ impl core::fmt::Display for BridgeError {
             Self::MessageNotFound { full_name } => {
                 write!(f, "message {full_name:?} not registered in the pool")
             }
+            Self::MessageTooLarge { full_name } => {
+                write!(f, "{full_name:?} exceeds the 2 GiB protobuf encoding limit")
+            }
             Self::Decode { full_name, source } => write!(
                 f,
                 "{full_name:?} failed to round-trip through the pool's descriptor: {source}"
@@ -1556,7 +1594,7 @@ impl std::error::Error for BridgeError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Decode { source, .. } => Some(source),
-            Self::MessageNotFound { .. } => None,
+            Self::MessageNotFound { .. } | Self::MessageTooLarge { .. } => None,
         }
     }
 }
@@ -2812,7 +2850,7 @@ mod tests {
             // through the untrusted-input element-memory budget: the plain
             // decoder rejects the bytes, while the bridge's finite,
             // input-scaled budget admits the process's own encoding.
-            let elements = 2 * buffa::DEFAULT_ELEMENT_MEMORY_LIMIT / core::mem::size_of::<Value>();
+            let elements = buffa::DEFAULT_ELEMENT_MEMORY_LIMIT / core::mem::size_of::<Value>() + 1;
             let msg = FileDescriptorProto {
                 name: Some("big.proto".into()),
                 public_dependency: vec![0; elements],
@@ -2864,6 +2902,14 @@ mod tests {
                 full_name: "t.M".into(),
             };
             assert!(err.source().is_none());
+            let err = BridgeError::MessageTooLarge {
+                full_name: "t.M".into(),
+            };
+            assert!(err.source().is_none());
+            assert_eq!(
+                err.to_string(),
+                "\"t.M\" exceeds the 2 GiB protobuf encoding limit"
+            );
         }
     }
 }
