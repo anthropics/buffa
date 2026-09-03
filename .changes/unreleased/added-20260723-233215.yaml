@@ -1,3 +1,4 @@
 kind: Added
-body: Added `TextDecoder::with_element_memory_limit`, `buffa::text::decode_from_str_with_element_memory_limit`, and the `ParseErrorKind::ElementMemoryLimitExceeded` variant, for raising the textproto parser bound above the default.
+body: |-
+    **`TextDecoder::with_element_memory_limit` and `buffa::text::decode_from_str_with_element_memory_limit` raise the textproto parser bound above the default** (#344), reported past the limit as the new `ParseErrorKind::ElementMemoryLimitExceeded` variant.
 time: 2026-07-23T23:32:15.368190489-07:00
