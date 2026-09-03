@@ -204,6 +204,12 @@ pub enum PoolError {
         start: u32,
         end: u32,
     },
+    /// A message field is declared inside one of its extension ranges.
+    FieldInExtensionRange {
+        message: String,
+        name: String,
+        number: u32,
+    },
     /// An open enum's first declared value has a non-zero number.
     OpenEnumFirstValueNotZero {
         enum_name: String,
@@ -317,6 +323,14 @@ impl core::fmt::Display for PoolError {
             } => write!(
                 f,
                 "message {message} extension range {start}..{end} overlaps a reserved range"
+            ),
+            Self::FieldInExtensionRange {
+                message,
+                name,
+                number,
+            } => write!(
+                f,
+                "message {message} field {name:?} uses field number {number} in an extension range"
             ),
             Self::OpenEnumFirstValueNotZero {
                 enum_name,
@@ -433,11 +447,11 @@ impl DescriptorPool {
     /// Returns a [`PoolError`] if any type name fails to resolve, a symbol or
     /// field identity is declared twice, a field number is out of range or in
     /// the implementation-reserved band (19000-19999), a field uses a name or
-    /// number its message reserved, an extension range overlaps a reserved
-    /// range, an open enum's first value is non-zero, an enum value reuses a
-    /// reserved name or number or a duplicate number without `allow_alias`, a
-    /// oneof index is invalid, a message exceeds 65 535 fields, or a map entry
-    /// is malformed.
+    /// number its message reserved, a field is inside an extension range, an
+    /// extension range overlaps a reserved range, an open enum's first value
+    /// is non-zero, an enum value reuses a reserved name or number or a
+    /// duplicate number without `allow_alias`, a oneof index is invalid, a
+    /// message exceeds 65 535 fields, or a map entry is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -456,11 +470,11 @@ impl DescriptorPool {
     /// Returns [`PoolError::Decode`] if the bytes are not a well-formed
     /// `FileDescriptorSet`, or any other [`PoolError`] on a structural
     /// validation failure (dangling type names, out-of-range or
-    /// implementation-reserved field numbers, reserved message fields, an
-    /// overlapping extension range, duplicate symbols or field identities,
-    /// an open enum whose first value is non-zero, reserved enum values,
-    /// duplicate enum numbers without `allow_alias`, invalid oneof indices,
-    /// or malformed map entries).
+    /// implementation-reserved field numbers, reserved message fields, a
+    /// field inside an extension range, an overlapping extension range,
+    /// duplicate symbols or field identities, an open enum whose first value
+    /// is non-zero, reserved enum values, duplicate enum numbers without
+    /// `allow_alias`, invalid oneof indices, or malformed map entries).
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -1132,7 +1146,6 @@ impl DescriptorPool {
             }
             fields.push(fd);
         }
-        field_by_number.sort_unstable_by_key(|&(n, _)| n);
         field_by_name.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
 
         // Mark synthetic oneofs (proto3 optional). Per protobuf semantics,
@@ -1172,6 +1185,30 @@ impl DescriptorPool {
             // `extensions 1000 to max;` spans it). An extension *numbered* in
             // the band is rejected in `link_field` before any range check.
             extension_ranges.push((start, end));
+        }
+
+        field_by_number.sort_unstable_by_key(|&(n, _)| n);
+        let mut sorted_extension_ranges = extension_ranges.clone();
+        sorted_extension_ranges.sort_unstable_by_key(|&(start, _)| start);
+        let mut range_index = 0;
+        for &(number, field_index) in &field_by_number {
+            while sorted_extension_ranges
+                .get(range_index)
+                .is_some_and(|&(_, end)| end <= number)
+            {
+                range_index += 1;
+            }
+            if sorted_extension_ranges
+                .get(range_index)
+                .is_some_and(|&(start, end)| start <= number && number < end)
+            {
+                let field = &fields[field_index as usize];
+                return Err(PoolError::FieldInExtensionRange {
+                    message: fqn.clone(),
+                    name: field.name.clone(),
+                    number,
+                });
+            }
         }
 
         // Replace the placeholder. Pass 1 registered messages depth-first
