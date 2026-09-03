@@ -1387,6 +1387,123 @@ fn non_reserved_enum_values_are_accepted() {
 }
 
 #[test]
+fn duplicate_enum_value_numbers_are_rejected_without_allow_alias() {
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, EnumOptions, EnumValueDescriptorProto, FileDescriptorProto,
+        FileDescriptorSet,
+    };
+
+    for (suffix, allow_alias) in [("unset", None), ("false", Some(false))] {
+        let file_name = format!("duplicate-enum-number-{suffix}.proto");
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some(file_name.clone()),
+                package: Some("invalid.test".into()),
+                syntax: Some("proto3".into()),
+                enum_type: vec![EnumDescriptorProto {
+                    name: Some("Status".into()),
+                    options: allow_alias
+                        .map(|value| EnumOptions {
+                            allow_alias: Some(value),
+                            ..Default::default()
+                        })
+                        .into(),
+                    value: vec![
+                        EnumValueDescriptorProto {
+                            name: Some("UNSPECIFIED".into()),
+                            number: Some(0),
+                            ..Default::default()
+                        },
+                        EnumValueDescriptorProto {
+                            name: Some("ACTIVE".into()),
+                            number: Some(1),
+                            ..Default::default()
+                        },
+                        EnumValueDescriptorProto {
+                            name: Some("STARTED".into()),
+                            number: Some(1),
+                            ..Default::default()
+                        },
+                    ],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        assert_set_rejected_without_mutating_pool(&file_name, "invalid.test.Status", set, |err| {
+            assert!(matches!(
+                err,
+                PoolError::DuplicateEnumValueNumber {
+                    enum_name,
+                    name,
+                    number,
+                } if enum_name == "invalid.test.Status"
+                    && name == "STARTED"
+                    && *number == 1
+            ));
+        });
+    }
+}
+
+#[test]
+fn duplicate_enum_value_numbers_are_accepted_when_allow_alias_is_true() {
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, EnumOptions, EnumValueDescriptorProto, FileDescriptorProto,
+        FileDescriptorSet,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("duplicate-enum-number-allowed.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto3".into()),
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Status".into()),
+                options: EnumOptions {
+                    allow_alias: Some(true),
+                    ..Default::default()
+                }
+                .into(),
+                value: vec![
+                    EnumValueDescriptorProto {
+                        name: Some("UNSPECIFIED".into()),
+                        number: Some(0),
+                        ..Default::default()
+                    },
+                    EnumValueDescriptorProto {
+                        name: Some("ACTIVE".into()),
+                        number: Some(1),
+                        ..Default::default()
+                    },
+                    EnumValueDescriptorProto {
+                        name: Some("STARTED".into()),
+                        number: Some(1),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    let pool = DescriptorPool::new(set).expect("enum aliases should be accepted");
+    let status = pool.enum_by_name("valid.test.Status").unwrap();
+    assert_eq!(
+        status
+            .values()
+            .iter()
+            .map(|value| (value.name(), value.number()))
+            .collect::<Vec<_>>(),
+        [("UNSPECIFIED", 0), ("ACTIVE", 1), ("STARTED", 1)]
+    );
+    assert_eq!(status.value(1).unwrap().name(), "ACTIVE");
+}
+
+#[test]
 fn method_fqn_collisions_with_registered_symbols_are_rejected_transactionally() {
     use buffa_descriptor::generated::descriptor::{
         DescriptorProto, FileDescriptorProto, FileDescriptorSet, MethodDescriptorProto,
