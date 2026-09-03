@@ -199,7 +199,7 @@ pub(crate) fn generate_view_with_nesting(
         &oneof_idents,
     )?;
 
-    let unknown_fields_field = if ctx.config.preserve_unknown_fields {
+    let unknown_fields_field = if ctx.preserve_unknown_fields(proto_fqn) {
         quote! { pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>, }
     } else {
         quote! {}
@@ -207,7 +207,7 @@ pub(crate) fn generate_view_with_nesting(
     let view_encode_methods = crate::impl_message::build_view_encode_methods(
         ctx,
         msg,
-        ctx.config.preserve_unknown_fields,
+        ctx.preserve_unknown_fields(proto_fqn),
         features,
         &oneof_idents,
         &view_oneof_prefix,
@@ -279,12 +279,12 @@ pub(crate) fn generate_view_with_nesting(
 
     // When preserving unknowns the trait loop's `before_tag` is consumed by
     // the unknown-field arm; otherwise bind it as `_before_tag`.
-    let before_tag_param = if ctx.config.preserve_unknown_fields {
+    let before_tag_param = if ctx.preserve_unknown_fields(proto_fqn) {
         format_ident!("before_tag")
     } else {
         format_ident!("_before_tag")
     };
-    let unknown_field_handling = if ctx.config.preserve_unknown_fields {
+    let unknown_field_handling = if ctx.preserve_unknown_fields(proto_fqn) {
         quote! {
             let span_len = before_tag.len() - cur.len();
             view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
@@ -296,8 +296,12 @@ pub(crate) fn generate_view_with_nesting(
     // If no field borrows from 'a (all-scalar message with unknown-fields
     // preservation disabled), inject PhantomData<&'a ()> so the struct's
     // lifetime param is used. decode_view_ctx(buf: &'a [u8]) requires 'a.
-    let has_phantom_field =
-        !message_view_has_borrowing_field(ctx, msg, features, ctx.config.preserve_unknown_fields);
+    let has_phantom_field = !message_view_has_borrowing_field(
+        ctx,
+        msg,
+        features,
+        ctx.preserve_unknown_fields(proto_fqn),
+    );
     let phantom_field = if has_phantom_field {
         quote! { #[doc(hidden)] pub __buffa_phantom: ::core::marker::PhantomData<&'a ()>, }
     } else {
@@ -576,7 +580,7 @@ pub(crate) fn custom_view_default_impl(
         }
     }
 
-    if ctx.config.preserve_unknown_fields {
+    if scope.preserve_unknown_fields() {
         field_inits.push(quote! {
             __buffa_unknown_fields: ::core::default::Default::default(),
         });
@@ -1358,7 +1362,7 @@ pub(crate) fn scalar_decode_arm(
         features: parent_features,
         ..
     } = scope;
-    let preserve_unknown_fields = ctx.config.preserve_unknown_fields;
+    let preserve_unknown_fields = scope.preserve_unknown_fields();
     let features = &crate::features::resolve_field(ctx, field, parent_features);
     let field_name = field
         .name
@@ -1471,7 +1475,7 @@ pub(crate) fn repeated_decode_arm(
         features: parent_features,
         ..
     } = scope;
-    let preserve_unknown_fields = ctx.config.preserve_unknown_fields;
+    let preserve_unknown_fields = scope.preserve_unknown_fields();
     let features = &crate::features::resolve_field(ctx, field, parent_features);
     let field_name = field
         .name
@@ -1660,7 +1664,7 @@ pub(crate) fn map_decode_arm(
     field: &FieldDescriptorProto,
 ) -> Result<TokenStream, CodeGenError> {
     let MessageScope { ctx, features, .. } = scope;
-    let preserve_unknown_fields = ctx.config.preserve_unknown_fields;
+    let preserve_unknown_fields = scope.preserve_unknown_fields();
     let field_name = field
         .name
         .as_deref()
@@ -1815,7 +1819,7 @@ pub(crate) fn oneof_decode_arms(
     view_oneof_prefix: &TokenStream,
 ) -> Result<Vec<TokenStream>, CodeGenError> {
     let MessageScope { ctx, features, .. } = scope;
-    let preserve_unknown_fields = ctx.config.preserve_unknown_fields;
+    let preserve_unknown_fields = scope.preserve_unknown_fields();
     let field_ident = ctx.oneof_ident(oneof_name);
     let view_enum: TokenStream = quote! { #view_oneof_prefix #base_ident };
 
@@ -1932,7 +1936,7 @@ fn build_to_owned_fields(
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
 ) -> Result<Vec<TokenStream>, CodeGenError> {
     let MessageScope { ctx, features, .. } = scope;
-    let preserve_unknown_fields = ctx.config.preserve_unknown_fields;
+    let preserve_unknown_fields = scope.preserve_unknown_fields();
     let mut out = Vec::new();
 
     for field in &msg.field {

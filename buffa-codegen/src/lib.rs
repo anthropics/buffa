@@ -1099,7 +1099,19 @@ pub struct CodeGenConfig {
     /// views disabled the flag is ignored with a warning.
     pub lazy_views: bool,
     /// Whether to preserve unknown fields (default: true).
+    ///
+    /// Path-scoped overrides go in
+    /// [`preserve_unknown_fields_in`](Self::preserve_unknown_fields_in);
+    /// last matching rule wins over this global default.
     pub preserve_unknown_fields: bool,
+    /// Path-scoped overrides for
+    /// [`preserve_unknown_fields`](Self::preserve_unknown_fields). Each entry is
+    /// `(proto_path_prefix, enabled)`. Matching uses proto-segment-aware
+    /// prefix rules (same as `bytes_fields` / `unboxed_oneof_fields`); the
+    /// **last** matching rule wins over the global default. Granularity is
+    /// per-message: the flag gates whether the struct carries
+    /// `__buffa_unknown_fields`. Nested messages resolve independently.
+    pub preserve_unknown_fields_in: Vec<(String, bool)>,
     /// Whether to derive `serde::Serialize` / `serde::Deserialize` on
     /// generated message structs and enum types, and emit `#[serde(with = "...")]`
     /// attributes for proto3 JSON's special scalar encodings (int64 as quoted
@@ -1713,6 +1725,7 @@ impl Default for CodeGenConfig {
             generate_views: true,
             lazy_views: false,
             preserve_unknown_fields: true,
+            preserve_unknown_fields_in: Vec::new(),
             generate_json: false,
             generate_arbitrary: false,
             extern_paths: Vec::new(),

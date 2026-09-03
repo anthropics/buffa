@@ -202,6 +202,7 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.generate_json(bool)` | `false` | Generate serde Serialize/Deserialize for proto3 JSON |
 | `.generate_text(bool)` | `false` | Generate `impl buffa::text::TextFormat` for textproto encoding/decoding |
 | `.preserve_unknown_fields(bool)` | `true` | Preserve unknown fields for round-trip fidelity |
+| `.preserve_unknown_fields_in(&[...])` | — | Re-enable unknown-field preservation for matching messages (proto-path prefixes; last match wins). Use after `.preserve_unknown_fields(false)` to keep the memory savings globally while selected types still round-trip |
 | `.override_feature_in(path, feature)` | — | Apply a path-scoped editions feature override to the compiled descriptors — for protos you cannot modify; see [Enums](#enumvaluet--type-safe-open-enums) for the `enum_type` override's semantics |
 | `.open_enums_in(&[...])` | — | Shorthand for `override_feature_in(path, FeatureOverride::EnumType(EnumTypeOverride::Open))` per path: treat matching closed enums (or closed enum fields) as open in generated Rust (`EnumValue<E>`) |
 | `.generate_with_setters(bool)` | `true` | Emit `with_<name>()` builder-style setters for explicit-presence fields |
@@ -599,6 +600,7 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `json=true` | Generate serde Serialize/Deserialize for proto3 JSON |
 | `text=true` | Generate `impl buffa::text::TextFormat` for textproto encoding/decoding |
 | `unknown_fields=false` | Disable unknown field preservation |
+| `unknown_fields_in=<path>` | Re-enable unknown-field preservation for matching messages. Repeatable; last matching rule wins. Same proto-path prefix matching as `open_enums_in` |
 | `arbitrary=true` | Emit `#[derive(arbitrary::Arbitrary)]` for fuzzing |
 | `gate_impls=true` | Wrap json/views/text impls in `#[cfg(feature = ...)]` for library crates whose generated code is a public dependency surface (default: emitted unconditionally) |
 | `json_feature=<name>` | Rename the crate feature a gated impl kind is conditioned on (also `views_feature=`, `text_feature=`, `reflect_feature=`); inert without `gate_impls=true` |
@@ -2182,6 +2184,26 @@ Leave preservation enabled unless you are memory-constrained (embedded / `no_std
 targets) or maintain large in-memory collections of small messages where struct
 size dominates cache footprint. "I don't need round-trip fidelity" alone is not a
 strong reason to disable it.
+
+### Path-scoped re-enable
+
+When the global flag is off, `.preserve_unknown_fields_in` (plugin:
+`unknown_fields_in=<path>`, repeatable) turns preservation back on for matching
+message FQNs and package prefixes. Matching uses the same proto-segment prefix
+rules as `unbox_oneof_in`; the last matching rule wins. Nested messages resolve
+independently of their enclosing type — preserving `Outer` does not, by itself,
+preserve `Outer.Inner` unless the nested FQN also matches a rule (a prefix such
+as `.pkg.Outer` *does* match nested children).
+
+```rust,ignore
+buffa_build::Config::new()
+    .preserve_unknown_fields(false)
+    .preserve_unknown_fields_in(&[".wa.CallLogRecord", ".wa.SyncdMutation"])
+    // ...
+```
+
+Per-field granularity is not representable: the flag gates whether the generated
+struct carries `__buffa_unknown_fields` at all.
 
 ## Custom type implementations
 

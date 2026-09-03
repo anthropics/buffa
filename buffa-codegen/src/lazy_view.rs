@@ -129,7 +129,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
         &oneof_idents,
     )?;
 
-    let unknown_fields_field = if ctx.config.preserve_unknown_fields {
+    let unknown_fields_field = if ctx.preserve_unknown_fields(proto_fqn) {
         quote! { pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>, }
     } else {
         quote! {}
@@ -138,7 +138,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
     let view_encode_methods = crate::impl_message::build_view_encode_methods(
         ctx,
         msg,
-        ctx.config.preserve_unknown_fields,
+        ctx.preserve_unknown_fields(proto_fqn),
         features,
         &oneof_idents,
         &view_oneof_prefix,
@@ -168,12 +168,12 @@ pub(crate) fn generate_lazy_view_with_nesting(
         quote! {}
     };
 
-    let before_tag_capture = if ctx.config.preserve_unknown_fields {
+    let before_tag_capture = if ctx.preserve_unknown_fields(proto_fqn) {
         quote! { let before_tag = cur; }
     } else {
         quote! {}
     };
-    let unknown_field_handling = if ctx.config.preserve_unknown_fields {
+    let unknown_field_handling = if ctx.preserve_unknown_fields(proto_fqn) {
         quote! {
             let span_len = before_tag.len() - cur.len();
             view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
@@ -182,8 +182,12 @@ pub(crate) fn generate_lazy_view_with_nesting(
         quote! {}
     };
 
-    let has_phantom_field =
-        !message_view_has_borrowing_field(ctx, msg, features, ctx.config.preserve_unknown_fields);
+    let has_phantom_field = !message_view_has_borrowing_field(
+        ctx,
+        msg,
+        features,
+        ctx.preserve_unknown_fields(proto_fqn),
+    );
     let phantom_field = if has_phantom_field {
         quote! { #[doc(hidden)] pub __buffa_phantom: ::core::marker::PhantomData<&'a ()>, }
     } else {
@@ -915,7 +919,7 @@ fn build_lazy_to_owned_fields(
         }
     }
 
-    if ctx.config.preserve_unknown_fields {
+    if scope.preserve_unknown_fields() {
         out.push(quote! {
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields
