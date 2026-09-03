@@ -2,6 +2,7 @@
 
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::features::{self, ResolvedFeatures};
 use crate::generated::descriptor::{DescriptorProto, EnumDescriptorProto, FileDescriptorProto};
@@ -86,7 +87,7 @@ pub struct CodeGenContext<'a> {
     /// translation means codegen call sites can look up comments by the
     /// proto FQN they already have, rather than threading index-based paths
     /// through every function signature.
-    comment_map: HashMap<String, String>,
+    comment_map: Arc<HashMap<String, String>>,
     /// Deconflicted module name for each top-level message, keyed by the
     /// leading-dot FQN (`".pkg.Msg"`).
     ///
@@ -101,13 +102,13 @@ pub struct CodeGenContext<'a> {
     /// `config.unboxed_oneof_fields` whose oneof variants are stored inline.
     /// Built once by [`resolve_unboxed_variants`](crate::oneof::resolve_unboxed_variants);
     /// never contains recursive variants. See [`oneof_unboxed`](Self::oneof_unboxed).
-    unboxed_oneof_variants: HashSet<String>,
+    unboxed_oneof_variants: Arc<HashSet<String>>,
     /// Singular message-field paths (leading-dot form) whose resolved
     /// [`PointerRepr`](crate::PointerRepr) is `Inline`. Built once by
     /// [`resolve_inlined_fields`](crate::oneof::resolve_inlined_fields); never
     /// contains recursive fields. [`pointer_repr`](Self::pointer_repr) demotes
     /// any raw `Inline` not in this set to `Box`.
-    inlined_message_fields: HashSet<String>,
+    inlined_message_fields: Arc<HashSet<String>>,
     /// Non-fatal diagnostics accumulated during generation (e.g. an enum whose
     /// idiomatic CamelCase aliases were suppressed by a naming conflict).
     ///
@@ -268,19 +269,29 @@ impl<'a> CodeGenContext<'a> {
         let mut type_map = HashMap::new();
         let mut package_of = HashMap::new();
         let mut enum_closedness = HashMap::new();
-        let mut comment_map = HashMap::new();
         let mut nested_module_names = HashMap::new();
-        let msg_index = crate::oneof::message_index(files);
-        let unboxed_oneof_variants = crate::oneof::resolve_unboxed_variants(
-            &msg_index,
-            &config.unboxed_oneof_fields,
-            &config.pointer_fields,
-        );
-        let inlined_message_fields = crate::oneof::resolve_inlined_fields(
-            &msg_index,
-            &config.unboxed_oneof_fields,
-            &config.pointer_fields,
-        );
+
+        // Reuse the corpus-wide state a caller precomputed with
+        // `SharedCorpusContext::new`: it is identical for the same `files`
+        // and oneof/pointer-repr rules regardless of `effective_extern_paths`
+        // (the one thing that legitimately varies per call in a
+        // one-crate-per-package workspace), so this is an `Arc` clone
+        // instead of a fresh corpus-wide walk. `generate` has already
+        // checked that the context matches this call; this entry point is
+        // infallible, so it only asserts in debug builds.
+        let shared = match &config.shared_corpus_context {
+            Some(shared) => {
+                debug_assert!(
+                    shared.check(files, config).is_ok(),
+                    "shared_corpus_context does not match this call's files or rules"
+                );
+                shared.clone()
+            }
+            None => crate::SharedCorpusContext::new(files, config),
+        };
+        let unboxed_oneof_variants = Arc::clone(shared.unboxed_oneof_variants());
+        let inlined_message_fields = Arc::clone(shared.inlined_message_fields());
+        let comment_map = Arc::clone(shared.comment_map());
 
         // Pre-pass: collect every package and top-level message name in the
         // descriptor set so nested-types module deconfliction (issue #135) is
@@ -335,7 +346,6 @@ impl<'a> CodeGenContext<'a> {
         }
 
         for file in files {
-            comment_map.extend(crate::comments::fqn_comments(file));
             let package = file.package.as_deref().unwrap_or("");
             let file_features = features::for_file(file);
             let proto_prefix = if package.is_empty() {
