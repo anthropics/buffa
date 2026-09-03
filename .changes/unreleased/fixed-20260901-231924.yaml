@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects message fields that reuse a reserved name or number, and extension ranges that overlap a reserved range** (#412), as `protoc` does. Only hand-built or synthesized descriptor sets can reach this; the new `PoolError::ReservedMessageFieldName`, `ReservedMessageFieldNumber`, and `ReservedExtensionRange` variants name the message and the offending field or range.
+time: 2026-09-01T23:19:24+02:00
