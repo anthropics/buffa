@@ -1198,6 +1198,195 @@ fn duplicate_enum_value_names_are_rejected_transactionally() {
 }
 
 #[test]
+fn reserved_enum_value_numbers_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::enum_descriptor_proto::EnumReservedRange;
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, EnumValueDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    for number in [7, 9] {
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some(format!("reserved-enum-number-{number}.proto")),
+                package: Some("invalid.test".into()),
+                syntax: Some("proto3".into()),
+                enum_type: vec![
+                    EnumDescriptorProto {
+                        name: Some("Valid".into()),
+                        value: vec![
+                            EnumValueDescriptorProto {
+                                name: Some("VALID_UNSPECIFIED".into()),
+                                number: Some(0),
+                                ..Default::default()
+                            },
+                            EnumValueDescriptorProto {
+                                name: Some("ACTIVE".into()),
+                                number: Some(1),
+                                ..Default::default()
+                            },
+                        ],
+                        ..Default::default()
+                    },
+                    EnumDescriptorProto {
+                        name: Some("Status".into()),
+                        value: vec![
+                            EnumValueDescriptorProto {
+                                name: Some("STATUS_UNSPECIFIED".into()),
+                                number: Some(0),
+                                ..Default::default()
+                            },
+                            EnumValueDescriptorProto {
+                                name: Some("VALUE".into()),
+                                number: Some(number),
+                                ..Default::default()
+                            },
+                        ],
+                        reserved_range: vec![EnumReservedRange {
+                            start: Some(7),
+                            end: Some(9),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        assert_set_rejected_without_mutating_pool(
+            &format!("reserved-enum-number-{number}.proto"),
+            "invalid.test.Status",
+            set,
+            |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::ReservedEnumValueNumber {
+                        enum_name,
+                        name,
+                        number: actual,
+                    } if enum_name == "invalid.test.Status"
+                        && name == "VALUE"
+                        && *actual == number
+                ));
+            },
+        );
+    }
+}
+
+#[test]
+fn reserved_enum_value_names_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, EnumValueDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("reserved-enum-name.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            enum_type: vec![
+                EnumDescriptorProto {
+                    name: Some("Valid".into()),
+                    value: vec![
+                        EnumValueDescriptorProto {
+                            name: Some("VALID_UNSPECIFIED".into()),
+                            number: Some(0),
+                            ..Default::default()
+                        },
+                        EnumValueDescriptorProto {
+                            name: Some("ACTIVE".into()),
+                            number: Some(1),
+                            ..Default::default()
+                        },
+                    ],
+                    ..Default::default()
+                },
+                EnumDescriptorProto {
+                    name: Some("Status".into()),
+                    value: vec![
+                        EnumValueDescriptorProto {
+                            name: Some("STATUS_UNSPECIFIED".into()),
+                            number: Some(0),
+                            ..Default::default()
+                        },
+                        EnumValueDescriptorProto {
+                            name: Some("DEPRECATED".into()),
+                            number: Some(2),
+                            ..Default::default()
+                        },
+                    ],
+                    reserved_name: vec!["DEPRECATED".into()],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_set_rejected_without_mutating_pool(
+        "reserved-enum-name.proto",
+        "invalid.test.Status",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::ReservedEnumValueName { enum_name, name }
+                    if enum_name == "invalid.test.Status" && name == "DEPRECATED"
+            ));
+        },
+    );
+}
+
+#[test]
+fn non_reserved_enum_values_are_accepted() {
+    use buffa_descriptor::generated::descriptor::enum_descriptor_proto::EnumReservedRange;
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, EnumValueDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("valid-enum-value.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto3".into()),
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Status".into()),
+                value: vec![
+                    EnumValueDescriptorProto {
+                        name: Some("STATUS_UNSPECIFIED".into()),
+                        number: Some(0),
+                        ..Default::default()
+                    },
+                    EnumValueDescriptorProto {
+                        name: Some("ACTIVE".into()),
+                        number: Some(6),
+                        ..Default::default()
+                    },
+                    EnumValueDescriptorProto {
+                        name: Some("AFTER".into()),
+                        number: Some(10), // one past the reserved end
+                        ..Default::default()
+                    },
+                ],
+                reserved_range: vec![EnumReservedRange {
+                    start: Some(7),
+                    end: Some(9),
+                    ..Default::default()
+                }],
+                reserved_name: vec!["DEPRECATED".into()],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    DescriptorPool::new(set).expect("non-reserved enum values are valid");
+}
+
+#[test]
 fn method_fqn_collisions_with_registered_symbols_are_rejected_transactionally() {
     use buffa_descriptor::generated::descriptor::{
         DescriptorProto, FileDescriptorProto, FileDescriptorSet, MethodDescriptorProto,
