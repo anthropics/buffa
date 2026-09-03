@@ -134,6 +134,22 @@ impl ReservedRanges {
     }
 }
 
+fn validate_reserved_range_bounds(
+    owner: &str,
+    ranges: impl IntoIterator<Item = (Option<i32>, Option<i32>)>,
+) -> Result<(), PoolError> {
+    for (start, end) in ranges {
+        if start.is_none() || end.is_none() {
+            return Err(PoolError::InvalidReservedRange {
+                owner: owner.to_string(),
+                start,
+                end,
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Errors that can occur while building a [`DescriptorPool`].
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -224,6 +240,12 @@ pub enum PoolError {
         enum_name: String,
         name: String,
         number: i32,
+    },
+    /// A message or enum reserved range is missing its start or end bound.
+    InvalidReservedRange {
+        owner: String,
+        start: Option<i32>,
+        end: Option<i32>,
     },
 }
 
@@ -345,6 +367,10 @@ impl core::fmt::Display for PoolError {
                 f,
                 "enum {enum_name} value {name:?} reuses number {number} without allow_alias"
             ),
+            Self::InvalidReservedRange { owner, start, end } => write!(
+                f,
+                "reserved range on {owner} is missing a bound (start: {start:?}, end: {end:?})"
+            ),
         }
     }
 }
@@ -433,11 +459,11 @@ impl DescriptorPool {
     /// Returns a [`PoolError`] if any type name fails to resolve, a symbol or
     /// field identity is declared twice, a field number is out of range or in
     /// the implementation-reserved band (19000-19999), a field uses a name or
-    /// number its message reserved, an extension range overlaps a reserved
-    /// range, an open enum's first value is non-zero, an enum value reuses a
-    /// reserved name or number or a duplicate number without `allow_alias`, a
-    /// oneof index is invalid, a message exceeds 65 535 fields, or a map entry
-    /// is malformed.
+    /// number its message reserved, a message or enum reserved range is
+    /// missing a bound, an extension range overlaps a reserved range, an open
+    /// enum's first value is non-zero, an enum value reuses a reserved name or
+    /// number or a duplicate number without `allow_alias`, a oneof index is
+    /// invalid, a message exceeds 65 535 fields, or a map entry is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -456,11 +482,12 @@ impl DescriptorPool {
     /// Returns [`PoolError::Decode`] if the bytes are not a well-formed
     /// `FileDescriptorSet`, or any other [`PoolError`] on a structural
     /// validation failure (dangling type names, out-of-range or
-    /// implementation-reserved field numbers, reserved message fields, an
-    /// overlapping extension range, duplicate symbols or field identities,
-    /// an open enum whose first value is non-zero, reserved enum values,
-    /// duplicate enum numbers without `allow_alias`, invalid oneof indices,
-    /// or malformed map entries).
+    /// implementation-reserved field numbers, reserved message fields,
+    /// missing bounds on message or enum reserved ranges, an overlapping
+    /// extension range, duplicate symbols or field identities, an open enum
+    /// whose first value is non-zero, reserved enum values, duplicate enum
+    /// numbers without `allow_alias`, invalid oneof indices, or malformed map
+    /// entries).
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -1020,6 +1047,8 @@ impl DescriptorPool {
         let msg_features =
             features::resolve_child(parent_features, features::message_features(msg));
 
+        validate_reserved_range_bounds(&fqn, msg.reserved_range.iter().map(|r| (r.start, r.end)))?;
+
         // u16 field index cap.
         let field_count = msg.field.len();
         if field_count > u16::MAX as usize {
@@ -1223,6 +1252,7 @@ impl DescriptorPool {
             format!("{parent_fqn}.{name}")
         };
         let enum_features = features::resolve_child(parent_features, features::enum_features(e));
+        validate_reserved_range_bounds(&fqn, e.reserved_range.iter().map(|r| (r.start, r.end)))?;
         if enum_features.enum_type == EnumType::Open {
             if let Some(first) = e.value.first() {
                 let number = first.number.unwrap_or(0);

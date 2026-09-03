@@ -757,6 +757,85 @@ fn reserved_message_field_numbers_are_rejected_without_mutating_pool() {
 }
 
 #[test]
+fn missing_message_reserved_range_bounds_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ReservedRange;
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    for (suffix, start, end) in [
+        ("missing-start", None, Some(8)),
+        ("missing-end", Some(7), None),
+        ("missing-both", None, None),
+    ] {
+        let file_name = format!("reserved-message-range-{suffix}.proto");
+        let full_name = "invalid.test.MissingMessageRange";
+        let expected_start = start;
+        let expected_end = end;
+
+        assert_rejected_without_mutating_pool(
+            &file_name,
+            full_name,
+            DescriptorProto {
+                name: Some("MissingMessageRange".into()),
+                reserved_range: vec![ReservedRange {
+                    start,
+                    end,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            move |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::InvalidReservedRange { owner, start, end }
+                        if owner == full_name
+                            && *start == expected_start
+                            && *end == expected_end
+                ));
+            },
+        );
+    }
+}
+
+#[test]
+fn complete_message_reserved_ranges_are_accepted() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ReservedRange;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let pool = DescriptorPool::new(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("complete-message-range.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Message".into()),
+                field: vec![scalar_field("value", 8, Type::TYPE_INT32)],
+                reserved_range: vec![ReservedRange {
+                    start: Some(7),
+                    end: Some(8),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("complete message reserved ranges should be accepted");
+
+    assert_eq!(
+        pool.message_by_name("valid.test.Message")
+            .unwrap()
+            .field(8)
+            .unwrap()
+            .name(),
+        "value"
+    );
+}
+
+#[test]
 fn reserved_message_field_range_end_is_exclusive() {
     use buffa_descriptor::generated::descriptor::descriptor_proto::ReservedRange;
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
@@ -1272,6 +1351,107 @@ fn reserved_enum_value_numbers_are_rejected_transactionally() {
             },
         );
     }
+}
+
+#[test]
+fn missing_enum_reserved_range_bounds_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::enum_descriptor_proto::EnumReservedRange;
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, EnumValueDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    for (suffix, start, end) in [
+        ("missing-start", None, Some(8)),
+        ("missing-end", Some(7), None),
+        ("missing-both", None, None),
+    ] {
+        let file_name = format!("reserved-enum-range-{suffix}.proto");
+        let full_name = "invalid.test.MissingEnumRange";
+        let expected_start = start;
+        let expected_end = end;
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some(file_name.clone()),
+                package: Some("invalid.test".into()),
+                syntax: Some("proto3".into()),
+                enum_type: vec![EnumDescriptorProto {
+                    name: Some("MissingEnumRange".into()),
+                    value: vec![EnumValueDescriptorProto {
+                        name: Some("ZERO".into()),
+                        number: Some(0),
+                        ..Default::default()
+                    }],
+                    reserved_range: vec![EnumReservedRange {
+                        start,
+                        end,
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        assert_set_rejected_without_mutating_pool(&file_name, full_name, set, move |err| {
+            assert!(matches!(
+                err,
+                PoolError::InvalidReservedRange { owner, start, end }
+                    if owner == full_name
+                        && *start == expected_start
+                        && *end == expected_end
+            ));
+        });
+    }
+}
+
+#[test]
+fn complete_enum_reserved_ranges_are_accepted() {
+    use buffa_descriptor::generated::descriptor::enum_descriptor_proto::EnumReservedRange;
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, EnumValueDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let pool = DescriptorPool::new(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("complete-enum-range.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto3".into()),
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Status".into()),
+                value: vec![
+                    EnumValueDescriptorProto {
+                        name: Some("ZERO".into()),
+                        number: Some(0),
+                        ..Default::default()
+                    },
+                    EnumValueDescriptorProto {
+                        name: Some("AFTER".into()),
+                        number: Some(10),
+                        ..Default::default()
+                    },
+                ],
+                reserved_range: vec![EnumReservedRange {
+                    start: Some(7),
+                    end: Some(9),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("complete enum reserved ranges should be accepted");
+
+    assert_eq!(
+        pool.enum_by_name("valid.test.Status")
+            .unwrap()
+            .value(10)
+            .unwrap()
+            .name(),
+        "AFTER"
+    );
 }
 
 #[test]
