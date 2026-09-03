@@ -126,22 +126,20 @@ fn shared_context_matches_fresh_computation() {
     let with_shared =
         crate::generate(&files, &files_to_generate, &config).expect("shared-context generate");
 
-    // Sanity: the corpus actually exercised what we're testing. Owned
-    // message fields use `MessageField<T>`, which is indirected internally
-    // regardless of recursion, so self-recursion only forces a literal
-    // `Box` in the *view* type (a borrowed `SelfRefView<'a>` referencing
-    // itself would otherwise be infinite-size).
-    let self_ref_view = with_shared
-        .iter()
-        .find(|f| f.content.contains("struct SelfRefView"))
-        .expect("SelfRefView must be generated");
-    assert!(
-        self_ref_view.content.contains("Box<SelfRefView"),
-        "SelfRefView's self-referencing field must stay boxed: {}",
-        self_ref_view.content
-    );
-
+    // Sanity: the corpus actually exercised what the shared context
+    // resolves. `Inline` is the default pointer repr, so the non-recursive
+    // `Holder.leaf` is stored inline while the self-recursive
+    // `SelfRef.child` is demoted to the indirected form — both decisions
+    // come from the cached `inlined_message_fields` set.
     let all = joined(&with_shared);
+    assert!(
+        all.contains("::buffa::Inline<Leaf>"),
+        "Holder.leaf must be stored inline: {all}"
+    );
+    assert!(
+        !all.contains("::buffa::Inline<SelfRef>"),
+        "SelfRef.child must not be inlined into itself: {all}"
+    );
     assert!(
         all.contains("The leaf message comment.") && all.contains("The inline leaf field comment."),
         "the cached comment map must reach the output: {all}"
