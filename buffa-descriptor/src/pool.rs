@@ -75,24 +75,36 @@ fn clone_options<T: Clone + Default, P: buffa::ProtoBox<T>>(
 /// limit — reached in pass 1, before the other three walks run.
 pub const MAX_SYMBOL_LEN: usize = 512;
 
-/// A message's `reserved_range` entries, sorted and coalesced, so a field
-/// number or an extension range is checked with one binary search rather
-/// than a scan. Both are half-open like `DescriptorProto.ReservedRange`.
-/// Descriptor sets are untrusted input, and a message may declare tens of
-/// thousands of fields and as many reserved ranges within the element
-/// budget, so the per-field check must not be linear in the range count.
+/// Reserved number ranges, sorted and coalesced, so a number or a range is
+/// checked with one binary search rather than a scan. Stored half-open;
+/// `DescriptorProto.ReservedRange` is half-open already and
+/// `EnumReservedRange`'s inclusive end is converted on the way in.
+/// Descriptor sets are untrusted input, and a message or enum may declare
+/// tens of thousands of fields or values and as many reserved ranges within
+/// the element budget, so the per-field check must not be linear in the
+/// range count.
 struct ReservedRanges(Vec<(i64, i64)>);
 
 impl ReservedRanges {
     fn new(ranges: &[crate::generated::descriptor::descriptor_proto::ReservedRange]) -> Self {
-        let mut sorted: Vec<(i64, i64)> = ranges
-            .iter()
-            .filter_map(|r| match (r.start, r.end) {
-                // An unset bound cannot be honoured; protoc requires both.
-                (Some(start), Some(end)) if start < end => Some((i64::from(start), i64::from(end))),
-                _ => None,
-            })
-            .collect();
+        Self::from_half_open(ranges.iter().filter_map(|r| match (r.start, r.end) {
+            // An unset bound cannot be honoured; protoc requires both.
+            (Some(start), Some(end)) => Some((i64::from(start), i64::from(end))),
+            _ => None,
+        }))
+    }
+
+    fn for_enum(
+        ranges: &[crate::generated::descriptor::enum_descriptor_proto::EnumReservedRange],
+    ) -> Self {
+        Self::from_half_open(ranges.iter().filter_map(|r| match (r.start, r.end) {
+            (Some(start), Some(end)) => Some((i64::from(start), i64::from(end) + 1)),
+            _ => None,
+        }))
+    }
+
+    fn from_half_open(ranges: impl Iterator<Item = (i64, i64)>) -> Self {
+        let mut sorted: Vec<(i64, i64)> = ranges.filter(|&(start, end)| start < end).collect();
         sorted.sort_unstable();
         let mut merged: Vec<(i64, i64)> = Vec::with_capacity(sorted.len());
         for (start, end) in sorted {
@@ -104,8 +116,8 @@ impl ReservedRanges {
         Self(merged)
     }
 
-    fn contains(&self, number: u32) -> bool {
-        let number = i64::from(number);
+    fn contains(&self, number: impl Into<i64>) -> bool {
+        let number = number.into();
         let idx = self.0.partition_point(|&(start, _)| start <= number);
         idx > 0 && number < self.0[idx - 1].1
     }
@@ -1207,6 +1219,8 @@ impl DescriptorPool {
             }
         }
         let idx = self.enum_index(&fqn).expect("enum registered in pass 1");
+        let reserved_names: BTreeSet<&str> = e.reserved_name.iter().map(String::as_str).collect();
+        let reserved_ranges = ReservedRanges::for_enum(&e.reserved_range);
         let mut value_names = BTreeSet::new();
         let mut values = Vec::with_capacity(e.value.len());
         for v in &e.value {
@@ -1217,16 +1231,14 @@ impl DescriptorPool {
                     name: value_name,
                 });
             }
-            if e.reserved_name.iter().any(|name| name == &value_name) {
+            if reserved_names.contains(value_name.as_str()) {
                 return Err(PoolError::ReservedEnumValueName {
                     enum_name: fqn.clone(),
                     name: value_name,
                 });
             }
             let number = v.number.unwrap_or(0);
-            if e.reserved_range.iter().any(|range| {
-                matches!((range.start, range.end), (Some(start), Some(end)) if start <= number && number <= end)
-            }) {
+            if reserved_ranges.contains(number) {
                 return Err(PoolError::ReservedEnumValueNumber {
                     enum_name: fqn.clone(),
                     name: value_name,
@@ -1767,6 +1779,34 @@ mod reserved_ranges_tests {
         assert!(r.0.is_empty());
         assert!(!r.contains(1));
         assert!(!r.overlaps(0, 10));
+    }
+
+    #[test]
+    fn enum_ranges_are_inclusive_and_may_be_negative() {
+        use crate::generated::descriptor::enum_descriptor_proto::EnumReservedRange;
+        let raw: Vec<EnumReservedRange> = [(-5, -3), (7, 9), (9, 9), (i32::MAX, i32::MAX)]
+            .into_iter()
+            .map(|(start, end)| EnumReservedRange {
+                start: Some(start),
+                end: Some(end),
+                ..Default::default()
+            })
+            .collect();
+        let r = ReservedRanges::for_enum(&raw);
+        assert_eq!(
+            r.0,
+            vec![
+                (-5, -2),
+                (7, 10),
+                (i64::from(i32::MAX), i64::from(i32::MAX) + 1)
+            ]
+        );
+        assert!(r.contains(-5));
+        assert!(r.contains(-3));
+        assert!(!r.contains(-2));
+        assert!(r.contains(9));
+        assert!(!r.contains(10));
+        assert!(r.contains(i32::MAX));
     }
 
     #[test]
