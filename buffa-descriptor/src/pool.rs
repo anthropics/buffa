@@ -186,6 +186,21 @@ pub enum PoolError {
     DuplicateExtensionNumber { extendee: String, number: u32 },
     /// Two methods in one service have the same proto name.
     DuplicateMethodName { service: String, name: String },
+    /// A file's `public_dependency` names an index outside its `dependency`
+    /// list. The indices are positions in that list, so an out-of-range one
+    /// names no import at all.
+    InvalidPublicDependencyIndex {
+        file: String,
+        index: i32,
+        dependency_count: usize,
+    },
+    /// A file's `weak_dependency` names an index outside its `dependency`
+    /// list.
+    InvalidWeakDependencyIndex {
+        file: String,
+        index: i32,
+        dependency_count: usize,
+    },
     /// Two enum values in the same symbol scope have the same proto name.
     DuplicateEnumValueName { enum_name: String, name: String },
     /// A message field reuses a name reserved by its containing message.
@@ -294,6 +309,28 @@ impl core::fmt::Display for PoolError {
                 write!(
                     f,
                     "service {service} declares method {name:?} more than once"
+                )
+            }
+            Self::InvalidPublicDependencyIndex {
+                file,
+                index,
+                dependency_count,
+            } => {
+                write!(
+                    f,
+                    "file {file} public_dependency index {index} is out of range \
+                     ({dependency_count} dependencies declared)"
+                )
+            }
+            Self::InvalidWeakDependencyIndex {
+                file,
+                index,
+                dependency_count,
+            } => {
+                write!(
+                    f,
+                    "file {file} weak_dependency index {index} is out of range \
+                     ({dependency_count} dependencies declared)"
                 )
             }
             Self::DuplicateEnumValueName { enum_name, name } => {
@@ -436,7 +473,8 @@ impl DescriptorPool {
     /// number its message reserved, an extension range overlaps a reserved
     /// range, an open enum's first value is non-zero, an enum value reuses a
     /// reserved name or number or a duplicate number without `allow_alias`, a
-    /// oneof index is invalid, a message exceeds 65 535 fields, or a map entry
+    /// oneof index is invalid, a `public_dependency` or `weak_dependency`
+    /// index is out of range, a message exceeds 65 535 fields, or a map entry
     /// is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
@@ -460,7 +498,7 @@ impl DescriptorPool {
     /// overlapping extension range, duplicate symbols or field identities,
     /// an open enum whose first value is non-zero, reserved enum values,
     /// duplicate enum numbers without `allow_alias`, invalid oneof indices,
-    /// or malformed map entries).
+    /// out-of-range dependency indices, or malformed map entries).
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -550,6 +588,11 @@ impl DescriptorPool {
             .collect();
         if new_files.is_empty() {
             return Ok(());
+        }
+
+        // Pass 0: per-file structural checks that need no name resolution.
+        for file in &new_files {
+            validate_dependency_indices(file)?;
         }
 
         // Pass 1: register all message/enum FQNs and assign indices.
@@ -1754,6 +1797,40 @@ impl DescriptorPool {
 }
 
 /// Derive the default JSON name for a proto field name (lowerCamelCase).
+/// Check that a file's `public_dependency` and `weak_dependency` entries name
+/// positions in its own `dependency` list.
+///
+/// Both fields are `repeated int32` indices into `dependency`, so an index
+/// that is negative or past the end names no import at all. protoc rejects
+/// such a file with "Invalid public dependency index."; without this check a
+/// hand-built or truncated `FileDescriptorSet` carrying one links silently.
+fn validate_dependency_indices(file: &FileDescriptorProto) -> Result<(), PoolError> {
+    let dependency_count = file.dependency.len();
+    let out_of_range = |index: i32| match usize::try_from(index) {
+        Ok(i) => i >= dependency_count,
+        Err(_) => true,
+    };
+    for &index in &file.public_dependency {
+        if out_of_range(index) {
+            return Err(PoolError::InvalidPublicDependencyIndex {
+                file: file.name.clone().unwrap_or_default(),
+                index,
+                dependency_count,
+            });
+        }
+    }
+    for &index in &file.weak_dependency {
+        if out_of_range(index) {
+            return Err(PoolError::InvalidWeakDependencyIndex {
+                file: file.name.clone().unwrap_or_default(),
+                index,
+                dependency_count,
+            });
+        }
+    }
+    Ok(())
+}
+
 fn derive_json_name(proto_name: &str) -> String {
     let mut out = String::with_capacity(proto_name.len());
     let mut capitalize = false;
@@ -1768,6 +1845,107 @@ fn derive_json_name(proto_name: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod dependency_index_tests {
+    use super::{validate_dependency_indices, DescriptorPool, PoolError};
+    use crate::generated::descriptor::{DescriptorProto, FileDescriptorProto, FileDescriptorSet};
+
+    fn file(public: &[i32], weak: &[i32], deps: &[&str]) -> FileDescriptorProto {
+        FileDescriptorProto {
+            name: Some("a.proto".into()),
+            package: Some("a".into()),
+            dependency: deps.iter().map(|d| (*d).to_string()).collect(),
+            public_dependency: public.to_vec(),
+            weak_dependency: weak.to_vec(),
+            message_type: vec![DescriptorProto {
+                name: Some("M".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn accepts_indices_inside_the_dependency_list() {
+        let f = file(&[0, 1], &[1], &["b.proto", "c.proto"]);
+        assert!(validate_dependency_indices(&f).is_ok());
+    }
+
+    #[test]
+    fn accepts_a_file_with_no_dependencies_and_no_indices() {
+        assert!(validate_dependency_indices(&file(&[], &[], &[])).is_ok());
+    }
+
+    #[test]
+    fn rejects_a_public_index_past_the_end() {
+        let f = file(&[1], &[], &["b.proto"]);
+        assert!(matches!(
+            validate_dependency_indices(&f),
+            Err(PoolError::InvalidPublicDependencyIndex {
+                index: 1,
+                dependency_count: 1,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn rejects_a_negative_public_index() {
+        let f = file(&[-1], &[], &["b.proto"]);
+        assert!(matches!(
+            validate_dependency_indices(&f),
+            Err(PoolError::InvalidPublicDependencyIndex { index: -1, .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_a_weak_index_past_the_end() {
+        let f = file(&[], &[3], &["b.proto"]);
+        assert!(matches!(
+            validate_dependency_indices(&f),
+            Err(PoolError::InvalidWeakDependencyIndex {
+                index: 3,
+                dependency_count: 1,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn rejects_any_index_when_the_file_declares_no_dependencies() {
+        let f = file(&[0], &[], &[]);
+        assert!(matches!(
+            validate_dependency_indices(&f),
+            Err(PoolError::InvalidPublicDependencyIndex {
+                index: 0,
+                dependency_count: 0,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn the_pool_rejects_the_set_and_stays_unchanged() {
+        // The check runs in the staged pass, so a rejected set must leave the
+        // live pool untouched.
+        let mut pool = DescriptorPool::default();
+        let set = FileDescriptorSet {
+            file: vec![file(&[7], &[], &[])],
+            ..Default::default()
+        };
+        let err = pool.add_file_descriptor_set(set).unwrap_err();
+        assert!(matches!(
+            err,
+            PoolError::InvalidPublicDependencyIndex { index: 7, .. }
+        ));
+        assert!(pool.file_by_name("a.proto").is_none());
+        assert_eq!(
+            err.to_string(),
+            "file a.proto public_dependency index 7 is out of range (0 dependencies declared)"
+        );
+    }
 }
 
 #[cfg(test)]
