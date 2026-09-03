@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects empty enum declarations** as `protoc` does. Only hand-built or synthesized descriptor sets can reach this state; the rejection is the new `PoolError::EmptyEnum` variant.
+time: 2026-09-03T13:45:00+02:00
