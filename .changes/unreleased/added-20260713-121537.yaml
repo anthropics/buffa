@@ -1,4 +1,0 @@
-kind: Added
-body: |-
-    **`buffa_build::Config::shared_descriptor_pool` enables the shared descriptor pool from `build.rs`** (#369). The descriptor set is written once as a binary sidecar next to the generated tree and `include_bytes!`-d by the shared `__buffa_fds` module, removing both the per-package duplication and the byte-literal source expansion. Requires reflection and `.include_file(...)`. With a checked-in `out_dir`, commit the emitted `*.descriptor_set.binpb` sidecar alongside the generated `.rs`.
-time: 2026-07-13T12:15:37.209981-04:00

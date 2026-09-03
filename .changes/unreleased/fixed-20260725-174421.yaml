@@ -1,4 +1,0 @@
-kind: Fixed
-body: |-
-    **Strict reflective `Any` JSON decoding now rejects unknown members alongside the `value` of a wrapped well-known type** (#354); `from_json_ignoring_unknown` continues to discard those members.
-time: 2026-07-25T17:44:21.14133+02:00

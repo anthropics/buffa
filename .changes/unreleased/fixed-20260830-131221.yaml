@@ -1,4 +1,0 @@
-kind: Fixed
-body: |-
-    **ProtoJSON `FieldMask` paths are validated the same way on the typed and reflective codecs** (#391). Both now reject a component that is empty or contains a character outside `[a-z0-9_]` (whitespace, `-`, `/`), on parse and on serialize, as C++ and protobuf-go do; previously the reflective parser trimmed whitespace and the typed one kept it. Surrounding whitespace in a path is therefore an error where the reflective codec used to accept `"foo, barBaz"`. `buffa::json_helpers::wkt::field_mask_path_round_trips` carries the new check for anyone calling it directly. The exact path `*` stays accepted as the full-mask wildcard.
-time: 2026-08-30T13:12:21+02:00

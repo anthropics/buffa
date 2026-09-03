@@ -1,4 +1,0 @@
-kind: Changed
-body: |-
-    **Same-module AIP-192 rustdoc links are emitted bare** (#394). A `[Mixin][]` reference to a type in the same generated module now renders as `[Mixin]` rather than `[Mixin](crate::…::Mixin)`, which `rustdoc::redundant_explicit_links` rejects under `-D warnings`; cross-module references, fully-qualified display names, and keyword-named types keep the explicit target.
-time: 2026-08-31T21:30:00Z

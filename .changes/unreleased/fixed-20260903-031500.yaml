@@ -1,4 +1,0 @@
-kind: Fixed
-body: |-
-    **`DynamicMessage::from_message`, `to_message`, generated owned-mode `to_dynamic`, and bridge-mode `reflect()` no longer reject large messages the process built itself** (#414, refs #413). Their internal re-decode applied the fixed untrusted-input element-memory and unknown-field budgets to bytes the library had just encoded, so a valid message a few megabytes on the wire panicked with `ElementMemoryLimitExceeded`; the budgets now scale with the encoded length, floored at the defaults, as the generated view conversion already did (#341). The recursion limit and the 2 GiB protobuf size limit still apply.
-time: 2026-09-03T03:15:00+08:00

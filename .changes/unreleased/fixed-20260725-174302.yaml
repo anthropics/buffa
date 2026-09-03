@@ -1,4 +1,0 @@
-kind: Fixed
-body: |-
-    **Integer extensions now use the same ProtoJSON decoders as generated fields** (#356), accepting exact quoted decimal and exponent forms across every integer wire type while rejecting unsafe high-magnitude unquoted floats.
-time: 2026-07-25T17:43:02.867033+02:00

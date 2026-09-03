@@ -1,4 +1,0 @@
-kind: Added
-body: |-
-    **`DynamicMessage::decode_with_options` and `merge_with_options` decode under caller-supplied limits** (#341), mirroring `DescriptorPool::decode_with_options`.
-time: 2026-07-23T22:49:09.68632687-07:00

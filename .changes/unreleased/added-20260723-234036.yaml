@@ -1,4 +1,0 @@
-kind: Added
-body: |-
-    **A defaulted `SingularCodec::decode_one_ctx` lets repeated extension elements share one decode budget** (#345). Existing implementations need no change; the default forwards to `decode_one`, which is correct for any codec with a fixed per-record cost. A codec whose value can materialize an unbounded subtree must override it.
-time: 2026-07-23T23:40:36.267700981-07:00
