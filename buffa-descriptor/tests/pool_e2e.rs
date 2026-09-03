@@ -888,6 +888,111 @@ fn adjacent_reserved_and_extension_ranges_are_accepted() {
 }
 
 #[test]
+fn extension_range_bounds_are_half_open_at_the_field_number_limit() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let max = buffa::encoding::MAX_FIELD_NUMBER as i32;
+    let pool = DescriptorPool::new(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("valid-extension-bounds.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto2".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("RangeMessage".into()),
+                extension_range: vec![
+                    ExtensionRange {
+                        start: Some(7),
+                        end: Some(8),
+                        ..Default::default()
+                    },
+                    ExtensionRange {
+                        start: Some(max),
+                        end: Some(max + 1),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("one-element ranges include the maximum field number");
+
+    let message = pool.message_by_name("valid.test.RangeMessage").unwrap();
+    assert_eq!(
+        message.extension_ranges(),
+        &[(7, 8), (max as u32, (max + 1) as u32)]
+    );
+    assert!(message.in_extension_range(7));
+    assert!(!message.in_extension_range(8));
+    assert!(message.in_extension_range(max as u32));
+    assert!(!message.in_extension_range((max + 1) as u32));
+}
+
+#[test]
+fn invalid_extension_range_bounds_are_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let max = buffa::encoding::MAX_FIELD_NUMBER as i32;
+    for (suffix, start, end) in [
+        ("equal", 7, 7),
+        ("reversed", 8, 7),
+        ("max-equal", max + 1, max + 1),
+        ("max-reversed", max + 1, max),
+    ] {
+        let message_name = format!("InvalidRange{suffix}");
+        let full_name = format!("invalid.test.{message_name}");
+        let file_name = format!("invalid-extension-range-{suffix}.proto");
+        let expected_message = full_name.clone();
+
+        assert_set_rejected_without_mutating_pool(
+            &file_name,
+            &full_name,
+            FileDescriptorSet {
+                file: vec![FileDescriptorProto {
+                    name: Some(file_name.clone()),
+                    package: Some("invalid.test".into()),
+                    syntax: Some("proto2".into()),
+                    message_type: vec![DescriptorProto {
+                        name: Some(message_name),
+                        extension_range: vec![ExtensionRange {
+                            start: Some(start),
+                            end: Some(end),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            move |err| {
+                assert!(
+                    matches!(
+                        err,
+                        PoolError::InvalidExtensionRange {
+                            message,
+                            start: actual_start,
+                            end: actual_end,
+                        } if message == &expected_message
+                            && *actual_start == start as u32
+                            && *actual_end == end as u32
+                    ),
+                    "unexpected error: {err}"
+                );
+            },
+        );
+    }
+}
+
+#[test]
 fn duplicate_proto_field_names_are_rejected_without_mutating_pool() {
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
     use buffa_descriptor::generated::descriptor::DescriptorProto;

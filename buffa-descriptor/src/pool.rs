@@ -204,6 +204,12 @@ pub enum PoolError {
         start: u32,
         end: u32,
     },
+    /// A message extension range has invalid half-open bounds (`start >= end`).
+    InvalidExtensionRange {
+        message: String,
+        start: u32,
+        end: u32,
+    },
     /// An open enum's first declared value has a non-zero number.
     OpenEnumFirstValueNotZero {
         enum_name: String,
@@ -317,6 +323,14 @@ impl core::fmt::Display for PoolError {
             } => write!(
                 f,
                 "message {message} extension range {start}..{end} overlaps a reserved range"
+            ),
+            Self::InvalidExtensionRange {
+                message,
+                start,
+                end,
+            } => write!(
+                f,
+                "message {message} has invalid extension range {start}..{end}; start must be less than end"
             ),
             Self::OpenEnumFirstValueNotZero {
                 enum_name,
@@ -433,11 +447,11 @@ impl DescriptorPool {
     /// Returns a [`PoolError`] if any type name fails to resolve, a symbol or
     /// field identity is declared twice, a field number is out of range or in
     /// the implementation-reserved band (19000-19999), a field uses a name or
-    /// number its message reserved, an extension range overlaps a reserved
-    /// range, an open enum's first value is non-zero, an enum value reuses a
-    /// reserved name or number or a duplicate number without `allow_alias`, a
-    /// oneof index is invalid, a message exceeds 65 535 fields, or a map entry
-    /// is malformed.
+    /// number its message reserved, an extension range has invalid bounds or
+    /// overlaps a reserved range, an open enum's first value is non-zero, an
+    /// enum value reuses a reserved name or number or a duplicate number
+    /// without `allow_alias`, a oneof index is invalid, a message exceeds
+    /// 65 535 fields, or a map entry is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -457,10 +471,10 @@ impl DescriptorPool {
     /// `FileDescriptorSet`, or any other [`PoolError`] on a structural
     /// validation failure (dangling type names, out-of-range or
     /// implementation-reserved field numbers, reserved message fields, an
-    /// overlapping extension range, duplicate symbols or field identities,
-    /// an open enum whose first value is non-zero, reserved enum values,
-    /// duplicate enum numbers without `allow_alias`, invalid oneof indices,
-    /// or malformed map entries).
+    /// invalid or overlapping extension range, duplicate symbols or field
+    /// identities, an open enum whose first value is non-zero, reserved enum
+    /// values, duplicate enum numbers without `allow_alias`, invalid oneof
+    /// indices, or malformed map entries).
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -1160,6 +1174,13 @@ impl DescriptorPool {
                     number: start.min(end),
                 });
             };
+            if start >= end {
+                return Err(PoolError::InvalidExtensionRange {
+                    message: fqn.clone(),
+                    start,
+                    end,
+                });
+            }
             if reserved_ranges.overlaps(start, end) {
                 return Err(PoolError::ReservedExtensionRange {
                     message: fqn.clone(),

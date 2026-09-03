@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects extension ranges with empty or reversed half-open bounds**. Valid one-element ranges, including `MAX_FIELD_NUMBER..MAX_FIELD_NUMBER + 1`, remain accepted. The new `PoolError::InvalidExtensionRange` variant reports the message and offending bounds, and failed additions remain transactional.
+time: 2026-09-03T14:00:00+02:00
