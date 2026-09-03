@@ -190,6 +190,8 @@ pub enum PoolError {
     DuplicateEnumValueName { enum_name: String, name: String },
     /// A message field reuses a name reserved by its containing message.
     ReservedMessageFieldName { message: String, name: String },
+    /// A message declares the same reserved name more than once.
+    DuplicateMessageReservedName { message: String, name: String },
     /// A message field uses a number reserved by its containing message.
     ReservedMessageFieldNumber {
         message: String,
@@ -212,6 +214,8 @@ pub enum PoolError {
     },
     /// An enum value reuses a name reserved by its enum declaration.
     ReservedEnumValueName { enum_name: String, name: String },
+    /// An enum declares the same reserved name more than once.
+    DuplicateEnumReservedName { enum_name: String, name: String },
     /// An enum value uses a number reserved by its enum declaration.
     ReservedEnumValueNumber {
         enum_name: String,
@@ -302,6 +306,12 @@ impl core::fmt::Display for PoolError {
             Self::ReservedMessageFieldName { message, name } => {
                 write!(f, "message {message} field {name:?} reuses a reserved name")
             }
+            Self::DuplicateMessageReservedName { message, name } => {
+                write!(
+                    f,
+                    "message {message} declares reserved name {name:?} more than once"
+                )
+            }
             Self::ReservedMessageFieldNumber {
                 message,
                 name,
@@ -328,6 +338,12 @@ impl core::fmt::Display for PoolError {
             ),
             Self::ReservedEnumValueName { enum_name, name } => {
                 write!(f, "enum {enum_name} reuses reserved value name {name:?}")
+            }
+            Self::DuplicateEnumReservedName { enum_name, name } => {
+                write!(
+                    f,
+                    "enum {enum_name} declares reserved name {name:?} more than once"
+                )
             }
             Self::ReservedEnumValueNumber {
                 enum_name,
@@ -434,10 +450,10 @@ impl DescriptorPool {
     /// field identity is declared twice, a field number is out of range or in
     /// the implementation-reserved band (19000-19999), a field uses a name or
     /// number its message reserved, an extension range overlaps a reserved
-    /// range, an open enum's first value is non-zero, an enum value reuses a
-    /// reserved name or number or a duplicate number without `allow_alias`, a
-    /// oneof index is invalid, a message exceeds 65 535 fields, or a map entry
-    /// is malformed.
+    /// range, a message or enum declares a reserved name twice, an open enum's
+    /// first value is non-zero, an enum value reuses a reserved name or number
+    /// or a duplicate number without `allow_alias`, a oneof index is invalid,
+    /// a message exceeds 65 535 fields, or a map entry is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -458,9 +474,9 @@ impl DescriptorPool {
     /// validation failure (dangling type names, out-of-range or
     /// implementation-reserved field numbers, reserved message fields, an
     /// overlapping extension range, duplicate symbols or field identities,
-    /// an open enum whose first value is non-zero, reserved enum values,
-    /// duplicate enum numbers without `allow_alias`, invalid oneof indices,
-    /// or malformed map entries).
+    /// duplicate reserved names, an open enum whose first value is non-zero,
+    /// reserved enum values, duplicate enum numbers without `allow_alias`,
+    /// invalid oneof indices, or malformed map entries).
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -1046,7 +1062,15 @@ impl DescriptorPool {
         let mut field_by_number: Vec<(u32, u16)> = Vec::with_capacity(field_count);
         let mut field_by_name: Vec<(String, u16)> = Vec::with_capacity(field_count * 2);
         let mut field_numbers: BTreeMap<u32, usize> = BTreeMap::new();
-        let reserved_names: BTreeSet<&str> = msg.reserved_name.iter().map(String::as_str).collect();
+        let mut reserved_names = BTreeSet::new();
+        for name in &msg.reserved_name {
+            if !reserved_names.insert(name.as_str()) {
+                return Err(PoolError::DuplicateMessageReservedName {
+                    message: fqn.clone(),
+                    name: name.clone(),
+                });
+            }
+        }
         let reserved_ranges = ReservedRanges::new(&msg.reserved_range);
         let mut field_names: BTreeMap<String, usize> = BTreeMap::new();
         // Two fields resolving to one JSON name make JSON lookup ambiguous, but
@@ -1236,7 +1260,15 @@ impl DescriptorPool {
             }
         }
         let idx = self.enum_index(&fqn).expect("enum registered in pass 1");
-        let reserved_names: BTreeSet<&str> = e.reserved_name.iter().map(String::as_str).collect();
+        let mut reserved_names = BTreeSet::new();
+        for name in &e.reserved_name {
+            if !reserved_names.insert(name.as_str()) {
+                return Err(PoolError::DuplicateEnumReservedName {
+                    enum_name: fqn.clone(),
+                    name: name.clone(),
+                });
+            }
+        }
         let reserved_ranges = ReservedRanges::for_enum(&e.reserved_range);
         let allow_alias = e
             .options

@@ -40,6 +40,17 @@ fn scalar_field(
     }
 }
 
+fn enum_value(
+    name: &str,
+    number: i32,
+) -> buffa_descriptor::generated::descriptor::EnumValueDescriptorProto {
+    buffa_descriptor::generated::descriptor::EnumValueDescriptorProto {
+        name: Some(name.into()),
+        number: Some(number),
+        ..Default::default()
+    }
+}
+
 fn assert_rejected_without_mutating_pool(
     file_name: &str,
     full_message_name: &str,
@@ -715,6 +726,48 @@ fn reserved_message_field_names_are_rejected_without_mutating_pool() {
 }
 
 #[test]
+fn duplicate_message_reserved_names_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("duplicate-message-reserved-name.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![
+                DescriptorProto {
+                    name: Some("Valid".into()),
+                    reserved_name: vec!["legacy".into()],
+                    ..Default::default()
+                },
+                DescriptorProto {
+                    name: Some("Invalid".into()),
+                    reserved_name: vec!["legacy".into(), "legacy".into()],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_set_rejected_without_mutating_pool(
+        "duplicate-message-reserved-name.proto",
+        "invalid.test.Invalid",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::DuplicateMessageReservedName { message, name }
+                    if message == "invalid.test.Invalid" && name == "legacy"
+            ));
+        },
+    );
+}
+
+#[test]
 fn reserved_message_field_numbers_are_rejected_without_mutating_pool() {
     use buffa_descriptor::generated::descriptor::descriptor_proto::ReservedRange;
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
@@ -1340,6 +1393,50 @@ fn reserved_enum_value_names_are_rejected_transactionally() {
 }
 
 #[test]
+fn duplicate_enum_reserved_names_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("duplicate-enum-reserved-name.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            enum_type: vec![
+                EnumDescriptorProto {
+                    name: Some("Valid".into()),
+                    reserved_name: vec!["LEGACY".into()],
+                    value: vec![enum_value("UNSPECIFIED", 0), enum_value("ACTIVE", 1)],
+                    ..Default::default()
+                },
+                EnumDescriptorProto {
+                    name: Some("Invalid".into()),
+                    reserved_name: vec!["LEGACY".into(), "LEGACY".into()],
+                    value: vec![enum_value("INVALID_UNSPECIFIED", 0)],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_set_rejected_without_mutating_pool(
+        "duplicate-enum-reserved-name.proto",
+        "invalid.test.Invalid",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::DuplicateEnumReservedName { enum_name, name }
+                    if enum_name == "invalid.test.Invalid" && name == "LEGACY"
+            ));
+        },
+    );
+}
+
+#[test]
 fn non_reserved_enum_values_are_accepted() {
     use buffa_descriptor::generated::descriptor::enum_descriptor_proto::EnumReservedRange;
     use buffa_descriptor::generated::descriptor::{
@@ -1384,6 +1481,57 @@ fn non_reserved_enum_values_are_accepted() {
     };
 
     DescriptorPool::new(set).expect("non-reserved enum values are valid");
+}
+
+#[test]
+fn distinct_reserved_names_and_names_in_different_owners_are_accepted() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, EnumDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("valid-reserved-names.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![
+                DescriptorProto {
+                    name: Some("First".into()),
+                    field: vec![scalar_field("current", 1, Type::TYPE_STRING)],
+                    reserved_name: vec!["legacy".into(), "old_name".into()],
+                    ..Default::default()
+                },
+                DescriptorProto {
+                    name: Some("Second".into()),
+                    field: vec![scalar_field("current", 1, Type::TYPE_STRING)],
+                    reserved_name: vec!["legacy".into()],
+                    ..Default::default()
+                },
+            ],
+            enum_type: vec![
+                EnumDescriptorProto {
+                    name: Some("FirstStatus".into()),
+                    value: vec![enum_value("FIRST_UNSPECIFIED", 0), enum_value("ACTIVE", 1)],
+                    reserved_name: vec!["LEGACY".into(), "OLD_STATUS".into()],
+                    ..Default::default()
+                },
+                EnumDescriptorProto {
+                    name: Some("SecondStatus".into()),
+                    value: vec![
+                        enum_value("SECOND_UNSPECIFIED", 0),
+                        enum_value("STARTED", 1),
+                    ],
+                    reserved_name: vec!["LEGACY".into()],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    DescriptorPool::new(set).expect("distinct reserved names should be accepted");
 }
 
 #[test]
