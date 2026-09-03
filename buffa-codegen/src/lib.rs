@@ -3086,13 +3086,8 @@ pub enum IncludeMode<'a> {
 #[derive(Clone)]
 pub struct SharedCorpusContext {
     /// The exact corpus this context was built from, compared by full
-    /// structural equality in [`check`](Self::check) — not just file names.
-    /// `SharedCorpusContext` carries no lifetime tying it to the caller's
-    /// `files`, so a later call can pass a `Vec` that kept the same
-    /// allocation (same pointer, same length) but different contents (e.g.
-    /// a `pop()` followed by a `push()` of a different file) without that
-    /// being adversarial or unusual; only a full content compare catches
-    /// that reliably.
+    /// structural equality in [`check`](Self::check) rather than just file
+    /// names — see `check` for why.
     files: std::sync::Arc<Vec<generated::descriptor::FileDescriptorProto>>,
     unboxed_oneof_fields: std::sync::Arc<Vec<String>>,
     pointer_fields: std::sync::Arc<Vec<(String, PointerRepr)>>,
@@ -3135,14 +3130,13 @@ impl SharedCorpusContext {
 
     /// Refuse a context built from a different corpus or different
     /// oneof/pointer-repr rules than this call's. Compares the full corpus
-    /// by structural equality, not just file names: `SharedCorpusContext`
-    /// carries no lifetime tying it to the caller's `files`, so a cheaper
-    /// pointer/length identity check would be unsound — a `Vec` can keep
-    /// its allocation (same pointer, same length) across an ordinary
-    /// `pop()` + `push()` of a different file. This is O(corpus) per call;
-    /// measured at ~25-28% added wall/CPU time on a 2895-crate corpus
-    /// versus a name-only comparison, still a ~2.3x wall-clock win over not
-    /// sharing the context at all.
+    /// by structural equality rather than just file names, since
+    /// `SharedCorpusContext` has no lifetime tying it to the caller's
+    /// `files` — a `Vec` can keep its allocation across an ordinary
+    /// `pop()` + `push()` of a different file, so a pointer/length check
+    /// would be unsound. O(corpus) per call; ~25-28% added wall/CPU time on
+    /// a 2895-crate corpus versus a name-only comparison, still a ~2.3x win
+    /// over not sharing the context at all.
     pub(crate) fn check(
         &self,
         files: &[generated::descriptor::FileDescriptorProto],
