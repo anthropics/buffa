@@ -247,6 +247,222 @@ fn enum_links_with_proto3_open() {
 }
 
 #[test]
+fn proto3_open_enum_first_value_must_be_zero() {
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, EnumValueDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("proto3-open-enum-nonzero.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Status".into()),
+                value: vec![
+                    EnumValueDescriptorProto {
+                        name: Some("ACTIVE".into()),
+                        number: Some(1),
+                        ..Default::default()
+                    },
+                    EnumValueDescriptorProto {
+                        name: Some("UNSPECIFIED".into()),
+                        number: Some(0),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_set_rejected_without_mutating_pool(
+        "proto3-open-enum-nonzero.proto",
+        "invalid.test.Status",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::OpenEnumFirstValueNotZero {
+                    enum_name,
+                    name,
+                    number,
+                } if enum_name == "invalid.test.Status"
+                    && name == "ACTIVE"
+                    && *number == 1
+            ));
+        },
+    );
+}
+
+#[test]
+fn editions_open_enum_first_value_must_be_zero() {
+    use buffa_descriptor::generated::descriptor::feature_set::EnumType as FeatureEnumType;
+    use buffa_descriptor::generated::descriptor::{
+        Edition, EnumDescriptorProto, EnumOptions, EnumValueDescriptorProto, FeatureSet,
+        FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("editions-open-enum-nonzero.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("editions".into()),
+            edition: Some(Edition::EDITION_2023),
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Status".into()),
+                value: vec![EnumValueDescriptorProto {
+                    name: Some("ACTIVE".into()),
+                    number: Some(1),
+                    ..Default::default()
+                }],
+                options: EnumOptions {
+                    features: buffa::MessageField::some(FeatureSet {
+                        enum_type: Some(FeatureEnumType::OPEN),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }
+                .into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_set_rejected_without_mutating_pool(
+        "editions-open-enum-nonzero.proto",
+        "invalid.test.Status",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::OpenEnumFirstValueNotZero {
+                    enum_name,
+                    name,
+                    number,
+                } if enum_name == "invalid.test.Status"
+                    && name == "ACTIVE"
+                    && *number == 1
+            ));
+        },
+    );
+}
+
+#[test]
+fn editions_closed_enum_first_value_can_be_nonzero() {
+    use buffa_descriptor::generated::descriptor::feature_set::EnumType as FeatureEnumType;
+    use buffa_descriptor::generated::descriptor::{
+        Edition, EnumDescriptorProto, EnumOptions, EnumValueDescriptorProto, FeatureSet,
+        FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let pool = DescriptorPool::new(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("editions-closed-enum-nonzero.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("editions".into()),
+            edition: Some(Edition::EDITION_2023),
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Status".into()),
+                value: vec![
+                    EnumValueDescriptorProto {
+                        name: Some("ACTIVE".into()),
+                        number: Some(1),
+                        ..Default::default()
+                    },
+                    EnumValueDescriptorProto {
+                        name: Some("UNSPECIFIED".into()),
+                        number: Some(0),
+                        ..Default::default()
+                    },
+                ],
+                options: EnumOptions {
+                    features: buffa::MessageField::some(FeatureSet {
+                        enum_type: Some(FeatureEnumType::CLOSED),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }
+                .into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("closed editions enums may start with a non-zero value");
+
+    let status = pool.enum_by_name("valid.test.Status").unwrap();
+    assert_eq!(status.enum_type(), EnumType::Closed);
+    assert_eq!(status.values()[0].number(), 1);
+}
+
+#[test]
+fn proto2_enum_first_value_can_be_nonzero() {
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, EnumValueDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    // proto2 enums are closed, so the open-enum rule does not apply; a
+    // proto2 enum starting at 1 is the common real-world shape.
+    let pool = DescriptorPool::new(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("proto2-enum-nonzero.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto2".into()),
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Status".into()),
+                value: vec![EnumValueDescriptorProto {
+                    name: Some("ACTIVE".into()),
+                    number: Some(1),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("proto2 enums are closed and may start at any number");
+    let status = pool.enum_by_name("valid.test.Status").unwrap();
+    assert_eq!(status.values()[0].number(), 1);
+}
+
+#[test]
+fn open_enum_with_no_values_is_not_rejected_by_the_first_value_rule() {
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    // protoc rejects an empty enum for a different reason; this rule must
+    // not panic or misfire on `value.first()` being `None`.
+    let result = DescriptorPool::new(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("proto3-empty-enum.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto3".into()),
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Empty".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    assert!(
+        !matches!(
+            result,
+            Err(buffa_descriptor::PoolError::OpenEnumFirstValueNotZero { .. })
+        ),
+        "{result:?}"
+    );
+}
+
+#[test]
 fn oneof_links() {
     let p = pool();
     let oneof = p.message_by_name("reflect.test.OneOf").unwrap();

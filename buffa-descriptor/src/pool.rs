@@ -192,6 +192,12 @@ pub enum PoolError {
         start: u32,
         end: u32,
     },
+    /// An open enum's first declared value has a non-zero number.
+    OpenEnumFirstValueNotZero {
+        enum_name: String,
+        name: String,
+        number: i32,
+    },
 }
 
 impl core::fmt::Display for PoolError {
@@ -285,6 +291,14 @@ impl core::fmt::Display for PoolError {
                 f,
                 "message {message} extension range {start}..{end} overlaps a reserved range"
             ),
+            Self::OpenEnumFirstValueNotZero {
+                enum_name,
+                name,
+                number,
+            } => write!(
+                f,
+                "open enum {enum_name} first value {name:?} has non-zero number {number}"
+            ),
         }
     }
 }
@@ -374,8 +388,8 @@ impl DescriptorPool {
     /// field identity is declared twice, a field number is out of range or in
     /// the implementation-reserved band (19000-19999), a field uses a name or
     /// number its message reserved, an extension range overlaps a reserved
-    /// range, a oneof index is invalid, a message exceeds 65 535 fields, or a
-    /// map entry is malformed.
+    /// range, an open enum's first value is non-zero, a oneof index is
+    /// invalid, a message exceeds 65 535 fields, or a map entry is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -396,7 +410,8 @@ impl DescriptorPool {
     /// validation failure (dangling type names, out-of-range or
     /// implementation-reserved field numbers, reserved message fields, an
     /// overlapping extension range, duplicate symbols or field identities,
-    /// invalid oneof indices, or malformed map entries).
+    /// an open enum whose first value is non-zero, invalid oneof indices, or
+    /// malformed map entries).
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -1159,6 +1174,18 @@ impl DescriptorPool {
             format!("{parent_fqn}.{name}")
         };
         let enum_features = features::resolve_child(parent_features, features::enum_features(e));
+        if enum_features.enum_type == EnumType::Open {
+            if let Some(first) = e.value.first() {
+                let number = first.number.unwrap_or(0);
+                if number != 0 {
+                    return Err(PoolError::OpenEnumFirstValueNotZero {
+                        enum_name: fqn.clone(),
+                        name: first.name.clone().unwrap_or_default(),
+                        number,
+                    });
+                }
+            }
+        }
         let idx = self.enum_index(&fqn).expect("enum registered in pass 1");
         let mut value_names = BTreeSet::new();
         let mut values = Vec::with_capacity(e.value.len());
