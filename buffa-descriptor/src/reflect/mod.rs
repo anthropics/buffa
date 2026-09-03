@@ -30,7 +30,7 @@ mod message;
 mod value;
 
 pub use containers::{ReflectElement, ReflectMapKey};
-pub use dynamic::{AnyError, DynamicMessage};
+pub use dynamic::{AnyError, BridgeError, DynamicMessage};
 #[cfg(feature = "json")]
 pub use json::DynamicMessageSeed;
 pub use message::{ReflectCow, ReflectError, ReflectMessage, ReflectMessageMut, Reflectable};
