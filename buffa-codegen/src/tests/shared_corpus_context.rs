@@ -1,12 +1,15 @@
 //! `generate()` must produce byte-identical output whether
 //! `CodeGenConfig::shared_corpus_context` is
 //! unset (recomputed fresh, today's behavior) or precomputed once via
-//! [`crate::precompute_shared_corpus_context`] and reused — the whole point
+//! [`crate::SharedCorpusContext::new`] and reused — the whole point
 //! is that this is a pure caching layer with no observable effect on output.
 
 use super::*;
 use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
-use crate::generated::descriptor::{DescriptorProto, FieldDescriptorProto, OneofDescriptorProto};
+use crate::generated::descriptor::source_code_info::Location;
+use crate::generated::descriptor::{
+    DescriptorProto, FieldDescriptorProto, OneofDescriptorProto, SourceCodeInfo,
+};
 
 fn oneof_config() -> CodeGenConfig {
     CodeGenConfig {
@@ -70,14 +73,34 @@ fn test_files() -> Vec<FileDescriptorProto> {
         },
     ];
 
+    // Comments on a message and on a field, so the cached comment map is
+    // exercised end to end (they surface as doc attributes in the output).
+    let mut leaf_sci = SourceCodeInfo::default();
+    leaf_sci
+        .location
+        .push(location(vec![4, 0], " The leaf message comment.\n"));
+    leaf.source_code_info = leaf_sci.into();
+    let mut main_sci = SourceCodeInfo::default();
+    main_sci.location.push(location(
+        vec![4, 1, 2, 0],
+        " The inline leaf field comment.\n",
+    ));
+    main.source_code_info = main_sci.into();
+
     vec![leaf, main]
 }
 
+fn location(path: Vec<i32>, leading: &str) -> Location {
+    Location {
+        path,
+        leading_comments: Some(leading.to_string()),
+        ..Default::default()
+    }
+}
+
 /// Assert two `generate()` outputs are byte-identical, order-independent.
-fn assert_same_output(a: Vec<GeneratedFile>, b: Vec<GeneratedFile>, label: &str) {
+fn assert_same_output(mut a: Vec<GeneratedFile>, mut b: Vec<GeneratedFile>, label: &str) {
     assert_eq!(a.len(), b.len(), "{label}: same number of generated files");
-    let mut a = a;
-    let mut b = b;
     a.sort_by(|x, y| x.name.cmp(&y.name));
     b.sort_by(|x, y| x.name.cmp(&y.name));
     for (x, y) in a.iter().zip(b.iter()) {
@@ -99,8 +122,7 @@ fn shared_context_matches_fresh_computation() {
 
     let fresh = crate::generate(&files, &files_to_generate, &config).expect("fresh generate");
 
-    let shared = crate::precompute_shared_corpus_context(&files, &config);
-    config.shared_corpus_context = Some(std::sync::Arc::new(shared));
+    config.shared_corpus_context = Some(crate::SharedCorpusContext::new(&files, &config));
     let with_shared =
         crate::generate(&files, &files_to_generate, &config).expect("shared-context generate");
 
@@ -114,9 +136,15 @@ fn shared_context_matches_fresh_computation() {
         .find(|f| f.content.contains("struct SelfRefView"))
         .expect("SelfRefView must be generated");
     assert!(
-        self_ref_view.content.contains("Box"),
+        self_ref_view.content.contains("Box<SelfRefView"),
         "SelfRefView's self-referencing field must stay boxed: {}",
         self_ref_view.content
+    );
+
+    let all = joined(&with_shared);
+    assert!(
+        all.contains("The leaf message comment.") && all.contains("The inline leaf field comment."),
+        "the cached comment map must reach the output: {all}"
     );
 
     assert_same_output(fresh, with_shared, "single combined generate() call");
@@ -145,12 +173,9 @@ fn shared_context_across_separate_per_crate_calls() {
     let fresh_leaf = crate::generate(&files, &leaf_call, &leaf_config).expect("fresh leaf crate");
     let fresh_main = crate::generate(&files, &main_call, &main_config).expect("fresh main crate");
 
-    let shared = std::sync::Arc::new(crate::precompute_shared_corpus_context(
-        &files,
-        &leaf_config,
-    ));
+    let shared = crate::SharedCorpusContext::new(&files, &leaf_config);
     let mut leaf_config_shared = leaf_config;
-    leaf_config_shared.shared_corpus_context = Some(std::sync::Arc::clone(&shared));
+    leaf_config_shared.shared_corpus_context = Some(shared.clone());
     let mut main_config_shared = main_config;
     main_config_shared.shared_corpus_context = Some(shared);
 
@@ -174,4 +199,76 @@ fn shared_context_across_separate_per_crate_calls() {
 
     assert_same_output(fresh_leaf, shared_leaf, "leaf crate");
     assert_same_output(fresh_main, shared_main, "main crate");
+}
+
+/// The shared context is live, not merely tolerated: a context built under
+/// different oneof rules than the call's is refused rather than silently
+/// resolving the corpus against the wrong rules, and so is one built from a
+/// different corpus.
+#[test]
+fn mismatched_shared_context_is_rejected() {
+    let files = test_files();
+    let files_to_generate = vec!["leaf.proto".to_string(), "main.proto".to_string()];
+
+    let no_rules = CodeGenConfig::default();
+    let mut with_rules = oneof_config();
+    with_rules.shared_corpus_context = Some(crate::SharedCorpusContext::new(&files, &no_rules));
+    let err = crate::generate(&files, &files_to_generate, &with_rules)
+        .expect_err("a context built under different oneof rules must be refused");
+    assert!(
+        matches!(
+            err,
+            CodeGenError::SharedCorpusContextMismatch {
+                what: "unboxed_oneof_fields"
+            }
+        ),
+        "{err}"
+    );
+
+    let mut other_corpus = oneof_config();
+    other_corpus.shared_corpus_context =
+        Some(crate::SharedCorpusContext::new(&files[..1], &other_corpus));
+    let err = crate::generate(&files, &files_to_generate, &other_corpus)
+        .expect_err("a context built from a different corpus must be refused");
+    assert!(
+        matches!(
+            err,
+            CodeGenError::SharedCorpusContextMismatch { what: "files" }
+        ),
+        "{err}"
+    );
+
+    let mut pointer_rules = oneof_config();
+    pointer_rules.shared_corpus_context =
+        Some(crate::SharedCorpusContext::new(&files, &pointer_rules));
+    pointer_rules.pointer_fields = vec![(".".to_string(), PointerRepr::Box)];
+    let err = crate::generate(&files, &files_to_generate, &pointer_rules)
+        .expect_err("a context built under different pointer rules must be refused");
+    assert!(
+        matches!(
+            err,
+            CodeGenError::SharedCorpusContextMismatch {
+                what: "pointer_fields"
+            }
+        ),
+        "{err}"
+    );
+}
+
+/// `SharedCorpusContext` is handed to parallel per-package `generate()`
+/// calls, so it must stay `Send + Sync`; a `Debug` of it (and so of a
+/// `CodeGenConfig` carrying one) prints sizes, not the corpus comment text.
+#[test]
+fn shared_context_is_send_sync_and_debug_prints_sizes() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<crate::SharedCorpusContext>();
+
+    let files = test_files();
+    let shared = crate::SharedCorpusContext::new(&files, &oneof_config());
+    let debug = format!("{shared:?}");
+    assert!(
+        debug.contains("files: 2") && debug.contains("comments: 2"),
+        "{debug}"
+    );
+    assert!(!debug.contains("leaf message comment"), "{debug}");
 }

@@ -271,28 +271,27 @@ impl<'a> CodeGenContext<'a> {
         let mut enum_closedness = HashMap::new();
         let mut nested_module_names = HashMap::new();
 
-        // Reuse a corpus-wide context precomputed once via
-        // `precompute_shared_corpus_context` when the caller supplied one:
-        // its output is identical for the same `files` + oneof/pointer
-        // config regardless of `effective_extern_paths` (the one thing that
-        // legitimately varies per call in a one-crate-per-package
-        // workspace), so this is an `Arc` clone instead of a fresh
-        // corpus-wide walk.
-        let (unboxed_oneof_variants, inlined_message_fields, comment_map) =
-            if let Some(shared) = &config.shared_corpus_context {
-                (
-                    Arc::clone(&shared.unboxed_oneof_variants),
-                    Arc::clone(&shared.inlined_message_fields),
-                    Arc::clone(&shared.comment_map),
-                )
-            } else {
-                let shared = crate::precompute_shared_corpus_context(files, config);
-                (
-                    shared.unboxed_oneof_variants,
-                    shared.inlined_message_fields,
-                    shared.comment_map,
-                )
-            };
+        // Reuse the corpus-wide state a caller precomputed with
+        // `SharedCorpusContext::new`: it is identical for the same `files`
+        // and oneof/pointer-repr rules regardless of `effective_extern_paths`
+        // (the one thing that legitimately varies per call in a
+        // one-crate-per-package workspace), so this is an `Arc` clone
+        // instead of a fresh corpus-wide walk. `generate` has already
+        // checked that the context matches this call; this entry point is
+        // infallible, so it only asserts in debug builds.
+        let shared = match &config.shared_corpus_context {
+            Some(shared) => {
+                debug_assert!(
+                    shared.check(files, config).is_ok(),
+                    "shared_corpus_context does not match this call's files or rules"
+                );
+                shared.clone()
+            }
+            None => crate::SharedCorpusContext::new(files, config),
+        };
+        let unboxed_oneof_variants = Arc::clone(shared.unboxed_oneof_variants());
+        let inlined_message_fields = Arc::clone(shared.inlined_message_fields());
+        let comment_map = Arc::clone(shared.comment_map());
 
         // Pre-pass: collect every package and top-level message name in the
         // descriptor set so nested-types module deconfliction (issue #135) is

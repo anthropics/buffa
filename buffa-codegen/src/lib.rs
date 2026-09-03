@@ -1500,21 +1500,19 @@ pub struct CodeGenConfig {
     ///
     /// `None` (the default) keeps the `super::`-relative behavior.
     pub shared_descriptor_pool_root: Option<String>,
-    /// Reuse a [`SharedCorpusContext`] precomputed once via
-    /// [`precompute_shared_corpus_context`] instead of recomputing
-    /// `msg_index`/`resolve_unboxed_variants`/`resolve_inlined_fields`/
-    /// comment collection on every `generate()` call. Safe only when
-    /// `files` and the oneof/pointer-repr config are the same across every
-    /// call sharing one context — true for a one-crate-per-package
-    /// workspace generating from one whole-corpus `FileDescriptorSet` with
-    /// a fixed config, false if either varies per call. This precondition
-    /// is not checked at runtime: passing a context built from different
-    /// `files` or a different `unboxed_oneof_fields`/`pointer_fields` than
-    /// the current call silently produces stale or incorrect output for
-    /// whatever changed.
+    /// Reuse a [`SharedCorpusContext`] built once by
+    /// [`SharedCorpusContext::new`] instead of re-deriving the corpus-wide
+    /// oneof/pointer-repr resolution and comment collection on every
+    /// `generate()` call — the win for a one-crate-per-package workspace that
+    /// generates each package from one whole-corpus `FileDescriptorSet` with
+    /// only `extern_paths` varying per call. The context must have been built
+    /// from the same `files` and the same
+    /// `unboxed_oneof_fields`/`pointer_fields` as the call using it;
+    /// `generate` checks and returns
+    /// [`CodeGenError::SharedCorpusContextMismatch`] otherwise.
     ///
-    /// `None` (the default) recomputes fresh every call, as today.
-    pub shared_corpus_context: Option<std::sync::Arc<SharedCorpusContext>>,
+    /// `None` (the default) recomputes on every call.
+    pub shared_corpus_context: Option<SharedCorpusContext>,
     /// Gate the reflection impls behind a `reflect` crate feature, *without*
     /// gating json/views/text (unlike
     /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features),
@@ -2793,6 +2791,9 @@ pub fn generate_with_diagnostics(
     let file_descriptors: &[FileDescriptorProto] =
         overridden.as_ref().map_or(file_descriptors, |o| &o.files);
 
+    if let Some(shared) = &config.shared_corpus_context {
+        shared.check(file_descriptors, config)?;
+    }
     let ctx = context::CodeGenContext::for_generate(file_descriptors, files_to_generate, config);
 
     // An inert rule means the user opted a path out of its default semantics
@@ -3048,49 +3049,141 @@ pub enum IncludeMode<'a> {
     OutDir,
 }
 
-/// The corpus-wide computations `CodeGenContext` builds on every
-/// `generate()` call — `msg_index`, `resolve_unboxed_variants`,
-/// `resolve_inlined_fields`, and per-file comment collection — none of which
-/// depend on `effective_extern_paths` (the one thing that legitimately varies
-/// per call in a one-crate-per-package workspace). Precompute once via
-/// [`precompute_shared_corpus_context`] and set
-/// [`CodeGenConfig::shared_corpus_context`] to reuse it across many calls
-/// instead of recomputing on each one.
-#[derive(Debug)]
+/// The corpus-wide state `CodeGenContext` derives on every `generate()`
+/// call — which oneof variants are unboxed, which message fields are stored
+/// inline, and the raw comment text per fully-qualified name — none of which
+/// depends on the extern paths that legitimately vary per call in a
+/// one-crate-per-package workspace. Build one with [`SharedCorpusContext::new`]
+/// from the whole corpus and set [`CodeGenConfig::shared_corpus_context`] on
+/// every per-package config to skip that work on each call.
+///
+/// A context is only valid for the exact `files` and the same
+/// `unboxed_oneof_fields`/`pointer_fields` it was built from; `generate`
+/// checks both and returns [`CodeGenError::SharedCorpusContextMismatch`]
+/// rather than emitting code resolved against a different corpus. The
+/// context holds the corpus comment map for as long as any clone of it lives,
+/// so drop it once code generation is done. Cloning shares the precomputed
+/// state (`Arc`s inside), and the type is `Send + Sync`, so one context can
+/// be handed to parallel per-package `generate()` calls.
+///
+/// # Examples
+///
+/// ```
+/// use buffa_codegen::{CodeGenConfig, SharedCorpusContext};
+/// # use buffa_codegen::generated::descriptor::FileDescriptorProto;
+/// # let corpus: Vec<FileDescriptorProto> = Vec::new();
+/// # let packages: Vec<(String, Vec<String>)> = Vec::new();
+/// let base = CodeGenConfig::default();
+/// let shared = SharedCorpusContext::new(&corpus, &base);
+/// for (extern_prefix, files_to_generate) in packages {
+///     let mut config = base.clone();
+///     config.extern_paths.push((extern_prefix, "::other_crate".to_string()));
+///     config.shared_corpus_context = Some(shared.clone());
+///     let _files = buffa_codegen::generate(&corpus, &files_to_generate, &config)?;
+/// }
+/// # Ok::<(), buffa_codegen::CodeGenError>(())
+/// ```
+#[derive(Clone)]
 pub struct SharedCorpusContext {
+    /// The corpus fingerprint: every file name, in order.
+    file_names: std::sync::Arc<Vec<String>>,
+    unboxed_oneof_fields: std::sync::Arc<Vec<String>>,
+    pointer_fields: std::sync::Arc<Vec<(String, PointerRepr)>>,
     unboxed_oneof_variants: std::sync::Arc<std::collections::HashSet<String>>,
     inlined_message_fields: std::sync::Arc<std::collections::HashSet<String>>,
     comment_map: std::sync::Arc<std::collections::HashMap<String, String>>,
 }
 
-/// Precompute a [`SharedCorpusContext`] from the whole corpus once, for
-/// reuse across every `generate()` call sharing that corpus and config (see
-/// [`CodeGenConfig::shared_corpus_context`]).
-#[must_use]
-pub fn precompute_shared_corpus_context(
-    files: &[generated::descriptor::FileDescriptorProto],
-    config: &CodeGenConfig,
-) -> SharedCorpusContext {
-    let msg_index = oneof::message_index(files);
-    let unboxed_oneof_variants = oneof::resolve_unboxed_variants(
-        &msg_index,
-        &config.unboxed_oneof_fields,
-        &config.pointer_fields,
-    );
-    let inlined_message_fields = oneof::resolve_inlined_fields(
-        &msg_index,
-        &config.unboxed_oneof_fields,
-        &config.pointer_fields,
-    );
-    let mut comment_map: std::collections::HashMap<String, String> =
-        std::collections::HashMap::new();
-    for file in files {
-        comment_map.extend(comments::fqn_comments(file));
+impl SharedCorpusContext {
+    /// Precompute the corpus-wide state for `files` under `config`'s oneof
+    /// and pointer-representation rules, for reuse across every `generate()`
+    /// call that passes the same `files` and rules (see
+    /// [`CodeGenConfig::shared_corpus_context`]).
+    #[must_use]
+    pub fn new(
+        files: &[generated::descriptor::FileDescriptorProto],
+        config: &CodeGenConfig,
+    ) -> Self {
+        let msg_index = oneof::message_index(files);
+        let unboxed_oneof_variants = oneof::resolve_unboxed_variants(
+            &msg_index,
+            &config.unboxed_oneof_fields,
+            &config.pointer_fields,
+        );
+        let inlined_message_fields = oneof::resolve_inlined_fields(
+            &msg_index,
+            &config.unboxed_oneof_fields,
+            &config.pointer_fields,
+        );
+        let comment_map = files.iter().flat_map(comments::fqn_comments).collect();
+        Self {
+            file_names: std::sync::Arc::new(Self::file_names(files)),
+            unboxed_oneof_fields: std::sync::Arc::new(config.unboxed_oneof_fields.clone()),
+            pointer_fields: std::sync::Arc::new(config.pointer_fields.clone()),
+            unboxed_oneof_variants: std::sync::Arc::new(unboxed_oneof_variants),
+            inlined_message_fields: std::sync::Arc::new(inlined_message_fields),
+            comment_map: std::sync::Arc::new(comment_map),
+        }
     }
-    SharedCorpusContext {
-        unboxed_oneof_variants: std::sync::Arc::new(unboxed_oneof_variants),
-        inlined_message_fields: std::sync::Arc::new(inlined_message_fields),
-        comment_map: std::sync::Arc::new(comment_map),
+
+    fn file_names(files: &[generated::descriptor::FileDescriptorProto]) -> Vec<String> {
+        files
+            .iter()
+            .map(|f| f.name.clone().unwrap_or_default())
+            .collect()
+    }
+
+    /// Refuse a context built from a different corpus or different
+    /// oneof/pointer-repr rules than this call's.
+    pub(crate) fn check(
+        &self,
+        files: &[generated::descriptor::FileDescriptorProto],
+        config: &CodeGenConfig,
+    ) -> Result<(), CodeGenError> {
+        let what = if files.len() != self.file_names.len()
+            || files
+                .iter()
+                .zip(self.file_names.iter())
+                .any(|(f, name)| f.name.as_deref().unwrap_or_default() != name)
+        {
+            "files"
+        } else if *self.unboxed_oneof_fields != config.unboxed_oneof_fields {
+            "unboxed_oneof_fields"
+        } else if *self.pointer_fields != config.pointer_fields {
+            "pointer_fields"
+        } else {
+            return Ok(());
+        };
+        Err(CodeGenError::SharedCorpusContextMismatch { what })
+    }
+
+    pub(crate) fn unboxed_oneof_variants(
+        &self,
+    ) -> &std::sync::Arc<std::collections::HashSet<String>> {
+        &self.unboxed_oneof_variants
+    }
+
+    pub(crate) fn inlined_message_fields(
+        &self,
+    ) -> &std::sync::Arc<std::collections::HashSet<String>> {
+        &self.inlined_message_fields
+    }
+
+    pub(crate) fn comment_map(&self) -> &std::sync::Arc<std::collections::HashMap<String, String>> {
+        &self.comment_map
+    }
+}
+
+// The comment map is the whole corpus's comment text; print sizes, not
+// contents, so a `{:?}` of a `CodeGenConfig` stays readable.
+impl core::fmt::Debug for SharedCorpusContext {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SharedCorpusContext")
+            .field("files", &self.file_names.len())
+            .field("unboxed_oneof_variants", &self.unboxed_oneof_variants.len())
+            .field("inlined_message_fields", &self.inlined_message_fields.len())
+            .field("comments", &self.comment_map.len())
+            .finish()
     }
 }
 
@@ -4444,6 +4537,19 @@ pub enum CodeGenError {
          extensions). Rename the proto element."
     )]
     ReservedModuleName { name: String, location: String },
+    /// [`CodeGenConfig::shared_corpus_context`] was built from a different
+    /// corpus or different oneof/pointer-repr rules than this call's.
+    ///
+    /// `what` names the mismatch: `"files"`, `"unboxed_oneof_fields"`, or
+    /// `"pointer_fields"`. Build the context with
+    /// [`SharedCorpusContext::new`] from the same `files` and config as every
+    /// `generate()` call that uses it.
+    #[error(
+        "shared_corpus_context was built from different {what} than this \
+         generate() call; build it from the same files and oneof/pointer-repr \
+         config as every call that uses it"
+    )]
+    SharedCorpusContextMismatch { what: &'static str },
     /// The input contains a message with `option message_set_wire_format = true`
     /// but [`CodeGenConfig::allow_message_set`] was not set.
     #[error(
