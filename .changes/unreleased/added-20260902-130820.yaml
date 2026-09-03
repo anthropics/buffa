@@ -1,4 +1,0 @@
-kind: Added
-body: |-
-    **`DynamicMessage::try_from_message`: a fallible, name-resolving bridge from a generated message** (#414, refs #413). Resolves the descriptor from the type's `MessageName` and returns a new `BridgeError` (`MessageNotFound` / `MessageTooLarge` / `Decode`, re-exported from `buffa_descriptor::reflect` and the crate root) instead of panicking when the pool lacks the type or the encoded bytes fail to decode against its descriptor. `DynamicMessage::try_from_message_with_index` is the fallible form for callers that already hold a `MessageIndex`; `from_message` now shares its decode step. The bridge uses the same encoded-length-scaled memory budgets as generated `ReflectMessage::to_dynamic`, so large generated messages avoid false `ElementMemoryLimitExceeded` failures without making the second representation unbounded.
-time: 2026-09-02T13:08:20.560601+08:00

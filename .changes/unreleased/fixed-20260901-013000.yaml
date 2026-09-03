@@ -1,4 +1,0 @@
-kind: Fixed
-body: |-
-    **`DescriptorPool` rejects enum values that reuse a reserved name or number** (#405), as `protoc` does. Only hand-built or synthesized descriptor sets can reach this; the rejection is the new `PoolError::ReservedEnumValueName` / `ReservedEnumValueNumber` variants, naming the enum and the value.
-time: 2026-09-01T01:30:00+02:00

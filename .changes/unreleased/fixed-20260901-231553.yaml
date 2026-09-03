@@ -1,4 +1,0 @@
-kind: Fixed
-body: |-
-    **`DescriptorPool` rejects an open enum whose first declared value is not zero** (#411), as `protoc` does for proto3 and editions `enum_type = OPEN`; closed enums (proto2, or editions `CLOSED`) may still start anywhere. Only hand-built or synthesized descriptor sets can reach this; the rejection is the new `PoolError::OpenEnumFirstValueNotZero` variant.
-time: 2026-09-01T23:15:53+02:00

@@ -1,3 +1,0 @@
-kind: Fixed
-body: The generated `Deserialize` impl for messages with a oneof (or with extension ranges under `preserve_unknown_fields`) now reaches `core::fmt` through an absolute `::core::` path. It was the one unqualified path the codegen emitted, so a proto package named `core` produced a module that shadowed the `core` crate and the generated code failed to compile with `E0433: cannot find fmt in core`.
-time: 2026-08-26T23:40:00-05:00

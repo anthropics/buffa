@@ -1,4 +1,0 @@
-kind: Fixed
-body: |-
-    **Generated enums carry `#[allow(non_camel_case_types)]`** (#409, closes #408). The module-tree wrapper emitted by `buffa-build` and `protoc-gen-buffa-packaging` already suppresses the lint, but a per-proto content file consumed on its own (`mod`/`include!` without the packaging plugin) warned on every `SCREAMING_CASE` variant. The attribute is now on each enum, as the scoped `non_snake_case` allow already is on messages.
-time: 2026-09-01T15:05:00Z

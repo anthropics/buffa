@@ -1,4 +1,0 @@
-kind: Fixed
-body: |-
-    **Textproto accepts a comment between `-` and a special float literal** (#404). The tokenizer already allowed whitespace and comments between the sign and `inf`/`infinity`/`nan`, as the spec and C++ do, but the decoder only trimmed whitespace from the raw span, so `f: - # note\n inf` failed to parse.
-time: 2026-09-01T01:48:54+02:00
