@@ -3085,8 +3085,15 @@ pub enum IncludeMode<'a> {
 /// ```
 #[derive(Clone)]
 pub struct SharedCorpusContext {
-    /// The corpus fingerprint: every file name, in order.
-    file_names: std::sync::Arc<Vec<String>>,
+    /// The exact corpus this context was built from, compared by full
+    /// structural equality in [`check`](Self::check) — not just file names.
+    /// `SharedCorpusContext` carries no lifetime tying it to the caller's
+    /// `files`, so a later call can pass a `Vec` that kept the same
+    /// allocation (same pointer, same length) but different contents (e.g.
+    /// a `pop()` followed by a `push()` of a different file) without that
+    /// being adversarial or unusual; only a full content compare catches
+    /// that reliably.
+    files: std::sync::Arc<Vec<generated::descriptor::FileDescriptorProto>>,
     unboxed_oneof_fields: std::sync::Arc<Vec<String>>,
     pointer_fields: std::sync::Arc<Vec<(String, PointerRepr)>>,
     unboxed_oneof_variants: std::sync::Arc<std::collections::HashSet<String>>,
@@ -3117,7 +3124,7 @@ impl SharedCorpusContext {
         );
         let comment_map = files.iter().flat_map(comments::fqn_comments).collect();
         Self {
-            file_names: std::sync::Arc::new(Self::file_names(files)),
+            files: std::sync::Arc::new(files.to_vec()),
             unboxed_oneof_fields: std::sync::Arc::new(config.unboxed_oneof_fields.clone()),
             pointer_fields: std::sync::Arc::new(config.pointer_fields.clone()),
             unboxed_oneof_variants: std::sync::Arc::new(unboxed_oneof_variants),
@@ -3126,26 +3133,22 @@ impl SharedCorpusContext {
         }
     }
 
-    fn file_names(files: &[generated::descriptor::FileDescriptorProto]) -> Vec<String> {
-        files
-            .iter()
-            .map(|f| f.name.clone().unwrap_or_default())
-            .collect()
-    }
-
     /// Refuse a context built from a different corpus or different
-    /// oneof/pointer-repr rules than this call's.
+    /// oneof/pointer-repr rules than this call's. Compares the full corpus
+    /// by structural equality, not just file names: `SharedCorpusContext`
+    /// carries no lifetime tying it to the caller's `files`, so a cheaper
+    /// pointer/length identity check would be unsound — a `Vec` can keep
+    /// its allocation (same pointer, same length) across an ordinary
+    /// `pop()` + `push()` of a different file. This is O(corpus) per call;
+    /// measured at ~25-28% added wall/CPU time on a 2895-crate corpus
+    /// versus a name-only comparison, still a ~2.3x wall-clock win over not
+    /// sharing the context at all.
     pub(crate) fn check(
         &self,
         files: &[generated::descriptor::FileDescriptorProto],
         config: &CodeGenConfig,
     ) -> Result<(), CodeGenError> {
-        let what = if files.len() != self.file_names.len()
-            || files
-                .iter()
-                .zip(self.file_names.iter())
-                .any(|(f, name)| f.name.as_deref().unwrap_or_default() != name)
-        {
+        let what = if *files != self.files[..] {
             "files"
         } else if *self.unboxed_oneof_fields != config.unboxed_oneof_fields {
             "unboxed_oneof_fields"
@@ -3179,7 +3182,7 @@ impl SharedCorpusContext {
 impl core::fmt::Debug for SharedCorpusContext {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("SharedCorpusContext")
-            .field("files", &self.file_names.len())
+            .field("files", &self.files.len())
             .field("unboxed_oneof_variants", &self.unboxed_oneof_variants.len())
             .field("inlined_message_fields", &self.inlined_message_fields.len())
             .field("comments", &self.comment_map.len())

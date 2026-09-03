@@ -253,6 +253,51 @@ fn mismatched_shared_context_is_rejected() {
     );
 }
 
+/// A corpus that keeps the same file names (and count) but changes a
+/// message's content must still be rejected: file names alone are not a
+/// sound corpus fingerprint, since `SharedCorpusContext` carries no
+/// lifetime tying it to the caller's `files` — a later call can easily
+/// pass a same-named file with different content (e.g. after regenerating
+/// a `FileDescriptorSet` from an edited `.proto`), and that must not
+/// silently reuse oneof/inlining decisions or comments resolved against
+/// the old content.
+#[test]
+fn same_name_changed_content_is_rejected() {
+    let files = test_files();
+    let files_to_generate = vec!["leaf.proto".to_string(), "main.proto".to_string()];
+
+    let mut config = oneof_config();
+    config.shared_corpus_context = Some(crate::SharedCorpusContext::new(&files, &config));
+
+    let mut changed_files = files.clone();
+    changed_files[0].message_type[0].field.push(make_field(
+        "extra",
+        2,
+        Label::LABEL_OPTIONAL,
+        Type::TYPE_INT32,
+    ));
+    assert_eq!(
+        changed_files.len(),
+        files.len(),
+        "content changes, not the file count"
+    );
+    assert_eq!(
+        changed_files[0].name, files[0].name,
+        "content changes, not the file name"
+    );
+
+    let err = crate::generate(&changed_files, &files_to_generate, &config).expect_err(
+        "a context built from a same-named but different-content corpus must be refused",
+    );
+    assert!(
+        matches!(
+            err,
+            CodeGenError::SharedCorpusContextMismatch { what: "files" }
+        ),
+        "{err}"
+    );
+}
+
 /// `SharedCorpusContext` is handed to parallel per-package `generate()`
 /// calls, so it must stay `Send + Sync`; a `Debug` of it (and so of a
 /// `CodeGenConfig` carrying one) prints sizes, not the corpus comment text.
