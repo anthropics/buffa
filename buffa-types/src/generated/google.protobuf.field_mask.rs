@@ -452,7 +452,7 @@ impl ::buffa::text::TextFormat for FieldMask {
                         |__d| ::core::result::Result::Ok(__d.read_string()?.into_owned()),
                     )?
                 }
-                _ => dec.skip_value()?,
+                _ => return Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())

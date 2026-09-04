@@ -14,7 +14,8 @@
 //! `merge_text` is a `while let Some(name) = dec.read_field_name()?` loop
 //! with a `match name { ... }` dispatch. The match key is the proto field
 //! name as it appears in the `.proto` (not `json_name`, not the Rust ident).
-//! Unknown names call `dec.skip_value()`.
+//! Reserved names call `dec.skip_value()`; other unknown names call
+//! `dec.unknown_field()`.
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -90,7 +91,7 @@ pub(crate) fn generate_text_impl(
     // MessageSet wire format: the message has no regular fields, only an
     // extension range. Textproto representation is all `[type.url]` brackets
     // which needs the extension registry (PR 4). Emit a stub so containing
-    // messages still compile — encode writes nothing, decode skips. A
+    // messages still compile — encode writes nothing, decode rejects names. A
     // MessageSet field shows as `name {}` until the registry is wired.
     let is_message_set = msg
         .options
@@ -115,8 +116,8 @@ pub(crate) fn generate_text_impl(
                         &mut self,
                         dec: &mut ::buffa::text::TextDecoder<'_>,
                     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
-                        while dec.read_field_name()?.is_some() {
-                            dec.skip_value()?;
+                        if dec.read_field_name()?.is_some() {
+                            return Err(dec.unknown_field());
                         }
                         ::core::result::Result::Ok(())
                     }
@@ -236,6 +237,16 @@ pub(crate) fn generate_text_impl(
         .map(|f| map_merge_arm(ctx, msg, f, current_package, proto_fqn, features, nesting))
         .collect::<Result<_, _>>()?;
 
+    // Protobuf text parsers accept reserved field names and discard their
+    // values. Keep these explicit arms before the strict unknown-field arm.
+    // Map-entry messages cannot have reserved names, so their local parser
+    // needs no equivalent arms.
+    let reserved_merge: Vec<_> = msg
+        .reserved_name
+        .iter()
+        .map(|name| quote! { #name => dec.skip_value()?, })
+        .collect();
+
     // Extension bracket syntax `[pkg.ext] { ... }` — encode side writes
     // registered extensions from unknown fields; decode side consults the
     // text extension map installed via `set_type_registry`. The lookup
@@ -260,6 +271,37 @@ pub(crate) fn generate_text_impl(
         )
     } else {
         (quote! {}, quote! {})
+    };
+
+    // An empty message has no recognized text fields. Emit a single check
+    // instead of a loop whose body always returns, which is both simpler and
+    // avoids `clippy::never_loop` in generated code.
+    let has_text_fields = !scalar_merge.is_empty()
+        || !repeated_merge.is_empty()
+        || !oneof_merge.is_empty()
+        || !map_merge.is_empty()
+        || !reserved_merge.is_empty()
+        || use_ext_text;
+    let merge_body = if has_text_fields {
+        quote! {
+            while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+                match __name {
+                    #(#scalar_merge)*
+                    #(#repeated_merge)*
+                    #(#oneof_merge)*
+                    #(#map_merge)*
+                    #(#reserved_merge)*
+                    #ext_merge_arm
+                    _ => return Err(dec.unknown_field()),
+                }
+            }
+        }
+    } else {
+        quote! {
+            if dec.read_field_name()?.is_some() {
+                return Err(dec.unknown_field());
+            }
+        }
     };
 
     // Unknown-field printing is a no-op by default (the encoder checks its
@@ -309,16 +351,7 @@ pub(crate) fn generate_text_impl(
                 ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
                     #[allow(unused_imports)]
                     use ::buffa::Enumeration as _;
-                    while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
-                        match __name {
-                            #(#scalar_merge)*
-                            #(#repeated_merge)*
-                            #(#oneof_merge)*
-                            #(#map_merge)*
-                            #ext_merge_arm
-                            _ => dec.skip_value()?,
-                        }
-                    }
+                    #merge_body
                     ::core::result::Result::Ok(())
                 }
             }
@@ -1102,7 +1135,7 @@ fn map_merge_arm(
                         match __n {
                             "key" => __k = ::core::option::Option::Some(#key_read),
                             "value" => __v = ::core::option::Option::Some(#val_read),
-                            _ => __d.skip_value()?,
+                            _ => return Err(__d.unknown_field()),
                         }
                     }
                     ::core::result::Result::Ok(())

@@ -354,7 +354,7 @@ impl ::buffa::text::TextFormat for Timestamp {
             match __name {
                 "seconds" => self.seconds = dec.read_i64()?,
                 "nanos" => self.nanos = dec.read_i32()?,
-                _ => dec.skip_value()?,
+                _ => return Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())

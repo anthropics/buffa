@@ -271,7 +271,7 @@ impl ::buffa::text::TextFormat for Version {
                         dec.read_string()?.into_owned(),
                     );
                 }
-                _ => dec.skip_value()?,
+                _ => return Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -689,7 +689,7 @@ impl ::buffa::text::TextFormat for CodeGeneratorRequest {
                         },
                     )?
                 }
-                _ => dec.skip_value()?,
+                _ => return Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -1078,7 +1078,7 @@ impl ::buffa::text::TextFormat for CodeGeneratorResponse {
                         },
                     )?
                 }
-                _ => dec.skip_value()?,
+                _ => return Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -1633,7 +1633,7 @@ pub mod code_generator_response {
                             self.generated_code_info.get_or_insert_default(),
                         )?
                     }
-                    _ => dec.skip_value()?,
+                    _ => return Err(dec.unknown_field()),
                 }
             }
             ::core::result::Result::Ok(())

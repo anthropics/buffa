@@ -313,7 +313,7 @@ impl ::buffa::text::TextFormat for Struct {
                                                 __m
                                             });
                                         }
-                                        _ => __d.skip_value()?,
+                                        _ => return Err(__d.unknown_field()),
                                     }
                                 }
                                 ::core::result::Result::Ok(())
@@ -328,7 +328,7 @@ impl ::buffa::text::TextFormat for Struct {
                         self.fields.insert(__k, __v);
                     }
                 }
-                _ => dec.skip_value()?,
+                _ => return Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -887,7 +887,7 @@ impl ::buffa::text::TextFormat for Value {
                         );
                     }
                 }
-                _ => dec.skip_value()?,
+                _ => return Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -1153,7 +1153,7 @@ impl ::buffa::text::TextFormat for ListValue {
                         },
                     )?
                 }
-                _ => dec.skip_value()?,
+                _ => return Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
