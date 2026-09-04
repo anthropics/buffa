@@ -796,6 +796,107 @@ fn reserved_message_field_range_end_is_exclusive() {
 }
 
 #[test]
+fn fields_inside_extension_ranges_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let make_set = |message_name: String, number: i32| FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some(format!("field-in-extension-range-{number}.proto")),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto2".into()),
+            message_type: vec![DescriptorProto {
+                name: Some(message_name),
+                field: vec![scalar_field("value", number, Type::TYPE_INT32)],
+                extension_range: vec![
+                    ExtensionRange {
+                        start: Some(20),
+                        end: Some(30),
+                        ..Default::default()
+                    },
+                    ExtensionRange {
+                        start: Some(7),
+                        end: Some(10),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    for (suffix, number) in [("start", 7), ("end-minus-one", 9)] {
+        let message_name = format!("FieldInRange{suffix}");
+        let full_name = format!("invalid.test.{message_name}");
+        let file_name = format!("field-in-extension-range-{number}.proto");
+        let expected_message = full_name.clone();
+
+        assert_rejected_without_mutating_pool(
+            &file_name,
+            &full_name,
+            make_set(message_name, number).file[0].message_type[0].clone(),
+            move |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::FieldInExtensionRange {
+                        message,
+                        name,
+                        number: actual,
+                    } if message == &expected_message
+                        && name == "value"
+                        && *actual == number as u32
+                ));
+            },
+        );
+    }
+
+    let accepted = DescriptorPool::new(make_set("AdjacentFields".into(), 6)).unwrap();
+    let message = accepted
+        .message_by_name("invalid.test.AdjacentFields")
+        .unwrap();
+    assert!(message.field(6).is_some(), "start - 1 remains available");
+    assert_eq!(
+        message.extension_ranges(),
+        &[(20, 30), (7, 10)],
+        "stored extension ranges keep declaration order"
+    );
+
+    let accepted = DescriptorPool::new(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("field-at-extension-end.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto2".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("AtExtensionEnd".into()),
+                field: vec![scalar_field("value", 10, Type::TYPE_INT32)],
+                extension_range: vec![ExtensionRange {
+                    start: Some(7),
+                    end: Some(10),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .unwrap();
+    assert!(
+        accepted
+            .message_by_name("valid.test.AtExtensionEnd")
+            .unwrap()
+            .field(10)
+            .is_some(),
+        "the extension range end is exclusive"
+    );
+}
+
+#[test]
 fn reserved_and_extension_ranges_must_not_overlap() {
     use buffa_descriptor::generated::descriptor::descriptor_proto::{
         ExtensionRange, ReservedRange,
