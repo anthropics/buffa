@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**`DescriptorPool` now rejects message and enum reserved ranges with a missing start or end bound**, instead of silently ignoring malformed range entries.'
+time: 2026-09-03T13:28:23+02:00
