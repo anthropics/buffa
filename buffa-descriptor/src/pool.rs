@@ -168,6 +168,8 @@ pub enum PoolError {
         field: String,
         index: i32,
     },
+    /// Two oneof declarations in one message have the same name.
+    DuplicateOneofName { message: String, name: String },
     /// A field number is outside the valid range
     /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`), or an extension range has
     /// an invalid bound.
@@ -272,6 +274,12 @@ impl core::fmt::Display for PoolError {
                 f,
                 "field {field} in message {message} has invalid oneof index {index}"
             ),
+            Self::DuplicateOneofName { message, name } => {
+                write!(
+                    f,
+                    "message {message} declares oneof name {name:?} more than once"
+                )
+            }
             Self::InvalidFieldNumber { field, number } => {
                 write!(f, "field {field} has invalid field number {number}")
             }
@@ -431,13 +439,13 @@ impl DescriptorPool {
     /// # Errors
     ///
     /// Returns a [`PoolError`] if any type name fails to resolve, a symbol or
-    /// field identity is declared twice, a field number is out of range or in
-    /// the implementation-reserved band (19000-19999), a field uses a name or
-    /// number its message reserved, an extension range overlaps a reserved
-    /// range, an open enum's first value is non-zero, an enum value reuses a
-    /// reserved name or number or a duplicate number without `allow_alias`, a
-    /// oneof index is invalid, a message exceeds 65 535 fields, or a map entry
-    /// is malformed.
+    /// field identity or oneof name is declared twice, a field number is out
+    /// of range or in the implementation-reserved band (19000-19999), a
+    /// field uses a name or number its message reserved, an extension range
+    /// overlaps a reserved range, an open enum's first value is non-zero, an
+    /// enum value reuses a reserved name or number or a duplicate number
+    /// without `allow_alias`, a oneof index is invalid, a message exceeds
+    /// 65 535 fields, or a map entry is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -457,10 +465,10 @@ impl DescriptorPool {
     /// `FileDescriptorSet`, or any other [`PoolError`] on a structural
     /// validation failure (dangling type names, out-of-range or
     /// implementation-reserved field numbers, reserved message fields, an
-    /// overlapping extension range, duplicate symbols or field identities,
-    /// an open enum whose first value is non-zero, reserved enum values,
-    /// duplicate enum numbers without `allow_alias`, invalid oneof indices,
-    /// or malformed map entries).
+    /// overlapping extension range, duplicate symbols, field identities, or
+    /// oneof names, an open enum whose first value is non-zero, reserved enum
+    /// values, duplicate enum numbers without `allow_alias`, invalid oneof
+    /// indices, or malformed map entries).
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -1030,16 +1038,23 @@ impl DescriptorPool {
         }
 
         // Build oneof descriptors. Track member field indices as we go.
-        let mut oneofs: Vec<OneofDescriptor> = msg
-            .oneof_decl
-            .iter()
-            .map(|o| OneofDescriptor {
-                name: o.name.clone().unwrap_or_default(),
+        let mut oneof_names = BTreeSet::new();
+        let mut oneofs = Vec::with_capacity(msg.oneof_decl.len());
+        for o in &msg.oneof_decl {
+            let oneof_name = o.name.clone().unwrap_or_default();
+            if !oneof_names.insert(oneof_name.clone()) {
+                return Err(PoolError::DuplicateOneofName {
+                    message: fqn.clone(),
+                    name: oneof_name,
+                });
+            }
+            oneofs.push(OneofDescriptor {
+                name: oneof_name,
                 field_indices: Vec::new(),
                 synthetic: false,
                 options: clone_options(&o.options),
-            })
-            .collect();
+            });
+        }
 
         // Build field descriptors.
         let mut fields = Vec::with_capacity(field_count);

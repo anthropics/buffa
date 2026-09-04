@@ -474,6 +474,84 @@ fn oneof_links() {
 }
 
 #[test]
+fn duplicate_oneof_names_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{DescriptorProto, OneofDescriptorProto};
+
+    assert_rejected_without_mutating_pool(
+        "duplicate-oneof-name.proto",
+        "invalid.test.DuplicateOneof",
+        DescriptorProto {
+            name: Some("DuplicateOneof".into()),
+            oneof_decl: vec![
+                OneofDescriptorProto {
+                    name: Some("choice".into()),
+                    ..Default::default()
+                },
+                OneofDescriptorProto {
+                    name: Some("choice".into()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::DuplicateOneofName { message, name }
+                    if message == "invalid.test.DuplicateOneof" && name == "choice"
+            ));
+            assert_eq!(
+                err.to_string(),
+                "message invalid.test.DuplicateOneof declares oneof name \"choice\" more than once"
+            );
+        },
+    );
+}
+
+#[test]
+fn distinct_oneof_names_are_accepted() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet, OneofDescriptorProto,
+    };
+
+    let mut p = DescriptorPool::decode(FDS_BYTES).unwrap();
+    p.add_file_descriptor_set(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("distinct-oneof-names.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("DistinctOneofs".into()),
+                oneof_decl: vec![
+                    OneofDescriptorProto {
+                        name: Some("first".into()),
+                        ..Default::default()
+                    },
+                    OneofDescriptorProto {
+                        name: Some("second".into()),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .unwrap();
+
+    let message = p.message_by_name("valid.test.DistinctOneofs").unwrap();
+    assert_eq!(
+        message
+            .oneofs()
+            .iter()
+            .map(|oneof| oneof.name())
+            .collect::<Vec<_>>(),
+        ["first", "second"]
+    );
+}
+
+#[test]
 fn editions_feature_resolution() {
     let p = pool();
     let editions = p.message_by_name("reflect.editions.Editions").unwrap();
