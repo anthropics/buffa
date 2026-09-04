@@ -226,6 +226,37 @@ fn dynamic_message_containers_round_trip() {
 }
 
 #[test]
+fn map_message_values_reject_group_wire_encoding() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+
+    // `children` is map<int32, Inner>. Map values always use the
+    // length-delimited message encoding, even though ordinary message fields
+    // may also use the legacy group encoding.
+    let mut entry = Vec::new();
+    Tag::new(1, WireType::Varint).encode(&mut entry);
+    encode_varint(7, &mut entry);
+    Tag::new(2, WireType::StartGroup).encode(&mut entry);
+    Tag::new(1, WireType::LengthDelimited).encode(&mut entry);
+    buffa::types::encode_string("group", &mut entry);
+    Tag::new(2, WireType::EndGroup).encode(&mut entry);
+
+    let mut wire = Vec::new();
+    Tag::new(4, WireType::LengthDelimited).encode(&mut wire);
+    encode_varint(entry.len() as u64, &mut wire);
+    wire.extend_from_slice(&entry);
+
+    assert_eq!(
+        DynamicMessage::decode(Arc::clone(&p), idx, &wire),
+        Err(DecodeError::WireTypeMismatch {
+            field_number: 2,
+            expected: WireType::LengthDelimited as u8,
+            actual: WireType::StartGroup as u8,
+        })
+    );
+}
+
+#[test]
 fn closed_enum_unknown_singular_oneof_and_extension_values_are_unknown() {
     let p = pool();
     let idx = p.message_index("reflect.closed.Contexts").unwrap();
