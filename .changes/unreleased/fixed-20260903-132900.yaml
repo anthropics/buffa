@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects duplicate message and enum reserved names** (#419), instead of silently deduplicating them while collecting `reserved_name` entries. The new `PoolError::DuplicateMessageReservedName` and `DuplicateEnumReservedName` variants identify the owner and repeated name.
+time: 2026-09-03T13:29:00+02:00
