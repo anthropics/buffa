@@ -80,30 +80,66 @@ impl AsRef<[u8]> for BytesValue {
 
 // ── serde impls ──────────────────────────────────────────────────────────────
 
-/// Macro for wrapper types whose inner type's default serde is correct for
-/// proto JSON (bool, i32, u32, String).
-macro_rules! impl_wrapper_serde_simple {
-    ($wrapper:ty, $inner:ty) => {
-        #[cfg(feature = "json")]
-        impl serde::Serialize for $wrapper {
-            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-                serde::Serialize::serialize(&self.value, s)
-            }
-        }
-
-        #[cfg(feature = "json")]
-        impl<'de> serde::Deserialize<'de> for $wrapper {
-            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-                <$inner as serde::Deserialize>::deserialize(d).map(Self::from)
-            }
-        }
-    };
+// Primitive wrapper values use the same ProtoJSON scalar helpers as generated
+// fields, including their handling of null.
+#[cfg(feature = "json")]
+impl serde::Serialize for BoolValue {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(&self.value, s)
+    }
 }
 
-impl_wrapper_serde_simple!(BoolValue, bool);
-impl_wrapper_serde_simple!(Int32Value, i32);
-impl_wrapper_serde_simple!(UInt32Value, u32);
-impl_wrapper_serde_simple!(StringValue, String);
+#[cfg(feature = "json")]
+impl<'de> serde::Deserialize<'de> for BoolValue {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        buffa::json_helpers::proto_bool::deserialize(d).map(Self::from)
+    }
+}
+
+#[cfg(feature = "json")]
+impl serde::Serialize for StringValue {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(&self.value, s)
+    }
+}
+
+#[cfg(feature = "json")]
+impl<'de> serde::Deserialize<'de> for StringValue {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        buffa::json_helpers::proto_string::deserialize::<String, _>(d).map(Self::from)
+    }
+}
+
+// Int32Value / UInt32Value: ProtoJSON accepts integer numbers, quoted decimal
+// strings, exact decimal/exponent forms, and null. Reuse the same helpers as
+// generated scalar fields so wrappers follow the runtime's integer policy.
+#[cfg(feature = "json")]
+impl serde::Serialize for Int32Value {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(&self.value, s)
+    }
+}
+
+#[cfg(feature = "json")]
+impl<'de> serde::Deserialize<'de> for Int32Value {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        buffa::json_helpers::int32::deserialize(d).map(Self::from)
+    }
+}
+
+#[cfg(feature = "json")]
+impl serde::Serialize for UInt32Value {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(&self.value, s)
+    }
+}
+
+#[cfg(feature = "json")]
+impl<'de> serde::Deserialize<'de> for UInt32Value {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        buffa::json_helpers::uint32::deserialize(d).map(Self::from)
+    }
+}
 
 // Int64Value: quoted decimal string per proto3 JSON spec.
 #[cfg(feature = "json")]
@@ -181,6 +217,45 @@ impl<'de> serde::Deserialize<'de> for BytesValue {
         buffa::json_helpers::bytes::deserialize::<Vec<u8>, _>(d).map(Self::from)
     }
 }
+
+#[cfg(feature = "json")]
+macro_rules! impl_wrapper_proto_elem_json {
+    ($wrapper:ty) => {
+        impl buffa::json_helpers::ProtoElemJson for $wrapper {
+            fn serialize_proto_json<S: serde::Serializer>(
+                value: &Self,
+                s: S,
+            ) -> Result<S::Ok, S::Error> {
+                serde::Serialize::serialize(value, s)
+            }
+
+            fn deserialize_proto_json<'de, D: serde::Deserializer<'de>>(
+                d: D,
+            ) -> Result<Self, D::Error> {
+                <Self as serde::Deserialize>::deserialize(d)
+            }
+        }
+    };
+}
+
+#[cfg(feature = "json")]
+impl_wrapper_proto_elem_json!(BoolValue);
+#[cfg(feature = "json")]
+impl_wrapper_proto_elem_json!(BytesValue);
+#[cfg(feature = "json")]
+impl_wrapper_proto_elem_json!(DoubleValue);
+#[cfg(feature = "json")]
+impl_wrapper_proto_elem_json!(FloatValue);
+#[cfg(feature = "json")]
+impl_wrapper_proto_elem_json!(Int32Value);
+#[cfg(feature = "json")]
+impl_wrapper_proto_elem_json!(Int64Value);
+#[cfg(feature = "json")]
+impl_wrapper_proto_elem_json!(StringValue);
+#[cfg(feature = "json")]
+impl_wrapper_proto_elem_json!(UInt32Value);
+#[cfg(feature = "json")]
+impl_wrapper_proto_elem_json!(UInt64Value);
 
 #[cfg(test)]
 mod tests {
@@ -303,12 +378,44 @@ mod tests {
         }
 
         #[test]
+        fn bool_value_accepts_protojson_null() {
+            let value: BoolValue = serde_json::from_str("null").unwrap();
+            assert!(!value.value);
+        }
+
+        #[test]
         fn int32_value_serde_roundtrip() {
             let w = Int32Value::from(-42_i32);
             let json = serde_json::to_string(&w).unwrap();
             assert_eq!(json, "-42");
             let back: Int32Value = serde_json::from_str(&json).unwrap();
             assert_eq!(back.value, -42);
+        }
+
+        #[test]
+        fn int32_value_accepts_protojson_integer_forms() {
+            for (json, expected) in [
+                ("1", 1),
+                (r#""1""#, 1),
+                ("1.0", 1),
+                (r#""1.0""#, 1),
+                ("1e2", 100),
+                (r#""1e2""#, 100),
+                ("null", 0),
+            ] {
+                let value: Int32Value = serde_json::from_str(json).unwrap();
+                assert_eq!(value.value, expected, "input: {json}");
+            }
+        }
+
+        #[test]
+        fn int32_value_rejects_invalid_protojson_integers() {
+            for json in ["1.5", r#""1.5""#, "2147483648", r#""""#, r#""2147483648""#] {
+                assert!(
+                    serde_json::from_str::<Int32Value>(json).is_err(),
+                    "input should be rejected: {json}"
+                );
+            }
         }
 
         #[test]
@@ -321,12 +428,53 @@ mod tests {
         }
 
         #[test]
+        fn uint32_value_accepts_protojson_integer_forms() {
+            for (json, expected) in [
+                ("1", 1),
+                (r#""1""#, 1),
+                ("1.0", 1),
+                (r#""1.0""#, 1),
+                ("1e2", 100),
+                (r#""1e2""#, 100),
+                ("4294967295", u32::MAX),
+                ("null", 0),
+            ] {
+                let value: UInt32Value = serde_json::from_str(json).unwrap();
+                assert_eq!(value.value, expected, "input: {json}");
+            }
+        }
+
+        #[test]
+        fn uint32_value_rejects_invalid_protojson_integers() {
+            for json in [
+                "-1",
+                r#""-1""#,
+                "1.5",
+                r#""1.5""#,
+                "4294967296",
+                r#""4294967296""#,
+                r#""""#,
+            ] {
+                assert!(
+                    serde_json::from_str::<UInt32Value>(json).is_err(),
+                    "input should be rejected: {json}"
+                );
+            }
+        }
+
+        #[test]
         fn string_value_serde_roundtrip() {
             let w = StringValue::from("hello".to_string());
             let json = serde_json::to_string(&w).unwrap();
             assert_eq!(json, r#""hello""#);
             let back: StringValue = serde_json::from_str(&json).unwrap();
             assert_eq!(back.value, "hello");
+        }
+
+        #[test]
+        fn string_value_accepts_protojson_null() {
+            let value: StringValue = serde_json::from_str("null").unwrap();
+            assert_eq!(value.value, "");
         }
 
         #[test]

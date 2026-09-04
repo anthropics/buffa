@@ -843,6 +843,14 @@ impl Config {
     /// disable views ([`generate_views(false)`](Self::generate_views)), for
     /// such types.
     ///
+    /// When JSON generation is enabled, an external message routed through a
+    /// ProtoJSON container helper must implement
+    /// `buffa::json_helpers::ProtoElemJson` so generated containers can apply
+    /// ProtoJSON encoding and reject null elements/values. This includes
+    /// external wrapper types in repeated/map fields and external message
+    /// values in bytes-keyed maps; ordinary message containers use serde
+    /// directly.
+    ///
     /// A misconfigured mapping (a typo'd FQN target, a non-absolute
     /// `rust_path`, or a view-referenced type mapped to a non-buffa crate) is
     /// not diagnosed at generation time; it surfaces as an unresolved-path

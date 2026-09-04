@@ -1603,6 +1603,12 @@ struct BytesKeyWrapper {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Default)]
+struct BytesKeyInt64Wrapper {
+    #[serde(with = "bytes_key_map")]
+    m: crate::__private::HashMap<Vec<u8>, i64>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Default)]
 struct BytesKeyBytesValWrapper {
     #[serde(with = "bytes_key_bytes_val_map")]
     m: crate::__private::HashMap<Vec<u8>, Vec<u8>>,
@@ -1618,6 +1624,26 @@ fn bytes_key_map_roundtrip() {
     assert_eq!(json, r#"{"m":{"a2V5MQ==":42}}"#);
     let back: BytesKeyWrapper = serde_json::from_str(&json).unwrap();
     assert_eq!(back.m.get(b"key1".as_slice()), Some(&42));
+}
+
+#[test]
+fn bytes_key_map_rejects_null_values() {
+    assert!(
+        serde_json::from_str::<BytesKeyWrapper>(r#"{"m":{"a2V5MQ==":null}}"#).is_err(),
+        "null map values must be rejected"
+    );
+}
+
+#[test]
+fn bytes_key_map_uses_protojson_for_int64_values() {
+    let mut m = crate::__private::HashMap::default();
+    m.insert(b"k".to_vec(), 5_i64);
+    let w = BytesKeyInt64Wrapper { m };
+    let json = serde_json::to_string(&w).unwrap();
+    assert_eq!(json, r#"{"m":{"aw==":"5"}}"#);
+
+    let back: BytesKeyInt64Wrapper = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.m.get(b"k".as_slice()), Some(&5));
 }
 
 #[test]

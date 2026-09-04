@@ -118,3 +118,60 @@ fn json_none_fields_base64_encode() {
     assert_eq!(decoded.validated_name, Some("world".to_string()));
     assert_eq!(decoded.raw_labels.get(&b"k".to_vec()), Some(&b"v".to_vec()));
 }
+
+#[test]
+fn json_none_bytes_key_map_values_use_proto_json_and_reject_null() {
+    use buffa_types::google::protobuf::{
+        BoolValue, Int32Value, StringValue, Timestamp, UInt32Value, Value,
+    };
+
+    let msg = WrapperMapNoValidation {
+        flags: [(b"key".to_vec(), BoolValue::from(true))]
+            .into_iter()
+            .collect(),
+        counts: [(b"key".to_vec(), Int32Value::from(7))]
+            .into_iter()
+            .collect(),
+        labels: [(b"key".to_vec(), StringValue::from("value"))]
+            .into_iter()
+            .collect(),
+        totals: [(b"key".to_vec(), UInt32Value::from(9))]
+            .into_iter()
+            .collect(),
+        stamps: [(b"key".to_vec(), Timestamp::from_unix_secs(1))]
+            .into_iter()
+            .collect(),
+        values: [(b"key".to_vec(), Value::null())].into_iter().collect(),
+        ..Default::default()
+    };
+    let json = serde_json::to_value(&msg).unwrap();
+    assert_eq!(json["flags"]["a2V5"], serde_json::json!(true));
+    assert_eq!(json["counts"]["a2V5"], serde_json::json!(7));
+    assert_eq!(json["labels"]["a2V5"], serde_json::json!("value"));
+    assert_eq!(json["totals"]["a2V5"], serde_json::json!(9));
+    assert_eq!(
+        json["stamps"]["a2V5"],
+        serde_json::json!("1970-01-01T00:00:01Z")
+    );
+
+    let decoded: WrapperMapNoValidation = serde_json::from_value(json).unwrap();
+    assert!(decoded.flags.get(&b"key".to_vec()).unwrap().value);
+    assert_eq!(decoded.counts.get(&b"key".to_vec()).unwrap().value, 7);
+    assert_eq!(decoded.labels.get(&b"key".to_vec()).unwrap().value, "value");
+    assert_eq!(decoded.totals.get(&b"key".to_vec()).unwrap().value, 9);
+    assert_eq!(decoded.stamps.get(&b"key".to_vec()).unwrap().seconds, 1);
+    assert!(decoded.values.get(&b"key".to_vec()).unwrap().is_null());
+
+    for input in [
+        r#"{"flags":{"a2V5":null}}"#,
+        r#"{"counts":{"a2V5":null}}"#,
+        r#"{"labels":{"a2V5":null}}"#,
+        r#"{"totals":{"a2V5":null}}"#,
+        r#"{"stamps":{"a2V5":null}}"#,
+    ] {
+        assert!(
+            serde_json::from_str::<WrapperMapNoValidation>(input).is_err(),
+            "null wrapper map values must be rejected: {input}"
+        );
+    }
+}

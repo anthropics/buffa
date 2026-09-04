@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package string_map;
 
+import "google/protobuf/wrappers.proto";
+
 // Compiled with `.string_type_custom("crate::string_map::MapStr")`, so every
 // `string` map key and value uses the crate-local custom `ProtoString` newtype
 // instead of `String`. Each field pins one JSON serde-dispatch path for a custom
@@ -16,6 +18,8 @@ package string_map;
 //   i32s  int32→string   : string_key_map — non-string key + custom string value.
 //   smsg  string→message : derive (None) — custom key + message value.
 //   senum string→enum    : map_enum — custom key + open-enum value.
+//   wrapped string→UInt32Value : proto_str_key_map — custom key + wrapper
+//                               value uses the scalar ProtoJSON path.
 //
 // Compiling the crate exercises the owned codegen surface (the `ProtoStringMap`
 // codec for both key and value, view→owned `Into` conversion, vtable reflect,
@@ -29,6 +33,7 @@ message Maps {
   map<int32, string> i32s = 4;
   map<string, Inner> smsg = 5;
   map<string, Color> senum = 6;
+  map<string, google.protobuf.UInt32Value> wrapped = 7;
 }
 
 message Inner {
