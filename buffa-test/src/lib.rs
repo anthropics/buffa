@@ -560,6 +560,11 @@ pub mod prelude_shadow {
     buffa::include_proto!("test.prelude_shadow");
 }
 
+#[allow(clippy::derivable_impls, clippy::match_single_binding, dead_code)]
+pub mod float_default_shadow {
+    buffa::include_proto!("f32");
+}
+
 // Nested-package pair, wrapped exactly the way `buffa-build`'s
 // `_include.rs` would. The chain of `use super::*;` glob imports makes the
 // outer package's `__buffa` reachable from `inner`'s scope, which is the
