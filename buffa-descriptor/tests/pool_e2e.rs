@@ -463,6 +463,39 @@ fn open_enum_with_no_values_is_not_rejected_by_the_first_value_rule() {
 }
 
 #[test]
+fn empty_enums_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("empty-enum.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Empty".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_set_rejected_without_mutating_pool(
+        "empty-enum.proto",
+        "invalid.test.Empty",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::EmptyEnum { enum_name } if enum_name == "invalid.test.Empty"
+            ));
+        },
+    );
+}
+
+#[test]
 fn oneof_links() {
     let p = pool();
     let oneof = p.message_by_name("reflect.test.OneOf").unwrap();

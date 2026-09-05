@@ -225,6 +225,8 @@ pub enum PoolError {
         name: String,
         number: i32,
     },
+    /// An enum declares no values.
+    EmptyEnum { enum_name: String },
 }
 
 impl core::fmt::Display for PoolError {
@@ -345,6 +347,9 @@ impl core::fmt::Display for PoolError {
                 f,
                 "enum {enum_name} value {name:?} reuses number {number} without allow_alias"
             ),
+            Self::EmptyEnum { enum_name } => {
+                write!(f, "enum {enum_name} declares no values")
+            }
         }
     }
 }
@@ -434,10 +439,10 @@ impl DescriptorPool {
     /// field identity is declared twice, a field number is out of range or in
     /// the implementation-reserved band (19000-19999), a field uses a name or
     /// number its message reserved, an extension range overlaps a reserved
-    /// range, an open enum's first value is non-zero, an enum value reuses a
-    /// reserved name or number or a duplicate number without `allow_alias`, a
-    /// oneof index is invalid, a message exceeds 65 535 fields, or a map entry
-    /// is malformed.
+    /// range, an enum declares no values, an open enum's first value is
+    /// non-zero, an enum value reuses a reserved name or number or a duplicate
+    /// number without `allow_alias`, a oneof index is invalid, a message
+    /// exceeds 65 535 fields, or a map entry is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -458,9 +463,9 @@ impl DescriptorPool {
     /// validation failure (dangling type names, out-of-range or
     /// implementation-reserved field numbers, reserved message fields, an
     /// overlapping extension range, duplicate symbols or field identities,
-    /// an open enum whose first value is non-zero, reserved enum values,
-    /// duplicate enum numbers without `allow_alias`, invalid oneof indices,
-    /// or malformed map entries).
+    /// an empty enum, an open enum whose first value is non-zero, reserved enum
+    /// values, duplicate enum numbers without `allow_alias`, invalid oneof
+    /// indices, or malformed map entries).
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -1223,6 +1228,9 @@ impl DescriptorPool {
             format!("{parent_fqn}.{name}")
         };
         let enum_features = features::resolve_child(parent_features, features::enum_features(e));
+        if e.value.is_empty() {
+            return Err(PoolError::EmptyEnum { enum_name: fqn });
+        }
         if enum_features.enum_type == EnumType::Open {
             if let Some(first) = e.value.first() {
                 let number = first.number.unwrap_or(0);
