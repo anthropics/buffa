@@ -92,11 +92,14 @@ pub trait ReflectElement: core::fmt::Debug {
 /// bytes in the view; it converts via UTF-8 and is documented as best-effort
 /// (see the impl).
 ///
-/// The [`PartialEq`] supertrait is required so the generic [`ReflectMap`] impl
-/// can deduplicate wire entries via [`MapView::iter_unique`](buffa::MapView::iter_unique),
-/// matching the bridge path's distinct-key semantics. The [`Debug`] supertrait
-/// plays the same role as it does for [`ReflectElement`].
-pub trait ReflectMapKey: core::fmt::Debug + PartialEq {
+/// The [`Ord`] supertrait is required so the generic [`ReflectMap`] impl can
+/// deduplicate wire entries via [`MapView::iter_unique`](buffa::MapView::iter_unique),
+/// matching the bridge path's distinct-key semantics. Ordering (rather than
+/// just equality) is what lets that dedup group equal keys by sorting instead
+/// of comparing every pair; every type in the spec-valid key set below already
+/// satisfies it. The [`Debug`] supertrait plays the same role as it does for
+/// [`ReflectElement`].
+pub trait ReflectMapKey: core::fmt::Debug + Ord {
     /// Borrow this key as a [`MapKeyRef`].
     #[must_use]
     fn as_map_key_ref(&self) -> MapKeyRef<'_>;

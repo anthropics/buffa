@@ -1,0 +1,3 @@
+kind: Fixed
+body: 'Made `MapView::iter_unique` / `len_unique` `O(n log n)` instead of `O(n^2)`. The pairwise scan short-circuited only when it *found* a duplicate, so a map with all-distinct keys — ordinary well-formed input — was the worst case rather than the benign one: 802 KB of wire data cost 5.3 s of CPU to serialize as JSON against 0.9 ms to decode it, now 9.5 ms. Deduplication sorts rather than hashes, so attacker-controlled keys cannot be made to collide.'
+time: 2026-07-23T22:45:05.981354037-07:00
