@@ -204,6 +204,13 @@ pub enum PoolError {
         start: u32,
         end: u32,
     },
+    /// Two extension ranges declared by the same message overlap.
+    /// `end` is exclusive, as in `DescriptorProto.ExtensionRange`.
+    OverlappingExtensionRange {
+        message: String,
+        start: u32,
+        end: u32,
+    },
     /// An open enum's first declared value has a non-zero number.
     OpenEnumFirstValueNotZero {
         enum_name: String,
@@ -317,6 +324,14 @@ impl core::fmt::Display for PoolError {
             } => write!(
                 f,
                 "message {message} extension range {start}..{end} overlaps a reserved range"
+            ),
+            Self::OverlappingExtensionRange {
+                message,
+                start,
+                end,
+            } => write!(
+                f,
+                "message {message} extension range {start}..{end} overlaps another extension range"
             ),
             Self::OpenEnumFirstValueNotZero {
                 enum_name,
@@ -433,11 +448,11 @@ impl DescriptorPool {
     /// Returns a [`PoolError`] if any type name fails to resolve, a symbol or
     /// field identity is declared twice, a field number is out of range or in
     /// the implementation-reserved band (19000-19999), a field uses a name or
-    /// number its message reserved, an extension range overlaps a reserved
-    /// range, an open enum's first value is non-zero, an enum value reuses a
-    /// reserved name or number or a duplicate number without `allow_alias`, a
-    /// oneof index is invalid, a message exceeds 65 535 fields, or a map entry
-    /// is malformed.
+    /// number its message reserved, extension ranges overlap each other or a
+    /// reserved range, an open enum's first value is non-zero, an enum value
+    /// reuses a reserved name or number or a duplicate number without
+    /// `allow_alias`, a oneof index is invalid, a message exceeds 65 535
+    /// fields, or a map entry is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -456,8 +471,8 @@ impl DescriptorPool {
     /// Returns [`PoolError::Decode`] if the bytes are not a well-formed
     /// `FileDescriptorSet`, or any other [`PoolError`] on a structural
     /// validation failure (dangling type names, out-of-range or
-    /// implementation-reserved field numbers, reserved message fields, an
-    /// overlapping extension range, duplicate symbols or field identities,
+    /// implementation-reserved field numbers, reserved message fields,
+    /// overlapping extension ranges, duplicate symbols or field identities,
     /// an open enum whose first value is non-zero, reserved enum values,
     /// duplicate enum numbers without `allow_alias`, invalid oneof indices,
     /// or malformed map entries).
@@ -1172,6 +1187,28 @@ impl DescriptorPool {
             // `extensions 1000 to max;` spans it). An extension *numbered* in
             // the band is rejected in `link_field` before any range check.
             extension_ranges.push((start, end));
+        }
+
+        // Extension ranges are public in declaration order, but overlap
+        // validation is independent of that order. Check a sorted copy so
+        // every range only needs to be compared with its predecessor.
+        let mut sorted_extension_ranges: Vec<(u32, u32)> = extension_ranges
+            .iter()
+            .copied()
+            .filter(|&(start, end)| start < end)
+            .collect();
+        sorted_extension_ranges.sort_unstable();
+        for window in sorted_extension_ranges.windows(2) {
+            let &[(.., previous_end), (start, end)] = window else {
+                unreachable!("a two-element window has two ranges");
+            };
+            if start < previous_end {
+                return Err(PoolError::OverlappingExtensionRange {
+                    message: fqn.clone(),
+                    start,
+                    end,
+                });
+            }
         }
 
         // Replace the placeholder. Pass 1 registered messages depth-first
