@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**`DescriptorPool` rejects out-of-range `public_dependency` and `weak_dependency` indices** (#422), instead of linking a file whose import indices name no import. Both fields are `repeated int32` positions in the file''s own `dependency` list, so a negative index or one past the end resolves to nothing; protoc rejects such a file with "Invalid public dependency index." The new `PoolError::InvalidPublicDependencyIndex` and `InvalidWeakDependencyIndex` variants name the file, the offending index and how many dependencies it declares.'
+time: 2026-09-03T05:30:01.591018535-07:00
