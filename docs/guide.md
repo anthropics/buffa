@@ -1143,7 +1143,7 @@ The default `Message::decode` / `decode_from_slice` methods use the defaults (10
 
 ### What these limits do and do not bound
 
-Every option above applies to the protobuf binary decoders — owned, view, and the reflective `DynamicMessage` codec. The one carve-out is `ReflectMessage::to_dynamic`, whose internal round-trip re-decodes bytes buffa just encoded and so exempts itself from the two memory bounds; it reads a message you already hold, not wire input. **None of them applies to JSON.** Decoding from JSON runs `serde_json` (or another `Deserializer`) directly into the generated `Deserialize` impls, which never receive a `DecodeOptions`, so a message parsed from JSON is bounded by none of the limits that bound the same message parsed from protobuf. The element amplification is very nearly as large there — `{}` is three JSON bytes for the same element footprint that costs two on the wire.
+Every option above applies to the protobuf binary decoders — owned, view, and the reflective `DynamicMessage` codec. The carve-outs are `ReflectMessage::to_dynamic` and the generated-message bridge (`DynamicMessage::from_message` / `try_from_message*`), whose internal round-trip re-decodes bytes buffa just encoded with memory bounds scaled to the encoded length: 128 bytes of element memory per encoded byte and one unknown-field slot per encoded byte, each floored at its default. They read messages you already hold, not wire input, so this avoids false rejection by the fixed defaults without making the second representation unbounded. **None of them applies to JSON.** Decoding from JSON runs `serde_json` (or another `Deserializer`) directly into the generated `Deserialize` impls, which never receive a `DecodeOptions`, so a message parsed from JSON is bounded by none of the limits that bound the same message parsed from protobuf. The element amplification is very nearly as large there — `{}` is three JSON bytes for the same element footprint that costs two on the wire.
 
 Textproto is the exception among the non-binary formats: `decode_from_str` applies the element-memory limit on its own. The amplification there is very nearly as large as on the wire — `{},` is three input bytes for the same element footprint that costs two encoded — so the parser needs the same bound, and carries its own because `DecodeContext` never reaches it. Raise it with `buffa::text::decode_from_str_with_element_memory_limit`. The recursion limit already applied there, enforced by the tokenizer.
 
@@ -1966,6 +1966,13 @@ let bytes = msg.encode_to_vec();
 // proto3 canonical JSON (requires the `json` feature)
 let from_json = DynamicMessage::from_json(pool.clone(), idx, r#"{"name":"alice"}"#)?;
 let json = msg.to_json()?;
+
+// From a generated message, resolving the descriptor by the type's full name
+let person_msg = my_pkg::Person {
+    name: "alice".into(),
+    ..Default::default()
+};
+let bridged = DynamicMessage::try_from_message(&person_msg, pool.clone())?;
 ```
 
 Beyond plain encode/decode, `DynamicMessage` covers the rest of the
@@ -1986,8 +1993,13 @@ reflection surface:
   options message; `DynamicMessage::from_options(pool, opts)` re-reads it
   reflectively so extension-defined custom options are reachable by
   descriptor.
-- **Bridging** — `from_message` / `to_message` convert between a
-  `DynamicMessage` and any generated type with the same descriptor.
+- **Bridging** — `try_from_message` / `to_message` convert between a
+  `DynamicMessage` and any generated type with the same descriptor;
+  `try_from_message` resolves the descriptor from the type's `MessageName`
+  and returns a `BridgeError` when the pool lacks the type or the encoded
+  bytes fail to decode against its descriptor
+  (`try_from_message_with_index` is the fallible index-taking form;
+  `from_message` is the panicking one).
 
 ### Reflecting generated types
 

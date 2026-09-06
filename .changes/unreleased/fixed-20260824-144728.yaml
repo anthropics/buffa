@@ -1,3 +1,0 @@
-kind: Fixed
-body: Reflective ProtoJSON parsing now honors `ignore_unknown_fields` for `google.protobuf.Empty`, including `Empty` values packed in `google.protobuf.Any`.
-time: 2026-08-24T14:47:28+02:00

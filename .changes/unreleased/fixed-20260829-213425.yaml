@@ -1,4 +1,0 @@
-kind: Fixed
-body: |-
-    **Generated JSON code uses absolute `::serde` paths** (#384). A proto package or message named `serde` put a `mod serde` in scope that shadowed the crate inside the generated custom message and oneof `Serialize`/`Deserialize` impls, so the generated code failed to compile.
-time: 2026-08-29T21:34:25+02:00
