@@ -1603,8 +1603,10 @@ let msg: Person = decode_from_str(&compact)?;
 
 Generated textproto parsers reject unknown field names by default, so spelling
 mistakes return `ParseErrorKind::UnknownField` instead of being silently
-discarded. A hand-written `TextFormat` implementation can opt into lenient
-parsing by calling `TextDecoder::skip_value()` for names it does not recognize.
+discarded. Names the message declares as `reserved` are still accepted and
+their values discarded, matching upstream parsers. A hand-written `TextFormat`
+implementation can opt into lenient parsing by calling
+`TextDecoder::skip_value()` for names it does not recognize.
 
 For streaming to a `Write` sink or tuning options (e.g. printing unknown
 fields), use `TextEncoder` / `TextDecoder` directly:

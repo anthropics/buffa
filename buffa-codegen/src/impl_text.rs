@@ -117,7 +117,7 @@ pub(crate) fn generate_text_impl(
                         dec: &mut ::buffa::text::TextDecoder<'_>,
                     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
                         if dec.read_field_name()?.is_some() {
-                            return Err(dec.unknown_field());
+                            return ::core::result::Result::Err(dec.unknown_field());
                         }
                         ::core::result::Result::Ok(())
                     }
@@ -292,14 +292,14 @@ pub(crate) fn generate_text_impl(
                     #(#map_merge)*
                     #(#reserved_merge)*
                     #ext_merge_arm
-                    _ => return Err(dec.unknown_field()),
+                    _ => return ::core::result::Result::Err(dec.unknown_field()),
                 }
             }
         }
     } else {
         quote! {
             if dec.read_field_name()?.is_some() {
-                return Err(dec.unknown_field());
+                return ::core::result::Result::Err(dec.unknown_field());
             }
         }
     };
@@ -1135,7 +1135,7 @@ fn map_merge_arm(
                         match __n {
                             "key" => __k = ::core::option::Option::Some(#key_read),
                             "value" => __v = ::core::option::Option::Some(#val_read),
-                            _ => return Err(__d.unknown_field()),
+                            _ => return ::core::result::Result::Err(__d.unknown_field()),
                         }
                     }
                     ::core::result::Result::Ok(())

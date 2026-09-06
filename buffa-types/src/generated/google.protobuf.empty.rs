@@ -203,7 +203,7 @@ impl ::buffa::text::TextFormat for Empty {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
         if dec.read_field_name()?.is_some() {
-            return Err(dec.unknown_field());
+            return ::core::result::Result::Err(dec.unknown_field());
         }
         ::core::result::Result::Ok(())
     }

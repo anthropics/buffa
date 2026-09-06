@@ -120,8 +120,8 @@ pub fn encode_to_string_pretty<M: TextFormat>(msg: &M) -> String {
 ///
 /// # Errors
 ///
-/// Any [`ParseError`] — syntax errors, unknown fields (if the generated
-/// `merge_text` is strict), type mismatches, depth limit exceeded, or
+/// Any [`ParseError`] — syntax errors, unknown field names, type
+/// mismatches, depth limit exceeded, or
 /// [`ParseErrorKind::ElementMemoryLimitExceeded`] when the repeated and map
 /// elements would materialize more than
 /// [`DEFAULT_ELEMENT_MEMORY_LIMIT`](crate::DEFAULT_ELEMENT_MEMORY_LIMIT).

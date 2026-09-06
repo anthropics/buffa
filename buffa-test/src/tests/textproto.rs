@@ -320,6 +320,15 @@ fn reserved_field_names_are_skipped() {
     assert_eq!(msg.name, "ok");
     assert!(msg.active);
     assert_eq!(msg.after_gap, 7);
+
+    // List and angle-bracket message forms are consumed too.
+    let msg: WithReserved =
+        decode_from_str(r#"old_field: [1, 2] deprecated_name < ignored: "v" > id: 2"#).unwrap();
+    assert_eq!(msg.id, 2);
+
+    // A name that is neither declared nor reserved still errors on this message.
+    let err = decode_from_str::<WithReserved>("old_nmae: 1").unwrap_err();
+    assert_eq!(err.kind, ParseErrorKind::UnknownField);
 }
 
 // ── merge semantics ─────────────────────────────────────────────────────────

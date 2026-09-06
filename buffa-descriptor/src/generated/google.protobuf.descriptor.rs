@@ -579,7 +579,7 @@ impl ::buffa::text::TextFormat for FileDescriptorSet {
                         self.__buffa_unknown_fields.push(__r);
                     }
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -1598,7 +1598,7 @@ impl ::buffa::text::TextFormat for FileDescriptorProto {
                         },
                     )?
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -2307,7 +2307,7 @@ impl ::buffa::text::TextFormat for DescriptorProto {
                         |__d| ::core::result::Result::Ok(__d.read_string()?.into_owned()),
                     )?
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -2579,7 +2579,7 @@ pub mod descriptor_proto {
                     "start" => self.start = ::core::option::Option::Some(dec.read_i32()?),
                     "end" => self.end = ::core::option::Option::Some(dec.read_i32()?),
                     "options" => dec.merge_message(self.options.get_or_insert_default())?,
-                    _ => return Err(dec.unknown_field()),
+                    _ => return ::core::result::Result::Err(dec.unknown_field()),
                 }
             }
             ::core::result::Result::Ok(())
@@ -2805,7 +2805,7 @@ pub mod descriptor_proto {
                 match __name {
                     "start" => self.start = ::core::option::Option::Some(dec.read_i32()?),
                     "end" => self.end = ::core::option::Option::Some(dec.read_i32()?),
-                    _ => return Err(dec.unknown_field()),
+                    _ => return ::core::result::Result::Err(dec.unknown_field()),
                 }
             }
             ::core::result::Result::Ok(())
@@ -3193,7 +3193,7 @@ impl ::buffa::text::TextFormat for ExtensionRangeOptions {
                         self.__buffa_unknown_fields.push(__r);
                     }
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -3920,7 +3920,7 @@ pub mod extension_range_options {
                     "repeated" => {
                         self.repeated = ::core::option::Option::Some(dec.read_bool()?);
                     }
-                    _ => return Err(dec.unknown_field()),
+                    _ => return ::core::result::Result::Err(dec.unknown_field()),
                 }
             }
             ::core::result::Result::Ok(())
@@ -4628,7 +4628,7 @@ impl ::buffa::text::TextFormat for FieldDescriptorProto {
                 "proto3_optional" => {
                     self.proto3_optional = ::core::option::Option::Some(dec.read_bool()?);
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -5297,7 +5297,7 @@ impl ::buffa::text::TextFormat for OneofDescriptorProto {
                     );
                 }
                 "options" => dec.merge_message(self.options.get_or_insert_default())?,
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -5738,7 +5738,7 @@ impl ::buffa::text::TextFormat for EnumDescriptorProto {
                         |__d| ::core::result::Result::Ok(__d.read_string()?.into_owned()),
                     )?
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -5970,7 +5970,7 @@ pub mod enum_descriptor_proto {
                 match __name {
                     "start" => self.start = ::core::option::Option::Some(dec.read_i32()?),
                     "end" => self.end = ::core::option::Option::Some(dec.read_i32()?),
-                    _ => return Err(dec.unknown_field()),
+                    _ => return ::core::result::Result::Err(dec.unknown_field()),
                 }
             }
             ::core::result::Result::Ok(())
@@ -6247,7 +6247,7 @@ impl ::buffa::text::TextFormat for EnumValueDescriptorProto {
                 }
                 "number" => self.number = ::core::option::Option::Some(dec.read_i32()?),
                 "options" => dec.merge_message(self.options.get_or_insert_default())?,
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -6530,7 +6530,7 @@ impl ::buffa::text::TextFormat for ServiceDescriptorProto {
                     )?
                 }
                 "stream" => dec.skip_value()?,
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -6949,7 +6949,7 @@ impl ::buffa::text::TextFormat for MethodDescriptorProto {
                         dec.read_bool()?,
                     );
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -8208,7 +8208,7 @@ impl ::buffa::text::TextFormat for FileOptions {
                         self.__buffa_unknown_fields.push(__r);
                     }
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -9314,7 +9314,7 @@ impl ::buffa::text::TextFormat for MessageOptions {
                         self.__buffa_unknown_fields.push(__r);
                     }
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -10422,7 +10422,7 @@ impl ::buffa::text::TextFormat for FieldOptions {
                         self.__buffa_unknown_fields.push(__r);
                     }
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -11721,7 +11721,7 @@ pub mod field_options {
                             dec.read_string()?.into_owned(),
                         );
                     }
-                    _ => return Err(dec.unknown_field()),
+                    _ => return ::core::result::Result::Err(dec.unknown_field()),
                 }
             }
             ::core::result::Result::Ok(())
@@ -12094,7 +12094,7 @@ pub mod field_options {
                             dec.read_closed_enum_by_name::<super::Edition>()?,
                         );
                     }
-                    _ => return Err(dec.unknown_field()),
+                    _ => return ::core::result::Result::Err(dec.unknown_field()),
                 }
             }
             ::core::result::Result::Ok(())
@@ -12362,7 +12362,7 @@ impl ::buffa::text::TextFormat for OneofOptions {
                         self.__buffa_unknown_fields.push(__r);
                     }
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -12910,7 +12910,7 @@ impl ::buffa::text::TextFormat for EnumOptions {
                         self.__buffa_unknown_fields.push(__r);
                     }
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -13490,7 +13490,7 @@ impl ::buffa::text::TextFormat for EnumValueOptions {
                         self.__buffa_unknown_fields.push(__r);
                     }
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -13987,7 +13987,7 @@ impl ::buffa::text::TextFormat for ServiceOptions {
                         self.__buffa_unknown_fields.push(__r);
                     }
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -14513,7 +14513,7 @@ impl ::buffa::text::TextFormat for MethodOptions {
                         self.__buffa_unknown_fields.push(__r);
                     }
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -15337,7 +15337,7 @@ impl ::buffa::text::TextFormat for UninterpretedOption {
                         },
                     )?
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -15532,7 +15532,7 @@ pub mod uninterpreted_option {
                 match __name {
                     "name_part" => self.name_part = dec.read_string()?.into_owned(),
                     "is_extension" => self.is_extension = dec.read_bool()?,
-                    _ => return Err(dec.unknown_field()),
+                    _ => return ::core::result::Result::Err(dec.unknown_field()),
                 }
             }
             ::core::result::Result::Ok(())
@@ -16165,7 +16165,7 @@ impl ::buffa::text::TextFormat for FeatureSet {
                         self.__buffa_unknown_fields.push(__r);
                     }
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -17703,7 +17703,7 @@ pub mod feature_set {
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
             if dec.read_field_name()?.is_some() {
-                return Err(dec.unknown_field());
+                return ::core::result::Result::Err(dec.unknown_field());
             }
             ::core::result::Result::Ok(())
         }
@@ -18224,7 +18224,7 @@ impl ::buffa::text::TextFormat for FeatureSetDefaults {
                         },
                     )?
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -18530,7 +18530,7 @@ pub mod feature_set_defaults {
                         dec.merge_message(self.fixed_features.get_or_insert_default())?
                     }
                     "features" => dec.skip_value()?,
-                    _ => return Err(dec.unknown_field()),
+                    _ => return ::core::result::Result::Err(dec.unknown_field()),
                 }
             }
             ::core::result::Result::Ok(())
@@ -18790,7 +18790,7 @@ impl ::buffa::text::TextFormat for SourceCodeInfo {
                         self.__buffa_unknown_fields.push(__r);
                     }
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -19449,7 +19449,7 @@ pub mod source_code_info {
                             ),
                         )?
                     }
-                    _ => return Err(dec.unknown_field()),
+                    _ => return ::core::result::Result::Err(dec.unknown_field()),
                 }
             }
             ::core::result::Result::Ok(())
@@ -19655,7 +19655,7 @@ impl ::buffa::text::TextFormat for GeneratedCodeInfo {
                         },
                     )?
                 }
-                _ => return Err(dec.unknown_field()),
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -20077,7 +20077,7 @@ pub mod generated_code_info {
                     "path" => {
                         dec.read_repeated_into(&mut self.path, |__d| __d.read_i32())?
                     }
-                    _ => return Err(dec.unknown_field()),
+                    _ => return ::core::result::Result::Err(dec.unknown_field()),
                 }
             }
             ::core::result::Result::Ok(())
