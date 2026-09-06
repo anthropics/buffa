@@ -45,6 +45,12 @@ MESSAGES = [
     ("google_message1_proto3", "GoogleMessage1", "#E45756"),
     ("media_frame", "MediaFrame", "#72B7B2"),
     ("packed_tile", "PackedTile", "#B279A2"),
+    # Added to the matrix after the fact and measured back across the whole
+    # series, so a change's effect on them is visible from v0.1.0 rather than
+    # only from the release that started tracking them. Appended rather than
+    # slotted in, to keep the existing lines' order and colours stable.
+    ("mesh", "TriMesh", "#EECA3B"),
+    ("column_batch", "ColumnBatch", "#9D755D"),
 ]
 MSG_DISPLAY = {snake: disp for snake, disp, _ in MESSAGES}
 MSG_COLOR = {snake: color for snake, _, color in MESSAGES}
@@ -153,7 +159,7 @@ def render_report(runs: list[dict], matrix: dict[tuple[str, str], dict[str, floa
     w(f"- Build profile: {latest.get('build_profile') or '?'}")
     samples = max((b.get("samples", 1) for b in latest["benchmarks"].values()), default=1)
     if samples > 1:
-        w(f"- Samples: median of {samples} cores per release (per-benchmark spread in run files)")
+        w(f"- Samples: median of {samples} runs per release (per-benchmark spread in run files)")
     w(f"- Criterion: {latest.get('criterion', '?')} · latest measured at "
       f"{latest.get('measured_at', '?')}")
     w("")

@@ -1,0 +1,21 @@
+// googleapis descriptor WKTs (#382): Api, Type, Enum, SourceContext.
+// Compiling this file is the test that codegen maps them to buffa-types
+// (`::buffa_types::google::protobuf::{Api,Type,Enum,SourceContext}` and the
+// matching view types) rather than generating locals that then fail to
+// resolve. Built without JSON: these types have no serde impls, so a
+// json=true fixture embedding them would not compile.
+
+syntax = "proto3";
+
+package test.wktapi;
+
+import "google/protobuf/api.proto";
+import "google/protobuf/type.proto";
+import "google/protobuf/source_context.proto";
+
+message Catalog {
+  google.protobuf.Api api = 1;
+  google.protobuf.Type type_info = 2;
+  google.protobuf.SourceContext source_context = 3;
+  google.protobuf.Enum enum_type = 4;
+}

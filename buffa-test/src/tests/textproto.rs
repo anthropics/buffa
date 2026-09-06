@@ -46,6 +46,20 @@ fn all_scalars_golden() {
 }
 
 #[test]
+fn signed_special_floats_allow_comments_between_sign_and_literal() {
+    let inf: AllScalars = decode_from_str("f_float: - # comment\ninf").unwrap();
+    assert!(inf.f_float.is_infinite() && inf.f_float.is_sign_negative());
+
+    let infinity: AllScalars = decode_from_str("f_double: -\n# comment\ninfinity").unwrap();
+    assert!(infinity.f_double.is_infinite() && infinity.f_double.is_sign_negative());
+
+    let nan: AllScalars = decode_from_str("f_double: -\n# comment\nnan").unwrap();
+    // Sign bit is only guaranteed for the negation, so assert it on the
+    // f64 path rather than through the f32 cast.
+    assert!(nan.f_double.is_nan() && nan.f_double.is_sign_negative());
+}
+
+#[test]
 fn default_encodes_to_empty() {
     // Implicit presence: all-zero → nothing emitted.
     assert_eq!(encode_to_string(&AllScalars::default()), "");

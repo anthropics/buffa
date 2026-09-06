@@ -2,6 +2,7 @@
 // source: google/protobuf/descriptor.proto
 
 /// The full set of known editions.
+#[allow(non_camel_case_types)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 #[repr(i32)]
@@ -261,6 +262,7 @@ impl ::buffa::Enumeration for Edition {
 /// it (ex: local symbols cannot be imported).  Visibility modifiers can only set
 /// on `message` and `enum` as they are the only types available to be referenced
 /// from other files.
+#[allow(non_camel_case_types)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 #[repr(i32)]
@@ -584,18 +586,21 @@ impl ::buffa::text::TextFormat for FileDescriptorSet {
     }
 }
 #[cfg(feature = "json")]
-impl<'de> serde::Deserialize<'de> for FileDescriptorSet {
-    fn deserialize<D: serde::Deserializer<'de>>(
+impl<'de> ::serde::Deserialize<'de> for FileDescriptorSet {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
         d: D,
     ) -> ::core::result::Result<Self, D::Error> {
         struct _V;
-        impl<'de> serde::de::Visitor<'de> for _V {
+        impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = FileDescriptorSet;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct FileDescriptorSet")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: serde::de::MapAccess<'de>>(
+            fn visit_map<A: ::serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> ::core::result::Result<FileDescriptorSet, A::Error> {
@@ -608,9 +613,9 @@ impl<'de> serde::Deserialize<'de> for FileDescriptorSet {
                         "file" => {
                             __f_file = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<FileDescriptorProto>;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -648,7 +653,7 @@ impl<'de> serde::Deserialize<'de> for FileDescriptorSet {
                             }
                         }
                         _ => {
-                            map.next_value::<serde::de::IgnoredAny>()?;
+                            map.next_value::<::serde::de::IgnoredAny>()?;
                         }
                     }
                 }
@@ -3195,18 +3200,21 @@ impl ::buffa::text::TextFormat for ExtensionRangeOptions {
     }
 }
 #[cfg(feature = "json")]
-impl<'de> serde::Deserialize<'de> for ExtensionRangeOptions {
-    fn deserialize<D: serde::Deserializer<'de>>(
+impl<'de> ::serde::Deserialize<'de> for ExtensionRangeOptions {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
         d: D,
     ) -> ::core::result::Result<Self, D::Error> {
         struct _V;
-        impl<'de> serde::de::Visitor<'de> for _V {
+        impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = ExtensionRangeOptions;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct ExtensionRangeOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: serde::de::MapAccess<'de>>(
+            fn visit_map<A: ::serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> ::core::result::Result<ExtensionRangeOptions, A::Error> {
@@ -3228,9 +3236,9 @@ impl<'de> serde::Deserialize<'de> for ExtensionRangeOptions {
                         "uninterpretedOption" | "uninterpreted_option" => {
                             __f_uninterpreted_option = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -3246,11 +3254,11 @@ impl<'de> serde::Deserialize<'de> for ExtensionRangeOptions {
                         "declaration" => {
                             __f_declaration = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<
                                         extension_range_options::Declaration,
                                     >;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -3279,11 +3287,11 @@ impl<'de> serde::Deserialize<'de> for ExtensionRangeOptions {
                         "verification" => {
                             __f_verification = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::core::option::Option<
                                         extension_range_options::VerificationState,
                                     >;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -3323,7 +3331,7 @@ impl<'de> serde::Deserialize<'de> for ExtensionRangeOptions {
                             }
                         }
                         _ => {
-                            map.next_value::<serde::de::IgnoredAny>()?;
+                            map.next_value::<::serde::de::IgnoredAny>()?;
                         }
                     }
                 }
@@ -3428,6 +3436,7 @@ pub mod extension_range_options {
     #[allow(unused_imports)]
     use super::*;
     /// The verification state of the extension range.
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -4657,6 +4666,7 @@ pub const __FIELD_DESCRIPTOR_PROTO_TEXT_ANY: ::buffa::type_registry::TextAnyEntr
 pub mod field_descriptor_proto {
     #[allow(unused_imports)]
     use super::*;
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -4942,6 +4952,7 @@ pub mod field_descriptor_proto {
             ]
         }
     }
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -8204,18 +8215,21 @@ impl ::buffa::text::TextFormat for FileOptions {
     }
 }
 #[cfg(feature = "json")]
-impl<'de> serde::Deserialize<'de> for FileOptions {
-    fn deserialize<D: serde::Deserializer<'de>>(
+impl<'de> ::serde::Deserialize<'de> for FileOptions {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
         d: D,
     ) -> ::core::result::Result<Self, D::Error> {
         struct _V;
-        impl<'de> serde::de::Visitor<'de> for _V {
+        impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = FileOptions;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct FileOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: serde::de::MapAccess<'de>>(
+            fn visit_map<A: ::serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> ::core::result::Result<FileOptions, A::Error> {
@@ -8320,11 +8334,11 @@ impl<'de> serde::Deserialize<'de> for FileOptions {
                         "optimizeFor" | "optimize_for" => {
                             __f_optimize_for = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::core::option::Option<
                                         file_options::OptimizeMode,
                                     >;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -8440,9 +8454,9 @@ impl<'de> serde::Deserialize<'de> for FileOptions {
                         "uninterpretedOption" | "uninterpreted_option" => {
                             __f_uninterpreted_option = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -8480,7 +8494,7 @@ impl<'de> serde::Deserialize<'de> for FileOptions {
                             }
                         }
                         _ => {
-                            map.next_value::<serde::de::IgnoredAny>()?;
+                            map.next_value::<::serde::de::IgnoredAny>()?;
                         }
                     }
                 }
@@ -8636,6 +8650,7 @@ pub mod file_options {
     #[allow(unused_imports)]
     use super::*;
     /// Generated classes can be optimized for speed or code size.
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -9306,18 +9321,21 @@ impl ::buffa::text::TextFormat for MessageOptions {
     }
 }
 #[cfg(feature = "json")]
-impl<'de> serde::Deserialize<'de> for MessageOptions {
-    fn deserialize<D: serde::Deserializer<'de>>(
+impl<'de> ::serde::Deserialize<'de> for MessageOptions {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
         d: D,
     ) -> ::core::result::Result<Self, D::Error> {
         struct _V;
-        impl<'de> serde::de::Visitor<'de> for _V {
+        impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = MessageOptions;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct MessageOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: serde::de::MapAccess<'de>>(
+            fn visit_map<A: ::serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> ::core::result::Result<MessageOptions, A::Error> {
@@ -9386,9 +9404,9 @@ impl<'de> serde::Deserialize<'de> for MessageOptions {
                         "uninterpretedOption" | "uninterpreted_option" => {
                             __f_uninterpreted_option = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -9426,7 +9444,7 @@ impl<'de> serde::Deserialize<'de> for MessageOptions {
                             }
                         }
                         _ => {
-                            map.next_value::<serde::de::IgnoredAny>()?;
+                            map.next_value::<::serde::de::IgnoredAny>()?;
                         }
                     }
                 }
@@ -10411,18 +10429,21 @@ impl ::buffa::text::TextFormat for FieldOptions {
     }
 }
 #[cfg(feature = "json")]
-impl<'de> serde::Deserialize<'de> for FieldOptions {
-    fn deserialize<D: serde::Deserializer<'de>>(
+impl<'de> ::serde::Deserialize<'de> for FieldOptions {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
         d: D,
     ) -> ::core::result::Result<Self, D::Error> {
         struct _V;
-        impl<'de> serde::de::Visitor<'de> for _V {
+        impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = FieldOptions;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct FieldOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: serde::de::MapAccess<'de>>(
+            fn visit_map<A: ::serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> ::core::result::Result<FieldOptions, A::Error> {
@@ -10473,9 +10494,9 @@ impl<'de> serde::Deserialize<'de> for FieldOptions {
                         "ctype" => {
                             __f_ctype = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::core::option::Option<field_options::CType>;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -10496,9 +10517,9 @@ impl<'de> serde::Deserialize<'de> for FieldOptions {
                         "jstype" => {
                             __f_jstype = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::core::option::Option<field_options::JSType>;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -10539,11 +10560,11 @@ impl<'de> serde::Deserialize<'de> for FieldOptions {
                         "retention" => {
                             __f_retention = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::core::option::Option<
                                         field_options::OptionRetention,
                                     >;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -10559,11 +10580,11 @@ impl<'de> serde::Deserialize<'de> for FieldOptions {
                         "targets" => {
                             __f_targets = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<
                                         field_options::OptionTargetType,
                                     >;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -10579,11 +10600,11 @@ impl<'de> serde::Deserialize<'de> for FieldOptions {
                         "editionDefaults" | "edition_defaults" => {
                             __f_edition_defaults = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<
                                         field_options::EditionDefault,
                                     >;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -10621,9 +10642,9 @@ impl<'de> serde::Deserialize<'de> for FieldOptions {
                         "uninterpretedOption" | "uninterpreted_option" => {
                             __f_uninterpreted_option = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -10661,7 +10682,7 @@ impl<'de> serde::Deserialize<'de> for FieldOptions {
                             }
                         }
                         _ => {
-                            map.next_value::<serde::de::IgnoredAny>()?;
+                            map.next_value::<::serde::de::IgnoredAny>()?;
                         }
                     }
                 }
@@ -10795,6 +10816,7 @@ pub const __FIELD_OPTIONS_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buf
 pub mod field_options {
     #[allow(unused_imports)]
     use super::*;
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -10948,6 +10970,7 @@ pub mod field_options {
             &[Self::STRING, Self::CORD, Self::STRING_PIECE]
         }
     }
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -11100,6 +11123,7 @@ pub mod field_options {
         }
     }
     /// If set to RETENTION_SOURCE, the option will be omitted from the binary.
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -11258,6 +11282,7 @@ pub mod field_options {
     /// This indicates the types of entities that the field may apply to when used
     /// as an option. If it is unset, then the field may be freely used as an
     /// option on any kind of entity.
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -12344,18 +12369,21 @@ impl ::buffa::text::TextFormat for OneofOptions {
     }
 }
 #[cfg(feature = "json")]
-impl<'de> serde::Deserialize<'de> for OneofOptions {
-    fn deserialize<D: serde::Deserializer<'de>>(
+impl<'de> ::serde::Deserialize<'de> for OneofOptions {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
         d: D,
     ) -> ::core::result::Result<Self, D::Error> {
         struct _V;
-        impl<'de> serde::de::Visitor<'de> for _V {
+        impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = OneofOptions;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct OneofOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: serde::de::MapAccess<'de>>(
+            fn visit_map<A: ::serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> ::core::result::Result<OneofOptions, A::Error> {
@@ -12382,9 +12410,9 @@ impl<'de> serde::Deserialize<'de> for OneofOptions {
                         "uninterpretedOption" | "uninterpreted_option" => {
                             __f_uninterpreted_option = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -12422,7 +12450,7 @@ impl<'de> serde::Deserialize<'de> for OneofOptions {
                             }
                         }
                         _ => {
-                            map.next_value::<serde::de::IgnoredAny>()?;
+                            map.next_value::<::serde::de::IgnoredAny>()?;
                         }
                     }
                 }
@@ -12889,18 +12917,21 @@ impl ::buffa::text::TextFormat for EnumOptions {
     }
 }
 #[cfg(feature = "json")]
-impl<'de> serde::Deserialize<'de> for EnumOptions {
-    fn deserialize<D: serde::Deserializer<'de>>(
+impl<'de> ::serde::Deserialize<'de> for EnumOptions {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
         d: D,
     ) -> ::core::result::Result<Self, D::Error> {
         struct _V;
-        impl<'de> serde::de::Visitor<'de> for _V {
+        impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = EnumOptions;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct EnumOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: serde::de::MapAccess<'de>>(
+            fn visit_map<A: ::serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> ::core::result::Result<EnumOptions, A::Error> {
@@ -12952,9 +12983,9 @@ impl<'de> serde::Deserialize<'de> for EnumOptions {
                         "uninterpretedOption" | "uninterpreted_option" => {
                             __f_uninterpreted_option = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -12992,7 +13023,7 @@ impl<'de> serde::Deserialize<'de> for EnumOptions {
                             }
                         }
                         _ => {
-                            map.next_value::<serde::de::IgnoredAny>()?;
+                            map.next_value::<::serde::de::IgnoredAny>()?;
                         }
                     }
                 }
@@ -13466,18 +13497,21 @@ impl ::buffa::text::TextFormat for EnumValueOptions {
     }
 }
 #[cfg(feature = "json")]
-impl<'de> serde::Deserialize<'de> for EnumValueOptions {
-    fn deserialize<D: serde::Deserializer<'de>>(
+impl<'de> ::serde::Deserialize<'de> for EnumValueOptions {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
         d: D,
     ) -> ::core::result::Result<Self, D::Error> {
         struct _V;
-        impl<'de> serde::de::Visitor<'de> for _V {
+        impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = EnumValueOptions;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct EnumValueOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: serde::de::MapAccess<'de>>(
+            fn visit_map<A: ::serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> ::core::result::Result<EnumValueOptions, A::Error> {
@@ -13537,9 +13571,9 @@ impl<'de> serde::Deserialize<'de> for EnumValueOptions {
                         "uninterpretedOption" | "uninterpreted_option" => {
                             __f_uninterpreted_option = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -13577,7 +13611,7 @@ impl<'de> serde::Deserialize<'de> for EnumValueOptions {
                             }
                         }
                         _ => {
-                            map.next_value::<serde::de::IgnoredAny>()?;
+                            map.next_value::<::serde::de::IgnoredAny>()?;
                         }
                     }
                 }
@@ -13960,18 +13994,21 @@ impl ::buffa::text::TextFormat for ServiceOptions {
     }
 }
 #[cfg(feature = "json")]
-impl<'de> serde::Deserialize<'de> for ServiceOptions {
-    fn deserialize<D: serde::Deserializer<'de>>(
+impl<'de> ::serde::Deserialize<'de> for ServiceOptions {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
         d: D,
     ) -> ::core::result::Result<Self, D::Error> {
         struct _V;
-        impl<'de> serde::de::Visitor<'de> for _V {
+        impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = ServiceOptions;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct ServiceOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: serde::de::MapAccess<'de>>(
+            fn visit_map<A: ::serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> ::core::result::Result<ServiceOptions, A::Error> {
@@ -14006,9 +14043,9 @@ impl<'de> serde::Deserialize<'de> for ServiceOptions {
                         "uninterpretedOption" | "uninterpreted_option" => {
                             __f_uninterpreted_option = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -14046,7 +14083,7 @@ impl<'de> serde::Deserialize<'de> for ServiceOptions {
                             }
                         }
                         _ => {
-                            map.next_value::<serde::de::IgnoredAny>()?;
+                            map.next_value::<::serde::de::IgnoredAny>()?;
                         }
                     }
                 }
@@ -14483,18 +14520,21 @@ impl ::buffa::text::TextFormat for MethodOptions {
     }
 }
 #[cfg(feature = "json")]
-impl<'de> serde::Deserialize<'de> for MethodOptions {
-    fn deserialize<D: serde::Deserializer<'de>>(
+impl<'de> ::serde::Deserialize<'de> for MethodOptions {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
         d: D,
     ) -> ::core::result::Result<Self, D::Error> {
         struct _V;
-        impl<'de> serde::de::Visitor<'de> for _V {
+        impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = MethodOptions;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct MethodOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: serde::de::MapAccess<'de>>(
+            fn visit_map<A: ::serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> ::core::result::Result<MethodOptions, A::Error> {
@@ -14521,11 +14561,11 @@ impl<'de> serde::Deserialize<'de> for MethodOptions {
                         "idempotencyLevel" | "idempotency_level" => {
                             __f_idempotency_level = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::core::option::Option<
                                         method_options::IdempotencyLevel,
                                     >;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -14552,9 +14592,9 @@ impl<'de> serde::Deserialize<'de> for MethodOptions {
                         "uninterpretedOption" | "uninterpreted_option" => {
                             __f_uninterpreted_option = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -14592,7 +14632,7 @@ impl<'de> serde::Deserialize<'de> for MethodOptions {
                             }
                         }
                         _ => {
-                            map.next_value::<serde::de::IgnoredAny>()?;
+                            map.next_value::<::serde::de::IgnoredAny>()?;
                         }
                     }
                 }
@@ -14699,6 +14739,7 @@ pub mod method_options {
     /// Is this method side-effect-free (or safe in HTTP parlance), or idempotent,
     /// or neither? HTTP based RPC implementation may choose GET verb for safe
     /// methods, and PUT verb for idempotent methods instead of the default POST.
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -16131,18 +16172,21 @@ impl ::buffa::text::TextFormat for FeatureSet {
     }
 }
 #[cfg(feature = "json")]
-impl<'de> serde::Deserialize<'de> for FeatureSet {
-    fn deserialize<D: serde::Deserializer<'de>>(
+impl<'de> ::serde::Deserialize<'de> for FeatureSet {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
         d: D,
     ) -> ::core::result::Result<Self, D::Error> {
         struct _V;
-        impl<'de> serde::de::Visitor<'de> for _V {
+        impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = FeatureSet;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct FeatureSet")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: serde::de::MapAccess<'de>>(
+            fn visit_map<A: ::serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> ::core::result::Result<FeatureSet, A::Error> {
@@ -16178,11 +16222,11 @@ impl<'de> serde::Deserialize<'de> for FeatureSet {
                         "fieldPresence" | "field_presence" => {
                             __f_field_presence = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::core::option::Option<
                                         feature_set::FieldPresence,
                                     >;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -16198,9 +16242,9 @@ impl<'de> serde::Deserialize<'de> for FeatureSet {
                         "enumType" | "enum_type" => {
                             __f_enum_type = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::core::option::Option<feature_set::EnumType>;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -16216,11 +16260,11 @@ impl<'de> serde::Deserialize<'de> for FeatureSet {
                         "repeatedFieldEncoding" | "repeated_field_encoding" => {
                             __f_repeated_field_encoding = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::core::option::Option<
                                         feature_set::RepeatedFieldEncoding,
                                     >;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -16236,11 +16280,11 @@ impl<'de> serde::Deserialize<'de> for FeatureSet {
                         "utf8Validation" | "utf8_validation" => {
                             __f_utf8_validation = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::core::option::Option<
                                         feature_set::Utf8Validation,
                                     >;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -16256,11 +16300,11 @@ impl<'de> serde::Deserialize<'de> for FeatureSet {
                         "messageEncoding" | "message_encoding" => {
                             __f_message_encoding = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::core::option::Option<
                                         feature_set::MessageEncoding,
                                     >;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -16276,11 +16320,11 @@ impl<'de> serde::Deserialize<'de> for FeatureSet {
                         "jsonFormat" | "json_format" => {
                             __f_json_format = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::core::option::Option<
                                         feature_set::JsonFormat,
                                     >;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -16296,11 +16340,11 @@ impl<'de> serde::Deserialize<'de> for FeatureSet {
                         "enforceNamingStyle" | "enforce_naming_style" => {
                             __f_enforce_naming_style = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::core::option::Option<
                                         feature_set::EnforceNamingStyle,
                                     >;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -16316,11 +16360,11 @@ impl<'de> serde::Deserialize<'de> for FeatureSet {
                         "defaultSymbolVisibility" | "default_symbol_visibility" => {
                             __f_default_symbol_visibility = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::core::option::Option<
                                         feature_set::visibility_feature::DefaultSymbolVisibility,
                                     >;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -16360,7 +16404,7 @@ impl<'de> serde::Deserialize<'de> for FeatureSet {
                             }
                         }
                         _ => {
-                            map.next_value::<serde::de::IgnoredAny>()?;
+                            map.next_value::<::serde::de::IgnoredAny>()?;
                         }
                     }
                 }
@@ -16476,6 +16520,7 @@ pub const __FEATURE_SET_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa
 pub mod feature_set {
     #[allow(unused_imports)]
     use super::*;
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -16638,6 +16683,7 @@ pub mod feature_set {
             ]
         }
     }
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -16788,6 +16834,7 @@ pub mod feature_set {
             &[Self::ENUM_TYPE_UNKNOWN, Self::OPEN, Self::CLOSED]
         }
     }
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -16945,6 +16992,7 @@ pub mod feature_set {
             &[Self::REPEATED_FIELD_ENCODING_UNKNOWN, Self::PACKED, Self::EXPANDED]
         }
     }
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -17096,6 +17144,7 @@ pub mod feature_set {
             &[Self::UTF8_VALIDATION_UNKNOWN, Self::VERIFY, Self::NONE]
         }
     }
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -17247,6 +17296,7 @@ pub mod feature_set {
             &[Self::MESSAGE_ENCODING_UNKNOWN, Self::LENGTH_PREFIXED, Self::DELIMITED]
         }
     }
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -17399,6 +17449,7 @@ pub mod feature_set {
             &[Self::JSON_FORMAT_UNKNOWN, Self::ALLOW, Self::LEGACY_BEST_EFFORT]
         }
     }
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]
@@ -17689,6 +17740,7 @@ pub mod feature_set {
     pub mod visibility_feature {
         #[allow(unused_imports)]
         use super::*;
+        #[allow(non_camel_case_types)]
         #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
         #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
         #[repr(i32)]
@@ -18745,18 +18797,21 @@ impl ::buffa::text::TextFormat for SourceCodeInfo {
     }
 }
 #[cfg(feature = "json")]
-impl<'de> serde::Deserialize<'de> for SourceCodeInfo {
-    fn deserialize<D: serde::Deserializer<'de>>(
+impl<'de> ::serde::Deserialize<'de> for SourceCodeInfo {
+    fn deserialize<D: ::serde::Deserializer<'de>>(
         d: D,
     ) -> ::core::result::Result<Self, D::Error> {
         struct _V;
-        impl<'de> serde::de::Visitor<'de> for _V {
+        impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = SourceCodeInfo;
-            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn expecting(
+                &self,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
                 f.write_str("struct SourceCodeInfo")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: serde::de::MapAccess<'de>>(
+            fn visit_map<A: ::serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> ::core::result::Result<SourceCodeInfo, A::Error> {
@@ -18769,11 +18824,11 @@ impl<'de> serde::Deserialize<'de> for SourceCodeInfo {
                         "location" => {
                             __f_location = Some({
                                 struct _S;
-                                impl<'de> serde::de::DeserializeSeed<'de> for _S {
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<
                                         source_code_info::Location,
                                     >;
-                                    fn deserialize<D: serde::Deserializer<'de>>(
+                                    fn deserialize<D: ::serde::Deserializer<'de>>(
                                         self,
                                         d: D,
                                     ) -> ::core::result::Result<
@@ -18811,7 +18866,7 @@ impl<'de> serde::Deserialize<'de> for SourceCodeInfo {
                             }
                         }
                         _ => {
-                            map.next_value::<serde::de::IgnoredAny>()?;
+                            map.next_value::<::serde::de::IgnoredAny>()?;
                         }
                     }
                 }
@@ -20062,6 +20117,7 @@ pub mod generated_code_info {
         use super::*;
         /// Represents the identified object's effect on the element in the original
         /// .proto file.
+        #[allow(non_camel_case_types)]
         #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
         #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
         #[repr(i32)]

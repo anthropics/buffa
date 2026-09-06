@@ -287,6 +287,10 @@ pub fn snake_to_camel(path: &str) -> String {
 
 /// Convert a lowerCamelCase field-mask path to snake_case, handling dotted
 /// sub-paths.
+///
+/// A leading uppercase letter produces a leading underscore (`Foo` → `_foo`),
+/// the inverse of [`snake_to_camel`] on a field named `_foo`; `_` is a legal
+/// first character in a proto field name.
 #[must_use]
 pub fn camel_to_snake(path: &str) -> String {
     path.split('.')
@@ -294,11 +298,7 @@ pub fn camel_to_snake(path: &str) -> String {
             let mut out = String::with_capacity(component.len() + 4);
             for ch in component.chars() {
                 if ch.is_uppercase() {
-                    // No underscore before the first char of a component,
-                    // even if it's uppercase (PascalCase → snake, not _snake).
-                    if !out.is_empty() {
-                        out.push('_');
-                    }
+                    out.push('_');
                     out.extend(ch.to_lowercase());
                 } else {
                     out.push(ch);
@@ -310,16 +310,36 @@ pub fn camel_to_snake(path: &str) -> String {
         .join(".")
 }
 
-/// Whether a snake_case `FieldMask` path round-trips through camelCase
-/// without information loss.
+/// Whether a snake_case `FieldMask` path is valid in proto3 JSON.
 ///
-/// The proto3 JSON spec requires rejecting paths that can't round-trip:
-/// double underscores (`foo__bar`), digits after underscores (`foo_3_bar`),
-/// and uppercase in the snake form (`fooBar`) all violate the invariant
-/// `camel_to_snake(snake_to_camel(p)) == p`.
+/// Two checks: every dotted component must be an ASCII identifier of the
+/// form `[a-z_][a-z0-9_]*` (C++ accepts only `[0-9a-zA-Z.]` in the JSON
+/// form; protobuf-go requires each snake-cased component to be a valid
+/// proto name), and the path must round-trip, `camel_to_snake(snake_to_camel(p)) == p`,
+/// which rejects double underscores (`foo__bar`), digits after underscores
+/// (`foo_3_bar`), and uppercase in the snake form (`fooBar`). Whitespace,
+/// `-`, `/` and other non-identifier characters fail the first check even
+/// though they would survive the round-trip.
+///
+/// The exact path `*` is accepted as a deliberate divergence from both
+/// references, which reject it: AIP-161 uses it as the full-mask wildcard
+/// and it was accepted before the character check existed.
+///
+/// The name predates the character check and is kept for compatibility.
 #[must_use]
 pub fn field_mask_path_round_trips(path: &str) -> bool {
-    camel_to_snake(&snake_to_camel(path)) == path
+    if path == "*" {
+        return true;
+    }
+    path.split('.').all(|component| {
+        let Some((first, rest)) = component.as_bytes().split_first() else {
+            return false;
+        };
+        (first.is_ascii_lowercase() || *first == b'_')
+            && rest
+                .iter()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'_')
+    }) && camel_to_snake(&snake_to_camel(path)) == path
 }
 
 // ── Civil calendar ──────────────────────────────────────────────────────────
@@ -447,10 +467,27 @@ mod tests {
         assert_eq!(snake_to_camel("foo_bar"), "fooBar");
         assert_eq!(camel_to_snake("fooBar"), "foo_bar");
         assert_eq!(snake_to_camel("user.first_name"), "user.firstName");
+        assert_eq!(snake_to_camel("_foo"), "Foo");
+        assert_eq!(camel_to_snake("Foo"), "_foo");
+        assert_eq!(snake_to_camel("foo._bar"), "foo.Bar");
+        assert_eq!(camel_to_snake("foo.Bar"), "foo._bar");
+        assert!(field_mask_path_round_trips("_foo"));
+        assert!(field_mask_path_round_trips("foo._bar"));
         assert!(field_mask_path_round_trips("foo_bar"));
         assert!(field_mask_path_round_trips("user.first_name"));
+        assert!(field_mask_path_round_trips("*"));
+        assert!(!field_mask_path_round_trips(""));
+        assert!(!field_mask_path_round_trips("foo."));
+        assert!(!field_mask_path_round_trips(".foo"));
+        assert!(!field_mask_path_round_trips("foo..bar"));
         assert!(!field_mask_path_round_trips("foo__bar"));
         assert!(!field_mask_path_round_trips("foo_3_bar"));
         assert!(!field_mask_path_round_trips("fooBar"));
+        assert!(!field_mask_path_round_trips("foo bar"));
+        assert!(!field_mask_path_round_trips("foo-bar"));
+        assert!(!field_mask_path_round_trips("foo/bar"));
+        assert!(!field_mask_path_round_trips("3d"));
+        assert!(field_mask_path_round_trips("foo3_bar"));
+        assert!(field_mask_path_round_trips("_foo.bar1"));
     }
 }

@@ -127,6 +127,13 @@ macro_rules! impl_default_instance {
 /// default is recursion-aware and is the intended blanket; reserve custom
 /// inline pointers for per-field or per-prefix overrides.
 ///
+/// # JSON serialization
+///
+/// When JSON codegen is enabled, custom pointers do not need
+/// `serde::Serialize` or `serde::Deserialize`. Singular message fields use
+/// `MessageField`'s generic serde implementation, and message-valued oneof
+/// variants serialize the pointee through this trait's `Deref` bound.
+///
 /// # Examples
 ///
 /// A minimal crate-local newtype wrapping a foreign pointer (the `Clone` derive

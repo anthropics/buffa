@@ -75,6 +75,65 @@ fn clone_options<T: Clone + Default, P: buffa::ProtoBox<T>>(
 /// limit — reached in pass 1, before the other three walks run.
 pub const MAX_SYMBOL_LEN: usize = 512;
 
+/// Reserved number ranges, sorted and coalesced, so a number or a range is
+/// checked with one binary search rather than a scan. Stored half-open;
+/// `DescriptorProto.ReservedRange` is half-open already and
+/// `EnumReservedRange`'s inclusive end is converted on the way in.
+/// Descriptor sets are untrusted input, and a message or enum may declare
+/// tens of thousands of fields or values and as many reserved ranges within
+/// the element budget, so the per-field check must not be linear in the
+/// range count.
+struct ReservedRanges(Vec<(i64, i64)>);
+
+impl ReservedRanges {
+    fn new(ranges: &[crate::generated::descriptor::descriptor_proto::ReservedRange]) -> Self {
+        Self::from_half_open(ranges.iter().filter_map(|r| match (r.start, r.end) {
+            // An unset bound cannot be honoured; protoc requires both.
+            (Some(start), Some(end)) => Some((i64::from(start), i64::from(end))),
+            _ => None,
+        }))
+    }
+
+    fn for_enum(
+        ranges: &[crate::generated::descriptor::enum_descriptor_proto::EnumReservedRange],
+    ) -> Self {
+        Self::from_half_open(ranges.iter().filter_map(|r| match (r.start, r.end) {
+            (Some(start), Some(end)) => Some((i64::from(start), i64::from(end) + 1)),
+            _ => None,
+        }))
+    }
+
+    fn from_half_open(ranges: impl Iterator<Item = (i64, i64)>) -> Self {
+        let mut sorted: Vec<(i64, i64)> = ranges.filter(|&(start, end)| start < end).collect();
+        sorted.sort_unstable();
+        let mut merged: Vec<(i64, i64)> = Vec::with_capacity(sorted.len());
+        for (start, end) in sorted {
+            match merged.last_mut() {
+                Some(last) if start <= last.1 => last.1 = last.1.max(end),
+                _ => merged.push((start, end)),
+            }
+        }
+        Self(merged)
+    }
+
+    fn contains(&self, number: impl Into<i64>) -> bool {
+        let number = number.into();
+        let idx = self.0.partition_point(|&(start, _)| start <= number);
+        idx > 0 && number < self.0[idx - 1].1
+    }
+
+    /// Whether the half-open `start..end` overlaps any reserved range.
+    fn overlaps(&self, start: u32, end: u32) -> bool {
+        let (start, end) = (i64::from(start), i64::from(end));
+        let idx = self
+            .0
+            .partition_point(|&(_, reserved_end)| reserved_end <= start);
+        self.0
+            .get(idx)
+            .is_some_and(|&(reserved_start, _)| reserved_start < end)
+    }
+}
+
 /// Errors that can occur while building a [`DescriptorPool`].
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -111,8 +170,13 @@ pub enum PoolError {
     },
     /// A field number is outside the valid range
     /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`), or an extension range has
-    /// a negative bound.
+    /// an invalid bound.
     InvalidFieldNumber { field: String, number: i32 },
+    /// A field number, or a finite extension range, overlaps the field-number
+    /// interval reserved for the protobuf implementation. The bounds are
+    /// [`buffa::encoding::FIRST_RESERVED_FIELD_NUMBER`] through
+    /// [`buffa::encoding::LAST_RESERVED_FIELD_NUMBER`].
+    ReservedFieldNumber { field: String, number: i32 },
     /// A map entry message did not have exactly fields 1 (key) and 2 (value),
     /// or the key type is not a valid map key per the protobuf spec.
     MalformedMapEntry { message: String },
@@ -124,6 +188,43 @@ pub enum PoolError {
     DuplicateMethodName { service: String, name: String },
     /// Two enum values in the same symbol scope have the same proto name.
     DuplicateEnumValueName { enum_name: String, name: String },
+    /// A message field reuses a name reserved by its containing message.
+    ReservedMessageFieldName { message: String, name: String },
+    /// A message field uses a number reserved by its containing message.
+    ReservedMessageFieldNumber {
+        message: String,
+        name: String,
+        number: u32,
+    },
+    /// A message extension range overlaps a range reserved by that message.
+    /// `end` is exclusive, as in `DescriptorProto.ReservedRange` and
+    /// `ExtensionRange` (`extensions 5 to 7;` is `start: 5, end: 8`).
+    ReservedExtensionRange {
+        message: String,
+        start: u32,
+        end: u32,
+    },
+    /// An open enum's first declared value has a non-zero number.
+    OpenEnumFirstValueNotZero {
+        enum_name: String,
+        name: String,
+        number: i32,
+    },
+    /// An enum value reuses a name reserved by its enum declaration.
+    ReservedEnumValueName { enum_name: String, name: String },
+    /// An enum value uses a number reserved by its enum declaration.
+    ReservedEnumValueNumber {
+        enum_name: String,
+        name: String,
+        number: i32,
+    },
+    /// Two enum values in the same enum have the same number without
+    /// `allow_alias` enabled.
+    DuplicateEnumValueNumber {
+        enum_name: String,
+        name: String,
+        number: i32,
+    },
 }
 
 impl core::fmt::Display for PoolError {
@@ -174,6 +275,12 @@ impl core::fmt::Display for PoolError {
             Self::InvalidFieldNumber { field, number } => {
                 write!(f, "field {field} has invalid field number {number}")
             }
+            Self::ReservedFieldNumber { field, number } => {
+                write!(
+                    f,
+                    "field {field} uses field number {number}, which is reserved for the protobuf implementation"
+                )
+            }
             Self::MalformedMapEntry { message } => {
                 write!(f, "malformed map entry message {message}")
             }
@@ -192,6 +299,52 @@ impl core::fmt::Display for PoolError {
             Self::DuplicateEnumValueName { enum_name, name } => {
                 write!(f, "enum {enum_name} declares value {name:?} more than once")
             }
+            Self::ReservedMessageFieldName { message, name } => {
+                write!(f, "message {message} field {name:?} reuses a reserved name")
+            }
+            Self::ReservedMessageFieldNumber {
+                message,
+                name,
+                number,
+            } => write!(
+                f,
+                "message {message} field {name:?} uses reserved number {number}"
+            ),
+            Self::ReservedExtensionRange {
+                message,
+                start,
+                end,
+            } => write!(
+                f,
+                "message {message} extension range {start}..{end} overlaps a reserved range"
+            ),
+            Self::OpenEnumFirstValueNotZero {
+                enum_name,
+                name,
+                number,
+            } => write!(
+                f,
+                "open enum {enum_name} first value {name:?} has non-zero number {number}"
+            ),
+            Self::ReservedEnumValueName { enum_name, name } => {
+                write!(f, "enum {enum_name} reuses reserved value name {name:?}")
+            }
+            Self::ReservedEnumValueNumber {
+                enum_name,
+                name,
+                number,
+            } => write!(
+                f,
+                "enum {enum_name} value {name:?} uses reserved number {number}"
+            ),
+            Self::DuplicateEnumValueNumber {
+                enum_name,
+                name,
+                number,
+            } => write!(
+                f,
+                "enum {enum_name} value {name:?} reuses number {number} without allow_alias"
+            ),
         }
     }
 }
@@ -278,8 +431,13 @@ impl DescriptorPool {
     /// # Errors
     ///
     /// Returns a [`PoolError`] if any type name fails to resolve, a symbol or
-    /// field identity is declared twice, a oneof index is invalid, a message
-    /// exceeds 65 535 fields, or a map entry is malformed.
+    /// field identity is declared twice, a field number is out of range or in
+    /// the implementation-reserved band (19000-19999), a field uses a name or
+    /// number its message reserved, an extension range overlaps a reserved
+    /// range, an open enum's first value is non-zero, an enum value reuses a
+    /// reserved name or number or a duplicate number without `allow_alias`, a
+    /// oneof index is invalid, a message exceeds 65 535 fields, or a map entry
+    /// is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -297,9 +455,12 @@ impl DescriptorPool {
     ///
     /// Returns [`PoolError::Decode`] if the bytes are not a well-formed
     /// `FileDescriptorSet`, or any other [`PoolError`] on a structural
-    /// validation failure (dangling type names, out-of-range field numbers,
-    /// duplicate symbols or field identities, invalid oneof indices, or
-    /// malformed map entries).
+    /// validation failure (dangling type names, out-of-range or
+    /// implementation-reserved field numbers, reserved message fields, an
+    /// overlapping extension range, duplicate symbols or field identities,
+    /// an open enum whose first value is non-zero, reserved enum values,
+    /// duplicate enum numbers without `allow_alias`, invalid oneof indices,
+    /// or malformed map entries).
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -354,7 +515,7 @@ impl DescriptorPool {
     ///
     /// # Errors
     ///
-    /// Returns a [`PoolError`] on resolution failure.
+    /// Returns a [`PoolError`] on resolution or structural validation failure.
     pub fn add_file_descriptor_set(&mut self, set: FileDescriptorSet) -> Result<(), PoolError> {
         // Fast path for no-op re-adds without cloning the existing pool.
         let has_new_files = set.file.iter().any(|f| {
@@ -581,11 +742,11 @@ impl DescriptorPool {
     ///
     /// # Panics
     ///
-    /// Panics if `idx` was issued by a *different* pool whose message count
-    /// is smaller than this one's. `MessageIndex` carries no pool identity;
-    /// passing an index across pools is a logic error and may also silently
-    /// return the wrong descriptor without panicking. Hold one pool per
-    /// schema and don't mix indices.
+    /// Panics if `idx`'s ordinal is at or beyond this pool's message count,
+    /// which can only happen with an index issued by a *different* pool.
+    /// `MessageIndex` carries no pool identity; passing an index across pools
+    /// is a logic error and may also silently return the wrong descriptor
+    /// without panicking. Hold one pool per schema and don't mix indices.
     #[must_use]
     pub fn message(&self, idx: MessageIndex) -> &MessageDescriptor {
         &self.messages[idx.0 as usize]
@@ -885,6 +1046,8 @@ impl DescriptorPool {
         let mut field_by_number: Vec<(u32, u16)> = Vec::with_capacity(field_count);
         let mut field_by_name: Vec<(String, u16)> = Vec::with_capacity(field_count * 2);
         let mut field_numbers: BTreeMap<u32, usize> = BTreeMap::new();
+        let reserved_names: BTreeSet<&str> = msg.reserved_name.iter().map(String::as_str).collect();
+        let reserved_ranges = ReservedRanges::new(&msg.reserved_range);
         let mut field_names: BTreeMap<String, usize> = BTreeMap::new();
         // Two fields resolving to one JSON name make JSON lookup ambiguous, but
         // protobuf permits it where JSON is best-effort: protoc emits such a
@@ -916,6 +1079,19 @@ impl DescriptorPool {
                 }
             }
             let fd = self.link_field(&fqn, f, &msg_features, Some(msg))?;
+            if reserved_names.contains(fd.name.as_str()) {
+                return Err(PoolError::ReservedMessageFieldName {
+                    message: fqn.clone(),
+                    name: fd.name.clone(),
+                });
+            }
+            if reserved_ranges.contains(fd.number) {
+                return Err(PoolError::ReservedMessageFieldNumber {
+                    message: fqn.clone(),
+                    name: fd.name.clone(),
+                    number: fd.number,
+                });
+            }
             if field_numbers.insert(fd.number, i).is_some() {
                 return Err(PoolError::DuplicateFieldNumber {
                     message: fqn.clone(),
@@ -984,6 +1160,17 @@ impl DescriptorPool {
                     number: start.min(end),
                 });
             };
+            if reserved_ranges.overlaps(start, end) {
+                return Err(PoolError::ReservedExtensionRange {
+                    message: fqn.clone(),
+                    start,
+                    end,
+                });
+            }
+            // Ranges that span the implementation-reserved band are kept as
+            // declared, as protoc and protobuf-go do (`descriptor.proto`'s own
+            // `extensions 1000 to max;` spans it). An extension *numbered* in
+            // the band is rejected in `link_field` before any range check.
             extension_ranges.push((start, end));
         }
 
@@ -1036,8 +1223,28 @@ impl DescriptorPool {
             format!("{parent_fqn}.{name}")
         };
         let enum_features = features::resolve_child(parent_features, features::enum_features(e));
+        if enum_features.enum_type == EnumType::Open {
+            if let Some(first) = e.value.first() {
+                let number = first.number.unwrap_or(0);
+                if number != 0 {
+                    return Err(PoolError::OpenEnumFirstValueNotZero {
+                        enum_name: fqn.clone(),
+                        name: first.name.clone().unwrap_or_default(),
+                        number,
+                    });
+                }
+            }
+        }
         let idx = self.enum_index(&fqn).expect("enum registered in pass 1");
+        let reserved_names: BTreeSet<&str> = e.reserved_name.iter().map(String::as_str).collect();
+        let reserved_ranges = ReservedRanges::for_enum(&e.reserved_range);
+        let allow_alias = e
+            .options
+            .as_option()
+            .and_then(|options| options.allow_alias)
+            .unwrap_or(false);
         let mut value_names = BTreeSet::new();
+        let mut value_numbers = BTreeSet::new();
         let mut values = Vec::with_capacity(e.value.len());
         for v in &e.value {
             let value_name = v.name.clone().unwrap_or_default();
@@ -1045,6 +1252,29 @@ impl DescriptorPool {
                 return Err(PoolError::DuplicateEnumValueName {
                     enum_name: fqn.clone(),
                     name: value_name,
+                });
+            }
+            if reserved_names.contains(value_name.as_str()) {
+                return Err(PoolError::ReservedEnumValueName {
+                    enum_name: fqn.clone(),
+                    name: value_name,
+                });
+            }
+            let number = v.number.unwrap_or(0);
+            if reserved_ranges.contains(number) {
+                return Err(PoolError::ReservedEnumValueNumber {
+                    enum_name: fqn.clone(),
+                    name: value_name,
+                    number,
+                });
+            }
+            // With allow_alias the set is never populated: protoc allows any
+            // number to repeat then, and lookup keeps the first declaration.
+            if !allow_alias && !value_numbers.insert(number) {
+                return Err(PoolError::DuplicateEnumValueNumber {
+                    enum_name: fqn.clone(),
+                    name: value_name,
+                    number,
                 });
             }
             let value_fqn = if parent_fqn.is_empty() {
@@ -1061,7 +1291,7 @@ impl DescriptorPool {
             self.register_symbol(&value_fqn, SymbolKind::EnumValue)?;
             values.push(EnumValueDescriptor {
                 name: value_name,
-                number: v.number.unwrap_or(0),
+                number,
                 options: clone_options(&v.options),
             });
         }
@@ -1152,7 +1382,8 @@ impl DescriptorPool {
         field.oneof_index = None;
         // Validate the number falls inside one of the extendee's declared
         // extension ranges.
-        if !self.messages[extendee.0 as usize].in_extension_range(field.number) {
+        let extendee_message = &self.messages[extendee.0 as usize];
+        if !extendee_message.in_extension_range(field.number) {
             return Err(PoolError::InvalidFieldNumber {
                 field: fqn,
                 // `link_field` bounds the number to `MAX_FIELD_NUMBER`
@@ -1353,18 +1584,27 @@ impl DescriptorPool {
             .clone()
             .unwrap_or_else(|| derive_json_name(&name));
 
-        // Validate the field number. The wire format reserves 0; the upper
-        // bound is `(1 << 29) - 1`. Spec-compliant `protoc` never emits an
-        // out-of-range number, but the input is no longer trusted to come
-        // from `protoc` once consumers feed network-loaded descriptors.
+        // Validate the field number. The wire format reserves 0, and the
+        // upper bound is `(1 << 29) - 1`. Spec-compliant `protoc` never emits
+        // an invalid number, but the input is no longer trusted to come from
+        // `protoc` once consumers feed network-loaded descriptors.
         let raw_number = f.number.unwrap_or(0);
         let number = u32::try_from(raw_number)
             .ok()
             .filter(|&n| (1..=buffa::encoding::MAX_FIELD_NUMBER).contains(&n))
-            .ok_or(PoolError::InvalidFieldNumber {
-                field: field_fqn,
+            .ok_or_else(|| PoolError::InvalidFieldNumber {
+                field: field_fqn.clone(),
                 number: raw_number,
             })?;
+        if (buffa::encoding::FIRST_RESERVED_FIELD_NUMBER
+            ..=buffa::encoding::LAST_RESERVED_FIELD_NUMBER)
+            .contains(&number)
+        {
+            return Err(PoolError::ReservedFieldNumber {
+                field: field_fqn,
+                number: raw_number,
+            });
+        }
 
         Ok(FieldDescriptor {
             name,
@@ -1528,4 +1768,104 @@ fn derive_json_name(proto_name: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod reserved_ranges_tests {
+    use super::ReservedRanges;
+    use crate::generated::descriptor::descriptor_proto::ReservedRange;
+
+    fn ranges(spec: &[(Option<i32>, Option<i32>)]) -> ReservedRanges {
+        let raw: Vec<ReservedRange> = spec
+            .iter()
+            .map(|&(start, end)| ReservedRange {
+                start,
+                end,
+                ..Default::default()
+            })
+            .collect();
+        ReservedRanges::new(&raw)
+    }
+
+    #[test]
+    fn coalesces_overlapping_and_adjacent_ranges_in_any_order() {
+        // 9..12 and 12..15 are adjacent, 20..30 and 25..27 nest, 5..6 stands alone.
+        let r = ranges(&[
+            (Some(20), Some(30)),
+            (Some(12), Some(15)),
+            (Some(5), Some(6)),
+            (Some(25), Some(27)),
+            (Some(9), Some(12)),
+        ]);
+        assert_eq!(r.0, vec![(5, 6), (9, 15), (20, 30)]);
+    }
+
+    #[test]
+    fn unset_or_empty_ranges_are_ignored() {
+        let r = ranges(&[
+            (Some(1), None),
+            (None, Some(4)),
+            (Some(7), Some(7)),
+            (Some(8), Some(3)),
+        ]);
+        assert!(r.0.is_empty());
+        assert!(!r.contains(1));
+        assert!(!r.overlaps(0, 10));
+    }
+
+    #[test]
+    fn enum_ranges_are_inclusive_and_may_be_negative() {
+        use crate::generated::descriptor::enum_descriptor_proto::EnumReservedRange;
+        let raw: Vec<EnumReservedRange> = [(-5, -3), (7, 9), (9, 9), (i32::MAX, i32::MAX)]
+            .into_iter()
+            .map(|(start, end)| EnumReservedRange {
+                start: Some(start),
+                end: Some(end),
+                ..Default::default()
+            })
+            .collect();
+        let r = ReservedRanges::for_enum(&raw);
+        assert_eq!(
+            r.0,
+            vec![
+                (-5, -2),
+                (7, 10),
+                (i64::from(i32::MAX), i64::from(i32::MAX) + 1)
+            ]
+        );
+        assert!(r.contains(-5));
+        assert!(r.contains(-3));
+        assert!(!r.contains(-2));
+        assert!(r.contains(9));
+        assert!(!r.contains(10));
+        assert!(r.contains(i32::MAX));
+    }
+
+    #[test]
+    fn contains_is_half_open() {
+        let r = ranges(&[(Some(9), Some(12)), (Some(20), Some(30))]);
+        assert!(!r.contains(8));
+        assert!(r.contains(9));
+        assert!(r.contains(11));
+        assert!(!r.contains(12));
+        assert!(!r.contains(19));
+        assert!(r.contains(29));
+        assert!(!r.contains(30));
+    }
+
+    #[test]
+    fn overlaps_is_half_open_on_both_sides() {
+        let r = ranges(&[(Some(9), Some(12)), (Some(20), Some(30))]);
+        // Adjacent on either side: no overlap.
+        assert!(!r.overlaps(5, 9));
+        assert!(!r.overlaps(12, 20));
+        assert!(!r.overlaps(30, 40));
+        // One number in: overlap.
+        assert!(r.overlaps(5, 10));
+        assert!(r.overlaps(11, 20));
+        assert!(r.overlaps(29, 40));
+        // Enclosing and enclosed.
+        assert!(r.overlaps(0, 100));
+        assert!(r.overlaps(22, 23));
+    }
 }

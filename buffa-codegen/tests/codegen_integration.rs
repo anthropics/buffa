@@ -195,6 +195,24 @@ fn codegen_wkt_auto_mapping() {
 }
 
 #[test]
+fn codegen_wkt_api_auto_mapping() {
+    // #382: googleapis WKTs must resolve through buffa-types, including views.
+    let files = generate_for("wkt_api.proto", &CodeGenConfig::default());
+    let combined = files
+        .iter()
+        .map(|f| f.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(combined.contains("::buffa_types::google::protobuf::Api"));
+    assert!(combined.contains("::buffa_types::google::protobuf::Type"));
+    assert!(combined.contains("::buffa_types::google::protobuf::SourceContext"));
+    assert!(combined.contains("::buffa_types::google::protobuf::Enum"));
+    assert!(combined.contains("::buffa_types::google::protobuf::__buffa::view::ApiView"));
+    assert!(combined.contains("::buffa_types::google::protobuf::__buffa::view::TypeView"));
+    assert!(combined.contains("::buffa_types::google::protobuf::__buffa::view::EnumView"));
+}
+
+#[test]
 fn codegen_wkt_explicit_extern_overrides_auto() {
     let mut config = no_views();
     config
@@ -1789,5 +1807,79 @@ fn boxed_oneof_variant_under_inline_default_uses_box() {
     assert!(
         !content.contains("Child(::buffa::Inline<"),
         "boxed oneof variant must not use the Inline pointer: {content}"
+    );
+}
+
+#[test]
+fn custom_deserialize_qualifies_core_paths() {
+    // A proto package named after a crate in the extern prelude shadows that
+    // crate inside the generated module, so every path the codegen emits has
+    // to be absolute. The generated Deserialize impl (oneofs and
+    // extension-preserving messages take this path) reached core::fmt
+    // unqualified, which resolves to the generated `core` module and fails to
+    // compile with E0433.
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package core;
+        message RegisterRequest {
+          string name = 1;
+          oneof kind {
+            string a = 2;
+            int32 b = 3;
+          }
+        }
+        "#,
+        &json_with_views(),
+    );
+    assert!(
+        content.contains("&mut ::core::fmt::Formatter"),
+        "expecting() must take an absolute ::core::fmt path: {content}"
+    );
+    assert!(
+        !content.contains("&mut core::fmt::Formatter"),
+        "expecting() must not emit a bare core::fmt path: {content}"
+    );
+}
+
+#[test]
+fn json_codegen_qualifies_serde_paths() {
+    // Same shadowing hazard as above for the `serde` crate: a package or
+    // nested message named `serde` puts a `mod serde` in scope, so every
+    // `serde::` path the JSON emitters write has to be absolute. The
+    // non-oneof field is what makes the custom Deserialize impl emit its
+    // `DeserializeSeed` helper; keep it.
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package serde;
+        message RegisterRequest {
+          string name = 1;
+          oneof kind {
+            string a = 2;
+            int32 b = 3;
+          }
+        }
+        "#,
+        &json_with_views(),
+    );
+
+    // Every `serde::` occurrence must be the tail of a `::serde::` path.
+    // Counting covers every emitter at once, where a list of literal
+    // patterns silently misses the ones prettyplease wraps onto their own
+    // line (`::serde::de::Error::custom(` is emitted that way).
+    assert_eq!(
+        content.matches("serde::").count(),
+        content.matches("::serde::").count(),
+        "generated code must not contain a bare serde:: path: {content}"
+    );
+
+    assert!(
+        content.contains("impl ::serde::Serialize for Kind"),
+        "oneof serialization must use an absolute serde path: {content}"
+    );
+    assert!(
+        content.contains("impl<'de> ::serde::Deserialize<'de> for RegisterRequest"),
+        "custom deserialization must use an absolute serde path: {content}"
     );
 }

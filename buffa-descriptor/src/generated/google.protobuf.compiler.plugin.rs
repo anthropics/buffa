@@ -1117,6 +1117,7 @@ pub mod code_generator_response {
     #[allow(unused_imports)]
     use super::*;
     /// Sync with code_generator.h.
+    #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     #[repr(i32)]

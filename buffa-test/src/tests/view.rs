@@ -269,6 +269,146 @@ fn test_view_map_empty() {
     assert!(view.locations.is_empty());
 }
 
+/// `tag`, a single-byte length, then `payload`: one length-delimited field,
+/// for hand-building wire shapes no encoder emits.
+fn ld(tag: u8, payload: &[u8]) -> Vec<u8> {
+    assert!(payload.len() < 128, "helper only emits single-byte lengths");
+    let mut out = vec![tag, payload.len() as u8];
+    out.extend_from_slice(payload);
+    out
+}
+
+// Wire tags used below. `Inventory.locations` (field 2) and a map entry's
+// value (field 2) happen to share a tag byte; name them so the buffers read.
+const LOCATIONS_FIELD: u8 = 0x12; // Inventory field 2, length-delimited
+const STOCK_FIELD: u8 = 0x0A; // Inventory field 1, length-delimited
+const ENTRY_KEY: u8 = 0x0A; // map entry field 1, length-delimited
+const ENTRY_VALUE: u8 = 0x12; // map entry field 2, length-delimited
+const ENTRY_VALUE_VARINT: u8 = 0x10; // map entry field 2, varint
+
+/// A map entry whose message value is split across two occurrences of the
+/// value field must decode identically everywhere: proto merge semantics
+/// say the occurrences merge, and every decoder has to agree or a check on
+/// one representation can be bypassed via another (parser differential,
+/// reported privately via HackerOne).
+#[test]
+fn test_map_message_value_split_across_occurrences_merges_in_every_decoder() {
+    use crate::basic_prefixed::RpcInventoryLazyView;
+    use buffa::LazyMessageView;
+    use buffa_descriptor::reflect::{DynamicMessage, MapKey, Value};
+
+    // Inventory { locations: { "k": <value#1: zip_code=12345> <value#2: city="SF"> } }
+    let zip_only = Address {
+        zip_code: 12345,
+        ..Default::default()
+    };
+    let city_only = Address {
+        city: "SF".into(),
+        ..Default::default()
+    };
+    let entry = [
+        ld(ENTRY_KEY, b"k"),
+        ld(ENTRY_VALUE, &zip_only.encode_to_vec()),
+        ld(ENTRY_VALUE, &city_only.encode_to_vec()),
+    ]
+    .concat();
+    let split_value_entry = ld(LOCATIONS_FIELD, &entry);
+    let bytes = &split_value_entry[..];
+
+    let owned = Inventory::decode_from_slice(bytes).expect("owned");
+    let addr = &owned.locations["k"];
+    assert_eq!(
+        (addr.zip_code, addr.city.as_str()),
+        (12345, "SF"),
+        "owned merges"
+    );
+
+    let view = InventoryView::decode_view(bytes).expect("view");
+    let addr = view.locations.get(&"k").expect("view entry");
+    assert_eq!((addr.zip_code, addr.city), (12345, "SF"), "view merges");
+    assert_eq!(
+        view.to_owned_message().unwrap(),
+        owned,
+        "view → owned agrees"
+    );
+
+    let lazy = RpcInventoryLazyView::decode_lazy(bytes).expect("lazy view");
+    let addr = lazy.locations.get(&"k").expect("lazy entry");
+    assert_eq!(
+        (addr.zip_code, addr.city),
+        (12345, "SF"),
+        "lazy view merges"
+    );
+
+    let pool = crate::basic::descriptor_pool();
+    let idx = pool.message_index("basic.Inventory").unwrap();
+    let dynamic = DynamicMessage::decode(pool.clone(), idx, bytes).expect("dynamic");
+    let Some(Value::Map(locations)) = dynamic.field_by_number(2) else {
+        panic!("locations missing: {dynamic:?}");
+    };
+    let Some(Value::Message(addr)) = locations.get(&MapKey::String("k".into())) else {
+        panic!("entry missing: {locations:?}");
+    };
+    assert_eq!(
+        addr.field_by_number(3), // zip_code
+        Some(&Value::U32(12345)),
+        "dynamic merges"
+    );
+    assert_eq!(
+        addr.field_by_number(2), // city
+        Some(&Value::String("SF".into())),
+        "dynamic merges"
+    );
+}
+
+/// The merge rule is for message values only: a repeated *scalar* value in
+/// one entry stays last-wins in every decoder, and a second message-value
+/// occurrence with the wrong wire type is still an error everywhere.
+#[test]
+fn test_map_value_repeat_rules_agree_across_decoders() {
+    use buffa_descriptor::reflect::{DynamicMessage, MapKey, Value};
+    let pool = crate::basic::descriptor_pool();
+    let idx = pool.message_index("basic.Inventory").unwrap();
+
+    // Inventory { stock: { "k": <value 1> <value 2> } } — scalar: last wins.
+    let entry = [
+        ld(ENTRY_KEY, b"k"),
+        vec![ENTRY_VALUE_VARINT, 1],
+        vec![ENTRY_VALUE_VARINT, 2],
+    ]
+    .concat();
+    let bytes = &ld(STOCK_FIELD, &entry)[..];
+    assert_eq!(Inventory::decode_from_slice(bytes).unwrap().stock["k"], 2);
+    assert_eq!(
+        InventoryView::decode_view(bytes).unwrap().stock.get(&"k"),
+        Some(&2)
+    );
+    let dynamic = DynamicMessage::decode(pool.clone(), idx, bytes).unwrap();
+    let Some(Value::Map(stock)) = dynamic.field_by_number(1) else {
+        panic!("stock missing: {dynamic:?}");
+    };
+    assert_eq!(stock.get(&MapKey::String("k".into())), Some(&Value::I32(2)));
+
+    // Inventory { locations: { "k": <value: Address{}> <value as varint> } }
+    // — the second occurrence has the wrong wire type: an error, not a merge.
+    let entry = [
+        ld(ENTRY_KEY, b"k"),
+        ld(ENTRY_VALUE, &[]),
+        vec![ENTRY_VALUE_VARINT, 0],
+    ]
+    .concat();
+    let bytes = &ld(LOCATIONS_FIELD, &entry)[..];
+    assert!(
+        Inventory::decode_from_slice(bytes).is_err(),
+        "owned rejects"
+    );
+    assert!(InventoryView::decode_view(bytes).is_err(), "view rejects");
+    assert!(
+        DynamicMessage::decode(pool.clone(), idx, bytes).is_err(),
+        "dynamic rejects"
+    );
+}
+
 #[test]
 fn test_compute_size_matches_encode_len() {
     let mut msg = Person::default();

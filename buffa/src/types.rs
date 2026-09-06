@@ -900,6 +900,58 @@ pub fn encode_string(value: &str, buf: &mut impl EncodeSink) {
     buf.put_slice(value.as_bytes());
 }
 
+/// Append exactly `len` bytes from `buf` to `dst`, chunk by chunk, publishing
+/// them (extending `dst.len()`) only once every byte has been written.
+///
+/// This is `Buf::copy_to_slice` into `dst`'s spare capacity, without the
+/// zero-fill a `resize` would cost and without ever letting `dst`'s length
+/// cover memory this call did not initialise: `chunk()` / `advance()` are safe,
+/// user-implementable methods, so if one of them unwinds part-way through, or
+/// `chunk()` runs dry before `len` bytes have been copied (a `Buf` whose
+/// `remaining()` over-reports), the bytes already written are simply spare
+/// capacity again. The caller must have checked `buf.remaining() >= len`.
+///
+/// # Panics
+///
+/// If `buf.chunk()` returns an empty slice before `len` bytes have been copied.
+/// The stock `copy_to_slice` spins forever on such a `Buf`; this one names it.
+#[inline]
+fn copy_into_spare(buf: &mut impl Buf, dst: &mut Vec<u8>, len: usize) {
+    dst.reserve(len);
+    let start = dst.len();
+    let spare = &mut dst.spare_capacity_mut()[..len];
+    let mut written = 0;
+    while written < len {
+        let chunk = buf.chunk();
+        let n = chunk.len().min(len - written);
+        assert!(
+            n > 0,
+            "Buf::chunk returned an empty slice with {} bytes still to read",
+            len - written
+        );
+        // SAFETY: `MaybeUninit<u8>` has the same layout as `u8`, and the
+        // destination `spare[written..written + n]` lies within the `len`
+        // reserved slots (`written + n <= len` by the `min` above), so the
+        // write is in bounds. It cannot overlap `chunk`: `dst` is a `&mut
+        // Vec` and therefore uniquely borrowed for this call, while `chunk`
+        // is borrowed from `buf`.
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                chunk.as_ptr(),
+                spare.as_mut_ptr().add(written).cast::<u8>(),
+                n,
+            );
+        }
+        buf.advance(n);
+        written += n;
+    }
+    // SAFETY: the loop exits only with `written == len`, so `dst[start..start
+    // + len]` was fully initialised above and `start + len <= dst.capacity()`
+    // by the `reserve`. Every early exit (a panic in `chunk`/`advance`, or the
+    // assertion) leaves `dst.len() == start`.
+    unsafe { dst.set_len(start + len) };
+}
+
 /// Decode a `string` value: read a varint length prefix, then that many bytes,
 /// and validate that the bytes are valid UTF-8.
 ///
@@ -909,6 +961,11 @@ pub fn encode_string(value: &str, buf: &mut impl EncodeSink) {
 ///   declared length.
 /// - [`DecodeError::MessageTooLarge`] if the declared length overflows `usize`.
 /// - [`DecodeError::InvalidUtf8`] if the bytes are not valid UTF-8.
+///
+/// # Panics
+///
+/// If `buf.chunk()` returns an empty slice before `buf.remaining()` bytes have
+/// been read — a `Buf` that violates its own contract.
 #[inline]
 pub fn decode_string(buf: &mut impl Buf) -> Result<String, DecodeError> {
     let len = decode_varint(buf)?;
@@ -933,18 +990,8 @@ pub fn decode_string(buf: &mut impl Buf) -> Result<String, DecodeError> {
     }
     // Non-contiguous: own first (the source has no single slice to validate
     // against), then validate the owned bytes via the safe path.
-    //
-    // SAFETY: `copy_to_slice` writes exactly `len` bytes into the buffer,
-    // and we verified `buf.remaining() >= len` above. The Vec has capacity
-    // for `len` bytes. This avoids a redundant zero-initialization that
-    // `vec![0u8; len]` would perform.
-    #[allow(clippy::uninit_vec)]
-    let mut bytes = {
-        let mut v = alloc::vec::Vec::with_capacity(len);
-        unsafe { v.set_len(len) };
-        v
-    };
-    buf.copy_to_slice(&mut bytes);
+    let mut bytes = Vec::with_capacity(len);
+    copy_into_spare(buf, &mut bytes, len);
     validate_str(&bytes)?;
     // SAFETY: `validate_str` just confirmed `bytes` is well-formed UTF-8.
     Ok(unsafe { String::from_utf8_unchecked(bytes) })
@@ -963,6 +1010,11 @@ pub fn decode_string(buf: &mut impl Buf) -> Result<String, DecodeError> {
 ///   declared length.
 /// - [`DecodeError::MessageTooLarge`] if the declared length overflows `usize`.
 /// - [`DecodeError::InvalidUtf8`] if the bytes are not valid UTF-8.
+///
+/// # Panics
+///
+/// If `buf.chunk()` returns an empty slice before `buf.remaining()` bytes have
+/// been read — a `Buf` that violates its own contract. `value` is left empty.
 #[inline]
 pub fn merge_string(value: &mut String, buf: &mut impl Buf) -> Result<(), DecodeError> {
     let len = decode_varint(buf)?;
@@ -997,21 +1049,12 @@ pub fn merge_string(value: &mut String, buf: &mut impl Buf) -> Result<(), Decode
     // safe path.
     //
     // SAFETY: `as_mut_vec` requires that the vec contains valid UTF-8 when
-    // the String is next used as a string. We validate UTF-8 below before
-    // returning Ok, and clear the vec on validation failure.
+    // the String is next used as a string. It is cleared (trivially valid)
+    // before the copy and stays empty if the copy unwinds; we validate UTF-8
+    // below before returning Ok, and clear the vec on validation failure.
     let vec = unsafe { value.as_mut_vec() };
     vec.clear();
-    vec.reserve(len);
-    // SAFETY: `copy_to_slice` writes exactly `len` bytes into the vec, and we
-    // verified `buf.remaining() >= len` above. The vec was just cleared (len 0)
-    // and reserved to hold at least `len` bytes, so `set_len(len)` is within
-    // the allocated capacity. The bytes will be fully initialized by
-    // `copy_to_slice` before any read occurs.
-    #[allow(clippy::uninit_vec)]
-    unsafe {
-        vec.set_len(len);
-    }
-    buf.copy_to_slice(vec);
+    copy_into_spare(buf, vec, len);
     // Validate UTF-8 on the new content.
     if validate_str(vec).is_err() {
         vec.clear(); // leave in a valid state on error
@@ -1392,6 +1435,11 @@ pub fn encode_bytes(value: &[u8], buf: &mut impl EncodeSink) {
 /// - [`DecodeError::UnexpectedEof`] if the buffer has fewer bytes than the
 ///   declared length.
 /// - [`DecodeError::MessageTooLarge`] if the declared length overflows `usize`.
+///
+/// # Panics
+///
+/// If `buf.chunk()` returns an empty slice before `buf.remaining()` bytes have
+/// been read — a `Buf` that violates its own contract.
 #[inline]
 pub fn decode_bytes(buf: &mut impl Buf) -> Result<Vec<u8>, DecodeError> {
     let len = decode_varint(buf)?;
@@ -1399,16 +1447,8 @@ pub fn decode_bytes(buf: &mut impl Buf) -> Result<Vec<u8>, DecodeError> {
     if buf.remaining() < len {
         return Err(DecodeError::UnexpectedEof);
     }
-    // SAFETY: `copy_to_slice` writes exactly `len` bytes into the buffer,
-    // and we verified `buf.remaining() >= len` above. The Vec has capacity
-    // for `len` bytes. This avoids a redundant zero-initialization.
-    #[allow(clippy::uninit_vec)]
-    let mut bytes = {
-        let mut v = alloc::vec::Vec::with_capacity(len);
-        unsafe { v.set_len(len) };
-        v
-    };
-    buf.copy_to_slice(&mut bytes);
+    let mut bytes = Vec::with_capacity(len);
+    copy_into_spare(buf, &mut bytes, len);
     Ok(bytes)
 }
 
@@ -1805,6 +1845,11 @@ const _: fn() = || {
 /// - [`DecodeError::UnexpectedEof`] if the buffer has fewer bytes than the
 ///   declared length.
 /// - [`DecodeError::MessageTooLarge`] if the declared length overflows `usize`.
+///
+/// # Panics
+///
+/// If `buf.chunk()` returns an empty slice before `buf.remaining()` bytes have
+/// been read — a `Buf` that violates its own contract. `value` is left empty.
 #[inline]
 pub fn merge_bytes(value: &mut Vec<u8>, buf: &mut impl Buf) -> Result<(), DecodeError> {
     let len = decode_varint(buf)?;
@@ -1813,17 +1858,7 @@ pub fn merge_bytes(value: &mut Vec<u8>, buf: &mut impl Buf) -> Result<(), Decode
         return Err(DecodeError::UnexpectedEof);
     }
     value.clear();
-    value.reserve(len);
-    // SAFETY: `copy_to_slice` writes exactly `len` bytes into the vec, and we
-    // verified `buf.remaining() >= len` above. The vec was just cleared (len 0)
-    // and reserved to hold at least `len` bytes, so `set_len(len)` is within
-    // the allocated capacity. The bytes will be fully initialized by
-    // `copy_to_slice` before any read occurs.
-    #[allow(clippy::uninit_vec)]
-    unsafe {
-        value.set_len(len);
-    }
-    buf.copy_to_slice(value);
+    copy_into_spare(buf, value, len);
     Ok(())
 }
 
@@ -1856,8 +1891,8 @@ pub fn borrow_str<'a>(buf: &mut &'a [u8]) -> Result<&'a str, DecodeError> {
     }
     // Validate against the surrounding slice (so the slack-buffer fast path
     // can read past `len` when the wire buffer continues), then advance the
-    // cursor unconditionally — matching `decode_string` (where `copy_to_slice`
-    // consumes the bytes before validation) and protobuf error-recovery
+    // cursor unconditionally — matching `decode_string` (which consumes the
+    // bytes before validating them) and protobuf error-recovery
     // semantics: the field payload has been consumed regardless of whether
     // its contents were valid.
     //
@@ -3026,6 +3061,192 @@ mod tests {
             let mut value = Vec::new();
             merge_bytes(&mut value, &mut buf.as_slice()).unwrap();
             assert_eq!(b, value.as_slice());
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // copy_into_spare: chunked, panicking, and over-reporting sources
+    // -----------------------------------------------------------------------
+
+    // A nested module so CI's Miri job can select these by name alongside the
+    // size_cache tests (`-- size_cache copy_into_spare`).
+    mod copy_into_spare {
+        use super::*;
+
+        /// A `Buf` over fixed chunks that can misbehave on demand: `chunk()`
+        /// panics once `panic_after` bytes have been consumed, `advance()`
+        /// panics once it would push the consumed count past
+        /// `panic_in_advance_after`, and `remaining()` reports `over_report`
+        /// bytes more than the chunks actually hold.
+        struct ChunkedBuf {
+            chunks: Vec<Vec<u8>>,
+            pos: usize,
+            consumed: usize,
+            panic_after: usize,
+            panic_in_advance_after: usize,
+            over_report: usize,
+        }
+
+        impl ChunkedBuf {
+            fn new(chunks: &[&[u8]]) -> Self {
+                Self {
+                    chunks: chunks.iter().map(|c| c.to_vec()).collect(),
+                    pos: 0,
+                    consumed: 0,
+                    panic_after: usize::MAX,
+                    panic_in_advance_after: usize::MAX,
+                    over_report: 0,
+                }
+            }
+        }
+
+        impl Buf for ChunkedBuf {
+            fn remaining(&self) -> usize {
+                self.chunks.iter().map(Vec::len).sum::<usize>() - self.pos + self.over_report
+            }
+
+            fn chunk(&self) -> &[u8] {
+                assert!(
+                    self.consumed < self.panic_after,
+                    "chunk() called after {} bytes",
+                    self.consumed
+                );
+                self.chunks.first().map_or(&[], |c| &c[self.pos..])
+            }
+
+            fn advance(&mut self, cnt: usize) {
+                assert!(
+                    self.consumed + cnt <= self.panic_in_advance_after,
+                    "advance({cnt}) called after {} bytes",
+                    self.consumed
+                );
+                self.pos += cnt;
+                self.consumed += cnt;
+                while self.chunks.first().is_some_and(|c| c.len() <= self.pos) {
+                    self.pos -= self.chunks.remove(0).len();
+                }
+            }
+        }
+
+        /// `wire` split into a one-byte length prefix and two payload chunks.
+        fn split(wire: &[u8]) -> ChunkedBuf {
+            ChunkedBuf::new(&[&wire[..1], &wire[1..4], &wire[4..]])
+        }
+
+        #[cfg(feature = "std")]
+        fn unwinds<R>(f: impl FnOnce() -> R) -> bool {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).is_err()
+        }
+
+        #[test]
+        fn appends_across_chunks() {
+            let mut buf = ChunkedBuf::new(&[b"ab", b"cde", b"f"]);
+            let mut dst = vec![0x10, 0x11];
+            copy_into_spare(&mut buf, &mut dst, 5);
+            assert_eq!(dst, [0x10, 0x11, b'a', b'b', b'c', b'd', b'e']);
+            assert_eq!(buf.chunk(), b"f");
+            assert_eq!(buf.remaining(), 1);
+        }
+
+        #[test]
+        fn chunked_source_decodes_and_merges() {
+            let payload = b"h\xC3\xA9llo!";
+            let mut wire = Vec::new();
+            encode_bytes(payload, &mut wire);
+
+            assert_eq!(decode_bytes(&mut split(&wire)).unwrap(), payload);
+            assert_eq!(decode_string(&mut split(&wire)).unwrap(), "héllo!");
+            let mut bytes = vec![0xAA; 3];
+            merge_bytes(&mut bytes, &mut split(&wire)).unwrap();
+            assert_eq!(bytes, payload);
+            let mut string = String::from("previous");
+            merge_string(&mut string, &mut split(&wire)).unwrap();
+            assert_eq!(string, "héllo!");
+        }
+
+        #[test]
+        fn chunked_source_invalid_utf8_is_rejected_after_copy() {
+            // Non-contiguous, so validation runs on the owned copy rather
+            // than against the source chunk.
+            let mut wire = Vec::new();
+            encode_bytes(b"ab\xFF\xFEcd", &mut wire);
+
+            assert_eq!(
+                decode_string(&mut split(&wire)),
+                Err(DecodeError::InvalidUtf8)
+            );
+            let mut string = String::from("previous");
+            assert_eq!(
+                merge_string(&mut string, &mut split(&wire)),
+                Err(DecodeError::InvalidUtf8)
+            );
+            assert!(string.is_empty());
+        }
+
+        #[cfg(feature = "std")]
+        #[test]
+        fn merge_bytes_unwind_mid_copy_leaves_value_empty() {
+            let mut buf = ChunkedBuf::new(&[b"\x06ab", b"cd", b"ef"]);
+            buf.panic_after = 5; // after the length prefix + "abcd"
+            let mut value = Vec::with_capacity(16);
+            value.extend_from_slice(b"previous content");
+            assert!(unwinds(|| merge_bytes(&mut value, &mut buf)));
+            assert!(value.is_empty());
+            assert!(value.capacity() >= 16);
+        }
+
+        #[cfg(feature = "std")]
+        #[test]
+        fn merge_string_unwind_mid_copy_leaves_value_empty() {
+            let mut buf = ChunkedBuf::new(&[b"\x06ab", b"cd", b"ef"]);
+            buf.panic_after = 5;
+            let mut value = String::from("previous content");
+            assert!(unwinds(|| merge_string(&mut value, &mut buf)));
+            assert!(value.is_empty());
+        }
+
+        #[cfg(feature = "std")]
+        #[test]
+        fn unwind_in_advance_leaves_value_empty() {
+            // `advance()` unwinds after "abcd" have already been copied into
+            // spare capacity but before that progress is recorded — the
+            // widest window of written-but-unpublished bytes.
+            let mut buf = ChunkedBuf::new(&[b"\x06ab", b"cd", b"ef"]);
+            buf.panic_in_advance_after = 4;
+            let mut value = vec![0xAA; 8];
+            assert!(unwinds(|| merge_bytes(&mut value, &mut buf)));
+            assert!(value.is_empty());
+        }
+
+        #[cfg(feature = "std")]
+        #[test]
+        fn decode_unwind_mid_copy_drops_partial_vec() {
+            // The destination is a local `Vec` whose spare capacity is
+            // partially written when the unwind drops it; under Miri this
+            // checks that the drop touches nothing uninitialised.
+            let mut buf = ChunkedBuf::new(&[b"\x06ab", b"cd", b"ef"]);
+            buf.panic_after = 5;
+            assert!(unwinds(|| decode_bytes(&mut buf)));
+            let mut buf = ChunkedBuf::new(&[b"\x06ab", b"cd", b"ef"]);
+            buf.panic_after = 5;
+            assert!(unwinds(|| decode_string(&mut buf)));
+        }
+
+        #[cfg(feature = "std")]
+        #[test]
+        fn over_reporting_buf_panics_without_publishing_length() {
+            // `remaining()` promises 6 bytes but the chunks hold only 4 after
+            // the length prefix, so `chunk()` runs dry mid-copy.
+            let mut buf = ChunkedBuf::new(&[b"\x06ab", b"cd"]);
+            buf.over_report = 2;
+            let mut value = vec![0xAA; 8];
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                merge_bytes(&mut value, &mut buf)
+            }));
+            let msg = r.unwrap_err();
+            let msg = msg.downcast_ref::<String>().map_or("", String::as_str);
+            assert!(msg.contains("2 bytes still to read"), "{msg}");
+            assert!(value.is_empty());
         }
     }
 

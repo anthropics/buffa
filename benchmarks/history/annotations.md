@@ -2,11 +2,11 @@
 
 Why the numbers in [REPORT.md](REPORT.md) move. The data is a **dense,
 per-message-isolated, layout-normalized matrix**: every message shape is measured
-against every release (v0.1.0–v0.8.0), each built with only its own decoder
+against every release (v0.1.0–v0.9.0), each built with only its own decoder
 compiled, at the pinned toolchain (1.96.0), `lto=true, codegen-units=1`, and
 **64-byte block and loop alignment** (`-Cllvm-args=-align-all-nofallthru-blocks=6
--Cllvm-args=-align-loops=64`; the committed runs predate the loop flag — see "Loop
-alignment" below), median of 32 cores. See [DESIGN.md](DESIGN.md) for the system and [README.md](README.md)
+-Cllvm-args=-align-loops=64`), measured **1-up** — one benchmark process pinned to
+one core with the box otherwise idle — as the median of 3 runs. See [DESIGN.md](DESIGN.md) for the system and [README.md](README.md)
 for the mechanics. Each release's harness lives on its `historical-benchmark/vX.Y.Z`
 branch, so any cell is rebuildable.
 
@@ -41,7 +41,7 @@ releases. Three findings stand, each now sitting on a clean, flat baseline:
   per-field allocation enters.
 - **AnalyticsEvent `encode` −12% / `compute_size` −9%** — a real regression. A step
   down at v0.4.0 (encode 468→414, compute_size 1379→1262 MiB/s) that holds flat
-  through v0.8.0. `compute_size` is the tightest operation and corroborates the
+  through v0.9.0. `compute_size` is the tightest operation and corroborates the
   `encode` figure, so the deeply nested, repeated-submessage shape genuinely lost
   ground on the owned encode/size paths — the one result worth investigating.
 - **PackedTile `decode_view` +47% at v0.7.1** — flat (~175 MiB/s) from v0.1.0
@@ -53,6 +53,59 @@ Everything else is flat across the nine releases — including all of `json_enco
 ~880 MiB/s at every release, vs a 19% flap before normalization). buffa's core
 paths did not regress; the reassuring headline is that nine releases of `decode`,
 `merge`, and the JSON paths hold steady once layout is controlled.
+
+## The v0.9.0 re-measurement: 1-up, and two shapes backported (2026-07)
+
+The whole matrix was re-measured for v0.9.0, rather than a column being appended,
+for two reasons. Both changed the numbers, so no cell here is comparable to a
+chart published before this date.
+
+**Measurement moved from 32-way self-concurrent to 1-up.** Earlier runs measured a
+release by running 32 copies of a shape's binary at once, one per physical core,
+and taking the median — 32 samples for the price of one wall-clock pass. Measuring
+the same v0.8.0 binaries one at a time, on a pinned core with the rest of the box
+idle, showed that convenience was not free: throughput came out **higher on 41 of
+42 benchmarks, median +5.9%**, and the effect tracks memory pressure exactly as
+contention would predict — `media_frame/json_encode`, the largest dataset and the
+most allocation-heavy operation, gained **+44.7%**. Self-concurrency was not merely
+noisier, it was biased downward, and the bias was uneven across shapes, which is
+worse than a constant offset because it distorts *comparisons between shapes*.
+
+Precision improved at the same time, despite dropping from 32 samples to 3:
+spread went from p50 3.59% / p90 8.31% to **p50 0.76% / p90 4.93%**. Parallelism
+now comes from running several machines rather than several cores of one machine
+(`run-series.sh --boxes N`), which keeps each measurement 1-up.
+
+**`mesh` and `column_batch` were backported to every release.** Both shapes were
+added to the suite long after most of these releases shipped. Because the harness
+belongs to the tooling rather than to any release, they could be measured back
+across the whole history, and doing so changed the story of v0.9.0's decode work
+substantially — the packed-decode changes read as roughly +32% on `packed_tile`,
+the short-array shape that existed at the time, and as **+113% on
+`column_batch/decode`** and **+124% on `column_batch/merge`**, the long-column
+shape they were actually written for. Judging that work on the shapes we happened
+to be tracking when it landed would have understated it by a factor of three.
+
+### An unresolved regression: view decode on message-heavy shapes
+
+Two cells moved the wrong way in v0.9.0 and are not explained by noise:
+
+| benchmark | v0.7.1 | v0.8.0 | v0.9.0 | spread |
+| --- | --- | --- | --- | --- |
+| `google_message1_proto3/decode_view` | 998.2 | 911.0 | **836.3** | 2.37% |
+| `media_frame/decode_view` | 53324 | 60188 | **55252** | 3.76% |
+
+Both are -8.2% against v0.8.0, on spreads well under that, so the movement is real.
+`google_message1_proto3` is the more concerning of the two: it has now declined for
+two consecutive releases (-8.7%, then -8.2%), which is the pattern the ±5% band
+exists to distinguish from noise, and it has cleared it.
+
+These are the two most message-dense shapes in the matrix, and the leading
+hypothesis is #250 — singular message fields stored inline by default. That change
+is unambiguously good for owned decoding, and the same release's `decode` numbers
+for both shapes stay inside the noise band (-1.8% and -2.4%) rather than falling
+with the view path, so this looks view-specific rather than a general regression. It has not been root-caused; it is recorded here rather than
+left for someone to rediscover in a chart.
 
 ## Layout normalization — why, and what it costs
 
@@ -185,7 +238,7 @@ only at the release that added it to the suite.
 
 ## Caveats
 
-These are medians of 32 cores with per-benchmark spread recorded. Reproduction
+These are medians of 3 runs measured 1-up, with per-benchmark spread recorded. Reproduction
 across runs rules out random run noise but not deterministic per-binary effects;
 with layout now normalized and isolation removing coupling, the remaining
 real-versus-artifact test is persistence across *releases*. The matrix covers the

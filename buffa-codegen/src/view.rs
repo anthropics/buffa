@@ -1788,10 +1788,14 @@ fn map_view_entry_decode(
         }
         Type::TYPE_MESSAGE => {
             let vt = resolve_view_decode_tokens(scope, fd)?;
+            // Proto merge semantics, as in the singular/oneof arms and the
+            // owned map codec: a repeated occurrence of the value field
+            // within one entry merges into the message decoded so far
+            // (`#var` starts as the view's `Default`), never replaces it.
             quote! {
                 let __sub_ctx = ctx.descend()?;
                 let sub = ::buffa::types::borrow_bytes(&mut entry_cur)?;
-                #var = <#vt as ::buffa::MessageView>::decode_view_ctx(sub, __sub_ctx)?;
+                <#vt as ::buffa::MessageView>::merge_into_view(&mut #var, sub, __sub_ctx)?;
             }
         }
         _ => {

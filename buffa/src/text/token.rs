@@ -936,7 +936,7 @@ pub(super) fn number_for_parse<'a>(raw: &'a str, num: &LexNumber) -> alloc::borr
 }
 
 /// Consume leading whitespace and `#`-to-EOL comments.
-fn consume_ws(mut s: &[u8]) -> &[u8] {
+pub(super) fn consume_ws(mut s: &[u8]) -> &[u8] {
     loop {
         match s.first() {
             Some(&c) if is_textproto_ws(c) => s = &s[1..],

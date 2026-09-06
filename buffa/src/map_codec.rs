@@ -840,7 +840,8 @@ where
 /// optionally preserved as an unknown-field record.
 ///
 /// Implements proto map-entry semantics: missing key/value fields take
-/// their type defaults, repeated occurrences within one entry last-win,
+/// their type defaults, repeated occurrences of a scalar key or value within
+/// one entry last-win while repeated occurrences of a message value merge,
 /// and unknown entry fields are skipped.
 ///
 /// If the *final* value-field occurrence in the entry is an unknown
