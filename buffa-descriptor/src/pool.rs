@@ -156,20 +156,24 @@ pub enum PoolError {
         index: i32,
         dependency_count: usize,
     },
+    /// Two files in one `FileDescriptorSet` have the same `name`. protoc
+    /// rejects a file listed twice; the pool's filename index would
+    /// otherwise keep only the last.
+    DuplicateFileName { file: String },
     /// A file lists a `dependency` that is not in the pool or the set being
     /// added. Only reported under
-    /// [`LinkOptions::require_dependencies_present`]; by default a missing
+    /// [`LinkOptions::with_required_dependencies`]; by default a missing
     /// import is tolerated and only the types actually referenced must
     /// resolve.
-    ImportNotFound { file: String, import: String },
+    DependencyNotFound { file: String, dependency: String },
     /// A `type_name`, `extendee`, or method input/output type resolved to a
     /// definition in a file the referring file does not import, either
     /// directly or through a chain of `import public`. protoc rejects the
     /// same reference ("seems to be defined in ..., which is not imported
     /// by ..."). `field` is the fully-qualified referring field, extension
     /// or method. Reported only while
-    /// [`LinkOptions::enforce_import_visibility`] is on (the default).
-    NotImported {
+    /// [`LinkOptions::with_import_visibility`] is on (the default).
+    TypeNotImported {
         file: String,
         field: String,
         type_name: String,
@@ -292,21 +296,24 @@ impl core::fmt::Display for PoolError {
                 )
             }
             Self::MissingTypeName { field } => write!(f, "field {field} has no type_name"),
-            Self::ImportNotFound { file, import } => {
+            Self::DuplicateFileName { file } => {
+                write!(f, "file {file} appears more than once in the set")
+            }
+            Self::DependencyNotFound { file, dependency } => {
                 write!(
                     f,
-                    "file {file} imports {import:?}, which is not in the pool"
+                    "file {file} imports {dependency}, which is not in the pool"
                 )
             }
-            Self::NotImported {
+            Self::TypeNotImported {
                 file,
                 field,
                 type_name,
                 defined_in,
             } => write!(
                 f,
-                "field {field} references {type_name:?}, which is defined in {defined_in:?} \
-                 and not imported by {file:?}"
+                "field {field} references {type_name:?}, which is defined in {defined_in} \
+                 and not imported by {file}; add {defined_in} to its dependency list"
             ),
             Self::UnresolvedTypeName { type_name, field } => {
                 write!(f, "unresolved type name {type_name:?} on field {field}")
@@ -470,37 +477,43 @@ enum SymbolKind {
     EnumValue,
 }
 
-/// A pool of linked, feature-resolved protobuf descriptors.
-///
 /// How strictly [`DescriptorPool`] links files against their import lists.
 ///
 /// The defaults match what a `protoc`-produced `FileDescriptorSet` always
 /// satisfies: a file may only reference types from itself, the files it
 /// lists in `dependency`, and anything those re-export through `import
-/// public` ([`enforce_import_visibility`](Self::enforce_import_visibility),
-/// on); a `dependency` that is absent from the pool is tolerated as long as
-/// nothing referenced lives in it
-/// ([`require_dependencies_present`](Self::require_dependencies_present),
-/// off), which keeps sets that strip option-only imports such as
-/// `google/api/annotations.proto` loadable. Use
-/// [`DescriptorPool::with_link_options`] to change either.
+/// public` ([`import_visibility`](Self::import_visibility), on); a
+/// `dependency` that is absent from the pool is tolerated as long as nothing
+/// referenced lives in it
+/// ([`required_dependencies`](Self::required_dependencies), off), which
+/// keeps sets that strip option-only imports such as
+/// `google/api/annotations.proto` loadable. Pass a value to
+/// [`DescriptorPool::decode_with_link_options`] or
+/// [`DescriptorPool::with_link_options`] to change either:
+///
+/// ```no_run
+/// # use buffa_descriptor::{DescriptorPool, LinkOptions};
+/// # fn f(bytes: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+/// // Pre-0.10 behaviour: resolve every name across the whole pool.
+/// let pool = DescriptorPool::decode_with_link_options(
+///     bytes,
+///     &buffa::DecodeOptions::new(),
+///     LinkOptions::new().with_import_visibility(false),
+/// )?;
+/// # let _ = pool; Ok(())
+/// # }
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct LinkOptions {
-    /// Reject a reference to a type defined in a file the referring file does
-    /// not import ([`PoolError::NotImported`]). Default `true`.
-    pub enforce_import_visibility: bool,
-    /// Reject a file whose `dependency` list names a file that is neither in
-    /// the pool nor in the set being added ([`PoolError::ImportNotFound`]).
-    /// Default `false`.
-    pub require_dependencies_present: bool,
+    import_visibility: bool,
+    required_dependencies: bool,
 }
 
 impl Default for LinkOptions {
     fn default() -> Self {
         Self {
-            enforce_import_visibility: true,
-            require_dependencies_present: false,
+            import_visibility: true,
+            required_dependencies: false,
         }
     }
 }
@@ -512,20 +525,36 @@ impl LinkOptions {
         Self::default()
     }
 
-    /// Set [`enforce_import_visibility`](Self::enforce_import_visibility).
-    /// Turning it off restores the pre-0.10 behaviour of resolving every
-    /// type name against the whole pool regardless of imports.
+    /// Whether a reference to a type defined in a file the referring file does
+    /// not import is rejected ([`PoolError::TypeNotImported`]). Default
+    /// `true`; `false` restores the pre-0.10 behaviour of resolving every type
+    /// name against the whole pool regardless of imports.
     #[must_use]
-    pub fn enforce_import_visibility(mut self, on: bool) -> Self {
-        self.enforce_import_visibility = on;
+    pub fn with_import_visibility(mut self, on: bool) -> Self {
+        self.import_visibility = on;
         self
     }
 
-    /// Set [`require_dependencies_present`](Self::require_dependencies_present).
+    /// Whether a file whose `dependency` list names a file that is neither in
+    /// the pool nor in the set being added is rejected
+    /// ([`PoolError::DependencyNotFound`]). Default `false`. Weak
+    /// dependencies (`weak_dependency`) are exempt, as under `protoc`.
     #[must_use]
-    pub fn require_dependencies_present(mut self, on: bool) -> Self {
-        self.require_dependencies_present = on;
+    pub fn with_required_dependencies(mut self, on: bool) -> Self {
+        self.required_dependencies = on;
         self
+    }
+
+    /// See [`with_import_visibility`](Self::with_import_visibility).
+    #[must_use]
+    pub fn import_visibility(&self) -> bool {
+        self.import_visibility
+    }
+
+    /// See [`with_required_dependencies`](Self::with_required_dependencies).
+    #[must_use]
+    pub fn required_dependencies(&self) -> bool {
+        self.required_dependencies
     }
 }
 
@@ -539,6 +568,8 @@ struct LinkScope<'a> {
     visible: Option<&'a BTreeSet<usize>>,
 }
 
+/// A pool of linked, feature-resolved protobuf descriptors.
+///
 /// Built from one or more `FileDescriptorProto`s via [`DescriptorPool::new`]
 /// or accumulated via [`DescriptorPool::add_file_descriptor_set`]. Once built,
 /// the pool is immutable — descriptor handles are pool indices and all data
@@ -591,7 +622,9 @@ impl DescriptorPool {
     /// An empty pool that links with `options` instead of the defaults; fill
     /// it with [`add_file_descriptor_set`](Self::add_file_descriptor_set).
     /// [`new`](Self::new) and [`decode`](Self::decode) use
-    /// [`LinkOptions::default`].
+    /// [`LinkOptions::default`]; for bytes in hand,
+    /// [`decode_with_link_options`](Self::decode_with_link_options) is the
+    /// one-call form.
     #[must_use]
     pub fn with_link_options(options: LinkOptions) -> Self {
         Self {
@@ -681,8 +714,31 @@ impl DescriptorPool {
         bytes: &[u8],
         opts: &buffa::DecodeOptions,
     ) -> Result<Self, PoolError> {
+        Self::decode_with_link_options(bytes, opts, LinkOptions::default())
+    }
+
+    /// Build a pool from raw `FileDescriptorSet` bytes under caller-supplied
+    /// decode limits and [`LinkOptions`].
+    ///
+    /// [`decode`](Self::decode) and
+    /// [`decode_with_options`](Self::decode_with_options) link with
+    /// [`LinkOptions::default`]; this is the entry point for a set that needs
+    /// the pre-0.10 flat name resolution
+    /// (`LinkOptions::new().with_import_visibility(false)`) or strict import
+    /// presence.
+    ///
+    /// # Errors
+    ///
+    /// As [`decode`](Self::decode), under the given link options.
+    pub fn decode_with_link_options(
+        bytes: &[u8],
+        opts: &buffa::DecodeOptions,
+        link: LinkOptions,
+    ) -> Result<Self, PoolError> {
         let set = opts.decode_from_slice::<FileDescriptorSet>(bytes)?;
-        Self::new(set)
+        let mut pool = Self::with_link_options(link);
+        pool.add_file_descriptor_set(set)?;
+        Ok(pool)
     }
 
     /// Add the files in a `FileDescriptorSet` to the pool, registering and
@@ -694,9 +750,20 @@ impl DescriptorPool {
     /// the existing pool. Callers loading many files should batch them into a
     /// single `FileDescriptorSet` rather than adding files one set at a time.
     ///
+    /// A file added here may reference types in files added by an earlier
+    /// call, provided it lists them in `dependency` (see [`LinkOptions`]). A
+    /// `dependency` not yet in the pool is tolerated by default; a reference
+    /// into it fails as [`PoolError::UnresolvedTypeName`], as it always has,
+    /// so a client streaming files one response at a time should add
+    /// dependencies before dependents or batch them into one set. Two files
+    /// with the same name in one set are rejected
+    /// ([`PoolError::DuplicateFileName`]).
+    ///
     /// # Errors
     ///
-    /// Returns a [`PoolError`] on resolution or structural validation failure.
+    /// Returns a [`PoolError`] on resolution or structural validation
+    /// failure, including a reference to a type in a file the referring file
+    /// does not import ([`PoolError::TypeNotImported`]).
     pub fn add_file_descriptor_set(&mut self, set: FileDescriptorSet) -> Result<(), PoolError> {
         // Pass 0: per-file structural checks that need no name resolution,
         // and the fast path for no-op re-adds. Both run ahead of the staged
@@ -706,6 +773,7 @@ impl DescriptorPool {
         // Only new files are checked, as in every later pass: a file already
         // in the pool cleared this when it was added, and a re-add has to
         // stay a no-op.
+        let mut new_names = BTreeSet::new();
         let mut has_new_files = false;
         for file in &set.file {
             let is_new = file
@@ -715,6 +783,13 @@ impl DescriptorPool {
                 .map_or(true, |n| !self.file_by_name.contains_key(n));
             if is_new {
                 has_new_files = true;
+                if let Some(n) = file.name.as_deref() {
+                    if !new_names.insert(n) {
+                        return Err(PoolError::DuplicateFileName {
+                            file: n.to_string(),
+                        });
+                    }
+                }
                 validate_dependency_indices(file)?;
             }
         }
@@ -730,6 +805,10 @@ impl DescriptorPool {
         Ok(())
     }
 
+    /// Must only run on the staged clone made by
+    /// [`add_file_descriptor_set`](Self::add_file_descriptor_set): it mutates
+    /// `file_by_name` and the descriptor tables before validation completes
+    /// and relies on the caller discarding the clone on error.
     fn add_file_descriptor_set_staged(&mut self, set: FileDescriptorSet) -> Result<(), PoolError> {
         // Filter out files already present (idempotent re-add).
         let new_files: Vec<FileDescriptorProto> = set
@@ -755,19 +834,11 @@ impl DescriptorPool {
             }
         }
 
-        // Per-file visible set: the file itself, every `dependency` (weak
-        // ones included — protoc resolves through them too), and the
-        // transitive `public_dependency` closure of those. Computed once per
-        // new file; `None` entries when visibility is not enforced.
-        let visible: Vec<Option<BTreeSet<usize>>> = new_files
-            .iter()
-            .enumerate()
-            .map(|(i, f)| self.visible_files(base + i, f, base, &new_files))
-            .collect::<Result<_, _>>()?;
-        let scope_of = |i: usize| LinkScope {
-            file: base + i,
-            visible: visible[i].as_ref(),
-        };
+        // Under `required_dependencies`, reject a listed import that is
+        // nowhere in the pool or the set before anything is registered.
+        for f in &new_files {
+            self.check_dependencies_present(f)?;
+        }
 
         // Pass 1: register all message/enum FQNs and assign indices.
         // This walk is over the new files only; existing names are already in
@@ -785,12 +856,22 @@ impl DescriptorPool {
 
         // Pass 2: link. We need to iterate the new files again to fill in
         // the placeholder `MessageDescriptor`s. Walk in the same order.
+        // Each file links under its own visible set (itself, its
+        // `dependency` entries, and their transitive `public_dependency`
+        // closure). The set is rebuilt per file and per pass rather than
+        // tabulated for the whole batch: a chain of public imports makes the
+        // table quadratic in the file count, and the input is untrusted.
         let mut linked = first_new_message;
         for (i, file) in new_files.iter().enumerate() {
             let pkg = file.package.as_deref().unwrap_or("");
             let file_features = features::for_file(file);
+            let visible = self.visible_files(base + i, file, base, &new_files);
+            let scope = LinkScope {
+                file: base + i,
+                visible: visible.as_ref(),
+            };
             for msg in &file.message_type {
-                linked = self.link_message(pkg, msg, &file_features, linked, scope_of(i))?;
+                linked = self.link_message(pkg, msg, &file_features, linked, scope)?;
             }
             for e in &file.enum_type {
                 self.link_enum(pkg, e, &file_features)?;
@@ -807,7 +888,11 @@ impl DescriptorPool {
         for (i, file) in new_files.iter().enumerate() {
             let pkg = file.package.as_deref().unwrap_or("");
             let file_features = features::for_file(file);
-            let scope = scope_of(i);
+            let visible = self.visible_files(base + i, file, base, &new_files);
+            let scope = LinkScope {
+                file: base + i,
+                visible: visible.as_ref(),
+            };
             for svc in &file.service {
                 self.link_service(pkg, svc, scope)?;
             }
@@ -835,26 +920,49 @@ impl DescriptorPool {
         Ok(())
     }
 
-    /// The set of file indices whose top-level and nested types `file` (at
-    /// index `file_idx`) may reference: itself, each `dependency` present in
-    /// the pool or in `new_files`, and, transitively, whatever those
-    /// re-export through `public_dependency`. Returns `None` when
-    /// visibility is not enforced.
+    /// Under [`LinkOptions::with_required_dependencies`], reject a
+    /// `dependency` that is neither in the pool nor in the set being added.
+    /// Weak dependencies are exempt, as under `protoc`, which substitutes a
+    /// placeholder for a missing weak import.
+    fn check_dependencies_present(&self, file: &FileDescriptorProto) -> Result<(), PoolError> {
+        if !self.link_options.required_dependencies {
+            return Ok(());
+        }
+        let is_weak = |i: usize| {
+            file.weak_dependency
+                .iter()
+                .any(|&w| usize::try_from(w) == Ok(i))
+        };
+        for (i, dep) in file.dependency.iter().enumerate() {
+            if !self.file_by_name.contains_key(dep.as_str()) && !is_weak(i) {
+                return Err(PoolError::DependencyNotFound {
+                    file: file.name.clone().unwrap_or_default(),
+                    dependency: dep.clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// The set of file indices whose types `file` (at index `file_idx`) may
+    /// reference: itself, each `dependency` present in the pool or in
+    /// `new_files` (weak dependencies are entries in that list like any
+    /// other), and, transitively, whatever those re-export through
+    /// `public_dependency`. `None` when visibility is not enforced.
     ///
-    /// A `dependency` name that is not in the pool is skipped unless
-    /// [`LinkOptions::require_dependencies_present`] is set, in which case it
-    /// is an error. `public_dependency` indices were validated against the
-    /// `dependency` list before this runs.
+    /// A `dependency` name that is not in the pool contributes nothing; a
+    /// reference into it then fails as `UnresolvedTypeName`.
+    /// `public_dependency` indices were validated against the `dependency`
+    /// list before this runs.
     fn visible_files(
         &self,
         file_idx: usize,
         file: &FileDescriptorProto,
         base: usize,
         new_files: &[FileDescriptorProto],
-    ) -> Result<Option<BTreeSet<usize>>, PoolError> {
-        let opts = self.link_options;
-        if !opts.enforce_import_visibility && !opts.require_dependencies_present {
-            return Ok(None);
+    ) -> Option<BTreeSet<usize>> {
+        if !self.link_options.import_visibility {
+            return None;
         }
         let proto_at = |idx: usize| -> &FileDescriptorProto {
             if idx >= base {
@@ -868,40 +976,29 @@ impl DescriptorPool {
         // Direct dependencies seed the walk; from there only `import public`
         // edges are followed, which is protoc's rule (an ordinary import is
         // not re-exported to the importer's importers).
-        let mut frontier: Vec<usize> = Vec::new();
-        for dep in &file.dependency {
-            let Some(&idx) = self.file_by_name.get(dep.as_str()) else {
-                if opts.require_dependencies_present {
-                    return Err(PoolError::ImportNotFound {
-                        file: file.name.clone().unwrap_or_default(),
-                        import: dep.clone(),
-                    });
-                }
-                continue;
-            };
-            if visible.insert(idx) {
-                frontier.push(idx);
-            }
-        }
+        let mut frontier: Vec<usize> = file
+            .dependency
+            .iter()
+            .filter_map(|dep| self.file_by_name.get(dep.as_str()).copied())
+            .filter(|&idx| visible.insert(idx))
+            .collect();
         while let Some(idx) = frontier.pop() {
             let dep_file = proto_at(idx);
             for &pub_i in &dep_file.public_dependency {
-                let Some(name) = usize::try_from(pub_i)
+                let reexported = usize::try_from(pub_i)
                     .ok()
                     .and_then(|i| dep_file.dependency.get(i))
-                else {
-                    // Out-of-range indices in already-pooled files were
-                    // rejected when they were added; in new files, by pass 0.
-                    continue;
-                };
-                if let Some(&next) = self.file_by_name.get(name.as_str()) {
+                    .and_then(|name| self.file_by_name.get(name.as_str()));
+                // An out-of-range index was rejected in pass 0 (or when the
+                // pooled file was added); an absent file contributes nothing.
+                if let Some(&next) = reexported {
                     if visible.insert(next) {
                         frontier.push(next);
                     }
                 }
             }
         }
-        Ok(opts.enforce_import_visibility.then_some(visible))
+        Some(visible)
     }
 
     /// Name of the file at `idx`, for error messages. Unnamed files render
@@ -924,7 +1021,7 @@ impl DescriptorPool {
         referrer: &str,
     ) -> Result<(), PoolError> {
         match scope.visible {
-            Some(visible) if !visible.contains(&def_file) => Err(PoolError::NotImported {
+            Some(visible) if !visible.contains(&def_file) => Err(PoolError::TypeNotImported {
                 file: self.file_name_of(scope.file).to_string(),
                 field: referrer.to_string(),
                 type_name: type_name.to_string(),

@@ -102,7 +102,7 @@ pub mod __buffa {
                             FILE_DESCRIPTOR_SET_BYTES,
                             &options,
                         )
-                        .expect("buffa-codegen emitted a decodable FileDescriptorSet"),
+                        .expect("buffa-codegen emitted a linkable FileDescriptorSet"),
                 )
             })
         }

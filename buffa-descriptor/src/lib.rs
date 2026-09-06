@@ -16,6 +16,10 @@
 //!   `descriptor.proto`.
 //! - [`generated::compiler`] — `CodeGeneratorRequest`, `CodeGeneratorResponse`
 //!   from `plugin.proto`.
+//! - `pool` and `reflect` (feature `reflect`) — `DescriptorPool`, which links
+//!   a `FileDescriptorSet` into feature-resolved descriptors under protoc's
+//!   import rules (`LinkOptions`), and the `DynamicMessage` runtime built on
+//!   it.
 //!
 //! # Regenerating
 //!

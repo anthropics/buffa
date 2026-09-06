@@ -2049,7 +2049,7 @@ mod import_visibility {
         assert!(
             matches!(
                 err,
-                PoolError::NotImported { file: f, type_name: t, defined_in: d, .. }
+                PoolError::TypeNotImported { file: f, type_name: t, defined_in: d, .. }
                     if f == file && t == type_name && d == defined_in
             ),
             "unexpected error: {err}"
@@ -2063,8 +2063,8 @@ mod import_visibility {
         assert_not_imported(&err, "b.proto", ".a.Thing", "a.proto");
         assert_eq!(
             err.to_string(),
-            "field b.Holder.thing references \".a.Thing\", which is defined in \"a.proto\" \
-             and not imported by \"b.proto\""
+            "field b.Holder.thing references \".a.Thing\", which is defined in a.proto \
+             and not imported by b.proto; add a.proto to its dependency list"
         );
     }
 
@@ -2171,6 +2171,9 @@ mod import_visibility {
     #[test]
     fn public_import_cycle_terminates() {
         // a and b publicly import each other; c imports a and uses b.Thing.
+        // protoc rejects the cycle itself ("File recursively imports
+        // itself"); the pool does not detect import cycles yet, so this pins
+        // only that the visibility walk terminates on one.
         let cyc = |name: &str, dep: &str| FileDescriptorProto {
             dependency: vec![dep.into()],
             public_dependency: vec![0],
@@ -2272,7 +2275,7 @@ mod import_visibility {
         };
         let err = DescriptorPool::new(set(vec![leaf("a"), svc(&[])])).unwrap_err();
         assert!(
-            matches!(&err, PoolError::NotImported { field, .. } if field == "svc.S.Call"),
+            matches!(&err, PoolError::TypeNotImported { field, .. } if field == "svc.S.Call"),
             "unexpected error: {err}"
         );
         DescriptorPool::new(set(vec![leaf("a"), svc(&["a.proto"])]))
@@ -2368,35 +2371,135 @@ mod import_visibility {
         DescriptorPool::new(set(vec![leaf("a"), b.clone()]))
             .expect("an absent, unreferenced import is tolerated by default");
 
-        let mut strict = DescriptorPool::with_link_options(
-            LinkOptions::new().require_dependencies_present(true),
+        // A reference *into* the absent file is still an unresolved name, not
+        // a visibility error: the file's symbols were never registered.
+        let dangling = FileDescriptorProto {
+            dependency: vec!["absent.proto".into()],
+            ..referrer("d", &[], &[], ".absent.Thing")
+        };
+        let err = DescriptorPool::new(set(vec![dangling])).unwrap_err();
+        assert!(
+            matches!(&err, PoolError::UnresolvedTypeName { type_name, .. } if type_name == ".absent.Thing"),
+            "unexpected error: {err}"
         );
+
+        let mut strict =
+            DescriptorPool::with_link_options(LinkOptions::new().with_required_dependencies(true));
         let err = strict
             .add_file_descriptor_set(set(vec![leaf("a"), b]))
             .unwrap_err();
         assert!(
             matches!(
                 &err,
-                PoolError::ImportNotFound { file, import }
-                    if file == "b.proto" && import == "google/api/annotations.proto"
+                PoolError::DependencyNotFound { file, dependency }
+                    if file == "b.proto" && dependency == "google/api/annotations.proto"
             ),
             "unexpected error: {err}"
         );
         assert_eq!(
             err.to_string(),
-            "file b.proto imports \"google/api/annotations.proto\", which is not in the pool"
+            "file b.proto imports google/api/annotations.proto, which is not in the pool"
         );
         assert!(
             strict.file_by_name("a.proto").is_none(),
             "rejected set left the pool unchanged"
         );
+
+        // A missing *weak* dependency is exempt, as under protoc.
+        let weak_only = FileDescriptorProto {
+            dependency: vec!["a.proto".into(), "gone.proto".into()],
+            weak_dependency: vec![1],
+            ..referrer("w", &[], &[], ".a.Thing")
+        };
+        strict
+            .add_file_descriptor_set(set(vec![leaf("a"), weak_only]))
+            .expect("a missing weak dependency is tolerated even when dependencies are required");
+    }
+
+    #[test]
+    fn decode_with_link_options_applies_them() {
+        use buffa::Message as _;
+        let bytes = set(vec![leaf("a"), referrer("b", &[], &[], ".a.Thing")]).encode_to_vec();
+        assert!(matches!(
+            DescriptorPool::decode(&bytes),
+            Err(PoolError::TypeNotImported { .. })
+        ));
+        let pool = DescriptorPool::decode_with_link_options(
+            &bytes,
+            &buffa::DecodeOptions::new(),
+            LinkOptions::new().with_import_visibility(false),
+        )
+        .expect("flat resolution when visibility is off");
+        assert!(!pool.link_options().import_visibility());
+        assert!(pool.message_by_name("b.Holder").is_some());
+    }
+
+    #[test]
+    fn enum_reference_follows_the_same_rule() {
+        use buffa_descriptor::generated::descriptor::{
+            EnumDescriptorProto, EnumValueDescriptorProto,
+        };
+        let enums = FileDescriptorProto {
+            name: Some("e.proto".into()),
+            package: Some("e".into()),
+            syntax: Some("proto3".into()),
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Colour".into()),
+                value: vec![EnumValueDescriptorProto {
+                    name: Some("COLOUR_UNSPECIFIED".into()),
+                    number: Some(0),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let user = |deps: &[&str]| FileDescriptorProto {
+            name: Some("u.proto".into()),
+            package: Some("u".into()),
+            syntax: Some("proto3".into()),
+            dependency: deps.iter().map(|d| (*d).to_string()).collect(),
+            message_type: vec![DescriptorProto {
+                name: Some("Paint".into()),
+                field: vec![FieldDescriptorProto {
+                    r#type: Some(Type::TYPE_ENUM),
+                    ..msg_field("colour", 1, ".e.Colour")
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let err = DescriptorPool::new(set(vec![enums.clone(), user(&[])])).unwrap_err();
+        assert_not_imported(&err, "u.proto", ".e.Colour", "e.proto");
+        DescriptorPool::new(set(vec![enums, user(&["e.proto"])]))
+            .expect("enum reference links when imported");
+    }
+
+    #[test]
+    fn duplicate_file_names_in_one_set_are_rejected() {
+        let mut pool = DescriptorPool::new(set(vec![leaf("z")])).unwrap();
+        let err = pool
+            .add_file_descriptor_set(set(vec![leaf("a"), leaf("a")]))
+            .unwrap_err();
+        assert!(
+            matches!(&err, PoolError::DuplicateFileName { file } if file == "a.proto"),
+            "unexpected error: {err}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "file a.proto appears more than once in the set"
+        );
+        assert!(pool.file_by_name("a.proto").is_none());
+        // A name already in the pool is an idempotent re-add, not a duplicate.
+        pool.add_file_descriptor_set(set(vec![leaf("z"), leaf("z")]))
+            .expect("re-adding a pooled file is a no-op");
     }
 
     #[test]
     fn enforcement_can_be_switched_off() {
         let mut pool =
-            DescriptorPool::with_link_options(LinkOptions::new().enforce_import_visibility(false));
-        assert!(!pool.link_options().enforce_import_visibility);
+            DescriptorPool::with_link_options(LinkOptions::new().with_import_visibility(false));
+        assert!(!pool.link_options().import_visibility());
         pool.add_file_descriptor_set(set(vec![leaf("a"), referrer("b", &[], &[], ".a.Thing")]))
             .expect("flat resolution when visibility is not enforced");
         assert!(pool.message_by_name("b.Holder").is_some());
@@ -2405,8 +2508,8 @@ mod import_visibility {
     #[test]
     fn defaults_enforce_visibility_and_tolerate_absent_imports() {
         let opts = LinkOptions::default();
-        assert!(opts.enforce_import_visibility);
-        assert!(!opts.require_dependencies_present);
+        assert!(opts.import_visibility());
+        assert!(!opts.required_dependencies());
         assert_eq!(
             DescriptorPool::new(set(vec![])).unwrap().link_options(),
             opts
