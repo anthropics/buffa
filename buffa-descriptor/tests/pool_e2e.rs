@@ -941,11 +941,18 @@ fn invalid_extension_range_bounds_are_rejected_without_mutating_pool() {
     };
 
     let max = buffa::encoding::MAX_FIELD_NUMBER as i32;
+    // protoc reads an unset bound as 0, then requires `0 < start < end`.
     for (suffix, start, end) in [
-        ("equal", 7, 7),
-        ("reversed", 8, 7),
-        ("max-equal", max + 1, max + 1),
-        ("max-reversed", max + 1, max),
+        ("equal", Some(7), Some(7)),
+        ("reversed", Some(8), Some(7)),
+        ("max-equal", Some(max + 1), Some(max + 1)),
+        ("max-reversed", Some(max + 1), Some(max)),
+        ("zero-start", Some(0), Some(5)),
+        ("negative-start", Some(-3), Some(5)),
+        ("negative-end", Some(3), Some(-5)),
+        ("unset-start", None, Some(5)),
+        ("unset-end", Some(5), None),
+        ("unset-both", None, None),
     ] {
         let message_name = format!("InvalidRange{suffix}");
         let full_name = format!("invalid.test.{message_name}");
@@ -963,8 +970,8 @@ fn invalid_extension_range_bounds_are_rejected_without_mutating_pool() {
                     message_type: vec![DescriptorProto {
                         name: Some(message_name),
                         extension_range: vec![ExtensionRange {
-                            start: Some(start),
-                            end: Some(end),
+                            start,
+                            end,
                             ..Default::default()
                         }],
                         ..Default::default()
@@ -982,11 +989,20 @@ fn invalid_extension_range_bounds_are_rejected_without_mutating_pool() {
                             start: actual_start,
                             end: actual_end,
                         } if message == &expected_message
-                            && *actual_start == start as u32
-                            && *actual_end == end as u32
+                            && *actual_start == start
+                            && *actual_end == end
                     ),
                     "unexpected error: {err}"
                 );
+                if (start, end) == (Some(5), None) {
+                    assert_eq!(
+                        err.to_string(),
+                        format!(
+                            "message {expected_message} extension range 5..unset is invalid; \
+                             bounds must satisfy 0 < start < end"
+                        )
+                    );
+                }
             },
         );
     }
