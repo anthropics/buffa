@@ -1180,6 +1180,7 @@ fn duplicate_rpc_method_names_are_rejected_transactionally() {
             name: Some("duplicate-method.proto".into()),
             package: Some("invalid.test".into()),
             syntax: Some("proto3".into()),
+            dependency: vec!["reflect_test.proto".into()],
             service: vec![ServiceDescriptorProto {
                 name: Some("Gateway".into()),
                 method: vec![method(), method()],
@@ -1981,4 +1982,443 @@ fn proto2_still_rejects_duplicate_proto_field_names() {
         err,
         PoolError::DuplicateFieldName { ref name, .. } if name == "same"
     ));
+}
+
+// ── import visibility (#423) ────────────────────────────────────────────────
+
+mod import_visibility {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        MethodDescriptorProto, ServiceDescriptorProto,
+    };
+    use buffa_descriptor::{DescriptorPool, LinkOptions, PoolError};
+
+    /// `<name>.proto` in package `<name>` declaring `message Thing {}`.
+    fn leaf(name: &str) -> FileDescriptorProto {
+        FileDescriptorProto {
+            name: Some(format!("{name}.proto")),
+            package: Some(name.into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Thing".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    /// A singular message field referencing `type_name`.
+    fn msg_field(name: &str, number: i32, type_name: &str) -> FieldDescriptorProto {
+        FieldDescriptorProto {
+            name: Some(name.into()),
+            number: Some(number),
+            label: Some(Label::LABEL_OPTIONAL),
+            r#type: Some(Type::TYPE_MESSAGE),
+            type_name: Some(type_name.into()),
+            ..Default::default()
+        }
+    }
+
+    /// `<name>.proto` in package `<name>` with `message Holder { <target> thing = 1; }`
+    /// and the given import lists.
+    fn referrer(name: &str, deps: &[&str], public: &[i32], target: &str) -> FileDescriptorProto {
+        FileDescriptorProto {
+            name: Some(format!("{name}.proto")),
+            package: Some(name.into()),
+            syntax: Some("proto3".into()),
+            dependency: deps.iter().map(|d| (*d).to_string()).collect(),
+            public_dependency: public.to_vec(),
+            message_type: vec![DescriptorProto {
+                name: Some("Holder".into()),
+                field: vec![msg_field("thing", 1, target)],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    fn set(files: Vec<FileDescriptorProto>) -> FileDescriptorSet {
+        FileDescriptorSet {
+            file: files,
+            ..Default::default()
+        }
+    }
+
+    fn assert_not_imported(err: &PoolError, file: &str, type_name: &str, defined_in: &str) {
+        assert!(
+            matches!(
+                err,
+                PoolError::NotImported { file: f, type_name: t, defined_in: d, .. }
+                    if f == file && t == type_name && d == defined_in
+            ),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn reference_without_import_is_rejected() {
+        let err = DescriptorPool::new(set(vec![leaf("a"), referrer("b", &[], &[], ".a.Thing")]))
+            .unwrap_err();
+        assert_not_imported(&err, "b.proto", ".a.Thing", "a.proto");
+        assert_eq!(
+            err.to_string(),
+            "field b.Holder.thing references \".a.Thing\", which is defined in \"a.proto\" \
+             and not imported by \"b.proto\""
+        );
+    }
+
+    #[test]
+    fn reference_with_import_links() {
+        let pool = DescriptorPool::new(set(vec![
+            leaf("a"),
+            referrer("b", &["a.proto"], &[], ".a.Thing"),
+        ]))
+        .expect("imported type links");
+        assert!(pool.message_by_name("b.Holder").is_some());
+    }
+
+    #[test]
+    fn import_order_within_a_set_does_not_matter() {
+        // The referrer precedes the file it imports; protoc emits sets in
+        // dependency order, but hand-built and merged sets need not be.
+        DescriptorPool::new(set(vec![
+            referrer("b", &["a.proto"], &[], ".a.Thing"),
+            leaf("a"),
+        ]))
+        .expect("links regardless of file order");
+    }
+
+    #[test]
+    fn same_file_and_nested_references_need_no_import() {
+        let file = FileDescriptorProto {
+            name: Some("self.proto".into()),
+            package: Some("selfref".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Outer".into()),
+                field: vec![
+                    msg_field("inner", 1, ".selfref.Outer.Inner"),
+                    msg_field("me", 2, ".selfref.Outer"),
+                ],
+                nested_type: vec![DescriptorProto {
+                    name: Some("Inner".into()),
+                    field: vec![msg_field("up", 1, ".selfref.Outer")],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        DescriptorPool::new(set(vec![file])).expect("same-file references link");
+    }
+
+    #[test]
+    fn public_import_chain_is_visible_transitively() {
+        // c imports b; b `import public "a.proto"`; c may use a.Thing.
+        let b = FileDescriptorProto {
+            name: Some("b.proto".into()),
+            package: Some("b".into()),
+            dependency: vec!["a.proto".into()],
+            public_dependency: vec![0],
+            ..Default::default()
+        };
+        DescriptorPool::new(set(vec![
+            leaf("a"),
+            b,
+            referrer("c", &["b.proto"], &[], ".a.Thing"),
+        ]))
+        .expect("public re-export is visible");
+    }
+
+    #[test]
+    fn two_hop_public_import_chain_is_visible() {
+        // d imports c; c `import public` b; b `import public` a.
+        let reexport = |name: &str, dep: &str| FileDescriptorProto {
+            name: Some(format!("{name}.proto")),
+            package: Some(name.into()),
+            dependency: vec![dep.into()],
+            public_dependency: vec![0],
+            ..Default::default()
+        };
+        DescriptorPool::new(set(vec![
+            leaf("a"),
+            reexport("b", "a.proto"),
+            reexport("c", "b.proto"),
+            referrer("d", &["c.proto"], &[], ".a.Thing"),
+        ]))
+        .expect("transitive public re-export is visible");
+    }
+
+    #[test]
+    fn ordinary_transitive_import_is_not_visible() {
+        // c imports b; b imports a (not public); c may NOT use a.Thing.
+        let b = FileDescriptorProto {
+            name: Some("b.proto".into()),
+            package: Some("b".into()),
+            dependency: vec!["a.proto".into()],
+            ..Default::default()
+        };
+        let err = DescriptorPool::new(set(vec![
+            leaf("a"),
+            b,
+            referrer("c", &["b.proto"], &[], ".a.Thing"),
+        ]))
+        .unwrap_err();
+        assert_not_imported(&err, "c.proto", ".a.Thing", "a.proto");
+    }
+
+    #[test]
+    fn public_import_cycle_terminates() {
+        // a and b publicly import each other; c imports a and uses b.Thing.
+        let cyc = |name: &str, dep: &str| FileDescriptorProto {
+            dependency: vec![dep.into()],
+            public_dependency: vec![0],
+            ..leaf(name)
+        };
+        DescriptorPool::new(set(vec![
+            cyc("a", "b.proto"),
+            cyc("b", "a.proto"),
+            referrer("c", &["a.proto"], &[], ".b.Thing"),
+        ]))
+        .expect("cycle in public imports does not loop and b is visible through a");
+    }
+
+    #[test]
+    fn weak_dependency_is_visible() {
+        let c = FileDescriptorProto {
+            weak_dependency: vec![0],
+            ..referrer("c", &["a.proto"], &[], ".a.Thing")
+        };
+        DescriptorPool::new(set(vec![leaf("a"), c])).expect("weak imports resolve like imports");
+    }
+
+    #[test]
+    fn extendee_and_extension_type_must_be_imported() {
+        let extendable = FileDescriptorProto {
+            name: Some("base.proto".into()),
+            package: Some("base".into()),
+            syntax: Some("proto2".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Ext".into()),
+                extension_range: vec![
+                    buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange {
+                        start: Some(100),
+                        end: Some(200),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let extender = |deps: &[&str], value_type: &str| FileDescriptorProto {
+            name: Some("extender.proto".into()),
+            package: Some("extender".into()),
+            syntax: Some("proto2".into()),
+            dependency: deps.iter().map(|d| (*d).to_string()).collect(),
+            extension: vec![FieldDescriptorProto {
+                extendee: Some(".base.Ext".into()),
+                ..msg_field("payload", 100, value_type)
+            }],
+            ..Default::default()
+        };
+
+        // Extendee not imported.
+        let err = DescriptorPool::new(set(vec![
+            extendable.clone(),
+            leaf("a"),
+            extender(&["a.proto"], ".a.Thing"),
+        ]))
+        .unwrap_err();
+        assert_not_imported(&err, "extender.proto", ".base.Ext", "base.proto");
+
+        // Extendee imported, value type not.
+        let err = DescriptorPool::new(set(vec![
+            extendable.clone(),
+            leaf("a"),
+            extender(&["base.proto"], ".a.Thing"),
+        ]))
+        .unwrap_err();
+        assert_not_imported(&err, "extender.proto", ".a.Thing", "a.proto");
+
+        // Both imported.
+        DescriptorPool::new(set(vec![
+            extendable,
+            leaf("a"),
+            extender(&["base.proto", "a.proto"], ".a.Thing"),
+        ]))
+        .expect("extension links when extendee and value type are imported");
+    }
+
+    #[test]
+    fn method_types_must_be_imported() {
+        let svc = |deps: &[&str]| FileDescriptorProto {
+            name: Some("svc.proto".into()),
+            package: Some("svc".into()),
+            syntax: Some("proto3".into()),
+            dependency: deps.iter().map(|d| (*d).to_string()).collect(),
+            service: vec![ServiceDescriptorProto {
+                name: Some("S".into()),
+                method: vec![MethodDescriptorProto {
+                    name: Some("Call".into()),
+                    input_type: Some(".a.Thing".into()),
+                    output_type: Some(".a.Thing".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let err = DescriptorPool::new(set(vec![leaf("a"), svc(&[])])).unwrap_err();
+        assert!(
+            matches!(&err, PoolError::NotImported { field, .. } if field == "svc.S.Call"),
+            "unexpected error: {err}"
+        );
+        DescriptorPool::new(set(vec![leaf("a"), svc(&["a.proto"])]))
+            .expect("method types link when imported");
+    }
+
+    #[test]
+    fn map_value_type_must_be_imported() {
+        let entry = DescriptorProto {
+            name: Some("ByIdEntry".into()),
+            field: vec![
+                FieldDescriptorProto {
+                    name: Some("key".into()),
+                    number: Some(1),
+                    label: Some(Label::LABEL_OPTIONAL),
+                    r#type: Some(Type::TYPE_INT32),
+                    ..Default::default()
+                },
+                msg_field("value", 2, ".a.Thing"),
+            ],
+            options: buffa::MessageField::some(
+                buffa_descriptor::generated::descriptor::MessageOptions {
+                    map_entry: Some(true),
+                    ..Default::default()
+                },
+            ),
+            ..Default::default()
+        };
+        let holder = |deps: &[&str]| FileDescriptorProto {
+            name: Some("m.proto".into()),
+            package: Some("m".into()),
+            syntax: Some("proto3".into()),
+            dependency: deps.iter().map(|d| (*d).to_string()).collect(),
+            message_type: vec![DescriptorProto {
+                name: Some("Holder".into()),
+                field: vec![FieldDescriptorProto {
+                    label: Some(Label::LABEL_REPEATED),
+                    ..msg_field("by_id", 1, ".m.Holder.ByIdEntry")
+                }],
+                nested_type: vec![entry.clone()],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let err = DescriptorPool::new(set(vec![leaf("a"), holder(&[])])).unwrap_err();
+        assert_not_imported(&err, "m.proto", ".a.Thing", "a.proto");
+        DescriptorPool::new(set(vec![leaf("a"), holder(&["a.proto"])]))
+            .expect("map value type links when imported");
+    }
+
+    #[test]
+    fn later_set_may_import_files_from_an_earlier_set() {
+        let mut pool = DescriptorPool::new(set(vec![leaf("a")])).unwrap();
+        pool.add_file_descriptor_set(set(vec![referrer("b", &["a.proto"], &[], ".a.Thing")]))
+            .expect("import of an already-pooled file resolves");
+        assert!(pool.message_by_name("b.Holder").is_some());
+
+        // And visibility is still enforced across the boundary.
+        let err = pool
+            .add_file_descriptor_set(set(vec![referrer("c", &[], &[], ".a.Thing")]))
+            .unwrap_err();
+        assert_not_imported(&err, "c.proto", ".a.Thing", "a.proto");
+        assert!(
+            pool.file_by_name("c.proto").is_none(),
+            "rejected set left the pool unchanged"
+        );
+        assert!(pool.message_by_name("c.Holder").is_none());
+    }
+
+    #[test]
+    fn public_reexport_through_an_earlier_set_is_visible() {
+        // Set 1: a, and b which `import public` a. Set 2: c imports b, uses a.
+        let b = FileDescriptorProto {
+            name: Some("b.proto".into()),
+            package: Some("b".into()),
+            dependency: vec!["a.proto".into()],
+            public_dependency: vec![0],
+            ..Default::default()
+        };
+        let mut pool = DescriptorPool::new(set(vec![leaf("a"), b])).unwrap();
+        pool.add_file_descriptor_set(set(vec![referrer("c", &["b.proto"], &[], ".a.Thing")]))
+            .expect("public re-export recorded in an earlier set is honoured");
+    }
+
+    #[test]
+    fn absent_dependency_is_tolerated_by_default_and_rejected_when_required() {
+        // `b` lists an import that is nowhere in the set, but references
+        // nothing from it (the option-only-import shape).
+        let b = FileDescriptorProto {
+            dependency: vec!["a.proto".into(), "google/api/annotations.proto".into()],
+            ..referrer("b", &[], &[], ".a.Thing")
+        };
+        DescriptorPool::new(set(vec![leaf("a"), b.clone()]))
+            .expect("an absent, unreferenced import is tolerated by default");
+
+        let mut strict = DescriptorPool::with_link_options(
+            LinkOptions::new().require_dependencies_present(true),
+        );
+        let err = strict
+            .add_file_descriptor_set(set(vec![leaf("a"), b]))
+            .unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                PoolError::ImportNotFound { file, import }
+                    if file == "b.proto" && import == "google/api/annotations.proto"
+            ),
+            "unexpected error: {err}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "file b.proto imports \"google/api/annotations.proto\", which is not in the pool"
+        );
+        assert!(
+            strict.file_by_name("a.proto").is_none(),
+            "rejected set left the pool unchanged"
+        );
+    }
+
+    #[test]
+    fn enforcement_can_be_switched_off() {
+        let mut pool =
+            DescriptorPool::with_link_options(LinkOptions::new().enforce_import_visibility(false));
+        assert!(!pool.link_options().enforce_import_visibility);
+        pool.add_file_descriptor_set(set(vec![leaf("a"), referrer("b", &[], &[], ".a.Thing")]))
+            .expect("flat resolution when visibility is not enforced");
+        assert!(pool.message_by_name("b.Holder").is_some());
+    }
+
+    #[test]
+    fn defaults_enforce_visibility_and_tolerate_absent_imports() {
+        let opts = LinkOptions::default();
+        assert!(opts.enforce_import_visibility);
+        assert!(!opts.require_dependencies_present);
+        assert_eq!(
+            DescriptorPool::new(set(vec![])).unwrap().link_options(),
+            opts
+        );
+    }
+
+    #[test]
+    fn protoc_output_links_under_the_defaults() {
+        // The checked-in `reflect_test.fds` is real `protoc --include_imports`
+        // output spanning several files with cross-file references
+        // (extensions of messages in another file, WKT imports).
+        DescriptorPool::decode(super::FDS_BYTES)
+            .expect("protoc output satisfies import visibility");
+    }
 }

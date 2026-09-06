@@ -156,6 +156,25 @@ pub enum PoolError {
         index: i32,
         dependency_count: usize,
     },
+    /// A file lists a `dependency` that is not in the pool or the set being
+    /// added. Only reported under
+    /// [`LinkOptions::require_dependencies_present`]; by default a missing
+    /// import is tolerated and only the types actually referenced must
+    /// resolve.
+    ImportNotFound { file: String, import: String },
+    /// A `type_name`, `extendee`, or method input/output type resolved to a
+    /// definition in a file the referring file does not import, either
+    /// directly or through a chain of `import public`. protoc rejects the
+    /// same reference ("seems to be defined in ..., which is not imported
+    /// by ..."). `field` is the fully-qualified referring field, extension
+    /// or method. Reported only while
+    /// [`LinkOptions::enforce_import_visibility`] is on (the default).
+    NotImported {
+        file: String,
+        field: String,
+        type_name: String,
+        defined_in: String,
+    },
     /// A field had no `type_name` for a `TYPE_MESSAGE`/`TYPE_GROUP`/`TYPE_ENUM`.
     MissingTypeName { field: String },
     /// A field's `type_name` did not resolve to any registered message or
@@ -273,6 +292,22 @@ impl core::fmt::Display for PoolError {
                 )
             }
             Self::MissingTypeName { field } => write!(f, "field {field} has no type_name"),
+            Self::ImportNotFound { file, import } => {
+                write!(
+                    f,
+                    "file {file} imports {import:?}, which is not in the pool"
+                )
+            }
+            Self::NotImported {
+                file,
+                field,
+                type_name,
+                defined_in,
+            } => write!(
+                f,
+                "field {field} references {type_name:?}, which is defined in {defined_in:?} \
+                 and not imported by {file:?}"
+            ),
             Self::UnresolvedTypeName { type_name, field } => {
                 write!(f, "unresolved type name {type_name:?} on field {field}")
             }
@@ -437,6 +472,73 @@ enum SymbolKind {
 
 /// A pool of linked, feature-resolved protobuf descriptors.
 ///
+/// How strictly [`DescriptorPool`] links files against their import lists.
+///
+/// The defaults match what a `protoc`-produced `FileDescriptorSet` always
+/// satisfies: a file may only reference types from itself, the files it
+/// lists in `dependency`, and anything those re-export through `import
+/// public` ([`enforce_import_visibility`](Self::enforce_import_visibility),
+/// on); a `dependency` that is absent from the pool is tolerated as long as
+/// nothing referenced lives in it
+/// ([`require_dependencies_present`](Self::require_dependencies_present),
+/// off), which keeps sets that strip option-only imports such as
+/// `google/api/annotations.proto` loadable. Use
+/// [`DescriptorPool::with_link_options`] to change either.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct LinkOptions {
+    /// Reject a reference to a type defined in a file the referring file does
+    /// not import ([`PoolError::NotImported`]). Default `true`.
+    pub enforce_import_visibility: bool,
+    /// Reject a file whose `dependency` list names a file that is neither in
+    /// the pool nor in the set being added ([`PoolError::ImportNotFound`]).
+    /// Default `false`.
+    pub require_dependencies_present: bool,
+}
+
+impl Default for LinkOptions {
+    fn default() -> Self {
+        Self {
+            enforce_import_visibility: true,
+            require_dependencies_present: false,
+        }
+    }
+}
+
+impl LinkOptions {
+    /// The defaults: import visibility enforced, absent imports tolerated.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set [`enforce_import_visibility`](Self::enforce_import_visibility).
+    /// Turning it off restores the pre-0.10 behaviour of resolving every
+    /// type name against the whole pool regardless of imports.
+    #[must_use]
+    pub fn enforce_import_visibility(mut self, on: bool) -> Self {
+        self.enforce_import_visibility = on;
+        self
+    }
+
+    /// Set [`require_dependencies_present`](Self::require_dependencies_present).
+    #[must_use]
+    pub fn require_dependencies_present(mut self, on: bool) -> Self {
+        self.require_dependencies_present = on;
+        self
+    }
+}
+
+/// The file a link step runs for and the files whose symbols it may name.
+#[derive(Clone, Copy)]
+struct LinkScope<'a> {
+    /// Index of the referring file in `files` / `file_by_name`.
+    file: usize,
+    /// Itself, its direct and weak dependencies, and their transitive
+    /// `public_dependency` closure; `None` when visibility is not enforced.
+    visible: Option<&'a BTreeSet<usize>>,
+}
+
 /// Built from one or more `FileDescriptorProto`s via [`DescriptorPool::new`]
 /// or accumulated via [`DescriptorPool::add_file_descriptor_set`]. Once built,
 /// the pool is immutable — descriptor handles are pool indices and all data
@@ -476,15 +578,41 @@ pub struct DescriptorPool {
     /// — the symbols gRPC server reflection's `FindFileContainingSymbol`
     /// resolves.
     symbol_file: BTreeMap<String, usize>,
+    /// Defining file (index into `files`) of each message, parallel to
+    /// `messages`.
+    message_file: Vec<usize>,
+    /// Defining file (index into `files`) of each enum, parallel to `enums`.
+    enum_file: Vec<usize>,
+    /// Link strictness for every `add_file_descriptor_set` on this pool.
+    link_options: LinkOptions,
 }
 
 impl DescriptorPool {
+    /// An empty pool that links with `options` instead of the defaults; fill
+    /// it with [`add_file_descriptor_set`](Self::add_file_descriptor_set).
+    /// [`new`](Self::new) and [`decode`](Self::decode) use
+    /// [`LinkOptions::default`].
+    #[must_use]
+    pub fn with_link_options(options: LinkOptions) -> Self {
+        Self {
+            link_options: options,
+            ..Self::default()
+        }
+    }
+
+    /// The [`LinkOptions`] this pool links with.
+    #[must_use]
+    pub fn link_options(&self) -> LinkOptions {
+        self.link_options
+    }
+
     /// Build a pool from a single `FileDescriptorSet`.
     ///
     /// # Errors
     ///
-    /// Returns a [`PoolError`] if any type name fails to resolve, a symbol or
-    /// field identity is declared twice, a field number is out of range or in
+    /// Returns a [`PoolError`] if any type name fails to resolve or resolves
+    /// to a file the referring file does not import, a symbol or field
+    /// identity is declared twice, a field number is out of range or in
     /// the implementation-reserved band (19000-19999), a field uses a name or
     /// number its message reserved, an extension range overlaps a reserved
     /// range, a message or enum declares a reserved name twice, an open enum's
@@ -508,7 +636,7 @@ impl DescriptorPool {
     ///
     /// Returns [`PoolError::Decode`] if the bytes are not a well-formed
     /// `FileDescriptorSet`, or any other [`PoolError`] on a structural
-    /// validation failure (dangling type names, out-of-range or
+    /// validation failure (dangling or unimported type names, out-of-range or
     /// implementation-reserved field numbers, reserved message fields, an
     /// overlapping extension range, duplicate symbols or field identities,
     /// duplicate reserved names, an open enum whose first value is non-zero,
@@ -618,28 +746,51 @@ impl DescriptorPool {
             return Ok(());
         }
 
+        // Assign file indices and record filenames up front: dependency
+        // lists name files, and a new file may import another new file.
+        let base = self.files.len();
+        for (i, f) in new_files.iter().enumerate() {
+            if let Some(n) = f.name.as_deref() {
+                self.file_by_name.insert(n.to_string(), base + i);
+            }
+        }
+
+        // Per-file visible set: the file itself, every `dependency` (weak
+        // ones included — protoc resolves through them too), and the
+        // transitive `public_dependency` closure of those. Computed once per
+        // new file; `None` entries when visibility is not enforced.
+        let visible: Vec<Option<BTreeSet<usize>>> = new_files
+            .iter()
+            .enumerate()
+            .map(|(i, f)| self.visible_files(base + i, f, base, &new_files))
+            .collect::<Result<_, _>>()?;
+        let scope_of = |i: usize| LinkScope {
+            file: base + i,
+            visible: visible[i].as_ref(),
+        };
+
         // Pass 1: register all message/enum FQNs and assign indices.
         // This walk is over the new files only; existing names are already in
         // `by_name`.
         let first_new_message = self.messages.len();
-        for file in &new_files {
+        for (i, file) in new_files.iter().enumerate() {
             let pkg = file.package.as_deref().unwrap_or("");
             for msg in &file.message_type {
-                self.register_message(pkg, msg)?;
+                self.register_message(pkg, msg, base + i)?;
             }
             for e in &file.enum_type {
-                self.register_enum(pkg, e)?;
+                self.register_enum(pkg, e, base + i)?;
             }
         }
 
         // Pass 2: link. We need to iterate the new files again to fill in
         // the placeholder `MessageDescriptor`s. Walk in the same order.
         let mut linked = first_new_message;
-        for file in &new_files {
+        for (i, file) in new_files.iter().enumerate() {
             let pkg = file.package.as_deref().unwrap_or("");
             let file_features = features::for_file(file);
             for msg in &file.message_type {
-                linked = self.link_message(pkg, msg, &file_features, linked)?;
+                linked = self.link_message(pkg, msg, &file_features, linked, scope_of(i))?;
             }
             for e in &file.enum_type {
                 self.link_enum(pkg, e, &file_features)?;
@@ -653,38 +804,134 @@ impl DescriptorPool {
         // register/link split because neither has forward references to its
         // own kind.
         let first_new_extension = self.extensions.len();
-        for file in &new_files {
+        for (i, file) in new_files.iter().enumerate() {
             let pkg = file.package.as_deref().unwrap_or("");
             let file_features = features::for_file(file);
+            let scope = scope_of(i);
             for svc in &file.service {
-                self.link_service(pkg, svc)?;
+                self.link_service(pkg, svc, scope)?;
             }
             // File-level extensions: `extend Foo { ... }` at the top level.
             for ext in &file.extension {
-                self.link_extension(pkg, ext, &file_features)?;
+                self.link_extension(pkg, ext, &file_features, scope)?;
             }
             // Message-scoped extensions: `message Scope { extend Foo {...} }`,
             // registered under `pkg.Scope.ext_name`. Recurses into nested
             // messages.
             for msg in &file.message_type {
-                self.link_nested_extensions(pkg, msg, &file_features)?;
+                self.link_nested_extensions(pkg, msg, &file_features, scope)?;
             }
         }
         self.finalize_field_enum_types(first_new_message, first_new_extension);
 
-        // Record filenames (for idempotent re-add) and the symbol → file
-        // index (for `FindFileContainingSymbol`).
-        let base = self.files.len();
+        // Record the symbol → file index (for `FindFileContainingSymbol`).
         for (i, f) in new_files.iter().enumerate() {
-            let file_idx = base + i;
-            if let Some(n) = f.name.as_deref() {
-                self.file_by_name.insert(n.to_string(), file_idx);
-            }
-            self.index_file_symbols(f, file_idx);
+            self.index_file_symbols(f, base + i);
         }
+        debug_assert_eq!(self.message_file.len(), self.messages.len());
+        debug_assert_eq!(self.enum_file.len(), self.enums.len());
         self.files.extend(new_files);
 
         Ok(())
+    }
+
+    /// The set of file indices whose top-level and nested types `file` (at
+    /// index `file_idx`) may reference: itself, each `dependency` present in
+    /// the pool or in `new_files`, and, transitively, whatever those
+    /// re-export through `public_dependency`. Returns `None` when
+    /// visibility is not enforced.
+    ///
+    /// A `dependency` name that is not in the pool is skipped unless
+    /// [`LinkOptions::require_dependencies_present`] is set, in which case it
+    /// is an error. `public_dependency` indices were validated against the
+    /// `dependency` list before this runs.
+    fn visible_files(
+        &self,
+        file_idx: usize,
+        file: &FileDescriptorProto,
+        base: usize,
+        new_files: &[FileDescriptorProto],
+    ) -> Result<Option<BTreeSet<usize>>, PoolError> {
+        let opts = self.link_options;
+        if !opts.enforce_import_visibility && !opts.require_dependencies_present {
+            return Ok(None);
+        }
+        let proto_at = |idx: usize| -> &FileDescriptorProto {
+            if idx >= base {
+                &new_files[idx - base]
+            } else {
+                &self.files[idx]
+            }
+        };
+        let mut visible = BTreeSet::new();
+        visible.insert(file_idx);
+        // Direct dependencies seed the walk; from there only `import public`
+        // edges are followed, which is protoc's rule (an ordinary import is
+        // not re-exported to the importer's importers).
+        let mut frontier: Vec<usize> = Vec::new();
+        for dep in &file.dependency {
+            let Some(&idx) = self.file_by_name.get(dep.as_str()) else {
+                if opts.require_dependencies_present {
+                    return Err(PoolError::ImportNotFound {
+                        file: file.name.clone().unwrap_or_default(),
+                        import: dep.clone(),
+                    });
+                }
+                continue;
+            };
+            if visible.insert(idx) {
+                frontier.push(idx);
+            }
+        }
+        while let Some(idx) = frontier.pop() {
+            let dep_file = proto_at(idx);
+            for &pub_i in &dep_file.public_dependency {
+                let Some(name) = usize::try_from(pub_i)
+                    .ok()
+                    .and_then(|i| dep_file.dependency.get(i))
+                else {
+                    // Out-of-range indices in already-pooled files were
+                    // rejected when they were added; in new files, by pass 0.
+                    continue;
+                };
+                if let Some(&next) = self.file_by_name.get(name.as_str()) {
+                    if visible.insert(next) {
+                        frontier.push(next);
+                    }
+                }
+            }
+        }
+        Ok(opts.enforce_import_visibility.then_some(visible))
+    }
+
+    /// Name of the file at `idx`, for error messages. Unnamed files render
+    /// as the empty string, as elsewhere in [`PoolError`].
+    fn file_name_of(&self, idx: usize) -> &str {
+        self.file_by_name
+            .iter()
+            .find_map(|(name, &i)| (i == idx).then_some(name.as_str()))
+            .unwrap_or("")
+    }
+
+    /// Enforce import visibility for a resolved reference: `def_file` is the
+    /// file defining the type that `type_name` resolved to, `referrer` the
+    /// fully-qualified field, extension, or method naming it.
+    fn check_visible(
+        &self,
+        scope: LinkScope<'_>,
+        def_file: usize,
+        type_name: &str,
+        referrer: &str,
+    ) -> Result<(), PoolError> {
+        match scope.visible {
+            Some(visible) if !visible.contains(&def_file) => Err(PoolError::NotImported {
+                file: self.file_name_of(scope.file).to_string(),
+                field: referrer.to_string(),
+                type_name: type_name.to_string(),
+                defined_in: self.file_name_of(def_file).to_string(),
+            }),
+            _ => Ok(()),
+        }
     }
 
     /// Record every symbol declared in `file` into `symbol_file`. Indexes the
@@ -997,6 +1244,7 @@ impl DescriptorPool {
         &mut self,
         parent_fqn: &str,
         msg: &DescriptorProto,
+        file_idx: usize,
     ) -> Result<(), PoolError> {
         let name = msg.name.as_deref().unwrap_or("");
         let fqn = if parent_fqn.is_empty() {
@@ -1025,11 +1273,12 @@ impl DescriptorPool {
             extension_ranges: Vec::new(),
             options: None,
         });
+        self.message_file.push(file_idx);
         for nested in &msg.nested_type {
-            self.register_message(&fqn, nested)?;
+            self.register_message(&fqn, nested, file_idx)?;
         }
         for nested_enum in &msg.enum_type {
-            self.register_enum(&fqn, nested_enum)?;
+            self.register_enum(&fqn, nested_enum, file_idx)?;
         }
         Ok(())
     }
@@ -1038,6 +1287,7 @@ impl DescriptorPool {
         &mut self,
         parent_fqn: &str,
         e: &EnumDescriptorProto,
+        file_idx: usize,
     ) -> Result<(), PoolError> {
         let name = e.name.as_deref().unwrap_or("");
         let fqn = if parent_fqn.is_empty() {
@@ -1063,6 +1313,7 @@ impl DescriptorPool {
             enum_type: EnumType::Open,
             options: None,
         });
+        self.enum_file.push(file_idx);
         Ok(())
     }
 
@@ -1076,6 +1327,7 @@ impl DescriptorPool {
         msg: &DescriptorProto,
         parent_features: &ResolvedFeatures,
         next_index: usize,
+        scope: LinkScope<'_>,
     ) -> Result<usize, PoolError> {
         let name = msg.name.as_deref().unwrap_or("");
         let fqn = if parent_fqn.is_empty() {
@@ -1152,7 +1404,7 @@ impl DescriptorPool {
                     });
                 }
             }
-            let fd = self.link_field(&fqn, f, &msg_features, Some(msg))?;
+            let fd = self.link_field(&fqn, f, &msg_features, Some(msg), scope)?;
             if reserved_names.contains(fd.name.as_str()) {
                 return Err(PoolError::ReservedMessageFieldName {
                     message: fqn.clone(),
@@ -1275,7 +1527,7 @@ impl DescriptorPool {
         // Recurse into nested messages. The nested message indices follow
         // this one in registration order.
         for nested in &msg.nested_type {
-            after = self.link_message(&fqn, nested, &msg_features, after)?;
+            after = self.link_message(&fqn, nested, &msg_features, after, scope)?;
         }
         // Link nested enums.
         for nested_enum in &msg.enum_type {
@@ -1390,6 +1642,7 @@ impl DescriptorPool {
         &mut self,
         parent_fqn: &str,
         svc: &ServiceDescriptorProto,
+        scope: LinkScope<'_>,
     ) -> Result<(), PoolError> {
         let name = svc.name.as_deref().unwrap_or("");
         let fqn = if parent_fqn.is_empty() {
@@ -1409,8 +1662,10 @@ impl DescriptorPool {
             }
             let method_fqn = format!("{fqn}.{}", m.name.as_deref().unwrap_or(""));
             self.register_symbol(&method_fqn, SymbolKind::Method)?;
-            let input = self.resolve_message_type_name(m.input_type.as_deref(), &method_fqn)?;
-            let output = self.resolve_message_type_name(m.output_type.as_deref(), &method_fqn)?;
+            let input =
+                self.resolve_message_type_name(m.input_type.as_deref(), &method_fqn, scope)?;
+            let output =
+                self.resolve_message_type_name(m.output_type.as_deref(), &method_fqn, scope)?;
             methods.push(MethodDescriptor {
                 name: mname,
                 input,
@@ -1441,6 +1696,7 @@ impl DescriptorPool {
         scope_fqn: &str,
         ext: &FieldDescriptorProto,
         parent_features: &ResolvedFeatures,
+        scope: LinkScope<'_>,
     ) -> Result<(), PoolError> {
         let name = ext.name.as_deref().unwrap_or("");
         let fqn = if scope_fqn.is_empty() {
@@ -1449,12 +1705,12 @@ impl DescriptorPool {
             format!("{scope_fqn}.{name}")
         };
         self.register_symbol(&fqn, SymbolKind::Extension)?;
-        let extendee = self.resolve_message_type_name(ext.extendee.as_deref(), &fqn)?;
+        let extendee = self.resolve_message_type_name(ext.extendee.as_deref(), &fqn, scope)?;
         // The field links exactly like a declared field. `containing_msg` is
         // `None` because extensions cannot be map fields (a map requires a
         // synthetic MapEntry message nested in the declaring message, which
         // an `extend` block cannot contain).
-        let mut field = self.link_field(scope_fqn, ext, parent_features, None)?;
+        let mut field = self.link_field(scope_fqn, ext, parent_features, None, scope)?;
         // Extensions cannot be oneof members. A malformed FieldDescriptorProto
         // carrying `oneof_index` would otherwise make `set()` clear the
         // *extendee's* declared oneof members (the index would be interpreted
@@ -1511,6 +1767,7 @@ impl DescriptorPool {
         parent_fqn: &str,
         msg: &DescriptorProto,
         parent_features: &ResolvedFeatures,
+        scope: LinkScope<'_>,
     ) -> Result<(), PoolError> {
         let name = msg.name.as_deref().unwrap_or("");
         let fqn = if parent_fqn.is_empty() {
@@ -1521,10 +1778,10 @@ impl DescriptorPool {
         let msg_features =
             features::resolve_child(parent_features, features::message_features(msg));
         for ext in &msg.extension {
-            self.link_extension(&fqn, ext, &msg_features)?;
+            self.link_extension(&fqn, ext, &msg_features, scope)?;
         }
         for nested in &msg.nested_type {
-            self.link_nested_extensions(&fqn, nested, &msg_features)?;
+            self.link_nested_extensions(&fqn, nested, &msg_features, scope)?;
         }
         Ok(())
     }
@@ -1535,13 +1792,17 @@ impl DescriptorPool {
         &self,
         type_name: Option<&str>,
         method_fqn: &str,
+        scope: LinkScope<'_>,
     ) -> Result<MessageIndex, PoolError> {
         let tn = type_name.ok_or_else(|| PoolError::MissingTypeName {
             field: method_fqn.to_string(),
         })?;
         let lookup = tn.strip_prefix('.').unwrap_or(tn);
         match self.by_name.get(lookup) {
-            Some(Definition::Message(midx)) => Ok(*midx),
+            Some(Definition::Message(midx)) => {
+                self.check_visible(scope, self.message_file[midx.0 as usize], tn, method_fqn)?;
+                Ok(*midx)
+            }
             Some(Definition::Enum(_)) => Err(PoolError::WrongTypeKind {
                 type_name: tn.to_string(),
                 field: method_fqn.to_string(),
@@ -1559,6 +1820,7 @@ impl DescriptorPool {
         f: &FieldDescriptorProto,
         parent_features: &ResolvedFeatures,
         containing_msg: Option<&DescriptorProto>,
+        scope: LinkScope<'_>,
     ) -> Result<FieldDescriptor, PoolError> {
         let name = f.name.clone().unwrap_or_default();
         let field_fqn = format!("{msg_fqn}.{name}");
@@ -1569,7 +1831,7 @@ impl DescriptorPool {
         let is_repeated = label == Label::LABEL_REPEATED;
 
         // Resolve the singular kind (element type).
-        let element = self.resolve_singular(proto_ty, f.type_name.as_deref(), &field_fqn)?;
+        let element = self.resolve_singular(proto_ty, f.type_name.as_deref(), &field_fqn, scope)?;
 
         // Detect map fields: repeated + message type + the message is a
         // map_entry. `containing_msg` is `None` for extensions, which cannot
@@ -1577,7 +1839,7 @@ impl DescriptorPool {
         let (kind, enum_type) = if is_repeated {
             if let SingularKind::Message(midx) = element {
                 if let Some(entry) = containing_msg.and_then(|m| self.find_map_entry(m, f)) {
-                    let (key_ty, value_kind) = self.resolve_map_entry(entry, &field_fqn)?;
+                    let (key_ty, value_kind) = self.resolve_map_entry(entry, &field_fqn, scope)?;
                     let enum_type = entry
                         .field
                         .iter()
@@ -1747,6 +2009,7 @@ impl DescriptorPool {
         ty: ProtoType,
         type_name: Option<&str>,
         field_fqn: &str,
+        scope: LinkScope<'_>,
     ) -> Result<SingularKind, PoolError> {
         if let Some(scalar) = ScalarType::from_proto(ty) {
             return Ok(SingularKind::Scalar(scalar));
@@ -1760,9 +2023,11 @@ impl DescriptorPool {
             Some(Definition::Message(midx))
                 if matches!(ty, ProtoType::TYPE_MESSAGE | ProtoType::TYPE_GROUP) =>
             {
+                self.check_visible(scope, self.message_file[midx.0 as usize], tn, field_fqn)?;
                 Ok(SingularKind::Message(*midx))
             }
             Some(Definition::Enum(eidx)) if ty == ProtoType::TYPE_ENUM => {
+                self.check_visible(scope, self.enum_file[eidx.0 as usize], tn, field_fqn)?;
                 Ok(SingularKind::Enum(*eidx))
             }
             Some(_) => Err(PoolError::WrongTypeKind {
@@ -1808,6 +2073,7 @@ impl DescriptorPool {
         &self,
         entry: &DescriptorProto,
         field_fqn: &str,
+        scope: LinkScope<'_>,
     ) -> Result<(ScalarType, SingularKind), PoolError> {
         let key_fd = entry.field.iter().find(|f| f.number == Some(1));
         let val_fd = entry.field.iter().find(|f| f.number == Some(2));
@@ -1830,6 +2096,7 @@ impl DescriptorPool {
             vf.r#type.unwrap_or_default(),
             vf.type_name.as_deref(),
             field_fqn,
+            scope,
         )?;
         Ok((key_ty, value_kind))
     }
