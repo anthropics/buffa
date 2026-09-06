@@ -173,11 +173,13 @@ mod view_json_types {
             ..Default::default()
         };
         let owned = ScalarsOwnedView::from_owned(&msg).expect("from_owned");
-        // Spelled out: rustc 1.75 (MSRV) cannot infer `V` through `AsRef`
-        // under the higher-ranked bound; current rustc can.
-        let handle: &buffa::view::OwnedView<ScalarsView<'static>> = owned.as_ref();
+        // Turbofish: rustc 1.75 (MSRV) registers the higher-ranked bound
+        // before it has inferred `V` from the argument and fails with
+        // `<_ as ViewReborrow>::Reborrowed<'b>: Serialize`; current rustc
+        // infers it. Downstream generic callers on old toolchains need the
+        // same.
         assert_eq!(
-            handle_to_json(handle),
+            handle_to_json::<ScalarsView<'static>>(owned.as_ref()),
             serde_json::to_string(&msg).expect("serialize owned")
         );
     }
