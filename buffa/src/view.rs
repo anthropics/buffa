@@ -1971,9 +1971,17 @@ impl<'a, K, V> MapView<'a, K, V> {
     /// (including malformed duplicates), so the JSON encode path must
     /// deduplicate.
     ///
-    /// Runs in `O(n log n)` over the wire-entry count, regardless of how many
-    /// of those entries are duplicates, and allocates one `Vec<usize>`.
-    pub fn iter_unique(&self) -> impl Iterator<Item = &(K, V)>
+    /// The work happens when this is called, not lazily: it sorts an index
+    /// vector, `O(n log n)` over the wire-entry count regardless of how many
+    /// entries are duplicates, allocating one `Vec<usize>`. Survivors are
+    /// yielded in wire order. A map with at most one entry skips the sort.
+    ///
+    /// # Panics
+    ///
+    /// Only if `K`'s [`Ord`] is not a total order, in which case the
+    /// underlying `sort_unstable_by` may panic.
+    #[must_use = "the deduplication runs when this is called; dropping the iterator wastes it"]
+    pub fn iter_unique(&self) -> impl ExactSizeIterator<Item = &(K, V)>
     where
         K: Ord,
     {
@@ -1983,7 +1991,14 @@ impl<'a, K, V> MapView<'a, K, V> {
             .map(move |i| &entries[i])
     }
 
-    /// Count of distinct keys (`iter_unique().count()`).
+    /// Count of distinct keys (`iter_unique().len()`). Same cost as
+    /// [`iter_unique`](Self::iter_unique); a caller that needs both should
+    /// call `iter_unique` once and take its `len()`.
+    ///
+    /// # Panics
+    ///
+    /// As [`iter_unique`](Self::iter_unique).
+    #[must_use]
     pub fn len_unique(&self) -> usize
     where
         K: Ord,
@@ -2014,7 +2029,8 @@ fn last_occurrence_indices<K: Ord, V>(entries: &[(K, V)]) -> alloc::vec::Vec<usi
     order.sort_unstable_by(|&a, &b| entries[a].0.cmp(&entries[b].0).then_with(|| a.cmp(&b)));
     let mut kept = 0usize;
     for r in 0..n {
-        let last_of_run = r + 1 == n || entries[order[r + 1]].0 != entries[order[r]].0;
+        // `cmp` rather than `!=`, so grouping uses the same relation the sort did.
+        let last_of_run = r + 1 == n || entries[order[r + 1]].0.cmp(&entries[order[r]].0).is_ne();
         if last_of_run {
             order[kept] = order[r];
             kept += 1;
@@ -3400,6 +3416,8 @@ mod tests {
     #[derive(Debug, Clone, Copy, Eq)]
     struct CountingKey(u32);
 
+    // Process-global and tests run in parallel: only one test may use
+    // `CountingKey`, or the counts interleave.
     static CMPS: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
     fn bump() {
@@ -3454,19 +3472,58 @@ mod tests {
 
     #[test]
     fn map_view_iter_unique_keeps_last_occurrence_across_many_duplicates() {
-        // Interleaved duplicates, so the surviving entry for each key is
-        // neither uniformly first nor uniformly last in the container.
+        // Interleaved duplicates, with the final round written in a scrambled
+        // key order so that wire order of the survivors differs from key
+        // order — the assertion can then tell the two apart.
         let mut mv = MapView::<i32, i32>::default();
-        for round in 0..4 {
+        for round in 0..3 {
             for key in 0..8 {
                 mv.push(key, round * 100 + key);
             }
         }
+        let last_round = [5, 2, 7, 0, 3, 6, 1, 4];
+        for key in last_round {
+            mv.push(key, 300 + key);
+        }
         let unique: alloc::vec::Vec<_> = mv.iter_unique().copied().collect();
-        let expected: alloc::vec::Vec<(i32, i32)> = (0..8).map(|k| (k, 300 + k)).collect();
-        assert_eq!(unique, expected, "last write wins, in ascending wire order");
+        let expected: alloc::vec::Vec<(i32, i32)> =
+            last_round.iter().map(|&k| (k, 300 + k)).collect();
+        assert_eq!(unique, expected, "last write wins, survivors in wire order");
         assert_eq!(mv.len_unique(), 8);
+        assert_eq!(mv.iter_unique().len(), 8, "exact size hint");
         assert_eq!(mv.len(), 32, "iter() still sees every wire entry");
+    }
+
+    #[test]
+    fn map_view_iter_unique_small_maps() {
+        // n = 1 takes the no-sort early return; n = 2 with a duplicate is the
+        // smallest input that reaches the sort and the run compaction.
+        let one = MapView::new(alloc::vec![("k", 1)]);
+        assert_eq!(
+            one.iter_unique().copied().collect::<alloc::vec::Vec<_>>(),
+            [("k", 1)]
+        );
+        assert_eq!(one.len_unique(), 1);
+
+        let two_dup = MapView::new(alloc::vec![("k", 1), ("k", 2)]);
+        assert_eq!(
+            two_dup
+                .iter_unique()
+                .copied()
+                .collect::<alloc::vec::Vec<_>>(),
+            [("k", 2)]
+        );
+        assert_eq!(two_dup.len_unique(), 1);
+
+        let two_distinct = MapView::new(alloc::vec![("b", 1), ("a", 2)]);
+        assert_eq!(
+            two_distinct
+                .iter_unique()
+                .copied()
+                .collect::<alloc::vec::Vec<_>>(),
+            [("b", 1), ("a", 2)],
+            "wire order, not key order"
+        );
     }
 
     #[test]
