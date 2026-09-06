@@ -128,10 +128,12 @@ const RUNTIME_IMPORTS: &[(&str, &str)] = &[
 /// The invariant: every identifier that any emission at the package root
 /// references without qualification — prelude traits and macros in derive
 /// lists (`#[derive(Clone, …)]`, `impl From<…>`), prelude value constructors
-/// (`Some`/`None`), primitive scalar types, and crate names referenced by
-/// bare path (`serde` under `json=true`). A proto-type `use` claiming one of
-/// these would silently change what those emissions mean. When a new
-/// package-root emission references a name bare, it must be added here.
+/// (`Some`/`None`), primitive scalar types, and `serde`, which the JSON
+/// emitters reach only through absolute `::serde::` paths but still name
+/// bare inside `#[serde(...)]` helper attributes. A proto-type `use`
+/// claiming one of these would silently change what those emissions mean.
+/// When a new package-root emission references a name bare, it must be
+/// added here.
 ///
 /// The [`RUNTIME_IMPORTS`] short names are additionally blocked for
 /// proto-type claims in [`RootImports::assign`] regardless of whether the

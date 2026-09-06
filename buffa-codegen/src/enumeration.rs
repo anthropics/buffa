@@ -286,8 +286,15 @@ pub fn generate_enum(
         proto_fqn,
     )?;
 
+    // Proto enum values are SCREAMING_CASE variants. The module-tree wrapper
+    // already allows this lint (`ALLOW_LINTS`), but a content file consumed
+    // on its own (`include!` or `mod` without the wrapper) is not covered, so
+    // the enum carries it too, like the scoped `non_snake_case` allow on
+    // messages (#408). A regular `//` comment inside `quote!` is dropped,
+    // which is why this note sits outside it.
     Ok(quote! {
         #enum_doc
+        #[allow(non_camel_case_types)]
         #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
         #arbitrary_derive
         #custom_type_attrs

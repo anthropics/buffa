@@ -53,6 +53,7 @@ mod comments;
 mod custom_attributes;
 mod debug_redact;
 mod element_memory_limit;
+mod excluded_refs;
 mod feature_gating;
 mod generation;
 mod idiomatic_enums;
@@ -67,6 +68,8 @@ mod proto2;
 mod reexports;
 mod reflect_view;
 mod repeated_type;
+mod shared_corpus_context;
+mod shared_pool;
 mod size_arithmetic;
 mod view_codegen;
 

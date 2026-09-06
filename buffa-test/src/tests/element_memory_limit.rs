@@ -5,7 +5,9 @@
 //! wire bytes and materializes `size_of::<Element>()` in the `Vec` it lands in.
 //! The tests below pin the ratio for each element kind, that the budget is
 //! shared across the whole decode rather than per field, and that packed
-//! scalars are deliberately not charged.
+//! scalars are deliberately not charged. The eager view and lazy view
+//! families are covered too: the lazy path charges at both the record site
+//! and the deferred access, and replays per subtree rather than sharing.
 
 use crate::lazyviews::{Holder, Payload};
 use crate::proto2::Proto2Message;
@@ -129,12 +131,18 @@ fn repeated_string_elements_are_charged() {
         .is_ok());
 }
 
-/// Packed scalars are deliberately not charged. Their worst case is a 1-byte
+/// Packed scalars are deliberately not charged by the generated decoders.
+///
+/// The reflective `DynamicMessage` codec does charge them — it stores each
+/// element as a `Value` rather than a native scalar — so this is a statement
+/// about generated code, not about the library. See
+/// `reflective_packed_scalars_are_charged_element_memory` in
+/// `buffa-descriptor/tests/dynamic_e2e.rs`. Their worst case is a 1-byte
 /// varint becoming a 4-byte `i32`, which is not an amplification vector, and
 /// charging them would reject the columnar payloads that carry millions of
 /// elements by design.
 #[test]
-fn packed_scalars_are_not_charged() {
+fn packed_scalars_are_not_charged_by_generated_decoders() {
     use buffa::encoding::encode_varint;
 
     // 4096 packed int32 elements, one wire byte each.
@@ -265,5 +273,192 @@ fn view_repeated_elements_are_charged() {
     assert!(DecodeOptions::new()
         .with_element_memory_limit(usize::MAX)
         .decode_view::<HolderView<'_>>(&wire)
+        .is_ok());
+}
+
+/// Enough `Holder.items` elements to exceed the default budget four times
+/// over. Field 2 is `repeated Payload`, so the view arm charges
+/// `size_of::<PayloadView>()` per element — the element type, not the
+/// container.
+fn over_budget_view_elements() -> Vec<u8> {
+    use crate::lazyviews::__buffa::view::PayloadView;
+    let n = 4 * DEFAULT_ELEMENT_MEMORY_LIMIT / core::mem::size_of::<PayloadView<'_>>();
+    empty_elements(2, n)
+}
+
+/// The bare `decode_view` entry point applies the same default budget the
+/// bare owned `decode` does.
+///
+/// `DecodeOptions::decode_view` attaches the budget explicitly, so testing
+/// only through it cannot tell whether the default path attaches one at all —
+/// which is how 0.9.0 and 0.9.1 shipped generated `decode_view` without one.
+/// The assertion that matters is the symmetry: identical bytes, identical
+/// verdict, whichever decoder reads them.
+#[test]
+fn the_default_view_entry_point_charges_element_memory() {
+    use crate::lazyviews::__buffa::view::HolderView;
+    use buffa::MessageView;
+
+    let wire = over_budget_view_elements();
+
+    assert_eq!(
+        HolderView::decode_view(&wire).unwrap_err(),
+        DecodeError::ElementMemoryLimitExceeded,
+        "the default view path must not accept what the default owned path rejects"
+    );
+    assert_eq!(
+        Holder::decode(&mut wire.as_slice()).unwrap_err(),
+        DecodeError::ElementMemoryLimitExceeded
+    );
+}
+
+/// `OwnedView::decode` and `HasMessageView::decode_view` both route through
+/// the generated `decode_view`, so they inherit the budget rather than
+/// needing their own.
+#[test]
+fn the_view_wrappers_inherit_the_default_budget() {
+    use crate::lazyviews::__buffa::view::HolderView;
+    use crate::lazyviews::Holder as HolderMsg;
+    use buffa::view::OwnedView;
+    use buffa::HasMessageView;
+
+    let wire = over_budget_view_elements();
+
+    assert_eq!(
+        OwnedView::<HolderView<'_>>::decode(buffa::bytes::Bytes::from(wire.clone())).unwrap_err(),
+        DecodeError::ElementMemoryLimitExceeded
+    );
+    assert_eq!(
+        <HolderMsg as HasMessageView>::decode_view(&wire).unwrap_err(),
+        DecodeError::ElementMemoryLimitExceeded
+    );
+}
+
+/// Recording a deferred element is charged, not free.
+///
+/// Lazy decode stores byte ranges instead of materializing elements, but the
+/// `Vec` of ranges is real memory spent at decode time whatever the elements
+/// cost later on access.
+#[test]
+fn the_lazy_entry_point_charges_recorded_elements() {
+    use crate::lazyviews::__buffa::lazy_view::HolderLazyView;
+    use buffa::LazyMessageView;
+
+    // One recorded element costs a pointer-and-length slot per 2 wire bytes.
+    let per_element = core::mem::size_of::<&[u8]>();
+    let n = 4 * DEFAULT_ELEMENT_MEMORY_LIMIT / per_element;
+    let wire = empty_elements(2, n);
+
+    assert_eq!(
+        HolderLazyView::decode_lazy(&wire).unwrap_err(),
+        DecodeError::ElementMemoryLimitExceeded,
+        "recording {n} deferred elements must be charged, not free"
+    );
+
+    // A ceiling, not a wall.
+    let small = empty_elements(2, 64);
+    assert_eq!(
+        HolderLazyView::decode_lazy(&small)
+            .expect("an ordinary lazy view decodes")
+            .items
+            .len(),
+        64
+    );
+}
+
+/// A configured element budget reaches the lazy family, in both directions.
+#[test]
+fn a_configured_element_budget_reaches_the_lazy_family() {
+    use crate::lazyviews::__buffa::lazy_view::HolderLazyView;
+
+    let wire = empty_elements(2, 1000);
+    assert_eq!(
+        DecodeOptions::new()
+            .with_element_memory_limit(64)
+            .decode_lazy_view::<HolderLazyView<'_>>(&wire)
+            .unwrap_err(),
+        DecodeError::ElementMemoryLimitExceeded
+    );
+    assert!(DecodeOptions::new()
+        .with_element_memory_limit(usize::MAX)
+        .decode_lazy_view::<HolderLazyView<'_>>(&wire)
+        .is_ok());
+}
+
+/// A deferred subtree is charged against the budget recorded at its fragment
+/// site, so an access cannot materialize more than was left when the bytes
+/// were set aside.
+///
+/// This is the half a lazy view actually defers, and it is reached through a
+/// context rebuilt at access time rather than the one the decode ran under —
+/// so it needs its own coverage, not just the top-level scan's.
+#[test]
+fn a_deferred_subtree_is_charged_when_it_is_accessed() {
+    use crate::lazyviews::__buffa::lazy_view::HolderLazyView;
+    use buffa::LazyMessageView;
+
+    // Holder.payload (field 1) is a lazy message whose own `pairs` (field 4)
+    // is a lazy repeated field. The outer decode only records the payload's
+    // bytes; the elements are recorded when the payload is accessed.
+    const N: usize = 200_000;
+    let inner = empty_elements(4, N);
+    let mut wire = vec![0x0Au8];
+    buffa::encoding::encode_varint(inner.len() as u64, &mut wire);
+    wire.extend_from_slice(&inner);
+
+    // Cheap: one recorded fragment, nothing materialized.
+    let holder = HolderLazyView::decode_lazy(&wire).expect("the outer view is cheap");
+
+    // The budget recorded at the fragment site has to reach here.
+    let budget_elements = DEFAULT_ELEMENT_MEMORY_LIMIT / core::mem::size_of::<&[u8]>();
+    assert!(
+        N < budget_elements,
+        "the closing default-budget assertion needs {N} elements to fit under \
+         DEFAULT_ELEMENT_MEMORY_LIMIT ({budget_elements} slots); lower N"
+    );
+
+    // With a budget far below what the subtree records, the access must fail
+    // rather than materialize.
+    let tight = DecodeOptions::new()
+        .with_element_memory_limit(64)
+        .decode_lazy_view::<HolderLazyView<'_>>(&wire)
+        .expect("recording one fragment is within any budget");
+    assert_eq!(
+        tight.payload.get().unwrap_err(),
+        DecodeError::ElementMemoryLimitExceeded,
+        "a deferred subtree must be charged against the recorded budget"
+    );
+
+    // And the default still lets an ordinary access through.
+    assert!(holder.payload.get().is_ok());
+}
+
+/// A *singular* lazy message field repeated on the wire retains one byte
+/// range per occurrence, because the lazy path defers the merge the eager
+/// decoder does in place. That retained `Vec` is an amplification the eager
+/// path does not have, so it is charged like a repeated element.
+#[test]
+fn repeated_occurrences_of_a_singular_lazy_field_are_charged() {
+    use crate::lazyviews::__buffa::lazy_view::HolderLazyView;
+    use buffa::LazyMessageView;
+
+    // Field 1 is `Payload payload` — singular, and lazy. Two bytes per
+    // occurrence, one retained `&[u8]` slot each.
+    let per_fragment = core::mem::size_of::<&[u8]>();
+    let n = 4 * DEFAULT_ELEMENT_MEMORY_LIMIT / per_fragment;
+    let wire = empty_elements(1, n);
+
+    assert_eq!(
+        HolderLazyView::decode_lazy(&wire).unwrap_err(),
+        DecodeError::ElementMemoryLimitExceeded,
+        "retaining {n} fragments of a singular field must be charged"
+    );
+
+    // Merging a handful of occurrences is ordinary protobuf and still works.
+    let few = empty_elements(1, 4);
+    assert!(HolderLazyView::decode_lazy(&few)
+        .expect("a few fragments merge normally")
+        .payload
+        .get()
         .is_ok());
 }

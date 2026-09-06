@@ -25,7 +25,7 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
+use serde::de::{self, DeserializeSeed, IntoDeserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -36,38 +36,121 @@ use crate::{
     ScalarType, SingularKind,
 };
 use buffa::editions::EnumType;
+use buffa::json_helpers;
+use buffa::RECURSION_LIMIT;
 
 // ── Serialize ───────────────────────────────────────────────────────────────
+//
+// Nesting is bounded by a depth budget threaded through every recursion site
+// below. A `DynamicMessage` built by `decode` is already at most
+// `RECURSION_LIMIT` deep, but `google.protobuf.Any` carries its payload as
+// opaque bytes that are only decoded here, at serialize time — so without a
+// budget that spans `Any` boundaries, N nested `Any` layers cost N stack
+// frames for a few bytes each and overflow the stack (an uncatchable abort)
+// on untrusted input. The budget makes over-deep input a serde error instead.
+//
+// The budget is deliberately the binary decoder's `RECURSION_LIMIT`, not a
+// JSON-specific constant: the contract is that anything `DynamicMessage::
+// decode` accepts must serialize, and the inner `Any` decode continues the
+// same count, so the two limits have to be one number.
 
+/// The serde error for serialization nesting exhausting the
+/// [`RECURSION_LIMIT`] budget — whether at a message boundary or inside an
+/// `Any` payload's own decode, so callers see one message for one condition.
+fn nesting_too_deep<E: serde::ser::Error>() -> E {
+    E::custom(format_args!(
+        "message nesting depth exceeds buffa::RECURSION_LIMIT ({RECURSION_LIMIT}) during JSON \
+         serialization (google.protobuf.Any payloads count toward the limit)"
+    ))
+}
+
+/// Consume one level of nesting budget, or fail with a serde error.
+fn descend<E: serde::ser::Error>(depth: u32) -> Result<u32, E> {
+    depth.checked_sub(1).ok_or_else(nesting_too_deep)
+}
+
+/// Proto3 canonical JSON via serde.
+///
+/// Fails with a serde error if message nesting exceeds
+/// [`buffa::RECURSION_LIMIT`] levels below this message. `google.protobuf.Any`
+/// payloads — decoded here, at serialize time — count toward the same budget
+/// as ordinary sub-messages, so nesting hidden inside `Any.value` cannot
+/// exhaust the stack. The count follows the binary decoder's, so a message
+/// [`DynamicMessage::decode`] accepted serializes provided its nesting
+/// *counted through* `Any` payloads stays within the limit and each `Any`
+/// names a type in the pool that its bytes decode as; decode success alone
+/// does not establish that. A message assembled deeper by other means (via
+/// [`ReflectMessageMut`], a raised [`buffa::DecodeOptions`] recursion limit,
+/// or `from_json`, whose only bound is the JSON parser's own) does not
+/// serialize. The cap is not configurable in this release.
 impl Serialize for DynamicMessage {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let md = self.message_descriptor();
-        if let Some(wkt) = WktKind::from_full_name(&md.full_name) {
-            return wkt.serialize_message(self, s);
+        // The one place the budget starts; every nested message goes through
+        // `Nested` / `serialize_message` so nothing below resets it.
+        serialize_message(self, RECURSION_LIMIT, s)
+    }
+}
+
+/// Serialize `msg` with `depth` levels of nesting budget remaining for its
+/// sub-messages. `msg` itself is already paid for by the caller.
+fn serialize_message<S: Serializer>(
+    msg: &DynamicMessage,
+    depth: u32,
+    s: S,
+) -> Result<S::Ok, S::Error> {
+    let md = msg.message_descriptor();
+    if let Some(wkt) = WktKind::from_full_name(&md.full_name) {
+        return wkt.serialize_message(msg, depth, s);
+    }
+    let pool = msg.pool();
+    let mut map = s.serialize_map(None)?;
+    for fd in &md.fields {
+        if !msg.has(fd) {
+            continue;
         }
-        let mut map = s.serialize_map(None)?;
-        for fd in &md.fields {
-            if !self.has(fd) {
-                continue;
-            }
-            let value = self
-                .field_by_number(fd.number)
-                .expect("has() ⇒ field is present");
-            map.serialize_entry(&fd.json_name, &FieldRef::new(self.pool(), fd, value))?;
+        let value = msg
+            .field_by_number(fd.number)
+            .expect("has() ⇒ field is present");
+        map.serialize_entry(&fd.json_name, &FieldRef::new(pool, fd, value, depth))?;
+    }
+    // Extensions present on this message serialize after the declared
+    // fields as `"[full.name]": value`, per the proto2 JSON convention.
+    for ext in pool.extensions_of(msg.message_index()) {
+        let fd = ext.field();
+        if !msg.has(fd) {
+            continue;
         }
-        // Extensions present on this message serialize after the declared
-        // fields as `"[full.name]": value`, per the proto2 JSON convention.
-        for ext in self.pool().extensions_of(self.message_index()) {
-            let fd = ext.field();
-            if !self.has(fd) {
-                continue;
-            }
-            let value = self
-                .field_by_number(fd.number)
-                .expect("has() ⇒ field is present");
-            map.serialize_entry(ext.json_key(), &FieldRef::new(self.pool(), fd, value))?;
-        }
-        map.end()
+        let value = msg
+            .field_by_number(fd.number)
+            .expect("has() ⇒ field is present");
+        map.serialize_entry(ext.json_key(), &FieldRef::new(pool, fd, value, depth))?;
+    }
+    map.end()
+}
+
+/// A sub-message whose own level is already charged; `depth` is the budget
+/// remaining for *its* sub-messages. Built via [`Nested::charge`], which is
+/// where the one level is paid — the only other constructor site is
+/// `serialize_any`, which charges explicitly because the inner decode needs
+/// the figure before the message exists.
+struct Nested<'a> {
+    msg: &'a DynamicMessage,
+    depth: u32,
+}
+
+impl<'a> Nested<'a> {
+    /// Charge one level of the parent's remaining budget for `msg`.
+    fn charge<E: serde::ser::Error>(msg: &'a DynamicMessage, parent_depth: u32) -> Result<Self, E> {
+        Ok(Self {
+            msg,
+            depth: descend(parent_depth)?,
+        })
+    }
+}
+
+impl Serialize for Nested<'_> {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        serialize_message(self.msg, self.depth, s)
     }
 }
 
@@ -76,32 +159,41 @@ struct FieldRef<'a> {
     pool: &'a DescriptorPool,
     fd: &'a FieldDescriptor,
     value: &'a Value,
+    depth: u32,
 }
 
 impl<'a> FieldRef<'a> {
-    fn new(pool: &'a DescriptorPool, fd: &'a FieldDescriptor, value: &'a Value) -> Self {
-        Self { pool, fd, value }
+    fn new(
+        pool: &'a DescriptorPool,
+        fd: &'a FieldDescriptor,
+        value: &'a Value,
+        depth: u32,
+    ) -> Self {
+        Self {
+            pool,
+            fd,
+            value,
+            depth,
+        }
     }
 }
 
 impl Serialize for FieldRef<'_> {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let singular = |kind, v| SingularRef::new(self.pool, kind, v, self.depth);
         match (&self.fd.kind, self.value) {
-            (FieldKind::Singular(sk), v) => SingularRef::new(self.pool, *sk, v).serialize(s),
+            (FieldKind::Singular(sk), v) => singular(*sk, v).serialize(s),
             (FieldKind::List(sk), Value::List(items)) => {
                 let mut seq = s.serialize_seq(Some(items.len()))?;
                 for item in items {
-                    seq.serialize_element(&SingularRef::new(self.pool, *sk, item))?;
+                    seq.serialize_element(&singular(*sk, item))?;
                 }
                 seq.end()
             }
             (FieldKind::Map { key, value: vk }, Value::Map(m)) => {
                 let mut map = s.serialize_map(Some(m.len()))?;
                 for (k, v) in m {
-                    map.serialize_entry(
-                        &MapKeyRef { key: *key, k },
-                        &SingularRef::new(self.pool, *vk, v),
-                    )?;
+                    map.serialize_entry(&MapKeyRef { key: *key, k }, &singular(*vk, v))?;
                 }
                 map.end()
             }
@@ -116,11 +208,17 @@ struct SingularRef<'a> {
     pool: &'a DescriptorPool,
     kind: SingularKind,
     value: &'a Value,
+    depth: u32,
 }
 
 impl<'a> SingularRef<'a> {
-    fn new(pool: &'a DescriptorPool, kind: SingularKind, value: &'a Value) -> Self {
-        Self { pool, kind, value }
+    fn new(pool: &'a DescriptorPool, kind: SingularKind, value: &'a Value, depth: u32) -> Self {
+        Self {
+            pool,
+            kind,
+            value,
+            depth,
+        }
     }
 }
 
@@ -131,7 +229,9 @@ impl Serialize for SingularRef<'_> {
             (SingularKind::Enum(eidx), Value::EnumNumber(n)) => {
                 serialize_enum(self.pool, eidx, *n, s)
             }
-            (SingularKind::Message(_), Value::Message(m)) => m.serialize(s),
+            (SingularKind::Message(_), Value::Message(m)) => {
+                Nested::charge(m, self.depth)?.serialize(s)
+            }
             _ => s.serialize_none(),
         }
     }
@@ -271,7 +371,10 @@ impl DynamicMessage {
     ///
     /// # Errors
     ///
-    /// Returns a `serde_json::Error` if serialization fails.
+    /// Returns a `serde_json::Error` if serialization fails — notably when
+    /// message nesting, counting `google.protobuf.Any` payloads, exceeds
+    /// [`buffa::RECURSION_LIMIT`] (see the [`Serialize`] impl), or when an
+    /// `Any` names a type that is not in the pool.
     #[cfg(feature = "std")]
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(self)
@@ -635,11 +738,11 @@ fn deserialize_scalar<'de, D: Deserializer<'de>>(sc: ScalarType, d: D) -> Result
         }
 
         fn visit_f64<E: de::Error>(self, v: f64) -> Result<Self::Value, E> {
-            scalar_from_f64(self.0, v).ok_or_else(|| de::Error::custom("invalid number"))
+            scalar_from_f64(self.0, v)
         }
 
         fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
-            scalar_from_str(self.0, v).map_err(de::Error::custom)
+            scalar_from_str(self.0, v)
         }
 
         fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
@@ -680,114 +783,76 @@ fn scalar_from_u64(sc: ScalarType, v: u64) -> Option<Value> {
     })
 }
 
-fn scalar_from_f64(sc: ScalarType, v: f64) -> Option<Value> {
-    Some(match sc {
+/// Integer scalars go through the same serde with-modules generated
+/// messages use (`json_helpers::{int32, uint32, int64, uint64}`), so the
+/// reflective decoder accepts and rejects exactly what the generated one
+/// does: quoted decimal and exponent forms parse exactly across the full
+/// range, and unquoted floats are rejected above the magnitude where
+/// serde_json's float parsing can no longer identify the token uniquely.
+fn scalar_from_f64<E: de::Error>(sc: ScalarType, v: f64) -> Result<Value, E> {
+    let d = v.into_deserializer();
+    Ok(match sc {
         ScalarType::Float => {
             // Reject values that overflow f32 — the spec requires erroring,
             // not saturating to ±Infinity. Allow exact ±Infinity through
             // (they came from "Infinity"/"-Infinity" string parse).
             if v.is_finite() && v.abs() > f64::from(f32::MAX) {
-                return None;
+                return Err(E::invalid_value(
+                    de::Unexpected::Float(v),
+                    &"a value within f32 range",
+                ));
             }
             Value::F32(v as f32)
         }
         ScalarType::Double => Value::F64(v),
-        // Integers as JSON floats: accept exact integral values. The
-        // `2^53` magnitude bound protects the `as` cast from saturating —
-        // `f64` cannot exactly represent integers beyond that, and `as i64`
-        // saturates rather than wrapping.
-        ScalarType::Int32 | ScalarType::Sint32 | ScalarType::Sfixed32
-            if v.fract() == 0.0 && integral_in_safe_range(v) =>
-        {
-            Value::I32(i32::try_from(v as i64).ok()?)
+        ScalarType::Int32 | ScalarType::Sint32 | ScalarType::Sfixed32 => {
+            Value::I32(json_helpers::int32::deserialize(d)?)
         }
-        ScalarType::Int64 | ScalarType::Sint64 | ScalarType::Sfixed64
-            if v.fract() == 0.0 && integral_in_safe_range(v) =>
-        {
-            Value::I64(v as i64)
+        ScalarType::Int64 | ScalarType::Sint64 | ScalarType::Sfixed64 => {
+            Value::I64(json_helpers::int64::deserialize(d)?)
         }
-        ScalarType::Uint32 | ScalarType::Fixed32
-            if v.fract() == 0.0 && v >= 0.0 && integral_in_safe_range(v) =>
-        {
-            Value::U32(u32::try_from(v as i64).ok()?)
+        ScalarType::Uint32 | ScalarType::Fixed32 => {
+            Value::U32(json_helpers::uint32::deserialize(d)?)
         }
-        ScalarType::Uint64 | ScalarType::Fixed64
-            if v.fract() == 0.0 && v >= 0.0 && integral_in_safe_range(v) =>
-        {
-            Value::U64(v as u64)
+        ScalarType::Uint64 | ScalarType::Fixed64 => {
+            Value::U64(json_helpers::uint64::deserialize(d)?)
         }
-        _ => return None,
+        ScalarType::Bool | ScalarType::String | ScalarType::Bytes => {
+            return Err(E::invalid_type(
+                de::Unexpected::Float(v),
+                &"a JSON value for this field",
+            ));
+        }
     })
 }
 
-/// Whether an integral `f64` is within the range where `f64` exactly
-/// represents integers (`±2^53`). Beyond that the value is approximate and
-/// `as i64` saturates rather than rounding to nearest, producing silent
-/// corruption.
-fn integral_in_safe_range(v: f64) -> bool {
-    // MSRV: `f64::abs` is not const-stable until 1.85, and no caller needs
-    // const evaluation here.
-    v.abs() <= (1u64 << 53) as f64
-}
-
-fn scalar_from_str(sc: ScalarType, v: &str) -> Result<Value, String> {
-    match sc {
-        ScalarType::String => Ok(Value::String(v.to_owned())),
-        ScalarType::Bytes => base64_decode(v)
-            .map(Value::Bytes)
-            .ok_or_else(|| "invalid base64".to_owned()),
-        // 64-bit integers are quoted strings. Spec also accepts decimal and
-        // exponential notation as long as the value is integral.
+fn scalar_from_str<E: de::Error>(sc: ScalarType, v: &str) -> Result<Value, E> {
+    let d = v.into_deserializer();
+    Ok(match sc {
+        ScalarType::String => Value::String(v.to_owned()),
+        ScalarType::Bytes => {
+            Value::Bytes(base64_decode(v).ok_or_else(|| E::custom("invalid base64"))?)
+        }
+        // 64-bit integers are quoted strings; 32-bit ones may be. Spec also
+        // accepts decimal and exponential notation as long as the value is
+        // integral — see `scalar_from_f64` for why the shared modules do it.
         ScalarType::Int64 | ScalarType::Sint64 | ScalarType::Sfixed64 => {
-            parse_int_str(v).map(Value::I64)
+            Value::I64(json_helpers::int64::deserialize(d)?)
         }
         ScalarType::Uint64 | ScalarType::Fixed64 => {
-            // Try the direct parse first to preserve full u64 range; fall
-            // back to the integral-float path for exponential notation.
-            if let Ok(n) = v.parse::<u64>() {
-                Ok(Value::U64(n))
-            } else {
-                parse_int_str(v)
-                    .and_then(|n| u64::try_from(n).map_err(|_| "negative uint64".to_owned()))
-                    .map(Value::U64)
-            }
+            Value::U64(json_helpers::uint64::deserialize(d)?)
         }
-        // 32-bit integers may also appear as strings.
-        ScalarType::Int32 | ScalarType::Sint32 | ScalarType::Sfixed32 => parse_int_str(v)
-            .and_then(|n| i32::try_from(n).map_err(|_| "out of range int32".to_owned()))
-            .map(Value::I32),
-        ScalarType::Uint32 | ScalarType::Fixed32 => parse_int_str(v)
-            .and_then(|n| u32::try_from(n).map_err(|_| "out of range uint32".to_owned()))
-            .map(Value::U32),
+        ScalarType::Int32 | ScalarType::Sint32 | ScalarType::Sfixed32 => {
+            Value::I32(json_helpers::int32::deserialize(d)?)
+        }
+        ScalarType::Uint32 | ScalarType::Fixed32 => {
+            Value::U32(json_helpers::uint32::deserialize(d)?)
+        }
         // Float/double special values.
-        ScalarType::Float => parse_float_str(v).map(|f| Value::F32(f as f32)),
-        ScalarType::Double => parse_float_str(v).map(Value::F64),
-        ScalarType::Bool => Err("string is not a bool".to_owned()),
-    }
-}
-
-/// Parse a quoted-string integer, accepting integral decimal/exponential
-/// forms (`"1.5e3"` → `1500`) per the proto3 JSON spec.
-fn parse_int_str(v: &str) -> Result<i64, String> {
-    if let Ok(n) = v.parse::<i64>() {
-        return Ok(n);
-    }
-    // Only fall back to the float path when the string visibly carries a
-    // decimal point or exponent — a pure-integer string that failed
-    // `i64::parse` is out of range, not a float.
-    if !v.contains(['.', 'e', 'E']) {
-        return Err("integer out of range".to_owned());
-    }
-    let f: f64 = v.parse().map_err(|_| "invalid integer string".to_owned())?;
-    if f.fract() != 0.0 || f.is_nan() || f.is_infinite() {
-        return Err("non-integral string for integer field".to_owned());
-    }
-    // f64 has 53 bits of mantissa; values above 2^53 cannot be exactly
-    // represented and the cast to i64 silently saturates. Reject to be safe.
-    if f.abs() >= (1u64 << 53) as f64 {
-        return Err("out of exact integer range".to_owned());
-    }
-    Ok(f as i64)
+        ScalarType::Float => Value::F32(parse_float_str(v).map_err(E::custom)? as f32),
+        ScalarType::Double => Value::F64(parse_float_str(v).map_err(E::custom)?),
+        ScalarType::Bool => return Err(E::custom("string is not a bool")),
+    })
 }
 
 fn parse_float_str(v: &str) -> Result<f64, String> {
@@ -977,6 +1042,21 @@ fn base64_encode(bytes: &[u8]) -> String {
     out
 }
 
+/// Capacity for a base64 decode of `trimmed_len` padding-stripped characters.
+///
+/// Divides before multiplying. `trimmed_len * 3` overflows a 32-bit `usize`
+/// above ~1.33 GiB — a panic under `overflow-checks`, a wrapped and badly
+/// undersized capacity otherwise — and the string comes straight from
+/// attacker-supplied JSON, on a target buffa supports and CI checks. This
+/// form cannot overflow for any `usize`.
+///
+/// Four base64 characters carry three bytes, so `len / 4 * 3` covers every
+/// whole group and the `+ 3` covers the 2- or 3-character remainder, which
+/// yields at most two bytes.
+fn decode_capacity(trimmed_len: usize) -> usize {
+    trimmed_len / 4 * 3 + 3
+}
+
 /// Decode standard or URL-safe base64, with or without padding (the proto3
 /// JSON spec accepts both forms on parse).
 fn base64_decode(s: &str) -> Option<Vec<u8>> {
@@ -991,7 +1071,7 @@ fn base64_decode(s: &str) -> Option<Vec<u8>> {
         })
     }
     let s = s.trim_end_matches('=');
-    let mut out = Vec::with_capacity(s.len() * 3 / 4 + 1);
+    let mut out = Vec::with_capacity(decode_capacity(s.len()));
     let bytes = s.as_bytes();
     let mut i = 0;
     while i + 4 <= bytes.len() {
@@ -1028,3 +1108,53 @@ include!("json_wkt.rs");
 // Suppress unused warnings for the items that the WKT codec keeps.
 #[allow(unused)]
 const _: fn(&MessageDescriptor) = |_| {};
+
+#[cfg(test)]
+mod tests {
+    use super::{base64_decode, base64_encode, field_mask_to_camel, field_mask_to_snake};
+
+    #[test]
+    fn field_mask_leading_underscore_roundtrip() {
+        for (snake, camel) in [
+            ("_foo", "Foo"),
+            ("foo._bar", "foo.Bar"),
+            ("foo._b_bar", "foo.BBar"),
+        ] {
+            assert_eq!(field_mask_to_camel(snake).unwrap(), camel);
+            assert_eq!(field_mask_to_snake(camel).unwrap(), snake);
+        }
+    }
+
+    /// The capacity computation must not overflow for any input length.
+    ///
+    /// Calls the real function, so a multiply-first capacity fails here — at
+    /// `usize::MAX` it panics under the overflow-checks that `cargo test`
+    /// enables. 32-bit Linux is a supported target with its own CI job, where
+    /// the same overflow is reachable at ~1.33 GiB of JSON.
+    #[test]
+    fn the_decode_capacity_cannot_overflow_at_any_length() {
+        for len in [0, 1, 4, usize::MAX / 2, usize::MAX - 1, usize::MAX] {
+            let cap = super::decode_capacity(len);
+            assert!(cap >= len / 4 * 3, "capacity {cap} too small for len {len}");
+        }
+    }
+
+    /// The capacity must also stay an upper bound on the decoded length, or
+    /// the `Vec` reallocates and dividing first is a silent pessimization.
+    #[test]
+    fn the_decode_capacity_still_covers_the_output() {
+        for n in 0..64usize {
+            let input = vec![0xABu8; n];
+            let encoded = base64_encode(&input);
+            let trimmed = encoded.trim_end_matches('=');
+            let cap = super::decode_capacity(trimmed.len());
+            let decoded = base64_decode(&encoded).expect("round-trips");
+            assert_eq!(decoded, input, "n={n}");
+            assert!(
+                cap >= decoded.len(),
+                "capacity {cap} under-covers {} decoded bytes at n={n}",
+                decoded.len()
+            );
+        }
+    }
+}

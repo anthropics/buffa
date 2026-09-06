@@ -54,9 +54,12 @@ impl WktKind {
         !matches!(self, Self::Empty)
     }
 
+    /// `depth` is the nesting budget remaining for `msg`'s sub-messages —
+    /// see `serialize_message` in `json.rs`.
     fn serialize_message<S: Serializer>(
         self,
         msg: &DynamicMessage,
+        depth: u32,
         s: S,
     ) -> Result<S::Ok, S::Error> {
         match self {
@@ -92,7 +95,7 @@ impl WktKind {
                         let Value::Message(inner) = v else {
                             return Err(serde::ser::Error::custom("Struct value must be message"));
                         };
-                        map.serialize_entry(ks, inner)?;
+                        map.serialize_entry(ks, &Nested::charge(inner, depth)?)?;
                     }
                 }
                 map.end()
@@ -104,13 +107,13 @@ impl WktKind {
                         let Value::Message(inner) = v else {
                             return Err(serde::ser::Error::custom("ListValue elem must be message"));
                         };
-                        seq.serialize_element(inner)?;
+                        seq.serialize_element(&Nested::charge(inner, depth)?)?;
                     }
                 }
                 seq.end()
             }
-            Self::JsonValue => serialize_json_value(msg, s),
-            Self::Any => serialize_any(msg, s),
+            Self::JsonValue => serialize_json_value(msg, depth, s),
+            Self::Any => serialize_any(msg, depth, s),
         }
     }
 
@@ -121,8 +124,11 @@ impl WktKind {
         d: D,
         ignore_unknown: bool,
     ) -> Result<DynamicMessage, D::Error> {
-        // Only `Any` recurses into a user-defined message type; the other
-        // WKTs are closed schemas with no unknown-field concept.
+        // Two WKTs consult `ignore_unknown`: `Any` recurses into a
+        // user-defined message type, and `Empty` parses from a plain object
+        // whose every member is an unknown field. The rest parse from a
+        // scalar (a type error, never an unknown field) or are open schemas
+        // that accept any member by construction.
         match self {
             Self::Any => deserialize_any(pool, midx, d, ignore_unknown),
             Self::Timestamp => {
@@ -141,7 +147,7 @@ impl WktKind {
                     Ok(Vec::new())
                 } else {
                     s.split(',')
-                        .map(|p| field_mask_to_snake(p.trim()).map(Value::String))
+                        .map(|p| field_mask_to_snake(p).map(Value::String))
                         .collect()
                 };
                 let mut m = DynamicMessage::new(pool, midx);
@@ -149,20 +155,28 @@ impl WktKind {
                 Ok(m)
             }
             Self::Empty => {
-                struct EmptyVisitor;
+                struct EmptyVisitor {
+                    ignore_unknown: bool,
+                }
                 impl<'de> Visitor<'de> for EmptyVisitor {
                     type Value = ();
                     fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                         write!(f, "an empty object")
                     }
                     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
-                        if map.next_key::<String>()?.is_some() {
-                            return Err(de::Error::custom("unexpected field on Empty"));
+                        if self.ignore_unknown {
+                            while map.next_entry::<de::IgnoredAny, de::IgnoredAny>()?.is_some() {}
+                            return Ok(());
+                        }
+                        if let Some(key) = map.next_key::<String>()? {
+                            return Err(de::Error::custom(format!(
+                                "unknown field {key:?} on message google.protobuf.Empty"
+                            )));
                         }
                         Ok(())
                     }
                 }
-                d.deserialize_map(EmptyVisitor)?;
+                d.deserialize_map(EmptyVisitor { ignore_unknown })?;
                 Ok(DynamicMessage::new(pool, midx))
             }
             Self::Wrapper(sc) => {
@@ -233,7 +247,11 @@ fn make_two_field(
 
 // ── google.protobuf.Value (recursive JSON) ──────────────────────────────────
 
-fn serialize_json_value<S: Serializer>(msg: &DynamicMessage, s: S) -> Result<S::Ok, S::Error> {
+fn serialize_json_value<S: Serializer>(
+    msg: &DynamicMessage,
+    depth: u32,
+    s: S,
+) -> Result<S::Ok, S::Error> {
     // Value is a oneof: null_value(1), number_value(2), string_value(3),
     // bool_value(4), struct_value(5), list_value(6).
     if msg.field_by_number(1).is_some() {
@@ -257,10 +275,10 @@ fn serialize_json_value<S: Serializer>(msg: &DynamicMessage, s: S) -> Result<S::
         return s.serialize_bool(*b);
     }
     if let Some(Value::Message(inner)) = msg.field_by_number(5) {
-        return inner.serialize(s);
+        return Nested::charge(inner, depth)?.serialize(s);
     }
     if let Some(Value::Message(inner)) = msg.field_by_number(6) {
-        return inner.serialize(s);
+        return Nested::charge(inner, depth)?.serialize(s);
     }
     // Unset Value: spec is ambiguous; serialize as null.
     s.serialize_none()
@@ -425,7 +443,16 @@ fn deserialize_list_value<'de, D: Deserializer<'de>>(
 /// Requires the inner type to be registered in the same pool — the spec
 /// permits failing on unregistered types, and CEL evaluation requires the
 /// pool to carry the full schema anyway.
-fn serialize_any<S: Serializer>(msg: &DynamicMessage, s: S) -> Result<S::Ok, S::Error> {
+///
+/// The payload is a nested message for budget purposes: it costs one level
+/// of `depth`, and its binary decode runs on the *remaining* budget rather
+/// than a fresh [`RECURSION_LIMIT`], so nesting inside `Any.value` — which
+/// the outer decode saw only as opaque bytes — cannot restart the count.
+fn serialize_any<S: Serializer>(
+    msg: &DynamicMessage,
+    depth: u32,
+    s: S,
+) -> Result<S::Ok, S::Error> {
     use serde::ser::Error as _;
     let type_url = match msg.field_by_number(1) {
         Some(Value::String(u)) => u.as_str(),
@@ -445,8 +472,21 @@ fn serialize_any<S: Serializer>(msg: &DynamicMessage, s: S) -> Result<S::Ok, S::
             "Any type_url {type_url:?} not registered in the descriptor pool"
         )));
     };
-    let inner = DynamicMessage::decode(Arc::clone(pool), inner_idx, value_bytes)
-        .map_err(|e| S::Error::custom(format!("Any inner decode failed: {e}")))?;
+    // The payload's one level is charged here, once, for both branches below.
+    let inner_depth = descend(depth)?;
+    let inner_msg =
+        DynamicMessage::decode_at_depth(Arc::clone(pool), inner_idx, value_bytes, inner_depth)
+            .map_err(|e| match e {
+                // The payload sits inside the serialize-side budget; report it
+                // as the nesting cap it is, not as a puzzling decode failure on
+                // bytes the caller already decoded successfully.
+                buffa::DecodeError::RecursionLimitExceeded => nesting_too_deep(),
+                e => S::Error::custom(format!("Any inner decode failed: {e}")),
+            })?;
+    let inner = Nested {
+        msg: &inner_msg,
+        depth: inner_depth,
+    };
     let inner_md = pool.message(inner_idx);
     let inner_wkt = WktKind::from_full_name(&inner_md.full_name);
 
@@ -458,16 +498,17 @@ fn serialize_any<S: Serializer>(msg: &DynamicMessage, s: S) -> Result<S::Ok, S::
             return map.end();
         }
     }
-    // Spread the inner fields. We can't use `inner.serialize` because that
+    // Spread the inner fields. We can't use `serialize_message` because that
     // opens a new object; instead, replay the field walk.
     for fd in &inner_md.fields {
-        if !inner.has(fd) {
+        if !inner.msg.has(fd) {
             continue;
         }
         let value = inner
+            .msg
             .field_by_number(fd.number)
             .expect("has() implies present");
-        map.serialize_entry(&fd.json_name, &FieldRef::new(pool, fd, value))?;
+        map.serialize_entry(&fd.json_name, &FieldRef::new(pool, fd, value, inner.depth))?;
     }
     map.end()
 }
@@ -503,11 +544,19 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
     // (for WKTs) or the remaining fields.
     let inner_json = if let Some(wkt) = inner_wkt {
         if wkt.uses_any_value_wrapping() {
-            obj.remove("value").ok_or_else(|| {
+            let value = obj.remove("value").ok_or_else(|| {
                 D::Error::custom(format!(
                     "Any with WKT type {type_url:?} requires a \"value\" key"
                 ))
-            })?
+            })?;
+            if !ignore_unknown {
+                if let Some(key) = obj.keys().next() {
+                    return Err(D::Error::custom(format!(
+                        "unknown field {key:?} in Any wrapper for {type_url:?}"
+                    )));
+                }
+            }
+            value
         } else {
             serde_json::Value::Object(obj)
         }
@@ -561,8 +610,8 @@ use buffa::json_helpers::wkt::{
 };
 
 /// Convert a snake_case field-mask path to lowerCamelCase, rejecting paths
-/// that don't round-trip per the proto3 JSON spec (double underscores,
-/// underscore-digit, uppercase).
+/// that don't round-trip per the proto3 JSON spec (empty components, invalid
+/// characters, double underscores, underscore-digit, uppercase).
 fn field_mask_to_camel(p: &str) -> Result<String, &'static str> {
     if !field_mask_path_round_trips(p) {
         return Err("FieldMask path does not round-trip through camelCase");
@@ -574,7 +623,7 @@ fn field_mask_to_camel(p: &str) -> Result<String, &'static str> {
 /// that don't round-trip.
 fn field_mask_to_snake(p: &str) -> Result<String, &'static str> {
     let snake = camel_to_snake(p);
-    if snake_to_camel(&snake) != p {
+    if !field_mask_path_round_trips(&snake) || snake_to_camel(&snake) != p {
         return Err("FieldMask JSON path is not canonical lowerCamelCase");
     }
     Ok(snake)

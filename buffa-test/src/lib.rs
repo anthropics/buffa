@@ -502,6 +502,13 @@ pub mod wkt {
     buffa::include_proto!("test.wkt");
 }
 
+/// googleapis WKTs (#382): Api/Type/Enum/SourceContext auto-mapped to
+/// buffa-types. Compiling this module is the assertion.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod wkt_api {
+    buffa::include_proto!("test.wktapi");
+}
+
 /// `lazy_views(true)` — the additive `FooLazyView` decode-on-access family.
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod lazyviews {
@@ -660,6 +667,15 @@ pub mod mixed_reflect_dep {
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod mixed_reflect_parent {
     buffa::include_proto!("mixedref.parent");
+}
+
+// Shared descriptor pool (`shared_descriptor_pool(true)`, `$OUT_DIR` mode):
+// the include file hosts the one `__buffa_fds` root at this module's top
+// level, with both packages (`sharedpool::a`, `sharedpool::b`) delegating to
+// it. See `src/tests/shared_pool.rs`.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod shared_pool {
+    include!(concat!(env!("OUT_DIR"), "/sharedpool_include.rs"));
 }
 
 #[allow(

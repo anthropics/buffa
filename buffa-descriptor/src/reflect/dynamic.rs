@@ -36,10 +36,7 @@ use buffa::types::{
     sint64_encoded_len, uint32_encoded_len, uint64_encoded_len,
 };
 use buffa::unknown_fields::UnknownFields;
-use buffa::{
-    DecodeContext, DecodeError, Message, UnknownField, UnknownFieldData,
-    DEFAULT_UNKNOWN_FIELD_LIMIT, RECURSION_LIMIT,
-};
+use buffa::{DecodeContext, DecodeError, Message, MessageName, UnknownField, UnknownFieldData};
 
 use super::message::{ReflectCow, ReflectError, ReflectMessage, ReflectMessageMut};
 use super::value::{MapKey, MapValue, Value, ValueRef};
@@ -111,14 +108,17 @@ impl PartialEq for DynamicMessage {
     /// independent decode pipelines. For those, compare `field_by_number`
     /// values directly or compare the re-encoded wire bytes.
     ///
-    /// Unknown-field comparison is by count, not contents — a structural
-    /// limitation of the prototype, since `UnknownFields` does not implement
-    /// `PartialEq`.
+    /// Unknown fields are compared by value in arrival order: two messages
+    /// carrying the same unknown fields received in a different tag order
+    /// compare unequal. protobuf's `MessageDifferencer` sorts unknown
+    /// fields by number before comparing; callers that want that
+    /// insensitivity can compare [`unknown_fields`](Self::unknown_fields)
+    /// after sorting.
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.pool, &other.pool)
             && self.msg_idx == other.msg_idx
             && self.fields == other.fields
-            && self.unknown.len() == other.unknown.len()
+            && self.unknown == other.unknown
     }
 }
 
@@ -254,7 +254,13 @@ impl DynamicMessage {
         })
     }
 
-    /// Decode wire bytes against the descriptor.
+    /// Decode wire bytes against the descriptor under the untrusted-input
+    /// defaults (see [`DecodeOptions::new`](buffa::DecodeOptions::new)).
+    ///
+    /// Use [`decode_with_options`](Self::decode_with_options) when the bytes
+    /// are your own rather than a peer's — re-decoding something this process
+    /// just encoded, for instance — and the defaults would only reject work
+    /// already paid for.
     ///
     /// # Errors
     ///
@@ -269,22 +275,116 @@ impl DynamicMessage {
         Ok(msg)
     }
 
-    /// Merge additional wire bytes into this message.
+    /// Decode wire bytes against the descriptor under caller-supplied limits.
+    ///
+    /// [`decode`](Self::decode) applies the untrusted-input defaults, which is
+    /// what you want for bytes off a socket. Use this when the bytes are your
+    /// own — re-decoding something this process just encoded, for instance —
+    /// and the defaults would only reject work already paid for.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`DecodeError`] if the wire data is malformed or exceeds one
+    /// of the supplied limits.
+    pub fn decode_with_options(
+        pool: Arc<DescriptorPool>,
+        msg_idx: MessageIndex,
+        bytes: &[u8],
+        options: &buffa::DecodeOptions,
+    ) -> Result<Self, DecodeError> {
+        let mut msg = Self::new(pool, msg_idx);
+        msg.merge_with_options(bytes, options)?;
+        Ok(msg)
+    }
+
+    /// Merge additional wire bytes into this message under the
+    /// untrusted-input defaults.
+    ///
+    /// Equivalent to
+    /// [`merge_with_options`](Self::merge_with_options) with
+    /// [`DecodeOptions::new`](buffa::DecodeOptions::new).
     ///
     /// # Errors
     ///
     /// Returns a [`DecodeError`] if the wire data is malformed.
     pub fn merge(&mut self, bytes: &[u8]) -> Result<(), DecodeError> {
-        let limit = core::cell::Cell::new(DEFAULT_UNKNOWN_FIELD_LIMIT);
-        let elem_budget = core::cell::Cell::new(buffa::DEFAULT_ELEMENT_MEMORY_LIMIT);
+        self.merge_with_options(bytes, &buffa::DecodeOptions::new())
+    }
+
+    /// Merge additional wire bytes under caller-supplied limits.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`DecodeError`] if the wire data is malformed or exceeds one
+    /// of the supplied limits.
+    pub fn merge_with_options(
+        &mut self,
+        bytes: &[u8],
+        options: &buffa::DecodeOptions,
+    ) -> Result<(), DecodeError> {
+        if bytes.len() > options.max_message_size() {
+            return Err(DecodeError::MessageTooLarge);
+        }
+        let limit = core::cell::Cell::new(options.unknown_field_limit());
+        let elem_budget = core::cell::Cell::new(options.element_memory_limit());
         let mut buf = bytes;
         self.merge_buf(
             &mut buf,
-            DecodeContext::new(RECURSION_LIMIT, &limit).with_element_memory(&elem_budget),
+            DecodeContext::new(options.recursion_limit(), &limit).with_element_memory(&elem_budget),
         )
     }
 
+    /// [`decode`](Self::decode) with `depth` levels of nesting budget instead
+    /// of a fresh [`RECURSION_LIMIT`]. For payloads that are logically nested
+    /// inside an already-decoded message (`google.protobuf.Any.value`), so
+    /// the inner decode continues the outer count rather than restarting it.
+    ///
+    /// Only depth is continued; the unknown-field and element-memory budgets
+    /// start fresh per call, as with `decode`. Each live `Any` layer also owns
+    /// a copy of its payload bytes (which contain the layers inside it), so a
+    /// nested-`Any` chain can hold up to `RECURSION_LIMIT` × its input size in
+    /// transient heap while it serializes — bounded, where it was unbounded
+    /// before the depth cap, but not the 1× a single decode costs.
+    #[cfg(feature = "json")]
+    pub(crate) fn decode_at_depth(
+        pool: Arc<DescriptorPool>,
+        msg_idx: MessageIndex,
+        bytes: &[u8],
+        depth: u32,
+    ) -> Result<Self, DecodeError> {
+        let mut msg = Self::new(pool, msg_idx);
+        msg.merge_with_options(
+            bytes,
+            &buffa::DecodeOptions::new().with_recursion_limit(depth),
+        )?;
+        Ok(msg)
+    }
+
     fn merge_buf(&mut self, buf: &mut impl Buf, ctx: DecodeContext<'_>) -> Result<(), DecodeError> {
+        self.normalizing(|s| s.merge_buf_fields(buf, ctx))
+    }
+
+    /// Run a field loop, then restore the sorted invariant on every map field.
+    ///
+    /// Map entries are appended unsorted during a loop and sorted once at the
+    /// end, so every loop over `merge_one_field` must go through here — on the
+    /// error path too, or a partially-decoded message escapes with maps whose
+    /// binary-search lookups silently miss.
+    fn normalizing<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        let result = f(self);
+        for value in self.fields.values_mut() {
+            if let Value::Map(m) = value {
+                m.normalize();
+            }
+        }
+        result
+    }
+
+    fn merge_buf_fields(
+        &mut self,
+        buf: &mut impl Buf,
+        ctx: DecodeContext<'_>,
+    ) -> Result<(), DecodeError> {
         while buf.has_remaining() {
             let tag = Tag::decode(buf)?;
             self.merge_one_field(tag, buf, ctx)?;
@@ -299,7 +399,7 @@ impl DynamicMessage {
         group_field_number: u32,
         ctx: DecodeContext<'_>,
     ) -> Result<(), DecodeError> {
-        loop {
+        self.normalizing(|s| loop {
             let tag = Tag::decode(buf)?;
             if tag.wire_type() == WireType::EndGroup {
                 if tag.field_number() != group_field_number {
@@ -307,8 +407,8 @@ impl DynamicMessage {
                 }
                 return Ok(());
             }
-            self.merge_one_field(tag, buf, ctx)?;
-        }
+            s.merge_one_field(tag, buf, ctx)?;
+        })
     }
 
     fn merge_one_field(
@@ -502,6 +602,10 @@ impl DynamicMessage {
             // Take a sub-buffer of `len` bytes and decode elements from it.
             let mut packed = buf.copy_to_bytes(len);
             while packed.has_remaining() {
+                // Charged, unlike the generated decoder: that exemption is
+                // sized for a `Vec<i32>`, and this store is a `Vec<Value>`.
+                // See `DecodeContext::register_element_memory`.
+                ctx.register_element_memory(core::mem::size_of::<Value>())?;
                 list.push(decode_packed_element(elem, number, &mut packed)?);
             }
             return Ok(());
@@ -543,6 +647,9 @@ impl DynamicMessage {
             while packed.has_remaining() {
                 let raw = decode_int32(&mut packed)?;
                 if self.enum_value_is_known(eidx, Some(EnumType::Closed), raw) {
+                    // Same charge `merge_list_field` applies; this is a
+                    // parallel implementation of the same work.
+                    ctx.register_element_memory(core::mem::size_of::<Value>())?;
                     known.push(Value::EnumNumber(raw));
                 } else {
                     self.record_unknown_enum(number, raw, ctx)?;
@@ -551,6 +658,7 @@ impl DynamicMessage {
         } else {
             let raw = decode_int32(buf)?;
             if self.enum_value_is_known(eidx, Some(EnumType::Closed), raw) {
+                ctx.register_element_memory(core::mem::size_of::<Value>())?;
                 known.push(Value::EnumNumber(raw));
             } else {
                 self.record_unknown_enum(number, raw, ctx)?;
@@ -609,17 +717,38 @@ impl DynamicMessage {
             match entry_tag.field_number() {
                 1 => key = Some(decode_map_key(key_ty, entry_tag, &mut entry)?),
                 2 => {
-                    // The map entry is a sub-message on the wire, so it
-                    // consumes one depth level. (The previous code used
-                    // `depth.saturating_sub(1)` here, which let scalar map
-                    // values through at exactly depth 0; erroring one level
-                    // earlier is intentional.)
-                    value = Some(self.decode_element_no_alias(
-                        value_kind,
-                        entry_tag,
-                        &mut entry,
-                        ctx.descend()?,
-                    )?);
+                    // No `descend()` for the entry itself. A message-typed
+                    // value descends once inside `decode_element_no_alias`,
+                    // and that single level is what the owned decoder
+                    // (`map_codec`) and the view decoder each spend on a
+                    // message-valued map entry. Charging a second one here
+                    // would make this decoder reject map nesting the other
+                    // two accept, which the infallible
+                    // `ReflectMessage::to_dynamic` cannot report.
+                    match &mut value {
+                        // Proto merge semantics, as in the owned map codec: a
+                        // repeated message value within one entry merges into
+                        // the message decoded so far rather than replacing it.
+                        // (Only reachable for a message-kind value — the kind
+                        // is fixed per field.) The `descend` here mirrors the
+                        // one inside `decode_element_no_alias`, so every
+                        // occurrence decodes at the same depth.
+                        Some(Value::Message(existing)) => {
+                            Self::merge_message_wire(
+                                existing,
+                                entry_tag,
+                                &mut entry,
+                                ctx.descend()?,
+                            )?;
+                        }
+                        // First occurrence, or any scalar/enum value (last wins).
+                        _ => {
+                            value =
+                                Some(self.decode_element_no_alias(
+                                    value_kind, entry_tag, &mut entry, ctx,
+                                )?);
+                        }
+                    }
                 }
                 _ => skip_field_depth(entry_tag, &mut entry, ctx.depth())?,
             }
@@ -635,11 +764,11 @@ impl DynamicMessage {
             .or_insert_with(|| Value::Map(MapValue::new()))
         {
             Value::Map(m) => {
-                m.insert(k, v);
+                m.push_unsorted(k, v);
             }
             other => {
                 let mut m = MapValue::new();
-                m.insert(k, v);
+                m.push_unsorted(k, v);
                 *other = Value::Map(m);
             }
         }
@@ -691,17 +820,23 @@ impl DynamicMessage {
         }
         let k = key.unwrap_or_else(|| default_map_key(key_ty));
         let v = value.unwrap_or_else(|| default_value(SingularKind::Enum(eidx), &self.pool));
+        // Same charge the ordinary map path applies; this parallel
+        // closed-enum implementation has to make it too, or a
+        // `map<K, ClosedEnum>` decodes with no ceiling at all.
+        ctx.register_element_memory(
+            core::mem::size_of::<MapKey>() + core::mem::size_of::<Value>(),
+        )?;
         match self
             .fields
             .entry(number)
             .or_insert_with(|| Value::Map(MapValue::new()))
         {
             Value::Map(m) => {
-                m.insert(k, v);
+                m.push_unsorted(k, v);
             }
             other => {
                 let mut m = MapValue::new();
-                m.insert(k, v);
+                m.push_unsorted(k, v);
                 *other = Value::Map(m);
             }
         }
@@ -737,30 +872,37 @@ impl DynamicMessage {
             }
             SingularKind::Message(midx) => {
                 let mut nested = DynamicMessage::new(Arc::clone(&self.pool), midx);
-                let ctx = ctx.descend()?;
-                match tag.wire_type() {
-                    WireType::LengthDelimited => {
-                        let len = decode_varint(buf)?;
-                        let len = usize::try_from(len).map_err(|_| DecodeError::MessageTooLarge)?;
-                        if buf.remaining() < len {
-                            return Err(DecodeError::UnexpectedEof);
-                        }
-                        let mut sub = buf.copy_to_bytes(len);
-                        nested.merge_buf(&mut sub, ctx)?;
-                    }
-                    WireType::StartGroup => {
-                        nested.merge_group(buf, tag.field_number(), ctx)?;
-                    }
-                    _ => {
-                        return Err(DecodeError::WireTypeMismatch {
-                            field_number: tag.field_number(),
-                            expected: WireType::LengthDelimited as u8,
-                            actual: tag.wire_type() as u8,
-                        })
-                    }
-                }
+                Self::merge_message_wire(&mut nested, tag, buf, ctx.descend()?)?;
                 Ok(Value::Message(nested))
             }
+        }
+    }
+
+    /// Merge one length-delimited or group-encoded occurrence of a message
+    /// field from `buf` into `nested`. `ctx` is the nested message's own
+    /// (already descended) context.
+    fn merge_message_wire(
+        nested: &mut DynamicMessage,
+        tag: Tag,
+        buf: &mut impl Buf,
+        ctx: DecodeContext<'_>,
+    ) -> Result<(), DecodeError> {
+        match tag.wire_type() {
+            WireType::LengthDelimited => {
+                let len = decode_varint(buf)?;
+                let len = usize::try_from(len).map_err(|_| DecodeError::MessageTooLarge)?;
+                if buf.remaining() < len {
+                    return Err(DecodeError::UnexpectedEof);
+                }
+                let mut sub = buf.copy_to_bytes(len);
+                nested.merge_buf(&mut sub, ctx)
+            }
+            WireType::StartGroup => nested.merge_group(buf, tag.field_number(), ctx),
+            _ => Err(DecodeError::WireTypeMismatch {
+                field_number: tag.field_number(),
+                expected: WireType::LengthDelimited as u8,
+                actual: tag.wire_type() as u8,
+            }),
         }
     }
 
@@ -902,15 +1044,130 @@ impl DynamicMessage {
 
     // ── Bridge ──────────────────────────────────────────────────────────────
 
+    /// Build a dynamic snapshot of a generated message via wire round-trip,
+    /// resolving the descriptor from the type's [`MessageName`].
+    ///
+    /// The descriptor is looked up by [`M::FULL_NAME`](MessageName::FULL_NAME),
+    /// so the caller does not resolve a [`MessageIndex`] by hand, and a pool
+    /// that lacks the type, or whose descriptor rejects the encoded bytes,
+    /// surfaces as an error rather than a panic.
+    ///
+    /// Only decode failures are detected. Wire-compatible schema drift — a
+    /// renamed field, a removed field, `int32` widened to `int64` — decodes
+    /// cleanly; a removed field lands in the snapshot's unknown fields rather
+    /// than erroring.
+    ///
+    /// # Errors
+    ///
+    /// - [`BridgeError::MessageNotFound`] if `pool` carries no message named
+    ///   `M::FULL_NAME`.
+    /// - [`BridgeError::MessageTooLarge`] if `msg` encodes past the 2 GiB
+    ///   protobuf limit ([`buffa::MAX_MESSAGE_BYTES`]).
+    /// - [`BridgeError::Decode`] if the encoded bytes fail to decode against
+    ///   the pool's descriptor of that name (the pool and the generated
+    ///   `Message` impl disagree about the schema). The decode keeps the
+    ///   default recursion limit of
+    ///   [`DecodeOptions::new`](buffa::DecodeOptions::new), so a message
+    ///   nested deeper than that also fails. Its element-memory and
+    ///   unknown-field budgets scale with the encoded length, matching the
+    ///   generated [`ReflectMessage::to_dynamic`] path for process-owned
+    ///   bytes.
+    pub fn try_from_message<M: Message + MessageName>(
+        msg: &M,
+        pool: Arc<DescriptorPool>,
+    ) -> Result<Self, BridgeError> {
+        let Some(msg_idx) = pool.message_index(M::FULL_NAME) else {
+            return Err(BridgeError::MessageNotFound {
+                full_name: M::FULL_NAME.to_owned(),
+            });
+        };
+        let bytes = msg
+            .try_encode_to_vec()
+            .map_err(|_| BridgeError::MessageTooLarge {
+                full_name: M::FULL_NAME.to_owned(),
+            })?;
+        Self::bridge_decode(pool, msg_idx, &bytes).map_err(|source| BridgeError::Decode {
+            full_name: M::FULL_NAME.to_owned(),
+            source,
+        })
+    }
+
+    /// Build a dynamic snapshot of a generated message via wire round-trip
+    /// against an explicit descriptor.
+    ///
+    /// Prefer [`try_from_message`](Self::try_from_message) when `M`
+    /// implements [`MessageName`]; this variant serves callers that already
+    /// hold the [`MessageIndex`], or that bridge a type into a descriptor
+    /// registered under a different name.
+    ///
+    /// `msg_idx` must have been obtained from `pool`. A [`MessageIndex`] does
+    /// not carry pool identity, so this method cannot verify that association:
+    /// a foreign index whose ordinal exists in `pool` silently selects that
+    /// pool's descriptor at the same ordinal.
+    ///
+    /// Only decode failures are detected; wire-compatible schema drift
+    /// decodes cleanly, as described by
+    /// [`try_from_message`](Self::try_from_message).
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`DecodeError`] if the encoded bytes fail to decode against
+    /// `msg_idx`'s descriptor — a mismatch between the descriptor in the pool
+    /// and the generated `Message` impl — or
+    /// [`DecodeError::MessageTooLarge`] if `msg` encodes past the 2 GiB
+    /// protobuf limit ([`buffa::MAX_MESSAGE_BYTES`]).
+    ///
+    /// The decode keeps the default recursion limit of
+    /// [`DecodeOptions::new`](buffa::DecodeOptions::new), so a message nested
+    /// deeper than that fails with [`DecodeError::RecursionLimitExceeded`];
+    /// the element-memory and unknown-field budgets scale with the encoded
+    /// length, because the bytes are the process's own (see
+    /// [`DecodeOptions`](buffa::DecodeOptions) for what those budgets guard
+    /// against).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `msg_idx`'s ordinal is out of range for `pool`, either while
+    /// decoding fields in this call or, when `msg` encodes no fields, on the
+    /// first later use that resolves the returned message's descriptor, such
+    /// as [`ReflectMessage::message_descriptor`]. This is the cross-pool
+    /// hazard documented by [`DescriptorPool::message`]; use
+    /// [`try_from_message`](Self::try_from_message) when the generated type
+    /// implements [`MessageName`].
+    pub fn try_from_message_with_index<M: Message>(
+        msg: &M,
+        pool: Arc<DescriptorPool>,
+        msg_idx: MessageIndex,
+    ) -> Result<Self, DecodeError> {
+        // An over-limit message cannot become valid wire bytes; surface the
+        // mirror decode error instead of panicking inside a fallible API,
+        // the same rule `to_message` applies in the other direction.
+        let bytes = msg
+            .try_encode_to_vec()
+            .map_err(|_| DecodeError::MessageTooLarge)?;
+        Self::bridge_decode(pool, msg_idx, &bytes)
+    }
+
     /// Build a dynamic snapshot of a generated message via wire round-trip.
+    ///
+    /// This is the panicking form of
+    /// [`try_from_message_with_index`](Self::try_from_message_with_index)
+    /// and shares its decode step. Generated reflection bridges use it
+    /// because their descriptor and `Message` impl come from the same codegen
+    /// run; reach for [`try_from_message`](Self::try_from_message) when the
+    /// pool is loaded at runtime and may not match the generated code.
     ///
     /// # Panics
     ///
     /// Panics if `msg.encode_to_vec()` produces bytes that fail to decode
-    /// against `msg_idx`'s descriptor. This indicates a mismatch between the
-    /// descriptor in the pool and the generated `Message` impl. Also panics
-    /// (inside `encode_to_vec`) if `msg`'s encoded size exceeds the 2 GiB
-    /// protobuf limit ([`buffa::MAX_MESSAGE_BYTES`]).
+    /// against `msg_idx`'s descriptor — a mismatch between the descriptor in
+    /// the pool and the generated `Message` impl, or nesting deeper than the
+    /// default recursion limit. Also panics (inside `encode_to_vec`) if
+    /// `msg`'s encoded size exceeds the 2 GiB protobuf limit
+    /// ([`buffa::MAX_MESSAGE_BYTES`]). It is also subject to the cross-pool
+    /// hazard described by
+    /// [`try_from_message_with_index`](Self::try_from_message_with_index):
+    /// `msg_idx` must come from `pool`.
     #[must_use]
     pub fn from_message<M: Message>(
         msg: &M,
@@ -918,8 +1175,60 @@ impl DynamicMessage {
         msg_idx: MessageIndex,
     ) -> Self {
         let bytes = msg.encode_to_vec();
-        Self::decode(pool, msg_idx, &bytes)
+        Self::bridge_decode(pool, msg_idx, &bytes)
             .expect("generated message must round-trip through its own descriptor")
+    }
+
+    /// Decode bytes the bridge just produced from a generated message.
+    ///
+    /// The bytes are the process's own, so the fixed untrusted-input memory
+    /// budgets of [`DecodeOptions::new`](buffa::DecodeOptions::new) can reject
+    /// a valid round-trip: the source and dynamic representations measure the
+    /// same message in different units. Scale both bounds with the encoded
+    /// length using the policy already established by generated
+    /// [`ReflectMessage::to_dynamic`]. This avoids false rejections while
+    /// keeping the second representation bounded. The recursion limit stays,
+    /// since it bounds the decoder's own stack rather than the input.
+    fn bridge_decode(
+        pool: Arc<DescriptorPool>,
+        msg_idx: MessageIndex,
+        bytes: &[u8],
+    ) -> Result<Self, DecodeError> {
+        let (element_memory_limit, unknown_field_limit) = Self::bridge_memory_limits(bytes.len());
+        let options = buffa::DecodeOptions::new()
+            .with_element_memory_limit(element_memory_limit)
+            .with_unknown_field_limit(unknown_field_limit);
+        Self::decode_with_options(pool, msg_idx, bytes, &options)
+    }
+
+    /// Element-memory budget per encoded byte for the bridge re-decode.
+    ///
+    /// The dynamic decoder charges `size_of::<Value>()` per scalar and
+    /// `size_of::<MapKey>() + size_of::<Value>()` per map entry, and the
+    /// smallest wire encoding of either is one byte, so this factor bounds
+    /// the dynamic footprint of any message the process encoded itself. The
+    /// generated view conversion (`buffa-codegen/src/reflect_view.rs`) uses
+    /// the same factor; the assertion below keeps both honest if `Value`
+    /// widens.
+    const BRIDGE_ELEMENT_BYTES_PER_ENCODED_BYTE: usize = 128;
+
+    fn bridge_memory_limits(encoded_len: usize) -> (usize, usize) {
+        const _: () = {
+            assert!(
+                core::mem::size_of::<Value>()
+                    <= DynamicMessage::BRIDGE_ELEMENT_BYTES_PER_ENCODED_BYTE
+            );
+            assert!(
+                core::mem::size_of::<MapKey>() + core::mem::size_of::<Value>()
+                    <= 2 * DynamicMessage::BRIDGE_ELEMENT_BYTES_PER_ENCODED_BYTE
+            );
+        };
+        (
+            encoded_len
+                .saturating_mul(Self::BRIDGE_ELEMENT_BYTES_PER_ENCODED_BYTE)
+                .max(buffa::DEFAULT_ELEMENT_MEMORY_LIMIT),
+            encoded_len.max(buffa::DEFAULT_UNKNOWN_FIELD_LIMIT),
+        )
     }
 
     /// Reconstitute a generated message from this dynamic snapshot.
@@ -935,9 +1244,14 @@ impl DynamicMessage {
         let bytes = self
             .try_encode_to_vec()
             .map_err(|_| DecodeError::MessageTooLarge)?;
-        let mut m = M::default();
-        m.merge_from_slice(&bytes)?;
-        Ok(m)
+        // The bytes are the process's own, so scale the budgets exactly as the
+        // inbound bridge does: the fixed untrusted-input limits could reject a
+        // snapshot the bridge itself admitted.
+        let (element_memory_limit, unknown_field_limit) = Self::bridge_memory_limits(bytes.len());
+        buffa::DecodeOptions::new()
+            .with_element_memory_limit(element_memory_limit)
+            .with_unknown_field_limit(unknown_field_limit)
+            .decode_from_slice(&bytes)
     }
 
     // ── Direct field access ─────────────────────────────────────────────────
@@ -1224,6 +1538,63 @@ impl std::error::Error for AnyError {
         match self {
             Self::Decode { source, .. } => Some(source),
             _ => None,
+        }
+    }
+}
+
+/// An error from [`DynamicMessage::try_from_message`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum BridgeError {
+    /// The pool carries no message with the generated type's
+    /// [`FULL_NAME`](MessageName::FULL_NAME), usually because the
+    /// `FileDescriptorSet` the pool was built from does not include the file
+    /// that declares the type.
+    MessageNotFound {
+        /// The fully-qualified name that was looked up.
+        full_name: String,
+    },
+    /// The generated message encodes past the 2 GiB protobuf limit, so
+    /// there are no wire bytes to bridge through.
+    MessageTooLarge {
+        /// The fully-qualified name of the message that would not encode.
+        full_name: String,
+    },
+    /// The generated message's wire bytes failed to decode against the
+    /// pool's descriptor of the same name: the pool and the generated code
+    /// disagree about the schema in a way the decoder rejects, or the message
+    /// nests deeper than the default recursion limit.
+    Decode {
+        /// The fully-qualified name that resolved before the decode failed.
+        full_name: String,
+        /// The underlying wire-format error.
+        source: DecodeError,
+    },
+}
+
+impl core::fmt::Display for BridgeError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::MessageNotFound { full_name } => {
+                write!(f, "message {full_name:?} not registered in the pool")
+            }
+            Self::MessageTooLarge { full_name } => {
+                write!(f, "{full_name:?} exceeds the 2 GiB protobuf encoding limit")
+            }
+            Self::Decode { full_name, source } => write!(
+                f,
+                "{full_name:?} failed to round-trip through the pool's descriptor: {source}"
+            ),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for BridgeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Decode { source, .. } => Some(source),
+            Self::MessageNotFound { .. } | Self::MessageTooLarge { .. } => None,
         }
     }
 }
@@ -2209,5 +2580,336 @@ mod tests {
             DynamicMessage::checked_encode_size(u32::MAX as usize + 1),
             Err(buffa::EncodeError::MessageTooLarge)
         );
+    }
+
+    /// `decode_at_depth` must run on the *given* depth. The JSON serializer
+    /// reports the decoder's recursion error with the same text as its own,
+    /// so no integration test can tell a continued budget from a fresh one —
+    /// this pins it directly.
+    #[cfg(feature = "json")]
+    #[test]
+    fn decode_at_depth_uses_the_supplied_depth() {
+        use crate::DescriptorPool;
+        use alloc::sync::Arc;
+        use buffa::DecodeError;
+
+        let fds = include_bytes!("../../tests/protos/reflect_test_options.fds");
+        let pool = Arc::new(DescriptorPool::decode(fds).unwrap());
+        let idx = pool
+            .message_index("google.protobuf.DescriptorProto")
+            .unwrap();
+        let decode = |bytes: &[u8], depth| {
+            DynamicMessage::decode_at_depth(Arc::clone(&pool), idx, bytes, depth)
+        };
+
+        // `DescriptorProto { nested_type: [ {} ] }` — one nested level.
+        let one_level = [0x1A, 0x00];
+        assert!(matches!(
+            decode(&one_level, 0),
+            Err(DecodeError::RecursionLimitExceeded)
+        ));
+        assert!(decode(&one_level, 1).is_ok());
+        // Depth 0 still admits a flat message: `{ name: "n" }`.
+        assert!(decode(&[0x0A, 0x01, b'n'], 0).is_ok());
+    }
+
+    mod bridge {
+        use alloc::{borrow::ToOwned, format, string::ToString as _, sync::Arc, vec};
+        use buffa::{DecodeError, Message, MessageName};
+
+        use crate::generated::descriptor::compiler::Version;
+        use crate::generated::descriptor::field_descriptor_proto::{Label, Type as ProtoType};
+        use crate::generated::descriptor::{
+            DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        };
+        use crate::reflect::{BridgeError, DynamicMessage, ReflectMessage, Value};
+        use crate::DescriptorPool;
+
+        /// A pool that carries `google.protobuf.DescriptorProto` (through the
+        /// `descriptor.proto` import) but not
+        /// `google.protobuf.compiler.Version`.
+        fn pool() -> Arc<DescriptorPool> {
+            let fds = include_bytes!("../../tests/protos/reflect_test_options.fds");
+            Arc::new(DescriptorPool::decode(fds).unwrap())
+        }
+
+        fn sample() -> DescriptorProto {
+            DescriptorProto {
+                name: Some("Sample".into()),
+                field: vec![FieldDescriptorProto {
+                    name: Some("id".into()),
+                    number: Some(1),
+                    r#type: Some(ProtoType::TYPE_INT32),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }
+        }
+
+        fn single_message_pool(
+            package: &str,
+            message_name: &str,
+            field_type: ProtoType,
+        ) -> Arc<DescriptorPool> {
+            Arc::new(
+                DescriptorPool::new(FileDescriptorSet {
+                    file: vec![FileDescriptorProto {
+                        name: Some(format!("{package}.proto")),
+                        package: Some(package.into()),
+                        syntax: Some("proto3".into()),
+                        message_type: vec![DescriptorProto {
+                            name: Some(message_name.into()),
+                            field: vec![FieldDescriptorProto {
+                                name: Some("value".into()),
+                                number: Some(1),
+                                label: Some(Label::LABEL_OPTIONAL),
+                                r#type: Some(field_type),
+                                ..Default::default()
+                            }],
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                })
+                .unwrap(),
+            )
+        }
+
+        #[test]
+        fn try_from_message_resolves_the_descriptor_by_name() {
+            let pool = pool();
+            let msg = sample();
+
+            let dm = DynamicMessage::try_from_message(&msg, Arc::clone(&pool)).unwrap();
+
+            let idx = pool.message_index(DescriptorProto::FULL_NAME).unwrap();
+            assert_eq!(dm.message_index(), idx);
+            assert_eq!(dm.to_message::<DescriptorProto>().unwrap(), msg);
+            // Same snapshot as the index-taking entry points produce.
+            let via_index = DynamicMessage::from_message(&msg, Arc::clone(&pool), idx);
+            assert_eq!(dm.encode_to_vec(), via_index.encode_to_vec());
+        }
+
+        #[test]
+        fn try_from_message_reports_a_type_the_pool_lacks() {
+            let err = DynamicMessage::try_from_message(&Version::default(), pool()).unwrap_err();
+
+            assert_eq!(
+                err,
+                BridgeError::MessageNotFound {
+                    full_name: Version::FULL_NAME.to_owned(),
+                }
+            );
+            assert_eq!(
+                err.to_string(),
+                "message \"google.protobuf.compiler.Version\" not registered in the pool"
+            );
+        }
+
+        #[test]
+        fn try_from_message_surfaces_a_schema_mismatch_as_an_error() {
+            // A pool whose `google.protobuf.compiler.Version` declares field 4
+            // (`suffix`) as a nested message while the generated type encodes
+            // it as a string: the shape of a pool built from a different
+            // `.proto` revision. A string payload that is not a valid message
+            // surfaces as a decode error rather than a panic.
+            let stale = FileDescriptorSet {
+                file: vec![FileDescriptorProto {
+                    name: Some("plugin_stale.proto".into()),
+                    package: Some("google.protobuf.compiler".into()),
+                    message_type: vec![DescriptorProto {
+                        name: Some("Version".into()),
+                        field: vec![FieldDescriptorProto {
+                            name: Some("suffix".into()),
+                            number: Some(4),
+                            label: Some(Label::LABEL_OPTIONAL),
+                            r#type: Some(ProtoType::TYPE_MESSAGE),
+                            type_name: Some(".google.protobuf.compiler.Version".into()),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let pool = Arc::new(DescriptorPool::new(stale).unwrap());
+            // `0x08` is a field-1 varint tag with no value behind it.
+            let msg = Version {
+                suffix: Some("\u{8}".into()),
+                ..Default::default()
+            };
+
+            let err = DynamicMessage::try_from_message(&msg, Arc::clone(&pool)).unwrap_err();
+
+            assert!(matches!(
+                &err,
+                BridgeError::Decode {
+                    full_name,
+                    source: DecodeError::UnexpectedEof,
+                } if full_name == Version::FULL_NAME
+            ));
+            assert_eq!(
+                err.to_string(),
+                "\"google.protobuf.compiler.Version\" failed to round-trip through the \
+                 pool's descriptor: unexpected end of buffer"
+            );
+            // The index-taking form returns the bare decode error.
+            let idx = pool.message_index(Version::FULL_NAME).unwrap();
+            assert!(matches!(
+                DynamicMessage::try_from_message_with_index(&msg, pool, idx),
+                Err(DecodeError::UnexpectedEof)
+            ));
+        }
+
+        #[test]
+        #[should_panic(expected = "index out of bounds")]
+        fn try_from_message_with_index_panics_on_out_of_range_foreign_index() {
+            let foreign_pool = pool();
+            let foreign_idx = foreign_pool
+                .message_index(FileDescriptorProto::FULL_NAME)
+                .unwrap();
+            let target_pool = single_message_pool("target", "Only", ProtoType::TYPE_INT32);
+            assert!(foreign_idx.0 as usize >= target_pool.messages().len());
+            let msg = Version {
+                major: Some(7),
+                ..Default::default()
+            };
+
+            let _ = DynamicMessage::try_from_message_with_index(&msg, target_pool, foreign_idx);
+        }
+
+        #[cfg(feature = "std")]
+        #[test]
+        fn try_from_message_with_index_defers_foreign_index_panic_for_empty_encoding() {
+            let foreign_pool = pool();
+            let foreign_idx = foreign_pool
+                .message_index(FileDescriptorProto::FULL_NAME)
+                .unwrap();
+            let target_pool = single_message_pool("target", "Only", ProtoType::TYPE_INT32);
+            assert!(foreign_idx.0 as usize >= target_pool.messages().len());
+
+            let bridged = DynamicMessage::try_from_message_with_index(
+                &Version::default(),
+                target_pool,
+                foreign_idx,
+            )
+            .expect("an empty encoding does not resolve the descriptor during construction");
+
+            assert!(std::panic::catch_unwind(|| bridged.message_descriptor()).is_err());
+        }
+
+        #[test]
+        fn try_from_message_with_index_can_silently_use_a_foreign_ordinal() {
+            let source_pool = single_message_pool("source", "Source", ProtoType::TYPE_INT32);
+            let target_pool = single_message_pool("target", "Target", ProtoType::TYPE_INT64);
+            let source_idx = source_pool.message_index("source.Source").unwrap();
+            let target_idx = target_pool.message_index("target.Target").unwrap();
+            assert_eq!(source_idx, target_idx);
+            let msg = Version {
+                major: Some(7),
+                ..Default::default()
+            };
+
+            let bridged = DynamicMessage::try_from_message_with_index(
+                &msg,
+                Arc::clone(&target_pool),
+                source_idx,
+            )
+            .unwrap();
+
+            assert_eq!(bridged.message_descriptor().full_name(), "target.Target");
+            assert_eq!(bridged.field_by_number(1), Some(&Value::I64(7)));
+            assert!(matches!(
+                DynamicMessage::try_from_message(&msg, target_pool),
+                Err(BridgeError::MessageNotFound { .. })
+            ));
+        }
+
+        #[test]
+        #[should_panic(expected = "generated message must round-trip")]
+        fn from_message_still_panics_on_a_schema_mismatch() {
+            let pool = pool();
+            // `DescriptorProto.field` (field 4) is a repeated message;
+            // `Version.suffix` (field 4) is a string whose payload here is not
+            // a valid message.
+            let idx = pool.message_index(DescriptorProto::FULL_NAME).unwrap();
+            // `0x08` is a field-1 varint tag with no value behind it.
+            let msg = Version {
+                suffix: Some("\u{8}".into()),
+                ..Default::default()
+            };
+            let _ = DynamicMessage::from_message(&msg, pool, idx);
+        }
+
+        #[test]
+        fn bridge_scales_the_untrusted_input_element_budget() {
+            let pool = pool();
+            // Enough repeated elements that the dynamic representation blows
+            // through the untrusted-input element-memory budget: the plain
+            // decoder rejects the bytes, while the bridge's finite,
+            // input-scaled budget admits the process's own encoding.
+            let elements = buffa::DEFAULT_ELEMENT_MEMORY_LIMIT / core::mem::size_of::<Value>() + 1;
+            let msg = FileDescriptorProto {
+                name: Some("big.proto".into()),
+                public_dependency: vec![0; elements],
+                ..Default::default()
+            };
+            let idx = pool.message_index(FileDescriptorProto::FULL_NAME).unwrap();
+            let bytes = msg.encode_to_vec();
+            assert_eq!(
+                DynamicMessage::decode(Arc::clone(&pool), idx, &bytes).unwrap_err(),
+                DecodeError::ElementMemoryLimitExceeded
+            );
+
+            let dm = DynamicMessage::try_from_message(&msg, Arc::clone(&pool)).unwrap();
+            assert_eq!(dm.to_message::<FileDescriptorProto>().unwrap(), msg);
+            let via_index = DynamicMessage::from_message(&msg, pool, idx);
+            assert_eq!(via_index.encode_to_vec(), bytes);
+        }
+
+        #[test]
+        fn bridge_memory_budgets_are_scaled_floored_and_finite() {
+            assert_eq!(
+                DynamicMessage::bridge_memory_limits(0),
+                (
+                    buffa::DEFAULT_ELEMENT_MEMORY_LIMIT,
+                    buffa::DEFAULT_UNKNOWN_FIELD_LIMIT,
+                )
+            );
+
+            let encoded_len = buffa::DEFAULT_UNKNOWN_FIELD_LIMIT + 1;
+            let (element_memory_limit, unknown_field_limit) =
+                DynamicMessage::bridge_memory_limits(encoded_len);
+            assert_eq!(element_memory_limit, encoded_len.saturating_mul(128));
+            assert_eq!(unknown_field_limit, encoded_len);
+            assert_ne!(element_memory_limit, usize::MAX);
+            assert_ne!(unknown_field_limit, usize::MAX);
+        }
+
+        #[cfg(feature = "std")]
+        #[test]
+        fn bridge_error_exposes_the_decode_source() {
+            use std::error::Error as _;
+
+            let err = BridgeError::Decode {
+                full_name: "t.M".into(),
+                source: DecodeError::UnexpectedEof,
+            };
+            assert!(err.source().is_some());
+            let err = BridgeError::MessageNotFound {
+                full_name: "t.M".into(),
+            };
+            assert!(err.source().is_none());
+            let err = BridgeError::MessageTooLarge {
+                full_name: "t.M".into(),
+            };
+            assert!(err.source().is_none());
+            assert_eq!(
+                err.to_string(),
+                "\"t.M\" exceeds the 2 GiB protobuf encoding limit"
+            );
+        }
     }
 }

@@ -38,6 +38,16 @@ pub const RECURSION_LIMIT: u32 = 100;
 /// not counted against the limit because they are already bounded by the
 /// input size, which [`DecodeOptions::with_max_message_size`] governs.
 ///
+/// The `limit × 40` figure prices a *flat* unknown field, and nesting costs
+/// more than that. Each unknown group allocates its own `Vec` of children,
+/// and `Vec`'s minimum non-zero capacity is four elements — so a group
+/// holding a single child occupies ~160 bytes of that `Vec` plus its own
+/// ~40-byte slot, roughly 200 bytes charged as one. A payload of many
+/// shallow groups therefore reaches about five times the flat ceiling,
+/// ~200 MB at the default rather than ~40 MB. Still bounded and still
+/// proportional to the limit, but worth knowing when choosing one: the
+/// count bounds *slots*, and a slot is not a fixed number of bytes.
+///
 /// A million unknown fields is far more than any realistic
 /// forward-compatibility scenario needs. Raise the limit with
 /// [`DecodeOptions::with_unknown_field_limit`] if you decode trusted
@@ -63,9 +73,16 @@ pub const DEFAULT_UNKNOWN_FIELD_LIMIT: usize = 1_000_000;
 /// Only the element footprint is counted. The *contents* of a string or bytes
 /// element are not, being already bounded by the input size that
 /// [`DecodeOptions::with_max_message_size`] governs, and packed scalars are not
-/// charged at all: their worst case is a 1-byte varint becoming a 4-byte `i32`,
-/// which is not an amplification vector, and bounding them would reject
-/// legitimate columnar payloads that carry millions of elements by design.
+/// charged by the generated or view decoders: their worst case there is a
+/// 1-byte varint becoming a 4-byte `i32`, which is not an amplification vector,
+/// and bounding it would reject legitimate columnar payloads that carry
+/// millions of elements by design. The reflective `DynamicMessage` decoder is
+/// the exception — it stores each element as a `Value`, so the same varint
+/// costs `size_of::<Value>()` and is charged accordingly. A columnar payload
+/// decoded reflectively may therefore need this limit raised.
+///
+/// The textproto parser defaults to this same constant, raised through
+/// [`TextDecoder::with_element_memory_limit`](crate::text::TextDecoder::with_element_memory_limit).
 ///
 /// 32 MiB of elements is far more than a realistic message carries, and sits
 /// alongside what [`DEFAULT_UNKNOWN_FIELD_LIMIT`] already permits (~38 MiB of
@@ -203,9 +220,12 @@ impl<'a> DecodeContext<'a> {
     /// fields where the wire is far cheaper than what it decodes into: an empty
     /// message element is two bytes and costs `size_of::<T>()`, so a payload
     /// well inside [`DecodeOptions::with_max_message_size`] can still expand by
-    /// two orders of magnitude. Packed scalars are not charged — their worst
-    /// case is a 1-byte varint becoming a 4-byte `i32`, and bounding them would
-    /// reject legitimate columnar payloads.
+    /// two orders of magnitude. Packed scalars are not charged by the
+    /// generated or view decoders — there the worst case is a 1-byte varint
+    /// becoming a 4-byte `i32`, and bounding that would reject legitimate
+    /// columnar payloads. The reflective `DynamicMessage` decoder does charge
+    /// them: its store is a `Vec<Value>`, so a 1-byte varint becomes a whole
+    /// `Value` slot and the ratio is an order of magnitude worse.
     ///
     /// No-op when no budget is attached (see
     /// [`with_element_memory`](DecodeContext::with_element_memory)).
@@ -1260,6 +1280,11 @@ impl DecodeOptions {
     /// and map entries — shared across the whole decode tree rather than per
     /// field or per message.
     ///
+    /// The lazy view family is the exception: there the budget is replayed
+    /// per deferred subtree rather than shared, so a full traversal can
+    /// spend it more than once. See
+    /// [`decode_lazy_view`](Self::decode_lazy_view).
+    ///
     /// This is not [`with_max_message_size`](Self::with_max_message_size) by
     /// another name: that bounds the bytes going *in*, this bounds what they
     /// expand *into*. They are not redundant, because the two are not
@@ -1270,12 +1295,16 @@ impl DecodeOptions {
     /// footprint, so a budget means the same amount of memory whatever the
     /// element size — which a count limit could not offer.
     ///
-    /// Packed scalar fields are never charged; see
+    /// Packed scalar fields are not charged by the generated or view
+    /// decoders, but are by the reflective `DynamicMessage` codec; see
     /// [`DEFAULT_ELEMENT_MEMORY_LIMIT`] for why, and for the `Vec`-doubling
     /// caveat on peak memory.
     ///
     /// Like every option on [`DecodeOptions`], this bounds the binary decoders
-    /// only. The same message decoded from JSON is not charged against this
+    /// only. The textproto parser applies the same default through its own
+    /// knob,
+    /// [`TextDecoder::with_element_memory_limit`](crate::text::TextDecoder::with_element_memory_limit).
+    /// The same message decoded from JSON is not charged against this
     /// budget, and the amplification it guards against is very nearly as large
     /// there — `{}` is three JSON bytes for the same element footprint.
     ///
@@ -1458,19 +1487,20 @@ impl DecodeOptions {
     /// The budgets remaining at each deferred field's position are recorded
     /// and charged when that field is accessed, so the configured limits
     /// flow through deferred decoding. Unlike
-    /// [`decode_view`](Self::decode_view), the unknown-field limit is not
-    /// enforced globally across the message tree at decode time: each
-    /// deferred subtree independently replays the allowance recorded at its
-    /// position, so a full traversal can materialize unknown-field records
-    /// proportional to input size. Prefer `decode_view` for untrusted input
-    /// if the global bound matters.
+    /// [`decode_view`](Self::decode_view), the unknown-field and
+    /// element-memory limits are not enforced globally across the message
+    /// tree at decode time: each deferred subtree independently replays the
+    /// budgets recorded at its position, so a full traversal can materialize
+    /// records proportional to input size. Prefer `decode_view` for
+    /// untrusted input if the global bound matters.
     ///
     /// # Errors
     ///
     /// Returns [`DecodeError::MessageTooLarge`] for oversized input, or any
     /// error from decoding the message's own fields — including
-    /// [`DecodeError::RecursionLimitExceeded`] /
-    /// [`DecodeError::UnknownFieldLimitExceeded`] when the configured limits
+    /// [`DecodeError::RecursionLimitExceeded`],
+    /// [`DecodeError::UnknownFieldLimitExceeded`], or
+    /// [`DecodeError::ElementMemoryLimitExceeded`] when the configured limits
     /// are exhausted by them. Deferred sub-message bytes surface errors on
     /// access instead.
     pub fn decode_lazy_view<'a, L: crate::view::LazyMessageView<'a>>(

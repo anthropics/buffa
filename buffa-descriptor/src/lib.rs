@@ -44,12 +44,12 @@ pub use desc::{
     ScalarType, ServiceDescriptor, ServiceIndex, SingularKind,
 };
 #[cfg(feature = "reflect")]
-pub use pool::{DescriptorPool, PoolError};
+pub use pool::{DescriptorPool, PoolError, MAX_SYMBOL_LEN};
 #[cfg(all(feature = "reflect", feature = "json"))]
 pub use reflect::DynamicMessageSeed;
 #[cfg(feature = "reflect")]
 pub use reflect::{
-    AnyError, DynamicMessage, MapKey, MapKeyRef, MapValue, ReflectCow, ReflectElement,
+    AnyError, BridgeError, DynamicMessage, MapKey, MapKeyRef, MapValue, ReflectCow, ReflectElement,
     ReflectError, ReflectList, ReflectMap, ReflectMapKey, ReflectMessage, ReflectMessageMut,
     ReflectMode, Reflectable, Value, ValueRef,
 };

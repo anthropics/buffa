@@ -12,19 +12,29 @@ use alloc::vec::Vec;
 use super::error::{ParseError, ParseErrorKind};
 use super::string::{unescape, unescape_str, UnescapeError};
 use super::token::{
-    lex_number, number_for_parse, NumKind, ScalarKind, Token, TokenKind, Tokenizer,
+    consume_ws, lex_number, number_for_parse, NumKind, ScalarKind, Token, TokenKind, Tokenizer,
 };
 
 /// Stateful textproto reader.
 ///
 /// Drives a [`Tokenizer`] and interprets scalar tokens as the requested Rust
 /// type. Recursion depth is enforced by the tokenizer's fixed-size open-stack
-/// (see [`RECURSION_LIMIT`](crate::RECURSION_LIMIT)).
+/// (see [`RECURSION_LIMIT`](crate::RECURSION_LIMIT)), and repeated and map
+/// elements are charged against an element-memory budget defaulting to
+/// [`DEFAULT_ELEMENT_MEMORY_LIMIT`](crate::DEFAULT_ELEMENT_MEMORY_LIMIT)
+/// (see [`with_element_memory_limit`](Self::with_element_memory_limit)).
 pub struct TextDecoder<'a> {
     tok: Tokenizer<'a>,
     /// Byte position of the last name returned by `read_field_name`, for
     /// [`unknown_field`](Self::unknown_field) error reporting.
     last_name_pos: usize,
+    /// Remaining element-memory budget, shared across the whole parse.
+    ///
+    /// The binary decoder's equivalent rides on `DecodeContext`, which never
+    /// reaches this parser, so textproto carries its own. See
+    /// [`ParseErrorKind::ElementMemoryLimitExceeded`] for the amplification
+    /// it bounds.
+    elem_remaining: usize,
 }
 
 impl<'a> TextDecoder<'a> {
@@ -33,7 +43,58 @@ impl<'a> TextDecoder<'a> {
         Self {
             tok: Tokenizer::new(input),
             last_name_pos: 0,
+            elem_remaining: crate::DEFAULT_ELEMENT_MEMORY_LIMIT,
         }
+    }
+
+    /// Set the element-memory budget for this parse.
+    ///
+    /// Bounds what the parse *materializes* rather than what it reads; see
+    /// [`ParseErrorKind::ElementMemoryLimitExceeded`]. Defaults to
+    /// [`DEFAULT_ELEMENT_MEMORY_LIMIT`](crate::DEFAULT_ELEMENT_MEMORY_LIMIT);
+    /// pass `usize::MAX` to disable.
+    ///
+    /// The budget is shared across the whole parse, not per field, as
+    /// [`DecodeOptions::with_element_memory_limit`](crate::DecodeOptions::with_element_memory_limit)
+    /// is on the binary side. The two are not charged identically: this
+    /// parser also charges repeated scalars, which the binary decoder
+    /// exempts because a packed 1-byte varint becoming a 4-byte `i32` is not
+    /// an amplification vector. Text has no packed form, so a repeated
+    /// scalar costs at least two input bytes per element and cannot reach a
+    /// worse ratio than that exemption protects — but a textproto scalar
+    /// list above roughly `limit / size_of::<T>()` elements is refused where
+    /// the equivalent binary payload is not.
+    #[must_use]
+    pub fn with_element_memory_limit(mut self, bytes: usize) -> Self {
+        self.elem_remaining = bytes;
+        self
+    }
+
+    /// Charge one element of type `T` against the budget.
+    ///
+    /// Charged before the element is parsed, so an over-budget input costs
+    /// the check rather than the work.
+    ///
+    /// Every repeated element is charged, including scalars — which the
+    /// binary decoder deliberately exempts, on the grounds that a packed
+    /// 1-byte varint becoming a 4-byte `i32` is not an amplification vector
+    /// and bounding it would reject columnar payloads. Text has no packed
+    /// form, so a repeated scalar costs at least two input bytes per element
+    /// and cannot reach a worse ratio than that exemption protects; charging
+    /// it uniformly keeps this one function the whole story rather than
+    /// pushing an element-kind distinction through codegen. The practical
+    /// effect is that a textproto scalar list above roughly
+    /// `DEFAULT_ELEMENT_MEMORY_LIMIT / size_of::<T>()` elements is refused
+    /// where the equivalent binary payload is not.
+    fn charge_element<T>(&mut self) -> Result<(), ParseError> {
+        let cost = core::mem::size_of::<T>();
+        if cost > self.elem_remaining {
+            return Err(self
+                .tok
+                .err_here(ParseErrorKind::ElementMemoryLimitExceeded));
+        }
+        self.elem_remaining -= cost;
+        Ok(())
     }
 
     /// Construct a parse error at a token's position.
@@ -225,7 +286,8 @@ impl<'a> TextDecoder<'a> {
     /// Read an `f32` value.
     ///
     /// Accepts any numeric form plus the case-insensitive literals `nan`,
-    /// `inf`, `infinity`, each optionally with a leading `-`. Overflow
+    /// `inf`, `infinity`, each optionally with a leading `-` (whitespace or
+    /// comments may separate the sign from the literal). Overflow
     /// saturates to ±∞ (matching C++ text-format behaviour).
     ///
     /// # Errors
@@ -249,11 +311,18 @@ impl<'a> TextDecoder<'a> {
         match tok.scalar_kind {
             ScalarKind::Literal => {
                 // nan, inf, infinity, -inf, -infinity (case-insensitive).
-                // trim_start: the tokenizer accepts `- inf` with whitespace
-                // between the sign and the literal, so the raw span may
-                // contain it.
+                // The tokenizer accepts whitespace/comments between `-` and
+                // the literal, so reuse its trivia handling for the raw span.
                 let (neg, lit) = match tok.raw.strip_prefix('-') {
-                    Some(r) => (true, r.trim_start()),
+                    Some(r) => {
+                        // `consume_ws` only stops after an ASCII whitespace
+                        // byte or a comment's `\n`, neither of which can sit
+                        // inside a multi-byte sequence, so the offset is a
+                        // char boundary even when a comment holds non-ASCII.
+                        let trivia_len = r.len() - consume_ws(r.as_bytes()).len();
+                        debug_assert!(r.is_char_boundary(trivia_len));
+                        (true, &r[trivia_len..])
+                    }
                     None => (false, tok.raw),
                 };
                 let v = if lit.eq_ignore_ascii_case("nan") {
@@ -538,6 +607,7 @@ impl<'a> TextDecoder<'a> {
                 return Ok(());
             }
             loop {
+                self.charge_element::<T>()?;
                 out.push(read_one(self)?);
                 // The tokenizer consumes the comma between elements. When
                 // there are no more elements, `ListClose` is next.
@@ -548,6 +618,7 @@ impl<'a> TextDecoder<'a> {
             }
         }
         // Single-value form.
+        self.charge_element::<T>()?;
         out.push(read_one(self)?);
         Ok(())
     }
@@ -866,6 +937,8 @@ mod tests {
             ("f: -inf",       "-inf"),
             ("f: - inf",      "-inf"),    // whitespace after sign
             ("f: -\tinf",     "-inf"),
+            ("f: - # c\ninf", "-inf"),  // comment after sign
+            ("f: -#c\n nan", "nan"),
             ("f: infinity",   "inf"),
             ("f: Infinity",   "inf"),
             ("f: -INFINITY",  "-inf"),

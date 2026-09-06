@@ -56,62 +56,92 @@ pub mod proto3 {
 }
 
 #[cfg(feature = "analytics_owned_types")]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
-#[repr(transparent)]
-#[serde(transparent)]
-/// Four-element inline list used by the `AnalyticsEvent` owned-type benchmark.
-pub struct SmallList<T>(pub smallvec::SmallVec<[T; 4]>);
+macro_rules! small_list {
+    ($(#[$meta:meta])* $name:ident, $capacity:literal) => {
+        $(#[$meta])*
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
+        #[repr(transparent)]
+        #[serde(transparent)]
+        pub struct $name<T>(pub smallvec::SmallVec<[T; $capacity]>);
 
-#[cfg(feature = "analytics_owned_types")]
-impl<T> Default for SmallList<T> {
-    #[inline]
-    fn default() -> Self {
-        Self(smallvec::SmallVec::new())
-    }
+        impl<T> Default for $name<T> {
+            #[inline]
+            fn default() -> Self {
+                Self(smallvec::SmallVec::new())
+            }
+        }
+
+        impl<T> core::ops::Deref for $name<T> {
+            type Target = [T];
+
+            #[inline]
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+
+        impl<T> FromIterator<T> for $name<T> {
+            #[inline]
+            fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+                Self(smallvec::SmallVec::from_iter(iter))
+            }
+        }
+
+        impl<T> From<Vec<T>> for $name<T> {
+            #[inline]
+            fn from(value: Vec<T>) -> Self {
+                Self(smallvec::SmallVec::from_vec(value))
+            }
+        }
+
+        impl<T> buffa::ProtoList<T> for $name<T>
+        where
+            T: Clone + PartialEq + core::fmt::Debug + Send + Sync,
+        {
+            #[inline]
+            fn push(&mut self, value: T) {
+                self.0.push(value);
+            }
+
+            #[inline]
+            fn clear(&mut self) {
+                self.0.clear();
+            }
+        }
+    };
 }
 
 #[cfg(feature = "analytics_owned_types")]
-impl<T> core::ops::Deref for SmallList<T> {
-    type Target = [T];
+// Benchmark-only wrappers share one implementation; use const
+// generics if generated custom-type paths gain const-argument support.
+small_list!(
+    /// Four-element inline list used by the uniform owned-type benchmark.
+    SmallList,
+    4
+);
 
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+#[cfg(feature = "analytics_owned_types")]
+small_list!(
+    /// Eight-element inline list used only for small-element repeated fields.
+    SmallList8,
+    8
+);
+
+#[cfg(feature = "analytics_owned_types")]
+macro_rules! assert_transparent {
+    ($outer:ty, $inner:ty) => {
+        const _: () = {
+            assert!(core::mem::size_of::<$outer>() == core::mem::size_of::<$inner>());
+            assert!(core::mem::align_of::<$outer>() == core::mem::align_of::<$inner>());
+        };
+    };
 }
 
 #[cfg(feature = "analytics_owned_types")]
-impl<T> FromIterator<T> for SmallList<T> {
-    #[inline]
-    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        Self(smallvec::SmallVec::from_iter(iter))
-    }
-}
-
+assert_transparent!(SmallList<u32>, smallvec::SmallVec<[u32; 4]>);
 #[cfg(feature = "analytics_owned_types")]
-impl<T> From<Vec<T>> for SmallList<T> {
-    #[inline]
-    fn from(value: Vec<T>) -> Self {
-        Self(smallvec::SmallVec::from_vec(value))
-    }
-}
-
-#[cfg(feature = "analytics_owned_types")]
-impl<T> buffa::ProtoList<T> for SmallList<T>
-where
-    T: Clone + PartialEq + core::fmt::Debug + Send + Sync,
-{
-    #[inline]
-    fn push(&mut self, value: T) {
-        self.0.push(value);
-    }
-
-    #[inline]
-    fn clear(&mut self) {
-        self.0.clear();
-    }
-}
+assert_transparent!(SmallList8<u32>, smallvec::SmallVec<[u32; 8]>);
 
 #[cfg(feature = "analytics_owned_types")]
 pub mod analytics_smolstr {
@@ -131,13 +161,21 @@ pub mod analytics_smolstr_smallvec {
     ));
 }
 
+#[cfg(feature = "analytics_owned_types")]
+pub mod analytics_selective_smallvec {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/analytics_selective_smallvec/bench.mod.rs"
+    ));
+}
+
 #[cfg(all(test, feature = "analytics_owned_types"))]
 mod owned_type_tests {
     use buffa::Message;
 
     use super::{
-        analytics_smallvec, analytics_smolstr, analytics_smolstr_smallvec, bench::AnalyticsEvent,
-        benchmarks::BenchmarkDataset,
+        analytics_selective_smallvec, analytics_smallvec, analytics_smolstr,
+        analytics_smolstr_smallvec, bench::AnalyticsEvent, benchmarks::BenchmarkDataset,
     };
 
     fn assert_small_list_shape(event: &analytics_smallvec::AnalyticsEvent) {
@@ -145,6 +183,15 @@ mod owned_type_tests {
         let _: &super::SmallList<_> = &event.sections;
         if let Some(section) = event.sections.first() {
             let _: &super::SmallList<_> = &section.attributes;
+            let _: &Vec<_> = &section.children;
+        }
+    }
+
+    fn assert_selective_small_list_shape(event: &analytics_selective_smallvec::AnalyticsEvent) {
+        let _: &super::SmallList8<_> = &event.properties;
+        let _: &Vec<_> = &event.sections;
+        if let Some(section) = event.sections.first() {
+            let _: &super::SmallList8<_> = &section.attributes;
             let _: &Vec<_> = &section.children;
         }
     }
@@ -179,6 +226,14 @@ mod owned_type_tests {
             let _: &super::SmallList<_> = &combined.properties;
             assert_eq!(
                 AnalyticsEvent::decode_from_slice(&combined.encode_to_vec()).unwrap(),
+                expected
+            );
+
+            let selective =
+                analytics_selective_smallvec::AnalyticsEvent::decode_from_slice(&payload).unwrap();
+            assert_selective_small_list_shape(&selective);
+            assert_eq!(
+                AnalyticsEvent::decode_from_slice(&selective.encode_to_vec()).unwrap(),
                 expected
             );
         }

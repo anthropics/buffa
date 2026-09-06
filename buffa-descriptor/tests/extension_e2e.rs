@@ -256,6 +256,61 @@ mod malformed {
     }
 
     #[test]
+    fn implementation_reserved_extension_numbers_rejected() {
+        for number in [
+            buffa::encoding::FIRST_RESERVED_FIELD_NUMBER as i32,
+            buffa::encoding::LAST_RESERVED_FIELD_NUMBER as i32,
+        ] {
+            let mut set = base_set();
+            let ext_file = set
+                .file
+                .iter_mut()
+                .find(|f| f.package.as_deref() == Some("reflect.ext"))
+                .unwrap();
+            ext_file.extension[0].number = Some(number);
+
+            let err = DescriptorPool::new(set).unwrap_err();
+            assert!(
+                matches!(
+                    &err,
+                    buffa_descriptor::PoolError::ReservedFieldNumber { field, number: actual }
+                        if field == "reflect.ext.ext_int32" && *actual == number
+                ),
+                "unexpected error: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn extension_ranges_overlapping_reserved_band_load_verbatim() {
+        // protoc and protobuf-go keep declared ranges as written even when
+        // they span 19000-19999 (`extensions 100 to max;` in descriptor.proto
+        // does); only a field or extension *numbered* in the band is
+        // rejected, and `link_field` catches that before any range check.
+        let mut set = base_set();
+        let ext_file = set
+            .file
+            .iter_mut()
+            .find(|f| f.package.as_deref() == Some("reflect.ext"))
+            .unwrap();
+        let extendable = ext_file
+            .message_type
+            .iter_mut()
+            .find(|m| m.name.as_deref() == Some("Extendable"))
+            .unwrap();
+        extendable.extension_range[0].start = Some(100);
+        extendable.extension_range[0].end =
+            Some((buffa::encoding::LAST_RESERVED_FIELD_NUMBER + 1) as i32);
+
+        let p = DescriptorPool::new(set).unwrap();
+        let md = p.message_by_name("reflect.ext.Extendable").unwrap();
+        assert_eq!(
+            md.extension_ranges(),
+            &[(100, buffa::encoding::LAST_RESERVED_FIELD_NUMBER + 1)]
+        );
+    }
+
+    #[test]
     fn extension_oneof_index_is_scrubbed() {
         let mut set = base_set();
         let ext_file = set
