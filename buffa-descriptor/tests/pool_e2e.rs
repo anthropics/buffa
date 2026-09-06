@@ -1700,6 +1700,97 @@ fn method_fqn_collisions_with_registered_symbols_are_rejected_transactionally() 
 }
 
 #[test]
+fn out_of_range_public_dependency_indices_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("bad-public-dependency.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            // No imports at all, so any index names nothing.
+            public_dependency: vec![7],
+            message_type: vec![DescriptorProto {
+                name: Some("Solo".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_set_rejected_without_mutating_pool(
+        "bad-public-dependency.proto",
+        "invalid.test.Solo",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::InvalidPublicDependencyIndex {
+                    index: 7,
+                    dependency_count: 0,
+                    ..
+                }
+            ));
+            assert_eq!(
+                err.to_string(),
+                "file bad-public-dependency.proto public_dependency index 7 \
+                 is out of range (0 dependencies declared)"
+            );
+        },
+    );
+}
+
+#[test]
+fn import_public_indices_that_protoc_emits_are_accepted() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    // What `import public "b.proto";` compiles to: a `dependency` entry plus
+    // its position in `public_dependency`. No .proto in the test corpus uses
+    // `import public`, so this is the only cover for a non-empty
+    // `public_dependency` reaching the pool.
+    let set = FileDescriptorSet {
+        file: vec![
+            FileDescriptorProto {
+                name: Some("b.proto".into()),
+                package: Some("pubdep.test".into()),
+                syntax: Some("proto3".into()),
+                message_type: vec![DescriptorProto {
+                    name: Some("Base".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            FileDescriptorProto {
+                name: Some("a.proto".into()),
+                package: Some("pubdep.test".into()),
+                syntax: Some("proto3".into()),
+                dependency: vec!["b.proto".into()],
+                public_dependency: vec![0],
+                message_type: vec![DescriptorProto {
+                    name: Some("Front".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+
+    let mut p = DescriptorPool::decode(FDS_BYTES).unwrap();
+    p.add_file_descriptor_set(set)
+        .expect("a re-exporting import links");
+
+    assert!(p.file_by_name("a.proto").is_some());
+    assert!(p.message_by_name("pubdep.test.Front").is_some());
+    assert!(p.message_by_name("pubdep.test.Base").is_some());
+}
+
+#[test]
 fn service_descriptor_links() {
     let p = pool();
     let svc = p
