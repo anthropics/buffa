@@ -114,7 +114,8 @@ mod view_json_types {
     use crate::view_json::__buffa::oneof::with_oneof::Value as ValueOneof;
     use crate::view_json::__buffa::view::oneof::with_oneof::Value as ValueViewOneof;
     use crate::view_json::{
-        Scalars, ScalarsOwnedView, WithMaps, WithMapsOwnedView, WithOneof, WithOneofOwnedView,
+        Scalars, ScalarsOwnedView, ScalarsView, WithMaps, WithMapsOwnedView, WithOneof,
+        WithOneofOwnedView,
     };
 
     #[test]
@@ -172,8 +173,11 @@ mod view_json_types {
             ..Default::default()
         };
         let owned = ScalarsOwnedView::from_owned(&msg).expect("from_owned");
+        // Spelled out: rustc 1.75 (MSRV) cannot infer `V` through `AsRef`
+        // under the higher-ranked bound; current rustc can.
+        let handle: &buffa::view::OwnedView<ScalarsView<'static>> = owned.as_ref();
         assert_eq!(
-            handle_to_json(owned.as_ref()),
+            handle_to_json(handle),
             serde_json::to_string(&msg).expect("serialize owned")
         );
     }
