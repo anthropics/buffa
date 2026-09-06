@@ -500,7 +500,10 @@ pub(crate) fn generate_view_with_nesting(
 
         ::buffa::impl_view_reborrow!(#view_ident);
 
-        // SAFETY (for the `unsafe impl` this expands to): the generated view
+        // Why codegen may assert `ViewLifetimeParametric` for every view it
+        // emits (this comment documents the emitter; `quote!` drops it, so
+        // the generated file carries only the macro call, whose own docs
+        // point at the contract): the generated view
         // struct is generic over `'a` and every impl emitted for it —
         // `MessageView`, `Debug`, `Clone`, `Serialize`, reflection — is
         // parametric in `'a`, so none can observe `OwnedView`'s forged
@@ -512,7 +515,7 @@ pub(crate) fn generate_view_with_nesting(
         // ever driven through those parametric impls, which forces its own
         // impls to be parametric too. The macro (rather than a literal
         // `unsafe impl`) keeps the output valid under `#![forbid(unsafe_code)]`.
-        ::buffa::unsafe_impl_lifetime_parametric!(#view_ident);
+        ::buffa::unsafe_impl_view_lifetime_parametric!(#view_ident);
 
         #owned_view_wrapper
 
@@ -1802,10 +1805,14 @@ fn map_view_entry_decode(
         }
         Type::TYPE_MESSAGE => {
             let vt = resolve_view_decode_tokens(scope, fd)?;
+            // Proto merge semantics, as in the singular/oneof arms and the
+            // owned map codec: a repeated occurrence of the value field
+            // within one entry merges into the message decoded so far
+            // (`#var` starts as the view's `Default`), never replaces it.
             quote! {
                 let __sub_ctx = ctx.descend()?;
                 let sub = ::buffa::types::borrow_bytes(&mut entry_cur)?;
-                #var = <#vt as ::buffa::MessageView>::decode_view_ctx(sub, __sub_ctx)?;
+                <#vt as ::buffa::MessageView>::merge_into_view(&mut #var, sub, __sub_ctx)?;
             }
         }
         _ => {

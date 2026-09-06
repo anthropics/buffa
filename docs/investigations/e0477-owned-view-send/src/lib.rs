@@ -53,7 +53,7 @@ pub struct View<'a> {
 //
 //   auto_send → mirrors buffa after the fix: no manual impl. Auto-traits
 //               give `Owned<V>: Send iff V: Send`, no lifetime bound.
-//               The real OwnedView is `ManuallyDrop<V>` + `Bytes`, both of
+//               The real OwnedView was then `ManuallyDrop<V>` + `Bytes`, both of
 //               which forward auto-traits, so a bare `(V,)` is equivalent.
 
 #[cfg(not(feature = "auto_send"))]

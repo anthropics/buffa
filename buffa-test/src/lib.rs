@@ -9,6 +9,20 @@ pub mod basic {
     buffa::include_proto!("basic");
 }
 
+/// Generated views assert `ViewLifetimeParametric` through
+/// `buffa::unsafe_impl_view_lifetime_parametric!`, whose expansion contains an
+/// `unsafe impl`. Consumers routinely `include!` generated code into crates
+/// under `#![forbid(unsafe_code)]`, and the macro form is accepted there only
+/// because the `unsafe` token originates in buffa and rustc does not report
+/// `unsafe_code` inside an external macro's expansion. This module pins that:
+/// if a future rustc starts reporting it, or codegen emits a literal
+/// `unsafe impl`, `buffa-test` stops compiling here.
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod forbid_unsafe_code {
+    buffa::include_proto!("inline_field");
+}
+
 /// `[debug_redact = true]` — generated Debug impls print a placeholder
 /// instead of the annotated field's value.
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
@@ -502,6 +516,13 @@ pub mod wkt {
     buffa::include_proto!("test.wkt");
 }
 
+/// googleapis WKTs (#382): Api/Type/Enum/SourceContext auto-mapped to
+/// buffa-types. Compiling this module is the assertion.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod wkt_api {
+    buffa::include_proto!("test.wktapi");
+}
+
 /// `lazy_views(true)` — the additive `FooLazyView` decode-on-access family.
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod lazyviews {
@@ -660,6 +681,15 @@ pub mod mixed_reflect_dep {
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod mixed_reflect_parent {
     buffa::include_proto!("mixedref.parent");
+}
+
+// Shared descriptor pool (`shared_descriptor_pool(true)`, `$OUT_DIR` mode):
+// the include file hosts the one `__buffa_fds` root at this module's top
+// level, with both packages (`sharedpool::a`, `sharedpool::b`) delegating to
+// it. See `src/tests/shared_pool.rs`.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod shared_pool {
+    include!(concat!(env!("OUT_DIR"), "/sharedpool_include.rs"));
 }
 
 #[allow(

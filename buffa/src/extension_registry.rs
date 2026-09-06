@@ -24,7 +24,6 @@
 //! - A `pub const __EXT_JSON: ExtensionRegistryEntry` per `extend` declaration,
 //!   plus a `register_extensions(&mut ExtensionRegistry)` convenience function.
 
-use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
@@ -58,7 +57,10 @@ pub struct JsonExtEntry {
     /// Extract this extension's value from the extendee's unknown fields and
     /// serialize it to a JSON value.
     pub to_json: fn(u32, &UnknownFields) -> Result<serde_json::Value, String>,
-    /// Parse a JSON value into unknown-field records at the given number.
+    /// Parse a JSON value into unknown-field records at the given number. The
+    /// function owns the ProtoJSON `null` policy: returning an empty vector
+    /// means the recognized key is absent and no record is added. Hand-written
+    /// entries may choose a different policy.
     pub from_json: fn(serde_json::Value, u32) -> Result<Vec<UnknownField>, String>,
 }
 
@@ -73,8 +75,8 @@ pub type ExtensionRegistryEntry = JsonExtEntry;
 /// unknown fields → is this number a known extension of this message?),
 /// deserialize looks up by `full_name` (saw `"[pkg.ext]"` → what is this?).
 pub struct ExtensionRegistry {
-    by_number: HashMap<(String, u32), JsonExtEntry>,
-    by_name: HashMap<String, (String, u32)>,
+    by_number: HashMap<&'static str, HashMap<u32, JsonExtEntry>>,
+    by_name: HashMap<&'static str, (&'static str, u32)>,
 }
 
 impl ExtensionRegistry {
@@ -89,28 +91,38 @@ impl ExtensionRegistry {
     /// Registers an entry. Replaces any existing entry at the same
     /// `(extendee, number)` or `full_name`.
     pub fn register(&mut self, entry: JsonExtEntry) {
-        let key = (entry.extendee.to_owned(), entry.number);
+        let extendee = entry.extendee;
+        let number = entry.number;
 
-        if let Some(previous) = self.by_number.remove(&key) {
+        if let Some(previous) = self
+            .by_number
+            .get_mut(extendee)
+            .and_then(|entries| entries.remove(&number))
+        {
             self.by_name.remove(previous.full_name);
         }
-        if let Some(previous_key) = self.by_name.remove(entry.full_name) {
-            self.by_number.remove(&previous_key);
+        if let Some((previous_extendee, previous_number)) = self.by_name.remove(entry.full_name) {
+            if let Some(entries) = self.by_number.get_mut(previous_extendee) {
+                entries.remove(&previous_number);
+            }
         }
 
-        self.by_name.insert(entry.full_name.to_owned(), key.clone());
-        self.by_number.insert(key, entry);
+        self.by_name.insert(entry.full_name, (extendee, number));
+        self.by_number
+            .entry(extendee)
+            .or_default()
+            .insert(number, entry);
     }
 
     /// Serialize-side lookup: is `number` a registered extension of `extendee`?
     pub fn by_number(&self, extendee: &str, number: u32) -> Option<&JsonExtEntry> {
-        self.by_number.get(&(extendee.to_owned(), number))
+        self.by_number.get(extendee)?.get(&number)
     }
 
     /// Deserialize-side lookup: what extension is `"[full_name]"`?
     pub fn by_name(&self, full_name: &str) -> Option<&JsonExtEntry> {
         let key = self.by_name.get(full_name)?;
-        self.by_number.get(key)
+        self.by_number.get(key.0)?.get(&key.1)
     }
 }
 
@@ -593,6 +605,28 @@ pub mod helpers {
         }])
     }
 
+    /// JSON encode for a `google.protobuf.NullValue` extension.
+    pub fn null_value_to_json(n: u32, f: &UnknownFields) -> Result<serde_json::Value, String> {
+        EnumI32::decode(n, f).ok_or_else(|| missing(n))?;
+        Ok(serde_json::Value::Null)
+    }
+
+    /// JSON decode for a `google.protobuf.NullValue` extension.
+    pub fn null_value_from_json(v: serde_json::Value, n: u32) -> Result<Vec<UnknownField>, String> {
+        match v {
+            serde_json::Value::Null => {}
+            serde_json::Value::String(s) if s == "NULL_VALUE" => {}
+            serde_json::Value::Number(num) if num.as_i64() == Some(0) => {}
+            _ => {
+                return Err(format!("field {n}: expected null, `NULL_VALUE`, or 0"));
+            }
+        }
+        Ok(alloc::vec![UnknownField {
+            number: n,
+            data: UnknownFieldData::Varint(0),
+        }])
+    }
+
     // ── Message-typed: uses the target type's own Serialize / Deserialize ───
 
     /// JSON encode for a message-typed extension.
@@ -825,6 +859,28 @@ pub mod helpers {
         n: u32,
     ) -> Result<Vec<UnknownField>, String> {
         repeated_from_array(v, n, enum_from_json::<E>)
+    }
+
+    /// JSON encode for a repeated `google.protobuf.NullValue` extension.
+    pub fn repeated_null_value_to_json(
+        n: u32,
+        f: &UnknownFields,
+    ) -> Result<serde_json::Value, String> {
+        let values = Repeated::<EnumI32>::decode(n, f);
+        Ok(serde_json::Value::Array(
+            values
+                .into_iter()
+                .map(|_| serde_json::Value::Null)
+                .collect(),
+        ))
+    }
+
+    /// JSON decode for a repeated `google.protobuf.NullValue` extension.
+    pub fn repeated_null_value_from_json(
+        v: serde_json::Value,
+        n: u32,
+    ) -> Result<Vec<UnknownField>, String> {
+        repeated_from_array(v, n, null_value_from_json)
     }
 
     /// JSON encode for a repeated message-typed extension: each element runs
@@ -1134,6 +1190,27 @@ mod tests {
     }
 
     #[test]
+    fn registry_keys_the_same_number_per_extendee() {
+        let mut reg = ExtensionRegistry::new();
+        reg.register(entry!(120, "pkg.ext", "pkg.Msg"));
+        reg.register(entry!(120, "other.ext", "other.Msg"));
+
+        // Two extendees may hold the same field number at once.
+        assert_eq!(reg.by_number("pkg.Msg", 120).unwrap().full_name, "pkg.ext");
+        assert_eq!(
+            reg.by_number("other.Msg", 120).unwrap().full_name,
+            "other.ext"
+        );
+
+        // Re-registering a name under a different extendee evicts the old
+        // (extendee, number) slot, not just the one under the new extendee.
+        reg.register(entry!(7, "pkg.ext", "other.Msg"));
+        assert!(reg.by_number("pkg.Msg", 120).is_none());
+        assert_eq!(reg.by_number("other.Msg", 7).unwrap().full_name, "pkg.ext");
+        assert_eq!(reg.by_name("pkg.ext").unwrap().extendee, "other.Msg");
+    }
+
+    #[test]
     fn deserialize_extension_key_shapes() {
         let mut reg = ExtensionRegistry::new();
         reg.register(entry!(120, "pkg.ext", "pkg.Msg"));
@@ -1339,6 +1416,29 @@ mod tests {
         assert!(err.contains("unknown enum variant"), "{err}");
     }
 
+    #[test]
+    fn null_value_helpers_roundtrip_and_accept_enum_forms() {
+        let fields = fields_with(UnknownField {
+            number: 5,
+            data: UnknownFieldData::Varint(0),
+        });
+        assert_eq!(
+            null_value_to_json(5, &fields).unwrap(),
+            serde_json::Value::Null
+        );
+
+        for value in [
+            serde_json::Value::Null,
+            serde_json::json!("NULL_VALUE"),
+            serde_json::json!(0),
+        ] {
+            let records = null_value_from_json(value, 5).unwrap();
+            assert_eq!(records.len(), 1);
+            assert_eq!(records[0].data, UnknownFieldData::Varint(0));
+        }
+        assert!(null_value_from_json(serde_json::json!(1), 5).is_err());
+    }
+
     // ── Repeated helpers ────────────────────────────────────────────────────
 
     fn fields_from(records: Vec<UnknownField>) -> UnknownFields {
@@ -1390,6 +1490,19 @@ mod tests {
         assert_eq!(records.len(), 2);
         let f = fields_from(records);
         assert_eq!(repeated_enum_to_json::<Color>(5, &f).unwrap(), json);
+    }
+
+    #[test]
+    fn repeated_null_value_helpers_roundtrip() {
+        let json = serde_json::json!([null, null]);
+        let records = repeated_null_value_from_json(json.clone(), 5).unwrap();
+        assert_eq!(records.len(), 2);
+        assert!(records
+            .iter()
+            .all(|record| record.data == UnknownFieldData::Varint(0)));
+
+        let fields = fields_from(records);
+        assert_eq!(repeated_null_value_to_json(5, &fields).unwrap(), json);
     }
 
     #[test]

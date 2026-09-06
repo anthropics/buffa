@@ -428,8 +428,8 @@ fn collect_variant_info(
                     "oneof variant `{variant_fqn}` is recursive and cannot be \
                      stored inline: it would make the generated enum unsized. \
                      Remove `\"{dotted_fqn}\"` from unbox_oneof_in, or use a \
-                     broader prefix (or unbox_oneof()) to keep this variant \
-                     boxed while inlining the rest."
+                     broader prefix (or the blanket `.` rule) to keep this \
+                     variant boxed while inlining the rest."
                 )));
             }
             Ok(VariantInfo {
@@ -738,7 +738,25 @@ fn generate_oneof_serialize(
                 };
             }
 
-            if serde_helper_path(v.field_type).is_some() {
+            if v.is_boxed {
+                // Boxed variants are message/group types (see is_boxed_variant),
+                // which never need a proto-JSON helper. Lock the invariant in
+                // case is_boxed_variant ever broadens: a boxed scalar taking
+                // this arm would skip the ProtoJson adapter silently.
+                debug_assert!(
+                    serde_helper_path(v.field_type).is_none(),
+                    "boxed oneof variant cannot need a proto-JSON helper"
+                );
+                // ProtoBox guarantees Deref<Target = T>, so serialize the
+                // message itself instead of requiring the pointer type to
+                // implement serde::Serialize. The default Box<T> already
+                // behaves this way through serde's blanket impl.
+                quote! {
+                    Self::#ident(v) => {
+                        map.serialize_entry(#json_name, &**v)?;
+                    }
+                }
+            } else if serde_helper_path(v.field_type).is_some() {
                 // Type needs special proto JSON encoding — route through the
                 // runtime ProtoJson adapter (ProtoElemJson covers every type
                 // serde_helper_path matches).
@@ -761,9 +779,9 @@ fn generate_oneof_serialize(
         .collect();
 
     quote! {
-        impl serde::Serialize for #enum_ident {
-            fn serialize<S: serde::Serializer>(&self, s: S) -> ::core::result::Result<S::Ok, S::Error> {
-                use serde::ser::SerializeMap;
+        impl ::serde::Serialize for #enum_ident {
+            fn serialize<S: ::serde::Serializer>(&self, s: S) -> ::core::result::Result<S::Ok, S::Error> {
+                use ::serde::ser::SerializeMap;
                 let mut map = s.serialize_map(Some(1))?;
                 match self {
                     #(#arms)*
@@ -843,7 +861,7 @@ pub(crate) fn oneof_variant_deser_arm(
         };
         let set = quote! {
             if #result_var.is_some() {
-                return Err(serde::de::Error::custom(#dup_err_msg));
+                return Err(::serde::de::Error::custom(#dup_err_msg));
             }
             #result_var = Some(#enum_ident::#variant_ident(#wrapped_v));
         };
@@ -856,9 +874,9 @@ pub(crate) fn oneof_variant_deser_arm(
             // (use_bytes_type). No shim needed.
             quote! {
                 struct _DeserSeed;
-                impl<'de> serde::de::DeserializeSeed<'de> for _DeserSeed {
+                impl<'de> ::serde::de::DeserializeSeed<'de> for _DeserSeed {
                     type Value = #variant_type;
-                    fn deserialize<D: serde::Deserializer<'de>>(self, d: D) -> ::core::result::Result<#variant_type, D::Error> {
+                    fn deserialize<D: ::serde::Deserializer<'de>>(self, d: D) -> ::core::result::Result<#variant_type, D::Error> {
                         #helper::deserialize(d)
                     }
                 }
@@ -878,7 +896,7 @@ pub(crate) fn oneof_variant_deser_arm(
         let set = quote! {
             if let Some(v) = v {
                 if #result_var.is_some() {
-                    return Err(serde::de::Error::custom(#dup_err_msg));
+                    return Err(::serde::de::Error::custom(#dup_err_msg));
                 }
                 #result_var = Some(#enum_ident::#variant_ident(#wrapped_v));
             }

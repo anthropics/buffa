@@ -63,7 +63,7 @@ Under `generate_json(true)`, the five traits have different serde requirements, 
 | `SmallBytes` (`ProtoBytes`) | No | Codegen routes all bytes positions through buffa's base64 with-module, which only needs `AsRef<[u8]>` / `From<Vec<u8>>`. |
 | `SmallVec<T>` (`ProtoList`) | Yes — `#[serde(transparent)]` | A repeated field whose element type is proto-JSON-compliant on its own (string, int32, message, …) is serialized through the collection's native serde. |
 | `IndexMap<K, V>` (`MapStorage`) | Yes — `#[serde(transparent)]` | An integer-keyed map routes through buffa's `string_key_map` with-module (which only needs `MapStorage`), but a string-keyed map serializes through the container's native serde. |
-| `SmallBox<T>` (`ProtoBox`) | `Serialize` only | An optional message field goes through `MessageField`'s blanket serde, and every deserialize path constructs via `ProtoBox::new` — so only the oneof *serialize* arm reaches the pointer's own `Serialize`. |
+| `SmallBox<T>` (`ProtoBox`) | No | Message-field JSON serialization and oneof message variants serialize the pointee, while every deserialize path constructs the pointer via `ProtoBox::new`. |
 
 ## The compile-time guard
 

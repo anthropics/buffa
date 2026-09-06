@@ -80,8 +80,8 @@ fn test_owned_view_wrapper_struct_and_value_accessors() {
     // The `unsafe` marker every `OwnedView` constructor requires, emitted
     // via the macro so the output stays valid under `forbid(unsafe_code)`.
     assert!(
-        content.contains("::buffa::unsafe_impl_lifetime_parametric!(ItemView);"),
-        "missing LifetimeParametric marker: {content}"
+        content.contains("::buffa::unsafe_impl_view_lifetime_parametric!(ItemView);"),
+        "missing ViewLifetimeParametric marker: {content}"
     );
 }
 

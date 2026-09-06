@@ -1,5 +1,6 @@
 //! WKT integration: extern_path auto-mapping to buffa-types for
-//! Timestamp/Duration/Any/Struct/wrappers/FieldMask, including views.
+//! Timestamp/Duration/Any/Struct/wrappers/FieldMask/Api/Type/SourceContext,
+//! including views.
 
 use super::round_trip;
 use buffa::Message;
@@ -104,4 +105,43 @@ fn test_wkt_view_with_extern_path() {
     assert_eq!(view.created_at.nanos, 999);
     // Full round-trip.
     assert_eq!(view.to_owned_message().unwrap().encode_to_vec(), wire);
+}
+
+#[test]
+fn test_wkt_api_types_round_trip() {
+    use crate::wkt_api::Catalog;
+    let msg = Catalog {
+        api: buffa::MessageField::some(buffa_types::google::protobuf::Api {
+            name: "google.example.v1.Example".into(),
+            version: "1.0".into(),
+            ..Default::default()
+        }),
+        type_info: buffa::MessageField::some(buffa_types::google::protobuf::Type {
+            name: "google.example.v1.Msg".into(),
+            ..Default::default()
+        }),
+        source_context: buffa::MessageField::some(buffa_types::google::protobuf::SourceContext {
+            file_name: "google/example/v1/example.proto".into(),
+            ..Default::default()
+        }),
+        enum_type: buffa::MessageField::some(buffa_types::google::protobuf::Enum {
+            name: "google.example.v1.Color".into(),
+            enumvalue: vec![buffa_types::google::protobuf::EnumValue {
+                name: "COLOR_RED".into(),
+                number: 1,
+                ..Default::default()
+            }],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let decoded = round_trip(&msg);
+    assert_eq!(decoded.api.name, "google.example.v1.Example");
+    assert_eq!(decoded.type_info.name, "google.example.v1.Msg");
+    assert_eq!(decoded.enum_type.name, "google.example.v1.Color");
+    assert_eq!(decoded.enum_type.enumvalue[0].number, 1);
+    assert_eq!(
+        decoded.source_context.file_name,
+        "google/example/v1/example.proto"
+    );
 }

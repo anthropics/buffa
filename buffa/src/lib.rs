@@ -112,7 +112,7 @@
 //! | [`view::MessageView`] | Zero-copy borrowed view trait |
 //! | [`view::OwnedView<V>`](view::OwnedView) | Self-contained `'static` view backed by `Bytes` |
 //! | [`view::ViewReborrow`] | Expose real borrow lifetime from `OwnedView` via [`reborrow`](view::OwnedView::reborrow) |
-//! | [`view::LifetimeParametric`] | `unsafe` marker required of every `V` in `OwnedView<V>` — the view keeps no buffer borrow past itself |
+//! | [`view::ViewLifetimeParametric`] | `unsafe` marker required of every `V` in `OwnedView<V>` — the view keeps no buffer borrow past itself |
 //!
 //! # `no_std`
 //!
@@ -279,8 +279,8 @@ pub use unknown_fields::{UnknownField, UnknownFieldData, UnknownFields};
 pub use text::TextFormat;
 pub use view::{
     DefaultViewInstance, HasMessageView, LazyMessageFieldView, LazyMessageView, LazyRepeatedView,
-    LifetimeParametric, MapView, MessageFieldView, MessageView, OwnedView, RepeatedView,
-    UnknownFieldsView, ViewEncode, ViewReborrow,
+    MapView, MessageFieldView, MessageView, OwnedView, RepeatedView, UnknownFieldsView, ViewEncode,
+    ViewLifetimeParametric, ViewReborrow,
 };
 
 /// Private re-exports used exclusively by generated code.
@@ -578,5 +578,5 @@ pub mod __doctest_fixtures {
     // SAFETY: `PersonView<'a>` is generic over `'a`; every impl on it other
     // than the canonical `ViewReborrow` shape above is parametric in `'a`, so
     // none can retain a buffer borrow past `Self`.
-    unsafe impl view::LifetimeParametric for PersonView<'static> {}
+    unsafe impl view::ViewLifetimeParametric for PersonView<'static> {}
 }

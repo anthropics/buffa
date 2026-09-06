@@ -761,6 +761,10 @@ pub enum PointerRepr {
     ///   pointer must implement `arbitrary::Arbitrary` (the oneof enum derives it
     ///   and stores the pointer directly in the variant). The singular-field path
     ///   needs no such impl — `MessageField` constructs the pointer itself.
+    /// - With JSON generation enabled, custom pointers do not need
+    ///   `serde::Serialize` or `serde::Deserialize`: singular message fields
+    ///   and message-valued oneof variants serialize the pointee, while decode
+    ///   paths construct the pointer through `ProtoBox`.
     Custom(String),
 }
 
@@ -1451,19 +1455,64 @@ pub struct CodeGenConfig {
     /// instance.
     ///
     /// The shared root module itself is emitted by the module-tree builder
-    /// (`buffa-build` or `protoc-gen-buffa-packaging`), not by `generate`, so
-    /// this mode requires one of those front-ends to assemble the tree.
-    /// Consumers that wire the per-package modules by hand should leave it
-    /// `false` (the default), which keeps today's self-contained per-package
-    /// embedding.
+    /// (`buffa-build`, or `protoc-gen-buffa-packaging` with its matching
+    /// `shared_descriptor_pool=true`), not by `generate`, so this mode
+    /// requires one of those front-ends to assemble the tree — unless
+    /// [`shared_descriptor_pool_root`](Self::shared_descriptor_pool_root) is
+    /// set, in which case the root can live anywhere the caller assembled it.
+    /// Consumers that wire the per-package modules by hand should leave both
+    /// `false`/`None` (the default), which keeps the self-contained
+    /// per-package embedding.
     ///
     /// Use the same setting for every codegen run assembled into one module
     /// tree. Packages generated with this set to `false` keep their own pools
     /// even when sibling packages delegate to a shared pool; this mixed setup
     /// is not diagnosed.
     ///
-    /// Defaults to `false`. Has no effect unless `generate_reflection` is on.
+    /// Defaults to `false`. [`generate`] errors when this is on without
+    /// `generate_reflection`.
     pub shared_descriptor_pool: bool,
+    /// When [`shared_descriptor_pool`](Self::shared_descriptor_pool) is on,
+    /// use this path to the shared `__buffa_fds` module verbatim instead of
+    /// computing a `super::`-relative one.
+    ///
+    /// The default `super::` path assumes one crate hosts the whole package
+    /// tree as nested modules. A workspace with one crate per package has no
+    /// such tree to climb; this field lets the caller point at wherever they
+    /// assembled [`shared_descriptor_root_module`]'s output instead — a
+    /// separate crate, a re-exported alias, anything.
+    ///
+    /// The target is a contract, not a free-form value: it must be
+    /// [`shared_descriptor_root_module`]'s output, `pub` and nameable from
+    /// every package this and every other codegen run in the tree emits,
+    /// gated the same way as [`reflect_feature_gate`](Self::reflect_feature_gate)
+    /// if that's set, built against a semver-compatible `buffa-descriptor`,
+    /// and — like the plugin path's `shared_descriptor_pool` (see the guide's
+    /// "spans both plugins" note) — contain every message this `generate()`
+    /// run reflects on. A root missing a type fails at runtime with a
+    /// `reflect()` lookup panic, not at `generate()` or `cargo build` time.
+    ///
+    /// Must be an absolute (`::`-prefixed) or `crate`-relative path of plain
+    /// `::`-separated identifiers — no generic or parenthesized arguments —
+    /// since the same string is spliced verbatim at every package depth.
+    /// [`generate`] rejects a malformed value immediately, before splicing it
+    /// into generated source. Example: `"::my_shared_fds_crate::__buffa_fds"`.
+    ///
+    /// `None` (the default) keeps the `super::`-relative behavior.
+    pub shared_descriptor_pool_root: Option<String>,
+    /// Reuse a [`SharedCorpusContext`] built once by
+    /// [`SharedCorpusContext::new`] instead of re-deriving the corpus-wide
+    /// oneof/pointer-repr resolution and comment collection on every
+    /// `generate()` call — the win for a one-crate-per-package workspace that
+    /// generates each package from one whole-corpus `FileDescriptorSet` with
+    /// only `extern_paths` varying per call. The context must have been built
+    /// from the same `files` and the same
+    /// `unboxed_oneof_fields`/`pointer_fields` as the call using it;
+    /// `generate` checks and returns
+    /// [`CodeGenError::SharedCorpusContextMismatch`] otherwise.
+    ///
+    /// `None` (the default) recomputes on every call.
+    pub shared_corpus_context: Option<SharedCorpusContext>,
     /// Gate the reflection impls behind a `reflect` crate feature, *without*
     /// gating json/views/text (unlike
     /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features),
@@ -1643,6 +1692,32 @@ pub struct CodeGenConfig {
     /// [`CodeGenError::InvalidTypeNamePrefix`] otherwise. Defaults to `""`
     /// (no prefix).
     pub type_name_prefix: String,
+    /// Proto packages to exclude from code generation (default: empty).
+    ///
+    /// Each entry is a normalized proto package name without a leading dot
+    /// (e.g. `"buf.validate"`, `"gnostic.openapi.v3"`). A package matches
+    /// if it equals an entry exactly or starts with `"<entry>."` — so
+    /// `"buf.validate"` excludes both `buf.validate` and `buf.validate.priv`.
+    ///
+    /// Use this when `.proto` files from option-only packages (e.g.
+    /// `buf/validate/validate.proto`, gnostic annotations) end up in the
+    /// generate set via `include_imports` or directory globbing, but you do
+    /// not want Rust types for those packages. Their descriptors remain in
+    /// the compilation for type resolution; only code generation is skipped.
+    ///
+    /// **If you exclude a package that other kept files reference as a field
+    /// type**, you must also add an [`extern_path`](Self::extern_paths) mapping
+    /// for it, or the generated code will contain dangling `super::…::Type`
+    /// paths that fail to compile ([`CodeGenWarning::ExcludedPackageFieldRef`]
+    /// names the offending field first).
+    ///
+    /// Entries are proto package names with no empty segments (e.g.
+    /// `"buf.validate"`, `"gnostic.openapi.v3"`); a leading dot is accepted
+    /// and stripped at generation time. [`generate_with_diagnostics`] rejects
+    /// anything else, and warns with
+    /// [`CodeGenWarning::ExcludePackageMatchedNothing`] for an entry that
+    /// matches no package in the input.
+    pub exclude_packages: Vec<String>,
 }
 
 impl Default for CodeGenConfig {
@@ -1676,12 +1751,15 @@ impl Default for CodeGenConfig {
             generate_reflection: false,
             generate_reflection_vtable: false,
             shared_descriptor_pool: false,
+            shared_descriptor_pool_root: None,
+            shared_corpus_context: None,
             gate_reflect_on_crate_feature: false,
             idiomatic_enum_aliases: true,
             idiomatic_imports: false,
             idiomatic_field_names: false,
             feature_gate_names: FeatureGateNames::default(),
             type_name_prefix: String::new(),
+            exclude_packages: Vec::new(),
         }
     }
 }
@@ -1794,7 +1872,7 @@ pub(crate) fn effective_extern_paths(
 /// taking priority over the package-level mappings from
 /// [`effective_extern_paths`]. They exist to resolve a structural problem:
 /// `descriptor.proto` is in the same `google.protobuf` package as the
-/// JSON-mappable WKTs (`Timestamp`, `Any`, …), but its types live in
+/// well-known types (`Timestamp`, `Any`, …), but its types live in
 /// `buffa-descriptor`, not `buffa-types`. A single package-keyed
 /// `.google.protobuf` extern_path can route the package to one crate or the
 /// other; it can't split it. The file-level mapping splits it.
@@ -1934,6 +2012,60 @@ pub enum CodeGenWarning {
         /// by proto name.
         assignments: Vec<(String, String)>,
     },
+    /// A field in a kept file references a type from a package that is neither
+    /// being generated nor covered by an [`extern_path`](CodeGenConfig::extern_paths)
+    /// mapping. The generated code will emit a dangling type path that fails to
+    /// compile in the consumer's build with no indication of where the
+    /// configuration gap is.
+    ///
+    /// Fix by either:
+    /// - Including the referenced package in the generation request (drop the
+    ///   `exclude_package` plugin directive or the `.exclude_package(…)` call,
+    ///   or add the missing `.proto` files to the generate set), or
+    /// - Adding an `extern_path` mapping for the package pointing to the crate
+    ///   that provides its generated types.
+    ///
+    /// Detection is type-granular: a kept file that generates *some* types from a
+    /// package while another file in the same package is excluded will still
+    /// produce a warning for references to the excluded file's types.
+    ///
+    /// One warning is emitted per unique `(file_name, type_fqn)` pair; other
+    /// fields in the same file referencing the same type are not reported
+    /// separately.
+    #[non_exhaustive]
+    ExcludedPackageFieldRef {
+        /// The proto file that contains the referencing field,
+        /// e.g. `"path/to/service.proto"`.
+        file_name: String,
+        /// The message that contains the referencing field, in dotted form
+        /// (e.g. `"MyMessage"` or `"Outer.Inner"`). Empty when the reference
+        /// is a file-level extension rather than a message field.
+        message_name: String,
+        /// The name of the field that holds the dangling reference.
+        field_name: String,
+        /// The proto package that owns the referenced type,
+        /// e.g. `"buf.validate"`.
+        ref_package: String,
+        /// The fully-qualified type name in the descriptor (leading-dot form,
+        /// matching the key format of [`CodeGenConfig::extern_paths`]),
+        /// e.g. `".buf.validate.FieldConstraints"`.
+        type_fqn: String,
+    },
+    /// An [`exclude_packages`](CodeGenConfig::exclude_packages) entry matched
+    /// no proto package in the descriptor set. Usually a typo in the package
+    /// name or a stale entry left after a proto reorganization — the entry is
+    /// accepted but changes nothing.
+    ///
+    /// Check the spelling against the `package` declarations in your `.proto`
+    /// files. The match is exact or prefix-on-component-boundary, so
+    /// `"buf.validate"` covers `buf.validate` and `buf.validate.priv` but not
+    /// `buf.validatex`.
+    #[non_exhaustive]
+    ExcludePackageMatchedNothing {
+        /// The normalized package entry that matched nothing
+        /// (leading dot already stripped).
+        package: String,
+    },
     /// A [`feature_overrides`](CodeGenConfig::feature_overrides) rule matched
     /// nothing the override targets in the compiled descriptor set, so it
     /// changed nothing. Usually a typo, a missing nested-message segment, or
@@ -2011,6 +2143,42 @@ impl core::fmt::Display for CodeGenWarning {
                     "message `{message_name}`: idiomatic snake_case field names collide; \
                      adjusted: {} (wire/JSON/text names are unaffected)",
                     parts.join(", ")
+                )
+            }
+            Self::ExcludedPackageFieldRef {
+                file_name,
+                message_name,
+                field_name,
+                ref_package,
+                type_fqn,
+            } => {
+                let location = if message_name.is_empty() {
+                    format!("{file_name}: {field_name}")
+                } else {
+                    format!("{file_name}: {message_name}.{field_name}")
+                };
+                write!(
+                    f,
+                    "field `{location}` references `{type_fqn}`, which is not being \
+                     generated and has no extern_path mapping; the generated code will \
+                     contain a dangling type path — map the type or its package \
+                     `{ref_package}` to the crate that defines it \
+                     (buffa-build: `.extern_path(\"{type_fqn}\", \"::your_crate::Type\")` \
+                     or `.extern_path(\".{ref_package}\", \"::your_crate\")`; \
+                     plugin: `extern_path={type_fqn}=::your_crate::Type` or \
+                     `extern_path=.{ref_package}=::your_crate`), or include the \
+                     defining .proto file in the generate set \
+                     (buffa-build: `.files(&[…])` or drop `.exclude_package(…)`; \
+                     plugin: drop `exclude_package=`)"
+                )
+            }
+            Self::ExcludePackageMatchedNothing { package } => {
+                write!(
+                    f,
+                    "exclude_package entry \"{package}\" matched no proto package in the \
+                     descriptor set — check for a typo or a stale entry \
+                     (exact match or dotted-prefix: \"buf.validate\" covers \
+                     buf.validate and buf.validate.priv, not buf.validatex)"
                 )
             }
             Self::FeatureOverrideMatchedNothing {
@@ -2293,6 +2461,207 @@ fn render_custom_elem_impls(
     Ok(out)
 }
 
+// ── Excluded-package field-reference detection ───────────────────────────
+
+/// Invariants shared across the recursive field-reference walk.
+#[derive(Clone, Copy)]
+struct ExcludedRefScan<'a> {
+    ctx: &'a context::CodeGenContext<'a>,
+    /// Effective package-level and per-type extern paths (from
+    /// [`effective_extern_paths`], including the auto-injected WKT mapping).
+    extern_paths: &'a [(String, String)],
+    /// FQNs declared in the kept files — these are always safe to reference.
+    declared_in_kept: &'a std::collections::HashSet<String>,
+    /// FQNs covered by file-level extern paths (e.g. `descriptor.proto` →
+    /// `::buffa_descriptor`). These resolve externally even when the
+    /// package-level `extern_paths` don't cover them.
+    file_extern_covered: &'a std::collections::HashSet<String>,
+}
+
+/// Populate `out` with all message/enum FQNs declared in `file` (in
+/// leading-dot form, e.g. `.my.pkg.MyMessage`).
+fn collect_fqns_in_file(file: &FileDescriptorProto, out: &mut std::collections::HashSet<String>) {
+    let pkg = file.package.as_deref().unwrap_or("");
+    for msg in &file.message_type {
+        let Some(name) = &msg.name else { continue };
+        let fqn = if pkg.is_empty() {
+            format!(".{name}")
+        } else {
+            format!(".{pkg}.{name}")
+        };
+        collect_fqns_msg_recursive(&fqn, msg, out);
+    }
+    for en in &file.enum_type {
+        let Some(name) = &en.name else { continue };
+        let fqn = if pkg.is_empty() {
+            format!(".{name}")
+        } else {
+            format!(".{pkg}.{name}")
+        };
+        out.insert(fqn);
+    }
+}
+
+fn collect_fqns_msg_recursive(
+    msg_fqn: &str,
+    msg: &crate::generated::descriptor::DescriptorProto,
+    out: &mut std::collections::HashSet<String>,
+) {
+    out.insert(msg_fqn.to_string());
+    for nested in &msg.nested_type {
+        let Some(name) = &nested.name else { continue };
+        let nested_fqn = format!("{msg_fqn}.{name}");
+        collect_fqns_msg_recursive(&nested_fqn, nested, out);
+    }
+    for en in &msg.enum_type {
+        let Some(name) = &en.name else { continue };
+        out.insert(format!("{msg_fqn}.{name}"));
+    }
+}
+
+/// Check whether `type_fqn` is resolvable and, if not, emit an
+/// `ExcludedPackageFieldRef` warning.
+///
+/// `field_name` is the *attribution* name used in the warning — normally the
+/// proto field name, but for map fields it is the outer map field name (e.g.
+/// `"prices"`) rather than the synthetic entry's `"value"` slot.
+fn warn_excluded_refs_type(
+    scan: ExcludedRefScan<'_>,
+    file_name: &str,
+    message_name: &str,
+    field_name: &str,
+    type_fqn: &str,
+    warned: &mut std::collections::HashSet<(String, String)>,
+) {
+    // Types declared in kept files are always resolvable.
+    if scan.declared_in_kept.contains(type_fqn) {
+        return;
+    }
+
+    // Look up the package for the diagnostic; if the type is absent from the
+    // descriptor set, codegen raises a hard error — skip quietly.
+    let Some(ref_package) = scan.ctx.package_of(type_fqn) else {
+        return;
+    };
+
+    // Package-less (.proto) types: the fix guidance would suggest `.` as an
+    // extern_path key, which acts as a catch-all — skip to avoid misleading advice.
+    if ref_package.is_empty() {
+        return;
+    }
+
+    // A per-type or package-level extern_path suppresses the warning.
+    if context::resolve_extern_type(type_fqn, scan.extern_paths).is_some() {
+        return;
+    }
+
+    // File-level externs (e.g. `descriptor.proto` → `::buffa_descriptor`)
+    // also suppress — they resolve externally even when no package mapping exists.
+    if scan.file_extern_covered.contains(type_fqn) {
+        return;
+    }
+
+    // Deduplicate by (file, type_fqn): one warning per unique referenced type per file.
+    if !warned.insert((file_name.to_string(), type_fqn.to_string())) {
+        return;
+    }
+
+    scan.ctx.warn(CodeGenWarning::ExcludedPackageFieldRef {
+        file_name: file_name.to_string(),
+        message_name: message_name.to_string(),
+        field_name: field_name.to_string(),
+        ref_package: ref_package.to_string(),
+        type_fqn: type_fqn.to_string(),
+    });
+}
+
+fn warn_excluded_refs_field(
+    scan: ExcludedRefScan<'_>,
+    file_name: &str,
+    field: &crate::generated::descriptor::FieldDescriptorProto,
+    message_name: &str,
+    warned: &mut std::collections::HashSet<(String, String)>,
+) {
+    let Some(type_fqn) = field.type_name.as_deref().filter(|s| !s.is_empty()) else {
+        return;
+    };
+    warn_excluded_refs_type(
+        scan,
+        file_name,
+        message_name,
+        field.name.as_deref().unwrap_or("?"),
+        type_fqn,
+        warned,
+    );
+}
+
+fn warn_excluded_refs_msg(
+    scan: ExcludedRefScan<'_>,
+    file_name: &str,
+    msg: &crate::generated::descriptor::DescriptorProto,
+    parent_path: &str,
+    warned: &mut std::collections::HashSet<(String, String)>,
+) {
+    let msg_name = msg.name.as_deref().unwrap_or("?");
+    let message_path = if parent_path.is_empty() {
+        msg_name.to_string()
+    } else {
+        format!("{parent_path}.{msg_name}")
+    };
+    use crate::generated::descriptor::field_descriptor_proto::Label;
+    for field in &msg.field {
+        // Always check the field itself: for plain message fields this emits a
+        // warning when the type is excluded; for genuine map fields, type_name
+        // points at the synthetic entry (same file, in declared_in_kept), so
+        // warn_excluded_refs_type returns immediately with no warning.
+        warn_excluded_refs_field(scan, file_name, field, &message_path, warned);
+
+        // Additionally, for map fields, look through the synthetic entry to the
+        // value field: the entry is safe (declared_in_kept), but the value type
+        // may be from an excluded package. Attribute the warning to the outer
+        // map field name (e.g. "prices"), not the entry's "value" slot.
+        //
+        // The LABEL_REPEATED gate mirrors every other is_map_field call site.
+        // find_map_entry matches on the type_name suffix, so a singular
+        // `dep.PricesEntry legacy` field would otherwise be taken for the
+        // same-named synthetic entry and get a redundant value-slot check;
+        // the field itself is already checked above either way.
+        let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;
+        if is_repeated && crate::message::is_map_field(msg, field) {
+            // Malformed entries (no key/value) are silently skipped — this is a
+            // diagnostic pass; real codegen errors on the same descriptor follow.
+            if let Ok((_, value_field)) = crate::impl_message::find_map_entry_fields(msg, field) {
+                if let Some(type_fqn) = value_field.type_name.as_deref().filter(|s| !s.is_empty()) {
+                    warn_excluded_refs_type(
+                        scan,
+                        file_name,
+                        &message_path,
+                        field.name.as_deref().unwrap_or("?"),
+                        type_fqn,
+                        warned,
+                    );
+                }
+            }
+        }
+    }
+    for ext in &msg.extension {
+        warn_excluded_refs_field(scan, file_name, ext, &message_path, warned);
+    }
+    for nested in &msg.nested_type {
+        // Skip synthetic map-entry messages: their cross-package references are
+        // checked above via the owning map field.
+        if nested
+            .options
+            .as_option()
+            .and_then(|o| o.map_entry)
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        warn_excluded_refs_msg(scan, file_name, nested, &message_path, warned);
+    }
+}
+
 pub fn generate_with_diagnostics(
     file_descriptors: &[FileDescriptorProto],
     files_to_generate: &[String],
@@ -2320,6 +2689,23 @@ pub fn generate_with_diagnostics(
              (it deduplicates the embedded reflection descriptor pool)"
                 .into(),
         ));
+    }
+
+    // shared_descriptor_pool_root only overrides how the shared root is
+    // reached, so — like shared_descriptor_pool without generate_reflection
+    // above — it is meaningless, and would silently no-op, without
+    // shared_descriptor_pool itself. Reject it up front rather than
+    // dropping the override.
+    if let Some(root) = &config.shared_descriptor_pool_root {
+        if !config.shared_descriptor_pool {
+            return Err(CodeGenError::Other(
+                "shared_descriptor_pool_root requires shared_descriptor_pool to be \
+                 enabled (it overrides the path to the shared root, which only exists \
+                 in shared-pool mode)"
+                    .into(),
+            ));
+        }
+        validate_shared_root_path(root)?;
     }
 
     // Idiomatic imports place `use` directives in the package-root scope,
@@ -2351,6 +2737,50 @@ pub fn generate_with_diagnostics(
 
     config.validate_type_name_prefix()?;
 
+    // Normalize exclude_packages entries (optional leading dot stripped). The
+    // plugin normalizes before it gets here and buffa-build validates in
+    // `compile()`, so this is the one place a direct `CodeGenConfig` caller's
+    // entries are checked; the message is the normalizer's own.
+    let normalized_excludes: Vec<String> = config
+        .exclude_packages
+        .iter()
+        .map(|entry| {
+            normalize_exclude_package(entry)
+                .map_err(|e| CodeGenError::Other(format!("exclude_package {entry:?}: {e}")))
+        })
+        .collect::<Result<_, _>>()?;
+    // Drop files whose proto package is listed in `config.exclude_packages`
+    // BEFORE building the codegen context, so that context decisions that key
+    // on `files_to_generate` membership (e.g. WKT auto-extern-path injection,
+    // descriptor.proto suppression) see the filtered set. Their descriptors
+    // stay in `file_descriptors` for type resolution; only code generation is
+    // skipped. A file with no matching descriptor is kept — the FileNotFound
+    // error below is more actionable than silently dropping it here.
+    let effective_files_to_generate: std::borrow::Cow<'_, [String]> =
+        if normalized_excludes.is_empty() {
+            std::borrow::Cow::Borrowed(files_to_generate)
+        } else {
+            std::borrow::Cow::Owned(
+                files_to_generate
+                    .iter()
+                    .filter(|name| {
+                        match file_descriptors
+                            .iter()
+                            .find(|fd| fd.name.as_deref() == Some(name.as_str()))
+                        {
+                            Some(fd) => !package_is_excluded(
+                                fd.package.as_deref().unwrap_or(""),
+                                &normalized_excludes,
+                            ),
+                            None => true,
+                        }
+                    })
+                    .cloned()
+                    .collect(),
+            )
+        };
+    let files_to_generate: &[String] = &effective_files_to_generate;
+
     // Feature overrides are applied by mutating the descriptor set up front,
     // so every downstream consumer — feature resolution, all generation
     // paths, and the embedded reflection descriptor pool — reads the same
@@ -2361,6 +2791,9 @@ pub fn generate_with_diagnostics(
     let file_descriptors: &[FileDescriptorProto] =
         overridden.as_ref().map_or(file_descriptors, |o| &o.files);
 
+    if let Some(shared) = &config.shared_corpus_context {
+        shared.check(file_descriptors, config)?;
+    }
     let ctx = context::CodeGenContext::for_generate(file_descriptors, files_to_generate, config);
 
     // An inert rule means the user opted a path out of its default semantics
@@ -2381,6 +2814,25 @@ pub fn generate_with_diagnostics(
         ctx.warn(CodeGenWarning::LazyViewsRequireViews);
     }
 
+    // Warn about exclude_packages entries that matched no package in the full
+    // descriptor set — likely a typo or stale entry. Checked against
+    // file_descriptors (not just files_to_generate) so plugin users without
+    // include_imports don't get spurious warnings for packages they never
+    // compiled in the first place.
+    for package in &normalized_excludes {
+        let matched = file_descriptors.iter().any(|fd| {
+            package_is_excluded(
+                fd.package.as_deref().unwrap_or(""),
+                std::slice::from_ref(package),
+            )
+        });
+        if !matched {
+            ctx.warn(CodeGenWarning::ExcludePackageMatchedNothing {
+                package: package.clone(),
+            });
+        }
+    }
+
     // Group requested files by package. BTreeMap → deterministic output order.
     let mut by_package: std::collections::BTreeMap<String, Vec<&FileDescriptorProto>> =
         std::collections::BTreeMap::new();
@@ -2393,16 +2845,75 @@ pub fn generate_with_diagnostics(
         by_package.entry(pkg).or_default().push(file_desc);
     }
 
+    // Warn when a kept file references a type that is not being generated and
+    // has no extern_path mapping. This catches exclude_package misuse (and
+    // missing extern_path) before the consumer gets a dangling `super::…::Type`
+    // compile error with no indication of the configuration gap.
+    {
+        let extern_paths = effective_extern_paths(file_descriptors, files_to_generate, config);
+
+        // Collect the FQNs of every type declared in a kept file.
+        // These are always safe to reference (generated in place).
+        let mut declared_in_kept: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        for files in by_package.values() {
+            for &file in files {
+                collect_fqns_in_file(file, &mut declared_in_kept);
+            }
+        }
+
+        // Collect FQNs covered by file-level externs (e.g. descriptor.proto →
+        // ::buffa_descriptor). These resolve externally even when the package-level
+        // extern_paths don't cover them — suppressing false positives when the
+        // auto-injected .google.protobuf package mapping is overridden.
+        let file_extern_paths = effective_file_extern_paths(files_to_generate, config);
+        let mut file_extern_covered: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        for (fe_file, _) in &file_extern_paths {
+            if let Some(fd) = file_descriptors
+                .iter()
+                .find(|f| f.name.as_deref() == Some(fe_file.as_str()))
+            {
+                collect_fqns_in_file(fd, &mut file_extern_covered);
+            }
+        }
+
+        let scan = ExcludedRefScan {
+            ctx: &ctx,
+            extern_paths: &extern_paths,
+            declared_in_kept: &declared_in_kept,
+            file_extern_covered: &file_extern_covered,
+        };
+        let mut warned: std::collections::HashSet<(String, String)> =
+            std::collections::HashSet::new();
+        for files in by_package.values() {
+            for &file in files {
+                let file_name = file.name.as_deref().unwrap_or("?");
+                for msg in &file.message_type {
+                    warn_excluded_refs_msg(scan, file_name, msg, "", &mut warned);
+                }
+                for ext in &file.extension {
+                    warn_excluded_refs_field(scan, file_name, ext, "", &mut warned);
+                }
+            }
+        }
+    }
+
     // Reflection: serialize the FileDescriptorSet once, regardless of how
     // many packages are in the request, so the build-time re-encoding cost
     // doesn't scale with the package count. In the default mode each package
     // embeds this copy; in shared-pool mode the bytes are embedded once by the
     // module-tree builder, not per package, so `generate` needs no copy at all.
-    // In shared mode the tree root gains a `pub mod __buffa_fds`; reserve that
-    // name against user packages/types the same way `__buffa` is reserved, so a
+    // In shared mode (without a `shared_descriptor_pool_root` override) the
+    // tree root gains a `pub mod __buffa_fds`; reserve that name against user
+    // packages/types the same way `__buffa` is reserved, so a
     // `package __buffa_fds;` (or a root-package type named `__buffa_fds`) fails
     // with a clear error instead of a duplicate-module collision at the root.
-    if config.shared_descriptor_pool {
+    // With an override the reservation is skipped for both absolute and
+    // crate-relative roots: buffa cannot verify where the override points,
+    // so a package/type actually named `__buffa_fds` in this tree would go
+    // undetected rather than erroring here.
+    if config.shared_descriptor_pool && config.shared_descriptor_pool_root.is_none() {
         validate_shared_root_name(file_descriptors, files_to_generate)?;
     }
 
@@ -2538,13 +3049,148 @@ pub enum IncludeMode<'a> {
     OutDir,
 }
 
+/// The corpus-wide state `CodeGenContext` derives on every `generate()`
+/// call — which oneof variants are unboxed, which message fields are stored
+/// inline, and the raw comment text per fully-qualified name — none of which
+/// depends on the extern paths that legitimately vary per call in a
+/// one-crate-per-package workspace. Build one with [`SharedCorpusContext::new`]
+/// from the whole corpus and set [`CodeGenConfig::shared_corpus_context`] on
+/// every per-package config to skip that work on each call.
+///
+/// A context is only valid for the exact `files` and the same
+/// `unboxed_oneof_fields`/`pointer_fields` it was built from; `generate`
+/// checks both and returns [`CodeGenError::SharedCorpusContextMismatch`]
+/// rather than emitting code resolved against a different corpus. The
+/// context holds the corpus comment map for as long as any clone of it lives,
+/// so drop it once code generation is done. Cloning shares the precomputed
+/// state (`Arc`s inside), and the type is `Send + Sync`, so one context can
+/// be handed to parallel per-package `generate()` calls.
+///
+/// # Examples
+///
+/// ```
+/// use buffa_codegen::{CodeGenConfig, SharedCorpusContext};
+/// # use buffa_codegen::generated::descriptor::FileDescriptorProto;
+/// # let corpus: Vec<FileDescriptorProto> = Vec::new();
+/// # let packages: Vec<(String, Vec<String>)> = Vec::new();
+/// let base = CodeGenConfig::default();
+/// let shared = SharedCorpusContext::new(&corpus, &base);
+/// for (extern_prefix, files_to_generate) in packages {
+///     let mut config = base.clone();
+///     config.extern_paths.push((extern_prefix, "::other_crate".to_string()));
+///     config.shared_corpus_context = Some(shared.clone());
+///     let _files = buffa_codegen::generate(&corpus, &files_to_generate, &config)?;
+/// }
+/// # Ok::<(), buffa_codegen::CodeGenError>(())
+/// ```
+#[derive(Clone)]
+pub struct SharedCorpusContext {
+    /// The exact corpus this context was built from, compared by full
+    /// structural equality in [`check`](Self::check) rather than just file
+    /// names — see `check` for why.
+    files: std::sync::Arc<Vec<generated::descriptor::FileDescriptorProto>>,
+    unboxed_oneof_fields: std::sync::Arc<Vec<String>>,
+    pointer_fields: std::sync::Arc<Vec<(String, PointerRepr)>>,
+    unboxed_oneof_variants: std::sync::Arc<std::collections::HashSet<String>>,
+    inlined_message_fields: std::sync::Arc<std::collections::HashSet<String>>,
+    comment_map: std::sync::Arc<std::collections::HashMap<String, String>>,
+}
+
+impl SharedCorpusContext {
+    /// Precompute the corpus-wide state for `files` under `config`'s oneof
+    /// and pointer-representation rules, for reuse across every `generate()`
+    /// call that passes the same `files` and rules (see
+    /// [`CodeGenConfig::shared_corpus_context`]).
+    #[must_use]
+    pub fn new(
+        files: &[generated::descriptor::FileDescriptorProto],
+        config: &CodeGenConfig,
+    ) -> Self {
+        let msg_index = oneof::message_index(files);
+        let unboxed_oneof_variants = oneof::resolve_unboxed_variants(
+            &msg_index,
+            &config.unboxed_oneof_fields,
+            &config.pointer_fields,
+        );
+        let inlined_message_fields = oneof::resolve_inlined_fields(
+            &msg_index,
+            &config.unboxed_oneof_fields,
+            &config.pointer_fields,
+        );
+        let comment_map = files.iter().flat_map(comments::fqn_comments).collect();
+        Self {
+            files: std::sync::Arc::new(files.to_vec()),
+            unboxed_oneof_fields: std::sync::Arc::new(config.unboxed_oneof_fields.clone()),
+            pointer_fields: std::sync::Arc::new(config.pointer_fields.clone()),
+            unboxed_oneof_variants: std::sync::Arc::new(unboxed_oneof_variants),
+            inlined_message_fields: std::sync::Arc::new(inlined_message_fields),
+            comment_map: std::sync::Arc::new(comment_map),
+        }
+    }
+
+    /// Refuse a context built from a different corpus or different
+    /// oneof/pointer-repr rules than this call's. Compares the full corpus
+    /// by structural equality rather than just file names, since
+    /// `SharedCorpusContext` has no lifetime tying it to the caller's
+    /// `files` — a `Vec` can keep its allocation across an ordinary
+    /// `pop()` + `push()` of a different file, so a pointer/length check
+    /// would be unsound. O(corpus) per call; ~25-28% added wall/CPU time on
+    /// a 2895-crate corpus versus a name-only comparison, still a ~2.3x win
+    /// over not sharing the context at all.
+    pub(crate) fn check(
+        &self,
+        files: &[generated::descriptor::FileDescriptorProto],
+        config: &CodeGenConfig,
+    ) -> Result<(), CodeGenError> {
+        let what = if *files != self.files[..] {
+            "files"
+        } else if *self.unboxed_oneof_fields != config.unboxed_oneof_fields {
+            "unboxed_oneof_fields"
+        } else if *self.pointer_fields != config.pointer_fields {
+            "pointer_fields"
+        } else {
+            return Ok(());
+        };
+        Err(CodeGenError::SharedCorpusContextMismatch { what })
+    }
+
+    pub(crate) fn unboxed_oneof_variants(
+        &self,
+    ) -> &std::sync::Arc<std::collections::HashSet<String>> {
+        &self.unboxed_oneof_variants
+    }
+
+    pub(crate) fn inlined_message_fields(
+        &self,
+    ) -> &std::sync::Arc<std::collections::HashSet<String>> {
+        &self.inlined_message_fields
+    }
+
+    pub(crate) fn comment_map(&self) -> &std::sync::Arc<std::collections::HashMap<String, String>> {
+        &self.comment_map
+    }
+}
+
+// The comment map is the whole corpus's comment text; print sizes, not
+// contents, so a `{:?}` of a `CodeGenConfig` stays readable.
+impl core::fmt::Debug for SharedCorpusContext {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SharedCorpusContext")
+            .field("files", &self.files.len())
+            .field("unboxed_oneof_variants", &self.unboxed_oneof_variants.len())
+            .field("inlined_message_fields", &self.inlined_message_fields.len())
+            .field("comments", &self.comment_map.len())
+            .finish()
+    }
+}
+
 /// Encode the shared reflection `FileDescriptorSet` for a codegen run, with
 /// `source_code_info` stripped, ready to embed once at the module-tree root in
 /// [shared-pool mode](CodeGenConfig::shared_descriptor_pool).
 ///
 /// `file_descriptors` is the full transitive closure (the same slice passed to
-/// [`generate`]). Front-ends (`buffa-build`, `protoc-gen-buffa-packaging`) call
-/// this to obtain the single copy of the bytes, then hand them to
+/// [`generate`]). Front-ends (`buffa-build`, `protoc-gen-buffa-packaging`)
+/// call this to obtain the single copy of the bytes, then hand them to
 /// [`shared_descriptor_root_module`].
 #[must_use]
 pub fn encode_descriptor_set(
@@ -2635,6 +3281,61 @@ pub fn shared_descriptor_root_module(
     let file = syn::parse2::<syn::File>(tokens)
         .expect("shared descriptor root module must parse as a Rust file");
     prettyplease::unparse(&file)
+}
+
+/// Validate [`CodeGenConfig::shared_descriptor_pool_root`]'s string form: an
+/// absolute (`::`-prefixed) or `crate`-relative path of plain `::`-separated
+/// identifiers, no generic or parenthesized arguments.
+///
+/// `syn::Path` alone isn't strict enough here — it happily parses
+/// `::k::__buffa_fds<T>`, which would then splice into uncompilable
+/// generated code (`pub use ::k::__buffa_fds<T>::FILE_DESCRIPTOR_SET_BYTES;`),
+/// exactly the downstream failure this check exists to prevent. A leading
+/// `::` or `crate` is required because the same string is spliced verbatim
+/// at every package depth in the tree — a plain relative path could only
+/// ever be correct from one depth.
+fn validate_shared_root_path(path: &str) -> Result<(), CodeGenError> {
+    let is_absolute = path.starts_with("::");
+    let is_crate_relative = path == "crate" || path.starts_with("crate::");
+    if !is_absolute && !is_crate_relative {
+        return Err(CodeGenError::Other(format!(
+            "shared_descriptor_pool_root must be an absolute (`::`-prefixed) or \
+             crate-relative (`crate`-prefixed) path — the same value is spliced \
+             verbatim at every package depth, so a plain relative path would only \
+             be correct from one depth: {path:?}"
+        )));
+    }
+    let rest = path.strip_prefix("::").unwrap_or(path);
+    if rest.is_empty() {
+        return Err(CodeGenError::Other(format!(
+            "shared_descriptor_pool_root has no path after the `::` prefix: {path:?}"
+        )));
+    }
+    for (i, segment) in rest.split("::").enumerate() {
+        let mut chars = segment.chars();
+        let is_ident = chars
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_');
+        if !is_ident {
+            return Err(CodeGenError::Other(format!(
+                "shared_descriptor_pool_root segment {segment:?} is not a plain \
+                 identifier (no generic or parenthesized arguments, ASCII only) — \
+                 the value is spliced verbatim into generated code: {path:?}"
+            )));
+        }
+        // `_`, `self`, `Self` and `super` are identifiers to the scan above but
+        // not usable path segments; `crate` is only legal first.
+        let is_path_keyword =
+            matches!(segment, "_" | "self" | "Self" | "super") || (i > 0 && segment == "crate");
+        if is_path_keyword {
+            return Err(CodeGenError::Other(format!(
+                "shared_descriptor_pool_root segment {segment:?} is a path keyword \
+                 and cannot be spliced into generated code: {path:?}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Reject user names that would collide with the shared descriptor root module
@@ -3457,7 +4158,10 @@ fn generate_package_mod(
         // Shared mode: delegate to the single root `__buffa_fds` module
         // instead of embedding this package's own byte copy.
         let pool_module = if ctx.config.shared_descriptor_pool {
-            reflect::reflect_pool_module_shared(current_package)
+            reflect::reflect_pool_module_shared(
+                current_package,
+                ctx.config.shared_descriptor_pool_root.as_deref(),
+            )
         } else {
             reflect::reflect_pool_module(fds_bytes)
         };
@@ -3567,12 +4271,12 @@ pub fn package_to_mod_filename(package: &str) -> String {
 /// paths without a leading dot (`buf.validate`, not `.buf.validate`); an
 /// empty entry matches only the unnamed package.
 ///
-/// Both `protoc-gen-buffa` (which filters `file_to_generate` before codegen)
-/// and `protoc-gen-buffa-packaging` (which filters the packages it stitches
-/// into `mod.rs`) route their exclusion through this one predicate, so the
-/// two plugins are guaranteed to drop exactly the same set — the invariant
-/// the packaging plugin's "Matching a codegen plugin's output set" note
-/// depends on.
+/// `generate_with_diagnostics` (which filters `files_to_generate` before
+/// building the codegen context) and `protoc-gen-buffa-packaging` (which
+/// filters the packages it stitches into `mod.rs`) route their exclusion
+/// through this one predicate, so the two are guaranteed to drop exactly the
+/// same set — the invariant the packaging plugin's "Matching a codegen
+/// plugin's output set" note depends on.
 pub fn package_is_excluded(package: &str, excludes: &[String]) -> bool {
     excludes.iter().any(|ex| {
         package == ex
@@ -3588,9 +4292,9 @@ pub fn package_is_excluded(package: &str, excludes: &[String]) -> bool {
 /// could never match a real package, so a typo would otherwise be a silent
 /// no-op.
 ///
-/// Both protoc plugins parse their `exclude_package` options through this
-/// one function so their normalization cannot drift — the same reason they
-/// share [`package_is_excluded`].
+/// The plugin option-string parsers and `generate_with_diagnostics` all run
+/// entries through this function so normalization cannot drift — the same
+/// reason they share [`package_is_excluded`].
 ///
 /// # Errors
 ///
@@ -3830,6 +4534,19 @@ pub enum CodeGenError {
          extensions). Rename the proto element."
     )]
     ReservedModuleName { name: String, location: String },
+    /// [`CodeGenConfig::shared_corpus_context`] was built from a different
+    /// corpus or different oneof/pointer-repr rules than this call's.
+    ///
+    /// `what` names the mismatch: `"files"`, `"unboxed_oneof_fields"`, or
+    /// `"pointer_fields"`. Build the context with
+    /// [`SharedCorpusContext::new`] from the same `files` and config as every
+    /// `generate()` call that uses it.
+    #[error(
+        "shared_corpus_context was built from different {what} than this \
+         generate() call; build it from the same files and oneof/pointer-repr \
+         config as every call that uses it"
+    )]
+    SharedCorpusContextMismatch { what: &'static str },
     /// The input contains a message with `option message_set_wire_format = true`
     /// but [`CodeGenConfig::allow_message_set`] was not set.
     #[error(

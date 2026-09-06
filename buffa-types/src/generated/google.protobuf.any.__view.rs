@@ -113,7 +113,7 @@ pub struct AnyView<'a> {
     /// server that maps type URLs to message definitions as follows:
     ///
     /// * If no scheme is provided, `https` is assumed.
-    /// * An HTTP GET on the URL must yield a \[google.protobuf.Type\]\[\]
+    /// * An HTTP GET on the URL must yield a [google.protobuf.Type](crate::google::protobuf::Type)
     ///   value in binary format, or produce an error.
     /// * Applications are allowed to cache lookup results based on the
     ///   URL, or have them precompiled into a binary to avoid any
@@ -250,7 +250,7 @@ impl<'a> ::buffa::MessageName for AnyView<'a> {
 }
 ::buffa::impl_default_view_instance!(AnyView);
 ::buffa::impl_view_reborrow!(AnyView);
-::buffa::unsafe_impl_lifetime_parametric!(AnyView);
+::buffa::unsafe_impl_view_lifetime_parametric!(AnyView);
 /** Self-contained, `'static` owned view of a `Any` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`AnyView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -340,7 +340,7 @@ impl AnyOwnedView {
     /// server that maps type URLs to message definitions as follows:
     ///
     /// * If no scheme is provided, `https` is assumed.
-    /// * An HTTP GET on the URL must yield a \[google.protobuf.Type\]\[\]
+    /// * An HTTP GET on the URL must yield a [google.protobuf.Type](crate::google::protobuf::Type)
     ///   value in binary format, or produce an error.
     /// * Applications are allowed to cache lookup results based on the
     ///   URL, or have them precompiled into a binary to avoid any
