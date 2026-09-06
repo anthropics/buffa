@@ -516,17 +516,20 @@ macro_rules! impl_view_reborrow {
 ///   `MessageView<'b>` bound with `Reborrowed<'b> = Self`, which would let
 ///   [`OwnedView::reborrow`] hand out `'static` borrows.)
 ///
-/// After `OwnedView`'s reborrow routing, only two impls on `V` ever observe
-/// the forged `'static`: the `MessageView<'static>` decode entry points
-/// (`decode_view` / `decode_view_with_ctx` and what they call) and `Clone`.
-/// `Debug`, `PartialEq`, `Serialize` and `to_owned_message` run on
-/// `Reborrowed<'b>` at the real lifetime; `Drop` cannot be specialised to
-/// `'static` (Rust requires a `Drop` impl to be as generic as the type), so
-/// it is parametric by construction; and `MessageView::Owned` is `'static`
-/// (`Message: DefaultInstance: 'static`), so `to_owned_message` cannot
-/// smuggle a borrow out through the owned type. An audit of a hand-written
-/// view therefore reduces to: is `decode_view*` parametric (written for
-/// `impl<'a> MessageView<'a>`), and is `Clone` derived or parametric?
+/// After `OwnedView`'s reborrow routing, three impls on `V` observe the
+/// forged `'static`: the `MessageView<'static>` decode entry points
+/// (`decode_view` / `decode_view_with_ctx` and what they call), `Clone`, and
+/// [`ViewReborrow::reborrow`] itself, which receives `&'b MyView<'static>`
+/// before shortening it. `Debug`, `PartialEq`, `Serialize` and
+/// `to_owned_message` run on `Reborrowed<'b>` at the real lifetime; a
+/// lifetime-generic view's `Drop` cannot be specialised to `'static` (Rust
+/// requires a `Drop` impl to be as generic as the type), so it is parametric
+/// by construction; and `MessageView::Owned` is `'static` (`Message:
+/// DefaultInstance: 'static`), so `to_owned_message` cannot smuggle a borrow
+/// out through the owned type. An audit of a hand-written view therefore
+/// reduces to: is `decode_view*` parametric (written for `impl<'a>
+/// MessageView<'a>`), is `Clone` derived or parametric, and is `reborrow` the
+/// canonical [`impl_view_reborrow!`] body (`{ this }`), which retains nothing?
 ///
 /// The trait is implemented for the `'static` instantiation
 /// (`MyView<'static>`) because that is the type `OwnedView` stores, but the
@@ -638,6 +641,9 @@ pub unsafe trait ViewLifetimeParametric: ViewReborrow {}
 /// ```
 #[macro_export]
 macro_rules! unsafe_impl_view_lifetime_parametric {
+    (:: $($seg:ident)::+) => {
+        unsafe impl $crate::ViewLifetimeParametric for :: $($seg)::+<'static> {}
+    };
     ($($seg:ident)::+) => {
         unsafe impl $crate::ViewLifetimeParametric for $($seg)::+<'static> {}
     };
@@ -3002,7 +3008,8 @@ where
 
 // `Debug`, `PartialEq`, `Eq` and `Serialize` delegate through
 // `ViewReborrow::reborrow` rather than to `V`'s own impl: the `'static`-typed
-// `V` never reaches an impl that could observe the forged lifetime, and the
+// `V` reaches no impl other than `ViewReborrow::reborrow` (whose canonical
+// body returns `this` and retains nothing), and the
 // bounds on `V::Reborrowed<'b>` mechanically require those impls to be
 // parametric in it (`impl<'a> Debug for FooView<'a>`), which is the shape
 // codegen emits. This is defence in depth behind the `ViewLifetimeParametric`

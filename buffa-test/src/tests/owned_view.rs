@@ -208,6 +208,7 @@ mod view_family {
         M::View<'static>: buffa::ViewLifetimeParametric,
     {
         let opts = buffa::DecodeOptions::default();
+        // Exercised only to prove the second constructor carries the same bound.
         let _ = M::decode_view_handle_with_options(bytes.clone(), &opts).expect("decode");
         let handle = M::decode_view_handle(bytes).expect("decode");
         let raw = handle.as_ref();

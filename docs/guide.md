@@ -2349,7 +2349,7 @@ buffa::impl_view_reborrow!(Int64RangeView);
 buffa::unsafe_impl_view_lifetime_parametric!(Int64RangeView);
 ```
 
-The macro takes a (possibly `::`-qualified) path and expands to `unsafe impl buffa::ViewLifetimeParametric for Int64RangeView<'static> {}`; writing that impl literally is equivalent, except that the macro form is accepted in a crate under `#![forbid(unsafe_code)]`.
+The macro takes a type path (`MyView`, `views::MyView`, `::my_crate::MyView`) and expands to `unsafe impl buffa::ViewLifetimeParametric for Int64RangeView<'static> {}`; writing that impl literally is equivalent, except that the macro form is accepted in a crate under `#![forbid(unsafe_code)]`.
 
 Alternatively, pass `.generate_views(false)` in your build config if you don't use views at all.
 

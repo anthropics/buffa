@@ -112,7 +112,7 @@
 //! | [`view::MessageView`] | Zero-copy borrowed view trait |
 //! | [`view::OwnedView<V>`](view::OwnedView) | Self-contained `'static` view backed by `Bytes` |
 //! | [`view::ViewReborrow`] | Expose real borrow lifetime from `OwnedView` via [`reborrow`](view::OwnedView::reborrow) |
-//! | [`view::ViewLifetimeParametric`] | `unsafe` marker required of every `V` in `OwnedView<V>` — the view keeps no buffer borrow past itself |
+//! | [`view::ViewLifetimeParametric`] | `unsafe` marker required by every `OwnedView` constructor — the view keeps no buffer borrow past itself |
 //!
 //! # `no_std`
 //!
