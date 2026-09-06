@@ -77,9 +77,10 @@ pub trait TextFormat: crate::Message {
     ///
     /// Implementations loop on [`TextDecoder::read_field_name`] until it
     /// returns `None`, dispatching each name to the matching `read_*` call.
-    /// Unknown names either [`skip_value`](TextDecoder::skip_value) or fail
-    /// with [`unknown_field`](TextDecoder::unknown_field), depending on
-    /// codegen configuration.
+    /// Generated implementations reject unknown names with
+    /// [`unknown_field`](TextDecoder::unknown_field). Hand-written
+    /// implementations can explicitly call
+    /// [`skip_value`](TextDecoder::skip_value) when lenient parsing is needed.
     ///
     /// # Errors
     ///
@@ -119,8 +120,8 @@ pub fn encode_to_string_pretty<M: TextFormat>(msg: &M) -> String {
 ///
 /// # Errors
 ///
-/// Any [`ParseError`] — syntax errors, unknown fields (if the generated
-/// `merge_text` is strict), type mismatches, depth limit exceeded, or
+/// Any [`ParseError`] — syntax errors, unknown field names, type
+/// mismatches, depth limit exceeded, or
 /// [`ParseErrorKind::ElementMemoryLimitExceeded`] when the repeated and map
 /// elements would materialize more than
 /// [`DEFAULT_ELEMENT_MEMORY_LIMIT`](crate::DEFAULT_ELEMENT_MEMORY_LIMIT).
