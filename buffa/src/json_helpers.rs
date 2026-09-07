@@ -1217,12 +1217,22 @@ pub mod float {
                     "NaN" => Ok(f32::NAN),
                     "Infinity" => Ok(f32::INFINITY),
                     "-Infinity" => Ok(f32::NEG_INFINITY),
-                    _ => v.parse::<f32>().map_err(|_| {
-                        E::invalid_value(
-                            serde::de::Unexpected::Str(v),
-                            &r#"a float, or "NaN", "Infinity", "-Infinity""#,
-                        )
-                    }),
+                    _ => {
+                        let value = v.parse::<f64>().map_err(|_| {
+                            E::invalid_value(
+                                serde::de::Unexpected::Str(v),
+                                &r#"a float, or "NaN", "Infinity", "-Infinity""#,
+                            )
+                        })?;
+                        let value_f32 = value as f32;
+                        if value.is_finite() && !value_f32.is_finite() {
+                            return Err(E::invalid_value(
+                                serde::de::Unexpected::Str(v),
+                                &"a finite f32 value",
+                            ));
+                        }
+                        Ok(value_f32)
+                    }
                 }
             }
 
