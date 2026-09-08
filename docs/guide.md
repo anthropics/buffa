@@ -1957,6 +1957,29 @@ extensions (`extension_by_name`, `extensions_of`), and retains the raw
 `FileDescriptorProto`s with a symbol index (`file_by_name`,
 `file_containing_symbol`) — the two lookups gRPC server reflection needs.
 
+Linking follows protoc's import rules: a file may reference types from
+itself, the files in its `dependency` list, and anything those re-export
+through `import public`; a reference to a type in any other file is
+`PoolError::TypeNotImported`, even when that file is in the same set. Sets
+produced with `protoc --include_imports` or `buf build` always satisfy this.
+A hand-built `FileDescriptorProto` that names types from another file must
+list that file in `dependency`. A `dependency` entry that is absent from the
+pool is tolerated as long as nothing it defines is referenced, so sets that
+strip option-only imports (`google/api/annotations.proto`) still load. Both
+rules are adjustable through `LinkOptions`:
+
+```rust,ignore
+use buffa_descriptor::{DescriptorPool, LinkOptions};
+
+// Pre-0.10 behaviour: resolve every type name across the whole pool.
+let pool = DescriptorPool::decode_with_link_options(
+    &descriptor_set_bytes,
+    &buffa::DecodeOptions::new(),
+    LinkOptions::new().with_import_visibility(false),
+)?;
+// Or reject an absent import outright: `.with_required_dependencies(true)`.
+```
+
 ### Dynamic messages
 
 `DynamicMessage` encodes and decodes any message by descriptor, with the same

@@ -16,6 +16,10 @@
 //!   `descriptor.proto`.
 //! - [`generated::compiler`] — `CodeGeneratorRequest`, `CodeGeneratorResponse`
 //!   from `plugin.proto`.
+//! - `pool` and `reflect` (feature `reflect`) — `DescriptorPool`, which links
+//!   a `FileDescriptorSet` into feature-resolved descriptors under protoc's
+//!   import rules (`LinkOptions`), and the `DynamicMessage` runtime built on
+//!   it.
 //!
 //! # Regenerating
 //!
@@ -44,7 +48,7 @@ pub use desc::{
     ScalarType, ServiceDescriptor, ServiceIndex, SingularKind,
 };
 #[cfg(feature = "reflect")]
-pub use pool::{DescriptorPool, PoolError, MAX_SYMBOL_LEN};
+pub use pool::{DescriptorPool, LinkOptions, PoolError, MAX_SYMBOL_LEN};
 #[cfg(all(feature = "reflect", feature = "json"))]
 pub use reflect::DynamicMessageSeed;
 #[cfg(feature = "reflect")]

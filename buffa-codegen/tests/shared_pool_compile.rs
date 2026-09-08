@@ -98,6 +98,7 @@ fn run_shared_pool_compile(mode: Mode) {
     // Package `beta` (depth 1) with a cross-package field referencing Alpha —
     // exercises the shared pool resolving a type from another package.
     let mut beta = proto3("beta.proto", "beta");
+    beta.dependency.push("alpha.proto".into());
     let mut cross = field("a", 2, Type::TYPE_MESSAGE);
     cross.type_name = Some(".alpha.v1.Alpha".into());
     beta.message_type.push(DescriptorProto {

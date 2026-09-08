@@ -241,7 +241,7 @@ pub(crate) fn reflect_pool_module(fds_bytes: &[u8]) -> TokenStream {
                             FILE_DESCRIPTOR_SET_BYTES,
                             &options,
                         )
-                        .expect("buffa-codegen emitted a decodable FileDescriptorSet"),
+                        .expect("buffa-codegen emitted a linkable FileDescriptorSet"),
                     )
                 })
             }
@@ -328,7 +328,7 @@ pub(crate) fn shared_root_module(source: FdsSource<'_>) -> TokenStream {
                             FILE_DESCRIPTOR_SET_BYTES,
                             &options,
                         )
-                        .expect("buffa-codegen emitted a decodable FileDescriptorSet"),
+                        .expect("buffa-codegen emitted a linkable FileDescriptorSet"),
                     )
                 })
             }
