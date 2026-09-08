@@ -1291,7 +1291,7 @@ let owned: Person = view.to_owned_message();
 
 When working with the generic `OwnedView<V>` directly (for example, a request type handed to you by an RPC framework), reach the inner view with `reborrow()`, which ties the borrow to the `OwnedView` itself: `let person = view.reborrow();` then `person.name`. Field access directly on the handle is deliberately not provided — the stored view's lifetime is a synthetic `'static`, and exposing it would let field borrows outlive the buffer they point into.
 
-`OwnedView` implements `Clone` (cheap — `Bytes` clone is an O(1) refcount bump), `Debug`, `PartialEq`, and `Eq` when the underlying view type does; the generated `PersonOwnedView` wrapper forwards `Clone` and `Debug`.
+`OwnedView` implements `Clone` (cheap — `Bytes` clone is an O(1) refcount bump) when the view does, `Debug` for every view (the `ViewReborrow::Reborrowed` type is required to be `Debug`, which every generated view is), and `PartialEq`, `Eq` and `Serialize` when the view implements them at every lifetime (`for<'b> V::Reborrowed<'b>: Trait`; generated views derive `Debug` but not `PartialEq`, so the comparison impls apply to hand-written views that do) — all of these except `Clone` call the view's impl on a `reborrow()`ed value, never on the `'static`-typed one. The generated `PersonOwnedView` wrapper forwards `Clone` and `Debug`.
 
 **When to use which:**
 
@@ -1438,9 +1438,14 @@ helper:
 use buffa::HasMessageView;
 
 // Accept any generated message type and hand back its 'static view handle.
-fn decode_request<M: HasMessageView>(
-    body: bytes::Bytes,
-) -> Result<M::ViewHandle, buffa::DecodeError> {
+// `decode_view_handle` requires the view to be `ViewLifetimeParametric` — the
+// `unsafe` marker every generated view carries (see `OwnedView`) — and the
+// trait cannot state that bound for you, so it goes at the call site.
+fn decode_request<M>(body: bytes::Bytes) -> Result<M::ViewHandle, buffa::DecodeError>
+where
+    M: HasMessageView,
+    M::View<'static>: buffa::ViewLifetimeParametric,
+{
     M::decode_view_handle(body)
 }
 
@@ -2366,6 +2371,17 @@ pub type Int64RangeView<'a> = Int64Range;
 ```
 
 For types with string or bytes fields where zero-copy borrowing is valuable, you would implement `MessageView` by hand, following the same pattern as the generated view types. The decode tag loop is a provided method on the trait, so a hand-written view supplies only `decode_view` and the per-field `merge_view_field`; see the `MessageView` trait docs for the canonical shape.
+
+As a field of a generated view, a hand-written view is only ever driven by the generated view's own lifetime-parametric impls, so nothing more is needed. To use it through `OwnedView` *directly* (`OwnedView<Int64RangeView<'static>>`), it must also implement `Debug`, `ViewReborrow` (via `buffa::impl_view_reborrow!(Int64RangeView)`, whose `Reborrowed` type must be `Debug`), and the `unsafe` marker `ViewLifetimeParametric`, whose `# Safety` section states the contract: no impl on the view may keep a borrow of the buffer past the view itself. A scalar-only alias like `Int64RangeView` holds no borrows at all and may be marked on that basis; a borrowing view must keep every impl parametric in `'a`:
+
+```rust,ignore
+buffa::impl_view_reborrow!(Int64RangeView);
+// SAFETY: `Int64RangeView<'a>` is an alias for an owned struct and holds no
+// borrows from the decode buffer, so no impl on it can retain one.
+buffa::unsafe_impl_view_lifetime_parametric!(Int64RangeView);
+```
+
+The macro takes a type path (`MyView`, `views::MyView`, `::my_crate::MyView`) and expands to `unsafe impl buffa::ViewLifetimeParametric for Int64RangeView<'static> {}`; writing that impl literally is equivalent, except that the macro form is accepted in a crate under `#![forbid(unsafe_code)]`.
 
 Alternatively, pass `.generate_views(false)` in your build config if you don't use views at all.
 

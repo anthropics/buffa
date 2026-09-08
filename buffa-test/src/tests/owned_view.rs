@@ -114,7 +114,8 @@ mod view_json_types {
     use crate::view_json::__buffa::oneof::with_oneof::Value as ValueOneof;
     use crate::view_json::__buffa::view::oneof::with_oneof::Value as ValueViewOneof;
     use crate::view_json::{
-        Scalars, ScalarsOwnedView, WithMaps, WithMapsOwnedView, WithOneof, WithOneofOwnedView,
+        Scalars, ScalarsOwnedView, ScalarsView, WithMaps, WithMapsOwnedView, WithOneof,
+        WithOneofOwnedView,
     };
 
     #[test]
@@ -152,6 +153,37 @@ mod view_json_types {
         assert!(owned.by_id().is_empty());
     }
 
+    /// The shape a downstream generic function must write to serialize any
+    /// `OwnedView<V>`: `V: ViewReborrow` plus the higher-ranked bound on the
+    /// reborrowed type. Exercised with a generated view to prove the
+    /// `for<'b>` clause is satisfiable and well-formed for codegen output.
+    fn handle_to_json<V>(handle: &buffa::view::OwnedView<V>) -> String
+    where
+        V: buffa::ViewReborrow,
+        for<'b> V::Reborrowed<'b>: serde::Serialize,
+    {
+        serde_json::to_string(handle).expect("serialize handle")
+    }
+
+    #[test]
+    fn generic_serialize_through_hrtb_bound() {
+        let msg = Scalars {
+            i32: 7,
+            s: "hrtb".into(),
+            ..Default::default()
+        };
+        let owned = ScalarsOwnedView::from_owned(&msg).expect("from_owned");
+        // Turbofish: rustc 1.75 (MSRV) registers the higher-ranked bound
+        // before it has inferred `V` from the argument and fails with
+        // `<_ as ViewReborrow>::Reborrowed<'b>: Serialize`; current rustc
+        // infers it. Downstream generic callers on old toolchains need the
+        // same.
+        assert_eq!(
+            handle_to_json::<ScalarsView<'static>>(owned.as_ref()),
+            serde_json::to_string(&msg).expect("serialize owned")
+        );
+    }
+
     #[test]
     fn wrapper_json_matches_owned_json() {
         let msg = Scalars {
@@ -173,15 +205,24 @@ mod view_family {
     /// Generic over the owned message via `HasMessageView`: decode into the
     /// handle, then reach the reborrowed view, the buffer, and the owned
     /// message through the trait's structural bounds only — no concrete type
-    /// names beyond the call site's turbofish.
+    /// names beyond the call site's turbofish. `ViewLifetimeParametric` is what
+    /// `decode_view_handle` needs; it implies the `ViewReborrow` that
+    /// `reborrow` and `to_owned_message` need.
     fn decode_via_family<M>(bytes: bytes::Bytes) -> (M, usize)
     where
         M: buffa::HasMessageView,
-        M::View<'static>: buffa::ViewReborrow,
+        M::View<'static>: buffa::ViewLifetimeParametric,
     {
+        let opts = buffa::DecodeOptions::default();
+        // Exercised only to prove the second constructor carries the same bound.
+        let _ = M::decode_view_handle_with_options(bytes.clone(), &opts).expect("decode");
         let handle = M::decode_view_handle(bytes).expect("decode");
         let raw = handle.as_ref();
         let _view = raw.reborrow();
+        // `OwnedView<V>: Debug` holds under the same bound — the `Debug`
+        // requirement rides on `ViewReborrow::Reborrowed`, so generic code
+        // never spells a `for<'b>` clause.
+        let _ = format!("{raw:?}");
         let len = raw.bytes().len();
         (raw.to_owned_message(), len)
     }

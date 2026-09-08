@@ -385,6 +385,7 @@ impl<'a> ::buffa::MessageName for ApiView<'a> {
 }
 ::buffa::impl_default_view_instance!(ApiView);
 ::buffa::impl_view_reborrow!(ApiView);
+::buffa::unsafe_impl_view_lifetime_parametric!(ApiView);
 /** Self-contained, `'static` owned view of a `Api` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`ApiView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -972,6 +973,7 @@ impl<'a> ::buffa::MessageName for MethodView<'a> {
 }
 ::buffa::impl_default_view_instance!(MethodView);
 ::buffa::impl_view_reborrow!(MethodView);
+::buffa::unsafe_impl_view_lifetime_parametric!(MethodView);
 /** Self-contained, `'static` owned view of a `Method` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`MethodView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -1474,6 +1476,7 @@ impl<'a> ::buffa::MessageName for MixinView<'a> {
 }
 ::buffa::impl_default_view_instance!(MixinView);
 ::buffa::impl_view_reborrow!(MixinView);
+::buffa::unsafe_impl_view_lifetime_parametric!(MixinView);
 /** Self-contained, `'static` owned view of a `Mixin` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`MixinView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.

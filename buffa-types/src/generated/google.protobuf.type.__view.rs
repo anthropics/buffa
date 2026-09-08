@@ -318,6 +318,7 @@ impl<'a> ::buffa::MessageName for TypeView<'a> {
 }
 ::buffa::impl_default_view_instance!(TypeView);
 ::buffa::impl_view_reborrow!(TypeView);
+::buffa::unsafe_impl_view_lifetime_parametric!(TypeView);
 /** Self-contained, `'static` owned view of a `Type` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`TypeView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -911,6 +912,7 @@ impl<'a> ::buffa::MessageName for FieldView<'a> {
 }
 ::buffa::impl_default_view_instance!(FieldView);
 ::buffa::impl_view_reborrow!(FieldView);
+::buffa::unsafe_impl_view_lifetime_parametric!(FieldView);
 /** Self-contained, `'static` owned view of a `Field` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`FieldView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -1506,6 +1508,7 @@ impl<'a> ::buffa::MessageName for EnumView<'a> {
 }
 ::buffa::impl_default_view_instance!(EnumView);
 ::buffa::impl_view_reborrow!(EnumView);
+::buffa::unsafe_impl_view_lifetime_parametric!(EnumView);
 /** Self-contained, `'static` owned view of a `Enum` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`EnumView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -1945,6 +1948,7 @@ impl<'a> ::buffa::MessageName for EnumValueView<'a> {
 }
 ::buffa::impl_default_view_instance!(EnumValueView);
 ::buffa::impl_view_reborrow!(EnumValueView);
+::buffa::unsafe_impl_view_lifetime_parametric!(EnumValueView);
 /** Self-contained, `'static` owned view of a `EnumValue` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`EnumValueView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.
@@ -2345,6 +2349,7 @@ impl<'a> ::buffa::MessageName for OptionView<'a> {
 }
 ::buffa::impl_default_view_instance!(OptionView);
 ::buffa::impl_view_reborrow!(OptionView);
+::buffa::unsafe_impl_view_lifetime_parametric!(OptionView);
 /** Self-contained, `'static` owned view of a `Option` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`OptionView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.

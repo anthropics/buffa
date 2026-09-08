@@ -275,8 +275,12 @@ jobs:
       # destructor runs), a second drop of the view on the into_bytes unwind
       # path, or a missing MaybeDangling (a protector on the forged borrows
       # when an OwnedView is passed by value) into a hard error.
+      # `owned_view_lifetime_parametric_contract` adds the Debug, Clone,
+      # PartialEq, reborrow and to_owned_message paths on a hand-written view.
       - name: Miri (OwnedView soundness)
-        run: cargo +${{ env.MIRI_TOOLCHAIN }} miri test -p buffa -- owned_view_drop owned_view_into_bytes
+        run: >-
+          cargo +${{ env.MIRI_TOOLCHAIN }} miri test -p buffa --
+          owned_view_drop owned_view_into_bytes owned_view_lifetime_parametric_contract
 
   # ── no_std and 32-bit compilation checks ─────────────────────────────────
   check-nostd:
