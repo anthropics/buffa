@@ -1650,6 +1650,8 @@ The `buffa-types` crate provides pre-generated types for Google's well-known pro
 
 `Api`, `Type`, `Enum`, `SourceContext` and the messages they contain (`Method`, `Mixin`, `Field`, `EnumValue`, `Option`) implement the binary, view, and text codecs but not `Serialize`/`Deserialize`. A message that embeds one of them under `json = true` fails to compile with `the trait bound Api: Serialize is not satisfied`; map the type to your own generated copy with `extern_path` if you need JSON for it.
 
+Import well-known types by name (`use buffa_types::google::protobuf::Timestamp;`) rather than with a glob. `type.proto` defines a message named `Option`, so `use buffa_types::google::protobuf::*;` brings a struct `Option` into scope that shadows the prelude's `core::option::Option` and turns every `Option<T>` in that module into `error[E0107]: struct takes 0 generic arguments`. The name is kept as protoc, prost-types and protobuf-go keep it, because the proto-path-to-Rust-path mapping that `extern_path` relies on has no room for a rename; generated code is unaffected since it always spells `::core::option::Option`.
+
 ### Timestamp and Duration
 
 With the `std` feature, `Timestamp` and `Duration` convert to/from `std::time` types:
