@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`examples/bsr-quickstart` compiles again, and CI checks it** (#427). Its checked-in generated code had been hand-patched across four releases while the plugin pin stayed at v0.5.2, so it matched neither the pinned plugin nor the in-tree runtime. The example now pins the BSR plugin and the `buffa` / `buffa-types` crates to the same release, and `cargo check` runs against it in CI.
+time: 2026-09-09T12:55:00.000000000-07:00
