@@ -1,7 +1,0 @@
-kind: Changed
-body: |-
-    **`SizeCache` panic locations are now gated on `debug_assertions`, shrinking generated code** (#366).
-    Generated `compute_size` calls `SizeCache::set` once per length-delimited sub-message field, and generated `write_to` calls `consume_next` once as well, so a large schema produces hundreds to thousands of call sites for each. Both carried `#[track_caller]`, which materializes a `Location` record at every one of them, and `set` inlined a formatted `assert!` panic block on top of that. The attribute is now gated on `debug_assertions` and `set`'s panic joins `consume_next`'s out of line.
-    Measured on a ~1000-message schema linked into a 13.2 MiB binary (fat LTO, `codegen-units = 1`, `panic = "abort"`, stripped): 1068 `Location` records removed, and 106 KiB (0.79%) off the linked binary.
-    Both bound checks still run, with the same conditions and messages as before. What changes is that a violation reports a location inside buffa rather than in your `compute_size` / `write_to`. The gate follows the profile buffa itself was compiled with; to get caller locations back in a release build, set `[profile.release.package.buffa] debug-assertions = true` (which also enables buffa's other debug assertions, so treat it as a diagnostic setting).
-time: 2026-08-19T15:15:56.669149855-03:00

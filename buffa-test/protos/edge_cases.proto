@@ -7,11 +7,11 @@ syntax = "proto3";
 
 package test.edge;
 
-// reserved field numbers and names are silently ignored by codegen — this
-// is a compile-only test (if the crate builds, reserved handling is correct).
+// Reserved field numbers are ignored by codegen. Textproto accepts reserved
+// field names and discards their values; textproto integration tests cover it.
 message WithReserved {
   reserved 4, 5, 9 to 11;
-  reserved "old_field", "deprecated_name";
+  reserved "old_field", "old_name", "deprecated_name";
   int32 id = 1;
   string name = 2;
   bool active = 3;

@@ -1,4 +1,0 @@
-kind: Fixed
-body: |-
-    **ProtoJSON `FieldMask` conversion preserves leading underscores** (#390). A path component such as `_foo` maps to `Foo` and back, matching the C++ and Go implementations; on the parse side a leading uppercase letter, previously rejected as non-canonical, now yields a leading underscore.
-time: 2026-08-30T13:05:47+02:00

@@ -545,7 +545,7 @@ impl ::buffa::text::TextFormat for Type {
                         },
                     )?
                 }
-                _ => dec.skip_value()?,
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -1081,7 +1081,7 @@ impl ::buffa::text::TextFormat for Field {
                         },
                     )?
                 }
-                _ => dec.skip_value()?,
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -1835,7 +1835,7 @@ impl ::buffa::text::TextFormat for Enum {
                         },
                     )?
                 }
-                _ => dec.skip_value()?,
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -2150,7 +2150,7 @@ impl ::buffa::text::TextFormat for EnumValue {
                         },
                     )?
                 }
-                _ => dec.skip_value()?,
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -2439,7 +2439,7 @@ impl ::buffa::text::TextFormat for Option {
             match __name {
                 "name" => self.name = dec.read_string()?.into_owned(),
                 "value" => dec.merge_message(self.value.get_or_insert_default())?,
-                _ => dec.skip_value()?,
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
