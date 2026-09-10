@@ -253,6 +253,19 @@ pub enum PoolError {
         start: Option<i32>,
         end: Option<i32>,
     },
+    /// Two extension ranges declared by the same message overlap. `end` is
+    /// exclusive, as in `DescriptorProto.ExtensionRange`. Carries both ranges
+    /// as declared: `start..end` is the later of the two in declaration
+    /// order, `other_start..other_end` the earlier one it collides with.
+    /// Contrast [`PoolError::ReservedExtensionRange`], an overlap with a
+    /// *reserved* range.
+    OverlappingExtensionRange {
+        message: String,
+        start: u32,
+        end: u32,
+        other_start: u32,
+        other_end: u32,
+    },
     /// An open enum's first declared value has a non-zero number.
     OpenEnumFirstValueNotZero {
         enum_name: String,
@@ -438,6 +451,17 @@ impl core::fmt::Display for PoolError {
                 "message {message} extension range {}..{} is invalid; bounds must satisfy 0 < start < end",
                 Bound(*start),
                 Bound(*end),
+            ),
+            Self::OverlappingExtensionRange {
+                message,
+                start,
+                end,
+                other_start,
+                other_end,
+            } => write!(
+                f,
+                "message {message} extension range {start}..{end} overlaps extension range \
+                 {other_start}..{other_end}"
             ),
             Self::OpenEnumFirstValueNotZero {
                 enum_name,
@@ -1632,6 +1656,40 @@ impl DescriptorPool {
             // `extensions 1000 to max;` spans it). An extension *numbered* in
             // the band is rejected in `link_field` before any range check.
             extension_ranges.push((start, end));
+        }
+
+        // Overlap is independent of declaration order, so check a copy sorted
+        // by start: after sorting, any overlap shows up between a range and
+        // the furthest-reaching range before it. The declaration index rides
+        // along so the error names the later-declared range first, as protoc
+        // does. (`extension_ranges` itself stays in declaration order.)
+        let mut by_start: Vec<(u32, u32, usize)> = extension_ranges
+            .iter()
+            .enumerate()
+            .map(|(i, &(start, end))| (start, end, i))
+            .collect();
+        by_start.sort_unstable();
+        let mut reach: Option<(u32, u32, usize)> = None;
+        for &(start, end, i) in &by_start {
+            if let Some((prev_start, prev_end, j)) = reach {
+                if start < prev_end {
+                    let (later, earlier) = if i > j {
+                        ((start, end), (prev_start, prev_end))
+                    } else {
+                        ((prev_start, prev_end), (start, end))
+                    };
+                    return Err(PoolError::OverlappingExtensionRange {
+                        message: fqn,
+                        start: later.0,
+                        end: later.1,
+                        other_start: earlier.0,
+                        other_end: earlier.1,
+                    });
+                }
+            }
+            if reach.map_or(true, |(_, prev_end, _)| end > prev_end) {
+                reach = Some((start, end, i));
+            }
         }
 
         // Replace the placeholder. Pass 1 registered messages depth-first
