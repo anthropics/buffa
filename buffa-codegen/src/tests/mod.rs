@@ -68,6 +68,7 @@ mod proto2;
 mod reexports;
 mod reflect_view;
 mod repeated_type;
+mod shared_corpus_context;
 mod shared_pool;
 mod size_arithmetic;
 mod view_codegen;

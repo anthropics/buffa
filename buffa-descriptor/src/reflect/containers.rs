@@ -92,10 +92,14 @@ pub trait ReflectElement: core::fmt::Debug {
 /// bytes in the view; it converts via UTF-8 and is documented as best-effort
 /// (see the impl).
 ///
-/// The [`PartialEq`] supertrait is required so the generic [`ReflectMap`] impl
-/// can deduplicate wire entries via [`MapView::iter_unique`](buffa::MapView::iter_unique),
-/// matching the bridge path's distinct-key semantics. The [`Debug`] supertrait
-/// plays the same role as it does for [`ReflectElement`].
+/// The [`PartialEq`] supertrait lets the generic [`ReflectMap`] impls look a
+/// key up by value. The [`Debug`] supertrait plays the same role as it does
+/// for [`ReflectElement`]. The impl for [`MapView`] additionally requires
+/// [`Ord`] on the key so it can deduplicate wire entries via
+/// [`MapView::iter_unique`](buffa::MapView::iter_unique) by sorting rather
+/// than comparing every pair; every view-side key type (the integral types,
+/// `bool`, `&str`, `&[u8]`) satisfies it, and the owned `HashMap`/`BTreeMap`
+/// impls do not need it, so a custom owned key type is not asked for `Ord`.
 pub trait ReflectMapKey: core::fmt::Debug + PartialEq {
     /// Borrow this key as a [`MapKeyRef`].
     #[must_use]
@@ -254,12 +258,23 @@ impl<T: ReflectElement> ReflectList for RepeatedView<'_, T> {
     }
 }
 
-impl<K: ReflectMapKey, V: ReflectElement> ReflectMap for MapView<'_, K, V> {
+/// The `Ord` bound (beyond [`ReflectMapKey`]'s own) is what
+/// [`MapView::iter_unique`] needs to deduplicate wire entries in `O(n log n)`;
+/// see the trait docs.
+impl<K: ReflectMapKey + Ord, V: ReflectElement> ReflectMap for MapView<'_, K, V> {
     fn len(&self) -> usize {
         // Distinct-key count, matching the bridge path (`MapValue` dedups at
         // construction). `MapView` preserves duplicate wire entries, so a raw
         // `iter().count()` would over-count and diverge from `MapValue::len`.
+        // This sorts an index vector on every call; `is_empty` below avoids
+        // that for the common emptiness check.
         self.len_unique()
+    }
+
+    fn is_empty(&self) -> bool {
+        // Deduplication never empties a non-empty entry list, so the raw
+        // count decides this without the sort `len` pays for.
+        self.iter().next().is_none()
     }
 
     fn get(&self, key: &MapKey) -> Option<ValueRef<'_>> {
