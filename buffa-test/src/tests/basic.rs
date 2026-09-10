@@ -80,6 +80,43 @@ fn test_all_scalars_round_trip() {
     assert_eq!(round_trip(&msg), msg);
 }
 
+/// The library's own `*_to_bytes` entry points and `Rope` no longer write
+/// through `BytesMut`'s `BufMut` impl, so this is the one place the blanket
+/// `EncodeSink for BufMut` instantiation for `BytesMut` — what a caller who
+/// frames into their own `BytesMut` uses — is exercised: varint, zigzag,
+/// fixed32, fixed64 and length-delimited writes must match the `Vec<u8>` sink
+/// byte for byte.
+#[test]
+fn encode_into_bytesmut_matches_encode_to_vec() {
+    use buffa::bytes::BytesMut;
+
+    let scalars = AllScalars {
+        f_int32: -1,
+        f_uint64: u64::MAX,
+        f_sint64: -200,
+        f_fixed32: 0xDEAD_BEEF,
+        f_fixed64: 0xDEAD_BEEF_CAFE_BABE,
+        f_double: std::f64::consts::PI,
+        f_bool: true,
+        ..Default::default()
+    };
+    let person = Person {
+        id: 7,
+        name: "framed".into(),
+        ..Default::default()
+    };
+
+    let mut buf = BytesMut::new();
+    scalars.encode(&mut buf);
+    assert_eq!(&buf[..], &scalars.encode_to_vec()[..]);
+    buf.clear();
+    person.encode_length_delimited(&mut buf);
+    let mut expected: Vec<u8> = Vec::new();
+    person.encode_length_delimited(&mut expected);
+    assert_eq!(&buf[..], &expected[..]);
+    assert_eq!(scalars.encode_to_bytes(), scalars.encode_to_vec());
+}
+
 #[test]
 fn test_person_scalar_fields() {
     let mut msg = Person::default();
