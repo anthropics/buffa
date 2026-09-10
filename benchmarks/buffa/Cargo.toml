@@ -16,6 +16,7 @@ buffa-descriptor = { path = "../../buffa-descriptor", features = ["reflect", "js
 buffa-smolstr = { path = "../../examples/buffa-smolstr", features = ["serde"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+bytes = "1"
 smallvec = { version = "1", features = ["serde"], optional = true }
 
 [build-dependencies]
@@ -102,7 +103,21 @@ required-features = ["iso", "mesh"]
 lto = true
 codegen-units = 1
 
+# What a downstream crate gets from a plain `cargo build --release` (no
+# `[profile.release] lto` of its own): cross-crate calls that are not
+# `#[inline]` stay out of line. `benches/encode_sink.rs` is run at both
+# profiles to show the `BytesMut` sink cost that LTO otherwise hides.
+[profile.bench-nolto]
+inherits = "bench"
+lto = false
+codegen-units = 16
+
 [[bench]]
 name = "column_batch"
 harness = false
 required-features = ["iso", "column_batch"]
+
+[[bench]]
+name = "encode_sink"
+harness = false
+required-features = ["api_response", "log_record", "google_message1"]

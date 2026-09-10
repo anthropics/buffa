@@ -1143,20 +1143,11 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     /// error-returning variant. In debug builds, also panics if a manual
     /// implementation's `write_to` produces a different byte count than
     /// its `compute_size` declared.
-    // Direct body — see Message::encode_to_vec for why the fat-payload
-    // entry points do not delegate to their try_ twins.
+    // Via `Vec<u8>` — see `Message::encode_to_bytes`.
     #[inline]
     #[must_use]
     fn encode_to_bytes(&self) -> Bytes {
-        let mut cache = crate::SizeCache::new();
-        let size = match crate::message::checked_encode_size(self.compute_size(&mut cache)) {
-            Ok(size) => size as usize,
-            Err(_) => crate::message::encode_size_overflow(),
-        };
-        let mut buf = bytes::BytesMut::with_capacity(size);
-        self.write_to(&mut cache, &mut buf);
-        crate::message::debug_assert_two_pass(buf.len(), size);
-        buf.freeze()
+        Bytes::from(self.encode_to_vec())
     }
 
     /// Encode to a new [`bytes::Bytes`], returning an error instead of
@@ -1173,12 +1164,7 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     /// In debug builds, panics if a manual implementation's `write_to`
     /// produces a different byte count than its `compute_size` declared.
     fn try_encode_to_bytes(&self) -> Result<Bytes, crate::EncodeError> {
-        let mut cache = crate::SizeCache::new();
-        let size = crate::message::checked_encode_size(self.compute_size(&mut cache))? as usize;
-        let mut buf = bytes::BytesMut::with_capacity(size);
-        self.write_to(&mut cache, &mut buf);
-        crate::message::debug_assert_two_pass(buf.len(), size);
-        Ok(buf.freeze())
+        self.try_encode_to_vec().map(Bytes::from)
     }
 }
 

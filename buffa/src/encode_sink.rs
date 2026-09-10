@@ -262,12 +262,12 @@ impl Rope {
     /// is a non-consuming full copy.)
     #[must_use]
     pub fn to_contiguous_bytes(&self) -> Bytes {
-        let mut out = BytesMut::with_capacity(self.len());
+        let mut out = Vec::with_capacity(self.len());
         for segment in &self.segments {
-            BufMut::put_slice(&mut out, segment);
+            out.extend_from_slice(segment);
         }
-        BufMut::put_slice(&mut out, &self.tail);
-        out.freeze()
+        out.extend_from_slice(&self.tail);
+        Bytes::from(out)
     }
 
     /// Move the accumulated tail into the segment list.
@@ -281,9 +281,12 @@ impl Rope {
 impl EncodeSink for Rope {
     const IS_SEGMENTED: bool = true;
 
+    // The tail is written through `BytesMut::extend_from_slice` (inherent,
+    // `#[inline]`) rather than its `BufMut::put_*` impls, which are
+    // out-of-line calls per tag/varint byte without LTO.
     #[inline]
     fn put_u8(&mut self, value: u8) {
-        BufMut::put_u8(&mut self.tail, value);
+        self.tail.extend_from_slice(&[value]);
     }
 
     #[inline]
@@ -301,17 +304,17 @@ impl EncodeSink for Rope {
                 return;
             }
         }
-        BufMut::put_slice(&mut self.tail, src);
+        self.tail.extend_from_slice(src);
     }
 
     #[inline]
     fn put_u32_le(&mut self, value: u32) {
-        BufMut::put_u32_le(&mut self.tail, value);
+        self.tail.extend_from_slice(&value.to_le_bytes());
     }
 
     #[inline]
     fn put_u64_le(&mut self, value: u64) {
-        BufMut::put_u64_le(&mut self.tail, value);
+        self.tail.extend_from_slice(&value.to_le_bytes());
     }
 
     #[inline]
@@ -320,7 +323,7 @@ impl EncodeSink for Rope {
             self.flush_tail();
             self.segments.push(bytes);
         } else {
-            BufMut::put_slice(&mut self.tail, &bytes);
+            self.tail.extend_from_slice(&bytes);
         }
     }
 }
