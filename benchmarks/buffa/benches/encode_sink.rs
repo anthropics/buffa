@@ -5,8 +5,10 @@
 // Why this exists: `BufMut for BytesMut` does not mark `put_slice` (and hence
 // the default `put_u8`) `#[inline]`, and LLVM folds `reserve_inner` into it, so
 // every tag and varint byte written through a `BytesMut` is an out-of-line
-// call — with or without fat LTO (measured: `encode_to_bytes` was 3.5–4.4x
-// slower than `encode_to_vec` on the tag-dense shapes at both profiles).
+// call — with or without fat LTO (quieted c7i.metal, both profiles:
+// `encode_to_bytes` through `BytesMut` was 3.1–3.9x slower than
+// `encode_to_vec` on the tag-dense shapes and 1.7x on bytes-heavy
+// `media_frame`).
 // `Vec<u8>`'s impl is inlined and compiles to a plain store. `encode_to_bytes`
 // therefore encodes into a `Vec<u8>` and converts (zero-copy); this bench is
 // the reproduction and the guard, and the `bytesmut` rows show what a caller
@@ -171,8 +173,9 @@ fn run(c: &mut Criterion) {
         "google_message1_proto3",
         include_bytes!("../../datasets/google_message1_proto3.pb"),
     );
-    // Bytes-heavy control: a few KB-scale `put_slice` calls per message, so
-    // the out-of-line call is amortised and the sinks should be close.
+    // Bytes-heavy control: KB-scale `put_slice` calls dominate, so the
+    // out-of-line call is amortised (1.7x rather than 3-4x) and the
+    // encode-then-copy framing row buys nothing here.
     sinks::<MediaFrame>(
         c,
         "media_frame",
