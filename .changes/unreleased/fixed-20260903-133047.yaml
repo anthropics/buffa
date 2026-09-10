@@ -1,3 +1,4 @@
 kind: Fixed
-body: DescriptorPool now rejects declared message fields whose numbers fall inside the containing message's extension ranges.
+body: |-
+    **`DescriptorPool` rejects a message field whose number lies inside one of the message's own extension ranges** (#420), as `protoc` does ("Extension range ... includes field ..."). Only hand-built or synthesized descriptor sets can reach this state; the rejection is the new `PoolError::FieldNumberInExtensionRange` variant.
 time: 2026-09-03T13:30:47+02:00

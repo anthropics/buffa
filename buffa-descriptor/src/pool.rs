@@ -1658,7 +1658,10 @@ impl DescriptorPool {
                 .iter()
                 .map(|&(start, end)| (i64::from(start), i64::from(end))),
         );
-        if let Some(fd) = fields.iter().find(|fd| extension_lookup.contains(fd.number)) {
+        if let Some(fd) = fields
+            .iter()
+            .find(|fd| extension_lookup.contains(fd.number))
+        {
             return Err(PoolError::FieldNumberInExtensionRange {
                 message: fqn,
                 name: fd.name.clone(),
