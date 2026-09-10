@@ -206,6 +206,8 @@ pub enum PoolError {
         field: String,
         index: i32,
     },
+    /// Two oneof declarations in one message have the same name.
+    DuplicateOneofName { message: String, name: String },
     /// A field number is outside the valid range
     /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`).
     InvalidFieldNumber { field: String, number: i32 },
@@ -377,6 +379,12 @@ impl core::fmt::Display for PoolError {
                 f,
                 "field {field} in message {message} has invalid oneof index {index}"
             ),
+            Self::DuplicateOneofName { message, name } => {
+                write!(
+                    f,
+                    "message {message} declares oneof name {name:?} more than once"
+                )
+            }
             Self::InvalidFieldNumber { field, number } => {
                 write!(f, "field {field} has invalid field number {number}")
             }
@@ -1477,16 +1485,23 @@ impl DescriptorPool {
         }
 
         // Build oneof descriptors. Track member field indices as we go.
-        let mut oneofs: Vec<OneofDescriptor> = msg
-            .oneof_decl
-            .iter()
-            .map(|o| OneofDescriptor {
-                name: o.name.clone().unwrap_or_default(),
+        let mut oneof_names: BTreeSet<&str> = BTreeSet::new();
+        let mut oneofs = Vec::with_capacity(msg.oneof_decl.len());
+        for o in &msg.oneof_decl {
+            let oneof_name = o.name.as_deref().unwrap_or("");
+            if !oneof_names.insert(oneof_name) {
+                return Err(PoolError::DuplicateOneofName {
+                    message: fqn,
+                    name: oneof_name.to_string(),
+                });
+            }
+            oneofs.push(OneofDescriptor {
+                name: oneof_name.to_string(),
                 field_indices: Vec::new(),
                 synthetic: false,
                 options: clone_options(&o.options),
-            })
-            .collect();
+            });
+        }
 
         // Build field descriptors.
         let mut fields = Vec::with_capacity(field_count);
