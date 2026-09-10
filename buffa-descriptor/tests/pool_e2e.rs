@@ -40,6 +40,17 @@ fn scalar_field(
     }
 }
 
+fn enum_value(
+    name: &str,
+    number: i32,
+) -> buffa_descriptor::generated::descriptor::EnumValueDescriptorProto {
+    buffa_descriptor::generated::descriptor::EnumValueDescriptorProto {
+        name: Some(name.into()),
+        number: Some(number),
+        ..Default::default()
+    }
+}
+
 fn assert_rejected_without_mutating_pool(
     file_name: &str,
     full_message_name: &str,
@@ -793,6 +804,48 @@ fn reserved_message_field_names_are_rejected_without_mutating_pool() {
 }
 
 #[test]
+fn duplicate_message_reserved_names_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("duplicate-message-reserved-name.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![
+                DescriptorProto {
+                    name: Some("Valid".into()),
+                    reserved_name: vec!["legacy".into()],
+                    ..Default::default()
+                },
+                DescriptorProto {
+                    name: Some("Invalid".into()),
+                    reserved_name: vec!["legacy".into(), "legacy".into()],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_set_rejected_without_mutating_pool(
+        "duplicate-message-reserved-name.proto",
+        "invalid.test.Invalid",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::DuplicateMessageReservedName { message, name }
+                    if message == "invalid.test.Invalid" && name == "legacy"
+            ));
+        },
+    );
+}
+
+#[test]
 fn reserved_message_field_numbers_are_rejected_without_mutating_pool() {
     use buffa_descriptor::generated::descriptor::descriptor_proto::ReservedRange;
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
@@ -963,6 +1016,127 @@ fn adjacent_reserved_and_extension_ranges_are_accepted() {
             .extension_ranges(),
         &[(8, 9)]
     );
+}
+
+#[test]
+fn extension_range_bounds_are_half_open_at_the_field_number_limit() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let max = buffa::encoding::MAX_FIELD_NUMBER as i32;
+    let pool = DescriptorPool::new(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("valid-extension-bounds.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto2".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("RangeMessage".into()),
+                extension_range: vec![
+                    ExtensionRange {
+                        start: Some(7),
+                        end: Some(8),
+                        ..Default::default()
+                    },
+                    ExtensionRange {
+                        start: Some(max),
+                        end: Some(max + 1),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("one-element ranges include the maximum field number");
+
+    let message = pool.message_by_name("valid.test.RangeMessage").unwrap();
+    assert_eq!(
+        message.extension_ranges(),
+        &[(7, 8), (max as u32, (max + 1) as u32)]
+    );
+    assert!(message.in_extension_range(7));
+    assert!(!message.in_extension_range(8));
+    assert!(message.in_extension_range(max as u32));
+    assert!(!message.in_extension_range((max + 1) as u32));
+}
+
+#[test]
+fn invalid_extension_range_bounds_are_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let max = buffa::encoding::MAX_FIELD_NUMBER as i32;
+    // protoc reads an unset bound as 0, then requires `0 < start < end`.
+    for (suffix, start, end) in [
+        ("equal", Some(7), Some(7)),
+        ("reversed", Some(8), Some(7)),
+        ("max-equal", Some(max + 1), Some(max + 1)),
+        ("max-reversed", Some(max + 1), Some(max)),
+        ("zero-start", Some(0), Some(5)),
+        ("negative-start", Some(-3), Some(5)),
+        ("negative-end", Some(3), Some(-5)),
+        ("unset-start", None, Some(5)),
+        ("unset-end", Some(5), None),
+        ("unset-both", None, None),
+    ] {
+        let message_name = format!("InvalidRange{suffix}");
+        let full_name = format!("invalid.test.{message_name}");
+        let file_name = format!("invalid-extension-range-{suffix}.proto");
+        let expected_message = full_name.clone();
+
+        assert_set_rejected_without_mutating_pool(
+            &file_name,
+            &full_name,
+            FileDescriptorSet {
+                file: vec![FileDescriptorProto {
+                    name: Some(file_name.clone()),
+                    package: Some("invalid.test".into()),
+                    syntax: Some("proto2".into()),
+                    message_type: vec![DescriptorProto {
+                        name: Some(message_name),
+                        extension_range: vec![ExtensionRange {
+                            start,
+                            end,
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            move |err| {
+                assert!(
+                    matches!(
+                        err,
+                        PoolError::InvalidExtensionRange {
+                            message,
+                            start: actual_start,
+                            end: actual_end,
+                        } if message == &expected_message
+                            && *actual_start == start
+                            && *actual_end == end
+                    ),
+                    "unexpected error: {err}"
+                );
+                if (start, end) == (Some(5), None) {
+                    assert_eq!(
+                        err.to_string(),
+                        format!(
+                            "message {expected_message} extension range 5..unset is invalid; \
+                             bounds must satisfy 0 < start < end"
+                        )
+                    );
+                }
+            },
+        );
+    }
 }
 
 #[test]
@@ -1205,6 +1379,7 @@ fn duplicate_rpc_method_names_are_rejected_transactionally() {
             name: Some("duplicate-method.proto".into()),
             package: Some("invalid.test".into()),
             syntax: Some("proto3".into()),
+            dependency: vec!["reflect_test.proto".into()],
             service: vec![ServiceDescriptorProto {
                 name: Some("Gateway".into()),
                 method: vec![method(), method()],
@@ -1418,6 +1593,50 @@ fn reserved_enum_value_names_are_rejected_transactionally() {
 }
 
 #[test]
+fn duplicate_enum_reserved_names_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("duplicate-enum-reserved-name.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            enum_type: vec![
+                EnumDescriptorProto {
+                    name: Some("Valid".into()),
+                    reserved_name: vec!["LEGACY".into()],
+                    value: vec![enum_value("UNSPECIFIED", 0), enum_value("ACTIVE", 1)],
+                    ..Default::default()
+                },
+                EnumDescriptorProto {
+                    name: Some("Invalid".into()),
+                    reserved_name: vec!["LEGACY".into(), "LEGACY".into()],
+                    value: vec![enum_value("INVALID_UNSPECIFIED", 0)],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_set_rejected_without_mutating_pool(
+        "duplicate-enum-reserved-name.proto",
+        "invalid.test.Invalid",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::DuplicateEnumReservedName { enum_name, name }
+                    if enum_name == "invalid.test.Invalid" && name == "LEGACY"
+            ));
+        },
+    );
+}
+
+#[test]
 fn non_reserved_enum_values_are_accepted() {
     use buffa_descriptor::generated::descriptor::enum_descriptor_proto::EnumReservedRange;
     use buffa_descriptor::generated::descriptor::{
@@ -1462,6 +1681,57 @@ fn non_reserved_enum_values_are_accepted() {
     };
 
     DescriptorPool::new(set).expect("non-reserved enum values are valid");
+}
+
+#[test]
+fn distinct_reserved_names_and_names_in_different_owners_are_accepted() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, EnumDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("valid-reserved-names.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![
+                DescriptorProto {
+                    name: Some("First".into()),
+                    field: vec![scalar_field("current", 1, Type::TYPE_STRING)],
+                    reserved_name: vec!["legacy".into(), "old_name".into()],
+                    ..Default::default()
+                },
+                DescriptorProto {
+                    name: Some("Second".into()),
+                    field: vec![scalar_field("current", 1, Type::TYPE_STRING)],
+                    reserved_name: vec!["legacy".into()],
+                    ..Default::default()
+                },
+            ],
+            enum_type: vec![
+                EnumDescriptorProto {
+                    name: Some("FirstStatus".into()),
+                    value: vec![enum_value("FIRST_UNSPECIFIED", 0), enum_value("ACTIVE", 1)],
+                    reserved_name: vec!["LEGACY".into(), "OLD_STATUS".into()],
+                    ..Default::default()
+                },
+                EnumDescriptorProto {
+                    name: Some("SecondStatus".into()),
+                    value: vec![
+                        enum_value("SECOND_UNSPECIFIED", 0),
+                        enum_value("STARTED", 1),
+                    ],
+                    reserved_name: vec!["LEGACY".into()],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    DescriptorPool::new(set).expect("distinct reserved names should be accepted");
 }
 
 #[test]
@@ -1627,6 +1897,97 @@ fn method_fqn_collisions_with_registered_symbols_are_rejected_transactionally() 
             ));
         },
     );
+}
+
+#[test]
+fn out_of_range_public_dependency_indices_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("bad-public-dependency.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            // No imports at all, so any index names nothing.
+            public_dependency: vec![7],
+            message_type: vec![DescriptorProto {
+                name: Some("Solo".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_set_rejected_without_mutating_pool(
+        "bad-public-dependency.proto",
+        "invalid.test.Solo",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::InvalidPublicDependencyIndex {
+                    index: 7,
+                    dependency_count: 0,
+                    ..
+                }
+            ));
+            assert_eq!(
+                err.to_string(),
+                "file bad-public-dependency.proto public_dependency index 7 \
+                 is out of range (0 dependencies declared)"
+            );
+        },
+    );
+}
+
+#[test]
+fn import_public_indices_that_protoc_emits_are_accepted() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    // What `import public "b.proto";` compiles to: a `dependency` entry plus
+    // its position in `public_dependency`. No .proto in the test corpus uses
+    // `import public`, so this is the only cover for a non-empty
+    // `public_dependency` reaching the pool.
+    let set = FileDescriptorSet {
+        file: vec![
+            FileDescriptorProto {
+                name: Some("b.proto".into()),
+                package: Some("pubdep.test".into()),
+                syntax: Some("proto3".into()),
+                message_type: vec![DescriptorProto {
+                    name: Some("Base".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            FileDescriptorProto {
+                name: Some("a.proto".into()),
+                package: Some("pubdep.test".into()),
+                syntax: Some("proto3".into()),
+                dependency: vec!["b.proto".into()],
+                public_dependency: vec![0],
+                message_type: vec![DescriptorProto {
+                    name: Some("Front".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+
+    let mut p = DescriptorPool::decode(FDS_BYTES).unwrap();
+    p.add_file_descriptor_set(set)
+        .expect("a re-exporting import links");
+
+    assert!(p.file_by_name("a.proto").is_some());
+    assert!(p.message_by_name("pubdep.test.Front").is_some());
+    assert!(p.message_by_name("pubdep.test.Base").is_some());
 }
 
 #[test]
@@ -1820,4 +2181,546 @@ fn proto2_still_rejects_duplicate_proto_field_names() {
         err,
         PoolError::DuplicateFieldName { ref name, .. } if name == "same"
     ));
+}
+
+// ── import visibility (#423) ────────────────────────────────────────────────
+
+mod import_visibility {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        MethodDescriptorProto, ServiceDescriptorProto,
+    };
+    use buffa_descriptor::{DescriptorPool, LinkOptions, PoolError};
+
+    /// `<name>.proto` in package `<name>` declaring `message Thing {}`.
+    fn leaf(name: &str) -> FileDescriptorProto {
+        FileDescriptorProto {
+            name: Some(format!("{name}.proto")),
+            package: Some(name.into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Thing".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    /// A singular message field referencing `type_name`.
+    fn msg_field(name: &str, number: i32, type_name: &str) -> FieldDescriptorProto {
+        FieldDescriptorProto {
+            name: Some(name.into()),
+            number: Some(number),
+            label: Some(Label::LABEL_OPTIONAL),
+            r#type: Some(Type::TYPE_MESSAGE),
+            type_name: Some(type_name.into()),
+            ..Default::default()
+        }
+    }
+
+    /// `<name>.proto` in package `<name>` with `message Holder { <target> thing = 1; }`
+    /// and the given import lists.
+    fn referrer(name: &str, deps: &[&str], public: &[i32], target: &str) -> FileDescriptorProto {
+        FileDescriptorProto {
+            name: Some(format!("{name}.proto")),
+            package: Some(name.into()),
+            syntax: Some("proto3".into()),
+            dependency: deps.iter().map(|d| (*d).to_string()).collect(),
+            public_dependency: public.to_vec(),
+            message_type: vec![DescriptorProto {
+                name: Some("Holder".into()),
+                field: vec![msg_field("thing", 1, target)],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    fn set(files: Vec<FileDescriptorProto>) -> FileDescriptorSet {
+        FileDescriptorSet {
+            file: files,
+            ..Default::default()
+        }
+    }
+
+    fn assert_not_imported(err: &PoolError, file: &str, type_name: &str, defined_in: &str) {
+        assert!(
+            matches!(
+                err,
+                PoolError::TypeNotImported { file: f, type_name: t, defined_in: d, .. }
+                    if f == file && t == type_name && d == defined_in
+            ),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn reference_without_import_is_rejected() {
+        let err = DescriptorPool::new(set(vec![leaf("a"), referrer("b", &[], &[], ".a.Thing")]))
+            .unwrap_err();
+        assert_not_imported(&err, "b.proto", ".a.Thing", "a.proto");
+        assert_eq!(
+            err.to_string(),
+            "field b.Holder.thing references \".a.Thing\", which is defined in a.proto \
+             and not imported by b.proto; add a.proto to its dependency list"
+        );
+    }
+
+    #[test]
+    fn reference_with_import_links() {
+        let pool = DescriptorPool::new(set(vec![
+            leaf("a"),
+            referrer("b", &["a.proto"], &[], ".a.Thing"),
+        ]))
+        .expect("imported type links");
+        assert!(pool.message_by_name("b.Holder").is_some());
+    }
+
+    #[test]
+    fn import_order_within_a_set_does_not_matter() {
+        // The referrer precedes the file it imports; protoc emits sets in
+        // dependency order, but hand-built and merged sets need not be.
+        DescriptorPool::new(set(vec![
+            referrer("b", &["a.proto"], &[], ".a.Thing"),
+            leaf("a"),
+        ]))
+        .expect("links regardless of file order");
+    }
+
+    #[test]
+    fn same_file_and_nested_references_need_no_import() {
+        let file = FileDescriptorProto {
+            name: Some("self.proto".into()),
+            package: Some("selfref".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Outer".into()),
+                field: vec![
+                    msg_field("inner", 1, ".selfref.Outer.Inner"),
+                    msg_field("me", 2, ".selfref.Outer"),
+                ],
+                nested_type: vec![DescriptorProto {
+                    name: Some("Inner".into()),
+                    field: vec![msg_field("up", 1, ".selfref.Outer")],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        DescriptorPool::new(set(vec![file])).expect("same-file references link");
+    }
+
+    #[test]
+    fn public_import_chain_is_visible_transitively() {
+        // c imports b; b `import public "a.proto"`; c may use a.Thing.
+        let b = FileDescriptorProto {
+            name: Some("b.proto".into()),
+            package: Some("b".into()),
+            dependency: vec!["a.proto".into()],
+            public_dependency: vec![0],
+            ..Default::default()
+        };
+        DescriptorPool::new(set(vec![
+            leaf("a"),
+            b,
+            referrer("c", &["b.proto"], &[], ".a.Thing"),
+        ]))
+        .expect("public re-export is visible");
+    }
+
+    #[test]
+    fn two_hop_public_import_chain_is_visible() {
+        // d imports c; c `import public` b; b `import public` a.
+        let reexport = |name: &str, dep: &str| FileDescriptorProto {
+            name: Some(format!("{name}.proto")),
+            package: Some(name.into()),
+            dependency: vec![dep.into()],
+            public_dependency: vec![0],
+            ..Default::default()
+        };
+        DescriptorPool::new(set(vec![
+            leaf("a"),
+            reexport("b", "a.proto"),
+            reexport("c", "b.proto"),
+            referrer("d", &["c.proto"], &[], ".a.Thing"),
+        ]))
+        .expect("transitive public re-export is visible");
+    }
+
+    #[test]
+    fn ordinary_transitive_import_is_not_visible() {
+        // c imports b; b imports a (not public); c may NOT use a.Thing.
+        let b = FileDescriptorProto {
+            name: Some("b.proto".into()),
+            package: Some("b".into()),
+            dependency: vec!["a.proto".into()],
+            ..Default::default()
+        };
+        let err = DescriptorPool::new(set(vec![
+            leaf("a"),
+            b,
+            referrer("c", &["b.proto"], &[], ".a.Thing"),
+        ]))
+        .unwrap_err();
+        assert_not_imported(&err, "c.proto", ".a.Thing", "a.proto");
+    }
+
+    #[test]
+    fn public_import_cycle_terminates() {
+        // a and b publicly import each other; c imports a and uses b.Thing.
+        // protoc rejects the cycle itself ("File recursively imports
+        // itself"); the pool does not detect import cycles yet, so this pins
+        // only that the visibility walk terminates on one.
+        let cyc = |name: &str, dep: &str| FileDescriptorProto {
+            dependency: vec![dep.into()],
+            public_dependency: vec![0],
+            ..leaf(name)
+        };
+        DescriptorPool::new(set(vec![
+            cyc("a", "b.proto"),
+            cyc("b", "a.proto"),
+            referrer("c", &["a.proto"], &[], ".b.Thing"),
+        ]))
+        .expect("cycle in public imports does not loop and b is visible through a");
+    }
+
+    #[test]
+    fn weak_dependency_is_visible() {
+        let c = FileDescriptorProto {
+            weak_dependency: vec![0],
+            ..referrer("c", &["a.proto"], &[], ".a.Thing")
+        };
+        DescriptorPool::new(set(vec![leaf("a"), c])).expect("weak imports resolve like imports");
+    }
+
+    #[test]
+    fn extendee_and_extension_type_must_be_imported() {
+        let extendable = FileDescriptorProto {
+            name: Some("base.proto".into()),
+            package: Some("base".into()),
+            syntax: Some("proto2".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Ext".into()),
+                extension_range: vec![
+                    buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange {
+                        start: Some(100),
+                        end: Some(200),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let extender = |deps: &[&str], value_type: &str| FileDescriptorProto {
+            name: Some("extender.proto".into()),
+            package: Some("extender".into()),
+            syntax: Some("proto2".into()),
+            dependency: deps.iter().map(|d| (*d).to_string()).collect(),
+            extension: vec![FieldDescriptorProto {
+                extendee: Some(".base.Ext".into()),
+                ..msg_field("payload", 100, value_type)
+            }],
+            ..Default::default()
+        };
+
+        // Extendee not imported.
+        let err = DescriptorPool::new(set(vec![
+            extendable.clone(),
+            leaf("a"),
+            extender(&["a.proto"], ".a.Thing"),
+        ]))
+        .unwrap_err();
+        assert_not_imported(&err, "extender.proto", ".base.Ext", "base.proto");
+
+        // Extendee imported, value type not.
+        let err = DescriptorPool::new(set(vec![
+            extendable.clone(),
+            leaf("a"),
+            extender(&["base.proto"], ".a.Thing"),
+        ]))
+        .unwrap_err();
+        assert_not_imported(&err, "extender.proto", ".a.Thing", "a.proto");
+
+        // Both imported.
+        DescriptorPool::new(set(vec![
+            extendable,
+            leaf("a"),
+            extender(&["base.proto", "a.proto"], ".a.Thing"),
+        ]))
+        .expect("extension links when extendee and value type are imported");
+    }
+
+    #[test]
+    fn method_types_must_be_imported() {
+        let svc = |deps: &[&str]| FileDescriptorProto {
+            name: Some("svc.proto".into()),
+            package: Some("svc".into()),
+            syntax: Some("proto3".into()),
+            dependency: deps.iter().map(|d| (*d).to_string()).collect(),
+            service: vec![ServiceDescriptorProto {
+                name: Some("S".into()),
+                method: vec![MethodDescriptorProto {
+                    name: Some("Call".into()),
+                    input_type: Some(".a.Thing".into()),
+                    output_type: Some(".a.Thing".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let err = DescriptorPool::new(set(vec![leaf("a"), svc(&[])])).unwrap_err();
+        assert!(
+            matches!(&err, PoolError::TypeNotImported { field, .. } if field == "svc.S.Call"),
+            "unexpected error: {err}"
+        );
+        DescriptorPool::new(set(vec![leaf("a"), svc(&["a.proto"])]))
+            .expect("method types link when imported");
+    }
+
+    #[test]
+    fn map_value_type_must_be_imported() {
+        let entry = DescriptorProto {
+            name: Some("ByIdEntry".into()),
+            field: vec![
+                FieldDescriptorProto {
+                    name: Some("key".into()),
+                    number: Some(1),
+                    label: Some(Label::LABEL_OPTIONAL),
+                    r#type: Some(Type::TYPE_INT32),
+                    ..Default::default()
+                },
+                msg_field("value", 2, ".a.Thing"),
+            ],
+            options: buffa::MessageField::some(
+                buffa_descriptor::generated::descriptor::MessageOptions {
+                    map_entry: Some(true),
+                    ..Default::default()
+                },
+            ),
+            ..Default::default()
+        };
+        let holder = |deps: &[&str]| FileDescriptorProto {
+            name: Some("m.proto".into()),
+            package: Some("m".into()),
+            syntax: Some("proto3".into()),
+            dependency: deps.iter().map(|d| (*d).to_string()).collect(),
+            message_type: vec![DescriptorProto {
+                name: Some("Holder".into()),
+                field: vec![FieldDescriptorProto {
+                    label: Some(Label::LABEL_REPEATED),
+                    ..msg_field("by_id", 1, ".m.Holder.ByIdEntry")
+                }],
+                nested_type: vec![entry.clone()],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let err = DescriptorPool::new(set(vec![leaf("a"), holder(&[])])).unwrap_err();
+        assert_not_imported(&err, "m.proto", ".a.Thing", "a.proto");
+        DescriptorPool::new(set(vec![leaf("a"), holder(&["a.proto"])]))
+            .expect("map value type links when imported");
+    }
+
+    #[test]
+    fn later_set_may_import_files_from_an_earlier_set() {
+        let mut pool = DescriptorPool::new(set(vec![leaf("a")])).unwrap();
+        pool.add_file_descriptor_set(set(vec![referrer("b", &["a.proto"], &[], ".a.Thing")]))
+            .expect("import of an already-pooled file resolves");
+        assert!(pool.message_by_name("b.Holder").is_some());
+
+        // And visibility is still enforced across the boundary.
+        let err = pool
+            .add_file_descriptor_set(set(vec![referrer("c", &[], &[], ".a.Thing")]))
+            .unwrap_err();
+        assert_not_imported(&err, "c.proto", ".a.Thing", "a.proto");
+        assert!(
+            pool.file_by_name("c.proto").is_none(),
+            "rejected set left the pool unchanged"
+        );
+        assert!(pool.message_by_name("c.Holder").is_none());
+    }
+
+    #[test]
+    fn public_reexport_through_an_earlier_set_is_visible() {
+        // Set 1: a, and b which `import public` a. Set 2: c imports b, uses a.
+        let b = FileDescriptorProto {
+            name: Some("b.proto".into()),
+            package: Some("b".into()),
+            dependency: vec!["a.proto".into()],
+            public_dependency: vec![0],
+            ..Default::default()
+        };
+        let mut pool = DescriptorPool::new(set(vec![leaf("a"), b])).unwrap();
+        pool.add_file_descriptor_set(set(vec![referrer("c", &["b.proto"], &[], ".a.Thing")]))
+            .expect("public re-export recorded in an earlier set is honoured");
+    }
+
+    #[test]
+    fn absent_dependency_is_tolerated_by_default_and_rejected_when_required() {
+        // `b` lists an import that is nowhere in the set, but references
+        // nothing from it (the option-only-import shape).
+        let b = FileDescriptorProto {
+            dependency: vec!["a.proto".into(), "google/api/annotations.proto".into()],
+            ..referrer("b", &[], &[], ".a.Thing")
+        };
+        DescriptorPool::new(set(vec![leaf("a"), b.clone()]))
+            .expect("an absent, unreferenced import is tolerated by default");
+
+        // A reference *into* the absent file is still an unresolved name, not
+        // a visibility error: the file's symbols were never registered.
+        let dangling = FileDescriptorProto {
+            dependency: vec!["absent.proto".into()],
+            ..referrer("d", &[], &[], ".absent.Thing")
+        };
+        let err = DescriptorPool::new(set(vec![dangling])).unwrap_err();
+        assert!(
+            matches!(&err, PoolError::UnresolvedTypeName { type_name, .. } if type_name == ".absent.Thing"),
+            "unexpected error: {err}"
+        );
+
+        let mut strict =
+            DescriptorPool::with_link_options(LinkOptions::new().with_required_dependencies(true));
+        let err = strict
+            .add_file_descriptor_set(set(vec![leaf("a"), b]))
+            .unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                PoolError::DependencyNotFound { file, dependency }
+                    if file == "b.proto" && dependency == "google/api/annotations.proto"
+            ),
+            "unexpected error: {err}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "file b.proto imports google/api/annotations.proto, which is not in the pool"
+        );
+        assert!(
+            strict.file_by_name("a.proto").is_none(),
+            "rejected set left the pool unchanged"
+        );
+
+        // A missing *weak* dependency is exempt, as under protoc.
+        let weak_only = FileDescriptorProto {
+            dependency: vec!["a.proto".into(), "gone.proto".into()],
+            weak_dependency: vec![1],
+            ..referrer("w", &[], &[], ".a.Thing")
+        };
+        strict
+            .add_file_descriptor_set(set(vec![leaf("a"), weak_only]))
+            .expect("a missing weak dependency is tolerated even when dependencies are required");
+    }
+
+    #[test]
+    fn decode_with_link_options_applies_them() {
+        use buffa::Message as _;
+        let bytes = set(vec![leaf("a"), referrer("b", &[], &[], ".a.Thing")]).encode_to_vec();
+        assert!(matches!(
+            DescriptorPool::decode(&bytes),
+            Err(PoolError::TypeNotImported { .. })
+        ));
+        let pool = DescriptorPool::decode_with_link_options(
+            &bytes,
+            &buffa::DecodeOptions::new(),
+            LinkOptions::new().with_import_visibility(false),
+        )
+        .expect("flat resolution when visibility is off");
+        assert!(!pool.link_options().import_visibility());
+        assert!(pool.message_by_name("b.Holder").is_some());
+    }
+
+    #[test]
+    fn enum_reference_follows_the_same_rule() {
+        use buffa_descriptor::generated::descriptor::{
+            EnumDescriptorProto, EnumValueDescriptorProto,
+        };
+        let enums = FileDescriptorProto {
+            name: Some("e.proto".into()),
+            package: Some("e".into()),
+            syntax: Some("proto3".into()),
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Colour".into()),
+                value: vec![EnumValueDescriptorProto {
+                    name: Some("COLOUR_UNSPECIFIED".into()),
+                    number: Some(0),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let user = |deps: &[&str]| FileDescriptorProto {
+            name: Some("u.proto".into()),
+            package: Some("u".into()),
+            syntax: Some("proto3".into()),
+            dependency: deps.iter().map(|d| (*d).to_string()).collect(),
+            message_type: vec![DescriptorProto {
+                name: Some("Paint".into()),
+                field: vec![FieldDescriptorProto {
+                    r#type: Some(Type::TYPE_ENUM),
+                    ..msg_field("colour", 1, ".e.Colour")
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let err = DescriptorPool::new(set(vec![enums.clone(), user(&[])])).unwrap_err();
+        assert_not_imported(&err, "u.proto", ".e.Colour", "e.proto");
+        DescriptorPool::new(set(vec![enums, user(&["e.proto"])]))
+            .expect("enum reference links when imported");
+    }
+
+    #[test]
+    fn duplicate_file_names_in_one_set_are_rejected() {
+        let mut pool = DescriptorPool::new(set(vec![leaf("z")])).unwrap();
+        let err = pool
+            .add_file_descriptor_set(set(vec![leaf("a"), leaf("a")]))
+            .unwrap_err();
+        assert!(
+            matches!(&err, PoolError::DuplicateFileName { file } if file == "a.proto"),
+            "unexpected error: {err}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "file a.proto appears more than once in the set"
+        );
+        assert!(pool.file_by_name("a.proto").is_none());
+        // A name already in the pool is an idempotent re-add, not a duplicate.
+        pool.add_file_descriptor_set(set(vec![leaf("z"), leaf("z")]))
+            .expect("re-adding a pooled file is a no-op");
+    }
+
+    #[test]
+    fn enforcement_can_be_switched_off() {
+        let mut pool =
+            DescriptorPool::with_link_options(LinkOptions::new().with_import_visibility(false));
+        assert!(!pool.link_options().import_visibility());
+        pool.add_file_descriptor_set(set(vec![leaf("a"), referrer("b", &[], &[], ".a.Thing")]))
+            .expect("flat resolution when visibility is not enforced");
+        assert!(pool.message_by_name("b.Holder").is_some());
+    }
+
+    #[test]
+    fn defaults_enforce_visibility_and_tolerate_absent_imports() {
+        let opts = LinkOptions::default();
+        assert!(opts.import_visibility());
+        assert!(!opts.required_dependencies());
+        assert_eq!(
+            DescriptorPool::new(set(vec![])).unwrap().link_options(),
+            opts
+        );
+    }
+
+    #[test]
+    fn protoc_output_links_under_the_defaults() {
+        // The checked-in `reflect_test.fds` is real `protoc --include_imports`
+        // output spanning several files with cross-file references
+        // (extensions of messages in another file, WKT imports).
+        DescriptorPool::decode(super::FDS_BYTES)
+            .expect("protoc output satisfies import visibility");
+    }
 }

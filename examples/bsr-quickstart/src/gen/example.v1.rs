@@ -1069,6 +1069,7 @@ pub mod __buffa {
                 this
             }
         }
+        ::buffa::unsafe_impl_view_lifetime_parametric!(GreetingView);
         /** Self-contained, `'static` owned view of a `Greeting` message.
 
  Wraps [`::buffa::OwnedView`]`<`[`GreetingView`]`<'static>>`: the decoded view and the [`::buffa::bytes::Bytes`] buffer it borrows from travel together, so the handle is `'static` and `Send + Sync` — suitable for async handlers, spawned tasks, and anywhere a `'static` bound is required.

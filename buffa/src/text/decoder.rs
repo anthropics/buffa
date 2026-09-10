@@ -138,8 +138,9 @@ impl<'a> TextDecoder<'a> {
     /// Construct an unknown-field error pointing at the last name returned
     /// by [`read_field_name`](Self::read_field_name).
     ///
-    /// Generated `merge_text` wildcard arms use this when they want to fail
-    /// fast on unknown fields rather than [`skip_value`](Self::skip_value).
+    /// Generated `merge_text` wildcard arms return this for any name that is
+    /// neither a declared field nor a declared reserved name; reserved names
+    /// are consumed with [`skip_value`](Self::skip_value) instead.
     pub fn unknown_field(&self) -> ParseError {
         let (line, col) = self.tok.line_col(self.last_name_pos);
         ParseError::new(line, col, ParseErrorKind::UnknownField)
@@ -695,8 +696,10 @@ impl<'a> TextDecoder<'a> {
 
     /// Consume a field's value without interpreting it.
     ///
-    /// Used for unknown fields when the caller wants to skip rather than
-    /// fail. Handles scalars, messages, and lists (recursively).
+    /// Generated `merge_text` impls call this for declared reserved field
+    /// names; hand-written impls can call it for any name they want to accept
+    /// and discard rather than fail on. Handles scalars, messages (`{}` and
+    /// `<>`), and lists (recursively).
     ///
     /// # Errors
     ///

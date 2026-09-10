@@ -1,5 +1,0 @@
-kind: Fixed
-body: |-
-    **`merge_bytes` / `merge_string` no longer publish a length before the bytes behind it are written** (#378).
-    The non-contiguous copy path of `merge_bytes`, `merge_string`, `decode_bytes`, and `decode_string` called `set_len(len)` on the destination and then let `Buf::copy_to_slice` fill it. `chunk()` and `advance()` are safe, user-implementable methods, so a `Buf` that panicked mid-copy (or whose `chunk()` ran dry before `remaining()` said it would) left the caller-owned `Vec<u8>` / `String` with a length covering bytes that were never written — stale or uninitialised heap, and for `String` possibly non-UTF-8 — readable by safe code that caught the unwind. All four sites now copy into the spare capacity chunk by chunk and extend the length only once every byte is in place, so an unwind leaves the merged value empty and a `Buf` that runs dry panics with a message instead of spinning. Not reachable with the stock `bytes` implementations. Reported by HackerOne researcher bezumiya.
-time: 2026-08-27T00:25:15.110319623-07:00

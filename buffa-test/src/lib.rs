@@ -57,6 +57,16 @@ pub mod box_type {
 /// `PointerRepr::Inline` default: the built-in inline pointer
 /// (`::buffa::Inline<T>`) for every non-recursive singular message field. The
 /// `self_ref` field is recursive and stays on `Box`.
+///
+/// Also the `#![forbid(unsafe_code)]` canary: generated views assert
+/// `ViewLifetimeParametric` through `buffa::unsafe_impl_view_lifetime_parametric!`,
+/// whose expansion contains an `unsafe impl`. Consumers routinely `include!`
+/// generated code into crates that forbid unsafe code, and the macro form is
+/// accepted there only because the `unsafe` token originates in buffa and
+/// rustc does not report `unsafe_code` inside an external macro's expansion.
+/// If a future rustc starts reporting it, or codegen emits a literal
+/// `unsafe impl`, this module stops compiling.
+#[forbid(unsafe_code)]
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod inline_field {
     buffa::include_proto!("inline_field");

@@ -16,6 +16,9 @@ env:
   # Ubuntu's apt protobuf-compiler is v21.12 — too old. Keep this in sync
   # with the conformance tools image (see conformance/Dockerfile.tools).
   PROTOC_VERSION: "33.5"
+  # SHA256 of protoc-${PROTOC_VERSION}-linux-x86_64.zip from the upstream
+  # protobuf release. Bump together with PROTOC_VERSION.
+  PROTOC_SHA256: "24e58fb231d50306ee28491f33a170301e99540f7e29ca461e0e80fd1239f8d1"
 
 jobs:
 
@@ -42,6 +45,7 @@ jobs:
       - name: Install protoc
         run: |
           curl -fsSL "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" -o /tmp/protoc.zip
+          echo "${PROTOC_SHA256}  /tmp/protoc.zip" | sha256sum -c -
           sudo unzip -o /tmp/protoc.zip -d /usr/local
           protoc --version
 
@@ -209,6 +213,7 @@ jobs:
       - name: Install protoc
         run: |
           curl -fsSL "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" -o /tmp/protoc.zip
+          echo "${PROTOC_SHA256}  /tmp/protoc.zip" | sha256sum -c -
           sudo unzip -o /tmp/protoc.zip -d /usr/local
           protoc --version
 
@@ -270,8 +275,12 @@ jobs:
       # destructor runs), a second drop of the view on the into_bytes unwind
       # path, or a missing MaybeDangling (a protector on the forged borrows
       # when an OwnedView is passed by value) into a hard error.
+      # `owned_view_lifetime_parametric_contract` adds the Debug, Clone,
+      # PartialEq, reborrow and to_owned_message paths on a hand-written view.
       - name: Miri (OwnedView soundness)
-        run: cargo +${{ env.MIRI_TOOLCHAIN }} miri test -p buffa -- owned_view_drop owned_view_into_bytes
+        run: >-
+          cargo +${{ env.MIRI_TOOLCHAIN }} miri test -p buffa --
+          owned_view_drop owned_view_into_bytes owned_view_lifetime_parametric_contract
 
   # ── no_std and 32-bit compilation checks ─────────────────────────────────
   check-nostd:
@@ -291,6 +300,7 @@ jobs:
       - name: Install protoc
         run: |
           curl -fsSL "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" -o /tmp/protoc.zip
+          echo "${PROTOC_SHA256}  /tmp/protoc.zip" | sha256sum -c -
           sudo unzip -o /tmp/protoc.zip -d /usr/local
           protoc --version
 
@@ -326,6 +336,7 @@ jobs:
       - name: Install protoc
         run: |
           curl -fsSL "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" -o /tmp/protoc.zip
+          echo "${PROTOC_SHA256}  /tmp/protoc.zip" | sha256sum -c -
           sudo unzip -o /tmp/protoc.zip -d /usr/local
           protoc --version
 
